@@ -5,6 +5,7 @@ import { useUi } from "../../state/ui.ts";
 import { relativeTime } from "../../lib/relativeTime.ts";
 import { NewThreadPopover } from "./NewThreadPopover.tsx";
 import { StatusGlyph } from "../ui/StatusGlyph.tsx";
+import { PrGlyph, WorktreeGlyph } from "../ui/VcsBadges.tsx";
 import styles from "./ProjectTree.module.css";
 
 function ThreadRow({ thread, siblings }: { thread: Thread; siblings: Thread[] }) {
@@ -20,6 +21,8 @@ function ThreadRow({ thread, siblings }: { thread: Thread; siblings: Thread[] })
       >
         <StatusGlyph status={thread.status} {...(thread.attention ? { attention: thread.attention } : {})} />
         <span className={styles.threadTitle}>{thread.title}</span>
+        <WorktreeGlyph thread={thread} />
+        <PrGlyph pr={thread.pr} />
         <span className={styles.provider}>{thread.provider}</span>
         <span className={styles.time}>{relativeTime(thread.updatedAt)}</span>
       </button>

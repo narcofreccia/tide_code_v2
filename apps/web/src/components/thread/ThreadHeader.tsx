@@ -10,6 +10,7 @@ import {
 import { Button } from "../ui/Button.tsx";
 import { Pill } from "../ui/Pill.tsx";
 import { StatusGlyph } from "../ui/StatusGlyph.tsx";
+import { PrBadge } from "../ui/VcsBadges.tsx";
 import styles from "./ThreadHeader.module.css";
 
 const NO_COMMAND = "No harness session to resume yet";
@@ -42,7 +43,11 @@ export function ThreadHeader({ thread }: { thread: Thread }) {
   return (
     <header className={styles.header}>
       <StatusGlyph status={thread.status} {...(thread.attention ? { attention: thread.attention } : {})} />
-      <span className={styles.branch}>{thread.branch ?? "no worktree"}</span>
+      <span className={styles.branch} title={thread.worktreePath ?? "no worktree"}>
+        {thread.worktreePath === undefined ? "" : "⎇ "}
+        {thread.branch ?? "no worktree"}
+      </span>
+      {thread.pr ? <PrBadge pr={thread.pr} /> : null}
       <Pill>{turnStatus ?? thread.status}</Pill>
       {percent === undefined ? null : <span className={styles.stat}>ctx {percent}%</span>}
       {thread.totalCostUsd === undefined ? null : (

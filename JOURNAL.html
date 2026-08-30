@@ -136,10 +136,11 @@
           <ul class="tasks">
             <li><span class="badge status done">done</span><span class="t">Contracts: <code>Turn.checkpoint</code>, <code>Thread.baseBranch/pr</code>, <code>thread.revert</code>/<code>thread.publish</code>, internal <code>worktree.attach</code>/<code>checkpoint.record</code>/<code>pr.update</code>, RPC <code>vcs.status|turnDiff|threadDiff|fileAt</code> — <code>cda50fb</code></span></li>
             <li><span class="badge status wip">wip</span><span class="t">Server <code>vcs/</code>: git wrapper (snapshot incl. untracked via temp index), WorktreeManager (<code>~/.tide/worktrees</code>, <code>tide/&lt;slug&gt;</code> branches), CheckpointService (<code>refs/tide/checkpoints/…</code>), VcsReactor (before-checkpoint gates the provider turn), revert, publish via gh — Opus agent</span></li>
-            <li><span class="badge status wip">wip</span><span class="t">Web Workbench › Changes: turn selector, file list, Monaco diff (lazy chunk, unified/split ⌘⇧D), revert, commit / commit+push+PR, PR badges — Opus agent</span></li>
+            <li><span class="badge status done">done</span><span class="t">Web Workbench › Changes: turn selector, file list, Monaco diff (lazy chunk, unified/split ⌘⇧D), revert, commit / commit+push+PR, PR badges, <code>state/vcs.ts</code> cache + status bar / rail / Mission Control git affordances — Opus agent</span></li>
             <li><span class="badge status todo">todo</span><span class="t">Orchestrator validation: two threads editing the same file on separate worktrees, revert a turn, PR button (gh present)</span></li>
           </ul>
           <p class="note">2026-08-31 — P2 contracts by the orchestrator; server vcs + web workbench fanned out.</p>
+          <p class="note">2026-08-31 — Web P2 landed: <code>monaco-editor@0.56.0</code> + <code>@monaco-editor/react@4.7.0</code> loaded through <code>React.lazy</code> (main chunk 481&nbsp;kB / 149&nbsp;kB gz, Monaco 3.98&nbsp;MB / 1.03&nbsp;MB gz in its own chunk, base worker only, <code>tide-dark</code>/<code>tide-light</code> themes from the CSS tokens). Diffs cached per <code>threadId:turnId</code> and invalidated when a turn settles or a checkpoint appears. 51 web tests (was 37).</p>
         </div>
       </details>
 

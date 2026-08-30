@@ -5,13 +5,17 @@ import {
   type ActivityOf,
   type EventRecord,
   type ProposedPlan,
+  type Message,
   type ReadModel,
   type Thread,
+  type Turn,
+  type UnaryMethodName,
 } from "@tide/contracts";
 import type { ModelStore, ModelStoreState } from "@tide/client";
-import { attachModelStore } from "./state/model.ts";
+import { attachModelStore, setRpcCaller, type RpcCaller } from "./state/model.ts";
 import { resetProviders } from "./state/providers.ts";
 import { useUi } from "./state/ui.ts";
+import { resetVcs } from "./state/vcs.ts";
 
 export interface FakeStore {
   store: ModelStore;
@@ -38,6 +42,8 @@ export function attachFakeStore(model: ReadModel): FakeStore {
 
 export function resetUi(): void {
   resetProviders();
+  resetVcs();
+  setRpcCaller(undefined);
   useUi.setState({
     view: "mission",
     selectedProjectId: null,
@@ -46,6 +52,8 @@ export function resetUi(): void {
     focusMode: "split",
     railCollapsed: false,
     splitRatio: 0.45,
+    diffSideBySide: true,
+    fileListCollapsed: false,
   });
 }
 
@@ -147,5 +155,34 @@ export function modelWithTimeline(thread: Thread, entries: (Activity | ProposedP
     if ("kind" in entry) model.activities[entry.id] = entry;
     else model.plans[entry.id] = entry;
   }
+  return model;
+}
+
+/** Answers non-command RPC from a table; unmocked methods reject loudly. */
+export function mockRpc(handlers: Partial<Record<UnaryMethodName, (params: never) => unknown>>) {
+  const caller = vi.fn(async (method: string, params: unknown) => {
+    const handler = handlers[method as UnaryMethodName] as ((p: unknown) => unknown) | undefined;
+    if (!handler) throw new Error(`unmocked rpc: ${method}`);
+    return handler(params);
+  });
+  setRpcCaller(caller as unknown as RpcCaller);
+  return caller;
+}
+
+export function makeTurn(id: string, patch: Partial<Turn> = {}): Turn {
+  return { id, threadId: "t1", status: "completed", requestedAt: 1, ...patch };
+}
+
+export function makeMessage(id: string, patch: Partial<Message> = {}): Message {
+  return { id, threadId: "t1", turnId: "u1", role: "user", text: "hello", createdAt: 1, ...patch };
+}
+
+/** One thread with its turns and messages wired into the read model. */
+export function modelWithTurns(thread: Thread, turns: Turn[], messages: Message[] = []): ReadModel {
+  const model = modelWith({ threads: { [thread.id]: thread } });
+  for (const turn of turns) model.turns[turn.id] = turn;
+  for (const message of messages) model.messages[message.id] = message;
+  model.threadMessages[thread.id] = messages.map((m) => m.id);
+  model.threadTimeline[thread.id] = messages.map((m) => ({ kind: "message" as const, id: m.id }));
   return model;
 }

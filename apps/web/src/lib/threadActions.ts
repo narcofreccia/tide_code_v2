@@ -2,6 +2,7 @@ import type { ApprovalDecision, InteractionMode, ProviderKind, RuntimeMode } fro
 import { call, dispatch, type DispatchResult } from "../state/model.ts";
 import { showToast } from "../state/toast.ts";
 import { useUi } from "../state/ui.ts";
+import { ensureStatus, invalidateThread } from "../state/vcs.ts";
 
 export interface ThreadPatch {
   title?: string;
@@ -111,4 +112,42 @@ export async function copyTerminalCommand(command: string): Promise<void> {
 export async function fetchTerminalCommand(threadId: string): Promise<string | undefined> {
   const result = await call("thread.terminalCommand", { threadId });
   return result.command;
+}
+
+// ---- git (P2) ----
+
+/** Restores the worktree to the checkpoint taken before `turnId`. */
+export async function revertTurn(threadId: string, turnId: string): Promise<void> {
+  try {
+    await dispatch({ type: "thread.revert", threadId, turnId });
+    invalidateThread(threadId);
+    showToast("Reverted to the checkpoint before this turn");
+  } catch (error) {
+    showToast(`Revert failed: ${error instanceof Error ? error.message : String(error)}`);
+  }
+}
+
+export interface PublishOptions {
+  title?: string;
+  body?: string;
+  /** commit without pushing or opening a PR */
+  commitOnly?: boolean;
+}
+
+/** Commits the worktree, and unless `commitOnly` pushes and opens/updates the PR. */
+export async function publishThread(threadId: string, options: PublishOptions = {}): Promise<void> {
+  try {
+    await dispatch({
+      type: "thread.publish",
+      threadId,
+      ...(options.title === undefined ? {} : { title: options.title }),
+      ...(options.body === undefined ? {} : { body: options.body }),
+      ...(options.commitOnly === undefined ? {} : { commitOnly: options.commitOnly }),
+    });
+    invalidateThread(threadId);
+    ensureStatus(threadId, true);
+    showToast(options.commitOnly ? "Committed" : "Committed, pushed, PR updated");
+  } catch (error) {
+    showToast(`Publish failed: ${error instanceof Error ? error.message : String(error)}`);
+  }
 }

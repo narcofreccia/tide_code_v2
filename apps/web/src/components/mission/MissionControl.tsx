@@ -6,6 +6,7 @@ import { relativeTime } from "../../lib/relativeTime.ts";
 import { NewThreadPopover } from "../shell/NewThreadPopover.tsx";
 import { Pill } from "../ui/Pill.tsx";
 import { StatusGlyph } from "../ui/StatusGlyph.tsx";
+import { PrGlyph, WorktreeGlyph } from "../ui/VcsBadges.tsx";
 import { Inbox } from "./Inbox.tsx";
 import styles from "./MissionControl.module.css";
 
@@ -44,6 +45,8 @@ export function MissionControl() {
               <button type="button" className={styles.row} onClick={() => selectThread(t.id)}>
                 <StatusGlyph status={t.status} {...(t.attention ? { attention: t.attention } : {})} />
                 <span className={styles.title}>{t.title}</span>
+                <WorktreeGlyph thread={t} />
+                <PrGlyph pr={t.pr} />
                 <span className={styles.project}>{model.projects[t.projectId]?.title ?? "—"}</span>
                 <Pill>{t.provider}</Pill>
                 <span className={styles.time}>{relativeTime(t.updatedAt)}</span>

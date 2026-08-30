@@ -10,8 +10,10 @@
     "test": "vitest run --passWithNoTests"
   },
   "dependencies": {
+    "@monaco-editor/react": "4.7.0",
     "@tide/client": "workspace:*",
     "@tide/contracts": "workspace:*",
+    "monaco-editor": "0.56.0",
     "react": "^19.2.0",
     "react-dom": "^19.2.0",
     "react-markdown": "^10.1.0",

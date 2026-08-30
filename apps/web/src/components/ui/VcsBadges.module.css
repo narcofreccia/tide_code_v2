@@ -1,0 +1,24 @@
+.worktree { color: var(--muted); font-size: 11px; }
+.glyph {
+  display: inline-flex;
+  align-items: center;
+  gap: 2px;
+  font-size: 10px;
+  color: var(--muted);
+}
+.badge {
+  display: inline-flex;
+  align-items: center;
+  gap: var(--sp-1);
+  height: 18px;
+  padding: 0 6px;
+  border: 1px solid var(--border);
+  border-radius: 999px;
+  font-size: 11px;
+  text-decoration: none;
+  color: var(--muted);
+}
+.badge:hover { border-color: var(--accent); color: var(--text); }
+.open { color: var(--accent); }
+.merged { color: var(--ok); }
+.closed { color: var(--danger); }

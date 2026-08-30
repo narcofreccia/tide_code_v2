@@ -1,7 +1,7 @@
 import { useEffect } from "react";
 import { useUi } from "../state/ui.ts";
 
-/** Global shortcuts: ⌘0 Mission Control · ⌘1/2/3 focus modes · ⌘B rail. */
+/** Global shortcuts: ⌘0 Mission Control · ⌘1/2/3 focus modes · ⌘B rail · ⌘⇧D diff layout. */
 export function useKeyboardMap(): void {
   useEffect(() => {
     const onKeyDown = (event: KeyboardEvent): void => {
@@ -22,7 +22,13 @@ export function useKeyboardMap(): void {
           break;
         case "b":
         case "B":
+          if (event.shiftKey) return;
           ui.toggleRail();
+          break;
+        case "d":
+        case "D":
+          if (!event.shiftKey) return;
+          ui.toggleDiffSideBySide();
           break;
         default:
           return;

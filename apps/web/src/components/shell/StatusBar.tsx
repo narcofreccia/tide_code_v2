@@ -2,6 +2,8 @@ import type { Thread } from "@tide/contracts";
 import { useModel } from "../../state/model.ts";
 import { useLatestTurnStatus, useSelectedThread } from "../../state/hooks.ts";
 import { ConnectionDot } from "../ui/ConnectionDot.tsx";
+import { PrBadge } from "../ui/VcsBadges.tsx";
+import { useSelectedDiffStats, useVcsStatus } from "../../state/vcs.ts";
 import styles from "./StatusBar.module.css";
 
 const LABEL: Record<string, string> = {
@@ -26,6 +28,33 @@ function ThreadStats({ thread }: { thread: Thread }) {
   );
 }
 
+/** `⎇ branch (worktree)` + the selected turn's diff stats + the PR chip. */
+function GitStatus({ thread }: { thread: Thread }) {
+  // worktree threads carry their branch in the read model; others need git.
+  const status = useVcsStatus(thread.worktreePath === undefined ? thread.id : undefined);
+  const stats = useSelectedDiffStats(thread.id);
+  const branch = thread.branch ?? status.data?.branch;
+  const onWorktree = thread.worktreePath !== undefined || status.data?.worktree === true;
+
+  return (
+    <>
+      {branch ? (
+        <span className={styles.item} title={thread.worktreePath ?? status.data?.cwd ?? branch}>
+          ⎇ {branch}
+          {onWorktree ? " (worktree)" : ""}
+        </span>
+      ) : null}
+      {stats ? (
+        <span className={styles.item}>
+          <span className={styles.add}>+{stats.additions}</span>
+          <span className={styles.del}>−{stats.deletions}</span>
+        </span>
+      ) : null}
+      {thread.pr ? <PrBadge pr={thread.pr} /> : null}
+    </>
+  );
+}
+
 export function StatusBar() {
   const status = useModel((s) => s.status);
   const environmentId = useModel((s) => s.environmentId);
@@ -42,6 +71,7 @@ export function StatusBar() {
       <span className={styles.mono}>{environmentId ?? "no environment"}</span>
       {thread ? <span className={styles.item}>thread: {turnStatus ?? thread.status}</span> : null}
       {thread ? <ThreadStats thread={thread} /> : null}
+      {thread ? <GitStatus thread={thread} /> : null}
       {lastError ? <span className={styles.error}>{lastError}</span> : null}
     </footer>
   );

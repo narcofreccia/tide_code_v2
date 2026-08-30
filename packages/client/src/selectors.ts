@@ -192,3 +192,29 @@ export function groupActivities(entries: readonly TimelineItem[]): TimelineNode[
   flush();
   return out;
 }
+
+// ---- turns / checkpoints ----
+
+/** Turns of a thread in request order (oldest first). */
+export function selectThreadTurns(model: ReadModel, threadId: string): Turn[] {
+  return Object.values(model.turns)
+    .filter((t) => t.threadId === threadId)
+    .sort((a, b) => a.requestedAt - b.requestedAt || a.id.localeCompare(b.id));
+}
+
+/** Turns that recorded a checkpoint — the ones a diff can be shown for. */
+export function selectCheckpointTurns(model: ReadModel, threadId: string): Turn[] {
+  return selectThreadTurns(model, threadId).filter((t) => t.checkpoint !== undefined);
+}
+
+/** The prompt that opened a turn; used to label it in the turn selector. */
+export function selectTurnPrompt(model: ReadModel, threadId: string, turnId: string): string | undefined {
+  for (const id of model.threadMessages[threadId] ?? []) {
+    const message = model.messages[id];
+    if (message && message.turnId === turnId && message.role === "user") return message.text;
+  }
+  for (const message of Object.values(model.messages)) {
+    if (message.turnId === turnId && message.role === "user") return message.text;
+  }
+  return undefined;
+}
