@@ -45,13 +45,14 @@ function unusable(kind: ProviderKind, err: unknown): ProviderStatusDto {
 }
 
 function toDto(status: ProviderStatus): ProviderStatusDto {
+  const loginCommand = loginCommandOf(status);
   return {
     kind: status.kind,
     installed: status.installed,
     loggedIn: status.loggedIn,
     ...(status.version !== undefined ? { version: status.version } : {}),
     ...(status.hint !== undefined ? { hint: status.hint } : {}),
-    ...(status.loginCommand !== undefined ? { loginCommand: status.loginCommand } : {}),
+    ...(loginCommand !== undefined ? { loginCommand } : {}),
     models: status.models.map((m) => ({
       id: m.id,
       label: m.label,
@@ -66,6 +67,13 @@ function toDto(status: ProviderStatus): ProviderStatusDto {
  * Owns one lazily created ProviderInstance per harness plus a short-lived cache of
  * their status, so the UI can poll `providers.list` without respawning CLIs.
  */
+/** Drivers may set loginCommand explicitly; otherwise the first backticked span of the hint is it. */
+function loginCommandOf(status: { loginCommand?: string; hint?: string; loggedIn: boolean }): string | undefined {
+  if (status.loginCommand) return status.loginCommand;
+  if (status.loggedIn || !status.hint) return undefined;
+  return /`([^`]+)`/.exec(status.hint)?.[1];
+}
+
 const ALL_KINDS: readonly ProviderKind[] = ["claude", "codex", "opencode", "pi"];
 
 export class DriverRegistry {
