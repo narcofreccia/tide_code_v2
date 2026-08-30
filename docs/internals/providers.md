@@ -7,9 +7,9 @@ runs the user's installed CLI/SDK and their subscription.
 
 | Tide `RuntimeMode`     | Claude `permissionMode` | Codex `approvalPolicy` / `sandboxPolicy`     | OpenCode permission | Pi |
 |------------------------|-------------------------|----------------------------------------------|---------------------|----|
-| approval-required      | `default`               | `unlessTrusted` / `workspaceWrite`           | ask                 | `tool_call` hook → ask |
-| auto-accept-edits      | `acceptEdits`           | `onRequest` / `workspaceWrite`               | edits allow, bash ask | hook: writes allow |
-| auto                   | `auto` (classifier)     | `onFailure` / `workspaceWrite`               | allow               | hook: allow, deny rm-critical |
+| approval-required      | `default`               | `untrusted` / workspace-write                | ask                 | `tool_call` hook → ask |
+| auto-accept-edits      | `acceptEdits`           | `on-request` / workspace-write               | edits allow, bash ask | hook: writes allow |
+| auto                   | `auto` (classifier)     | `never` / workspace-write (sandboxed)        | allow               | hook: allow |
 | full-access            | `bypassPermissions` (+`allowDangerouslySkipPermissions`) | `never` / `dangerFullAccess` | allow | hook: allow |
 
 `InteractionMode.plan` → Claude `permissionMode: "plan"`; Codex `collaborationMode`/plan;
@@ -24,15 +24,18 @@ OpenCode `plan` agent; Pi = system-prompt + `tide_propose_plan` tool.
 - Plan progress: `TodoWrite` tool_use input `{todos:[{content,status,activeForm}]}`.
 - Context usage: control request `get_context_usage`; cost: `get_session_cost`. `result.usage` has `input_tokens`, cache fields.
 
-## Codex — `codex app-server` (codex-cli 0.147)
+## Codex — `codex app-server` (codex-cli 0.147, verified against generated bindings + live)
 
-- Start `codex app-server` (stdio JSON-RPC; also `--listen ws://127.0.0.1:PORT`). Handshake: `initialize {clientInfo}` → response → `initialized` notification.
-- `thread/start {model, cwd, approvalPolicy, sandboxPolicy}` → `thread/started`; `thread/resume {threadId}`; `turn/start {threadId, input:[{type:'text',text}], cwd, model, effort, approvalPolicy, sandboxPolicy, collaborationMode?}`; `turn/interrupt {threadId, turnId}`.
-- Notifications: `turn/started`, `item/started`, `item/agentMessage/delta`, `item/completed` (authoritative), `turn/completed {status: completed|interrupted|failed}`, `thread/tokenUsage/updated`.
-- Server→client requests: `item/commandExecution/requestApproval`, `item/fileChange/requestApproval` → reply `accept|acceptForSession|decline|cancel` (+`acceptWithExecpolicyAmendment`); then `serverRequest/resolved`.
-- Collab (sub-agents): child threads with `agentThreadId`/nickname/role/depth; events `collabAgent/*` — render as child threads.
-- Verified against generated bindings of codex-cli 0.147 (642 types): additional methods/notifications to use — `model/list`, `account/read` (login state), `account/rateLimits/read`, `thread/list|read|fork|archive|delete`, `thread/name/set`, `thread/compact/start`, `item/plan/delta` (**native plan output** → ProposedPlan), `item/tool/requestUserInput` (→ user-input activity), `item/permissions/requestApproval` (generic approvals), `item/commandExecution/outputDelta`, `item/fileChange/patchUpdated`, `item/reasoning/*Delta`, `item/mcpToolCall/progress`, `collabAgentToolCall` (sub-agents), `skills/list`, `mcpServerStatus/list`.
-- **Exact bindings per installed version:** `codex app-server generate-ts --out packages/driver-codex/src/generated` (also `generate-json-schema`). Regenerate on codex upgrade; do not hand-write types.
+- Start `codex app-server` (stdio JSON-RPC 2.0, newline-delimited). Handshake: `initialize {clientInfo}` → response → `initialized` notification.
+- `thread/start {model, cwd, approvalPolicy, sandbox: "read-only"|"workspace-write"|"danger-full-access"}` → `thread/started`; `thread/resume {threadId}`; `turn/start {threadId, input:[{type:"text",text}], cwd, model, effort?, approvalPolicy, sandboxPolicy:{type:"workspaceWrite",writableRoots,…}, collaborationMode?}`; `turn/interrupt {threadId, turnId}`.
+- **`approvalPolicy` values:** `"untrusted" | "on-request" | {granular:…} | "never"` — there is **no** on-failure policy. Tide mapping: approval-required → `untrusted`+workspace-write; auto-accept-edits → `on-request`+workspace-write; auto → `never`+workspace-write; full-access → `never`+`dangerFullAccess`.
+- **Plan mode:** `turn/start.collaborationMode = {mode:"plan"|"default", settings:{model, reasoning_effort, developer_instructions:null}}` (absent from the ts-rs bindings but parsed strictly by the server; `null` instructions = Codex's native plan prompt). Streaming plan text = `item/plan/delta` → ProposedPlan. Plan/todo progress = `turn/plan/updated` (steps `pending|inProgress|completed`).
+- Notifications: `turn/started`, `item/started`, `item/agentMessage/delta`, `item/commandExecution/outputDelta`, `item/fileChange/outputDelta|patchUpdated`, `item/reasoning/*Delta`, `item/mcpToolCall/progress`, `item/completed` (authoritative), `turn/completed {status: completed|interrupted|failed}`, `thread/tokenUsage/updated {total, last, modelContextWindow}` (`last` = turn usage; `total`+window = context gauge), `model/rerouted`, `thread/settings/updated`.
+- Server→client requests (must be answered or the turn hangs): `item/commandExecution/requestApproval`, `item/fileChange/requestApproval` → `accept|acceptForSession|decline|cancel` (no persistent grant; `acceptAlways` ⇒ `acceptForSession`); `item/permissions/requestApproval` → `{permissions, scope}` (decline = empty grant); `item/tool/requestUserInput` → `{answers:{[questionId]:{answers:string[]}}}` by option label; also `mcpServer/elicitation/request`, `item/tool/call`, `attestation/generate`, `account/chatgptAuthTokens/refresh`, legacy `applyPatchApproval`/`execCommandApproval`.
+- Sub-agents: `collabAgentToolCall` and `subAgentActivity` are **`ThreadItem` variants** (via `item/started|completed`), not notifications → child activities.
+- Login probe: `account/read` → `{account|null, requiresOpenaiAuth}`; models: `model/list` (works even signed out). Escape hatch: `codex resume <threadId>`.
+- MCP: Tide's servers are added as `-c 'mcp_servers.<name>.command=…'` overrides at spawn — verified to **merge** with the user's own `mcp_servers` (non-crippling).
+- **Exact bindings per installed version:** `pnpm --filter @tide/driver-codex regen` (runs `codex app-server generate-ts` and fixes `.ts` specifiers). Regenerate on codex upgrade; never hand-write types.
 
 ## OpenCode — `opencode serve` + `@opencode-ai/sdk` (1.18.x)
 

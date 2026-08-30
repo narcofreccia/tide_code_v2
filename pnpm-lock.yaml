@@ -29,6 +29,9 @@ importers:
       '@tide/driver-claude':
         specifier: workspace:*
         version: link:../../packages/driver-claude
+      '@tide/driver-codex':
+        specifier: workspace:*
+        version: link:../../packages/driver-codex
       '@tide/driver-pi':
         specifier: workspace:*
         version: link:../../packages/driver-pi
