@@ -75,6 +75,40 @@ export const VcsStatus = Type.Object({
 });
 export type VcsStatus = Static<typeof VcsStatus>;
 
+// ---- workspace files & terminals (P3). All paths are relative to the thread's cwd
+// (worktree or project root) and validated server-side; ".." escapes are rejected. ----
+export const FsEntry = Type.Object({
+  name: Type.String(),
+  path: Type.String(),
+  kind: Type.Union([Type.Literal("file"), Type.Literal("dir"), Type.Literal("symlink")]),
+  size: Type.Optional(Type.Number()),
+  mtime: Type.Optional(Type.Number()),
+  /** true when .gitignore'd (client dims it) */
+  ignored: Type.Optional(Type.Boolean()),
+});
+export type FsEntry = Static<typeof FsEntry>;
+
+export const FsChange = Type.Object({
+  path: Type.String(),
+  kind: Type.Union([Type.Literal("created"), Type.Literal("modified"), Type.Literal("deleted"), Type.Literal("renamed")]),
+  at: Type.Number(),
+});
+export type FsChange = Static<typeof FsChange>;
+
+export const SearchMatch = Type.Object({
+  path: Type.String(),
+  line: Type.Number(),
+  column: Type.Number(),
+  text: Type.String(),
+});
+export type SearchMatch = Static<typeof SearchMatch>;
+
+export const PtyChunk = Type.Union([
+  Type.Object({ kind: Type.Literal("data"), data: Type.String() }),
+  Type.Object({ kind: Type.Literal("exit"), code: Type.Optional(Type.Number()), signal: Type.Optional(Type.String()) }),
+]);
+export type PtyChunk = Static<typeof PtyChunk>;
+
 export const ServerInfo = Type.Object({
   environmentId: Type.String(),
   version: Type.String(),
@@ -100,6 +134,38 @@ export const rpcMethods = {
   "vcs.turnDiff": unary(Type.Object({ threadId: Type.String(), turnId: Type.String() }), DiffResult),
   /** everything this thread changed: first checkpoint (or base branch) → working tree */
   "vcs.threadDiff": unary(Type.Object({ threadId: Type.String() }), DiffResult),
+  // fs
+  "fs.list": unary(Type.Object({ threadId: Type.String(), path: Type.Optional(Type.String()) }), Type.Object({ entries: Type.Array(FsEntry) })),
+  "fs.read": unary(
+    Type.Object({ threadId: Type.String(), path: Type.String() }),
+    Type.Object({ content: Type.Optional(Type.String()), binary: Type.Boolean(), size: Type.Number(), mtime: Type.Number() }),
+  ),
+  /** optimistic concurrency: when `ifMtime` is given and the file changed since, returns conflict */
+  "fs.write": unary(
+    Type.Object({ threadId: Type.String(), path: Type.String(), content: Type.String(), ifMtime: Type.Optional(Type.Number()) }),
+    Type.Object({ mtime: Type.Number() }),
+  ),
+  "fs.create": unary(Type.Object({ threadId: Type.String(), path: Type.String(), kind: Type.Union([Type.Literal("file"), Type.Literal("dir")]) }), Type.Object({ ok: Type.Boolean() })),
+  "fs.rename": unary(Type.Object({ threadId: Type.String(), from: Type.String(), to: Type.String() }), Type.Object({ ok: Type.Boolean() })),
+  "fs.delete": unary(Type.Object({ threadId: Type.String(), path: Type.String() }), Type.Object({ ok: Type.Boolean() })),
+  /** recursive change stream for the thread's cwd (debounced, gitignore-aware) */
+  "fs.watch": stream(Type.Object({ threadId: Type.String() }), FsChange),
+  /** text search (ripgrep when available) */
+  "fs.search": unary(
+    Type.Object({ threadId: Type.String(), query: Type.String({ minLength: 1 }), regex: Type.Optional(Type.Boolean()), caseSensitive: Type.Optional(Type.Boolean()), glob: Type.Optional(Type.String()), limit: Type.Optional(Type.Number()) }),
+    Type.Object({ matches: Type.Array(SearchMatch), truncated: Type.Boolean() }),
+  ),
+  // pty
+  "pty.create": unary(
+    Type.Object({ threadId: Type.String(), cols: Type.Number(), rows: Type.Number(), shell: Type.Optional(Type.String()) }),
+    Type.Object({ ptyId: Type.String() }),
+  ),
+  /** attaches to a pty: replays the scrollback buffer, then streams output until exit */
+  "pty.attach": stream(Type.Object({ ptyId: Type.String() }), PtyChunk),
+  "pty.write": unary(Type.Object({ ptyId: Type.String(), data: Type.String() }), Type.Object({ ok: Type.Boolean() })),
+  "pty.resize": unary(Type.Object({ ptyId: Type.String(), cols: Type.Number(), rows: Type.Number() }), Type.Object({ ok: Type.Boolean() })),
+  "pty.kill": unary(Type.Object({ ptyId: Type.String() }), Type.Object({ ok: Type.Boolean() })),
+  "pty.list": unary(Type.Object({ threadId: Type.String() }), Type.Object({ ptys: Type.Array(Type.Object({ ptyId: Type.String(), title: Type.Optional(Type.String()), alive: Type.Boolean() })) })),
   /** full contents of a file at a ref (or the working tree when ref is "WORKTREE"), for side-by-side views */
   "vcs.fileAt": unary(
     Type.Object({ threadId: Type.String(), ref: Type.String(), path: Type.String() }),
