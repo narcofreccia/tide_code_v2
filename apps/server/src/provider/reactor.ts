@@ -1,0 +1,249 @@
+import {
+  newId as defaultNewId,
+  type Activity,
+  type EventRecord,
+  type InternalCommand,
+  type NormalizedEvent,
+  type ProviderSession,
+} from "@tide/contracts";
+import type { Engine } from "../orchestration/engine.ts";
+import { activityKey, mergeActivity } from "./activities.ts";
+import type { SessionDirectory } from "./sessions.ts";
+
+interface ThreadState {
+  /** one turn at a time per thread; different threads run concurrently */
+  queue: Promise<void>;
+  /** driver activity key -> activity id, so updates land on the same row */
+  activityIds: Map<string, string>;
+  /** `${turnId}:${messageKey}` -> message id, so deltas assemble into one message */
+  messageIds: Map<string, string>;
+}
+
+export interface ReactorOptions {
+  engine: Engine;
+  sessions: SessionDirectory;
+  now?: () => number;
+  newId?: () => string;
+  log?: (msg: string, data?: unknown) => void;
+}
+
+/**
+ * Bridges the event log and the provider drivers: turns requested by the engine are
+ * run on a session, and every NormalizedEvent comes back as an internal command.
+ * The reactor holds no business rules — the decider still owns every transition.
+ */
+export class ProviderReactor {
+  #engine: Engine;
+  #sessions: SessionDirectory;
+  #now: () => number;
+  #newId: () => string;
+  #log: (msg: string, data?: unknown) => void;
+  #threads = new Map<string, ThreadState>();
+  #inflight = new Set<Promise<unknown>>();
+  #unsubscribe: (() => void) | undefined;
+
+  constructor(options: ReactorOptions) {
+    this.#engine = options.engine;
+    this.#sessions = options.sessions;
+    this.#now = options.now ?? (() => Date.now());
+    this.#newId = options.newId ?? (() => defaultNewId());
+    this.#log = options.log ?? ((msg, data) => console.error(msg, data));
+  }
+
+  start(): void {
+    this.#unsubscribe ??= this.#engine.subscribe((record) => this.#onRecord(record));
+  }
+
+  stop(): void {
+    this.#unsubscribe?.();
+    this.#unsubscribe = undefined;
+  }
+
+  /** Resolves when the engine is drained and no turn or driver call is in flight. */
+  async drain(): Promise<void> {
+    for (let i = 0; i < 10_000; i++) {
+      await this.#engine.drain();
+      if (this.#inflight.size === 0) {
+        await this.#engine.drain();
+        if (this.#inflight.size === 0) return;
+        continue;
+      }
+      await Promise.allSettled([...this.#inflight]);
+    }
+    throw new Error("reactor did not drain");
+  }
+
+  #onRecord(record: EventRecord): void {
+    const event = record.event;
+    switch (event.type) {
+      case "turn.requested":
+        this.#enqueue(event.turn.threadId, () =>
+          this.#runTurn(event.turn.threadId, event.turn.id, event.userMessage.text),
+        );
+        return;
+      case "approval.responded":
+        this.#withSession(event.threadId, (s) => s.respondApproval(event.requestId, event.decision));
+        return;
+      case "user-input.responded":
+        this.#withSession(event.threadId, (s) => s.respondUserInput(event.requestId, event.answers));
+        return;
+      case "turn.interrupt-requested":
+        this.#withSession(event.threadId, (s) => s.interrupt());
+        return;
+      default:
+        return;
+    }
+  }
+
+  #state(threadId: string): ThreadState {
+    let state = this.#threads.get(threadId);
+    if (!state) {
+      state = { queue: Promise.resolve(), activityIds: new Map(), messageIds: new Map() };
+      this.#threads.set(threadId, state);
+    }
+    return state;
+  }
+
+  #track(promise: Promise<unknown>): void {
+    const tracked = promise.finally(() => this.#inflight.delete(tracked));
+    this.#inflight.add(tracked);
+  }
+
+  #enqueue(threadId: string, task: () => Promise<void>): void {
+    const state = this.#state(threadId);
+    state.queue = state.queue.then(task).catch((err: unknown) => this.#log("[reactor] turn failed", err));
+    this.#track(state.queue);
+  }
+
+  /** Out-of-band driver calls: they must not wait behind the running turn. */
+  #withSession(threadId: string, call: (session: ProviderSession) => Promise<void>): void {
+    const session = this.#sessions.peek(threadId);
+    if (!session) {
+      this.#log("[reactor] no live session for thread", threadId);
+      return;
+    }
+    this.#track(
+      (async () => {
+        try {
+          await call(session);
+        } catch (err) {
+          this.#log("[reactor] driver call failed", err);
+        }
+      })(),
+    );
+  }
+
+  async #dispatch(command: InternalCommand): Promise<void> {
+    try {
+      await this.#engine.dispatch(command);
+    } catch (err) {
+      this.#log(`[reactor] ${command.type} rejected`, err);
+    }
+  }
+
+  async #runTurn(threadId: string, turnId: string, text: string): Promise<void> {
+    const model = this.#engine.getModel();
+    const thread = model.threads[threadId];
+    const project = thread ? model.projects[thread.projectId] : undefined;
+    if (!thread || !project) {
+      await this.#dispatch({ type: "turn.settle", turnId, status: "error", error: "thread or project is gone" });
+      return;
+    }
+
+    let started = false;
+    const start = async (nativeSessionId?: string, modelId?: string): Promise<void> => {
+      if (started) return;
+      started = true;
+      await this.#dispatch({
+        type: "turn.start",
+        turnId,
+        provider: thread.provider,
+        ...((modelId ?? thread.model) !== undefined ? { model: modelId ?? thread.model } : {}),
+        ...(nativeSessionId !== undefined ? { nativeSessionId } : {}),
+      });
+    };
+
+    let settled = false;
+    try {
+      const session = await this.#sessions.getOrOpen(thread, project);
+      if (session.nativeSessionId !== undefined) await start(session.nativeSessionId);
+      for await (const event of session.send({ text })) {
+        if (event.type === "session") {
+          await start(event.nativeSessionId, event.model);
+          continue;
+        }
+        await start();
+        if (await this.#ingest(threadId, turnId, event)) settled = true;
+      }
+      if (!settled) {
+        await start();
+        await this.#dispatch({ type: "turn.settle", turnId, status: "completed" });
+        settled = true;
+      }
+    } catch (err) {
+      const message = err instanceof Error ? err.message : String(err);
+      this.#log("[reactor] driver error", err);
+      if (settled) return;
+      await start();
+      await this.#dispatch({ type: "activity.upsert", activity: this.#errorActivity(threadId, turnId, message) });
+      await this.#dispatch({ type: "turn.settle", turnId, status: "error", error: message });
+    }
+  }
+
+  #errorActivity(threadId: string, turnId: string, text: string): Activity {
+    const at = this.#now();
+    return { id: this.#newId(), threadId, turnId, kind: "error", text, createdAt: at, updatedAt: at };
+  }
+
+  /** Translates one NormalizedEvent into internal commands; true when the turn settled. */
+  async #ingest(threadId: string, turnId: string, event: NormalizedEvent): Promise<boolean> {
+    const state = this.#state(threadId);
+    switch (event.type) {
+      case "assistant.delta": {
+        const key = `${turnId}:${event.messageKey}`;
+        let messageId = state.messageIds.get(key);
+        if (messageId === undefined) {
+          messageId = this.#newId();
+          state.messageIds.set(key, messageId);
+        }
+        await this.#dispatch({ type: "assistant.append", turnId, messageId, delta: event.delta });
+        return false;
+      }
+      case "activity": {
+        const key = activityKey(event.activity);
+        let id = event.activity.id ?? (key !== undefined ? state.activityIds.get(key) : undefined);
+        id ??= this.#newId();
+        if (key !== undefined) state.activityIds.set(key, id);
+        const at = this.#now();
+        const previous = this.#engine.getModel().activities[id];
+        const activity = mergeActivity(previous, event.activity, { id, threadId, turnId, createdAt: at, updatedAt: at });
+        await this.#dispatch({ type: "activity.upsert", activity });
+        return false;
+      }
+      case "plan.proposed":
+        await this.#dispatch({ type: "plan.propose", turnId, markdown: event.markdown });
+        return false;
+      case "plan.progress":
+        await this.#dispatch({ type: "plan.progress", threadId, steps: event.steps });
+        return false;
+      case "usage":
+        await this.#dispatch({
+          type: "usage.report",
+          turnId,
+          ...(event.usage !== undefined ? { usage: event.usage } : {}),
+          ...(event.contextUsage !== undefined ? { contextUsage: event.contextUsage } : {}),
+        });
+        return false;
+      case "settled":
+        await this.#dispatch({
+          type: "turn.settle",
+          turnId,
+          status: event.status,
+          ...(event.error !== undefined ? { error: event.error } : {}),
+        });
+        return true;
+      default:
+        return false;
+    }
+  }
+}

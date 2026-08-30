@@ -30,9 +30,20 @@ export function aggregateIdOf(event: DomainEvent): string | null {
     case "turn.requested":
       return event.turn.threadId;
     case "turn.started":
+    case "turn.interrupt-requested":
     case "assistant.delta":
+    case "approval.responded":
+    case "user-input.responded":
+    case "plan.progressed":
+    case "usage.reported":
     case "turn.settled":
       return event.threadId;
+    case "activity.upserted":
+      return event.activity.threadId;
+    case "plan.proposed":
+      return event.plan.threadId;
+    case "plan.updated":
+      return event.planId;
     default: {
       const _exhaustive: never = event;
       void _exhaustive;

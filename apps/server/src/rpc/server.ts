@@ -5,6 +5,7 @@ import { newId } from "@tide/contracts";
 import type { ServerConfig } from "../config.ts";
 import type { Engine } from "../orchestration/engine.ts";
 import type { EventStore } from "../orchestration/store.ts";
+import { DriverRegistry } from "../provider/registry.ts";
 import { registerHandlers } from "./handlers.ts";
 import { RpcRouter } from "./router.ts";
 import { TicketIssuer } from "./tickets.ts";
@@ -15,6 +16,8 @@ export interface ServerDeps {
   engine: Engine;
   store: EventStore;
   config: ServerConfig;
+  /** omitted in tests that don't exercise providers: an empty registry is used */
+  registry?: DriverRegistry;
 }
 
 export interface ServerHandle {
@@ -29,10 +32,14 @@ export async function startServer(deps: ServerDeps): Promise<ServerHandle> {
   const startedAt = Date.now();
   const tickets = new TicketIssuer();
 
+  const registry =
+    deps.registry ?? new DriverRegistry({ env: { dataDir: config.dataDir, log: (msg, data) => console.error(msg, data) } });
+
   const router = new RpcRouter();
   registerHandlers(router, {
     engine,
     store,
+    registry,
     environmentId: config.environmentId,
     version: config.version,
     startedAt,

@@ -2,7 +2,7 @@ import { randomBytes } from "node:crypto";
 import { existsSync, mkdirSync, readFileSync, writeFileSync } from "node:fs";
 import { homedir } from "node:os";
 import { dirname, join, resolve } from "node:path";
-import { newId } from "@tide/contracts";
+import { newId, type ProviderKind } from "@tide/contracts";
 
 export interface CliFlags {
   port?: number;
@@ -25,7 +25,11 @@ export interface ServerConfig {
   printToken: boolean;
   corsOrigins: string[];
   version: string;
+  /** per-driver config from `<TIDE_HOME>/server.json` → `providers: { claude: {...} }` */
+  providers: ProviderConfigs;
 }
+
+export type ProviderConfigs = Partial<Record<ProviderKind, Record<string, unknown>>>;
 
 export function parseArgs(argv: string[]): CliFlags {
   const flags: CliFlags = {};
@@ -73,22 +77,40 @@ function readVersion(): string {
 interface ServerIdentity {
   environmentId: string;
   token: string;
+  providers: ProviderConfigs;
 }
 
-/** Reads (or creates, 0600) `<TIDE_HOME>/server.json` holding the identity + bearer token. */
+const PROVIDER_KINDS: readonly ProviderKind[] = ["claude", "codex", "opencode", "pi"];
+
+function readProviders(value: unknown): ProviderConfigs {
+  if (typeof value !== "object" || value === null) return {};
+  const raw = value as Record<string, unknown>;
+  const out: ProviderConfigs = {};
+  for (const kind of PROVIDER_KINDS) {
+    const entry = raw[kind];
+    if (typeof entry === "object" && entry !== null) out[kind] = entry as Record<string, unknown>;
+  }
+  return out;
+}
+
+/** Reads (or creates, 0600) `<TIDE_HOME>/server.json`: identity, bearer token, driver config. */
 function loadIdentity(tideHome: string): ServerIdentity {
   const file = join(tideHome, "server.json");
   if (existsSync(file)) {
     try {
-      const parsed = JSON.parse(readFileSync(file, "utf8")) as Partial<ServerIdentity>;
-      if (typeof parsed.environmentId === "string" && typeof parsed.token === "string") {
-        return { environmentId: parsed.environmentId, token: parsed.token };
+      const parsed = JSON.parse(readFileSync(file, "utf8")) as Record<string, unknown>;
+      if (typeof parsed["environmentId"] === "string" && typeof parsed["token"] === "string") {
+        return {
+          environmentId: parsed["environmentId"],
+          token: parsed["token"],
+          providers: readProviders(parsed["providers"]),
+        };
       }
     } catch {
       /* fall through and rewrite a fresh identity */
     }
   }
-  const identity: ServerIdentity = { environmentId: newId(), token: randomBytes(32).toString("hex") };
+  const identity: ServerIdentity = { environmentId: newId(), token: randomBytes(32).toString("hex"), providers: {} };
   writeFileSync(file, `${JSON.stringify(identity, null, 2)}\n`, { mode: 0o600 });
   return identity;
 }
@@ -119,5 +141,6 @@ export function resolveConfig(argv: string[] = [], env: NodeJS.ProcessEnv = proc
     printToken: flags.printToken ?? false,
     corsOrigins: [...(dev ? ["http://localhost:5173"] : []), ...extraOrigins],
     version: readVersion(),
+    providers: identity.providers,
   };
 }

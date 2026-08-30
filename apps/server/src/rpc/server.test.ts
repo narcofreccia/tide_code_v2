@@ -5,6 +5,8 @@ import type { ServerConfig } from "../config.ts";
 import { openDatabase } from "../db/sqlite.ts";
 import { Engine } from "../orchestration/engine.ts";
 import { EventStore } from "../orchestration/store.ts";
+import { DriverRegistry } from "../provider/registry.ts";
+import { createFakeDriver, type FakeDriverControl } from "../provider/testing/fakeDriver.ts";
 import { startServer, type ServerHandle } from "./server.ts";
 
 const TOKEN = "test-token";
@@ -21,6 +23,7 @@ const config: ServerConfig = {
   printToken: false,
   corsOrigins: ["http://localhost:5173"],
   version: "0.0.0-test",
+  providers: {},
 };
 
 /** Minimal promise-based RPC client so tests never sleep. */
@@ -114,11 +117,16 @@ let server: ServerHandle;
 let store: EventStore;
 let engine: Engine;
 let base: string;
+let fake: FakeDriverControl;
 
 beforeAll(async () => {
   store = new EventStore(await openDatabase(":memory:"));
   engine = new Engine({ store });
-  server = await startServer({ engine, store, config });
+  const registry = new DriverRegistry({ env: { dataDir: ":memory:", log: () => undefined } });
+  const claude = createFakeDriver("claude");
+  fake = claude.control;
+  registry.register(claude.driver);
+  server = await startServer({ engine, store, registry, config });
   base = `127.0.0.1:${server.port}`;
 });
 
@@ -252,5 +260,57 @@ describe("rpc", () => {
   it("returns the model from model.get", async () => {
     const model = (await client.call("model.get", {})) as { seq: number };
     expect(model.seq).toBeGreaterThan(0);
+  });
+});
+
+describe("rpc: providers and the terminal escape hatch", () => {
+  let client: TestClient;
+
+  beforeAll(async () => {
+    client = await TestClient.open(`ws://${base}/ws?token=${TOKEN}`);
+  });
+  afterAll(() => client.close());
+
+  it("refuses an internal command on orchestration.dispatch", async () => {
+    const error = await client
+      .call("orchestration.dispatch", { command: { type: "turn.settle", turnId: "t", status: "completed" } })
+      .then(() => undefined, (e: unknown) => e as { code: string });
+    // the ClientCommand schema rejects it at the wire; the handler guard is the second line
+    expect(["forbidden", "invalid-params"]).toContain(error?.code);
+  });
+
+  it("lists provider status from the registry", async () => {
+    const before = (await client.call("providers.list", {})) as { kind: string; installed: boolean; models: { id: string }[] }[];
+    // every known harness is listed; unregistered ones are marked unusable so the UI can grey them out
+    expect(before.map((p) => p.kind)).toEqual(["claude", "codex", "opencode", "pi"]);
+    expect(before[0]).toMatchObject({ kind: "claude", installed: true, loggedIn: true });
+    expect(before[0]?.models[0]?.id).toBe("fake-model");
+    expect(before[1]).toMatchObject({ kind: "codex", installed: false, loggedIn: false });
+
+    fake.statusResult = { ...fake.statusResult, loggedIn: false };
+    const cached = (await client.call("providers.list", {})) as { loggedIn: boolean }[];
+    expect(cached[0]?.loggedIn).toBe(true);
+    const refreshed = (await client.call("providers.list", { refresh: true })) as { loggedIn: boolean }[];
+    expect(refreshed[0]?.loggedIn).toBe(false);
+  });
+
+  it("returns cwd, and a resume command once the thread has a native session", async () => {
+    const project = (await engine.dispatch({ type: "project.create", title: "Term", rootPath: "/term" })).events[0]?.event;
+    if (project?.type !== "project.created") throw new Error("expected project.created");
+    const created = (await engine.dispatch({ type: "thread.create", projectId: project.project.id, provider: "claude" })).events[0]?.event;
+    if (created?.type !== "thread.created") throw new Error("expected thread.created");
+    const threadId = created.thread.id;
+
+    expect(await client.call("thread.terminalCommand", { threadId })).toEqual({ cwd: "/term" });
+
+    const requested = (await engine.dispatch({ type: "turn.request", threadId, text: "hi" })).events[0]?.event;
+    if (requested?.type !== "turn.requested") throw new Error("expected turn.requested");
+    await engine.dispatch({ type: "turn.start", turnId: requested.turn.id, provider: "claude", nativeSessionId: "sess-42" });
+
+    expect(await client.call("thread.terminalCommand", { threadId })).toEqual({
+      cwd: "/term",
+      command: "claude --resume sess-42 # /term",
+    });
+    await expect(client.call("thread.terminalCommand", { threadId: "ghost" })).rejects.toMatchObject({ code: "not-found" });
   });
 });

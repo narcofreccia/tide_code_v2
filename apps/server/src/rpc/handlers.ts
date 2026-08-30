@@ -1,11 +1,14 @@
-import type { EventRecord } from "@tide/contracts";
+import { isInternalCommand, type EventRecord } from "@tide/contracts";
 import { CommandError, type Engine } from "../orchestration/engine.ts";
 import type { EventStore } from "../orchestration/store.ts";
+import type { DriverRegistry } from "../provider/registry.ts";
+import { threadCwd } from "../provider/sessions.ts";
 import { RpcException, type RpcRouter } from "./router.ts";
 
 export interface HandlerDeps {
   engine: Engine;
   store: EventStore;
+  registry: DriverRegistry;
   environmentId: string;
   version: string;
   startedAt: number;
@@ -19,11 +22,36 @@ export function registerHandlers(router: RpcRouter, deps: HandlerDeps): void {
   }));
 
   router.register("orchestration.dispatch", async (input) => {
+    // The schema already accepts only ClientCommand; this is the belt to that brace.
+    const type = input.command.type;
+    if (isInternalCommand(input.command)) {
+      throw new RpcException("forbidden", `${type} is a server-internal command`);
+    }
     try {
       return await deps.engine.dispatch(input.command);
     } catch (err) {
       if (err instanceof CommandError) throw new RpcException(err.code, err.message);
       throw err;
+    }
+  });
+
+  router.register("providers.list", async (input) => deps.registry.statusAll(input.refresh ?? false));
+
+  router.register("thread.terminalCommand", async (input) => {
+    const model = deps.engine.getModel();
+    const thread = model.threads[input.threadId];
+    if (!thread) throw new RpcException("not-found", `unknown thread ${input.threadId}`);
+    const project = model.projects[thread.projectId];
+    if (!project) throw new RpcException("not-found", `unknown project ${thread.projectId}`);
+    const cwd = threadCwd(thread, project);
+    if (thread.nativeSessionId === undefined) return { cwd };
+    try {
+      const instance = await deps.registry.get(thread.provider);
+      const command = instance.terminalCommand(thread.nativeSessionId, cwd);
+      return command === undefined ? { cwd } : { cwd, command };
+    } catch {
+      // no driver for this harness on this machine: still tell the client where it lives
+      return { cwd };
     }
   });
 

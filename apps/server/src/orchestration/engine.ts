@@ -9,7 +9,7 @@ import {
   type EventRecord,
   type ReadModel,
 } from "@tide/contracts";
-import { decide } from "./decider.ts";
+import { decide } from "./decider/index.ts";
 import type { EventStore } from "./store.ts";
 
 /** Rejection carrying a stable machine code (invalid-command / not-found / conflict / busy). */
