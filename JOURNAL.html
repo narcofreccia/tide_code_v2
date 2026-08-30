@@ -61,8 +61,8 @@
         <div class="sub">Focused agentic code editor &amp; orchestrator over Claude Code · Codex · OpenCode · Pi. Started 2026-08-30.</div>
         <div class="kpi">
           <div class="box"><b>P4</b><span>current phase</span></div>
-          <div class="box"><b>41</b><span>commits</span></div>
-          <div class="box"><b>387</b><span>tests passing</span></div>
+          <div class="box"><b>43</b><span>commits</span></div>
+          <div class="box"><b>443</b><span>tests passing</span></div>
         </div>
         <div class="howto">
           How to use: read at session start; flip <code>class="status done|wip|todo|blocked"</code> + label as work lands; add dated notes under the phase;
@@ -167,7 +167,7 @@
           <ul class="tasks">
             <li><span class="badge status wip">wip</span><span class="t"><code>packages/driver-codex</code> — app-server JSON-RPC over stdio, generated bindings, approvals/user-input, <code>item/plan/delta</code> → ProposedPlan, collab children — Opus agent</span></li>
             <li><span class="badge status wip">wip</span><span class="t"><code>packages/driver-opencode</code> — managed <code>opencode serve</code> + SDK, SSE events, permissions, plan agent — Opus agent</span></li>
-            <li><span class="badge status wip">wip</span><span class="t"><code>packages/driver-pi</code> + <code>packages/pi-extensions/tide-bridge.ts</code> — <code>pi --mode rpc</code>, approvals via extension UI requests, usage snapshot, plan tool, local models — Opus agent</span></li>
+            <li><span class="badge status done">done</span><span class="t"><code>packages/driver-pi</code> + <code>packages/pi-extensions/tide-bridge.ts</code> — <code>pi --mode rpc</code>, approvals via extension UI requests, usage snapshot, plan tool, local models — Opus agent</span></li>
             <li><span class="badge status done">done</span><span class="t">Web Settings: Providers (status/caps/models/defaults/login command → terminal), Git, Appearance (explicit theme + density), Keyboard (single shortcut registry), Remote, About — <code>7ab55bc</code>; contracts: <code>loginCommand</code>, <code>server.info.tideHome/worktreeRoot/tools</code> — <code>13a4624</code></span></li>
             <li><span class="badge status todo">todo</span><span class="t">Server registration of the three drivers (static imports in <code>provider/load.ts</code>)</span></li>
             <li><span class="badge status todo">todo</span><span class="t">Orchestrator validation: same prompt on 4 providers in 4 threads; plan on Claude → implement on Codex</span></li>
@@ -209,6 +209,7 @@
         <tr><td>P3</td><td>2026-08-31</td><td>feat(server): pty backends — Bun.spawn terminal under Bun, node-pty under Node</td><td class="sha">c4853ca</td></tr>
         <tr><td>P4</td><td>2026-08-31</td><td>feat(web): Settings — providers, git, appearance, keyboard, remote, about</td><td class="sha">7ab55bc</td></tr>
         <tr><td>P4</td><td>2026-08-31</td><td>feat(contracts,server): loginCommand; server.info tideHome/worktreeRoot/tools</td><td class="sha">13a4624</td></tr>
+        <tr><td>P4</td><td>2026-08-31</td><td>feat(driver-pi): Pi RPC driver + tide-bridge extension; registered in the server</td><td class="sha">e199898</td></tr>
         <tr><td>P2</td><td>2026-08-31</td><td>feat(server): vcs — git wrapper, worktrees, checkpoints, VcsReactor, revert, publish, vcs RPC</td><td class="sha">2f0c591</td></tr>
       </table>
 
@@ -221,6 +222,7 @@
         <li>Worktree teardown: no <code>worktree.detach</code> vocabulary yet — <code>thread.archive</code> leaves the worktree on disk. Add in a contracts pass (with "keep branch" option).</li>
         <li>Worktree-creation failure is only logged (no turn exists to attach an activity to). Consider thread-scoped notices (optional <code>turnId</code> on InfoActivity).</li>
         <li><code>DiffFile</code> lacks a <code>truncated</code> flag (server appends a marker line at 200 KB).</li>
+        <li>Pi has no credentials on this machine (auth.json empty, no Ollama) — the Pi driver's model turn is untested live. Andrea: run <code>pi</code> once and <code>/login</code>, or install Ollama, then re-run the four-provider check.</li>
         <li>Design canvas of key screens (Mission Control, thread split, plan card, approval) once the P1 thread panel exists — for visual tweaking.</li>
       </ul>
 
