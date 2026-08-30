@@ -1,0 +1,8 @@
+node_modules
+dist
+*.tsbuildinfo
+.DS_Store
+coverage
+.tide-dev
+apps/desktop/src-tauri/target
+apps/desktop/src-tauri/binaries
