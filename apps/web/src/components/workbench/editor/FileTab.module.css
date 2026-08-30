@@ -1,0 +1,33 @@
+.tab {
+  display: flex;
+  flex-direction: column;
+  flex: 1;
+  min-height: 0;
+  min-width: 0;
+}
+.bar {
+  display: flex;
+  align-items: center;
+  gap: var(--sp-2);
+  height: 24px;
+  padding: 0 var(--sp-2);
+  border-bottom: 1px solid var(--border);
+  color: var(--muted);
+  font-family: var(--font-mono);
+  font-size: 11px;
+}
+.path { overflow: hidden; text-overflow: ellipsis; white-space: nowrap; }
+.dirty { color: var(--warn); }
+.savedFlash { color: var(--ok); }
+.save { margin-left: auto; }
+.banner {
+  display: flex;
+  align-items: center;
+  gap: var(--sp-2);
+  padding: var(--sp-2);
+  background: var(--surface-2);
+  border-bottom: 1px solid var(--warn);
+  color: var(--text);
+}
+.note { margin: 0; padding: var(--sp-3); color: var(--muted); }
+.editor { flex: 1; min-height: 0; }

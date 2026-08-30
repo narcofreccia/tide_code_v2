@@ -10,6 +10,8 @@ import { SettingsView } from "./components/settings/SettingsView.tsx";
 import { useSelectedThread } from "./state/hooks.ts";
 import { useUi } from "./state/ui.ts";
 import { ToastHost } from "./components/ui/Toast.tsx";
+import { QuickOpen } from "./components/shell/QuickOpen.tsx";
+import { useWorkbench } from "./state/workbench.ts";
 import { useKeyboardMap } from "./lib/useKeyboardMap.ts";
 import styles from "./App.module.css";
 
@@ -23,6 +25,13 @@ function Content() {
   if (focusMode === "thread") return <ThreadView thread={thread} />;
   if (focusMode === "workbench") return <Workbench />;
   return <SplitPane primary={<ThreadView thread={thread} />} secondary={<Workbench />} />;
+}
+
+function QuickOpenHost() {
+  const open = useWorkbench((s) => s.quickOpen);
+  const thread = useSelectedThread();
+  if (!open || !thread) return null;
+  return <QuickOpen threadId={thread.id} />;
 }
 
 export function App() {
@@ -44,6 +53,7 @@ export function App() {
       </main>
       <StatusBar />
       <ToastHost />
+      <QuickOpenHost />
     </div>
   );
 }

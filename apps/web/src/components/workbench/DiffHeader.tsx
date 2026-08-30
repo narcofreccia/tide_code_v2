@@ -1,5 +1,5 @@
 import { useState } from "react";
-import type { DiffResult, ReadModel, Thread, Turn } from "@tide/contracts";
+import type { DiffFile, DiffResult, ReadModel, Thread, Turn } from "@tide/contracts";
 import { Button } from "../ui/Button.tsx";
 import { Kbd } from "../ui/Kbd.tsx";
 import { Popover } from "../ui/Popover.tsx";
@@ -7,6 +7,8 @@ import { PrBadge } from "../ui/VcsBadges.tsx";
 import { publishThread, revertTurn } from "../../lib/threadActions.ts";
 import { ALL_CHANGES, type TurnSelection } from "../../state/vcs.ts";
 import { useUi } from "../../state/ui.ts";
+import { openFileTab } from "../../state/workbench.ts";
+import { firstChangedLine } from "../../lib/diff.ts";
 import { TurnSelector } from "./TurnSelector.tsx";
 import styles from "./DiffHeader.module.css";
 
@@ -114,6 +116,7 @@ export function DiffHeader({
   running,
   prompt,
   diff,
+  file,
   onRefresh,
 }: {
   thread: Thread;
@@ -125,6 +128,7 @@ export function DiffHeader({
   running: boolean;
   prompt: string;
   diff: DiffResult | undefined;
+  file: DiffFile | undefined;
   onRefresh: () => void;
 }) {
   const sideBySide = useUi((s) => s.diffSideBySide);
@@ -160,7 +164,15 @@ export function DiffHeader({
         >
           {sideBySide ? "Split" : "Unified"} <Kbd>⌘⇧D</Kbd>
         </Button>
-        <Button variant="quiet" disabled title="P3">
+        <Button
+          variant="quiet"
+          disabled={file === undefined || file.status === "deleted"}
+          title={file ? `Open ${file.path} at the first change` : "Select a file first"}
+          onClick={() => {
+            if (!file) return;
+            openFileTab(thread.id, file.path, { line: firstChangedLine(file.patch) });
+          }}
+        >
           Open in editor
         </Button>
         <RevertAction thread={thread} turn={selectedTurn} running={running} />

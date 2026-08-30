@@ -28,3 +28,16 @@ export function diffStats(lines: DiffLine[]): { added: number; removed: number }
   }
   return { added, removed };
 }
+
+/**
+ * Line number of the first changed line on the new side, read from the patch's
+ * first hunk header (`@@ -a,b +c,d @@`). Used by "Open in editor".
+ */
+export function firstChangedLine(patch: string | undefined): number {
+  if (!patch) return 1;
+  for (const line of patch.split("\n")) {
+    const match = /^@@ -\d+(?:,\d+)? \+(\d+)/.exec(line);
+    if (match) return Math.max(1, Number(match[1]));
+  }
+  return 1;
+}

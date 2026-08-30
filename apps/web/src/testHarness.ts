@@ -9,13 +9,26 @@ import {
   type ReadModel,
   type Thread,
   type Turn,
+  type StreamMethodName,
   type UnaryMethodName,
 } from "@tide/contracts";
 import type { ModelStore, ModelStoreState } from "@tide/client";
-import { attachModelStore, setRpcCaller, type RpcCaller } from "./state/model.ts";
+import {
+  attachModelStore,
+  setRpcCaller,
+  setRpcStreamer,
+  type RpcCaller,
+  type RpcStreamer,
+  type StreamControl,
+} from "./state/model.ts";
 import { resetProviders } from "./state/providers.ts";
 import { useUi } from "./state/ui.ts";
 import { resetVcs } from "./state/vcs.ts";
+import { resetFiles } from "./state/files.ts";
+import { resetDocs } from "./state/docs.ts";
+import { resetWorkbench } from "./state/workbench.ts";
+import { resetTerminals } from "./state/terminals.ts";
+import { resetSearch } from "./state/search.ts";
 
 export interface FakeStore {
   store: ModelStore;
@@ -43,7 +56,14 @@ export function attachFakeStore(model: ReadModel): FakeStore {
 export function resetUi(): void {
   resetProviders();
   resetVcs();
+  resetFiles();
+  resetDocs();
+  resetWorkbench();
+  resetTerminals();
+  resetSearch();
   setRpcCaller(undefined);
+  setRpcStreamer(undefined);
+  window.localStorage.clear();
   useUi.setState({
     view: "mission",
     selectedProjectId: null,
@@ -185,4 +205,31 @@ export function modelWithTurns(thread: Thread, turns: Turn[], messages: Message[
   model.threadMessages[thread.id] = messages.map((m) => m.id);
   model.threadTimeline[thread.id] = messages.map((m) => ({ kind: "message" as const, id: m.id }));
   return model;
+}
+
+// ---- streaming RPC ----
+
+export interface FakeStream {
+  method: StreamMethodName;
+  params: unknown;
+  /** pushes one chunk to the subscriber */
+  push: (chunk: unknown) => void;
+  cancelled: boolean;
+}
+
+/** Records every `stream()` call and hands the test a way to push chunks. */
+export function mockStream(): { streams: FakeStream[]; streamer: RpcStreamer } {
+  const streams: FakeStream[] = [];
+  const streamer = ((method: StreamMethodName, params: unknown, onChunk: (chunk: unknown) => void): StreamControl => {
+    const entry: FakeStream = { method, params, push: onChunk, cancelled: false };
+    streams.push(entry);
+    return {
+      cancel: () => {
+        entry.cancelled = true;
+      },
+      done: Promise.resolve(),
+    };
+  }) as unknown as RpcStreamer;
+  setRpcStreamer(streamer);
+  return { streams, streamer };
 }

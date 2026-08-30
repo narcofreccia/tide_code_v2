@@ -91,3 +91,8 @@ export function formatPayload(value: unknown): string {
     return String(value);
   }
 }
+
+/** The raw file path a tool acted on, when it has one (Read/Edit/Write …). */
+export function toolFilePath(input: unknown): string | undefined {
+  return firstString(input, PATH_KEYS);
+}

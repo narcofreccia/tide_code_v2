@@ -81,3 +81,12 @@
   color: inherit;
   text-align: left;
 }
+.fileLink {
+  background: none;
+  border: none;
+  color: var(--muted);
+  text-align: left;
+  cursor: pointer;
+  padding: 0;
+}
+.fileLink:hover { color: var(--accent); text-decoration: underline; }

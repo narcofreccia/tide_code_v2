@@ -11,6 +11,7 @@ import {
   modelWithTurns,
   resetUi,
 } from "../../testHarness.ts";
+import { threadTabs, useWorkbench } from "../../state/workbench.ts";
 import { ChangesTab } from "./ChangesTab.tsx";
 
 vi.mock("./monaco/MonacoDiff.tsx", () => ({
@@ -204,5 +205,30 @@ describe("ChangesTab", () => {
 
     expect((screen.getByText("Revert this turn") as HTMLButtonElement).disabled).toBe(true);
     expect((screen.getByText("Commit…") as HTMLButtonElement).disabled).toBe(true);
+  });
+
+  it("opens the selected file in the editor at the first changed line", async () => {
+    setup();
+    mockRpc({
+      "vcs.turnDiff": () =>
+        diff({
+          files: [
+            {
+              path: "src/a.ts",
+              status: "modified",
+              additions: 1,
+              deletions: 0,
+              patch: "@@ -40,3 +42,4 @@\n context\n+added\n",
+            },
+          ],
+        }),
+      "vcs.fileAt": () => ({ content: "x", binary: false, missing: false }),
+    });
+    render(<ChangesTab />);
+    await waitFor(() => expect(screen.getByRole("option", { name: /a\.ts/ })).toBeDefined());
+
+    fireEvent.click(screen.getByText("Open in editor"));
+    expect(threadTabs("t1")).toContainEqual({ kind: "file", path: "src/a.ts" });
+    expect(useWorkbench.getState().reveal["t1:src/a.ts"]).toMatchObject({ line: 42 });
   });
 });

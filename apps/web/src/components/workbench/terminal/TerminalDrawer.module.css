@@ -1,0 +1,63 @@
+.drawer {
+  display: flex;
+  flex-direction: column;
+  flex: 0 0 auto;
+  min-height: 100px;
+  border-top: 1px solid var(--border);
+  background: var(--surface);
+}
+.grip {
+  height: 4px;
+  margin-top: -2px;
+  cursor: row-resize;
+  background: transparent;
+}
+.grip:hover { background: var(--accent-soft); }
+.tabs {
+  display: flex;
+  align-items: center;
+  gap: var(--sp-1);
+  height: 24px;
+  padding: 0 var(--sp-2);
+  border-bottom: 1px solid var(--border);
+}
+.tabWrap { display: inline-flex; align-items: center; }
+.tab {
+  height: 20px;
+  padding: 0 var(--sp-2);
+  background: transparent;
+  border: 1px solid transparent;
+  border-radius: var(--radius-sm);
+  color: var(--muted);
+  font: inherit;
+  font-size: 11px;
+  cursor: pointer;
+}
+.activeTab { color: var(--text); background: var(--surface-2); border-color: var(--border); }
+.close, .add {
+  width: 18px;
+  height: 18px;
+  background: transparent;
+  border: 0;
+  border-radius: var(--radius-sm);
+  color: var(--muted);
+  cursor: pointer;
+}
+.close:hover, .add:hover { background: var(--surface-2); color: var(--text); }
+.hide {
+  display: inline-flex;
+  align-items: center;
+  gap: var(--sp-1);
+  margin-left: auto;
+  height: 20px;
+  padding: 0 var(--sp-2);
+  background: transparent;
+  border: 0;
+  color: var(--muted);
+  font: inherit;
+  font-size: 11px;
+  cursor: pointer;
+}
+.body { flex: 1; min-height: 0; padding: var(--sp-1) var(--sp-2); overflow: hidden; }
+.surface { width: 100%; height: 100%; }
+.note { margin: 0; padding: var(--sp-2); color: var(--muted); }

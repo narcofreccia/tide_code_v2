@@ -75,6 +75,7 @@ function ChangesFor({ thread }: { thread: Thread }) {
         running={running}
         prompt={firstPrompt(model, thread.id)}
         diff={diff.data}
+        file={selectedFile}
         onRefresh={diff.refresh}
       />
       {diff.error ? (

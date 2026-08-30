@@ -4,6 +4,7 @@ import { useLatestTurnStatus, useSelectedThread } from "../../state/hooks.ts";
 import { ConnectionDot } from "../ui/ConnectionDot.tsx";
 import { PrBadge } from "../ui/VcsBadges.tsx";
 import { useSelectedDiffStats, useVcsStatus } from "../../state/vcs.ts";
+import { useWorkbench } from "../../state/workbench.ts";
 import styles from "./StatusBar.module.css";
 
 const LABEL: Record<string, string> = {
@@ -55,6 +56,17 @@ function GitStatus({ thread }: { thread: Thread }) {
   );
 }
 
+/** `Ln 12, Col 4 · TypeScript` for the file the workbench is editing. */
+function EditorPosition({ threadId }: { threadId: string }) {
+  const status = useWorkbench((s) => s.editorStatus);
+  if (!status || status.threadId !== threadId) return null;
+  return (
+    <span className={styles.item}>
+      Ln {status.line}, Col {status.column} · {status.language}
+    </span>
+  );
+}
+
 export function StatusBar() {
   const status = useModel((s) => s.status);
   const environmentId = useModel((s) => s.environmentId);
@@ -72,6 +84,7 @@ export function StatusBar() {
       {thread ? <span className={styles.item}>thread: {turnStatus ?? thread.status}</span> : null}
       {thread ? <ThreadStats thread={thread} /> : null}
       {thread ? <GitStatus thread={thread} /> : null}
+      {thread ? <EditorPosition threadId={thread.id} /> : null}
       {lastError ? <span className={styles.error}>{lastError}</span> : null}
     </footer>
   );

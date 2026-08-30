@@ -1,0 +1,36 @@
+.scrim {
+  position: fixed;
+  inset: 0;
+  z-index: 70;
+  display: flex;
+  align-items: flex-start;
+  justify-content: center;
+  padding-top: 14vh;
+  background: rgba(0, 0, 0, 0.4);
+}
+.panel {
+  width: min(420px, 90vw);
+  display: flex;
+  flex-direction: column;
+  gap: var(--sp-3);
+  padding: var(--sp-4);
+  background: var(--surface-2);
+  border: 1px solid var(--border);
+  border-radius: var(--radius-lg);
+  box-shadow: 0 12px 40px rgba(0, 0, 0, 0.4);
+}
+.title { margin: 0; font-size: 13px; font-weight: 600; }
+.body { margin: 0; color: var(--muted); }
+.field { display: flex; flex-direction: column; gap: var(--sp-1); }
+.label { color: var(--muted); font-size: 11px; }
+.input {
+  height: 26px;
+  padding: 0 var(--sp-2);
+  background: var(--surface);
+  border: 1px solid var(--border);
+  border-radius: var(--radius-sm);
+  color: var(--text);
+  font: inherit;
+  font-family: var(--font-mono);
+}
+.actions { display: flex; justify-content: flex-end; gap: var(--sp-2); }

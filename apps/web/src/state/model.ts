@@ -3,8 +3,10 @@ import {
   emptyReadModel,
   type ClientCommand,
   type ReadModel,
+  type RpcChunk,
   type RpcInput,
   type RpcOutput,
+  type StreamMethodName,
   type UnaryMethodName,
 } from "@tide/contracts";
 import type { ConnectionStatus, ModelStore } from "@tide/client";
@@ -63,4 +65,40 @@ export function setRpcCaller(fn: RpcCaller | undefined): void {
 export function call<M extends UnaryMethodName>(method: M, params: RpcInput<M>): Promise<RpcOutput<M>> {
   if (!caller) return Promise.reject(new Error("connection not attached"));
   return caller(method, params);
+}
+
+// ---- streaming RPC (fs.watch, pty.attach) ----
+
+export interface StreamControl {
+  cancel: () => void;
+  /** resolves when the server ends the stream, rejects on error/disconnect */
+  done: Promise<void>;
+}
+
+export type RpcStreamer = <M extends StreamMethodName>(
+  method: M,
+  params: RpcInput<M>,
+  onChunk: (chunk: RpcChunk<M>) => void,
+) => StreamControl;
+
+let streamer: RpcStreamer | undefined;
+
+/** Parallel to `setRpcCaller`, for the stream methods (`fs.watch`, `pty.attach`). */
+export function setRpcStreamer(fn: RpcStreamer | undefined): void {
+  streamer = fn;
+}
+
+const INERT: StreamControl = { cancel: () => undefined, done: Promise.resolve() };
+
+/**
+ * Subscribes to a stream method. With no connection attached the handle is inert
+ * rather than throwing: watchers mount before the socket is up and must not crash.
+ */
+export function stream<M extends StreamMethodName>(
+  method: M,
+  params: RpcInput<M>,
+  onChunk: (chunk: RpcChunk<M>) => void,
+): StreamControl {
+  if (!streamer) return INERT;
+  return streamer(method, params, onChunk);
 }
