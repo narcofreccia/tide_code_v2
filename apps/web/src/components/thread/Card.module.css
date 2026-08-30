@@ -1,0 +1,75 @@
+/* Shared inline-card shell: approval, user input, proposed plan. */
+.card {
+  border: 1px solid var(--border);
+  border-radius: var(--radius);
+  background: var(--surface);
+  padding: var(--sp-2) var(--sp-3);
+  display: flex;
+  flex-direction: column;
+  gap: var(--sp-2);
+}
+.attention { border-color: var(--accent); }
+.head { display: flex; align-items: center; gap: var(--sp-2); }
+.title { color: var(--text); }
+.target {
+  flex: 1;
+  min-width: 0;
+  overflow: hidden;
+  text-overflow: ellipsis;
+  white-space: nowrap;
+  font-family: var(--font-mono);
+  font-size: 11px;
+  color: var(--muted);
+}
+.description { margin: 0; color: var(--muted); }
+.actions { display: flex; align-items: center; gap: var(--sp-2); flex-wrap: wrap; }
+.hint { color: var(--muted); display: inline-flex; align-items: center; gap: var(--sp-1); }
+.resolved {
+  display: flex;
+  align-items: center;
+  gap: var(--sp-2);
+  height: 24px;
+  padding: 0 var(--sp-2);
+  color: var(--muted);
+}
+.question { display: flex; flex-direction: column; gap: var(--sp-2); }
+.questionText { color: var(--text); }
+.options { display: flex; gap: var(--sp-2); flex-wrap: wrap; }
+.check { display: flex; align-items: center; gap: var(--sp-2); color: var(--text); }
+.optionHint { color: var(--muted); }
+.textarea {
+  width: 100%;
+  min-height: 56px;
+  resize: vertical;
+  background: var(--bg);
+  border: 1px solid var(--border);
+  border-radius: var(--radius);
+  padding: var(--sp-2);
+}
+.field { display: flex; align-items: center; justify-content: space-between; gap: var(--sp-2); }
+.label {
+  font-size: 10px;
+  letter-spacing: 0.08em;
+  text-transform: uppercase;
+  color: var(--muted);
+}
+.link { background: none; border: none; padding: 0; color: var(--accent); text-align: left; }
+
+/* unified diff preview */
+.diff {
+  margin: 0;
+  max-height: 240px;
+  overflow: auto;
+  border: 1px solid var(--border);
+  border-radius: var(--radius-sm);
+  background: var(--bg);
+  font-family: var(--font-mono);
+  font-size: 11px;
+}
+.diffLine { display: block; padding: 0 var(--sp-2); white-space: pre; }
+.add { background: rgb(78 201 160 / 0.12); color: var(--ok); }
+.del { background: rgb(239 106 106 / 0.12); color: var(--danger); }
+.hunk { color: var(--accent); }
+.meta { color: var(--muted); }
+.context { color: var(--text); }
+.stats { color: var(--muted); font-variant-numeric: tabular-nums; }

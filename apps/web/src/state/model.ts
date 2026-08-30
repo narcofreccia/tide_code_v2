@@ -1,5 +1,12 @@
 import { create } from "zustand";
-import { emptyReadModel, type Command, type ReadModel, type RpcOutput } from "@tide/contracts";
+import {
+  emptyReadModel,
+  type ClientCommand,
+  type ReadModel,
+  type RpcInput,
+  type RpcOutput,
+  type UnaryMethodName,
+} from "@tide/contracts";
 import type { ConnectionStatus, ModelStore } from "@tide/client";
 
 interface ModelState {
@@ -39,7 +46,21 @@ export function setEnvironmentId(environmentId: string | null): void {
 
 export type DispatchResult = RpcOutput<"orchestration.dispatch">;
 
-export function dispatch(command: Command): Promise<DispatchResult> {
+export function dispatch(command: ClientCommand): Promise<DispatchResult> {
   if (!client) return Promise.reject(new Error("model store not attached"));
   return client.dispatch(command);
+}
+
+export type RpcCaller = <M extends UnaryMethodName>(method: M, params: RpcInput<M>) => Promise<RpcOutput<M>>;
+
+let caller: RpcCaller | undefined;
+
+/** Lets non-command RPC (providers.list, thread.terminalCommand) reach the connection. */
+export function setRpcCaller(fn: RpcCaller | undefined): void {
+  caller = fn;
+}
+
+export function call<M extends UnaryMethodName>(method: M, params: RpcInput<M>): Promise<RpcOutput<M>> {
+  if (!caller) return Promise.reject(new Error("connection not attached"));
+  return caller(method, params);
 }

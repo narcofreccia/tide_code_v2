@@ -1,5 +1,5 @@
 import { TideConnection, createModelStore } from "@tide/client";
-import { attachModelStore, setEnvironmentId } from "../state/model.ts";
+import { attachModelStore, setEnvironmentId, setRpcCaller } from "../state/model.ts";
 
 const TOKEN_KEY = "tide.devToken";
 const DEFAULT_URL = "ws://127.0.0.1:3777/ws";
@@ -37,6 +37,7 @@ export function startClient(): () => void {
   });
   const store = createModelStore(conn);
   const detach = attachModelStore(store);
+  setRpcCaller((method, params) => conn.call(method, params));
 
   conn.on("status", (status) => {
     if (status !== "open") return;
@@ -49,6 +50,7 @@ export function startClient(): () => void {
   void conn.connect().catch(() => undefined);
 
   return () => {
+    setRpcCaller(undefined);
     detach();
     store.dispose();
     conn.close();

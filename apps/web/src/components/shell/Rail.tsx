@@ -1,3 +1,5 @@
+import { selectInbox } from "@tide/client";
+import { useModel } from "../../state/model.ts";
 import { useUi } from "../../state/ui.ts";
 import { Button } from "../ui/Button.tsx";
 import { Kbd } from "../ui/Kbd.tsx";
@@ -7,6 +9,7 @@ import { ProjectTree } from "./ProjectTree.tsx";
 import styles from "./Rail.module.css";
 
 export function Rail() {
+  const inboxCount = useModel((s) => selectInbox(s.model).length);
   const collapsed = useUi((s) => s.railCollapsed);
   const toggleRail = useUi((s) => s.toggleRail);
   const view = useUi((s) => s.view);
@@ -24,6 +27,7 @@ export function Rail() {
         <Button variant="quiet" onClick={showMission} title="Mission Control (⌘0)" aria-label="Mission Control">
           ◫
         </Button>
+        {inboxCount > 0 ? <Pill tone="accent">{inboxCount}</Pill> : null}
         <Button variant="quiet" onClick={showSettings} title="Settings" aria-label="Settings">
           ⚙
         </Button>
@@ -39,7 +43,7 @@ export function Rail() {
         </Button>
         <Button variant="quiet" onClick={showMission} className={styles.inbox}>
           Inbox
-          <Pill>0</Pill>
+          <Pill {...(inboxCount > 0 ? { tone: "accent" as const } : {})}>{inboxCount}</Pill>
         </Button>
       </div>
 

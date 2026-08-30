@@ -79,15 +79,17 @@ describe("Rail", () => {
     expect(screen.getByText("Root path must be absolute")).toBeDefined();
   });
 
-  it("dispatches thread.create from + thread", () => {
+  it("dispatches thread.create from the + thread popover", () => {
     const fake = attachFakeStore(modelWith({ projects: { p1: project("p1", "Tide", "/src/tide") } }));
     render(<Rail />);
     fireEvent.click(screen.getByText("+ thread"));
+    fireEvent.click(screen.getByText("Create thread"));
     expect(fake.dispatch).toHaveBeenCalledWith({
       type: "thread.create",
       projectId: "p1",
       provider: "claude",
       title: "New thread",
+      useWorktree: true,
     });
   });
 });

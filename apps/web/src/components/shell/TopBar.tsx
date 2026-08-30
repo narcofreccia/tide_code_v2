@@ -2,11 +2,9 @@ import { selectProjects } from "@tide/client";
 import { useModel } from "../../state/model.ts";
 import { useUi } from "../../state/ui.ts";
 import { useSelectedThread } from "../../state/hooks.ts";
-import { INTERACTION_MODES, PROVIDERS, RUNTIME_MODES } from "../../lib/vocab.ts";
-import { updateThread } from "../../lib/threadActions.ts";
+import { ThreadPills } from "../thread/ThreadPills.tsx";
 import { Button } from "../ui/Button.tsx";
 import { Kbd } from "../ui/Kbd.tsx";
-import { Select } from "../ui/Select.tsx";
 import { ThreadTitle } from "./ThreadTitle.tsx";
 import styles from "./TopBar.module.css";
 
@@ -43,30 +41,7 @@ export function TopBar() {
 
       {thread ? <ThreadTitle thread={thread} /> : <span className={styles.idle}>Mission Control</span>}
 
-      <div className={styles.pills}>
-        {thread ? (
-          <>
-            <Select
-              label="Provider"
-              value={thread.provider}
-              options={PROVIDERS}
-              onSelect={(provider) => updateThread(thread.id, { provider })}
-            />
-            <Select
-              label="Mode"
-              value={thread.mode}
-              options={RUNTIME_MODES}
-              onSelect={(mode) => updateThread(thread.id, { mode })}
-            />
-            <Select
-              label="Interaction"
-              value={thread.interaction}
-              options={INTERACTION_MODES}
-              onSelect={(interaction) => updateThread(thread.id, { interaction })}
-            />
-          </>
-        ) : null}
-      </div>
+      <div className={styles.pills}>{thread ? <ThreadPills thread={thread} /> : null}</div>
     </header>
   );
 }

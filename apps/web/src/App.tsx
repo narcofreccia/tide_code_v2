@@ -9,6 +9,7 @@ import { Workbench } from "./components/workbench/Workbench.tsx";
 import { SettingsView } from "./components/settings/SettingsView.tsx";
 import { useSelectedThread } from "./state/hooks.ts";
 import { useUi } from "./state/ui.ts";
+import { ToastHost } from "./components/ui/Toast.tsx";
 import { useKeyboardMap } from "./lib/useKeyboardMap.ts";
 import styles from "./App.module.css";
 
@@ -42,6 +43,7 @@ export function App() {
         </div>
       </main>
       <StatusBar />
+      <ToastHost />
     </div>
   );
 }

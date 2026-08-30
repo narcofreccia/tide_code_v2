@@ -13,4 +13,17 @@ export {
   type ModelStoreConnection,
   type ModelStoreState,
 } from "./modelStore.ts";
-export { selectProjects, selectThreadsByProject, selectThreadMessages } from "./selectors.ts";
+export {
+  compareByAttention,
+  groupActivities,
+  selectActiveTurn,
+  selectInbox,
+  selectProjects,
+  selectThreadMessages,
+  selectThreadsByProject,
+  selectThreadsNeedingAttention,
+  selectTimeline,
+  type InboxItem,
+  type TimelineItem,
+  type TimelineNode,
+} from "./selectors.ts";

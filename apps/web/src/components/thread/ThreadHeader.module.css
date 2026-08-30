@@ -15,3 +15,4 @@
   white-space: nowrap;
 }
 .actions { display: flex; gap: var(--sp-1); margin-left: auto; }
+.stat { color: var(--muted); font-variant-numeric: tabular-nums; font-size: 11px; }

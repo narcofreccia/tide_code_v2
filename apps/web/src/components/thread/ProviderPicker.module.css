@@ -1,0 +1,8 @@
+.field { display: flex; align-items: center; justify-content: space-between; gap: var(--sp-3); }
+.label {
+  font-size: 10px;
+  letter-spacing: 0.08em;
+  text-transform: uppercase;
+  color: var(--muted);
+}
+.check { display: flex; align-items: center; gap: var(--sp-2); color: var(--text); }

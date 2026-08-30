@@ -1,0 +1,83 @@
+/* Shared by ActivityRow, ActivityGroup and ChildGroup: one 24px line + details. */
+.item { list-style: none; }
+.row {
+  display: flex;
+  align-items: center;
+  gap: var(--sp-2);
+  width: 100%;
+  height: 24px;
+  padding: 0 var(--sp-2);
+  background: transparent;
+  border: none;
+  color: var(--muted);
+  text-align: left;
+}
+.row:hover { background: var(--surface-2); }
+.glyph { width: 10px; flex: none; text-align: center; color: var(--muted); }
+.name { color: var(--text); flex: none; }
+.target {
+  flex: 1;
+  min-width: 0;
+  overflow: hidden;
+  text-overflow: ellipsis;
+  white-space: nowrap;
+  font-family: var(--font-mono);
+  font-size: 11px;
+}
+.mark { flex: none; font-size: 11px; }
+.duration { flex: none; font-variant-numeric: tabular-nums; font-size: 11px; }
+.running { color: var(--accent); animation: rowPulse 1.4s ease-in-out infinite; }
+.ok { color: var(--ok); }
+.error { color: var(--danger); }
+.summary { color: var(--muted); flex: 1; min-width: 0; }
+.details {
+  margin: 0 0 var(--sp-2) var(--sp-4);
+  padding: var(--sp-2);
+  border-left: 1px solid var(--border);
+  display: flex;
+  flex-direction: column;
+  gap: var(--sp-2);
+}
+.label {
+  font-size: 10px;
+  letter-spacing: 0.08em;
+  text-transform: uppercase;
+  color: var(--muted);
+}
+.pre {
+  margin: 0;
+  max-height: 220px;
+  overflow: auto;
+  white-space: pre-wrap;
+  word-break: break-word;
+  font-family: var(--font-mono);
+  font-size: 11px;
+  color: var(--text);
+}
+.nested { margin-left: var(--sp-4); }
+.child { border-left: 1px solid var(--border); margin-left: var(--sp-2); }
+.childRows { list-style: none; margin: 0; padding: 0; }
+.info { color: var(--muted); }
+.link {
+  flex: none;
+  background: none;
+  border: none;
+  color: var(--accent);
+  padding: 0;
+  font-size: 11px;
+}
+@keyframes rowPulse {
+  50% { opacity: 0.45; }
+}
+.rowBare {
+  display: flex;
+  align-items: center;
+  gap: var(--sp-2);
+  flex: 1;
+  min-width: 0;
+  padding: 0;
+  background: none;
+  border: none;
+  color: inherit;
+  text-align: left;
+}
