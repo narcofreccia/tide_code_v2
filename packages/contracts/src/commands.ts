@@ -1,5 +1,5 @@
 import { Type, type Static } from "typebox";
-import { Activity, ApprovalDecision, InteractionMode, ProviderKind, RuntimeMode, TurnUsage } from "./domain.ts";
+import { Activity, ApprovalDecision, CheckpointStats, InteractionMode, ProviderKind, PullRequest, RuntimeMode, TurnUsage } from "./domain.ts";
 
 // Commands = validated intents. ClientCommand may arrive over RPC; InternalCommand is
 // issued only by server reactors (driver ingestion) and is rejected at the RPC boundary.
@@ -70,12 +70,25 @@ export const PlanImplement = Type.Object({
 });
 export const PlanDismiss = Type.Object({ type: Type.Literal("plan.dismiss"), planId: Type.String() });
 
+/** Restore the worktree to the state before `turnId` (git checkout of the before-ref). */
+export const ThreadRevert = Type.Object({ type: Type.Literal("thread.revert"), threadId: Type.String(), turnId: Type.String() });
+/** Commit everything in the worktree, push, open (or update) a PR via gh. */
+export const ThreadPublish = Type.Object({
+  type: Type.Literal("thread.publish"),
+  threadId: Type.String(),
+  title: Type.Optional(Type.String()),
+  body: Type.Optional(Type.String()),
+  /** commit only, no push/PR */
+  commitOnly: Type.Optional(Type.Boolean()),
+});
+
 export const ClientCommand = Type.Union([
   ProjectCreate, ProjectUpdate, ProjectArchive,
   ThreadCreate, ThreadUpdate, ThreadArchive,
   TurnRequest, TurnInterrupt,
   ApprovalRespond, UserInputRespond,
   PlanImplement, PlanDismiss,
+  ThreadRevert, ThreadPublish,
 ]);
 export type ClientCommand = Static<typeof ClientCommand>;
 
@@ -117,8 +130,25 @@ export const TurnSettle = Type.Object({
   error: Type.Optional(Type.String()),
 });
 
+export const WorktreeAttach = Type.Object({
+  type: Type.Literal("worktree.attach"),
+  threadId: Type.String(),
+  worktreePath: Type.String(),
+  branch: Type.String(),
+  baseBranch: Type.Optional(Type.String()),
+});
+export const CheckpointRecord = Type.Object({
+  type: Type.Literal("checkpoint.record"),
+  turnId: Type.String(),
+  phase: Type.Union([Type.Literal("before"), Type.Literal("after")]),
+  ref: Type.String(),
+  stats: Type.Optional(CheckpointStats),
+});
+export const PrUpdate = Type.Object({ type: Type.Literal("pr.update"), threadId: Type.String(), pr: PullRequest });
+
 export const InternalCommand = Type.Union([
   TurnStart, AssistantAppend, ActivityUpsert, PlanPropose, PlanProgressReport, UsageReport, TurnSettle,
+  WorktreeAttach, CheckpointRecord, PrUpdate,
 ]);
 export type InternalCommand = Static<typeof InternalCommand>;
 

@@ -96,7 +96,27 @@ export function applyEvent(model: ReadModel, event: DomainEvent): ReadModel {
       return event.nativeSessionId !== undefined ? withThread(next, event.threadId, { nativeSessionId: event.nativeSessionId, updatedAt: event.startedAt }) : next;
     }
     case "turn.interrupt-requested":
-      return model; // reactor-facing; the settle event carries the outcome
+    case "revert.requested":
+    case "publish.requested":
+      return model; // reactor-facing intents; outcomes arrive as their own events
+    case "worktree.attached":
+      return withThread(model, event.threadId, {
+        worktreePath: event.worktreePath,
+        branch: event.branch,
+        ...(event.baseBranch !== undefined ? { baseBranch: event.baseBranch } : {}),
+        updatedAt: event.at,
+      });
+    case "checkpoint.recorded": {
+      const turn = model.turns[event.turnId];
+      if (!turn) return model;
+      const checkpoint =
+        event.phase === "before"
+          ? { ...(turn.checkpoint ?? {}), before: event.ref }
+          : { before: turn.checkpoint?.before ?? event.ref, after: event.ref, ...(event.stats !== undefined ? { stats: event.stats } : {}) };
+      return { ...model, turns: { ...model.turns, [turn.id]: { ...turn, checkpoint } } };
+    }
+    case "pr.updated":
+      return withThread(model, event.threadId, { pr: event.pr, updatedAt: event.pr.updatedAt });
     case "assistant.delta": {
       const existing = model.messages[event.messageId];
       const msg = existing

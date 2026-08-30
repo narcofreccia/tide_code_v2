@@ -63,6 +63,14 @@ export const Project = Type.Object({
 });
 export type Project = Static<typeof Project>;
 
+export const PullRequest = Type.Object({
+  url: Type.String(),
+  number: Type.Number(),
+  state: Type.Union([Type.Literal("open"), Type.Literal("merged"), Type.Literal("closed")]),
+  updatedAt: Type.Number(),
+});
+export type PullRequest = Static<typeof PullRequest>;
+
 export const Thread = Type.Object({
   id: Type.String(),
   projectId: Type.String(),
@@ -74,6 +82,9 @@ export const Thread = Type.Object({
   interaction: InteractionMode,
   worktreePath: Type.Optional(Type.String()),
   branch: Type.Optional(Type.String()),
+  /** branch the worktree was forked from (merge/PR base) */
+  baseBranch: Type.Optional(Type.String()),
+  pr: Type.Optional(PullRequest),
   status: ThreadStatus,
   attention: Type.Optional(AttentionKind),
   latestTurnId: Type.Optional(Type.String()),
@@ -113,10 +124,21 @@ export const TurnUsage = Type.Object({
 });
 export type TurnUsage = Static<typeof TurnUsage>;
 
+export const CheckpointStats = Type.Object({ files: Type.Number(), additions: Type.Number(), deletions: Type.Number() });
+export type CheckpointStats = Static<typeof CheckpointStats>;
+/** Git refs recorded around a turn: refs/tide/checkpoints/<thread>/<turn>/{before,after}. */
+export const Checkpoint = Type.Object({
+  before: Type.String(),
+  after: Type.Optional(Type.String()),
+  stats: Type.Optional(CheckpointStats),
+});
+export type Checkpoint = Static<typeof Checkpoint>;
+
 export const Turn = Type.Object({
   id: Type.String(),
   threadId: Type.String(),
   status: TurnStatus,
+  checkpoint: Type.Optional(Checkpoint),
   provider: Type.Optional(ProviderKind),
   model: Type.Optional(Type.String()),
   requestedAt: Type.Number(),

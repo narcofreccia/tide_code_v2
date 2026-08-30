@@ -1,5 +1,5 @@
 import { Type, type Static } from "typebox";
-import { Activity, ApprovalDecision, Message, Project, ProposedPlan, ProviderKind, Thread, Turn, TurnUsage } from "./domain.ts";
+import { Activity, ApprovalDecision, CheckpointStats, Message, Project, ProposedPlan, ProviderKind, PullRequest, Thread, Turn, TurnUsage } from "./domain.ts";
 
 // Events = persisted facts. Payloads are self-contained so the projector
 // never needs to look anything up outside the event.
@@ -15,10 +15,11 @@ export const ProjectUpdated = evt("project.updated", {
 });
 export const ProjectArchived = evt("project.archived", { projectId: Type.String(), archivedAt: Type.Number() });
 
-export const ThreadCreated = evt("thread.created", { thread: Thread });
+/** `useWorktree` is an intent for the vcs reactor, not state; the reactor answers with worktree.attached. */
+export const ThreadCreated = evt("thread.created", { thread: Thread, useWorktree: Type.Optional(Type.Boolean()) });
 export const ThreadUpdated = evt("thread.updated", {
   threadId: Type.String(),
-  patch: Type.Partial(Type.Pick(Thread, ["title", "provider", "model", "mode", "interaction", "worktreePath", "branch", "nativeSessionId"])),
+  patch: Type.Partial(Type.Pick(Thread, ["title", "provider", "model", "mode", "interaction", "worktreePath", "branch", "baseBranch", "nativeSessionId"])),
   updatedAt: Type.Number(),
 });
 export const ThreadArchived = evt("thread.archived", { threadId: Type.String(), archivedAt: Type.Number() });
@@ -63,6 +64,30 @@ export const PlanProgressed = evt("plan.progressed", {
   steps: Thread.properties.planProgress.properties.steps,
   at: Type.Number(),
 });
+export const WorktreeAttached = evt("worktree.attached", {
+  threadId: Type.String(),
+  worktreePath: Type.String(),
+  branch: Type.String(),
+  baseBranch: Type.Optional(Type.String()),
+  at: Type.Number(),
+});
+export const CheckpointRecorded = evt("checkpoint.recorded", {
+  turnId: Type.String(),
+  threadId: Type.String(),
+  phase: Type.Union([Type.Literal("before"), Type.Literal("after")]),
+  ref: Type.String(),
+  stats: Type.Optional(CheckpointStats),
+  at: Type.Number(),
+});
+export const RevertRequested = evt("revert.requested", { threadId: Type.String(), turnId: Type.String(), at: Type.Number() });
+export const PublishRequested = evt("publish.requested", {
+  threadId: Type.String(),
+  title: Type.Optional(Type.String()),
+  body: Type.Optional(Type.String()),
+  commitOnly: Type.Optional(Type.Boolean()),
+  at: Type.Number(),
+});
+export const PrUpdated = evt("pr.updated", { threadId: Type.String(), pr: PullRequest });
 export const UsageReported = evt("usage.reported", {
   turnId: Type.String(),
   threadId: Type.String(),
@@ -104,6 +129,11 @@ export const DomainEvent = Type.Union([
   PlanUpdated,
   PlanProgressed,
   UsageReported,
+  WorktreeAttached,
+  CheckpointRecorded,
+  RevertRequested,
+  PublishRequested,
+  PrUpdated,
   TurnSettled,
 ]);
 export type DomainEvent = Static<typeof DomainEvent>;

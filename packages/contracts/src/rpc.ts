@@ -48,6 +48,33 @@ export const ProviderStatusDto = Type.Object({
 });
 export type ProviderStatusDto = Static<typeof ProviderStatusDto>;
 
+export const DiffFile = Type.Object({
+  path: Type.String(),
+  oldPath: Type.Optional(Type.String()),
+  status: Type.Union([Type.Literal("added"), Type.Literal("modified"), Type.Literal("deleted"), Type.Literal("renamed")]),
+  additions: Type.Number(),
+  deletions: Type.Number(),
+  /** unified patch for this file; absent for binary */
+  patch: Type.Optional(Type.String()),
+  binary: Type.Optional(Type.Boolean()),
+});
+export type DiffFile = Static<typeof DiffFile>;
+export const DiffResult = Type.Object({ base: Type.String(), head: Type.String(), files: Type.Array(DiffFile) });
+export type DiffResult = Static<typeof DiffResult>;
+
+export const VcsStatus = Type.Object({
+  cwd: Type.String(),
+  isRepo: Type.Boolean(),
+  branch: Type.Optional(Type.String()),
+  worktree: Type.Boolean(),
+  dirty: Type.Number(),
+  ahead: Type.Optional(Type.Number()),
+  behind: Type.Optional(Type.Number()),
+  hasGh: Type.Boolean(),
+  hasRemote: Type.Boolean(),
+});
+export type VcsStatus = Static<typeof VcsStatus>;
+
 export const ServerInfo = Type.Object({
   environmentId: Type.String(),
   version: Type.String(),
@@ -67,6 +94,17 @@ export const rpcMethods = {
   "model.subscribe": stream(Type.Object({ fromSeq: Type.Optional(Type.Number()) }), ModelChunk),
   "model.get": unary(Type.Object({}), ReadModel),
   "unsubscribe": unary(Type.Object({ id: Type.String() }), Type.Object({ ok: Type.Boolean() })),
+  /** git state of the thread's cwd (worktree or project root) */
+  "vcs.status": unary(Type.Object({ threadId: Type.String() }), VcsStatus),
+  /** diff produced by one turn (before → after checkpoint); `after` falls back to the working tree while running */
+  "vcs.turnDiff": unary(Type.Object({ threadId: Type.String(), turnId: Type.String() }), DiffResult),
+  /** everything this thread changed: first checkpoint (or base branch) → working tree */
+  "vcs.threadDiff": unary(Type.Object({ threadId: Type.String() }), DiffResult),
+  /** full contents of a file at a ref (or the working tree when ref is "WORKTREE"), for side-by-side views */
+  "vcs.fileAt": unary(
+    Type.Object({ threadId: Type.String(), ref: Type.String(), path: Type.String() }),
+    Type.Object({ content: Type.Optional(Type.String()), binary: Type.Boolean(), missing: Type.Boolean() }),
+  ),
 } as const;
 
 export type RpcMethods = typeof rpcMethods;
