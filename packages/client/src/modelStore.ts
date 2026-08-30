@@ -1,7 +1,7 @@
 import {
   applyRecord,
   emptyReadModel,
-  type Command,
+  type ClientCommand,
   type ModelChunk,
   type ReadModel,
   type RpcOutput,
@@ -20,7 +20,7 @@ export interface ModelStoreState {
 export interface ModelStore {
   getState(): ModelStoreState;
   subscribe(listener: () => void): () => void;
-  dispatch(command: Command): Promise<RpcOutput<"orchestration.dispatch">>;
+  dispatch(command: ClientCommand): Promise<RpcOutput<"orchestration.dispatch">>;
   /** stop following the connection and cancel the live subscription */
   dispose(): void;
 }
