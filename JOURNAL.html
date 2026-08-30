@@ -60,9 +60,9 @@
         <h1>Tide v2 — Project Journal</h1>
         <div class="sub">Focused agentic code editor &amp; orchestrator over Claude Code · Codex · OpenCode · Pi. Started 2026-08-30.</div>
         <div class="kpi">
-          <div class="box"><b>P0</b><span>current phase</span></div>
-          <div class="box"><b>4</b><span>commits</span></div>
-          <div class="box"><b>49</b><span>tests passing</span></div>
+          <div class="box"><b>P1</b><span>current phase</span></div>
+          <div class="box"><b>8</b><span>commits</span></div>
+          <div class="box"><b>61</b><span>tests passing</span></div>
         </div>
         <div class="howto">
           How to use: read at session start; flip <code>class="status done|wip|todo|blocked"</code> + label as work lands; add dated notes under the phase;
@@ -96,24 +96,25 @@
 
       <h2>Phase board</h2>
 
-      <details class="phase" open>
-        <summary><span class="title"><h3>P0 — Skeleton, contracts, engine, shell</h3><small>monorepo · @tide/contracts · event-sourced server · client package · web shell</small></span><span class="badge status wip">wip</span></summary>
+      <details class="phase">
+        <summary><span class="title"><h3>P0 — Skeleton, contracts, engine, shell</h3><small>monorepo · @tide/contracts · event-sourced server · client package · web shell</small></span><span class="badge status done">done</span></summary>
         <div class="body">
           <ul class="tasks">
             <li><span class="badge status done">done</span><span class="t">Monorepo (pnpm, TS strict, erasable-only, <code>.ts</code> imports, vitest 4)</span></li>
             <li><span class="badge status done">done</span><span class="t"><code>@tide/contracts</code>: domain (Project/Thread/Turn/Message/ReadModel), commands, events, pure projector, rpc method table + wire envelope, ULID ids</span></li>
             <li><span class="badge status done">done</span><span class="t"><code>apps/server</code>: sqlite adapter (node/bun), EventStore, decider (17 tests), single-writer Engine, RpcRouter, handlers, HTTP+WS server with ticket auth, config/bin — 37 tests, boots</span></li>
-            <li><span class="badge status wip">wip</span><span class="t"><code>@tide/client</code>: TideConnection (reconnect, typed call/stream), modelStore (snapshot + fromSeq resume), selectors — Opus agent</span></li>
-            <li><span class="badge status wip">wip</span><span class="t"><code>apps/web</code>: shell per <code>docs/design/ui.md</code> (TopBar, Rail w/ Inbox, Thread column, Workbench empty state, StatusBar, focus modes, Mission Control landing) — Opus agent</span></li>
-            <li><span class="badge status todo">todo</span><span class="t">Orchestrator validation of client/web (typecheck, tests, boot against server, read core files) → commit</span></li>
+            <li><span class="badge status done">done</span><span class="t"><code>@tide/client</code>: TideConnection (reconnect, typed call/stream), modelStore (snapshot + fromSeq resume), selectors — Opus agent</span></li>
+            <li><span class="badge status done">done</span><span class="t"><code>apps/web</code>: shell per <code>docs/design/ui.md</code> (TopBar, Rail w/ Inbox, Thread column, Workbench empty state, StatusBar, focus modes, Mission Control landing) — Opus agent</span></li>
+            <li><span class="badge status done">done</span><span class="t">Orchestrator validation of client/web (typecheck, tests, boot against server, read core files) → commit</span></li>
           </ul>
           <p class="note">2026-08-30 — Contracts written by the orchestrator; server + client/web fanned out to two Opus agents. Server validated and committed <code>d301da0</code>.</p>
           <p class="note">2026-08-31 — Layout redesigned mid-flight (thread-first, Mission Control, workbench bound to worktree); web agent redirected to <code>docs/design/ui.md</code>.</p>
+          <p class="note">2026-08-31 — Client/web validated (typecheck, 22 tests, boot with server, live dispatch over WS) and committed <code>4cf59d2</code>. P0 closed: 61 tests across 4 packages.</p>
         </div>
       </details>
 
-      <details class="phase">
-        <summary><span class="title"><h3>P1 — Claude Code end-to-end</h3><small>driver-claude · normalizer · reactors · approvals · plan mode → ProposedPlan · subagent activities</small></span><span class="badge status todo">todo</span></summary>
+      <details class="phase" open>
+        <summary><span class="title"><h3>P1 — Claude Code end-to-end</h3><small>driver-claude · normalizer · reactors · approvals · plan mode → ProposedPlan · subagent activities · open in terminal</small></span><span class="badge status wip">wip</span></summary>
         <div class="body">
           <ul class="tasks">
             <li><span class="badge status todo">todo</span><span class="t">Contracts: Activity (tool call/result, approval, user-input), ProposedPlan, plan progress, usage events; driver SPI types</span></li>
@@ -156,6 +157,9 @@
         <tr><td>P0</td><td>2026-08-30</td><td>chore: monorepo skeleton + @tide/contracts</td><td class="sha">a810cc6</td></tr>
         <tr><td>P0</td><td>2026-08-31</td><td>docs: UI design, provider facts, README</td><td class="sha">8b48112</td></tr>
         <tr><td>P0</td><td>2026-08-31</td><td>feat(server): event-sourced engine, SQLite store, WS RPC with ticket auth</td><td class="sha">d301da0</td></tr>
+        <tr><td>P0</td><td>2026-08-31</td><td>docs: CLAUDE.md working rules + JOURNAL.html living status log</td><td class="sha">a54c944</td></tr>
+        <tr><td>P0</td><td>2026-08-31</td><td>docs(claude.md): value test and non-crippling rules</td><td class="sha">ed07131</td></tr>
+        <tr><td>P0</td><td>2026-08-31</td><td>feat(web,client): WS client + projection store, thread-first web shell</td><td class="sha">4cf59d2</td></tr>
       </table>
 
       <h2>Open questions &amp; follow-ups</h2>

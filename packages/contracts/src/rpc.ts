@@ -1,7 +1,7 @@
 import { Type, type Static, type TSchema } from "typebox";
-import { Command } from "./commands.ts";
+import { ClientCommand } from "./commands.ts";
 import { EventRecord } from "./events.ts";
-import { ReadModel } from "./domain.ts";
+import { ProviderKind, ReadModel } from "./domain.ts";
 
 // ---- wire envelope ----
 // client -> server
@@ -34,6 +34,20 @@ export const ModelChunk = Type.Union([
 ]);
 export type ModelChunk = Static<typeof ModelChunk>;
 
+export const ProviderStatusDto = Type.Object({
+  kind: ProviderKind,
+  installed: Type.Boolean(),
+  loggedIn: Type.Boolean(),
+  version: Type.Optional(Type.String()),
+  hint: Type.Optional(Type.String()),
+  models: Type.Array(Type.Object({ id: Type.String(), label: Type.String(), family: Type.Optional(Type.String()), default: Type.Optional(Type.Boolean()) })),
+  caps: Type.Object({
+    planMode: Type.Boolean(), subagents: Type.Boolean(), mcp: Type.Boolean(), images: Type.Boolean(),
+    resume: Type.Boolean(), contextUsage: Type.Boolean(), openInTerminal: Type.Boolean(),
+  }),
+});
+export type ProviderStatusDto = Static<typeof ProviderStatusDto>;
+
 export const ServerInfo = Type.Object({
   environmentId: Type.String(),
   version: Type.String(),
@@ -43,7 +57,12 @@ export const ServerInfo = Type.Object({
 export const rpcMethods = {
   "server.info": unary(Type.Object({}), ServerInfo),
   /** validated command -> persisted events */
-  "orchestration.dispatch": unary(Type.Object({ command: Command }), DispatchResult),
+  /** client commands only; internal commands are rejected with `forbidden` */
+  "orchestration.dispatch": unary(Type.Object({ command: ClientCommand }), DispatchResult),
+  /** installed/logged-in state + models per harness (cached server-side) */
+  "providers.list": unary(Type.Object({ refresh: Type.Optional(Type.Boolean()) }), Type.Array(ProviderStatusDto)),
+  /** escape hatch: shell command that reopens the thread's harness session in a terminal */
+  "thread.terminalCommand": unary(Type.Object({ threadId: Type.String() }), Type.Object({ cwd: Type.String(), command: Type.Optional(Type.String()) })),
   /** full model snapshot then live events; `fromSeq` skips the snapshot when the client already has one */
   "model.subscribe": stream(Type.Object({ fromSeq: Type.Optional(Type.Number()) }), ModelChunk),
   "model.get": unary(Type.Object({}), ReadModel),

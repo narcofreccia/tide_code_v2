@@ -1,8 +1,51 @@
-import type { ReadModel } from "./domain.ts";
+import type { Activity, AttentionKind, ReadModel, Thread, TimelineEntry } from "./domain.ts";
 import type { DomainEvent, EventRecord } from "./events.ts";
 
 // Pure projector shared by server and clients. Returns a new model; never
 // mutates input. Unknown event types are ignored so old clients survive.
+
+function withThread(model: ReadModel, id: string, patch: Partial<Thread>): ReadModel {
+  const t = model.threads[id];
+  if (!t) return model;
+  return { ...model, threads: { ...model.threads, [id]: { ...t, ...patch } } };
+}
+
+function appendTimeline(model: ReadModel, threadId: string, entry: TimelineEntry): ReadModel {
+  const list = model.threadTimeline[threadId] ?? [];
+  return { ...model, threadTimeline: { ...model.threadTimeline, [threadId]: [...list, entry] } };
+}
+
+/** Attention = first pending approval/question, else a proposed plan, else none. */
+function deriveAttention(model: ReadModel, threadId: string): AttentionKind | undefined {
+  for (const e of model.threadTimeline[threadId] ?? []) {
+    if (e.kind !== "activity") continue;
+    const a = model.activities[e.id];
+    if (a?.kind === "approval" && a.status === "pending") return "approval";
+    if (a?.kind === "user-input" && a.status === "pending") return "question";
+  }
+  for (const e of model.threadTimeline[threadId] ?? []) {
+    if (e.kind === "plan" && model.plans[e.id]?.status === "proposed") return "plan";
+  }
+  return undefined;
+}
+
+function refreshAttention(model: ReadModel, threadId: string, at: number): ReadModel {
+  const t = model.threads[threadId];
+  if (!t) return model;
+  const attention = deriveAttention(model, threadId);
+  if (attention === t.attention) return model;
+  const next: Thread = { ...t, updatedAt: at };
+  if (attention) next.attention = attention;
+  else delete next.attention;
+  return { ...model, threads: { ...model.threads, [threadId]: next } };
+}
+
+function upsertActivity(model: ReadModel, activity: Activity): ReadModel {
+  const exists = activity.id in model.activities;
+  let next: ReadModel = { ...model, activities: { ...model.activities, [activity.id]: activity } };
+  if (!exists) next = appendTimeline(next, activity.threadId, { kind: "activity", id: activity.id });
+  return refreshAttention(next, activity.threadId, activity.updatedAt);
+}
 
 export function applyEvent(model: ReadModel, event: DomainEvent): ReadModel {
   switch (event.type) {
@@ -11,13 +54,7 @@ export function applyEvent(model: ReadModel, event: DomainEvent): ReadModel {
     case "project.updated": {
       const p = model.projects[event.projectId];
       if (!p) return model;
-      return {
-        ...model,
-        projects: {
-          ...model.projects,
-          [p.id]: { ...p, ...(event.title !== undefined ? { title: event.title } : {}), updatedAt: event.updatedAt },
-        },
-      };
+      return { ...model, projects: { ...model.projects, [p.id]: { ...p, ...(event.title !== undefined ? { title: event.title } : {}), updatedAt: event.updatedAt } } };
     }
     case "project.archived": {
       const p = model.projects[event.projectId];
@@ -29,71 +66,120 @@ export function applyEvent(model: ReadModel, event: DomainEvent): ReadModel {
         ...model,
         threads: { ...model.threads, [event.thread.id]: event.thread },
         threadMessages: { ...model.threadMessages, [event.thread.id]: [] },
+        threadTimeline: { ...model.threadTimeline, [event.thread.id]: [] },
       };
-    case "thread.updated": {
-      const t = model.threads[event.threadId];
-      if (!t) return model;
-      return { ...model, threads: { ...model.threads, [t.id]: { ...t, ...event.patch, updatedAt: event.updatedAt } } };
-    }
-    case "thread.archived": {
-      const t = model.threads[event.threadId];
-      if (!t) return model;
-      return { ...model, threads: { ...model.threads, [t.id]: { ...t, archivedAt: event.archivedAt, updatedAt: event.archivedAt } } };
-    }
-    case "thread.status-changed": {
-      const t = model.threads[event.threadId];
-      if (!t) return model;
-      return { ...model, threads: { ...model.threads, [t.id]: { ...t, status: event.status, updatedAt: event.updatedAt } } };
-    }
+    case "thread.updated":
+      return withThread(model, event.threadId, { ...event.patch, updatedAt: event.updatedAt });
+    case "thread.archived":
+      return withThread(model, event.threadId, { archivedAt: event.archivedAt, updatedAt: event.archivedAt });
+    case "thread.status-changed":
+      return withThread(model, event.threadId, { status: event.status, updatedAt: event.updatedAt });
     case "turn.requested": {
-      const t = model.threads[event.turn.threadId];
-      const list = model.threadMessages[event.turn.threadId] ?? [];
-      return {
+      const { turn, userMessage } = event;
+      const list = model.threadMessages[turn.threadId] ?? [];
+      let next: ReadModel = {
         ...model,
-        turns: { ...model.turns, [event.turn.id]: event.turn },
-        messages: { ...model.messages, [event.userMessage.id]: event.userMessage },
-        threadMessages: { ...model.threadMessages, [event.turn.threadId]: [...list, event.userMessage.id] },
-        threads: t
-          ? { ...model.threads, [t.id]: { ...t, latestTurnId: event.turn.id, status: "running", updatedAt: event.turn.requestedAt } }
-          : model.threads,
+        turns: { ...model.turns, [turn.id]: turn },
+        messages: { ...model.messages, [userMessage.id]: userMessage },
+        threadMessages: { ...model.threadMessages, [turn.threadId]: [...list, userMessage.id] },
       };
+      next = appendTimeline(next, turn.threadId, { kind: "message", id: userMessage.id });
+      return withThread(next, turn.threadId, { latestTurnId: turn.id, status: "running", updatedAt: turn.requestedAt });
     }
     case "turn.started": {
       const turn = model.turns[event.turnId];
       if (!turn) return model;
-      return { ...model, turns: { ...model.turns, [turn.id]: { ...turn, status: "running", startedAt: event.startedAt } } };
+      const next: ReadModel = {
+        ...model,
+        turns: { ...model.turns, [turn.id]: { ...turn, status: "running", startedAt: event.startedAt, provider: event.provider, ...(event.model !== undefined ? { model: event.model } : {}) } },
+      };
+      return event.nativeSessionId !== undefined ? withThread(next, event.threadId, { nativeSessionId: event.nativeSessionId, updatedAt: event.startedAt }) : next;
     }
+    case "turn.interrupt-requested":
+      return model; // reactor-facing; the settle event carries the outcome
     case "assistant.delta": {
       const existing = model.messages[event.messageId];
       const msg = existing
         ? { ...existing, text: existing.text + event.delta }
         : { id: event.messageId, threadId: event.threadId, turnId: event.turnId, role: "assistant" as const, text: event.delta, createdAt: event.at, streaming: true };
-      const list = model.threadMessages[event.threadId] ?? [];
-      return {
+      let next: ReadModel = { ...model, messages: { ...model.messages, [msg.id]: msg } };
+      if (!existing) {
+        const list = model.threadMessages[event.threadId] ?? [];
+        next = { ...next, threadMessages: { ...next.threadMessages, [event.threadId]: [...list, msg.id] } };
+        next = appendTimeline(next, event.threadId, { kind: "message", id: msg.id });
+      }
+      return next;
+    }
+    case "activity.upserted":
+      return upsertActivity(model, event.activity);
+    case "approval.responded": {
+      const a = Object.values(model.activities).find((x) => x.kind === "approval" && x.requestId === event.requestId && x.threadId === event.threadId);
+      if (!a || a.kind !== "approval") return model;
+      return upsertActivity(model, { ...a, status: "resolved", decision: event.decision, updatedAt: event.at });
+    }
+    case "user-input.responded": {
+      const a = Object.values(model.activities).find((x) => x.kind === "user-input" && x.requestId === event.requestId && x.threadId === event.threadId);
+      if (!a || a.kind !== "user-input") return model;
+      return upsertActivity(model, { ...a, status: "resolved", answers: event.answers, updatedAt: event.at });
+    }
+    case "plan.proposed": {
+      let next: ReadModel = { ...model, plans: { ...model.plans, [event.plan.id]: event.plan } };
+      next = appendTimeline(next, event.plan.threadId, { kind: "plan", id: event.plan.id });
+      return refreshAttention(next, event.plan.threadId, event.plan.createdAt);
+    }
+    case "plan.updated": {
+      const plan = model.plans[event.planId];
+      if (!plan) return model;
+      const next: ReadModel = {
         ...model,
-        messages: { ...model.messages, [msg.id]: msg },
-        threadMessages: existing ? model.threadMessages : { ...model.threadMessages, [event.threadId]: [...list, msg.id] },
+        plans: { ...model.plans, [plan.id]: { ...plan, status: event.status, updatedAt: event.at, ...(event.implementationThreadId !== undefined ? { implementationThreadId: event.implementationThreadId } : {}) } },
       };
+      return refreshAttention(next, plan.threadId, event.at);
+    }
+    case "plan.progressed":
+      return withThread(model, event.threadId, { planProgress: { steps: event.steps, updatedAt: event.at }, updatedAt: event.at });
+    case "usage.reported": {
+      const turn = model.turns[event.turnId];
+      let next: ReadModel = model;
+      if (turn && event.usage) next = { ...next, turns: { ...next.turns, [turn.id]: { ...turn, usage: event.usage } } };
+      const t = next.threads[event.threadId];
+      if (!t) return next;
+      const patch: Partial<Thread> = { updatedAt: event.at };
+      if (event.contextUsage) patch.contextUsage = event.contextUsage;
+      if (event.usage?.costUsd !== undefined) patch.totalCostUsd = (t.totalCostUsd ?? 0) + event.usage.costUsd;
+      return withThread(next, event.threadId, patch);
     }
     case "turn.settled": {
       const turn = model.turns[event.turnId];
-      const t = model.threads[event.threadId];
-      // finalize streaming messages of this turn
       let messages = model.messages;
       for (const id of model.threadMessages[event.threadId] ?? []) {
         const m = messages[id];
         if (m && m.turnId === event.turnId && m.streaming) messages = { ...messages, [id]: { ...m, streaming: false } };
       }
-      return {
+      // pending approvals/questions of a settled turn can no longer be answered
+      let activities = model.activities;
+      for (const e of model.threadTimeline[event.threadId] ?? []) {
+        const a = e.kind === "activity" ? activities[e.id] : undefined;
+        if (a && a.turnId === event.turnId && (a.kind === "approval" || a.kind === "user-input") && a.status === "pending") {
+          activities = { ...activities, [a.id]: { ...a, status: "resolved", updatedAt: event.settledAt } as Activity };
+        }
+        if (a && a.turnId === event.turnId && a.kind === "tool" && a.status === "running") {
+          activities = { ...activities, [a.id]: { ...a, status: event.status === "completed" ? "ok" : "error", updatedAt: event.settledAt } };
+        }
+      }
+      let next: ReadModel = {
         ...model,
         messages,
-        turns: turn
-          ? { ...model.turns, [turn.id]: { ...turn, status: event.status, settledAt: event.settledAt, ...(event.error !== undefined ? { error: event.error } : {}) } }
-          : model.turns,
-        threads: t
-          ? { ...model.threads, [t.id]: { ...t, status: event.status === "completed" ? "idle" : event.status, updatedAt: event.settledAt } }
-          : model.threads,
+        activities,
+        turns: turn ? { ...model.turns, [turn.id]: { ...turn, status: event.status, settledAt: event.settledAt, ...(event.error !== undefined ? { error: event.error } : {}) } } : model.turns,
       };
+      const t = next.threads[event.threadId];
+      if (t) {
+        const patched: Thread = { ...t, status: event.status === "completed" ? "idle" : event.status, updatedAt: event.settledAt };
+        delete patched.planProgress;
+        next = { ...next, threads: { ...next.threads, [t.id]: patched } };
+      }
+      return refreshAttention(next, event.threadId, event.settledAt);
     }
     default: {
       const _exhaustive: never = event;
