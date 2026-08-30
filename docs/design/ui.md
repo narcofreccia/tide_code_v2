@@ -1,0 +1,77 @@
+# Tide v2 — UI design
+
+Present tense; the code follows this document. Principle: **the thread is the primary
+object; the code is the thread's worktree, shown as a review-and-intervention surface.**
+Tide is an orchestrator that includes an editor, not an editor with a chat panel.
+
+## Shell
+
+Three regions + top bar + status bar. Two regions collapse.
+
+| Region | Width | Content |
+|---|---|---|
+| Top bar | 36px | `⌘K` palette button · project switcher · thread title (inline rename) · right: provider / model / mode / interaction pills · turn state (Stop) |
+| Rail | 240px → 48px icons | **Inbox** (approvals, questions, plans-ready across all threads, with count) · projects → threads (child threads nested) · `+ thread` per project · bottom: Settings, connection |
+| Thread | flexible, primary | header (branch/worktree, PR badge, actions: archive, open in Finder, new child) · pinned plan progress while running · stream of messages + activities · inline cards (approval, user-input, proposed plan) · composer |
+| Workbench | flexible, secondary | tabs: **Changes** (default) · open files (Monaco) · tree toggle · terminal drawer |
+| Status bar | 24px | `⎇ branch (worktree)` · context % + cost · diff stats · provider health · connection |
+
+Focus modes: `⌘1` Thread only · `⌘2` Split (default 45/55, draggable) · `⌘3` Workbench only.
+Rail toggle `⌘B`. Terminal drawer `` ⌘` ``. Palette `⌘K`.
+
+## Views
+
+**Mission Control** (no thread selected, or `⌘0`): grid/list of all active threads across
+projects with status glyph, provider, last activity, needs-attention badge; the Inbox at the
+top. This is the landing view. "New thread" from here asks project → provider → worktree?.
+
+**Thread**: one chronological stream. Messages are plain (user right-aligned muted block,
+assistant as prose). Activities are single lines `▸ Read src/foo.ts` / `▸ Bash pnpm test ✓ 2.1s`,
+expandable; consecutive activities collapse into a group ("read 4 files"). Subagent /
+collab children render as an indented group with a "open as thread" link. Cards:
+- Approval: tool, target (path/command), diff preview when it is an edit, `Allow` `Allow for session` `Deny`, keyboard `y/n`.
+- User input (AskUserQuestion / codex user-input): options as buttons or free text.
+- Proposed plan: markdown, `Implement in new thread ▾` (provider · model · worktree checkbox) · `Keep planning`. Never auto-executes.
+Composer: textarea, `@` mentions (worktree files), paste images, mode/provider/model pills mirror the top bar, `⌘↵` send, `Esc` stop.
+
+**Workbench › Changes**: turn selector (`Turn 3 of 5 ▾`, "all turns"), file list with +/−, unified/split toggle, Monaco diff. Actions: revert turn, open file, commit+push+PR.
+**Workbench › File**: Monaco, write-enabled, dirty dot, `⌘S`. Open from diff, tree, `@mention`, activity line.
+**Workbench › Terminal**: xterm in the worktree; tabs; opened by `` ⌘` ``.
+Empty state: tree + "No changes in this thread yet".
+
+**Experts**: a thread whose Thread column shows the board — expert cards (provider, model,
+status), shared findings feed, discussion, your messages — and phase control (explore →
+discuss → synthesize). Workbench shows what experts read. Synthesis becomes a Proposed plan.
+
+**Settings** (route `/settings`): Providers (installed/logged-in/version, default model,
+default mode, login hint that opens the terminal), Git (worktree root, PR via gh), Appearance,
+Keyboard, Remote (bind host, pairing token).
+
+## States per thread (status glyph)
+
+`○ idle` · `● running` (pulsing) · `◐ needs you` (approval / question / plan ready) ·
+`✕ error` · `⏸ interrupted` · `✓ PR merged`. Rail sorts needs-you first within a project.
+
+## Design language
+
+- Tokens in `styles/tokens.css`: `--bg`, `--surface`, `--surface-2`, `--border`, `--text`,
+  `--muted`, `--accent` (single hue), `--ok`, `--warn`, `--danger`; radii 4/6/10; spacing 4-grid.
+  Dark default, light via `prefers-color-scheme` and an explicit toggle.
+- Type: system UI stack 13px base; monospace for paths, commands, diffs.
+- Flat surfaces, hairline borders, no nested cards, no shadows except popovers.
+- Motion only for state: streaming caret, running pulse, drawer slide (120ms).
+- Density: rows 28px in rail/lists, 24px activity lines.
+
+## Component inventory (apps/web/src/components)
+
+`shell/` TopBar, Rail, StatusBar, SplitPane, FocusModeSwitch · `mission/` MissionControl, Inbox ·
+`thread/` ThreadHeader, Stream, MessageItem, ActivityRow, ActivityGroup, ApprovalCard,
+UserInputCard, PlanCard, PlanProgress, Composer, MentionPicker · `workbench/` Workbench,
+ChangesTab, DiffView, FileTab (Monaco), FileTree, TerminalDrawer · `experts/` Board, ExpertCard,
+FindingsFeed · `settings/` … · `ui/` Button, Pill, Select, Menu, Dialog, Toast, Kbd.
+
+## Keyboard map
+
+`⌘K` palette · `⌘N` new thread · `⌘0` Mission Control · `⌘1/2/3` focus modes · `⌘B` rail ·
+`` ⌘` `` terminal · `⌘↵` send · `Esc` stop turn / close · `y`/`n` approve/deny focused card ·
+`⌘P` open file in worktree · `⌘S` save · `⌘⇧D` toggle unified/split diff · `[` `]` prev/next turn.
