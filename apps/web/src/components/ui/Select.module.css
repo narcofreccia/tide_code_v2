@@ -1,0 +1,10 @@
+.select {
+  height: 20px;
+  padding: 0 4px;
+  border: 1px solid var(--border);
+  border-radius: 999px;
+  background: var(--surface-2);
+  color: var(--muted);
+  font-size: 11px;
+}
+.select:hover { color: var(--text); border-color: var(--accent); }

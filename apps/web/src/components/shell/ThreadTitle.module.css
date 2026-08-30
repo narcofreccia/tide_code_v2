@@ -1,0 +1,13 @@
+.title {
+  flex: 1;
+  min-width: 60px;
+  max-width: 460px;
+  height: 24px;
+  background: transparent;
+  border: 1px solid transparent;
+  border-radius: var(--radius-sm);
+  padding: 0 6px;
+  font-weight: 600;
+}
+.title:hover { border-color: var(--border); }
+.title:focus { background: var(--bg); border-color: var(--accent); }

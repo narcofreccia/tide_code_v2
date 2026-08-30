@@ -1,0 +1,16 @@
+.group {
+  display: inline-flex;
+  border: 1px solid var(--border);
+  border-radius: var(--radius-sm);
+  overflow: hidden;
+}
+.button {
+  width: 22px;
+  height: 20px;
+  background: var(--surface-2);
+  border: none;
+  color: var(--muted);
+  font-size: 11px;
+}
+.button + .button { border-left: 1px solid var(--border); }
+.active { background: var(--accent-soft); color: var(--accent); }

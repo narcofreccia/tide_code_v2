@@ -1,0 +1,19 @@
+.split {
+  --split: 45%;
+  display: grid;
+  grid-template-columns: var(--split) 1px minmax(0, 1fr);
+  min-height: 0;
+  min-width: 0;
+}
+.pane { display: flex; flex-direction: column; min-width: 0; min-height: 0; }
+.handle {
+  background: var(--border);
+  cursor: col-resize;
+  position: relative;
+}
+.handle::after {
+  content: "";
+  position: absolute;
+  inset: 0 -3px;
+}
+.handle:hover { background: var(--accent); }

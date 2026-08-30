@@ -1,0 +1,20 @@
+.app {
+  display: grid;
+  grid-template-rows: 36px minmax(0, 1fr) 24px;
+  height: 100%;
+}
+.topRow {
+  display: grid;
+  grid-template-columns: minmax(0, 1fr) auto;
+  align-items: center;
+  border-bottom: 1px solid var(--border);
+  background: var(--surface);
+}
+.focus { padding: 0 var(--sp-2); }
+.body {
+  display: grid;
+  grid-template-columns: 240px minmax(0, 1fr);
+  min-height: 0;
+}
+.railCollapsed { grid-template-columns: 48px minmax(0, 1fr); }
+.content { display: flex; flex-direction: column; min-width: 0; min-height: 0; }

@@ -1,0 +1,18 @@
+.button {
+  display: inline-flex;
+  align-items: center;
+  gap: var(--sp-2);
+  height: 24px;
+  padding: 0 8px;
+  border-radius: var(--radius-sm);
+  border: 1px solid transparent;
+  background: transparent;
+  color: var(--text);
+  white-space: nowrap;
+}
+.button:disabled { opacity: 0.45; cursor: default; }
+.primary { background: var(--accent); border-color: var(--accent); color: #fff; }
+.ghost { border-color: var(--border); background: var(--surface-2); }
+.ghost:hover:not(:disabled) { border-color: var(--accent); }
+.quiet { color: var(--muted); padding: 0 4px; }
+.quiet:hover:not(:disabled) { color: var(--text); }

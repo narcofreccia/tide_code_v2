@@ -1,0 +1,12 @@
+.view { flex: 1; min-height: 0; overflow-y: auto; padding: var(--sp-4); background: var(--bg); }
+.header { display: flex; align-items: center; justify-content: space-between; }
+.heading { margin: 0; font-size: 14px; }
+.list { list-style: none; margin: var(--sp-4) 0 0; padding: 0; max-width: 520px; }
+.row {
+  display: flex;
+  align-items: center;
+  justify-content: space-between;
+  height: 28px;
+  border-bottom: 1px solid var(--border);
+}
+.soon { color: var(--muted); }

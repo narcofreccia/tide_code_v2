@@ -1,0 +1,26 @@
+.user { display: flex; justify-content: flex-end; }
+.assistant { display: flex; }
+.body {
+  max-width: 88%;
+  white-space: pre-wrap;
+  word-break: break-word;
+}
+.body[data-role="user"] {
+  background: var(--surface-2);
+  border: 1px solid var(--border);
+  border-radius: var(--radius);
+  padding: 5px 8px;
+  color: var(--muted);
+}
+.caret {
+  display: inline-block;
+  width: 6px;
+  height: 12px;
+  margin-left: 2px;
+  vertical-align: text-bottom;
+  background: var(--accent);
+  animation: blink 1s steps(2, start) infinite;
+}
+@keyframes blink {
+  to { visibility: hidden; }
+}

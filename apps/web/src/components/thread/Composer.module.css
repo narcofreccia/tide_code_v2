@@ -1,0 +1,22 @@
+.composer {
+  border-top: 1px solid var(--border);
+  padding: var(--sp-2);
+  background: var(--surface);
+}
+.input {
+  width: 100%;
+  resize: vertical;
+  background: var(--bg);
+  border: 1px solid var(--border);
+  border-radius: var(--radius);
+  padding: var(--sp-2);
+}
+.input::placeholder { color: var(--muted); }
+.input:focus { border-color: var(--accent); }
+.actions {
+  display: flex;
+  align-items: center;
+  justify-content: space-between;
+  padding-top: var(--sp-2);
+}
+.hint { display: inline-flex; align-items: center; gap: var(--sp-1); color: var(--muted); }

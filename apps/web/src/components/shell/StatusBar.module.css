@@ -1,0 +1,20 @@
+.bar {
+  display: flex;
+  align-items: center;
+  gap: var(--sp-4);
+  height: 24px;
+  padding: 0 var(--sp-3);
+  border-top: 1px solid var(--border);
+  background: var(--surface);
+  color: var(--muted);
+  font-size: 11px;
+}
+.item { display: inline-flex; align-items: center; gap: var(--sp-2); }
+.mono { font-family: var(--font-mono); }
+.error {
+  margin-left: auto;
+  color: var(--danger);
+  overflow: hidden;
+  text-overflow: ellipsis;
+  white-space: nowrap;
+}

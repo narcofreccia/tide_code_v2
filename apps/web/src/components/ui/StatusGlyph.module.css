@@ -1,0 +1,16 @@
+.glyph {
+  display: inline-block;
+  width: 10px;
+  text-align: center;
+  font-size: 10px;
+  line-height: 1;
+  flex: none;
+  color: var(--muted);
+}
+.idle { color: var(--muted); }
+.running { color: var(--accent); animation: pulse 1.4s ease-in-out infinite; }
+.interrupted { color: var(--warn); }
+.error { color: var(--danger); }
+@keyframes pulse {
+  50% { opacity: 0.35; }
+}

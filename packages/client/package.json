@@ -9,5 +9,10 @@
     "test": "vitest run --passWithNoTests",
     "build": "echo skip"
   },
-  "dependencies": { "@tide/contracts": "workspace:*" }
+  "dependencies": { "@tide/contracts": "workspace:*" },
+  "devDependencies": {
+    "@types/node": "^22.0.0",
+    "@types/ws": "^8.18.0",
+    "ws": "^8.21.0"
+  }
 }

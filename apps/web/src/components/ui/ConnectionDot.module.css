@@ -1,0 +1,11 @@
+.dot {
+  display: inline-block;
+  width: 6px;
+  height: 6px;
+  border-radius: 50%;
+  background: var(--muted);
+  flex: none;
+}
+.ok { background: var(--ok); }
+.pending { background: var(--warn); }
+.bad { background: var(--danger); }

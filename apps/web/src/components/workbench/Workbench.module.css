@@ -1,0 +1,40 @@
+.workbench {
+  display: flex;
+  flex-direction: column;
+  flex: 1;
+  min-height: 0;
+  min-width: 0;
+  background: var(--surface);
+}
+.tabs {
+  display: flex;
+  align-items: center;
+  gap: var(--sp-1);
+  height: 28px;
+  padding: 0 var(--sp-2);
+  border-bottom: 1px solid var(--border);
+}
+.tab {
+  height: 20px;
+  padding: 0 8px;
+  background: transparent;
+  border: 1px solid transparent;
+  border-radius: var(--radius-sm);
+  color: var(--muted);
+}
+.tab:disabled { opacity: 0.45; cursor: default; }
+.active { color: var(--text); background: var(--surface-2); border-color: var(--border); }
+.terminal {
+  display: inline-flex;
+  align-items: center;
+  gap: var(--sp-2);
+  margin-left: auto;
+  height: 20px;
+  padding: 0 6px;
+  background: transparent;
+  border: 1px solid var(--border);
+  border-radius: var(--radius-sm);
+  color: var(--muted);
+  opacity: 0.55;
+  cursor: default;
+}
