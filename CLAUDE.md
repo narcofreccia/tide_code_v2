@@ -25,6 +25,32 @@ Reference architecture: T3 Code (`pingdotgg/t3code`). Design docs: `docs/design/
 (layout — thread-first, workbench bound to worktree), `docs/internals/providers.md`
 (verified harness facts). The approved plan lives in the user's Claude plans dir.
 
+## 1a. Value test & non-crippling rules (apply to every feature)
+
+For one task in one repo, a terminal harness is already excellent. Tide earns its place
+only with what a single terminal harness structurally cannot do: **many threads in one
+field of view** (Mission Control + Inbox), **worktree isolation with managed merge-back**,
+**uniform turn-level checkpoints/diff/revert across harnesses**, **portability of work
+across harnesses/subscriptions**, **a review surface built for agent output + a real
+editor**, **cross-harness Experts**, **remote**, **cost/context glass-box**.
+
+Before building anything ask: *does this do something a single harness cannot, or does it
+re-do something it already does?* If the latter — cut it or surface the native one.
+When unsure how to leverage a harness, look at how T3 Code did it.
+
+Never cripple the harness:
+- Run it with **full native power**: user/project settings, `.claude/`/`AGENTS.md`, skills,
+  plugins, hooks, the user's MCP servers, subagents, workflows — all on. Tide only *adds*
+  its MCP server. A feature that works in the terminal must work in Tide.
+- **Escape hatch always available:** every thread offers "Open in terminal"
+  (`claude --resume <id>` / `codex resume` / `opencode` in the worktree). Sessions are the
+  harness's own; the user can drop to the CLI and come back.
+- **Pass through, don't translate, when unsure:** unknown activities/events render
+  generically instead of being dropped; native prompts map 1:1 to cards; harness slash
+  commands are typeable in the composer.
+- **Model lists come from the harness** (`list_models`, Codex manifest, OpenCode catalog),
+  never a hardcoded table.
+
 ## 2. Stack
 
 - **TypeScript strict, ESM, Node ≥22.13** (`nvm use` → 22; `source ~/.nvm/nvm.sh` in shells).
