@@ -31,6 +31,7 @@ OpenCode `plan` agent; Pi = system-prompt + `tide_propose_plan` tool.
 - Notifications: `turn/started`, `item/started`, `item/agentMessage/delta`, `item/completed` (authoritative), `turn/completed {status: completed|interrupted|failed}`, `thread/tokenUsage/updated`.
 - Server→client requests: `item/commandExecution/requestApproval`, `item/fileChange/requestApproval` → reply `accept|acceptForSession|decline|cancel` (+`acceptWithExecpolicyAmendment`); then `serverRequest/resolved`.
 - Collab (sub-agents): child threads with `agentThreadId`/nickname/role/depth; events `collabAgent/*` — render as child threads.
+- Verified against generated bindings of codex-cli 0.147 (642 types): additional methods/notifications to use — `model/list`, `account/read` (login state), `account/rateLimits/read`, `thread/list|read|fork|archive|delete`, `thread/name/set`, `thread/compact/start`, `item/plan/delta` (**native plan output** → ProposedPlan), `item/tool/requestUserInput` (→ user-input activity), `item/permissions/requestApproval` (generic approvals), `item/commandExecution/outputDelta`, `item/fileChange/patchUpdated`, `item/reasoning/*Delta`, `item/mcpToolCall/progress`, `collabAgentToolCall` (sub-agents), `skills/list`, `mcpServerStatus/list`.
 - **Exact bindings per installed version:** `codex app-server generate-ts --out packages/driver-codex/src/generated` (also `generate-json-schema`). Regenerate on codex upgrade; do not hand-write types.
 
 ## OpenCode — `opencode serve` + `@opencode-ai/sdk` (1.18.x)
