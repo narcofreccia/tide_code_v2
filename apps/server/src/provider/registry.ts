@@ -51,6 +51,7 @@ function toDto(status: ProviderStatus): ProviderStatusDto {
     loggedIn: status.loggedIn,
     ...(status.version !== undefined ? { version: status.version } : {}),
     ...(status.hint !== undefined ? { hint: status.hint } : {}),
+    ...(status.loginCommand !== undefined ? { loginCommand: status.loginCommand } : {}),
     models: status.models.map((m) => ({
       id: m.id,
       label: m.label,

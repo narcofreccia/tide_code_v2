@@ -30,6 +30,8 @@ export interface ProviderStatus {
   version?: string;
   /** shown to the user when not usable (e.g. "run `claude auth login`") */
   hint?: string;
+  /** exact shell command that logs the user in (UI offers to run it in a terminal) */
+  loginCommand?: string;
   models: ModelInfo[];
   caps: DriverCaps;
 }

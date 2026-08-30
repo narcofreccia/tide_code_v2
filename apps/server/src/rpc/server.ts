@@ -1,3 +1,5 @@
+import { accessSync, constants } from "node:fs";
+import { delimiter, join } from "node:path";
 import { createServer, type IncomingMessage, type Server, type ServerResponse } from "node:http";
 import type { Duplex } from "node:stream";
 import { WebSocketServer, type WebSocket } from "ws";
@@ -14,6 +16,20 @@ import { RpcRouter } from "./router.ts";
 import { TicketIssuer } from "./tickets.ts";
 
 const PING_INTERVAL_MS = 30_000;
+
+/** Host tools the UI may want to know about (Settings › Git); a cheap PATH scan at boot. */
+function detectTools(): { git: boolean; gh: boolean; rg: boolean } {
+  const has = (bin: string): boolean =>
+    (process.env["PATH"] ?? "").split(delimiter).some((dir) => {
+      try {
+        accessSync(join(dir, bin), constants.X_OK);
+        return true;
+      } catch {
+        return false;
+      }
+    });
+  return { git: has("git"), gh: has("gh"), rg: has("rg") };
+}
 
 export interface ServerDeps {
   engine: Engine;
@@ -50,6 +66,8 @@ export async function startServer(deps: ServerDeps): Promise<ServerHandle> {
     environmentId: config.environmentId,
     version: config.version,
     startedAt,
+    tideHome: config.tideHome,
+    tools: detectTools(),
   });
   registerVcsHandlers(router, { engine, checkpoints: deps.checkpoints ?? new CheckpointService() });
   const workspace = deps.workspace ?? createWorkspaceServices({ engine });

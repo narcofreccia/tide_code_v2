@@ -12,6 +12,8 @@ export interface HandlerDeps {
   environmentId: string;
   version: string;
   startedAt: number;
+  tideHome?: string;
+  tools?: { git: boolean; gh: boolean; rg: boolean };
 }
 
 export function registerHandlers(router: RpcRouter, deps: HandlerDeps): void {
@@ -19,6 +21,8 @@ export function registerHandlers(router: RpcRouter, deps: HandlerDeps): void {
     environmentId: deps.environmentId,
     version: deps.version,
     startedAt: deps.startedAt,
+    ...(deps.tideHome !== undefined ? { tideHome: deps.tideHome, worktreeRoot: `${deps.tideHome}/worktrees` } : {}),
+    ...(deps.tools !== undefined ? { tools: deps.tools } : {}),
   }));
 
   router.register("orchestration.dispatch", async (input) => {

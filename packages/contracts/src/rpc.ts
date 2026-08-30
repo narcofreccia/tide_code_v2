@@ -40,6 +40,7 @@ export const ProviderStatusDto = Type.Object({
   loggedIn: Type.Boolean(),
   version: Type.Optional(Type.String()),
   hint: Type.Optional(Type.String()),
+  loginCommand: Type.Optional(Type.String()),
   models: Type.Array(Type.Object({ id: Type.String(), label: Type.String(), family: Type.Optional(Type.String()), default: Type.Optional(Type.Boolean()) })),
   caps: Type.Object({
     planMode: Type.Boolean(), subagents: Type.Boolean(), mcp: Type.Boolean(), images: Type.Boolean(),
@@ -113,6 +114,10 @@ export const ServerInfo = Type.Object({
   environmentId: Type.String(),
   version: Type.String(),
   startedAt: Type.Number(),
+  tideHome: Type.Optional(Type.String()),
+  worktreeRoot: Type.Optional(Type.String()),
+  /** tools detected on the server host */
+  tools: Type.Optional(Type.Object({ git: Type.Boolean(), gh: Type.Boolean(), rg: Type.Boolean() })),
 });
 
 export const rpcMethods = {
