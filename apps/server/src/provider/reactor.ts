@@ -22,6 +22,8 @@ interface ThreadState {
 export interface ReactorOptions {
   engine: Engine;
   sessions: SessionDirectory;
+  /** awaited before the harness is handed the prompt (P2: the vcs before-checkpoint) */
+  beforeTurn?: (threadId: string, turnId: string) => Promise<void>;
   now?: () => number;
   newId?: () => string;
   log?: (msg: string, data?: unknown) => void;
@@ -35,6 +37,7 @@ export interface ReactorOptions {
 export class ProviderReactor {
   #engine: Engine;
   #sessions: SessionDirectory;
+  #beforeTurn: ((threadId: string, turnId: string) => Promise<void>) | undefined;
   #now: () => number;
   #newId: () => string;
   #log: (msg: string, data?: unknown) => void;
@@ -45,6 +48,7 @@ export class ProviderReactor {
   constructor(options: ReactorOptions) {
     this.#engine = options.engine;
     this.#sessions = options.sessions;
+    this.#beforeTurn = options.beforeTurn;
     this.#now = options.now ?? (() => Date.now());
     this.#newId = options.newId ?? (() => defaultNewId());
     this.#log = options.log ?? ((msg, data) => console.error(msg, data));
@@ -142,6 +146,15 @@ export class ProviderReactor {
   }
 
   async #runTurn(threadId: string, turnId: string, text: string): Promise<void> {
+    // Gives the vcs reactor its window to snapshot the working tree before the first tool
+    // call, and to attach a worktree, so the session below opens in the final cwd.
+    if (this.#beforeTurn) {
+      try {
+        await this.#beforeTurn(threadId, turnId);
+      } catch (err) {
+        this.#log("[reactor] beforeTurn hook failed", err);
+      }
+    }
     const model = this.#engine.getModel();
     const thread = model.threads[threadId];
     const project = thread ? model.projects[thread.projectId] : undefined;

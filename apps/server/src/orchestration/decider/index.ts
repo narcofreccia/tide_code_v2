@@ -4,6 +4,7 @@ import { decidePlan } from "./plans.ts";
 import { decideProject } from "./projects.ts";
 import { decideThread } from "./threads.ts";
 import { decideTurn } from "./turns.ts";
+import { decideVcs } from "./vcs.ts";
 import { fail, type DecideContext, type DecideResult } from "./types.ts";
 
 export type { DecideContext, DecideError, DecideResult } from "./types.ts";
@@ -43,6 +44,13 @@ export function decide(model: ReadModel, command: Command, ctx: DecideContext): 
     case "plan.implement":
     case "plan.dismiss":
       return decidePlan(model, command, ctx);
+
+    case "thread.revert":
+    case "thread.publish":
+    case "worktree.attach":
+    case "checkpoint.record":
+    case "pr.update":
+      return decideVcs(model, command, ctx);
 
     default: {
       const _exhaustive: never = command;

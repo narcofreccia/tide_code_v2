@@ -60,9 +60,9 @@
         <h1>Tide v2 — Project Journal</h1>
         <div class="sub">Focused agentic code editor &amp; orchestrator over Claude Code · Codex · OpenCode · Pi. Started 2026-08-30.</div>
         <div class="kpi">
-          <div class="box"><b>P2</b><span>current phase</span></div>
-          <div class="box"><b>22</b><span>commits</span></div>
-          <div class="box"><b>171</b><span>tests passing</span></div>
+          <div class="box"><b>P3</b><span>current phase</span></div>
+          <div class="box"><b>26</b><span>commits</span></div>
+          <div class="box"><b>253</b><span>tests passing</span></div>
         </div>
         <div class="howto">
           How to use: read at session start; flip <code>class="status done|wip|todo|blocked"</code> + label as work lands; add dated notes under the phase;
@@ -130,22 +130,22 @@
         </div>
       </details>
 
-      <details class="phase" open>
-        <summary><span class="title"><h3>P2 — Git: worktrees, checkpoints, diff, PR</h3><small>vcs/ · refs/tide/checkpoints · Changes tab · revert · gh pr</small></span><span class="badge status wip">wip</span></summary>
+      <details class="phase">
+        <summary><span class="title"><h3>P2 — Git: worktrees, checkpoints, diff, PR</h3><small>vcs/ · refs/tide/checkpoints · Changes tab · revert · gh pr</small></span><span class="badge status done">done</span></summary>
         <div class="body">
           <ul class="tasks">
             <li><span class="badge status done">done</span><span class="t">Contracts: <code>Turn.checkpoint</code>, <code>Thread.baseBranch/pr</code>, <code>thread.revert</code>/<code>thread.publish</code>, internal <code>worktree.attach</code>/<code>checkpoint.record</code>/<code>pr.update</code>, RPC <code>vcs.status|turnDiff|threadDiff|fileAt</code> — <code>cda50fb</code></span></li>
-            <li><span class="badge status wip">wip</span><span class="t">Server <code>vcs/</code>: git wrapper (snapshot incl. untracked via temp index), WorktreeManager (<code>~/.tide/worktrees</code>, <code>tide/&lt;slug&gt;</code> branches), CheckpointService (<code>refs/tide/checkpoints/…</code>), VcsReactor (before-checkpoint gates the provider turn), revert, publish via gh — Opus agent</span></li>
+            <li><span class="badge status done">done</span><span class="t">Server <code>vcs/</code>: git wrapper (snapshot incl. untracked via temp index), WorktreeManager (<code>~/.tide/worktrees</code>, <code>tide/&lt;slug&gt;</code> branches), CheckpointService (<code>refs/tide/checkpoints/…</code>), VcsReactor (before-checkpoint gates the provider turn), revert, publish via gh — Opus agent</span></li>
             <li><span class="badge status done">done</span><span class="t">Web Workbench › Changes: turn selector, file list, Monaco diff (lazy chunk, unified/split ⌘⇧D), revert, commit / commit+push+PR, PR badges, <code>state/vcs.ts</code> cache + status bar / rail / Mission Control git affordances — Opus agent</span></li>
-            <li><span class="badge status todo">todo</span><span class="t">Orchestrator validation: two threads editing the same file on separate worktrees, revert a turn, PR button (gh present)</span></li>
+            <li><span class="badge status done">done</span><span class="t">Orchestrator validation (live, Claude Max, throwaway repo): two worktree threads edited <code>notes.md</code> in parallel (7.7s), before/after checkpoints with stats, <code>vcs.turnDiff</code>/<code>fileAt</code>/<code>status</code> correct, <code>thread.revert</code> restored the file and emptied the thread diff, <code>main</code> untouched. PR path covered by tests with an injected gh + bare-repo origin (not exercised live — no remote on the scratch repo).</span></li>
           </ul>
           <p class="note">2026-08-31 — P2 contracts by the orchestrator; server vcs + web workbench fanned out.</p>
           <p class="note">2026-08-31 — Web P2 landed: <code>monaco-editor@0.56.0</code> + <code>@monaco-editor/react@4.7.0</code> loaded through <code>React.lazy</code> (main chunk 481&nbsp;kB / 149&nbsp;kB gz, Monaco 3.98&nbsp;MB / 1.03&nbsp;MB gz in its own chunk, base worker only, <code>tide-dark</code>/<code>tide-light</code> themes from the CSS tokens). Diffs cached per <code>threadId:turnId</code> and invalidated when a turn settles or a checkpoint appears. 51 web tests (was 37).</p>
         </div>
       </details>
 
-      <details class="phase">
-        <summary><span class="title"><h3>P3 — Editor, terminal, files + Tauri shell</h3><small>Monaco · xterm · fs/pty RPC · server_supervisor.rs · sidecar bundling</small></span><span class="badge status todo">todo</span></summary>
+      <details class="phase" open>
+        <summary><span class="title"><h3>P3 — Editor, terminal, files + Tauri shell</h3><small>Monaco · xterm · fs/pty RPC · server_supervisor.rs · sidecar bundling</small></span><span class="badge status wip">wip</span></summary>
         <div class="body"><ul class="tasks"><li><span class="badge status todo">todo</span><span class="t">fs/pty/search RPC scoped to worktree · File tabs · terminal drawer · Tauri shell + keychain + updater</span></li></ul></div>
       </details>
 
@@ -180,6 +180,8 @@
         <tr><td>P1</td><td>2026-08-31</td><td>feat(web,client): P1 thread stream — activities, cards, inbox, providers, open in terminal</td><td class="sha">2c79e6c</td></tr>
         <tr><td>P1</td><td>2026-08-31</td><td>feat(driver-claude): Claude Code driver over the Agent SDK</td><td class="sha">09fdaff</td></tr>
         <tr><td>P2</td><td>2026-08-31</td><td>feat(contracts): P2 vocabulary — worktrees, checkpoints, revert, publish/PR, vcs RPC</td><td class="sha">cda50fb</td></tr>
+        <tr><td>P2</td><td>2026-08-31</td><td>feat(web): Workbench Changes tab — turn selector, file list, lazy Monaco diff, revert, commit/PR</td><td class="sha">ba89113</td></tr>
+        <tr><td>P2</td><td>2026-08-31</td><td>feat(server): vcs — git wrapper, worktrees, checkpoints, VcsReactor, revert, publish, vcs RPC</td><td class="sha">(next)</td></tr>
       </table>
 
       <h2>Open questions &amp; follow-ups</h2>
@@ -188,6 +190,9 @@
         <li>Pi plan mode: emulate via system prompt + <code>tide_propose_plan</code> tool, or mark <code>planMode=false</code> for Pi in v1?</li>
         <li><code>turn.interrupt-requested</code> is not projected: a driver that never honours <code>interrupt()</code> leaves the thread <em>running</em> with no UI signal. Add an <code>interrupting</code> flag/status in a later contracts pass.</li>
         <li><code>DriverActivity</code> has no partial-update shape (tool results must resend name/input; reactor merges defensively). Consider a <code>DriverActivityPatch</code>.</li>
+        <li>Worktree teardown: no <code>worktree.detach</code> vocabulary yet — <code>thread.archive</code> leaves the worktree on disk. Add in a contracts pass (with "keep branch" option).</li>
+        <li>Worktree-creation failure is only logged (no turn exists to attach an activity to). Consider thread-scoped notices (optional <code>turnId</code> on InfoActivity).</li>
+        <li><code>DiffFile</code> lacks a <code>truncated</code> flag (server appends a marker line at 200 KB).</li>
         <li>Design canvas of key screens (Mission Control, thread split, plan card, approval) once the P1 thread panel exists — for visual tweaking.</li>
       </ul>
 

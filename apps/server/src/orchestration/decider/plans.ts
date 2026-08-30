@@ -76,7 +76,7 @@ export function decidePlan(model: ReadModel, command: PlanCommand, ctx: DecideCo
         createdAt: ctx.now,
       };
       return ok(
-        { type: "thread.created", thread },
+        { type: "thread.created", thread, ...(command.useWorktree !== undefined ? { useWorktree: command.useWorktree } : {}) },
         { type: "turn.requested", turn, userMessage },
         { type: "plan.updated", planId: plan.id, status: "implemented", implementationThreadId: thread.id, at: ctx.now },
       );

@@ -28,7 +28,7 @@ export function decideThread(model: ReadModel, command: ThreadCommand, ctx: Deci
         createdAt: ctx.now,
         updatedAt: ctx.now,
       };
-      return ok({ type: "thread.created", thread });
+      return ok({ type: "thread.created", thread, ...(command.useWorktree !== undefined ? { useWorktree: command.useWorktree } : {}) });
     }
 
     case "thread.update": {

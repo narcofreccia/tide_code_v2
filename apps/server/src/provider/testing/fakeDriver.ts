@@ -20,11 +20,14 @@ export type FakeStep =
   | { kind: "await-approval"; requestId: string }
   | { kind: "await-user-input"; requestId: string }
   | { kind: "await-interrupt" }
+  /** side effect run inside the turn, e.g. writing a file into the session's cwd */
+  | { kind: "effect"; run: (options: OpenSessionOptions) => void | Promise<void> }
   | { kind: "throw"; message: string };
 
 export const emit = (event: NormalizedEvent): FakeStep => ({ kind: "event", event });
 export const awaitApproval = (requestId: string): FakeStep => ({ kind: "await-approval", requestId });
 export const awaitUserInput = (requestId: string): FakeStep => ({ kind: "await-user-input", requestId });
+export const effect = (run: (options: OpenSessionOptions) => void | Promise<void>): FakeStep => ({ kind: "effect", run });
 export const awaitInterrupt = (): FakeStep => ({ kind: "await-interrupt" });
 export const throwStep = (message: string): FakeStep => ({ kind: "throw", message });
 
@@ -91,6 +94,9 @@ export class FakeSession implements ProviderSession {
             break;
           case "await-interrupt":
             await self.#waiter<void>("interrupt").promise;
+            break;
+          case "effect":
+            await step.run(self.options);
             break;
           case "throw":
             throw new Error(step.message);

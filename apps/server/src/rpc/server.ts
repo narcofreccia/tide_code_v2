@@ -6,7 +6,9 @@ import type { ServerConfig } from "../config.ts";
 import type { Engine } from "../orchestration/engine.ts";
 import type { EventStore } from "../orchestration/store.ts";
 import { DriverRegistry } from "../provider/registry.ts";
+import { CheckpointService } from "../vcs/checkpoints.ts";
 import { registerHandlers } from "./handlers.ts";
+import { registerVcsHandlers } from "./vcs.ts";
 import { RpcRouter } from "./router.ts";
 import { TicketIssuer } from "./tickets.ts";
 
@@ -18,6 +20,8 @@ export interface ServerDeps {
   config: ServerConfig;
   /** omitted in tests that don't exercise providers: an empty registry is used */
   registry?: DriverRegistry;
+  /** omitted in tests that don't exercise git: a stand-alone service is used */
+  checkpoints?: CheckpointService;
 }
 
 export interface ServerHandle {
@@ -44,6 +48,7 @@ export async function startServer(deps: ServerDeps): Promise<ServerHandle> {
     version: config.version,
     startedAt,
   });
+  registerVcsHandlers(router, { engine, checkpoints: deps.checkpoints ?? new CheckpointService() });
 
   const applyCors = (req: IncomingMessage, res: ServerResponse): void => {
     const origin = req.headers.origin;

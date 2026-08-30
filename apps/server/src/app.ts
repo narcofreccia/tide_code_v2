@@ -6,6 +6,10 @@ import { ProviderReactor } from "./provider/reactor.ts";
 import { DriverRegistry } from "./provider/registry.ts";
 import { SessionDirectory } from "./provider/sessions.ts";
 import { startServer, type ServerHandle } from "./rpc/server.ts";
+import { CheckpointService } from "./vcs/checkpoints.ts";
+import type { GhLike } from "./vcs/gh.ts";
+import { VcsReactor } from "./vcs/reactor.ts";
+import { WorktreeManager } from "./vcs/worktrees.ts";
 
 export interface AppOptions {
   config: ServerConfig;
@@ -15,6 +19,8 @@ export interface AppOptions {
   registerDrivers?: (registry: DriverRegistry) => void | Promise<void>;
   /** false keeps everything in-process without binding a socket */
   listen?: boolean;
+  /** tests inject a fake GitHub CLI */
+  gh?: GhLike;
   log?: (msg: string, data?: unknown) => void;
 }
 
@@ -26,6 +32,9 @@ export interface App {
   registry: DriverRegistry;
   sessions: SessionDirectory;
   reactor: ProviderReactor;
+  worktrees: WorktreeManager;
+  checkpoints: CheckpointService;
+  vcs: VcsReactor;
   server: ServerHandle | undefined;
   close(): Promise<void>;
 }
@@ -50,13 +59,33 @@ export async function createApp(options: AppOptions): Promise<App> {
   else await registerBundledDrivers(registry, config.providers, log);
 
   const sessions = new SessionDirectory({ registry, log });
-  const reactor = new ProviderReactor({ engine, sessions, log });
+
+  // The vcs reactor subscribes first on purpose: it must mark a turn's before-checkpoint
+  // gate while `turn.requested` is delivered, before the provider reactor queues the turn.
+  const worktrees = new WorktreeManager({ tideHome: config.tideHome, log });
+  const checkpoints = new CheckpointService({ log });
+  const vcs = new VcsReactor({
+    engine,
+    worktrees,
+    checkpoints,
+    sessions,
+    ...(options.gh !== undefined ? { gh: options.gh } : {}),
+    log,
+  });
+  vcs.start();
+
+  const reactor = new ProviderReactor({
+    engine,
+    sessions,
+    beforeTurn: (_threadId, turnId) => checkpoints.beforeReady(turnId),
+    log,
+  });
   reactor.start();
 
   const server =
     options.listen === false
       ? undefined
-      : await startServer({ engine, store, registry, config: { ...config, environmentId } });
+      : await startServer({ engine, store, registry, checkpoints, config: { ...config, environmentId } });
 
   return {
     config,
@@ -66,9 +95,13 @@ export async function createApp(options: AppOptions): Promise<App> {
     registry,
     sessions,
     reactor,
+    worktrees,
+    checkpoints,
+    vcs,
     server,
     async close() {
       reactor.stop();
+      vcs.stop();
       await server?.close();
       await sessions.closeAll();
       await registry.dispose();

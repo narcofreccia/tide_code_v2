@@ -37,6 +37,11 @@ export function aggregateIdOf(event: DomainEvent): string | null {
     case "plan.progressed":
     case "usage.reported":
     case "turn.settled":
+    case "worktree.attached":
+    case "checkpoint.recorded":
+    case "revert.requested":
+    case "publish.requested":
+    case "pr.updated":
       return event.threadId;
     case "activity.upserted":
       return event.activity.threadId;
