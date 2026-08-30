@@ -61,7 +61,7 @@
         <div class="sub">Focused agentic code editor &amp; orchestrator over Claude Code · Codex · OpenCode · Pi. Started 2026-08-30.</div>
         <div class="kpi">
           <div class="box"><b>P2</b><span>current phase</span></div>
-          <div class="box"><b>20</b><span>commits</span></div>
+          <div class="box"><b>22</b><span>commits</span></div>
           <div class="box"><b>171</b><span>tests passing</span></div>
         </div>
         <div class="howto">
@@ -132,7 +132,15 @@
 
       <details class="phase" open>
         <summary><span class="title"><h3>P2 — Git: worktrees, checkpoints, diff, PR</h3><small>vcs/ · refs/tide/checkpoints · Changes tab · revert · gh pr</small></span><span class="badge status wip">wip</span></summary>
-        <div class="body"><ul class="tasks"><li><span class="badge status todo">todo</span><span class="t">Worktree per thread · checkpoints around turns · turn diff · revert · commit+push+PR · Changes tab (Monaco diff)</span></li></ul></div>
+        <div class="body">
+          <ul class="tasks">
+            <li><span class="badge status done">done</span><span class="t">Contracts: <code>Turn.checkpoint</code>, <code>Thread.baseBranch/pr</code>, <code>thread.revert</code>/<code>thread.publish</code>, internal <code>worktree.attach</code>/<code>checkpoint.record</code>/<code>pr.update</code>, RPC <code>vcs.status|turnDiff|threadDiff|fileAt</code> — <code>cda50fb</code></span></li>
+            <li><span class="badge status wip">wip</span><span class="t">Server <code>vcs/</code>: git wrapper (snapshot incl. untracked via temp index), WorktreeManager (<code>~/.tide/worktrees</code>, <code>tide/&lt;slug&gt;</code> branches), CheckpointService (<code>refs/tide/checkpoints/…</code>), VcsReactor (before-checkpoint gates the provider turn), revert, publish via gh — Opus agent</span></li>
+            <li><span class="badge status wip">wip</span><span class="t">Web Workbench › Changes: turn selector, file list, Monaco diff (lazy chunk, unified/split ⌘⇧D), revert, commit / commit+push+PR, PR badges — Opus agent</span></li>
+            <li><span class="badge status todo">todo</span><span class="t">Orchestrator validation: two threads editing the same file on separate worktrees, revert a turn, PR button (gh present)</span></li>
+          </ul>
+          <p class="note">2026-08-31 — P2 contracts by the orchestrator; server vcs + web workbench fanned out.</p>
+        </div>
       </details>
 
       <details class="phase">
@@ -170,6 +178,7 @@
         <tr><td>P1</td><td>2026-08-31</td><td>feat(server): P1 decider rules, provider registry/sessions/reactor, providers.list, terminal escape hatch</td><td class="sha">a56a9c0</td></tr>
         <tr><td>P1</td><td>2026-08-31</td><td>feat(web,client): P1 thread stream — activities, cards, inbox, providers, open in terminal</td><td class="sha">2c79e6c</td></tr>
         <tr><td>P1</td><td>2026-08-31</td><td>feat(driver-claude): Claude Code driver over the Agent SDK</td><td class="sha">09fdaff</td></tr>
+        <tr><td>P2</td><td>2026-08-31</td><td>feat(contracts): P2 vocabulary — worktrees, checkpoints, revert, publish/PR, vcs RPC</td><td class="sha">cda50fb</td></tr>
       </table>
 
       <h2>Open questions &amp; follow-ups</h2>
