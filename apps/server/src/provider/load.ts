@@ -1,5 +1,6 @@
 import type { ProviderDriver } from "@tide/contracts";
 import { claudeDriver } from "@tide/driver-claude";
+import { piDriver } from "@tide/driver-pi";
 import type { ProviderConfigs } from "../config.ts";
 import type { DriverRegistry } from "./registry.ts";
 
@@ -15,6 +16,7 @@ type Log = (msg: string, data?: unknown) => void;
 export async function registerBundledDrivers(registry: DriverRegistry, providers: ProviderConfigs, log: Log): Promise<void> {
   const bundled: { driver: AnyDriver; config: Record<string, unknown> | undefined }[] = [
     { driver: claudeDriver as AnyDriver, config: providers.claude },
+    { driver: piDriver as AnyDriver, config: providers.pi },
   ];
   for (const { driver, config } of bundled) {
     try {

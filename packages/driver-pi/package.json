@@ -1,0 +1,20 @@
+{
+  "name": "@tide/driver-pi",
+  "version": "0.0.0",
+  "private": true,
+  "type": "module",
+  "exports": { ".": "./src/index.ts" },
+  "scripts": {
+    "typecheck": "tsc --noEmit -p tsconfig.json",
+    "test": "vitest run --passWithNoTests",
+    "build": "echo skip"
+  },
+  "dependencies": {
+    "@earendil-works/pi-coding-agent": "^0.84.0",
+    "@tide/contracts": "workspace:*",
+    "@tide/pi-extensions": "workspace:*"
+  },
+  "devDependencies": {
+    "@types/node": "^22.0.0"
+  }
+}

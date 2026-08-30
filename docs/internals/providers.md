@@ -41,6 +41,7 @@ OpenCode `plan` agent; Pi = system-prompt + `tide_propose_plan` tool.
 
 ## Pi — `pi --mode rpc` (0.78+)
 
-- NDJSON over stdio; commands `prompt|abort|steer|follow_up|compact|new_session|switch_session|set_model|set_thinking_level|get_state|get_messages|get_session_stats|get_available_models|extension_ui_response|...`; events `message_update` deltas, `agent_end`, `extension_ui_request`, `response {id}`.
+- NDJSON over stdio (pi 0.84): commands `prompt` (supports `images`), `abort`, `get_state`, `get_session_stats`, `get_available_models`, `extension_ui_response`, …; events `message_start|message_update|message_end` (deltas by `contentIndex`), `tool_execution_start|_end`, **`agent_settled` is the turn boundary** (not `agent_end`), `extension_ui_request` (confirm → approval card; `notify` = fire-and-forget channel the bridge uses for `TIDE_PLAN:`/`TIDE_USAGE:` lines), `response {id}`.
+- Tide loads one extension, `@tide/pi-extensions` `tide-bridge` (mode from `TIDE_RUNTIME_MODE`, plan mode from `TIDE_INTERACTION`, `tide_propose_plan` tool). Usage = `get_session_stats` deltas per turn. Escape hatch: `pi --session <file>`.
 - Extensions via `-e file.ts|js`; hooks `before_agent_start`, `tool_call` (return `{block, reason}`), `context`, `session_start`; `ctx.getContextUsage()`; `ctx.ui.confirm` → surfaces as `extension_ui_request`.
 - Auth/models are Pi's (`~/.pi/agent/{auth,models}.json`); local models via Ollama (`:11434/api/tags`) / LM Studio (`:1234/v1/models`).
