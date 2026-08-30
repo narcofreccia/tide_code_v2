@@ -5,7 +5,7 @@ import { openEventStore, type EventStore } from "../orchestration/store.ts";
 import { Git } from "../vcs/git.ts";
 import { createTempRepo, GIT_TEST_ENV, type TempRepo } from "../vcs/testing/tempRepo.ts";
 import { FileService } from "../workspace/files.ts";
-import { PtyManager } from "../workspace/pty.ts";
+import { PtyManager } from "../workspace/pty/index.ts";
 import { search } from "../workspace/search.ts";
 import { FsWatcher } from "../workspace/watcher.ts";
 import { RpcRouter, type RpcConnection } from "./router.ts";

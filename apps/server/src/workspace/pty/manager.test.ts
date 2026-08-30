@@ -3,7 +3,9 @@ import { tmpdir } from "node:os";
 import { join } from "node:path";
 import { afterEach, describe, expect, it } from "vitest";
 import type { PtyChunk } from "@tide/contracts";
-import { PtyManager } from "./pty.ts";
+import { isBunRuntime } from "./bunBackend.ts";
+import { PtyManager } from "./manager.ts";
+import type { PtyBackend, PtyHandle, PtySpawnSpec } from "./types.ts";
 
 const cleanups: (() => void | Promise<void>)[] = [];
 afterEach(async () => {
@@ -109,57 +111,60 @@ describe("PtyManager (node-pty)", () => {
   });
 });
 
-// ---- fake module: deterministic coverage of the bookkeeping ----
+// ---- fake backend: deterministic coverage of the bookkeeping ----
 
 interface FakeHandle {
+  spec: PtySpawnSpec;
   data(chunk: string): void;
-  exit(code: number): void;
+  exit(code: number, signal?: string): void;
   written: string[];
   resized: [number, number][];
   killed: number;
 }
 
-function fakeModule(): { load: () => Promise<never>; handles: FakeHandle[] } {
+/** A PtyBackend whose terminals are driven by the test rather than by a real process. */
+function fakeBackend(): { backend: PtyBackend; handles: FakeHandle[] } {
   const handles: FakeHandle[] = [];
-  const module = {
-    spawn() {
+  const backend: PtyBackend = {
+    name: "node-pty",
+    spawn(spec: PtySpawnSpec): PtyHandle {
       let onData: (d: string) => void = () => undefined;
-      let onExit: (e: { exitCode: number; signal?: number }) => void = () => undefined;
+      let onExit: (e: { code?: number; signal?: string }) => void = () => undefined;
       const handle: FakeHandle = {
+        spec,
         data: (chunk) => onData(chunk),
-        exit: (code) => onExit({ exitCode: code }),
+        exit: (code, signal) => onExit({ code, ...(signal !== undefined ? { signal } : {}) }),
         written: [],
         resized: [],
         killed: 0,
       };
       handles.push(handle);
       return {
-        pid: 1,
-        onData: (cb: (d: string) => void) => {
+        onData: (cb) => {
           onData = cb;
         },
-        onExit: (cb: (e: { exitCode: number; signal?: number }) => void) => {
+        onExit: (cb) => {
           onExit = cb;
         },
-        write: (data: string) => handle.written.push(data),
-        resize: (cols: number, rows: number) => handle.resized.push([cols, rows]),
+        write: (data) => handle.written.push(data),
+        resize: (cols, rows) => handle.resized.push([cols, rows]),
         kill: () => {
           handle.killed++;
-          onExit({ exitCode: 143 });
+          onExit({ code: 143, signal: "SIGTERM" });
         },
       };
     },
   };
-  return { load: (() => Promise.resolve(module)) as unknown as () => Promise<never>, handles };
+  return { backend, handles };
 }
 
 const ESC = "\x1b";
 const BEL = "\x07";
 
-describe("PtyManager bookkeeping", () => {
+describe("PtyManager bookkeeping (fake backend)", () => {
   it("uses the last OSC 0/2 title and falls back to the shell basename", async () => {
-    const fake = fakeModule();
-    const ptys = new PtyManager({ load: fake.load });
+    const fake = fakeBackend();
+    const ptys = new PtyManager({ backend: fake.backend });
     const id = await ptys.create("t", "/tmp", 80, 24, "/usr/local/bin/fish");
     expect(ptys.list("t")[0]?.title).toBe("fish");
     fake.handles[0]?.data(`${ESC}]0;first${BEL}${ESC}]2;second${BEL}rest`);
@@ -168,8 +173,8 @@ describe("PtyManager bookkeeping", () => {
   });
 
   it("keeps the scrollback under the ring size", async () => {
-    const fake = fakeModule();
-    const ptys = new PtyManager({ load: fake.load, scrollbackBytes: 32 });
+    const fake = fakeBackend();
+    const ptys = new PtyManager({ backend: fake.backend, scrollbackBytes: 32 });
     const id = await ptys.create("t", "/tmp", 80, 24, "/bin/sh");
     for (let i = 0; i < 10; i++) fake.handles[0]?.data("0123456789");
     const sink = new Sink();
@@ -179,8 +184,8 @@ describe("PtyManager bookkeeping", () => {
   });
 
   it("reaps a dead terminal after the grace period", async () => {
-    const fake = fakeModule();
-    const ptys = new PtyManager({ load: fake.load, reapAfterMs: 0 });
+    const fake = fakeBackend();
+    const ptys = new PtyManager({ backend: fake.backend, reapAfterMs: 0 });
     await ptys.create("t", "/tmp", 80, 24, "/bin/sh");
     fake.handles[0]?.exit(0);
     // a 0ms timer queued after the reaper fires after it, in registration order
@@ -189,8 +194,8 @@ describe("PtyManager bookkeeping", () => {
   });
 
   it("forwards writes and resizes and kills everything on close", async () => {
-    const fake = fakeModule();
-    const ptys = new PtyManager({ load: fake.load });
+    const fake = fakeBackend();
+    const ptys = new PtyManager({ backend: fake.backend });
     const id = await ptys.create("t", "/tmp", 80, 24, "/bin/sh");
     ptys.write(id, "ls\n");
     ptys.resize(id, 10.7, 20.2);
@@ -201,8 +206,39 @@ describe("PtyManager bookkeeping", () => {
     expect(ptys.list("t")).toEqual([]);
   });
 
+
+  it("passes the terminal env and geometry through to the backend", async () => {
+    const fake = fakeBackend();
+    const ptys = new PtyManager({ backend: fake.backend });
+    await ptys.create("th-env", "/tmp", 80, 24, "/bin/sh");
+    const spec = fake.handles[0]?.spec;
+    expect(spec?.cwd).toBe("/tmp");
+    expect(spec?.env["TERM"]).toBe("xterm-256color");
+    expect(spec?.env["COLORTERM"]).toBe("truecolor");
+    expect(spec?.env["TIDE_THREAD_ID"]).toBe("th-env");
+  });
+
+  it("reports a signal exit once, even if kill and exit both fire", async () => {
+    const fake = fakeBackend();
+    const ptys = new PtyManager({ backend: fake.backend });
+    const id = await ptys.create("t", "/tmp", 80, 24, "/bin/sh");
+    const sink = new Sink();
+    ptys.attach(id, sink.emit);
+    ptys.kill(id);
+    fake.handles[0]?.exit(0);
+    expect(sink.chunks.filter((c) => c.kind === "exit")).toEqual([{ kind: "exit", code: 143, signal: "SIGTERM" }]);
+  });
+});
+
+describe("pty backend selection", () => {
+  it("does not pick the Bun backend under Node", () => {
+    // vitest runs on Node, so `Bun` is undefined and node-pty is used; the Bun path is
+    // covered by the manual check in apps/server/scripts/check-bun-pty.ts
+    expect(isBunRuntime()).toBe(false);
+  });
+
   it("maps a broken native module to `unavailable`", async () => {
-    const ptys = new PtyManager({ load: () => Promise.reject(new Error("no prebuild")) as Promise<never> });
+    const ptys = new PtyManager({ backend: () => Promise.reject(new Error("no prebuild")) });
     await expect(ptys.create("t", "/tmp", 80, 24)).rejects.toMatchObject({
       code: "unavailable",
       message: "terminal support not built",

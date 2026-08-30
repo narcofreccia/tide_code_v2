@@ -1,7 +1,7 @@
 import type { Engine } from "../orchestration/engine.ts";
 import { threadCwd } from "../provider/sessions.ts";
 import { FileService } from "../workspace/files.ts";
-import { PtyManager } from "../workspace/pty.ts";
+import { PtyManager } from "../workspace/pty/index.ts";
 import { search as runSearch, type SearchOptions, type SearchResult } from "../workspace/search.ts";
 import { FsWatcher } from "../workspace/watcher.ts";
 import { RpcException, type RpcRouter } from "./router.ts";
