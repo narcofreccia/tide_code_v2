@@ -1,3 +1,4 @@
+import { THEME_EVENT } from "../../../state/settings.ts";
 import type * as Monaco from "monaco-editor";
 
 /** Mirrors `styles/tokens.css`; Monaco needs literal hex, so the palettes live here. */
@@ -71,8 +72,22 @@ export function defineThemes(monaco: typeof Monaco): void {
   monaco.editor.defineTheme(LIGHT_THEME, theme("vs", LIGHT));
 }
 
-/** The theme matching the OS colour scheme, kept in sync by `MonacoDiff`. */
+/** Explicit choice (Settings › Appearance) first, else the OS colour scheme. */
 export function preferredTheme(): string {
-  const light = typeof window !== "undefined" && window.matchMedia?.("(prefers-color-scheme: light)").matches;
-  return light ? LIGHT_THEME : DARK_THEME;
+  if (typeof window === "undefined") return DARK_THEME;
+  const explicit = document.documentElement.dataset.theme;
+  if (explicit === "light") return LIGHT_THEME;
+  if (explicit === "dark") return DARK_THEME;
+  return window.matchMedia?.("(prefers-color-scheme: light)").matches ? LIGHT_THEME : DARK_THEME;
+}
+
+/** Notifies on both the OS preference and the explicit setting changing. */
+export function subscribeTheme(onChange: () => void): () => void {
+  const query = window.matchMedia?.("(prefers-color-scheme: light)");
+  query?.addEventListener("change", onChange);
+  window.addEventListener(THEME_EVENT, onChange);
+  return () => {
+    query?.removeEventListener("change", onChange);
+    window.removeEventListener(THEME_EVENT, onChange);
+  };
 }

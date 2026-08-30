@@ -33,6 +33,7 @@ export interface NewThreadOptions {
   parentThreadId?: string;
   title?: string;
   model?: string;
+  mode?: RuntimeMode;
   useWorktree?: boolean;
 }
 
@@ -49,6 +50,7 @@ export async function createThread(
     title: options.title ?? "New thread",
     ...(options.parentThreadId === undefined ? {} : { parentThreadId: options.parentThreadId }),
     ...(options.model === undefined ? {} : { model: options.model }),
+    ...(options.mode === undefined ? {} : { mode: options.mode }),
     ...(options.useWorktree === undefined ? {} : { useWorktree: options.useWorktree }),
   });
   selectCreatedThread(result);

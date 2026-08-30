@@ -12,7 +12,7 @@
   display: flex;
   align-items: center;
   gap: var(--sp-2);
-  height: 24px;
+  height: var(--row-h);
   padding: 0 var(--sp-2);
   border-bottom: 1px solid var(--border);
 }
@@ -42,7 +42,7 @@
   align-items: center;
   gap: var(--sp-1);
   width: 100%;
-  height: 24px;
+  height: var(--row-h);
   padding-right: var(--sp-2);
   background: transparent;
   border: 0;

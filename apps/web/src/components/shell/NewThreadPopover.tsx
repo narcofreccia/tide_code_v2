@@ -28,6 +28,7 @@ export function NewThreadPopover({
               if (!projectId) return;
               void createThread(projectId, draft.provider, {
                 ...(draft.model === "" ? {} : { model: draft.model }),
+                ...(draft.mode === undefined ? {} : { mode: draft.mode }),
                 useWorktree: draft.useWorktree,
               }).catch(() => undefined);
             }}

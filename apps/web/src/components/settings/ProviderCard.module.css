@@ -1,0 +1,86 @@
+.card {
+  display: flex;
+  flex-direction: column;
+  gap: var(--sp-2);
+  padding: var(--sp-3);
+  border: 1px solid var(--border);
+  border-radius: var(--radius);
+  background: var(--surface);
+}
+
+.head {
+  display: flex;
+  align-items: center;
+  justify-content: space-between;
+}
+
+.name {
+  margin: 0;
+  font-size: 13px;
+}
+
+.status {
+  margin: 0;
+  color: var(--muted);
+}
+
+.status.ok > span {
+  color: var(--ok);
+}
+
+.status.warn > span {
+  color: var(--warn);
+}
+
+.status.off > span {
+  color: var(--muted);
+}
+
+.command {
+  margin-left: var(--sp-2);
+  font-family: var(--font-mono);
+  color: var(--muted);
+}
+
+.caps {
+  display: flex;
+  flex-wrap: wrap;
+  gap: var(--sp-1);
+  list-style: none;
+  margin: 0;
+  padding: 0;
+}
+
+.capOff {
+  opacity: 0.35;
+}
+
+.models > summary {
+  cursor: pointer;
+  color: var(--muted);
+}
+
+.modelList {
+  list-style: none;
+  margin: 0 0 var(--sp-2);
+  padding: 0;
+}
+
+.modelList > li {
+  display: flex;
+  align-items: center;
+  gap: var(--sp-2);
+  height: var(--activity-h);
+}
+
+.defaults {
+  display: flex;
+  flex-wrap: wrap;
+  gap: var(--sp-3);
+}
+
+.field {
+  display: flex;
+  align-items: center;
+  gap: var(--sp-2);
+}

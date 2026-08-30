@@ -14,7 +14,7 @@ export function Rail() {
   const toggleRail = useUi((s) => s.toggleRail);
   const view = useUi((s) => s.view);
   const showMission = useUi((s) => s.showMission);
-  const showSettings = useUi((s) => s.showSettings);
+  const toggleSettings = useUi((s) => s.toggleSettings);
   const newProjectOpen = useUi((s) => s.newProjectOpen);
   const setNewProjectOpen = useUi((s) => s.setNewProjectOpen);
 
@@ -28,7 +28,7 @@ export function Rail() {
           ◫
         </Button>
         {inboxCount > 0 ? <Pill tone="accent">{inboxCount}</Pill> : null}
-        <Button variant="quiet" onClick={showSettings} title="Settings" aria-label="Settings">
+        <Button variant="quiet" onClick={toggleSettings} title="Settings" aria-label="Settings">
           ⚙
         </Button>
       </nav>
@@ -62,7 +62,7 @@ export function Rail() {
       <div className={styles.foot}>
         <Button
           variant="quiet"
-          onClick={showSettings}
+          onClick={toggleSettings}
           className={view === "settings" ? styles.activeFoot : undefined}
         >
           ⚙ Settings

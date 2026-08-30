@@ -16,7 +16,7 @@
   left: 50%;
   bottom: var(--sp-3);
   transform: translateX(-50%);
-  height: 24px;
+  height: var(--activity-h);
   padding: 0 var(--sp-3);
   border: 1px solid var(--accent);
   border-radius: 999px;

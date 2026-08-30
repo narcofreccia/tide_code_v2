@@ -1,6 +1,7 @@
 import { useState } from "react";
-import type { ProviderKind } from "@tide/contracts";
+import type { ProviderKind, ProviderStatusDto, RuntimeMode } from "@tide/contracts";
 import { defaultModelOf, providerStatus, unavailableReason, useProviders } from "../../state/providers.ts";
+import { providerDefault, useSettings } from "../../state/settings.ts";
 import { PROVIDERS } from "../../lib/vocab.ts";
 import { Select, type SelectOption } from "../ui/Select.tsx";
 import styles from "./ProviderPicker.module.css";
@@ -9,12 +10,32 @@ export interface ThreadDraft {
   provider: ProviderKind;
   /** empty string means "let the harness choose" */
   model: string;
+  /** absent means "the harness default mode" */
+  mode?: RuntimeMode;
   useWorktree: boolean;
 }
 
-/** Draft state for the plan and new-thread pickers; switching harness re-picks its default model. */
+/**
+ * The per-provider defaults from Settings › Providers win over the harness's own
+ * default model; an explicit `model` argument wins over both.
+ */
+export function draftForProvider(
+  provider: ProviderKind,
+  providers: ProviderStatusDto[],
+  model = "",
+): Omit<ThreadDraft, "useWorktree"> {
+  const saved = providerDefault(provider);
+  const chosen = model || saved.model || defaultModelOf(providers, provider) || "";
+  return { provider, model: chosen, ...(saved.mode === undefined ? {} : { mode: saved.mode }) };
+}
+
+/** Draft state for the plan and new-thread pickers; switching harness re-picks its defaults. */
 export function useThreadDraft(provider: ProviderKind, model = ""): [ThreadDraft, (patch: Partial<ThreadDraft>) => void] {
-  const [draft, setDraft] = useState<ThreadDraft>({ provider, model, useWorktree: true });
+  const providers = useProviders();
+  const [draft, setDraft] = useState<ThreadDraft>(() => ({
+    ...draftForProvider(provider, providers, model),
+    useWorktree: useSettings.getState().worktreeByDefault,
+  }));
   return [draft, (patch) => setDraft((prev) => ({ ...prev, ...patch }))];
 }
 
@@ -52,7 +73,7 @@ export function ProviderPicker({
           label="Thread provider"
           value={draft.provider}
           options={providerOptions}
-          onSelect={(provider) => onChange({ provider, model: defaultModelOf(providers, provider) ?? "" })}
+          onSelect={(provider) => onChange(draftForProvider(provider, providers))}
         />
       </label>
       <label className={styles.field}>

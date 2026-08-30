@@ -5,6 +5,7 @@ import { WebLinksAddon } from "@xterm/addon-web-links";
 import "@xterm/xterm/css/xterm.css";
 import { stream } from "../../../state/model.ts";
 import { markExited, resizePty, writePty } from "../../../state/terminals.ts";
+import { subscribeTheme } from "../monaco/themes.ts";
 import styles from "./TerminalDrawer.module.css";
 
 const RESIZE_DEBOUNCE_MS = 120;
@@ -74,6 +75,11 @@ export function TerminalView({ threadId, ptyId }: { threadId: string; ptyId: str
         resizePty(ptyId, term.cols, term.rows);
       }, RESIZE_DEBOUNCE_MS);
     };
+    // the palette comes from the tokens, so a theme change means re-reading them
+    const unsubscribeTheme = subscribeTheme(() => {
+      term.options.theme = themeFromTokens();
+    });
+
     const observer = typeof ResizeObserver === "undefined" ? undefined : new ResizeObserver(onResize);
     observer?.observe(element);
     window.addEventListener("resize", onResize);
@@ -81,6 +87,7 @@ export function TerminalView({ threadId, ptyId }: { threadId: string; ptyId: str
     return () => {
       if (timer !== undefined) clearTimeout(timer);
       window.removeEventListener("resize", onResize);
+      unsubscribeTheme();
       observer?.disconnect();
       input.dispose();
       control.cancel();

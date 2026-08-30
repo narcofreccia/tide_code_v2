@@ -3,6 +3,16 @@ import { persist } from "zustand/middleware";
 
 export type FocusMode = "thread" | "split" | "workbench";
 export type View = "mission" | "thread" | "settings";
+export type SettingsSection = "providers" | "git" | "appearance" | "keyboard" | "remote" | "about";
+
+export const SETTINGS_SECTIONS: SettingsSection[] = [
+  "providers",
+  "git",
+  "appearance",
+  "keyboard",
+  "remote",
+  "about",
+];
 
 interface UiState {
   view: View;
@@ -16,10 +26,17 @@ interface UiState {
   /** Changes tab: side-by-side diff when true, unified when false (⌘⇧D) */
   diffSideBySide: boolean;
   fileListCollapsed: boolean;
+  /** last Settings section, persisted */
+  settingsSection: SettingsSection;
+  /** the view Settings was opened from, so Esc goes back */
+  settingsReturnTo: View;
   selectProject: (projectId: string | null) => void;
   selectThread: (threadId: string | null) => void;
   showMission: () => void;
   showSettings: () => void;
+  toggleSettings: () => void;
+  closeSettings: () => void;
+  setSettingsSection: (section: SettingsSection) => void;
   setNewProjectOpen: (open: boolean) => void;
   setFocusMode: (mode: FocusMode) => void;
   toggleRail: () => void;
@@ -43,11 +60,20 @@ export const useUi = create<UiState>()(
       splitRatio: 0.45,
       diffSideBySide: true,
       fileListCollapsed: false,
+      settingsSection: "providers",
+      settingsReturnTo: "mission",
       selectProject: (selectedProjectId) => set({ selectedProjectId }),
       selectThread: (selectedThreadId) =>
         set(selectedThreadId ? { selectedThreadId, view: "thread" } : { selectedThreadId: null, view: "mission" }),
       showMission: () => set({ view: "mission" }),
-      showSettings: () => set({ view: "settings" }),
+      showSettings: () =>
+        set((s) => (s.view === "settings" ? s : { view: "settings", settingsReturnTo: s.view })),
+      toggleSettings: () =>
+        set((s) =>
+          s.view === "settings" ? { view: s.settingsReturnTo } : { view: "settings", settingsReturnTo: s.view },
+        ),
+      closeSettings: () => set((s) => (s.view === "settings" ? { view: s.settingsReturnTo } : s)),
+      setSettingsSection: (settingsSection) => set({ settingsSection }),
       setNewProjectOpen: (newProjectOpen) => set({ newProjectOpen }),
       setFocusMode: (focusMode) => set({ focusMode }),
       toggleRail: () => set((s) => ({ railCollapsed: !s.railCollapsed })),
@@ -63,6 +89,7 @@ export const useUi = create<UiState>()(
         splitRatio: s.splitRatio,
         diffSideBySide: s.diffSideBySide,
         fileListCollapsed: s.fileListCollapsed,
+        settingsSection: s.settingsSection,
       }),
     },
   ),

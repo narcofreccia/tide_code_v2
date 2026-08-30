@@ -29,6 +29,7 @@ import { resetDocs } from "./state/docs.ts";
 import { resetWorkbench } from "./state/workbench.ts";
 import { resetTerminals } from "./state/terminals.ts";
 import { resetSearch } from "./state/search.ts";
+import { resetSettings } from "./state/settings.ts";
 
 export interface FakeStore {
   store: ModelStore;
@@ -61,6 +62,7 @@ export function resetUi(): void {
   resetWorkbench();
   resetTerminals();
   resetSearch();
+  resetSettings();
   setRpcCaller(undefined);
   setRpcStreamer(undefined);
   window.localStorage.clear();
@@ -74,6 +76,8 @@ export function resetUi(): void {
     splitRatio: 0.45,
     diffSideBySide: true,
     fileListCollapsed: false,
+    settingsSection: "providers",
+    settingsReturnTo: "mission",
   });
 }
 
