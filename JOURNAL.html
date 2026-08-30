@@ -61,8 +61,8 @@
         <div class="sub">Focused agentic code editor &amp; orchestrator over Claude Code · Codex · OpenCode · Pi. Started 2026-08-30.</div>
         <div class="kpi">
           <div class="box"><b>P1</b><span>current phase</span></div>
-          <div class="box"><b>14</b><span>commits</span></div>
-          <div class="box"><b>113</b><span>tests passing</span></div>
+          <div class="box"><b>17</b><span>commits</span></div>
+          <div class="box"><b>147</b><span>tests passing</span></div>
         </div>
         <div class="howto">
           How to use: read at session start; flip <code>class="status done|wip|todo|blocked"</code> + label as work lands; add dated notes under the phase;
@@ -120,7 +120,7 @@
             <li><span class="badge status done">done</span><span class="t">Contracts: Activity kinds, approval/user-input round-trips, ProposedPlan, plan progress, usage, attention derivation, ClientCommand vs InternalCommand, driver SPI, <code>providers.list</code>, <code>thread.terminalCommand</code> — <code>39c5091</code></span></li>
             <li><span class="badge status wip">wip</span><span class="t"><code>packages/driver-claude</code> over <code>@anthropic-ai/claude-agent-sdk</code> (canUseTool, permissionMode, resume, includePartialMessages, parent_tool_use_id)</span></li>
             <li><span class="badge status done">done</span><span class="t">Server: ProviderReactor, IngestionWorker, SessionDirectory, approval/user-input round-trips, interrupt</span></li>
-            <li><span class="badge status wip">wip</span><span class="t">Web: Stream (messages + activity rows/groups), ApprovalCard, UserInputCard, PlanCard, PlanProgress, Composer with pills</span></li>
+            <li><span class="badge status done">done</span><span class="t">Web: Stream (messages + activity rows/groups), ApprovalCard, UserInputCard, PlanCard, PlanProgress, Composer with pills</span></li>
             <li><span class="badge status todo">todo</span><span class="t">Recorded NDJSON fixtures + live smoke behind <code>TIDE_LIVE=1</code></span></li>
             <li><span class="badge status todo">todo</span><span class="t">Orchestrator validation: end-to-end turn on Claude Max from the web UI (approval card, plan card → implement in new thread, open in terminal) → commit</span></li>
           </ul>
@@ -166,6 +166,7 @@
         <tr><td>P1</td><td>2026-08-31</td><td>fix(client): dispatch accepts ClientCommand only</td><td class="sha">6adc30f</td></tr>
         <tr><td>P1</td><td>2026-08-31</td><td>docs(providers): codex 0.147 protocol surface from generated bindings</td><td class="sha">46d99f6</td></tr>
         <tr><td>P1</td><td>2026-08-31</td><td>feat(server): P1 decider rules, provider registry/sessions/reactor, providers.list, terminal escape hatch</td><td class="sha">a56a9c0</td></tr>
+        <tr><td>P1</td><td>2026-08-31</td><td>feat(web,client): P1 thread stream — activities, cards, inbox, providers, open in terminal</td><td class="sha">2c79e6c</td></tr>
       </table>
 
       <h2>Open questions &amp; follow-ups</h2>
