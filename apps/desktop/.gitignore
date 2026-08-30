@@ -1,0 +1,4 @@
+src-tauri/target/
+src-tauri/gen/schemas/
+# compiled server sidecars: built by scripts/build-server-sidecar.sh
+src-tauri/binaries/

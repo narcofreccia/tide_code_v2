@@ -1,0 +1,60 @@
+<!doctype html>
+<html lang="en">
+  <head>
+    <meta charset="utf-8" />
+    <title>Tide</title>
+    <style>
+      :root {
+        color-scheme: dark;
+        --bg: #0e1013;
+        --text: #e6e9ef;
+        --muted: #8b93a3;
+        --accent: #5b9dff;
+        --danger: #ef6a6a;
+      }
+      @media (prefers-color-scheme: light) {
+        :root { color-scheme: light; --bg: #f6f7f9; --text: #131722; --muted: #6a7285; --accent: #2f6fe0; --danger: #c93b3b; }
+      }
+      html, body { height: 100%; margin: 0; }
+      body {
+        background: var(--bg);
+        color: var(--text);
+        font: 13px/1.5 ui-sans-serif, -apple-system, BlinkMacSystemFont, "Segoe UI", Roboto, sans-serif;
+        display: flex; flex-direction: column; align-items: center; justify-content: center; gap: 12px;
+        -webkit-user-select: none; user-select: none;
+      }
+      /* the whole surface is draggable: the window uses an overlay titlebar */
+      body::before { content: ""; position: fixed; inset: 0 0 auto 0; height: 36px; -webkit-app-region: drag; }
+      .mark { font-size: 20px; font-weight: 600; letter-spacing: 0.02em; }
+      .dots { display: flex; gap: 5px; }
+      .dots i { width: 5px; height: 5px; border-radius: 50%; background: var(--accent); opacity: 0.25; animation: p 1.2s infinite ease-in-out; }
+      .dots i:nth-child(2) { animation-delay: 0.15s; }
+      .dots i:nth-child(3) { animation-delay: 0.3s; }
+      @keyframes p { 0%, 80%, 100% { opacity: 0.25; } 40% { opacity: 1; } }
+      #msg { color: var(--muted); font-family: ui-monospace, SFMono-Regular, Menlo, monospace; font-size: 12px; text-align: center; max-width: 70ch; padding: 0 24px; }
+      body[data-state="failed"] .dots { display: none; }
+      body[data-state="failed"] #msg { color: var(--danger); white-space: pre-wrap; }
+    </style>
+  </head>
+  <body data-state="starting">
+    <div class="mark">Tide</div>
+    <div class="dots"><i></i><i></i><i></i></div>
+    <div id="msg">starting the local server…</div>
+    <script>
+      // Desktop-only page. The shell pushes status straight into this hook (see
+      // server_supervisor.rs); the `tide://server-status` event is used when the
+      // global Tauri API happens to be available.
+      window.__tideStatus = function (state, message) {
+        document.body.dataset.state = state;
+        document.getElementById("msg").textContent = message || state;
+      };
+      if (window.__TAURI__ && window.__TAURI__.event) {
+        window.__TAURI__.event
+          .listen("tide://server-status", function (e) {
+            window.__tideStatus(e.payload.state, e.payload.message);
+          })
+          .catch(function () {});
+      }
+    </script>
+  </body>
+</html>

@@ -1,0 +1,17 @@
+{
+  "name": "@tide/desktop",
+  "version": "0.0.0",
+  "private": true,
+  "type": "module",
+  "scripts": {
+    "tauri": "tauri",
+    "dev": "tauri dev",
+    "build": "echo \"use pnpm desktop:build to bundle the app\"",
+    "typecheck": "echo \"no TS sources\"",
+    "test": "echo \"no tests\"",
+    "bundle": "tauri build"
+  },
+  "devDependencies": {
+    "@tauri-apps/cli": "^2.9.0"
+  }
+}

@@ -1,38 +1,26 @@
 import type { ProviderDriver } from "@tide/contracts";
+import { claudeDriver } from "@tide/driver-claude";
 import type { ProviderConfigs } from "../config.ts";
 import type { DriverRegistry } from "./registry.ts";
 
 type AnyDriver = ProviderDriver<Record<string, unknown>>;
 type Log = (msg: string, data?: unknown) => void;
 
-function isProviderDriver(value: unknown): value is AnyDriver {
-  if (typeof value !== "object" || value === null) return false;
-  const v = value as Record<string, unknown>;
-  return typeof v["kind"] === "string" && typeof v["defaultConfig"] === "function" && typeof v["create"] === "function";
-}
-
 /**
- * The driver packages are optional at build time: the specifier is kept off the
- * static graph so the server boots (without that harness) when one is missing.
+ * Driver packages are workspace dependencies and are imported statically so the
+ * bun-compiled sidecar bundles them (a runtime `import(<string>)` is invisible to
+ * the bundler and fails inside the binary). A driver that throws while registering
+ * is logged and skipped; the server still boots without that harness.
  */
-async function importDriver(specifier: string, exportName: string, log: Log): Promise<AnyDriver | undefined> {
-  const dynamic: string = specifier;
-  try {
-    const mod: unknown = await import(dynamic);
-    const candidate = (mod as Record<string, unknown>)[exportName];
-    if (!isProviderDriver(candidate)) {
-      log(`[provider] ${specifier} does not export a ${exportName} ProviderDriver`);
-      return undefined;
-    }
-    return candidate;
-  } catch (err) {
-    log(`[provider] ${specifier} unavailable`, err instanceof Error ? err.message : err);
-    return undefined;
-  }
-}
-
-/** Registers every driver package that resolves, with its `providers.<kind>` config. */
 export async function registerBundledDrivers(registry: DriverRegistry, providers: ProviderConfigs, log: Log): Promise<void> {
-  const claude = await importDriver("@tide/driver-claude", "claudeDriver", log);
-  if (claude) registry.register(claude, providers.claude);
+  const bundled: { driver: AnyDriver; config: Record<string, unknown> | undefined }[] = [
+    { driver: claudeDriver as AnyDriver, config: providers.claude },
+  ];
+  for (const { driver, config } of bundled) {
+    try {
+      registry.register(driver, config);
+    } catch (err) {
+      log(`[provider] failed to register ${driver.kind}`, err instanceof Error ? err.message : err);
+    }
+  }
 }

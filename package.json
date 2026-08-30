@@ -11,10 +11,18 @@
     "dev:web": "pnpm --filter @tide/web dev",
     "build": "pnpm -r build",
     "typecheck": "pnpm -r typecheck",
-    "test": "pnpm -r test"
+    "test": "pnpm -r test",
+    "desktop:dev": "pnpm --filter @tide/desktop tauri dev",
+    "desktop:build": "pnpm --filter @tide/desktop tauri build",
+    "desktop:sidecar": "./scripts/build-server-sidecar.sh"
   },
   "devDependencies": {
     "typescript": "^5.9.0",
     "vitest": "^4.1.0"
+  },
+  "pnpm": {
+    "onlyBuiltDependencies": [
+      "node-pty"
+    ]
   }
 }
