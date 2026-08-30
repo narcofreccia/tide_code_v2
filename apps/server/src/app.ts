@@ -47,7 +47,7 @@ export interface App {
  */
 export async function createApp(options: AppOptions): Promise<App> {
   const { config } = options;
-  const log = options.log ?? ((msg: string, data?: unknown) => console.error(msg, data));
+  const log = options.log ?? ((msg: string, data?: unknown) => (data === undefined ? console.error(msg) : console.error(msg, data)));
   const store = options.store ?? (await openEventStore(config.dbPath));
 
   // The env id lives in the log too, so a copied database keeps its identity.

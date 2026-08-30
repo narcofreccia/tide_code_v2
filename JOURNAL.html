@@ -60,9 +60,9 @@
         <h1>Tide v2 — Project Journal</h1>
         <div class="sub">Focused agentic code editor &amp; orchestrator over Claude Code · Codex · OpenCode · Pi. Started 2026-08-30.</div>
         <div class="kpi">
-          <div class="box"><b>P3</b><span>current phase</span></div>
-          <div class="box"><b>34</b><span>commits</span></div>
-          <div class="box"><b>305</b><span>tests passing</span></div>
+          <div class="box"><b>P4</b><span>current phase</span></div>
+          <div class="box"><b>38</b><span>commits</span></div>
+          <div class="box"><b>369</b><span>tests passing</span></div>
         </div>
         <div class="howto">
           How to use: read at session start; flip <code>class="status done|wip|todo|blocked"</code> + label as work lands; add dated notes under the phase;
@@ -144,25 +144,34 @@
         </div>
       </details>
 
-      <details class="phase" open>
-        <summary><span class="title"><h3>P3 — Editor, terminal, files + Tauri shell</h3><small>Monaco · xterm · fs/pty RPC · server_supervisor.rs · sidecar bundling</small></span><span class="badge status wip">wip</span></summary>
+      <details class="phase">
+        <summary><span class="title"><h3>P3 — Editor, terminal, files + Tauri shell</h3><small>Monaco · xterm · fs/pty RPC · server_supervisor.rs · sidecar bundling</small></span><span class="badge status done">done</span></summary>
         <div class="body">
           <ul class="tasks">
             <li><span class="badge status done">done</span><span class="t">Contracts: <code>fs.list|read|write|create|rename|delete|watch|search</code>, <code>pty.create|attach|write|resize|kill|list</code> — <code>2067cce</code></span></li>
             <li><span class="badge status done">done</span><span class="t">Server <code>workspace/</code>: path guard, FileService (atomic write + ifMtime), FsWatcher (ref-counted, gitignore-aware), search (rg → node fallback), PtyManager (node-pty, scrollback) — Opus agent</span></li>
-            <li><span class="badge status wip">wip</span><span class="t">Web: workbench tabs, file tree, Monaco file editor (⌘S, conflict banner, external reload), ⌘P quick-open, ⌘⇧F search, xterm terminal drawer, @file mentions — Opus agent</span></li>
+            <li><span class="badge status done">done</span><span class="t">Web: workbench tabs, file tree, Monaco file editor (⌘S, conflict banner, external reload), ⌘P quick-open, ⌘⇧F search, xterm terminal drawer, @file mentions — Opus agent</span></li>
             <li><span class="badge status done">done</span><span class="t">Desktop: Tauri v2 shell with <code>server_supervisor.rs</code> (spawn sidecar / dev node, health poll, token handoff via <code>?token&amp;server</code>), loading page, bun-compiled sidecar script — Opus agent</span></li>
-            <li><span class="badge status wip">wip</span><span class="t">Server: Bun-native PTY backend (<code>Bun.spawn({terminal})</code>, Bun ≥1.3) so the compiled sidecar has terminals without node-pty — Opus agent follow-up</span></li>
-            <li><span class="badge status todo">todo</span><span class="t">Orchestrator validation: edit + save in a worktree → terminal <code>git status</code> shows it → agent sees it; desktop window boots the server</span></li>
+            <li><span class="badge status done">done</span><span class="t">Server: Bun-native PTY backend (<code>Bun.spawn({terminal})</code>, Bun ≥1.3) so the compiled sidecar has terminals without node-pty — Opus agent follow-up</span></li>
+            <li><span class="badge status done">done</span><span class="t">Orchestrator validation (live): <code>fs.write</code> in a worktree → <code>fs.watch</code> emitted <code>created</code> → stale <code>ifMtime</code> → <code>conflict</code> → real PTY <code>git status --short</code> printed <code>?? hello.txt</code> → <code>fs.search</code> found it → Claude turn reported the untracked file (6.3s). Desktop window boots the server (verified by the desktop agent via lsof: webview WS connected).</span></li>
+            <li><span class="badge status todo">todo</span><span class="t">Andrea: <code>pnpm desktop:dev</code> walkthrough — open a project, thread on a worktree, edit + save in the editor, terminal, Changes tab; note UI feedback here</span></li>
           </ul>
           <p class="note">2026-08-31 — P3 contracts by the orchestrator (RPC-only, no new events); three agents fanned out on disjoint dirs.</p>
           <p class="note">2026-08-31 — Desktop shell landed (<code>8417e55</code>): 501 LOC Rust, window boots the server (WebSocket verified connected), unsigned <code>Tide.app</code> 66 MB / dmg 27 MB. Findings: bun compile cannot embed node-pty (externalised; terminal must degrade or ship a prebuilt <code>.node</code> resource); drivers must be imported statically for the bundle (fixed — sidecar now reports <code>providers: claude</code>); production WS auth needs the ticket path in the web bootstrap (handed to the web agent).</p>
         </div>
       </details>
 
-      <details class="phase">
-        <summary><span class="title"><h3>P4 — Codex, OpenCode, Pi drivers</h3><small>app-server generate-ts · opencode SDK · pi rpc + trimmed extensions · provider settings</small></span><span class="badge status todo">todo</span></summary>
-        <div class="body"><ul class="tasks"><li><span class="badge status todo">todo</span><span class="t">Three drivers + status/model/login UI · plan on one provider → implement on another</span></li></ul></div>
+      <details class="phase" open>
+        <summary><span class="title"><h3>P4 — Codex, OpenCode, Pi drivers</h3><small>app-server generate-ts · opencode SDK · pi rpc + trimmed extensions · provider settings</small></span><span class="badge status wip">wip</span></summary>
+        <div class="body">
+          <ul class="tasks">
+            <li><span class="badge status wip">wip</span><span class="t"><code>packages/driver-codex</code> — app-server JSON-RPC over stdio, generated bindings, approvals/user-input, <code>item/plan/delta</code> → ProposedPlan, collab children — Opus agent</span></li>
+            <li><span class="badge status wip">wip</span><span class="t"><code>packages/driver-opencode</code> — managed <code>opencode serve</code> + SDK, SSE events, permissions, plan agent — Opus agent</span></li>
+            <li><span class="badge status wip">wip</span><span class="t"><code>packages/driver-pi</code> + <code>packages/pi-extensions/tide-bridge.ts</code> — <code>pi --mode rpc</code>, approvals via extension UI requests, usage snapshot, plan tool, local models — Opus agent</span></li>
+            <li><span class="badge status todo">todo</span><span class="t">Server registration of the three drivers + provider config keys; web provider settings polish</span></li>
+            <li><span class="badge status todo">todo</span><span class="t">Orchestrator validation: same prompt on 4 providers in 4 threads; plan on Claude → implement on Codex</span></li>
+          </ul>
+        </div>
       </details>
 
       <details class="phase">
@@ -195,6 +204,8 @@
         <tr><td>P3</td><td>2026-08-31</td><td>feat(contracts): P3 fs + pty RPC methods</td><td class="sha">2067cce</td></tr>
         <tr><td>P3</td><td>2026-08-31</td><td>feat(desktop): Tauri v2 shell with server supervisor + bun-compiled sidecar</td><td class="sha">8417e55</td></tr>
         <tr><td>P3</td><td>2026-08-31</td><td>feat(server): workspace — files, watcher, search, pty manager, 13 fs/pty RPC methods</td><td class="sha">62b632b</td></tr>
+        <tr><td>P3</td><td>2026-08-31</td><td>feat(web): editor tabs, file tree, quick-open, search, terminal drawer, @mentions, ticket auth</td><td class="sha">58155d3</td></tr>
+        <tr><td>P3</td><td>2026-08-31</td><td>feat(server): pty backends — Bun.spawn terminal under Bun, node-pty under Node</td><td class="sha">c4853ca</td></tr>
         <tr><td>P2</td><td>2026-08-31</td><td>feat(server): vcs — git wrapper, worktrees, checkpoints, VcsReactor, revert, publish, vcs RPC</td><td class="sha">2f0c591</td></tr>
       </table>
 

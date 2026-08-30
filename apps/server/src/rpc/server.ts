@@ -40,7 +40,7 @@ export async function startServer(deps: ServerDeps): Promise<ServerHandle> {
   const tickets = new TicketIssuer();
 
   const registry =
-    deps.registry ?? new DriverRegistry({ env: { dataDir: config.dataDir, log: (msg, data) => console.error(msg, data) } });
+    deps.registry ?? new DriverRegistry({ env: { dataDir: config.dataDir, log: (msg, data) => (data === undefined ? console.error(msg) : console.error(msg, data)) } });
 
   const router = new RpcRouter();
   registerHandlers(router, {

@@ -58,7 +58,7 @@ export class VcsReactor {
     this.#git = options.git ?? ((cwd) => new Git(cwd));
     this.#now = options.now ?? (() => Date.now());
     this.#newId = options.newId ?? (() => defaultNewId());
-    this.#log = options.log ?? ((msg, data) => console.error(msg, data));
+    this.#log = options.log ?? ((msg, data) => (data === undefined ? console.error(msg) : console.error(msg, data)));
   }
 
   start(): void {
