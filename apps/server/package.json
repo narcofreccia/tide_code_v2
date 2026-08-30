@@ -3,7 +3,9 @@
   "version": "0.0.0",
   "private": true,
   "type": "module",
-  "bin": { "tide-server": "./src/bin.ts" },
+  "bin": {
+    "tide-server": "./src/bin.ts"
+  },
   "scripts": {
     "dev": "node --watch --experimental-strip-types --no-warnings=ExperimentalWarning src/bin.ts --dev",
     "start": "node --experimental-strip-types --no-warnings=ExperimentalWarning src/bin.ts",
@@ -14,8 +16,12 @@
   "dependencies": {
     "@tide/contracts": "workspace:*",
     "@tide/driver-claude": "workspace:*",
+    "node-pty": "^1.1.0",
     "typebox": "^1.3.0",
     "ws": "^8.21.0"
   },
-  "devDependencies": { "@types/node": "^22.0.0", "@types/ws": "^8.18.0" }
+  "devDependencies": {
+    "@types/node": "^22.0.0",
+    "@types/ws": "^8.18.0"
+  }
 }

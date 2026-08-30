@@ -1,10 +1,10 @@
-import { isAbsolute, relative, resolve } from "node:path";
 import type { Project, Thread, Turn } from "@tide/contracts";
 import type { Engine } from "../orchestration/engine.ts";
 import { threadCwd } from "../provider/sessions.ts";
 import type { CheckpointService } from "../vcs/checkpoints.ts";
 import { Git, WORKTREE } from "../vcs/git.ts";
 import { Gh, type GhLike } from "../vcs/gh.ts";
+import { safeRelativePath } from "../workspace/paths.ts";
 import { RpcException, type RpcRouter } from "./router.ts";
 
 export interface VcsHandlerDeps {
@@ -21,14 +21,8 @@ interface ThreadContext {
   turns: Turn[];
 }
 
-/** Rejects any path that escapes the thread's cwd; returns the repo-relative path. */
-export function safeRelativePath(cwd: string, input: string): string {
-  const rel = relative(cwd, resolve(cwd, input));
-  if (rel === "" || rel.startsWith("..") || isAbsolute(rel)) {
-    throw new RpcException("invalid-params", `path ${input} escapes the thread's working directory`);
-  }
-  return rel;
-}
+/** Re-exported for the vcs handlers and their tests; the implementation is shared. */
+export { safeRelativePath };
 
 export function registerVcsHandlers(router: RpcRouter, deps: VcsHandlerDeps): void {
   const gh = deps.gh ?? new Gh();

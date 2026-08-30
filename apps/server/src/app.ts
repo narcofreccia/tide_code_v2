@@ -6,6 +6,7 @@ import { ProviderReactor } from "./provider/reactor.ts";
 import { DriverRegistry } from "./provider/registry.ts";
 import { SessionDirectory } from "./provider/sessions.ts";
 import { startServer, type ServerHandle } from "./rpc/server.ts";
+import { createWorkspaceServices, type WorkspaceServices } from "./rpc/workspace.ts";
 import { CheckpointService } from "./vcs/checkpoints.ts";
 import type { GhLike } from "./vcs/gh.ts";
 import { VcsReactor } from "./vcs/reactor.ts";
@@ -35,6 +36,7 @@ export interface App {
   worktrees: WorktreeManager;
   checkpoints: CheckpointService;
   vcs: VcsReactor;
+  workspace: WorkspaceServices;
   server: ServerHandle | undefined;
   close(): Promise<void>;
 }
@@ -82,10 +84,12 @@ export async function createApp(options: AppOptions): Promise<App> {
   });
   reactor.start();
 
+  const workspace = createWorkspaceServices({ engine, log });
+
   const server =
     options.listen === false
       ? undefined
-      : await startServer({ engine, store, registry, checkpoints, config: { ...config, environmentId } });
+      : await startServer({ engine, store, registry, checkpoints, workspace, config: { ...config, environmentId } });
 
   return {
     config,
@@ -98,10 +102,12 @@ export async function createApp(options: AppOptions): Promise<App> {
     worktrees,
     checkpoints,
     vcs,
+    workspace,
     server,
     async close() {
       reactor.stop();
       vcs.stop();
+      workspace.close();
       await server?.close();
       await sessions.closeAll();
       await registry.dispose();

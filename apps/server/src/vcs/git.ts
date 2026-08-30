@@ -105,6 +105,29 @@ export class Git {
     return result.stdout;
   }
 
+  /** Runs git with `input` written to stdin; never throws. Used by `check-ignore --stdin`. */
+  tryRunWithInput(args: string[], input: string): Promise<GitRun> {
+    return new Promise((resolve) => {
+      const child = execFile(
+        "git",
+        ["--no-pager", ...args],
+        {
+          cwd: this.cwd,
+          env: { ...this.#env, GIT_TERMINAL_PROMPT: "0" },
+          maxBuffer: MAX_BUFFER,
+          timeout: this.#timeoutMs,
+          encoding: "utf8",
+        },
+        (err, stdout, stderr) => {
+          const code = err === null ? 0 : typeof (err as { code?: unknown }).code === "number" ? (err as { code: number }).code : 1;
+          resolve({ code, stdout: stdout ?? "", stderr: stderr ?? (err === null ? "" : String(err.message)) });
+        },
+      );
+      child.stdin?.on("error", () => undefined);
+      child.stdin?.end(input);
+    });
+  }
+
   /** Raw bytes, for content that may be binary. */
   runBuffer(args: string[]): Promise<{ code: number; stdout: Buffer; stderr: string }> {
     return new Promise((resolve) => {

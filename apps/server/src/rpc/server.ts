@@ -9,6 +9,7 @@ import { DriverRegistry } from "../provider/registry.ts";
 import { CheckpointService } from "../vcs/checkpoints.ts";
 import { registerHandlers } from "./handlers.ts";
 import { registerVcsHandlers } from "./vcs.ts";
+import { createWorkspaceServices, registerWorkspaceHandlers, type WorkspaceServices } from "./workspace.ts";
 import { RpcRouter } from "./router.ts";
 import { TicketIssuer } from "./tickets.ts";
 
@@ -22,6 +23,8 @@ export interface ServerDeps {
   registry?: DriverRegistry;
   /** omitted in tests that don't exercise git: a stand-alone service is used */
   checkpoints?: CheckpointService;
+  /** files/watcher/search/terminals; the app builds these once and owns their lifetime */
+  workspace?: WorkspaceServices;
 }
 
 export interface ServerHandle {
@@ -49,6 +52,9 @@ export async function startServer(deps: ServerDeps): Promise<ServerHandle> {
     startedAt,
   });
   registerVcsHandlers(router, { engine, checkpoints: deps.checkpoints ?? new CheckpointService() });
+  const workspace = deps.workspace ?? createWorkspaceServices({ engine });
+  const ownsWorkspace = deps.workspace === undefined;
+  registerWorkspaceHandlers(router, workspace);
 
   const applyCors = (req: IncomingMessage, res: ServerResponse): void => {
     const origin = req.headers.origin;
@@ -158,6 +164,7 @@ export async function startServer(deps: ServerDeps): Promise<ServerHandle> {
     url: `ws://${config.host}:${port}/ws`,
     async close() {
       clearInterval(keepalive);
+      if (ownsWorkspace) workspace.close();
       for (const ws of wss.clients) ws.terminate();
       await new Promise<void>((res) => wss.close(() => res()));
       await new Promise<void>((res) => http.close(() => res()));
