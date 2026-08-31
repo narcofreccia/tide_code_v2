@@ -1,4 +1,5 @@
-# Linux release — AppImage + updater artifact, published to R2.
+# Linux release — .deb + .rpm published to R2 (AppImage is skipped: linuxdeploy runs ldd over the
+# bun-compiled sidecar and aborts; deb/rpm need no linuxdeploy). No updater key for Linux yet.
 #
 # Same shape and same rules as release-windows.yml: manually triggered, ships the version
 # already in package.json, merges only the linux-x86_64 key of the shared latest.json.
@@ -73,12 +74,12 @@ jobs:
       - name: Build the web client
         run: pnpm --filter @tide/web build
 
-      - name: Build the Tauri app (AppImage + updater signature)
+      - name: Build the Tauri app (deb + rpm)
         env:
           NO_STRIP: "true"
           TAURI_SIGNING_PRIVATE_KEY: ${{ secrets.TAURI_SIGNING_PRIVATE_KEY }}
           TAURI_SIGNING_PRIVATE_KEY_PASSWORD: ${{ secrets.TAURI_SIGNING_PRIVATE_KEY_PASSWORD }}
-        run: pnpm --filter @tide/desktop exec tauri build --bundles appimage --verbose
+        run: pnpm --filter @tide/desktop exec tauri build --bundles deb,rpm
 
       - name: Smoke test the bundled sidecar
         run: |
@@ -92,7 +93,7 @@ jobs:
           curl -fsS "http://127.0.0.1:3799/health" || { echo "sidecar never answered /health"; kill $pid; exit 1; }
           kill $pid || true
 
-      - name: Publish to R2 (fixed names, merge linux-x86_64 key, verify updater)
+      - name: "Publish to R2 (fixed names linux/tide.deb, linux/tide.rpm)"
         env:
           AWS_ACCESS_KEY_ID: ${{ secrets.R2_ACCESS_KEY_ID }}
           AWS_SECRET_ACCESS_KEY: ${{ secrets.R2_SECRET_ACCESS_KEY }}

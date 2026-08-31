@@ -80,25 +80,33 @@ jobs:
 
       # Smoke test: install silently, then prove the bundled sidecar actually runs.
       - name: Smoke test the installed build
+        timeout-minutes: 8
         run: |
           set -euo pipefail
           setup="$(ls -t apps/desktop/src-tauri/target/release/bundle/nsis/*-setup.exe | head -1)"
           echo "installing $setup"
-          "$setup" /S
+          # silent per-user install; NSIS returns once files are in place
+          "$setup" /S /CURRENTUSER || "$setup" /S
           for _ in $(seq 1 30); do
-            server="$(find "/c/Program Files/Tide" "$LOCALAPPDATA/Tide" -name 'tide-server*.exe' 2>/dev/null | head -1 || true)"
+            server="$(find "$LOCALAPPDATA/Tide" "$LOCALAPPDATA/Programs/Tide" "/c/Program Files/Tide" -name 'tide-server*.exe' 2>/dev/null | head -1 || true)"
             [ -n "$server" ] && break
             sleep 2
           done
           [ -n "$server" ] || { echo "installed tide-server.exe not found"; exit 1; }
           echo "running $server"
-          TIDE_HOME="$RUNNER_TEMP/tide-smoke" "$server" --dev --port 3799 &
-          pid=$!
+          mkdir -p "$RUNNER_TEMP/tide-smoke"
+          # detach fully: no inherited stdio (an inherited pipe keeps the step alive forever)
+          TIDE_HOME="$RUNNER_TEMP/tide-smoke" "$server" --dev --port 3799 >"$RUNNER_TEMP/tide-smoke/server.log" 2>&1 </dev/null &
+          ok=0
           for _ in $(seq 1 30); do
-            curl -fsS "http://127.0.0.1:3799/health" && break || sleep 1
+            if curl -fsS "http://127.0.0.1:3799/health"; then ok=1; break; fi
+            sleep 1
           done
-          curl -fsS "http://127.0.0.1:3799/health" || { echo "sidecar never answered /health"; kill $pid; exit 1; }
-          kill $pid || true
+          echo
+          # kill the whole Windows process tree (bash 'kill' only reaches the msys wrapper)
+          powershell -NoProfile -Command "Get-Process | Where-Object { \$_.ProcessName -like 'tide-server*' } | Stop-Process -Force -ErrorAction SilentlyContinue" || true
+          tail -20 "$RUNNER_TEMP/tide-smoke/server.log" || true
+          [ "$ok" = 1 ] || { echo "sidecar never answered /health"; exit 1; }
           echo "smoke test OK"
 
       - name: Publish to R2 (fixed name, merge windows-x86_64 key, verify updater)
