@@ -1,4 +1,4 @@
-import type { ApprovalDecision, InteractionMode, ProviderKind, RuntimeMode } from "@tide/contracts";
+import type { ApprovalDecision, InteractionMode, LinkAccess, ProviderKind, RuntimeMode } from "@tide/contracts";
 import { call, dispatch, type DispatchResult } from "../state/model.ts";
 import { showToast } from "../state/toast.ts";
 import { useUi } from "../state/ui.ts";
@@ -68,6 +68,8 @@ export interface NewThreadOptions {
   model?: string;
   mode?: RuntimeMode;
   useWorktree?: boolean;
+  /** per-thread link overrides; omit to inherit every project link at its default access */
+  links?: { linkId: string; access: LinkAccess }[];
 }
 
 /** Creates a thread (optionally as a child) and selects it. */
@@ -85,6 +87,7 @@ export async function createThread(
     ...(options.model === undefined ? {} : { model: options.model }),
     ...(options.mode === undefined ? {} : { mode: options.mode }),
     ...(options.useWorktree === undefined ? {} : { useWorktree: options.useWorktree }),
+    ...(options.links === undefined ? {} : { links: options.links }),
   });
   selectCreatedThread(result);
 }

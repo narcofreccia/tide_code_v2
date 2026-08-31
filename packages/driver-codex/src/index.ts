@@ -6,7 +6,7 @@ export { AppServer, mcpConfigArgs, mergedEnv } from "./app-server.ts";
 export { ApprovalBroker, toCodexAnswers } from "./approvals.ts";
 export { CodexInstance } from "./instance.ts";
 export { JsonRpcConnection, JsonRpcError } from "./jsonrpc.ts";
-export { collaborationModeFor, policyFor } from "./modes.ts";
+export { collaborationModeFor, policyFor, writableRoots } from "./modes.ts";
 export { CodexNormalizer } from "./normalize.ts";
 export { CodexSession, turnInput } from "./session.ts";
 export { shellQuote } from "./shell.ts";

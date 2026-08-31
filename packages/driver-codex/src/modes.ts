@@ -1,5 +1,21 @@
-import type { InteractionMode, RuntimeMode } from "@tide/contracts";
+import { resolve } from "node:path";
+import type { InteractionMode, OpenSessionOptions, RuntimeMode } from "@tide/contracts";
 import type { CollaborationMode, CodexPolicy } from "./types.ts";
+
+/**
+ * W1: the sandbox's writable roots are the thread's cwd plus every *write* linked repo.
+ * Read-only links need no entry — a `workspace-write` sandbox can already read the whole
+ * filesystem, and leaving them out is exactly what makes them read-only.
+ */
+export function writableRoots(options: Pick<OpenSessionOptions, "cwd" | "linkedDirs">): string[] {
+  const roots = [resolve(options.cwd)];
+  for (const dir of options.linkedDirs ?? []) {
+    if (dir.access !== "write") continue;
+    const path = resolve(dir.path);
+    if (!roots.includes(path)) roots.push(path);
+  }
+  return roots;
+}
 
 /**
  * `RuntimeMode` -> Codex approval/sandbox knobs, verified against codex-cli 0.147's

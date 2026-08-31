@@ -1,6 +1,14 @@
 import { useEffect, useState } from "react";
 import { selectActiveTurn, selectCheckpointTurns, selectThreadMessages } from "@tide/client";
 import type { ReadModel, Thread } from "@tide/contracts";
+import { revertLinkedChanges } from "../../lib/linkActions.ts";
+import {
+  findLinkedFile,
+  linkedGroups,
+  linkedKey,
+  toDiffFile,
+  type LinkedDiffGroup,
+} from "../../lib/linkedDiff.ts";
 import { useSelectedThread } from "../../state/hooks.ts";
 import { useModel } from "../../state/model.ts";
 import { useUi } from "../../state/ui.ts";
@@ -56,8 +64,21 @@ function ChangesFor({ thread }: { thread: Thread }) {
   });
 
   const files = diff.data?.files ?? [];
-  const selectedPath = files.some((f) => f.path === picked) ? picked : files[0]?.path;
-  const selectedFile = files.find((f) => f.path === selectedPath);
+  const linked = linkedGroups(diff.data);
+  const firstLinked = linked[0]?.files[0];
+  const fallbackKey =
+    files[0]?.path ?? (firstLinked && linked[0] ? linkedKey(linked[0], firstLinked.path) : undefined);
+  const known =
+    picked !== undefined && (files.some((f) => f.path === picked) || findLinkedFile(linked, picked) !== undefined);
+  const selectedKey = known ? picked : fallbackKey;
+  const fromLink = selectedKey === undefined ? undefined : findLinkedFile(linked, selectedKey);
+  const selectedFile = fromLink
+    ? toDiffFile(fromLink.group, fromLink.file)
+    : files.find((f) => f.path === selectedKey);
+
+  const revertLinked = (group: LinkedDiffGroup): void => void revertLinkedChanges(thread.id, group.linkId);
+
+  const nothing = files.length === 0 && linked.length === 0;
 
   if (turns.length === 0 && selection === undefined) {
     return <p className={styles.empty}>{EMPTY}</p>;
@@ -86,19 +107,21 @@ function ChangesFor({ thread }: { thread: Thread }) {
           </Button>
         </p>
       ) : null}
-      {diff.data && files.length === 0 && !diff.error ? <p className={styles.empty}>{EMPTY}</p> : null}
-      {files.length > 0 ? (
+      {diff.data && nothing && !diff.error ? <p className={styles.empty}>{EMPTY}</p> : null}
+      {nothing ? null : (
         <div className={styles.body}>
           <FileList
             files={files}
-            selected={selectedPath}
+            linked={linked}
+            selected={selectedKey}
             onSelect={setPicked}
+            onRevertLinked={revertLinked}
             collapsed={collapsed}
             onToggle={toggleFileList}
           />
           <DiffPane threadId={thread.id} diff={diff.data} file={selectedFile} />
         </div>
-      ) : null}
+      )}
       {diff.loading && !diff.data ? <p className={styles.empty}>Loading changes…</p> : null}
     </div>
   );

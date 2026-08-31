@@ -3,6 +3,7 @@ import { ClaudeInstance } from "./instance.ts";
 import type { ClaudeConfig, QueryFn } from "./types.ts";
 
 export { ClaudeNormalizer, truncate } from "./normalize.ts";
+export { isUnder, readOnlyLinkFor, readOnlyDenyMessage, targetPath } from "./links.ts";
 export { ApprovalBroker, EXIT_PLAN_DENY_MESSAGE } from "./approvals.ts";
 export { unifiedDiff } from "./diff.ts";
 export { previewDiff } from "./edit-preview.ts";

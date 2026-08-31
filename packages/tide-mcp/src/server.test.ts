@@ -148,6 +148,26 @@ describe("tide-mcp server", () => {
     await client.close();
   });
 
+  it("passes `repo` through so the delegate runs in a linked repository", async () => {
+    const backend = new FakeBackend();
+    const client = await connect(backend);
+    await client.callTool({ name: "tide_delegate", arguments: { provider: "claude", prompt: "port the UI", repo: "frontend", useWorktree: true } });
+    expect(backend.commands[0]).toMatchObject({ type: "thread.delegate", provider: "claude", repo: "frontend", useWorktree: true });
+
+    // an omitted or empty repo means "this project's own repo" — never a `repo: ""`
+    await client.callTool({ name: "tide_delegate", arguments: { provider: "claude", prompt: "x" } });
+    await client.callTool({ name: "tide_delegate", arguments: { provider: "claude", prompt: "x", repo: "" } });
+    expect(backend.commands[1]).not.toHaveProperty("repo");
+    expect(backend.commands[2]).not.toHaveProperty("repo");
+    await client.close();
+  });
+
+  it("tells the agent what `repo` is for", () => {
+    const delegate = TOOL_DEFINITIONS.find((tool) => tool.name === "tide_delegate");
+    expect(delegate?.inputSchema.properties["repo"]).toMatchObject({ type: "string" });
+    expect(delegate?.description).toContain("linked repositories");
+  });
+
   it("reports a tool error instead of throwing when an argument is missing", async () => {
     const client = await connect(new FakeBackend());
     const result = await client.callTool({ name: "tide_experts_send_message", arguments: { to: "api" } });

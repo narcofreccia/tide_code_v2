@@ -5,6 +5,8 @@ import {
   type ActivityOf,
   type Message,
   type ProposedPlan,
+  type Project,
+  type ProjectLink,
   type ReadModel,
   type Thread,
   type TimelineEntry,
@@ -15,6 +17,8 @@ import {
   selectActiveTurn,
   selectInbox,
   selectThreadsNeedingAttention,
+  selectProjectLinks,
+  selectThreadLinks,
   selectTimeline,
   type TimelineItem,
 } from "./selectors.ts";
@@ -219,5 +223,61 @@ describe("groupActivities", () => {
     ]);
     const group = nodes[5];
     expect(group?.kind === "group" ? group.parentToolUseId : undefined).toBe("child");
+  });
+});
+
+describe("linked repositories", () => {
+  const link = (id: string, patch: Partial<ProjectLink> = {}): ProjectLink => ({
+    id,
+    path: `/repo/${id}`,
+    label: id,
+    access: "write",
+    ...patch,
+  });
+
+  const withProject = (links: ProjectLink[] | undefined, threads: Thread[] = []): ReadModel => {
+    const project: Project = {
+      id: "p1",
+      title: "api",
+      rootPath: "/repo/api",
+      createdAt: 1,
+      updatedAt: 1,
+      ...(links === undefined ? {} : { links }),
+    };
+    const model = emptyReadModel();
+    model.projects[project.id] = project;
+    for (const t of threads) model.threads[t.id] = t;
+    return model;
+  };
+
+  it("returns the project's links, and nothing for an unknown project", () => {
+    const model = withProject([link("a"), link("b")]);
+    expect(selectProjectLinks(model, "p1").map((l) => l.id)).toEqual(["a", "b"]);
+    expect(selectProjectLinks(model, "nope")).toEqual([]);
+    expect(selectProjectLinks(withProject(undefined), "p1")).toEqual([]);
+  });
+
+  it("resolves a thread's explicit links, keeping its own access", () => {
+    const model = withProject(
+      [link("a"), link("b", { access: "read" })],
+      [thread("t1", { links: [{ linkId: "b", access: "write" }] })],
+    );
+    expect(selectThreadLinks(model, "t1")).toEqual([
+      { link: link("b", { access: "read" }), access: "write" },
+    ]);
+  });
+
+  it("inherits every project link at its default access when the thread has none", () => {
+    const model = withProject([link("a"), link("b", { access: "read" })], [thread("t1")]);
+    expect(selectThreadLinks(model, "t1").map((r) => [r.link.id, r.access])).toEqual([
+      ["a", "write"],
+      ["b", "read"],
+    ]);
+  });
+
+  it("drops links the project no longer has, and unknown threads", () => {
+    const model = withProject([link("a")], [thread("t1", { links: [{ linkId: "gone", access: "read" }] })]);
+    expect(selectThreadLinks(model, "t1")).toEqual([]);
+    expect(selectThreadLinks(model, "t404")).toEqual([]);
   });
 });

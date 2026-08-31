@@ -16,6 +16,7 @@ import { ToastHost } from "./components/ui/Toast.tsx";
 import { QuickOpen } from "./components/shell/QuickOpen.tsx";
 import { CommandPaletteHost } from "./components/shell/CommandPalette.tsx";
 import { ThreadDialogHost } from "./components/thread/ThreadDialogs.tsx";
+import { ProjectLinksDialogHost } from "./components/mission/ProjectLinks.tsx";
 import { useWorkbench } from "./state/workbench.ts";
 import { useKeyboardMap } from "./lib/useKeyboardMap.ts";
 import styles from "./App.module.css";
@@ -77,6 +78,7 @@ export function App() {
       <CommandPaletteHost />
       <ThreadDialogHost />
       <ExpertsDialogHost />
+      <ProjectLinksDialogHost />
     </div>
   );
 }

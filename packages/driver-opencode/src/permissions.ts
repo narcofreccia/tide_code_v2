@@ -1,4 +1,5 @@
-import type { ApprovalDecision, InteractionMode, RuntimeMode } from "@tide/contracts";
+import { relative, resolve } from "node:path";
+import type { ApprovalDecision, InteractionMode, LinkedDir, RuntimeMode } from "@tide/contracts";
 import type { PermissionReply, PermissionRule } from "./wire.ts";
 
 /**
@@ -37,6 +38,41 @@ const RULESETS: Record<RuntimeMode, PermissionRule[]> = {
 export function permissionRuleset(mode: RuntimeMode, interaction: InteractionMode): PermissionRule[] {
   const rules = RULESETS[mode];
   return interaction === "plan" ? rules.filter((rule) => rule.action === "ask") : [...rules];
+}
+
+/**
+ * W1 linked repos, expressed in opencode's own ruleset — no fallback needed. Verified
+ * against opencode 1.1.36's `src/permission/next.ts`:
+ *  - `evaluate()` picks the **last** matching rule (`merged.findLast(...)`) and the session
+ *    ruleset is merged *after* the agent's (`merge(agent.permission, session.permission)`),
+ *    so these rules beat both the mode rules above and the agent defaults;
+ *  - `Wildcard.match` compiles `*` to `.*`, which crosses `/` — one `<path>/*` covers a
+ *    whole tree;
+ *  - reaching outside the project asks `external_directory` with the *absolute* glob of the
+ *    target's parent directory, so allowing `<link>/*` is what makes a link readable at all;
+ *  - the `edit` permission is asked with the path **relative to the worktree**, so a
+ *    read-only link is denied under both its relative and its absolute form.
+ */
+export function linkRules(cwd: string, links: LinkedDir[]): PermissionRule[] {
+  const rules: PermissionRule[] = [];
+  for (const link of links) {
+    const abs = resolve(link.path);
+    const rel = relative(resolve(cwd), abs);
+    const globs = [abs, `${abs}/*`, ...(rel === "" ? [] : [rel, `${rel}/*`])];
+    // reads (and the external-directory gate) are allowed for every link, read-only included
+    for (const pattern of globs) {
+      rules.push({ permission: "external_directory", pattern, action: "allow" });
+      rules.push({ permission: "read", pattern, action: "allow" });
+    }
+    if (link.access === "write") continue;
+    for (const pattern of globs) rules.push({ permission: "edit", pattern, action: "deny" });
+  }
+  return rules;
+}
+
+/** The session ruleset actually sent to `POST /session`: mode rules first, link rules last. */
+export function sessionRuleset(mode: RuntimeMode, interaction: InteractionMode, cwd: string, links: LinkedDir[] = []): PermissionRule[] {
+  return [...permissionRuleset(mode, interaction), ...linkRules(cwd, links)];
 }
 
 export function replyFor(decision: ApprovalDecision): PermissionReply {

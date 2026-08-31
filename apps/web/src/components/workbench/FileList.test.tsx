@@ -1,6 +1,7 @@
 import { afterEach, describe, expect, it, vi } from "vitest";
 import { cleanup, fireEvent, render, screen } from "@testing-library/react";
 import type { DiffFile } from "@tide/contracts";
+import type { LinkedChanges } from "@tide/contracts";
 import { FileList } from "./FileList.tsx";
 
 const files: DiffFile[] = [
@@ -53,5 +54,80 @@ describe("FileList", () => {
     expect(screen.queryByRole("listbox")).toBeNull();
     fireEvent.click(screen.getByLabelText("Show files"));
     expect(onToggle).toHaveBeenCalled();
+  });
+});
+
+const linked: LinkedChanges[] = [
+  {
+    linkId: "web",
+    label: "Web client",
+    path: "/src/web",
+    files: [
+      { path: "src/App.tsx", status: "modified" },
+      { path: "src/new.ts", status: "added" },
+    ],
+  },
+];
+
+describe("FileList linked repositories", () => {
+  it("groups linked files under a label — path header, below the main repo's", () => {
+    render(
+      <FileList
+        files={files}
+        linked={linked}
+        selected="src/a.ts"
+        onSelect={() => {}}
+        collapsed={false}
+        onToggle={() => {}}
+      />,
+    );
+
+    expect(screen.getByText("6 files")).toBeDefined();
+    expect(screen.getByText(/Web client/).textContent).toContain("/src/web");
+    const options = screen.getAllByRole("option");
+    expect(options).toHaveLength(6);
+    expect(options[4]?.getAttribute("title")).toBe("/src/web/src/App.tsx");
+  });
+
+  it("selects a linked file by its own key and walks into the group with ArrowDown", () => {
+    const onSelect = vi.fn();
+    render(
+      <FileList
+        files={files}
+        linked={linked}
+        selected="r.ts"
+        onSelect={onSelect}
+        collapsed={false}
+        onToggle={() => {}}
+      />,
+    );
+
+    fireEvent.click(screen.getByTitle("/src/web/src/new.ts"));
+    expect(onSelect).toHaveBeenCalledWith("web src/new.ts");
+
+    fireEvent.keyDown(screen.getByRole("listbox", { name: "Changed files" }), { key: "ArrowDown" });
+    expect(onSelect).toHaveBeenLastCalledWith("web src/App.tsx");
+  });
+
+  it("offers the revert action per group only when a handler is given", () => {
+    const onRevertLinked = vi.fn();
+    const { rerender } = render(
+      <FileList files={[]} linked={linked} selected={undefined} onSelect={() => {}} collapsed={false} onToggle={() => {}} />,
+    );
+    expect(screen.queryByText("Revert linked changes")).toBeNull();
+
+    rerender(
+      <FileList
+        files={[]}
+        linked={linked}
+        selected={undefined}
+        onSelect={() => {}}
+        onRevertLinked={onRevertLinked}
+        collapsed={false}
+        onToggle={() => {}}
+      />,
+    );
+    fireEvent.click(screen.getByText("Revert linked changes"));
+    expect(onRevertLinked).toHaveBeenCalledWith(linked[0]);
   });
 });

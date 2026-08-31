@@ -3,7 +3,7 @@ import { AppServer, mergedEnv } from "./app-server.ts";
 import { ApprovalBroker } from "./approvals.ts";
 import { AsyncQueue } from "./async-queue.ts";
 import type { RequestId } from "./jsonrpc.ts";
-import { collaborationModeFor, policyFor } from "./modes.ts";
+import { collaborationModeFor, policyFor, writableRoots } from "./modes.ts";
 import { CodexNormalizer } from "./normalize.ts";
 import type { CodexConfig } from "./types.ts";
 import type { ThreadResumeResponse } from "./generated/v2/ThreadResumeResponse.ts";
@@ -67,7 +67,7 @@ export class CodexSession implements ProviderSession {
       onRequest: (method, params, id) => (session ? session.#request(method, params, id) : requests.push({ method, params, id })),
     });
 
-    const policy = policyFor(options.mode, [options.cwd]);
+    const policy = policyFor(options.mode, writableRoots(options));
     const started =
       options.resume !== undefined
         ? await server.request<ThreadResumeResponse>("thread/resume", {
@@ -137,7 +137,7 @@ export class CodexSession implements ProviderSession {
   }
 
   async #startTurn(input: TurnInput, mailbox: AsyncQueue<NormalizedEvent>): Promise<void> {
-    const policy = policyFor(this.#options.mode, [this.#options.cwd]);
+    const policy = policyFor(this.#options.mode, writableRoots(this.#options));
     try {
       await this.#server.request<TurnStartResponse>("turn/start", {
         threadId: this.nativeSessionId,

@@ -53,10 +53,25 @@ export const ApprovalDecision = Type.Union([
 export type ApprovalDecision = Static<typeof ApprovalDecision>;
 
 // ---- read-model entities ----
+/** A secondary repository a project's threads may reach (Claude Code's `--add-dir` made durable).
+ *  `access` is the default for new threads; `note` is a one-line description injected into the
+ *  agent's preamble so it knows what the folder *is*. */
+export const LinkAccess = Type.Union([Type.Literal("read"), Type.Literal("write")]);
+export type LinkAccess = Static<typeof LinkAccess>;
+export const ProjectLink = Type.Object({
+  id: Type.String(),
+  path: Type.String(),
+  label: Type.String(),
+  note: Type.Optional(Type.String()),
+  access: LinkAccess,
+});
+export type ProjectLink = Static<typeof ProjectLink>;
+
 export const Project = Type.Object({
   id: Type.String(),
   title: Type.String(),
   rootPath: Type.String(),
+  links: Type.Optional(Type.Array(ProjectLink)),
   createdAt: Type.Number(),
   updatedAt: Type.Number(),
   archivedAt: Type.Optional(Type.Number()),
@@ -152,6 +167,8 @@ export const Thread = Type.Object({
   /** thread that created this one via tide_delegate */
   delegatedBy: Type.Optional(Type.String()),
   worktreePath: Type.Optional(Type.String()),
+  /** linked repos this thread can reach, resolved at creation from the project's links (per-thread overrides) */
+  links: Type.Optional(Type.Array(Type.Object({ linkId: Type.String(), access: LinkAccess }))),
   branch: Type.Optional(Type.String()),
   /** branch the worktree was forked from (merge/PR base) */
   baseBranch: Type.Optional(Type.String()),

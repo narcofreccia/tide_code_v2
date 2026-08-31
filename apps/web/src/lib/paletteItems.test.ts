@@ -103,3 +103,20 @@ describe("palette items", () => {
     expect(row?.detail).toBe("Tide · claude · running");
   });
 });
+
+describe("linked repositories item", () => {
+  it("appears only with a project in scope and opens its links editor", () => {
+    const model = fixture();
+    expect(buildPaletteItems({ model, selectedThreadId: null }).map((i) => i.id)).not.toContain("project:links");
+
+    const fromRail = buildPaletteItems({ model, selectedThreadId: null, selectedProjectId: "p1" });
+    const item = fromRail.find((i) => i.id === "project:links");
+    expect(item?.label).toBe("Manage linked repositories…");
+
+    // a selected thread scopes it to that thread's project
+    expect(buildPaletteItems({ model, selectedThreadId: "t1" }).map((i) => i.id)).toContain("project:links");
+
+    item?.run();
+    expect(useUi.getState().linksProjectId).toBe("p1");
+  });
+});

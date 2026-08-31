@@ -41,7 +41,8 @@ export function AddProjectForm({ onDone }: { onDone: () => void }) {
     <form className={styles.form} onSubmit={submit}>
       <span className={styles.heading}>Add a repository</span>
       <p className={styles.hint}>
-        A project is a local git repository; threads and worktrees live under it.
+        A project is a local git repository; threads and worktrees live under it. You can link
+        related repositories later from the project card.
       </p>
       <input
         className={styles.input}

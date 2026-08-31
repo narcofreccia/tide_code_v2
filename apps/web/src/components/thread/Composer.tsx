@@ -6,6 +6,7 @@ import { applyMention, expandMentions, findMentionQuery, normalizePastedPath } f
 import { Button } from "../ui/Button.tsx";
 import { Kbd } from "../ui/Kbd.tsx";
 import { MentionPicker, useMentionMatches } from "./MentionPicker.tsx";
+import { ThreadLinkChips } from "./ThreadLinkChips.tsx";
 import { ThreadPills } from "./ThreadPills.tsx";
 import styles from "./Composer.module.css";
 
@@ -119,6 +120,7 @@ export function Composer({ thread }: { thread: Thread }) {
       />
       <div className={styles.actions}>
         <ThreadPills thread={thread} />
+        <ThreadLinkChips threadId={thread.id} />
         <span className={styles.hint}>
           {interrupting ? (
             <span className={styles.interrupting}>interrupting…</span>

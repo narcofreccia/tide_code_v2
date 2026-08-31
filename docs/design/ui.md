@@ -43,6 +43,31 @@ Empty state: tree + "No changes in this thread yet".
 status), shared findings feed, discussion, your messages — and phase control (explore →
 discuss → synthesize). Workbench shows what experts read. Synthesis becomes a Proposed plan.
 
+## Linked repositories
+
+A project is one main repo; **links** are secondary repos its threads may reach — Claude
+Code's `--add-dir` made durable and cross-harness. Each link carries a label, an absolute
+path, a one-line note telling the agent what the repo *is*, and an access level
+(read / read & write).
+
+**Project settings › Linked repositories** is the editor: a list of links (label, muted
+path, note, `rw`/`ro` pill) with add via the FolderPicker (typing a path also works),
+inline edit, and remove behind a confirm. It opens from the project card on Mission
+Control ("Links · 2", or "Link a repo" when there are none) and from `⌘K`
+("Manage linked repositories…", offered while a project is in scope).
+
+**New thread**: when the project has links, the popover lists them as chips, all on at the
+project's default access, each with a read / read+write toggle; a link the project shares
+read-only cannot be widened. `thread.create.links` is sent only when the user changes
+something — otherwise the thread inherits every project link.
+
+**Thread**: the composer's pill row shows read-only chips `⧉ label rw|ro`; hover gives the
+path and the note. A live thread's link set is fixed at creation.
+
+**Workbench › Changes**: files a turn changed in a linked repo are grouped below the main
+repo's under a `label — path` header, opened at their absolute path, with
+"Revert linked changes" per group (`vcs.linkedRevert`).
+
 **Settings** (route `/settings`): Providers (installed/logged-in/version, default model,
 default mode, login hint that opens the terminal), Git (worktree root, PR via gh), Appearance,
 Keyboard, Remote (bind host, pairing token).
@@ -66,8 +91,8 @@ Keyboard, Remote (bind host, pairing token).
 
 ## Component inventory (apps/web/src/components)
 
-`shell/` TopBar, Rail, StatusBar, SplitPane, FocusModeSwitch · `mission/` MissionControl, Inbox ·
-`thread/` ThreadHeader, Stream, MessageItem, ActivityRow, ActivityGroup, ApprovalCard,
+`shell/` TopBar, Rail, StatusBar, SplitPane, FocusModeSwitch · `mission/` MissionControl, Inbox, ProjectCard, ProjectLinks ·
+`thread/` ThreadHeader, ThreadLinkChips, Stream, MessageItem, ActivityRow, ActivityGroup, ApprovalCard,
 UserInputCard, PlanCard, PlanProgress, Composer, MentionPicker · `workbench/` Workbench,
 ChangesTab, DiffView, FileTab (Monaco), FileTree, TerminalDrawer · `experts/` Board, ExpertCard,
 FindingsFeed · `settings/` … · `ui/` Button, Pill, Select, Checkbox/Radio (`Choice`), Menu,

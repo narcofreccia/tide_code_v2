@@ -152,16 +152,32 @@ function shortcutItems(): PaletteItem[] {
   }));
 }
 
+/** Project-scoped actions; the palette only offers them when a project is in scope. */
+function projectItems(projectId: string): PaletteItem[] {
+  return [
+    {
+      id: "project:links",
+      label: "Manage linked repositories…",
+      group: "Actions",
+      run: () => useUi.getState().setLinksProject(projectId),
+    },
+  ];
+}
+
 export interface PaletteInput {
   model: ReadModel;
   selectedThreadId: string | null;
+  /** the rail's project selection; the selected thread's project wins over it */
+  selectedProjectId?: string | null;
 }
 
 /** Every palette source, contextual thread actions first. */
-export function buildPaletteItems({ model, selectedThreadId }: PaletteInput): PaletteItem[] {
+export function buildPaletteItems({ model, selectedThreadId, selectedProjectId }: PaletteInput): PaletteItem[] {
   const thread = selectedThreadId ? model.threads[selectedThreadId] : undefined;
+  const projectId = thread?.projectId ?? selectedProjectId ?? undefined;
   return [
     ...(thread ? threadItems(model, thread) : []),
+    ...(projectId !== undefined && model.projects[projectId] ? projectItems(projectId) : []),
     ...shortcutItems(),
     ...navigationItems(model),
   ];

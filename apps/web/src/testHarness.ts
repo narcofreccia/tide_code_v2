@@ -102,6 +102,7 @@ export function resetUi(): void {
     expertsReturnTo: "mission",
     newExpertsProjectId: null,
     newProjectOpen: false,
+    linksProjectId: null,
     paletteOpen: false,
     threadDialog: null,
     focusMode: "split",

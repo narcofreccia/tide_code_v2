@@ -18,6 +18,11 @@ export const PLAN_TOOL_NAME = "tide_propose_plan";
 export const ENV_RUNTIME_MODE = "TIDE_RUNTIME_MODE";
 export const ENV_INTERACTION = "TIDE_INTERACTION";
 export const ENV_THREAD_ID = "TIDE_THREAD_ID";
+/** W1: the thread's cwd, and its linked repos as JSON (`LinkedDirWire[]`). */
+export const ENV_CWD = "TIDE_CWD";
+export const ENV_LINKED_DIRS = "TIDE_LINKED_DIRS";
+/** pi has no `systemPromptAppend` option; the bridge appends this in `before_agent_start`. */
+export const ENV_SYSTEM_PROMPT_APPEND = "TIDE_SYSTEM_PROMPT_APPEND";
 
 export type ToolClass = "read" | "write" | "command";
 export type RuntimeMode = "approval-required" | "auto-accept-edits" | "auto" | "full-access";
@@ -87,4 +92,82 @@ export function parsePrefixedJson<T>(message: string, prefix: string): T | undef
   } catch {
     return undefined;
   }
+}
+
+// ---- W1 linked repos -------------------------------------------------------------
+
+export interface LinkedDirWire {
+  path: string;
+  label: string;
+  note?: string;
+  access: "read" | "write";
+}
+
+export function parseLinkedDirs(raw: string | undefined): LinkedDirWire[] {
+  if (!raw) return [];
+  try {
+    const parsed: unknown = JSON.parse(raw);
+    if (!Array.isArray(parsed)) return [];
+    return parsed.filter((entry): entry is LinkedDirWire => {
+      if (typeof entry !== "object" || entry === null) return false;
+      const dir = entry as Partial<LinkedDirWire>;
+      return typeof dir.path === "string" && typeof dir.label === "string" && (dir.access === "read" || dir.access === "write");
+    });
+  } catch {
+    return [];
+  }
+}
+
+/**
+ * Pure POSIX/Win32-agnostic containment on already-absolute, `.`/`..`-free segments.
+ * `node:path` is deliberately not imported: the extension is transpiled and loaded inside
+ * pi, where a bare-module import would have to resolve against pi's own module graph.
+ */
+function segments(path: string): string[] {
+  const out: string[] = [];
+  for (const part of path.replace(/\\/g, "/").split("/")) {
+    if (part === "" || part === ".") continue;
+    if (part === "..") out.pop();
+    else out.push(part);
+  }
+  return out;
+}
+
+export function isUnder(root: string, target: string): boolean {
+  const r = segments(root);
+  const t = segments(target);
+  if (t.length < r.length) return false;
+  return r.every((part, i) => t[i] === part);
+}
+
+/** Resolves a possibly-relative tool path against the thread's cwd. */
+export function absolutize(cwd: string, path: string): string {
+  if (path.startsWith("/") || /^[A-Za-z]:[\\/]/.test(path)) return path;
+  return `${cwd}/${path}`;
+}
+
+const PATH_KEYS = ["path", "file_path", "filePath", "notebook_path"];
+
+export function toolTargetPath(input: unknown): string | undefined {
+  if (typeof input !== "object" || input === null) return undefined;
+  const record = input as Record<string, unknown>;
+  for (const key of PATH_KEYS) {
+    const value = record[key];
+    if (typeof value === "string" && value.length > 0) return value;
+  }
+  return undefined;
+}
+
+/**
+ * pi has no sandbox and no cwd gate: writes anywhere are possible, so *write* links work
+ * natively. The one thing that needs enforcing is the read-only link, and `tool_call` is
+ * the hook that can do it (`{block, reason}`). Reads are never blocked.
+ */
+export function readOnlyLinkFor(toolName: string, input: unknown, cwd: string, links: LinkedDirWire[]): LinkedDirWire | undefined {
+  if (links.length === 0) return undefined;
+  if (classifyTool(toolName) !== "write") return undefined;
+  const path = toolTargetPath(input);
+  if (path === undefined) return undefined;
+  const target = absolutize(cwd, path);
+  return links.find((link) => link.access === "read" && isUnder(link.path, target));
 }

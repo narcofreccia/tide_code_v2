@@ -1,4 +1,4 @@
-import { selectPrCounts, selectProjectTotals, selectRecentThreads } from "@tide/client";
+import { selectPrCounts, selectProjectLinks, selectProjectTotals, selectRecentThreads } from "@tide/client";
 import type { Project } from "@tide/contracts";
 import { relativeTime } from "../../lib/relativeTime.ts";
 import { useModel } from "../../state/model.ts";
@@ -20,9 +20,11 @@ export function ProjectCard({ project }: { project: Project }) {
   const selectThread = useUi((s) => s.selectThread);
   const selectProject = useUi((s) => s.selectProject);
   const setNewExpertsProject = useUi((s) => s.setNewExpertsProject);
+  const setLinksProject = useUi((s) => s.setLinksProject);
   const totals = selectProjectTotals(model, project.id);
   const prs = selectPrCounts(model, project.id);
   const recent = selectRecentThreads(model, project.id, 3);
+  const links = selectProjectLinks(model, project.id);
 
   return (
     <article className={styles.card} aria-label={`Project ${project.title}`}>
@@ -40,6 +42,14 @@ export function ProjectCard({ project }: { project: Project }) {
         {prs.open > 0 ? <Pill>⇡ {prs.open} open</Pill> : null}
         {prs.merged > 0 ? <Pill>✓ {prs.merged} merged</Pill> : null}
         <span>${totals.costTodayUsd.toFixed(2)} today</span>
+        <button
+          type="button"
+          className={styles.link}
+          onClick={() => setLinksProject(project.id)}
+          title="Linked repositories"
+        >
+          {links.length === 0 ? "Link a repo" : `Links · ${links.length}`}
+        </button>
       </div>
 
       {recent.length === 0 ? (

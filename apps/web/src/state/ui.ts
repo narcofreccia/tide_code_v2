@@ -31,6 +31,8 @@ interface UiState {
   /** project the create-experts dialog is open for, null when closed */
   newExpertsProjectId: string | null;
   newProjectOpen: boolean;
+  /** project whose "Linked repositories" editor is open, null when closed */
+  linksProjectId: string | null;
   /** ⌘K command palette */
   paletteOpen: boolean;
   /** archive / detach confirmation, null when none is open */
@@ -57,6 +59,7 @@ interface UiState {
   closeSettings: () => void;
   setSettingsSection: (section: SettingsSection) => void;
   setNewProjectOpen: (open: boolean) => void;
+  setLinksProject: (projectId: string | null) => void;
   setPaletteOpen: (open: boolean) => void;
   setThreadDialog: (dialog: ThreadDialog | null) => void;
   setFocusMode: (mode: FocusMode) => void;
@@ -79,6 +82,7 @@ export const useUi = create<UiState>()(
       expertsReturnTo: "mission",
       newExpertsProjectId: null,
       newProjectOpen: false,
+      linksProjectId: null,
       paletteOpen: false,
       threadDialog: null,
       focusMode: "split",
@@ -113,6 +117,7 @@ export const useUi = create<UiState>()(
       closeSettings: () => set((s) => (s.view === "settings" ? { view: s.settingsReturnTo } : s)),
       setSettingsSection: (settingsSection) => set({ settingsSection }),
       setNewProjectOpen: (newProjectOpen) => set({ newProjectOpen }),
+      setLinksProject: (linksProjectId) => set({ linksProjectId }),
       setPaletteOpen: (paletteOpen) => set({ paletteOpen }),
       setThreadDialog: (threadDialog) => set({ threadDialog }),
       setFocusMode: (focusMode) => set({ focusMode }),

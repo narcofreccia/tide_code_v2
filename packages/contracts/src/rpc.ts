@@ -60,7 +60,21 @@ export const DiffFile = Type.Object({
   binary: Type.Optional(Type.Boolean()),
 });
 export type DiffFile = Static<typeof DiffFile>;
-export const DiffResult = Type.Object({ base: Type.String(), head: Type.String(), files: Type.Array(DiffFile) });
+/** W1: uncommitted changes in a write-access linked repo, alongside the main repo's diff. */
+export const LinkedChanges = Type.Object({
+  linkId: Type.String(),
+  label: Type.String(),
+  path: Type.String(),
+  files: Type.Array(Type.Object({ path: Type.String(), status: Type.String() })),
+});
+export type LinkedChanges = Static<typeof LinkedChanges>;
+export const DiffResult = Type.Object({
+  base: Type.String(),
+  head: Type.String(),
+  files: Type.Array(DiffFile),
+  /** W1: per-linked-repo working-tree changes; absent when the thread has no write links */
+  linked: Type.Optional(Type.Array(LinkedChanges)),
+});
 export type DiffResult = Static<typeof DiffResult>;
 
 export const VcsStatus = Type.Object({
@@ -141,6 +155,11 @@ export const rpcMethods = {
   "vcs.turnDiff": unary(Type.Object({ threadId: Type.String(), turnId: Type.String() }), DiffResult),
   /** everything this thread changed: first checkpoint (or base branch) → working tree */
   "vcs.threadDiff": unary(Type.Object({ threadId: Type.String() }), DiffResult),
+  /** W1: discard working-tree changes in one linked repo (never touches anything outside it) */
+  "vcs.linkedRevert": unary(
+    Type.Object({ threadId: Type.String(), linkId: Type.String(), files: Type.Optional(Type.Array(Type.String())) }),
+    Type.Object({ reverted: Type.Array(Type.String()) }),
+  ),
   // fs
   "fs.list": unary(Type.Object({ threadId: Type.String(), path: Type.Optional(Type.String()) }), Type.Object({ entries: Type.Array(FsEntry) })),
   "fs.read": unary(

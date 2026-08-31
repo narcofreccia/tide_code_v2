@@ -1,6 +1,6 @@
 import type { DriverEnv, OpenSessionOptions, ProviderInstance, ProviderSession, ProviderStatus } from "@tide/contracts";
 import { SdkOpencodeApi } from "./client.ts";
-import { permissionRuleset } from "./permissions.ts";
+import { sessionRuleset } from "./permissions.ts";
 import { OpencodeServer, type SpawnFn } from "./server.ts";
 import { OpencodeSession } from "./session.ts";
 import { shellQuote } from "./shell.ts";
@@ -95,7 +95,7 @@ export class OpencodeInstance implements ProviderInstance {
       const created = await api.createSession({
         directory: options.cwd,
         title: `Tide ${options.threadId}`,
-        permission: permissionRuleset(options.mode, options.interaction),
+        permission: sessionRuleset(options.mode, options.interaction, options.cwd, options.linkedDirs ?? []),
       });
       sessionId = created.id;
     } else {

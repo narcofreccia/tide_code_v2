@@ -1,6 +1,7 @@
-import type { ApprovalDecision, NormalizedEvent } from "@tide/contracts";
+import type { ApprovalDecision, LinkedDir, NormalizedEvent } from "@tide/contracts";
 import { deferred, type Deferred } from "./async-queue.ts";
 import { isDiffTool, previewDiff } from "./edit-preview.ts";
+import { readOnlyDenyMessage, readOnlyLinkFor } from "./links.ts";
 import type { AskUserQuestionInputShape } from "./sdk-shapes.ts";
 
 export type PermissionResultShape =
@@ -29,14 +30,21 @@ export const EXIT_PLAN_DENY_MESSAGE =
 
 export class ApprovalBroker {
   #emit: (event: NormalizedEvent) => void;
+  #links: LinkedDir[];
   #approvals = new Map<string, Deferred<ApprovalDecision>>();
   #userInputs = new Map<string, Deferred<Record<string, unknown>>>();
 
-  constructor(emit: (event: NormalizedEvent) => void) {
+  constructor(emit: (event: NormalizedEvent) => void, links: LinkedDir[] = []) {
     this.#emit = emit;
+    this.#links = links;
   }
 
   async handle(toolName: string, input: Record<string, unknown>, context: CanUseToolContext): Promise<PermissionResultShape> {
+    const readOnly = readOnlyLinkFor(toolName, input, this.#links);
+    if (readOnly) {
+      this.#emit({ type: "activity", activity: { kind: "info", text: `Blocked ${toolName} in read-only linked repo ${readOnly.label}.` } });
+      return { behavior: "deny", message: readOnlyDenyMessage(readOnly) };
+    }
     if (toolName === "ExitPlanMode") {
       const plan = typeof input["plan"] === "string" ? input["plan"] : "";
       this.#emit({ type: "plan.proposed", markdown: plan });

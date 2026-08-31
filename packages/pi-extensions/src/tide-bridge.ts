@@ -1,15 +1,20 @@
 import { Type } from "typebox";
 import type { ExtensionAPI, ExtensionContext, ToolCallEvent, ToolCallEventResult } from "@earendil-works/pi-coding-agent";
 import {
+  ENV_CWD,
   ENV_INTERACTION,
+  ENV_LINKED_DIRS,
   ENV_RUNTIME_MODE,
+  ENV_SYSTEM_PROMPT_APPEND,
   META_PREFIX,
   PLAN_PREFIX,
   PLAN_TOOL_NAME,
   USAGE_PREFIX,
   classifyTool,
   needsApproval,
+  parseLinkedDirs,
   parseRuntimeMode,
+  readOnlyLinkFor,
 } from "./protocol.ts";
 
 /**
@@ -53,11 +58,21 @@ function emitUsage(ctx: ExtensionContext): void {
 export default function tideBridge(pi: ExtensionAPI): void {
   const mode = parseRuntimeMode(process.env[ENV_RUNTIME_MODE]);
   const plan = process.env[ENV_INTERACTION] === "plan";
+  const cwd = process.env[ENV_CWD] ?? process.cwd();
+  const links = parseLinkedDirs(process.env[ENV_LINKED_DIRS]);
+  const append = process.env[ENV_SYSTEM_PROMPT_APPEND];
 
   pi.on("tool_call", async (event: ToolCallEvent, ctx: ExtensionContext): Promise<ToolCallEventResult | undefined> => {
     if (event.toolName === PLAN_TOOL_NAME) return undefined;
     const toolClass = classifyTool(event.toolName);
     if (toolClass === "read") return undefined;
+
+    // W1: pi can write anywhere, so *write* links need nothing; a read-only link is the
+    // one rule Tide has to enforce, and this is the hook that can.
+    const readOnly = readOnlyLinkFor(event.toolName, event.input, cwd, links);
+    if (readOnly) {
+      return { block: true, reason: `read-only linked repo: ${readOnly.label} (${readOnly.path}) is linked read-only; do not modify it.` };
+    }
 
     if (plan) {
       return {
@@ -79,11 +94,16 @@ export default function tideBridge(pi: ExtensionAPI): void {
     emitUsage(ctx);
   });
 
-  if (!plan) return;
+  // pi's RPC has no `systemPromptAppend`; this hook is the path Tide's preamble
+  // (linked repos, plan instructions) actually takes into the model's system prompt.
+  if (plan || (append !== undefined && append.trim() !== "")) {
+    pi.on("before_agent_start", async (event, _ctx) => {
+      const blocks = [event.systemPrompt, ...(append && append.trim() !== "" ? [append] : []), ...(plan ? [PLAN_SYSTEM_PROMPT] : [])];
+      return { systemPrompt: blocks.join("\n\n") };
+    });
+  }
 
-  pi.on("before_agent_start", async (event, _ctx) => ({
-    systemPrompt: `${event.systemPrompt}\n\n${PLAN_SYSTEM_PROMPT}`,
-  }));
+  if (!plan) return;
 
   pi.registerTool({
     name: PLAN_TOOL_NAME,

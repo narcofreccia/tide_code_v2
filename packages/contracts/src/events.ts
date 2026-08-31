@@ -1,5 +1,5 @@
 import { Type, type Static } from "typebox";
-import { Activity, ApprovalDecision, CheckpointStats, ExpertsFinding, ExpertsMessage, ExpertsPhase, ExpertsSession, Message, Project, ProposedPlan, ProviderKind, PullRequest, Thread, Turn, TurnUsage } from "./domain.ts";
+import { Activity, ApprovalDecision, CheckpointStats, ExpertsFinding, ExpertsMessage, ExpertsPhase, ExpertsSession, Message, Project, ProjectLink, ProposedPlan, ProviderKind, PullRequest, Thread, Turn, TurnUsage } from "./domain.ts";
 
 // Events = persisted facts. Payloads are self-contained so the projector
 // never needs to look anything up outside the event.
@@ -14,6 +14,9 @@ export const ProjectUpdated = evt("project.updated", {
   updatedAt: Type.Number(),
 });
 export const ProjectArchived = evt("project.archived", { projectId: Type.String(), archivedAt: Type.Number() });
+export const ProjectLinkAdded = evt("project.link.added", { projectId: Type.String(), link: ProjectLink, updatedAt: Type.Number() });
+export const ProjectLinkUpdated = evt("project.link.updated", { projectId: Type.String(), link: ProjectLink, updatedAt: Type.Number() });
+export const ProjectLinkRemoved = evt("project.link.removed", { projectId: Type.String(), linkId: Type.String(), updatedAt: Type.Number() });
 
 /** `useWorktree` is an intent for the vcs reactor, not state; the reactor answers with worktree.attached. */
 export const ThreadCreated = evt("thread.created", { thread: Thread, useWorktree: Type.Optional(Type.Boolean()) });
@@ -133,7 +136,7 @@ export const TurnSettled = evt("turn.settled", {
 export const DomainEvent = Type.Union([
   ProjectCreated,
   ProjectUpdated,
-  ProjectArchived,
+  ProjectArchived, ProjectLinkAdded, ProjectLinkUpdated, ProjectLinkRemoved,
   ThreadCreated,
   ThreadUpdated,
   ThreadArchived,

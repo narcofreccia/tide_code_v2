@@ -232,3 +232,50 @@ describe("ChangesTab", () => {
     expect(useWorkbench.getState().reveal["t1:src/a.ts"]).toMatchObject({ line: 42 });
   });
 });
+
+const linkedDiff = () =>
+  diff({
+    linked: [
+      {
+        linkId: "web",
+        label: "Web client",
+        path: "/src/web",
+        files: [{ path: "src/App.tsx", status: "modified" }],
+      },
+    ],
+  });
+
+describe("ChangesTab linked repositories", () => {
+  it("lists linked files under their repo and opens them at their absolute path", async () => {
+    setup();
+    mockRpc({
+      "vcs.turnDiff": linkedDiff,
+      "vcs.fileAt": (params: { ref: string }) => ({
+        content: params.ref === "WORKTREE" ? "after" : "before",
+        binary: false,
+        missing: false,
+      }),
+    });
+    render(<ChangesTab />);
+
+    await waitFor(() => expect(screen.getByText(/Web client/)).toBeDefined());
+    fireEvent.click(screen.getByTitle("/src/web/src/App.tsx"));
+    await waitFor(() => expect(screen.getByText("/src/web/src/App.tsx")).toBeDefined());
+  });
+
+  it("reverts one linked repo through vcs.linkedRevert", async () => {
+    setup();
+    const rpc = mockRpc({
+      "vcs.turnDiff": linkedDiff,
+      "vcs.fileAt": () => ({ content: "x", binary: false, missing: false }),
+      "vcs.linkedRevert": () => ({ reverted: ["src/App.tsx"] }),
+    });
+    render(<ChangesTab />);
+
+    await waitFor(() => expect(screen.getByText("Revert linked changes")).toBeDefined());
+    fireEvent.click(screen.getByText("Revert linked changes"));
+    await waitFor(() =>
+      expect(rpc).toHaveBeenCalledWith("vcs.linkedRevert", { threadId: "t1", linkId: "web" }),
+    );
+  });
+});

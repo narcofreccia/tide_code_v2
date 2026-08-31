@@ -3,7 +3,7 @@ import { OpencodeInstance } from "./instance.ts";
 import type { OpencodeConfig } from "./types.ts";
 
 export { OpencodeNormalizer, truncate } from "./normalize.ts";
-export { permissionRuleset, replyFor } from "./permissions.ts";
+export { permissionRuleset, linkRules, sessionRuleset, replyFor } from "./permissions.ts";
 export { OpencodeServer } from "./server.ts";
 export { OpencodeSession } from "./session.ts";
 export { OpencodeInstance, parseModelId } from "./instance.ts";

@@ -10,6 +10,7 @@ import styles from "./CommandPalette.module.css";
 export function CommandPalette() {
   const model = useModel((s) => s.model);
   const selectedThreadId = useUi((s) => s.selectedThreadId);
+  const selectedProjectId = useUi((s) => s.selectedProjectId);
   const [query, setQuery] = useState("");
   const [cursor, setCursor] = useState(0);
   const input = useRef<HTMLInputElement>(null);
@@ -18,8 +19,8 @@ export function CommandPalette() {
   useEffect(() => input.current?.focus(), []);
 
   const items = useMemo(
-    () => buildPaletteItems({ model, selectedThreadId }),
-    [model, selectedThreadId],
+    () => buildPaletteItems({ model, selectedThreadId, selectedProjectId }),
+    [model, selectedThreadId, selectedProjectId],
   );
   const matches = useMemo(() => rankPaletteItems(query, items, recents), [query, items, recents]);
   const at = Math.min(cursor, Math.max(0, matches.length - 1));

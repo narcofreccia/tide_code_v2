@@ -101,6 +101,7 @@ export async function callTool(
       const mode = optionalString(rawArgs, "mode") as RuntimeMode | undefined;
       const model = optionalString(rawArgs, "model");
       const title = optionalString(rawArgs, "title");
+      const repo = optionalString(rawArgs, "repo");
       const result = await backend.dispatch({
         type: "thread.delegate",
         // rewritten server-side to the calling thread
@@ -110,6 +111,7 @@ export async function callTool(
         ...(model !== undefined ? { model } : {}),
         ...(mode !== undefined ? { mode } : {}),
         ...(title !== undefined ? { title } : {}),
+        ...(repo !== undefined ? { repo } : {}),
         ...(rawArgs["useWorktree"] === true ? { useWorktree: true } : {}),
       });
       const created = result.events.find((r) => r.event.type === "thread.created");

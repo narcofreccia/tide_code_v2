@@ -5,8 +5,10 @@ import type {
   ExpertsFinding,
   ExpertsMessage,
   ExpertsSession,
+  LinkAccess,
   Message,
   Project,
+  ProjectLink,
   ProposedPlan,
   ReadModel,
   Thread,
@@ -382,4 +384,38 @@ export function selectPrCounts(model: ReadModel, projectId: string): PrCounts {
     if (thread.pr) counts[thread.pr.state] += 1;
   }
   return counts;
+}
+
+// ---- linked repositories (W1) ----
+
+/** A thread's link with the project link it points at, already resolved. */
+export interface ResolvedThreadLink {
+  link: ProjectLink;
+  /** the access this thread was created with, which may narrow the project default */
+  access: LinkAccess;
+}
+
+const NO_LINKS: ProjectLink[] = [];
+
+/** A project's linked repositories in stored order; `[]` when it has none. */
+export function selectProjectLinks(model: ReadModel, projectId: string): ProjectLink[] {
+  return model.projects[projectId]?.links ?? NO_LINKS;
+}
+
+/**
+ * The linked repos a thread can reach, with dangling ids dropped. A thread with
+ * no explicit `links` inherits the project's, each at its default access — the
+ * same rule `thread.create` applies when `links` is omitted.
+ */
+export function selectThreadLinks(model: ReadModel, threadId: string): ResolvedThreadLink[] {
+  const thread = model.threads[threadId];
+  if (!thread) return [];
+  const links = selectProjectLinks(model, thread.projectId);
+  if (thread.links === undefined) return links.map((link) => ({ link, access: link.access }));
+  const out: ResolvedThreadLink[] = [];
+  for (const entry of thread.links) {
+    const link = links.find((l) => l.id === entry.linkId);
+    if (link) out.push({ link, access: entry.access });
+  }
+  return out;
 }

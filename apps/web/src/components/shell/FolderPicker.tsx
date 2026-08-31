@@ -51,7 +51,11 @@ export function FolderPicker({
           setListing(result);
           setActive(0);
         })
-        .catch((err: unknown) => setError(err instanceof Error ? err.message : String(err)));
+        .catch((err: unknown) => {
+          const message = err instanceof Error ? err.message : String(err);
+          // an older sidecar without fs.browse: point at the typed-path fallback instead of a raw RPC error
+          setError(/unknown method/i.test(message) ? "This Tide server can't browse folders yet (update the app). Close this and type the path instead." : message);
+        });
     },
     [],
   );

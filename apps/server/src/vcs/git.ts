@@ -184,6 +184,41 @@ export class Git {
     return { dirty };
   }
 
+  /**
+   * Working-tree changes as `{path, status}` — the porcelain-v1 XY code, with `??` for
+   * untracked. Used for the W1 linked-repo change summary, where a full patch would be
+   * both expensive and beside the point.
+   */
+  async statusFiles(): Promise<{ path: string; status: string }[]> {
+    // `-uall` so an untracked directory is listed as its individual files, not collapsed
+    const r = await this.tryRun(["status", "--porcelain=v1", "--untracked-files=all", "-z"]);
+    if (r.code !== 0) return [];
+    const out: { path: string; status: string }[] = [];
+    const parts = r.stdout.split("\0");
+    for (let i = 0; i < parts.length; i++) {
+      const entry = parts[i];
+      if (entry === undefined || entry.length < 4) continue;
+      const status = entry.slice(0, 2);
+      const path = entry.slice(3);
+      // renames/copies emit the source path as the next NUL-separated field
+      if (status[0] === "R" || status[0] === "C") i++;
+      if (path !== "") out.push({ path, status });
+    }
+    return out;
+  }
+
+  /** Discards working-tree changes for tracked paths (`git checkout --`). */
+  async restore(paths: string[]): Promise<void> {
+    if (paths.length === 0) return;
+    await this.run(["checkout", "--", ...paths]);
+  }
+
+  /** Deletes the named untracked paths only — never a blanket `git clean`. */
+  async removeUntracked(paths: string[]): Promise<void> {
+    if (paths.length === 0) return;
+    await this.run(["clean", "-fd", "--", ...paths]);
+  }
+
   async aheadBehind(): Promise<AheadBehind | undefined> {
     const r = await this.tryRun(["rev-list", "--left-right", "--count", "HEAD...@{upstream}"]);
     if (r.code !== 0) return undefined;

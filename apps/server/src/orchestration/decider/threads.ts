@@ -1,5 +1,24 @@
-import type { CommandOf, ReadModel, Thread } from "@tide/contracts";
+import type { CommandOf, LinkAccess, Project, ReadModel, Thread } from "@tide/contracts";
 import { fail, isArchived, ok, type DecideContext, type DecideResult } from "./types.ts";
+
+type ThreadLink = { linkId: string; access: LinkAccess };
+
+/**
+ * A thread's links are resolved once, at creation: the requested overrides if any, else
+ * every project link at its default access. An override can only ever *narrow* access —
+ * a read-only project link stays read-only however the caller asks for it.
+ */
+function resolveLinks(project: Project, requested: ThreadLink[] | undefined): { links: ThreadLink[] } | { error: string } {
+  const available = project.links ?? [];
+  if (requested === undefined) return { links: available.map((l) => ({ linkId: l.id, access: l.access })) };
+  const links: ThreadLink[] = [];
+  for (const want of requested) {
+    const link = available.find((l) => l.id === want.linkId);
+    if (!link) return { error: want.linkId };
+    links.push({ linkId: link.id, access: link.access === "read" ? "read" : want.access });
+  }
+  return { links };
+}
 
 type ThreadCommand =
   | CommandOf<"thread.create">
@@ -15,6 +34,8 @@ export function decideThread(model: ReadModel, command: ThreadCommand, ctx: Deci
       if (command.parentThreadId !== undefined && !model.threads[command.parentThreadId]) {
         return fail("not-found", `unknown parent thread ${command.parentThreadId}`);
       }
+      const resolved = resolveLinks(project, command.links);
+      if ("error" in resolved) return fail("not-found", `unknown link ${resolved.error} on project ${project.id}`);
       const thread: Thread = {
         id: ctx.newId(),
         projectId: project.id,
@@ -25,6 +46,7 @@ export function decideThread(model: ReadModel, command: ThreadCommand, ctx: Deci
         mode: command.mode ?? "approval-required",
         interaction: command.interaction ?? "default",
         status: "idle",
+        ...(resolved.links.length > 0 || command.links !== undefined ? { links: resolved.links } : {}),
         createdAt: ctx.now,
         updatedAt: ctx.now,
       };

@@ -1,4 +1,4 @@
-import type { CommandOf, ExpertsFinding, ExpertsMessage, ProposedPlan, ReadModel, Thread } from "@tide/contracts";
+import type { CommandOf, DomainEvent, ExpertsFinding, ExpertsMessage, Project, ProposedPlan, ReadModel, Thread } from "@tide/contracts";
 import { delegatePrompt } from "../../experts/prompts.ts";
 import { recipientKeys } from "./experts.ts";
 import { fail, isArchived, ok, turnRequested, type DecideContext, type DecideResult } from "./types.ts";
@@ -84,9 +84,25 @@ export function decideAgent(model: ReadModel, command: AgentCommand, ctx: Decide
     case "thread.delegate": {
       const from = model.threads[command.fromThreadId];
       if (!from) return fail("not-found", `unknown thread ${command.fromThreadId}`);
-      const project = model.projects[from.projectId];
-      if (!project) return fail("not-found", `unknown project ${from.projectId}`);
-      if (isArchived(project)) return fail("conflict", `project ${project.id} is archived`);
+      const home = model.projects[from.projectId];
+      if (!home) return fail("not-found", `unknown project ${from.projectId}`);
+      if (isArchived(home)) return fail("conflict", `project ${home.id} is archived`);
+
+      // `repo` names one of the caller's links: the delegate runs with that repo as its
+      // *main* repo (its own project), not as a link. It carries no links of its own.
+      let project = home;
+      const extra: DomainEvent[] = [];
+      if (command.repo !== undefined) {
+        const wanted = command.repo.trim().toLowerCase();
+        const link = (home.links ?? []).find((l) => l.label.trim().toLowerCase() === wanted);
+        if (!link) return fail("not-found", `no linked repository labelled ${command.repo} on project ${home.id}`);
+        const existing = Object.values(model.projects).find((p) => !isArchived(p) && p.rootPath === link.path);
+        if (existing) project = existing;
+        else {
+          project = { id: ctx.newId(), title: link.label, rootPath: link.path, createdAt: ctx.now, updatedAt: ctx.now } satisfies Project;
+          extra.push({ type: "project.created", project });
+        }
+      }
       const thread: Thread = {
         id: ctx.newId(),
         projectId: project.id,
@@ -103,6 +119,7 @@ export function decideAgent(model: ReadModel, command: AgentCommand, ctx: Decide
         updatedAt: ctx.now,
       };
       return ok(
+        ...extra,
         { type: "thread.created", thread, ...(command.useWorktree !== undefined ? { useWorktree: command.useWorktree } : {}) },
         turnRequested(thread.id, delegatePrompt(command.prompt, from.title), ctx),
       );

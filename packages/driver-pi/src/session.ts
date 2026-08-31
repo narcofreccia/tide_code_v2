@@ -1,5 +1,5 @@
 import type { ApprovalDecision, DriverEnv, NormalizedEvent, OpenSessionOptions, ProviderSession, TurnInput, TurnUsage } from "@tide/contracts";
-import { ENV_INTERACTION, ENV_RUNTIME_MODE, ENV_THREAD_ID } from "@tide/pi-extensions/protocol";
+import { ENV_CWD, ENV_INTERACTION, ENV_LINKED_DIRS, ENV_RUNTIME_MODE, ENV_SYSTEM_PROMPT_APPEND, ENV_THREAD_ID } from "@tide/pi-extensions/protocol";
 import { PiApprovalBroker } from "./approvals.ts";
 import { AsyncQueue } from "./async-queue.ts";
 import { PiNormalizer } from "./normalize.ts";
@@ -219,6 +219,9 @@ export function buildSpawn(
       [ENV_RUNTIME_MODE]: options.mode,
       [ENV_INTERACTION]: options.interaction,
       [ENV_THREAD_ID]: options.threadId,
+      [ENV_CWD]: options.cwd,
+      ...(options.linkedDirs && options.linkedDirs.length > 0 ? { [ENV_LINKED_DIRS]: JSON.stringify(options.linkedDirs) } : {}),
+      ...(options.systemPromptAppend !== undefined ? { [ENV_SYSTEM_PROMPT_APPEND]: options.systemPromptAppend } : {}),
     },
   };
 }

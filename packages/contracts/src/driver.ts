@@ -43,6 +43,14 @@ export interface McpServerSpec {
   env?: Record<string, string>;
 }
 
+/** W1: a linked repository the session may reach, resolved from the project's links. */
+export interface LinkedDir {
+  path: string;
+  label: string;
+  note?: string;
+  access: "read" | "write";
+}
+
 export interface OpenSessionOptions {
   threadId: string;
   cwd: string;
@@ -53,6 +61,8 @@ export interface OpenSessionOptions {
   interaction: InteractionMode;
   mcpServers: McpServerSpec[];
   systemPromptAppend?: string;
+  /** W1: secondary repos this thread may reach (never worktrees — always the real path) */
+  linkedDirs?: LinkedDir[];
   env?: Record<string, string>;
 }
 

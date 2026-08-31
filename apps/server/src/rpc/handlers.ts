@@ -1,4 +1,6 @@
-import { isInternalCommand, type EventRecord } from "@tide/contracts";
+import { realpath, stat } from "node:fs/promises";
+import { isAbsolute } from "node:path";
+import { isInternalCommand, type ClientCommand, type EventRecord } from "@tide/contracts";
 import { CommandError, type Engine } from "../orchestration/engine.ts";
 import type { EventStore } from "../orchestration/store.ts";
 import type { DriverRegistry } from "../provider/registry.ts";
@@ -17,6 +19,26 @@ export interface HandlerDeps {
   tools?: { git: boolean; gh: boolean; rg: boolean };
   /** how clients reach this server; resolved per call because the port is known only after listen */
   remote?: (options: { includePairing: boolean }) => RemoteInfo;
+  /** W1: resolves + validates a linked-repo path; injectable so tests need no real directories */
+  resolveDir?: (path: string) => Promise<string>;
+}
+
+/**
+ * The only filesystem check in the command path: a linked repo has to exist as a directory
+ * on this host, and symlinked link paths are recorded by their real path so containment
+ * checks in the drivers compare like with like. The decider stays pure.
+ */
+async function defaultResolveDir(path: string): Promise<string> {
+  if (!isAbsolute(path)) throw new RpcException("invalid-params", `link path ${path} must be absolute`);
+  let real: string;
+  try {
+    real = await realpath(path);
+  } catch {
+    throw new RpcException("not-found", `link path ${path} does not exist`);
+  }
+  const info = await stat(real);
+  if (!info.isDirectory()) throw new RpcException("invalid-params", `link path ${path} is not a directory`);
+  return real;
 }
 
 export function registerHandlers(router: RpcRouter, deps: HandlerDeps): void {
@@ -33,14 +55,18 @@ export function registerHandlers(router: RpcRouter, deps: HandlerDeps): void {
     };
   });
 
+  const resolveDir = deps.resolveDir ?? defaultResolveDir;
+
   router.register("orchestration.dispatch", async (input) => {
     // The schema already accepts only ClientCommand; this is the belt to that brace.
     const type = input.command.type;
     if (isInternalCommand(input.command)) {
       throw new RpcException("forbidden", `${type} is a server-internal command`);
     }
+    let command: ClientCommand = input.command;
+    if (command.type === "project.link.add") command = { ...command, path: await resolveDir(command.path) };
     try {
-      return await deps.engine.dispatch(input.command);
+      return await deps.engine.dispatch(command);
     } catch (err) {
       if (err instanceof CommandError) throw new RpcException(err.code, err.message);
       throw err;

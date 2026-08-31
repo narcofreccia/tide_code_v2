@@ -77,7 +77,7 @@ export class ClaudeSession implements ProviderSession {
     if (options.resume !== undefined) this.nativeSessionId = options.resume;
     this.#permissionMode = options.interaction === "plan" ? "plan" : (MODE_TO_PERMISSION[options.mode] ?? "default");
     this.#autoModeFallbackAvailable = this.#permissionMode === "auto";
-    this.#broker = new ApprovalBroker((event) => this.#emit(event));
+    this.#broker = new ApprovalBroker((event) => this.#emit(event), options.linkedDirs ?? []);
     this.#normalizer = new ClaudeNormalizer({
       partialMessages: true,
       // status/rate-limit/thinking chatter is expected; only surface it when debugging the driver
@@ -117,6 +117,10 @@ export class ClaudeSession implements ProviderSession {
       ...(model ? { model } : {}),
       ...(this.nativeSessionId ? { resume: this.nativeSessionId } : {}),
       ...(Object.keys(mcpServers).length > 0 ? { mcpServers } : {}),
+      // Every link (read-only ones too) is added: the SDK's workspace gate covers reads as
+      // well as writes, and a read-only link that is not listed could not even be read.
+      // Edits under a read-only link are denied in `canUseTool` instead — see links.ts.
+      ...(options.linkedDirs && options.linkedDirs.length > 0 ? { additionalDirectories: options.linkedDirs.map((dir) => dir.path) } : {}),
       ...(this.#permissionMode === "bypassPermissions" ? { allowDangerouslySkipPermissions: true } : {}),
       ...(options.systemPromptAppend ? { systemPrompt: { type: "preset", preset: "claude_code", append: options.systemPromptAppend } } : {}),
       ...(this.#binaryPath ? { pathToClaudeCodeExecutable: this.#binaryPath } : {}),

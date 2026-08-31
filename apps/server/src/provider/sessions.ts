@@ -1,4 +1,5 @@
 import type { McpServerSpec, Project, ProviderKind, ProviderSession, Thread } from "@tide/contracts";
+import { composeSystemPromptAppend, linkedRepoPreamble, resolveLinkedDirs } from "./links.ts";
 import type { DriverRegistry } from "./registry.ts";
 
 const IDLE_MS = 30 * 60_000;
@@ -83,13 +84,15 @@ export class SessionDirectory {
     const inflight = this.#opening.get(thread.id);
     if (inflight) return inflight;
 
-    const open = this.#open(thread, cwd).finally(() => this.#opening.delete(thread.id));
+    const open = this.#open(thread, cwd, project).finally(() => this.#opening.delete(thread.id));
     this.#opening.set(thread.id, open);
     return open;
   }
 
-  async #open(thread: Thread, cwd: string): Promise<ProviderSession> {
+  async #open(thread: Thread, cwd: string, project: Project): Promise<ProviderSession> {
     const instance = await this.#registry.get(thread.provider);
+    const linkedDirs = resolveLinkedDirs(thread, project);
+    const systemPromptAppend = composeSystemPromptAppend(linkedRepoPreamble(project, linkedDirs));
     const previous = this.#lastKind.get(thread.id);
     const resumable = thread.nativeSessionId !== undefined && (previous === undefined || previous === thread.provider);
     const session = await instance.openSession({
@@ -100,6 +103,8 @@ export class SessionDirectory {
       mode: thread.mode,
       interaction: thread.interaction,
       mcpServers: [...this.#mcpServers, ...(this.#mcp?.serversFor(thread.id) ?? [])],
+      ...(linkedDirs.length > 0 ? { linkedDirs } : {}),
+      ...(systemPromptAppend !== undefined ? { systemPromptAppend } : {}),
     });
     this.#entries.set(thread.id, { threadId: thread.id, kind: thread.provider, cwd, session, lastUsedAt: this.#now() });
     this.#lastKind.set(thread.id, thread.provider);

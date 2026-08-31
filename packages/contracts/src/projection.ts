@@ -60,6 +60,18 @@ export function applyEvent(model: ReadModel, event: DomainEvent): ReadModel {
       if (!p) return model;
       return { ...model, projects: { ...model.projects, [p.id]: { ...p, ...(event.title !== undefined ? { title: event.title } : {}), updatedAt: event.updatedAt } } };
     }
+    case "project.link.added":
+    case "project.link.updated": {
+      const p = model.projects[event.projectId];
+      if (!p) return model;
+      const links = (p.links ?? []).filter((l) => l.id !== event.link.id).concat(event.link);
+      return { ...model, projects: { ...model.projects, [p.id]: { ...p, links, updatedAt: event.updatedAt } } };
+    }
+    case "project.link.removed": {
+      const p = model.projects[event.projectId];
+      if (!p) return model;
+      return { ...model, projects: { ...model.projects, [p.id]: { ...p, links: (p.links ?? []).filter((l) => l.id !== event.linkId), updatedAt: event.updatedAt } } };
+    }
     case "project.archived": {
       const p = model.projects[event.projectId];
       if (!p) return model;

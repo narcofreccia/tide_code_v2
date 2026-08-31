@@ -1,5 +1,5 @@
 import { Type, type Static } from "typebox";
-import { Activity, ApprovalDecision, CheckpointStats, ExpertSpec, ExpertsPhase, InteractionMode, ProviderKind, PullRequest, RuntimeMode, TurnUsage } from "./domain.ts";
+import { Activity, ApprovalDecision, CheckpointStats, ExpertSpec, ExpertsPhase, InteractionMode, LinkAccess, ProviderKind, PullRequest, RuntimeMode, TurnUsage } from "./domain.ts";
 
 // Commands = validated intents. ClientCommand may arrive over RPC; InternalCommand is
 // issued only by server reactors (driver ingestion) and is rejected at the RPC boundary.
@@ -14,6 +14,27 @@ export const ProjectUpdate = Type.Object({
   projectId: Type.String(),
   title: Type.Optional(Type.String({ minLength: 1 })),
 });
+export const ProjectLinkAdd = Type.Object({
+  type: Type.Literal("project.link.add"),
+  projectId: Type.String(),
+  path: Type.String({ minLength: 1 }),
+  label: Type.String({ minLength: 1 }),
+  note: Type.Optional(Type.String()),
+  access: Type.Optional(LinkAccess),
+});
+export const ProjectLinkUpdate = Type.Object({
+  type: Type.Literal("project.link.update"),
+  projectId: Type.String(),
+  linkId: Type.String(),
+  label: Type.Optional(Type.String({ minLength: 1 })),
+  note: Type.Optional(Type.String()),
+  access: Type.Optional(LinkAccess),
+});
+export const ProjectLinkRemove = Type.Object({
+  type: Type.Literal("project.link.remove"),
+  projectId: Type.String(),
+  linkId: Type.String(),
+});
 export const ProjectArchive = Type.Object({ type: Type.Literal("project.archive"), projectId: Type.String() });
 
 export const ThreadCreate = Type.Object({
@@ -27,6 +48,8 @@ export const ThreadCreate = Type.Object({
   interaction: Type.Optional(InteractionMode),
   /** P2: create a git worktree for this thread */
   useWorktree: Type.Optional(Type.Boolean()),
+  /** W1: per-thread link overrides; omitted = all project links with their default access */
+  links: Type.Optional(Type.Array(Type.Object({ linkId: Type.String(), access: LinkAccess }))),
 });
 export const ThreadUpdate = Type.Object({
   type: Type.Literal("thread.update"),
@@ -109,7 +132,7 @@ export const ExpertsSetPhase = Type.Object({ type: Type.Literal("experts.set-pha
 export const ExpertsArchive = Type.Object({ type: Type.Literal("experts.archive"), sessionId: Type.String() });
 
 export const ClientCommand = Type.Union([
-  ProjectCreate, ProjectUpdate, ProjectArchive,
+  ProjectCreate, ProjectUpdate, ProjectArchive, ProjectLinkAdd, ProjectLinkUpdate, ProjectLinkRemove,
   ThreadCreate, ThreadUpdate, ThreadArchive,
   TurnRequest, TurnInterrupt,
   ApprovalRespond, UserInputRespond,
@@ -189,6 +212,8 @@ export const ThreadDelegate = Type.Object({
   title: Type.Optional(Type.String()),
   prompt: Type.String({ minLength: 1 }),
   useWorktree: Type.Optional(Type.Boolean()),
+  /** W1: label of one of the calling project's links; the delegate runs with that repo as its main repo */
+  repo: Type.Optional(Type.String({ minLength: 1 })),
 });
 export const ExpertsThreadsBound = Type.Object({
   type: Type.Literal("experts.threads.bound"),
