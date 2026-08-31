@@ -60,7 +60,7 @@
         <h1>Tide v2 — Project Journal</h1>
         <div class="sub">Focused agentic code editor &amp; orchestrator over Claude Code · Codex · OpenCode · Pi. Started 2026-08-30.</div>
         <div class="kpi">
-          <div class="box"><b>P0–P6</b><span>done · v2.0.0-alpha.0</span></div>
+          <div class="box"><b>R1</b><span>fixes + release · P0–P6 done</span></div>
           <div class="box"><b>54</b><span>commits</span></div>
           <div class="box"><b>621</b><span>tests passing</span></div>
         </div>
@@ -95,6 +95,18 @@
       </table>
 
       <h2>Phase board</h2>
+
+      <details class="phase" open>
+        <summary><span class="title"><h3>R1 — First-run fixes &amp; release pipeline</h3><small>title bar inset · dark default + toggle · custom Select · R2 release (mac local, windows/linux CI)</small></span><span class="badge status wip">wip</span></summary>
+        <div class="body">
+          <ul class="tasks">
+            <li><span class="badge status wip">wip</span><span class="t">Web: desktop flag + traffic-light inset + drag regions; dark default, ⌘⇧L toggle, no-flash pre-paint; custom listbox <code>Select</code> (pill/field, portal + clamp, keyboard, search, groups) reused everywhere incl. TopBar; <code>Checkbox</code>/<code>Radio</code> — Opus agent</span></li>
+            <li><span class="badge status wip">wip</span><span class="t">Release: <code>scripts/release/{build_release.sh,publish_windows.sh,publish_linux.sh,merge_manifest.py,bump_version.sh,entitlements.plist}</code> (tide_share template), updater keypair + endpoint <code>…/tidecode/latest.json</code>, shell updater dialog, <code>release-windows.yml</code> / <code>release-linux.yml</code>, <code>docs/RELEASING.md</code>, <code>trafficLightPosition</code> — Opus agent</span></li>
+            <li><span class="badge status todo">todo</span><span class="t">Orchestrator: validate, live mac release (signed + notarized → R2 <code>mac/</code>, manifest), set GitHub secrets, trigger Windows workflow</span></li>
+          </ul>
+          <p class="note">2026-08-31 — Andrea's first desktop run: traffic lights over ⌘K, opened in light mode with no switch, native selects. Decisions: dark default + quick toggle (no named palettes), custom Select component, R2 house layout with the same Apple credentials as v1, Windows via GitHub Actions.</p>
+        </div>
+      </details>
 
       <details class="phase">
         <summary><span class="title"><h3>P0 — Skeleton, contracts, engine, shell</h3><small>monorepo · @tide/contracts · event-sourced server · client package · web shell</small></span><span class="badge status done">done</span></summary>
