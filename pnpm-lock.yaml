@@ -32,6 +32,9 @@ importers:
       '@tide/driver-codex':
         specifier: workspace:*
         version: link:../../packages/driver-codex
+      '@tide/driver-opencode':
+        specifier: workspace:*
+        version: link:../../packages/driver-opencode
       '@tide/driver-pi':
         specifier: workspace:*
         version: link:../../packages/driver-pi

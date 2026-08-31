@@ -1,6 +1,7 @@
 import type { ProviderDriver } from "@tide/contracts";
 import { claudeDriver } from "@tide/driver-claude";
 import { codexDriver } from "@tide/driver-codex";
+import { opencodeDriver } from "@tide/driver-opencode";
 import { piDriver } from "@tide/driver-pi";
 import type { ProviderConfigs } from "../config.ts";
 import type { DriverRegistry } from "./registry.ts";
@@ -18,6 +19,7 @@ export async function registerBundledDrivers(registry: DriverRegistry, providers
   const bundled: { driver: AnyDriver; config: Record<string, unknown> | undefined }[] = [
     { driver: claudeDriver as AnyDriver, config: providers.claude },
     { driver: codexDriver as AnyDriver, config: providers.codex },
+    { driver: opencodeDriver as AnyDriver, config: providers.opencode },
     { driver: piDriver as AnyDriver, config: providers.pi },
   ];
   for (const { driver, config } of bundled) {

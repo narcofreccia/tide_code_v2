@@ -37,10 +37,14 @@ OpenCode `plan` agent; Pi = system-prompt + `tide_propose_plan` tool.
 - MCP: Tide's servers are added as `-c 'mcp_servers.<name>.command=…'` overrides at spawn — verified to **merge** with the user's own `mcp_servers` (non-crippling).
 - **Exact bindings per installed version:** `pnpm --filter @tide/driver-codex regen` (runs `codex app-server generate-ts` and fixes `.ts` specifiers). Regenerate on codex upgrade; never hand-write types.
 
-## OpenCode — `opencode serve` + `@opencode-ai/sdk` (1.18.x)
+## OpenCode — `opencode serve` + `@opencode-ai/sdk` (opencode 1.1.36 / sdk 1.18, verified live)
 
-- `opencode serve --port 0 --hostname 127.0.0.1` prints the bound URL; SDK `createOpencodeClient({ baseUrl })` (dist: `client`, `server` helper to spawn, `gen/` typed endpoints).
-- Sessions (`session.create/prompt/abort`), SSE `event.subscribe` for message parts, permission events + `permission.respond`, `plan`/`build` agents, native file parts (images/text/PDF).
+- One managed `opencode serve --port 0 --hostname 127.0.0.1` **per instance** (a server started anywhere runs sessions in whatever `directory` they carry); URL parsed from stdout; `GET /global/health` → `{healthy, version}`.
+- **Every route takes `?directory=`, including `event.subscribe`** — without it the SSE stream silently carries no session events.
+- SDK methods used: `session.create` (accepts a per-session `permission` ruleset `{permission, pattern, action}[]` — newer than the SDK body type), `session.promptAsync` (returns `{}`; completion only via SSE `session.idle`), `session.abort`, `postSessionIdPermissionsPermissionId` (`once|always|reject`), `event.subscribe`, `config.providers` (models `provider/model`), `app.agents` (`plan`/`build`), `mcp.add`. Raw: `POST /question/{id}/reply {answers: string[][]}`.
+- Events: `message.part.updated` (text `delta`, tool parts with state), `message.updated` (assistant `tokens`/`cost`), `permission.asked` (`id, permission, patterns, metadata, tool.{messageID,callID}`), `permission.replied`, `question.asked`, `todo.updated` → plan progress, `session.status` (`busy`/`retry` → info), `session.idle` → settled, `session.error`.
+- Plan mode = `plan` agent; ProposedPlan = the plan agent's completed assistant message, and a `plan_exit` permission is recorded as a plan and **auto-rejected** (Tide never lets the harness flip into editing).
+- Permission mapping: approval-required → edit/bash/webfetch `ask`; auto-accept-edits → edit `allow`, bash/webfetch `ask`; auto → all `allow`; full-access → `*` allow. Resumed sessions keep their original ruleset (`PATCH /session` only takes a title). Escape hatch: `opencode -s <sessionId>`.
 
 ## Pi — `pi --mode rpc` (0.78+)
 

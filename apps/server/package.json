@@ -20,7 +20,8 @@
     "typebox": "^1.3.0",
     "ws": "^8.21.0",
     "@tide/driver-pi": "workspace:*",
-    "@tide/driver-codex": "workspace:*"
+    "@tide/driver-codex": "workspace:*",
+    "@tide/driver-opencode": "workspace:*"
   },
   "devDependencies": {
     "@types/node": "^22.0.0",
