@@ -1,5 +1,5 @@
 import { Type, type Static, type TSchema } from "typebox";
-import { ClientCommand } from "./commands.ts";
+import { AgentCommand, ClientCommand } from "./commands.ts";
 import { EventRecord } from "./events.ts";
 import { ProviderKind, ReadModel } from "./domain.ts";
 
@@ -171,6 +171,26 @@ export const rpcMethods = {
   "pty.resize": unary(Type.Object({ ptyId: Type.String(), cols: Type.Number(), rows: Type.Number() }), Type.Object({ ok: Type.Boolean() })),
   "pty.kill": unary(Type.Object({ ptyId: Type.String() }), Type.Object({ ok: Type.Boolean() })),
   "pty.list": unary(Type.Object({ threadId: Type.String() }), Type.Object({ ptys: Type.Array(Type.Object({ ptyId: Type.String(), title: Type.Optional(Type.String()), alive: Type.Boolean() })) })),
+  // agent-facing (Tide MCP server; socket authenticated with a per-thread agent ticket → ctx.agentThreadId)
+  /** experts board / delegation commands; the server stamps author/from/fromThreadId from the authenticated thread */
+  "agent.dispatch": unary(Type.Object({ command: AgentCommand }), DispatchResult),
+  /** what the calling thread needs to know: its experts session (if any), unread messages, findings */
+  "agent.context": unary(
+    Type.Object({ sinceMessageId: Type.Optional(Type.String()) }),
+    Type.Object({
+      threadId: Type.String(),
+      role: Type.Optional(Type.String()),
+      expertKey: Type.Optional(Type.String()),
+      session: Type.Optional(Type.Object({ id: Type.String(), topic: Type.String(), phase: Type.String(), experts: Type.Array(Type.Object({ key: Type.String(), name: Type.String(), role: Type.String(), provider: Type.String(), status: Type.String() })) })),
+      findings: Type.Array(Type.Object({ id: Type.String(), author: Type.String(), text: Type.String(), createdAt: Type.Number() })),
+      messages: Type.Array(Type.Object({ id: Type.String(), from: Type.String(), to: Type.String(), text: Type.String(), createdAt: Type.Number() })),
+    }),
+  ),
+  /** status + last assistant text of a thread this agent delegated */
+  "agent.threadStatus": unary(
+    Type.Object({ threadId: Type.String() }),
+    Type.Object({ status: Type.String(), attention: Type.Optional(Type.String()), lastAssistantText: Type.Optional(Type.String()), settled: Type.Boolean(), error: Type.Optional(Type.String()) }),
+  ),
   /** full contents of a file at a ref (or the working tree when ref is "WORKTREE"), for side-by-side views */
   "vcs.fileAt": unary(
     Type.Object({ threadId: Type.String(), ref: Type.String(), path: Type.String() }),

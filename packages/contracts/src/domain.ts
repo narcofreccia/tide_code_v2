@@ -63,6 +63,72 @@ export const Project = Type.Object({
 });
 export type Project = Static<typeof Project>;
 
+// ---- Experts: a cross-harness brainstorming session. Each expert is an ordinary thread
+// (any provider); they talk through a server-mediated board exposed as MCP tools. ----
+export const ExpertsPhase = Type.Union([
+  Type.Literal("setup"),
+  Type.Literal("exploring"),
+  Type.Literal("discussing"),
+  Type.Literal("synthesizing"),
+  Type.Literal("ready"),
+  Type.Literal("archived"),
+]);
+export type ExpertsPhase = Static<typeof ExpertsPhase>;
+
+export const ExpertSpec = Type.Object({
+  key: Type.String(),
+  name: Type.String(),
+  role: Type.String(),
+  provider: ProviderKind,
+  model: Type.Optional(Type.String()),
+  /** persona instructions appended to the expert's first prompt */
+  persona: Type.Optional(Type.String()),
+});
+export type ExpertSpec = Static<typeof ExpertSpec>;
+
+export const ExpertState = Type.Object({
+  ...ExpertSpec.properties,
+  threadId: Type.Optional(Type.String()),
+  status: Type.Union([Type.Literal("pending"), Type.Literal("working"), Type.Literal("idle"), Type.Literal("error")]),
+});
+export type ExpertState = Static<typeof ExpertState>;
+
+export const ExpertsFinding = Type.Object({
+  id: Type.String(),
+  sessionId: Type.String(),
+  /** expert key, "lead", or "user" */
+  author: Type.String(),
+  text: Type.String(),
+  createdAt: Type.Number(),
+});
+export type ExpertsFinding = Static<typeof ExpertsFinding>;
+
+export const ExpertsMessage = Type.Object({
+  id: Type.String(),
+  sessionId: Type.String(),
+  from: Type.String(),
+  /** expert key, "lead", or "all" */
+  to: Type.String(),
+  text: Type.String(),
+  createdAt: Type.Number(),
+});
+export type ExpertsMessage = Static<typeof ExpertsMessage>;
+
+export const ExpertsSession = Type.Object({
+  id: Type.String(),
+  projectId: Type.String(),
+  topic: Type.String(),
+  phase: ExpertsPhase,
+  experts: Type.Array(ExpertState),
+  lead: Type.Object({ provider: ProviderKind, model: Type.Optional(Type.String()), threadId: Type.Optional(Type.String()) }),
+  findingIds: Type.Array(Type.String()),
+  messageIds: Type.Array(Type.String()),
+  synthesis: Type.Optional(Type.Object({ markdown: Type.String(), planId: Type.Optional(Type.String()), at: Type.Number() })),
+  createdAt: Type.Number(),
+  updatedAt: Type.Number(),
+});
+export type ExpertsSession = Static<typeof ExpertsSession>;
+
 export const PullRequest = Type.Object({
   url: Type.String(),
   number: Type.Number(),
@@ -80,6 +146,11 @@ export const Thread = Type.Object({
   model: Type.Optional(Type.String()),
   mode: RuntimeMode,
   interaction: InteractionMode,
+  /** set when the thread belongs to an Experts session or was delegated by another thread */
+  role: Type.Optional(Type.Union([Type.Literal("expert"), Type.Literal("lead"), Type.Literal("delegate")])),
+  expertsSessionId: Type.Optional(Type.String()),
+  /** thread that created this one via tide_delegate */
+  delegatedBy: Type.Optional(Type.String()),
   worktreePath: Type.Optional(Type.String()),
   branch: Type.Optional(Type.String()),
   /** branch the worktree was forked from (merge/PR base) */
@@ -247,6 +318,9 @@ export const ReadModel = Type.Object({
   messages: Type.Record(Type.String(), Message),
   activities: Type.Record(Type.String(), Activity),
   plans: Type.Record(Type.String(), ProposedPlan),
+  expertsSessions: Type.Record(Type.String(), ExpertsSession),
+  expertsFindings: Type.Record(Type.String(), ExpertsFinding),
+  expertsMessages: Type.Record(Type.String(), ExpertsMessage),
   /** threadId -> ordered messageIds (kept for simple consumers) */
   threadMessages: Type.Record(Type.String(), Type.Array(Type.String())),
   /** threadId -> ordered stream of messages, activities and plans */
@@ -255,5 +329,8 @@ export const ReadModel = Type.Object({
 export type ReadModel = Static<typeof ReadModel>;
 
 export function emptyReadModel(): ReadModel {
-  return { seq: 0, projects: {}, threads: {}, turns: {}, messages: {}, activities: {}, plans: {}, threadMessages: {}, threadTimeline: {} };
+  return {
+    seq: 0, projects: {}, threads: {}, turns: {}, messages: {}, activities: {}, plans: {},
+    expertsSessions: {}, expertsFindings: {}, expertsMessages: {}, threadMessages: {}, threadTimeline: {},
+  };
 }

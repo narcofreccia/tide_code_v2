@@ -1,4 +1,4 @@
-import type { Activity, AttentionKind, ReadModel, Thread, TimelineEntry } from "./domain.ts";
+import type { Activity, AttentionKind, ExpertsSession, ReadModel, Thread, TimelineEntry } from "./domain.ts";
 import type { DomainEvent, EventRecord } from "./events.ts";
 
 // Pure projector shared by server and clients. Returns a new model; never
@@ -8,6 +8,10 @@ function withThread(model: ReadModel, id: string, patch: Partial<Thread>): ReadM
   const t = model.threads[id];
   if (!t) return model;
   return { ...model, threads: { ...model.threads, [id]: { ...t, ...patch } } };
+}
+
+function withExperts(model: ReadModel, session: ExpertsSession): ReadModel {
+  return { ...model, expertsSessions: { ...model.expertsSessions, [session.id]: session } };
 }
 
 function appendTimeline(model: ReadModel, threadId: string, entry: TimelineEntry): ReadModel {
@@ -117,6 +121,43 @@ export function applyEvent(model: ReadModel, event: DomainEvent): ReadModel {
     }
     case "pr.updated":
       return withThread(model, event.threadId, { pr: event.pr, updatedAt: event.pr.updatedAt });
+    case "experts.created":
+      return { ...model, expertsSessions: { ...model.expertsSessions, [event.session.id]: event.session } };
+    case "experts.threads-bound": {
+      const x = model.expertsSessions[event.sessionId];
+      if (!x) return model;
+      const byKey = new Map(event.bindings.map((b) => [b.key, b.threadId]));
+      const experts = x.experts.map((e) => (byKey.has(e.key) ? { ...e, threadId: byKey.get(e.key) as string } : e));
+      return withExperts(model, { ...x, experts, lead: { ...x.lead, threadId: event.leadThreadId }, updatedAt: event.at });
+    }
+    case "experts.phase-changed": {
+      const x = model.expertsSessions[event.sessionId];
+      return x ? withExperts(model, { ...x, phase: event.phase, updatedAt: event.at }) : model;
+    }
+    case "experts.expert-status-changed": {
+      const x = model.expertsSessions[event.sessionId];
+      if (!x) return model;
+      return withExperts(model, { ...x, experts: x.experts.map((e) => (e.key === event.key ? { ...e, status: event.status } : e)), updatedAt: event.at });
+    }
+    case "experts.finding-posted": {
+      const x = model.expertsSessions[event.finding.sessionId];
+      const next: ReadModel = { ...model, expertsFindings: { ...model.expertsFindings, [event.finding.id]: event.finding } };
+      return x ? withExperts(next, { ...x, findingIds: [...x.findingIds, event.finding.id], updatedAt: event.finding.createdAt }) : next;
+    }
+    case "experts.message-posted": {
+      const x = model.expertsSessions[event.message.sessionId];
+      const next: ReadModel = { ...model, expertsMessages: { ...model.expertsMessages, [event.message.id]: event.message } };
+      return x ? withExperts(next, { ...x, messageIds: [...x.messageIds, event.message.id], updatedAt: event.message.createdAt }) : next;
+    }
+    case "experts.synthesis-set": {
+      const x = model.expertsSessions[event.sessionId];
+      if (!x) return model;
+      return withExperts(model, { ...x, phase: "ready", synthesis: { markdown: event.markdown, at: event.at, ...(event.planId !== undefined ? { planId: event.planId } : {}) }, updatedAt: event.at });
+    }
+    case "experts.archived": {
+      const x = model.expertsSessions[event.sessionId];
+      return x ? withExperts(model, { ...x, phase: "archived", updatedAt: event.at }) : model;
+    }
     case "assistant.delta": {
       const existing = model.messages[event.messageId];
       const msg = existing

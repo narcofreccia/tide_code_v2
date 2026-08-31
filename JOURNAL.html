@@ -61,7 +61,7 @@
         <div class="sub">Focused agentic code editor &amp; orchestrator over Claude Code · Codex · OpenCode · Pi. Started 2026-08-30.</div>
         <div class="kpi">
           <div class="box"><b>P5</b><span>current phase</span></div>
-          <div class="box"><b>49</b><span>commits</span></div>
+          <div class="box"><b>51</b><span>commits</span></div>
           <div class="box"><b>502</b><span>tests passing</span></div>
         </div>
         <div class="howto">
@@ -176,8 +176,17 @@
       </details>
 
       <details class="phase" open>
-        <summary><span class="title"><h3>P5 — Tide MCP server + Experts</h3><small>index/memory/experts tools for every harness · cross-harness expert teams</small></span><span class="badge status todo">todo</span></summary>
-        <div class="body"><ul class="tasks"><li><span class="badge status todo">todo</span><span class="t"><code>tide-mcp</code> · index-native · Experts board, message bus as events, synthesis → ProposedPlan</span></li></ul></div>
+        <summary><span class="title"><h3>P5 — Tide MCP server + Experts</h3><small>cross-harness experts board · agent delegation across harnesses · tide-mcp</small></span><span class="badge status wip">wip</span></summary>
+        <div class="body">
+          <ul class="tasks">
+            <li><span class="badge status done">done</span><span class="t">Scope decision (value test): tree-sitter index and project memory <strong>cut</strong> — harnesses have grep/CLAUDE.md/AGENTS.md. P5 = what no harness can do alone: a cross-harness Experts board and <code>tide_delegate</code> (an agent on one harness runs a task on another as a child thread).</span></li>
+            <li><span class="badge status done">done</span><span class="t">Contracts: <code>ExpertsSession/ExpertSpec/Finding/Message</code>, <code>Thread.role/expertsSessionId/delegatedBy</code>, client cmds <code>experts.create|start|post|set-phase|archive</code>, agent cmds <code>experts.finding.post|message.send|synthesis.set</code>, <code>thread.delegate</code>, RPC <code>agent.dispatch|context|threadStatus</code></span></li>
+            <li><span class="badge status wip">wip</span><span class="t">Server: decider rules, ExpertsReactor (spawn expert/lead threads, deliver messages as follow-up turns, phase prompts, synthesis → ProposedPlan), per-thread agent tickets, <code>packages/tide-mcp</code> stdio server attached to every session (claude/codex/opencode) — Opus agent</span></li>
+            <li><span class="badge status wip">wip</span><span class="t">Web: Experts view (create team, board with findings + discussion + user post, phase control, expert cards → threads, synthesis → plan card), delegated child threads in the rail — Opus agent</span></li>
+            <li><span class="badge status todo">todo</span><span class="t">Orchestrator validation: Claude + OpenCode experts on this repo → findings → synthesis → plan; Claude thread delegates a task to OpenCode via MCP</span></li>
+          </ul>
+          <p class="note">2026-08-31 — P5 contracts by the orchestrator.</p>
+        </div>
       </details>
 
       <details class="phase">

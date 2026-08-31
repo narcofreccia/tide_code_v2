@@ -1,5 +1,5 @@
 import { Type, type Static } from "typebox";
-import { Activity, ApprovalDecision, CheckpointStats, Message, Project, ProposedPlan, ProviderKind, PullRequest, Thread, Turn, TurnUsage } from "./domain.ts";
+import { Activity, ApprovalDecision, CheckpointStats, ExpertsFinding, ExpertsMessage, ExpertsPhase, ExpertsSession, Message, Project, ProposedPlan, ProviderKind, PullRequest, Thread, Turn, TurnUsage } from "./domain.ts";
 
 // Events = persisted facts. Payloads are self-contained so the projector
 // never needs to look anything up outside the event.
@@ -88,6 +88,24 @@ export const PublishRequested = evt("publish.requested", {
   at: Type.Number(),
 });
 export const PrUpdated = evt("pr.updated", { threadId: Type.String(), pr: PullRequest });
+export const ExpertsCreated = evt("experts.created", { session: ExpertsSession });
+export const ExpertsThreadsBoundEvt = evt("experts.threads-bound", {
+  sessionId: Type.String(),
+  bindings: Type.Array(Type.Object({ key: Type.String(), threadId: Type.String() })),
+  leadThreadId: Type.String(),
+  at: Type.Number(),
+});
+export const ExpertsPhaseChanged = evt("experts.phase-changed", { sessionId: Type.String(), phase: ExpertsPhase, at: Type.Number() });
+export const ExpertsExpertStatusChanged = evt("experts.expert-status-changed", {
+  sessionId: Type.String(),
+  key: Type.String(),
+  status: Type.Union([Type.Literal("pending"), Type.Literal("working"), Type.Literal("idle"), Type.Literal("error")]),
+  at: Type.Number(),
+});
+export const ExpertsFindingPosted = evt("experts.finding-posted", { finding: ExpertsFinding });
+export const ExpertsMessagePosted = evt("experts.message-posted", { message: ExpertsMessage });
+export const ExpertsSynthesisSetEvt = evt("experts.synthesis-set", { sessionId: Type.String(), markdown: Type.String(), planId: Type.Optional(Type.String()), at: Type.Number() });
+export const ExpertsArchived = evt("experts.archived", { sessionId: Type.String(), at: Type.Number() });
 export const UsageReported = evt("usage.reported", {
   turnId: Type.String(),
   threadId: Type.String(),
@@ -134,6 +152,14 @@ export const DomainEvent = Type.Union([
   RevertRequested,
   PublishRequested,
   PrUpdated,
+  ExpertsCreated,
+  ExpertsThreadsBoundEvt,
+  ExpertsPhaseChanged,
+  ExpertsExpertStatusChanged,
+  ExpertsFindingPosted,
+  ExpertsMessagePosted,
+  ExpertsSynthesisSetEvt,
+  ExpertsArchived,
   TurnSettled,
 ]);
 export type DomainEvent = Static<typeof DomainEvent>;

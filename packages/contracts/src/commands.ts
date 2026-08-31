@@ -1,5 +1,5 @@
 import { Type, type Static } from "typebox";
-import { Activity, ApprovalDecision, CheckpointStats, InteractionMode, ProviderKind, PullRequest, RuntimeMode, TurnUsage } from "./domain.ts";
+import { Activity, ApprovalDecision, CheckpointStats, ExpertSpec, ExpertsPhase, InteractionMode, ProviderKind, PullRequest, RuntimeMode, TurnUsage } from "./domain.ts";
 
 // Commands = validated intents. ClientCommand may arrive over RPC; InternalCommand is
 // issued only by server reactors (driver ingestion) and is rejected at the RPC boundary.
@@ -82,6 +82,21 @@ export const ThreadPublish = Type.Object({
   commitOnly: Type.Optional(Type.Boolean()),
 });
 
+// ---- experts (client) ----
+export const ExpertsCreate = Type.Object({
+  type: Type.Literal("experts.create"),
+  projectId: Type.String(),
+  topic: Type.String({ minLength: 1 }),
+  experts: Type.Array(ExpertSpec, { minItems: 1 }),
+  lead: Type.Object({ provider: ProviderKind, model: Type.Optional(Type.String()) }),
+});
+/** spawns the expert + lead threads and kicks off the exploring phase */
+export const ExpertsStart = Type.Object({ type: Type.Literal("experts.start"), sessionId: Type.String() });
+/** user contribution to the board (delivered to every expert as a message) */
+export const ExpertsPost = Type.Object({ type: Type.Literal("experts.post"), sessionId: Type.String(), text: Type.String({ minLength: 1 }), to: Type.Optional(Type.String()) });
+export const ExpertsSetPhase = Type.Object({ type: Type.Literal("experts.set-phase"), sessionId: Type.String(), phase: ExpertsPhase });
+export const ExpertsArchive = Type.Object({ type: Type.Literal("experts.archive"), sessionId: Type.String() });
+
 export const ClientCommand = Type.Union([
   ProjectCreate, ProjectUpdate, ProjectArchive,
   ThreadCreate, ThreadUpdate, ThreadArchive,
@@ -89,6 +104,7 @@ export const ClientCommand = Type.Union([
   ApprovalRespond, UserInputRespond,
   PlanImplement, PlanDismiss,
   ThreadRevert, ThreadPublish,
+  ExpertsCreate, ExpertsStart, ExpertsPost, ExpertsSetPhase, ExpertsArchive,
 ]);
 export type ClientCommand = Static<typeof ClientCommand>;
 
@@ -146,13 +162,45 @@ export const CheckpointRecord = Type.Object({
 });
 export const PrUpdate = Type.Object({ type: Type.Literal("pr.update"), threadId: Type.String(), pr: PullRequest });
 
+// ---- agent-originated (via the Tide MCP server; authenticated per thread) ----
+export const ExpertsFindingPost = Type.Object({ type: Type.Literal("experts.finding.post"), sessionId: Type.String(), author: Type.String(), text: Type.String({ minLength: 1 }) });
+export const ExpertsMessageSend = Type.Object({ type: Type.Literal("experts.message.send"), sessionId: Type.String(), from: Type.String(), to: Type.String(), text: Type.String({ minLength: 1 }) });
+export const ExpertsSynthesisSet = Type.Object({ type: Type.Literal("experts.synthesis.set"), sessionId: Type.String(), markdown: Type.String({ minLength: 1 }) });
+/** an agent asks Tide to run a task on another harness as a child thread */
+export const ThreadDelegate = Type.Object({
+  type: Type.Literal("thread.delegate"),
+  fromThreadId: Type.String(),
+  provider: ProviderKind,
+  model: Type.Optional(Type.String()),
+  mode: Type.Optional(RuntimeMode),
+  title: Type.Optional(Type.String()),
+  prompt: Type.String({ minLength: 1 }),
+  useWorktree: Type.Optional(Type.Boolean()),
+});
+export const ExpertsThreadsBound = Type.Object({
+  type: Type.Literal("experts.threads.bound"),
+  sessionId: Type.String(),
+  bindings: Type.Array(Type.Object({ key: Type.String(), threadId: Type.String() })),
+  leadThreadId: Type.String(),
+});
+export const ExpertsExpertStatus = Type.Object({
+  type: Type.Literal("experts.expert.status"),
+  sessionId: Type.String(),
+  key: Type.String(),
+  status: Type.Union([Type.Literal("pending"), Type.Literal("working"), Type.Literal("idle"), Type.Literal("error")]),
+});
+
+export const AgentCommand = Type.Union([ExpertsFindingPost, ExpertsMessageSend, ExpertsSynthesisSet, ThreadDelegate]);
+export type AgentCommand = Static<typeof AgentCommand>;
+
 export const InternalCommand = Type.Union([
   TurnStart, AssistantAppend, ActivityUpsert, PlanPropose, PlanProgressReport, UsageReport, TurnSettle,
   WorktreeAttach, CheckpointRecord, PrUpdate,
+  ExpertsThreadsBound, ExpertsExpertStatus,
 ]);
 export type InternalCommand = Static<typeof InternalCommand>;
 
-export const Command = Type.Union([ClientCommand, InternalCommand]);
+export const Command = Type.Union([ClientCommand, AgentCommand, InternalCommand]);
 export type Command = Static<typeof Command>;
 export type CommandOf<T extends Command["type"]> = Extract<Command, { type: T }>;
 
