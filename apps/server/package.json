@@ -21,7 +21,8 @@
     "ws": "^8.21.0",
     "@tide/driver-pi": "workspace:*",
     "@tide/driver-codex": "workspace:*",
-    "@tide/driver-opencode": "workspace:*"
+    "@tide/driver-opencode": "workspace:*",
+    "@tide/tide-mcp": "workspace:*"
   },
   "devDependencies": {
     "@types/node": "^22.0.0",

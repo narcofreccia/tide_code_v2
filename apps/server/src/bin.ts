@@ -1,9 +1,17 @@
 #!/usr/bin/env node
+import { runMcpServer } from "@tide/tide-mcp";
 import { createApp } from "./app.ts";
 import { resolveConfig } from "./config.ts";
 
 async function main(): Promise<void> {
-  const config = resolveConfig(process.argv.slice(2));
+  const argv = process.argv.slice(2);
+  // `--mcp` turns this same binary into the Tide MCP stdio server. The bun-compiled
+  // sidecar has no `packages/` on disk, so provider sessions re-exec it this way.
+  if (argv.includes("--mcp")) {
+    await runMcpServer();
+    return;
+  }
+  const config = resolveConfig(argv);
   const app = await createApp({ config });
   const port = app.server?.port ?? config.port;
 

@@ -1,4 +1,7 @@
 import type { ServerConfig } from "./config.ts";
+import { ExpertsReactor } from "./experts/reactor.ts";
+import { TideMcpProvisioner } from "./mcp/provision.ts";
+import { AgentTokenStore } from "./rpc/agentTickets.ts";
 import { Engine } from "./orchestration/engine.ts";
 import { openEventStore, type EventStore } from "./orchestration/store.ts";
 import { registerBundledDrivers } from "./provider/load.ts";
@@ -33,6 +36,9 @@ export interface App {
   registry: DriverRegistry;
   sessions: SessionDirectory;
   reactor: ProviderReactor;
+  experts: ExpertsReactor;
+  agentTokens: AgentTokenStore;
+  mcp: TideMcpProvisioner;
   worktrees: WorktreeManager;
   checkpoints: CheckpointService;
   vcs: VcsReactor;
@@ -60,7 +66,11 @@ export async function createApp(options: AppOptions): Promise<App> {
   if (options.registerDrivers) await options.registerDrivers(registry);
   else await registerBundledDrivers(registry, config.providers, log);
 
-  const sessions = new SessionDirectory({ registry, log });
+  // Every provider session gets the Tide MCP server, parameterised by a per-thread
+  // agent token that is revoked when the session closes.
+  const agentTokens = new AgentTokenStore();
+  const mcp = new TideMcpProvisioner({ tokens: agentTokens });
+  const sessions = new SessionDirectory({ registry, mcp, log });
 
   // The vcs reactor subscribes first on purpose: it must mark a turn's before-checkpoint
   // gate while `turn.requested` is delivered, before the provider reactor queues the turn.
@@ -84,12 +94,16 @@ export async function createApp(options: AppOptions): Promise<App> {
   });
   reactor.start();
 
+  const experts = new ExpertsReactor({ engine, log });
+  experts.start();
+
   const workspace = createWorkspaceServices({ engine, log });
 
   const server =
     options.listen === false
       ? undefined
-      : await startServer({ engine, store, registry, checkpoints, workspace, config: { ...config, environmentId } });
+      : await startServer({ engine, store, registry, checkpoints, workspace, agentTokens, config: { ...config, environmentId } });
+  if (server) mcp.setUrl(`ws://${config.host}:${server.port}/ws`);
 
   return {
     config,
@@ -99,6 +113,9 @@ export async function createApp(options: AppOptions): Promise<App> {
     registry,
     sessions,
     reactor,
+    experts,
+    agentTokens,
+    mcp,
     worktrees,
     checkpoints,
     vcs,
@@ -106,6 +123,7 @@ export async function createApp(options: AppOptions): Promise<App> {
     server,
     async close() {
       reactor.stop();
+      experts.stop();
       vcs.stop();
       workspace.close();
       await server?.close();

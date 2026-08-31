@@ -1,0 +1,20 @@
+{
+  "name": "@tide/tide-mcp",
+  "version": "0.0.0",
+  "private": true,
+  "type": "module",
+  "exports": { ".": "./src/index.ts" },
+  "bin": { "tide-mcp": "./src/bin.ts" },
+  "scripts": {
+    "typecheck": "tsc --noEmit -p tsconfig.json",
+    "test": "vitest run",
+    "build": "echo skip"
+  },
+  "dependencies": {
+    "@modelcontextprotocol/sdk": "^1.30.0",
+    "@tide/client": "workspace:*",
+    "@tide/contracts": "workspace:*",
+    "zod": "^4.5.4"
+  },
+  "devDependencies": { "@types/node": "^22.0.0" }
+}

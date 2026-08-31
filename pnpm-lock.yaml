@@ -38,6 +38,9 @@ importers:
       '@tide/driver-pi':
         specifier: workspace:*
         version: link:../../packages/driver-pi
+      '@tide/tide-mcp':
+        specifier: workspace:*
+        version: link:../../packages/tide-mcp
       node-pty:
         specifier: ^1.1.0
         version: 1.1.0
@@ -205,6 +208,25 @@ importers:
       esbuild:
         specifier: ^0.25.0
         version: 0.25.12
+
+  packages/tide-mcp:
+    dependencies:
+      '@modelcontextprotocol/sdk':
+        specifier: ^1.30.0
+        version: 1.30.0(zod@4.5.4)
+      '@tide/client':
+        specifier: workspace:*
+        version: link:../client
+      '@tide/contracts':
+        specifier: workspace:*
+        version: link:../contracts
+      zod:
+        specifier: ^4.5.4
+        version: 4.5.4
+    devDependencies:
+      '@types/node':
+        specifier: ^22.0.0
+        version: 22.20.1
 
 packages:
 

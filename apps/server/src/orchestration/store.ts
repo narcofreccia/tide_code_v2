@@ -49,6 +49,18 @@ export function aggregateIdOf(event: DomainEvent): string | null {
       return event.plan.threadId;
     case "plan.updated":
       return event.planId;
+    case "experts.created":
+      return event.session.id;
+    case "experts.threads-bound":
+    case "experts.phase-changed":
+    case "experts.expert-status-changed":
+    case "experts.synthesis-set":
+    case "experts.archived":
+      return event.sessionId;
+    case "experts.finding-posted":
+      return event.finding.sessionId;
+    case "experts.message-posted":
+      return event.message.sessionId;
     default: {
       const _exhaustive: never = event;
       void _exhaustive;

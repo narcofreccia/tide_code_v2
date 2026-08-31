@@ -26,9 +26,20 @@ export class RpcException extends Error {
 export interface RpcCallContext {
   connectionId: string;
   requestId: string;
+  /** set when the socket authenticated with an agent token: the thread it speaks for */
+  agentThreadId?: string;
   /** cancels an active stream on this connection */
   cancelStream(id: string): boolean;
 }
+
+export interface ConnectionOptions {
+  /** an agent connection may call `agent.*` (and nothing else); a client connection the reverse */
+  agentThreadId?: string;
+}
+
+const AGENT_PREFIX = "agent.";
+/** harmless on either kind of socket */
+const SHARED_METHODS: ReadonlySet<string> = new Set(["unsubscribe"]);
 
 type Send = (frame: RpcFrame) => void;
 type UnaryFn = (input: unknown, ctx: RpcCallContext) => Promise<unknown>;
@@ -56,8 +67,8 @@ export class RpcRouter {
     this.#streams.set(name, handler as StreamFn);
   }
 
-  connection(connectionId: string, send: Send): RpcConnection {
-    return new RpcConnection(this.#unary, this.#streams, connectionId, send);
+  connection(connectionId: string, send: Send, options: ConnectionOptions = {}): RpcConnection {
+    return new RpcConnection(this.#unary, this.#streams, connectionId, send, options);
   }
 }
 
@@ -69,12 +80,24 @@ export class RpcConnection {
   #send: Send;
   #active = new Map<string, { cancel: (() => void) | null; closed: boolean }>();
   #closed = false;
+  #agentThreadId: string | undefined;
 
-  constructor(unary: Map<string, UnaryFn>, streams: Map<string, StreamFn>, connectionId: string, send: Send) {
+  constructor(
+    unary: Map<string, UnaryFn>,
+    streams: Map<string, StreamFn>,
+    connectionId: string,
+    send: Send,
+    options: ConnectionOptions = {},
+  ) {
     this.#unary = unary;
     this.#streams = streams;
     this.#connectionId = connectionId;
     this.#send = send;
+    this.#agentThreadId = options.agentThreadId;
+  }
+
+  get agentThreadId(): string | undefined {
+    return this.#agentThreadId;
   }
 
   get connectionId(): string {
@@ -103,6 +126,13 @@ export class RpcConnection {
       this.#error(id, "method-not-found", `unknown method ${method}`);
       return;
     }
+    // Least privilege: an agent socket reaches only agent.* methods, and only an
+    // agent socket reaches them at all.
+    const isAgentMethod = method.startsWith(AGENT_PREFIX);
+    if (!SHARED_METHODS.has(method) && isAgentMethod !== (this.#agentThreadId !== undefined)) {
+      this.#error(id, "forbidden", `method ${method} is not available on this connection`);
+      return;
+    }
     if (!Check(spec.input, params)) {
       const first = Errors(spec.input, params)[0];
       this.#error(id, "invalid-params", first?.message ?? "invalid params");
@@ -112,6 +142,7 @@ export class RpcConnection {
     const ctx: RpcCallContext = {
       connectionId: this.#connectionId,
       requestId: id,
+      ...(this.#agentThreadId !== undefined ? { agentThreadId: this.#agentThreadId } : {}),
       cancelStream: (streamId) => this.cancelStream(streamId),
     };
 

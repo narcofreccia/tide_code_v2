@@ -1,5 +1,7 @@
 import type { Command, ReadModel } from "@tide/contracts";
 import { decideActivity } from "./activities.ts";
+import { decideAgent } from "./agent.ts";
+import { decideExperts } from "./experts.ts";
 import { decidePlan } from "./plans.ts";
 import { decideProject } from "./projects.ts";
 import { decideThread } from "./threads.ts";
@@ -51,6 +53,21 @@ export function decide(model: ReadModel, command: Command, ctx: DecideContext): 
     case "checkpoint.record":
     case "pr.update":
       return decideVcs(model, command, ctx);
+
+    case "experts.create":
+    case "experts.start":
+    case "experts.post":
+    case "experts.set-phase":
+    case "experts.archive":
+    case "experts.threads.bound":
+    case "experts.expert.status":
+      return decideExperts(model, command, ctx);
+
+    case "experts.finding.post":
+    case "experts.message.send":
+    case "experts.synthesis.set":
+    case "thread.delegate":
+      return decideAgent(model, command, ctx);
 
     default: {
       const _exhaustive: never = command;

@@ -19,6 +19,8 @@ export interface SessionDirectoryOptions {
   idleMs?: number;
   /** Tide's own MCP servers, added on top of the user's native config */
   mcpServers?: McpServerSpec[];
+  /** per-thread MCP servers (the Tide board/delegation tools, carrying an agent token) */
+  mcp?: { serversFor(threadId: string): McpServerSpec[]; revoke(threadId: string): void };
   /** false in tests: reapIdle() is then driven by hand against a manual clock */
   autoReap?: boolean;
   log?: (msg: string, data?: unknown) => void;
@@ -38,6 +40,7 @@ export class SessionDirectory {
   #now: () => number;
   #idleMs: number;
   #mcpServers: McpServerSpec[];
+  #mcp: { serversFor(threadId: string): McpServerSpec[]; revoke(threadId: string): void } | undefined;
   #log: (msg: string, data?: unknown) => void;
   #entries = new Map<string, Entry>();
   /** last provider a thread actually ran on; resume is only valid for the same one */
@@ -50,6 +53,7 @@ export class SessionDirectory {
     this.#now = options.now ?? (() => Date.now());
     this.#idleMs = options.idleMs ?? IDLE_MS;
     this.#mcpServers = options.mcpServers ?? [];
+    this.#mcp = options.mcp;
     this.#log = options.log ?? (() => undefined);
     if (options.autoReap ?? true) {
       this.#timer = setInterval(() => void this.reapIdle(), REAP_INTERVAL_MS);
@@ -95,7 +99,7 @@ export class SessionDirectory {
       ...(thread.model !== undefined ? { model: thread.model } : {}),
       mode: thread.mode,
       interaction: thread.interaction,
-      mcpServers: this.#mcpServers,
+      mcpServers: [...this.#mcpServers, ...(this.#mcp?.serversFor(thread.id) ?? [])],
     });
     this.#entries.set(thread.id, { threadId: thread.id, kind: thread.provider, cwd, session, lastUsedAt: this.#now() });
     this.#lastKind.set(thread.id, thread.provider);
@@ -111,6 +115,8 @@ export class SessionDirectory {
     const entry = this.#entries.get(threadId);
     if (!entry) return;
     this.#entries.delete(threadId);
+    // the agent token only lives as long as the harness process that was handed it
+    this.#mcp?.revoke(threadId);
     try {
       await entry.session.close();
     } catch (err) {

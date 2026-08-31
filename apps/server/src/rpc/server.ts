@@ -9,6 +9,8 @@ import type { Engine } from "../orchestration/engine.ts";
 import type { EventStore } from "../orchestration/store.ts";
 import { DriverRegistry } from "../provider/registry.ts";
 import { CheckpointService } from "../vcs/checkpoints.ts";
+import { AgentTokenStore } from "./agentTickets.ts";
+import { registerAgentHandlers } from "./agent.ts";
 import { registerHandlers } from "./handlers.ts";
 import { registerVcsHandlers } from "./vcs.ts";
 import { createWorkspaceServices, registerWorkspaceHandlers, type WorkspaceServices } from "./workspace.ts";
@@ -41,6 +43,8 @@ export interface ServerDeps {
   checkpoints?: CheckpointService;
   /** files/watcher/search/terminals; the app builds these once and owns their lifetime */
   workspace?: WorkspaceServices;
+  /** per-thread agent tokens; the app shares this with the MCP provisioner */
+  agentTokens?: AgentTokenStore;
 }
 
 export interface ServerHandle {
@@ -54,6 +58,7 @@ export async function startServer(deps: ServerDeps): Promise<ServerHandle> {
   const { config, engine, store } = deps;
   const startedAt = Date.now();
   const tickets = new TicketIssuer();
+  const agentTokens = deps.agentTokens ?? new AgentTokenStore();
 
   const registry =
     deps.registry ?? new DriverRegistry({ env: { dataDir: config.dataDir, log: (msg, data) => (data === undefined ? console.error(msg) : console.error(msg, data)) } });
@@ -69,6 +74,7 @@ export async function startServer(deps: ServerDeps): Promise<ServerHandle> {
     tideHome: config.tideHome,
     tools: detectTools(),
   });
+  registerAgentHandlers(router, { engine });
   registerVcsHandlers(router, { engine, checkpoints: deps.checkpoints ?? new CheckpointService() });
   const workspace = deps.workspace ?? createWorkspaceServices({ engine });
   const ownsWorkspace = deps.workspace === undefined;
@@ -116,11 +122,17 @@ export async function startServer(deps: ServerDeps): Promise<ServerHandle> {
   const wss = new WebSocketServer({ noServer: true });
   const alive = new WeakMap<WebSocket, boolean>();
 
-  const authorize = (url: URL): boolean => {
+  /** null = rejected; otherwise the connection's privileges. */
+  const authorize = (url: URL): { agentThreadId?: string } | null => {
+    const agentToken = url.searchParams.get("agentToken");
+    if (agentToken !== null) {
+      const agentThreadId = agentTokens.resolve(agentToken);
+      return agentThreadId === undefined ? null : { agentThreadId };
+    }
     const ticket = url.searchParams.get("wsTicket");
-    if (ticket && tickets.consume(ticket)) return true;
+    if (ticket && tickets.consume(ticket)) return {};
     const token = url.searchParams.get("token");
-    return config.dev && token !== null && token === config.token;
+    return config.dev && token !== null && token === config.token ? {} : null;
   };
 
   http.on("upgrade", (req: IncomingMessage, socket: Duplex, head: Buffer) => {
@@ -136,15 +148,19 @@ export async function startServer(deps: ServerDeps): Promise<ServerHandle> {
         ws.close(4401, "unauthorized");
         return;
       }
-      wss.emit("connection", ws, req);
+      wss.emit("connection", ws, req, authorized);
     });
   });
 
-  wss.on("connection", (ws: WebSocket) => {
+  wss.on("connection", (ws: WebSocket, _req: IncomingMessage, privileges: { agentThreadId?: string } = {}) => {
     alive.set(ws, true);
-    const connection = router.connection(newId(), (frame) => {
-      if (ws.readyState === ws.OPEN) ws.send(JSON.stringify(frame));
-    });
+    const connection = router.connection(
+      newId(),
+      (frame) => {
+        if (ws.readyState === ws.OPEN) ws.send(JSON.stringify(frame));
+      },
+      privileges,
+    );
     ws.on("pong", () => alive.set(ws, true));
     ws.on("message", (data) => {
       void connection.handleMessage(typeof data === "string" ? data : data.toString());
