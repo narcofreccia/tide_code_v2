@@ -1,0 +1,97 @@
+# Linux release — AppImage + updater artifact, published to R2.
+#
+# Same shape and same rules as release-windows.yml: manually triggered, ships the version
+# already in package.json, merges only the linux-x86_64 key of the shared latest.json.
+#
+# Required repository secrets:
+#   TAURI_SIGNING_PRIVATE_KEY           contents of ~/.tauri/tidecode2.key
+#   TAURI_SIGNING_PRIVATE_KEY_PASSWORD  tidecode2
+#   R2_ACCESS_KEY_ID / R2_SECRET_ACCESS_KEY   the house r2 token (storage bucket)
+name: release-linux
+
+on:
+  workflow_dispatch:
+    inputs:
+      version:
+        description: "Expected version (optional) — the job fails if package.json differs"
+        required: false
+        type: string
+
+env:
+  R2_ENDPOINT: https://d76960bd74940e6213de6aa16f3e04fd.r2.cloudflarestorage.com
+  R2_BUCKET: storage/tidecode
+  TIDE_PUBLIC_BUCKET: https://pub-7b3e5bbd605d43adbeb4601a962d84bd.r2.dev/tidecode
+
+jobs:
+  linux:
+    runs-on: ubuntu-latest
+    defaults:
+      run:
+        shell: bash
+    steps:
+      - uses: actions/checkout@v4
+
+      - name: Install Tauri system dependencies
+        run: |
+          sudo apt-get update
+          sudo apt-get install -y libwebkit2gtk-4.1-dev libappindicator3-dev librsvg2-dev patchelf
+
+      # No `version:` here — pnpm is pinned by `packageManager` in package.json.
+      - uses: pnpm/action-setup@v4
+
+      - uses: actions/setup-node@v4
+        with:
+          node-version: 22
+          cache: pnpm
+
+      - uses: oven-sh/setup-bun@v2
+
+      - uses: dtolnay/rust-toolchain@stable
+
+      - uses: Swatinem/rust-cache@v2
+        with:
+          workspaces: apps/desktop/src-tauri
+          cache-on-failure: true
+
+      - name: Check the version input
+        if: inputs.version != ''
+        run: |
+          actual="$(node -p "require('./package.json').version")"
+          [ "$actual" = "${{ inputs.version }}" ] || { echo "package.json is $actual, expected ${{ inputs.version }}"; exit 1; }
+
+      - name: Install dependencies
+        run: pnpm install --frozen-lockfile
+
+      - name: Typecheck
+        run: pnpm typecheck
+
+      - name: Build the tide-server sidecar (linux-x64)
+        run: bash scripts/build-server-sidecar.sh --target linux-x64
+
+      - name: Build the web client
+        run: pnpm --filter @tide/web build
+
+      - name: Build the Tauri app (AppImage + updater signature)
+        env:
+          TAURI_SIGNING_PRIVATE_KEY: ${{ secrets.TAURI_SIGNING_PRIVATE_KEY }}
+          TAURI_SIGNING_PRIVATE_KEY_PASSWORD: ${{ secrets.TAURI_SIGNING_PRIVATE_KEY_PASSWORD }}
+        run: pnpm --filter @tide/desktop exec tauri build --bundles appimage
+
+      - name: Smoke test the bundled sidecar
+        run: |
+          set -euo pipefail
+          server="apps/desktop/src-tauri/binaries/tide-server-x86_64-unknown-linux-gnu"
+          TIDE_HOME="$RUNNER_TEMP/tide-smoke" "$server" --dev --port 3799 &
+          pid=$!
+          for _ in $(seq 1 30); do
+            curl -fsS "http://127.0.0.1:3799/health" && break || sleep 1
+          done
+          curl -fsS "http://127.0.0.1:3799/health" || { echo "sidecar never answered /health"; kill $pid; exit 1; }
+          kill $pid || true
+
+      - name: Publish to R2 (fixed names, merge linux-x86_64 key, verify updater)
+        env:
+          AWS_ACCESS_KEY_ID: ${{ secrets.R2_ACCESS_KEY_ID }}
+          AWS_SECRET_ACCESS_KEY: ${{ secrets.R2_SECRET_ACCESS_KEY }}
+          AWS_DEFAULT_REGION: auto
+        run: bash scripts/release/publish_linux.sh

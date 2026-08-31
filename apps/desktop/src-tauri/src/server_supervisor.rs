@@ -309,6 +309,8 @@ fn boot(app: &AppHandle, inner: &Arc<Mutex<Inner>>) -> Result<Instant, String> {
             }
             status(app, "ready", Some(format!("connected to {}", endpoint.url)));
             open_web_app(app, &endpoint);
+            // The app is usable now — look for a newer release without blocking it.
+            crate::updater::check_on_launch(app.clone());
             return Ok(started_at);
         }
         if exited(inner) {

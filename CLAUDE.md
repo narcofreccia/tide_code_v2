@@ -162,4 +162,7 @@ the bottom is the user's space — never rewrite it, only append if asked.
   unless asked. Remote: `origin` → `github.com/narcofreccia/tide_code_v2`. Work on `main`.
 - Messages: conventional prefix (`feat(server):`, `feat(web):`, `docs:`, `chore:`), short body
   on *why*. Trailer: `Co-Authored-By: Claude Fable 5 <noreply@anthropic.com>`.
-- Never commit secrets: `~/.tide/server.json`, provider auth files, `.env`.
+- Never commit secrets: `~/.tide/server.json`, provider auth files, `.env`, `.env.build`.
+- **Releases are user-triggered only.** Never run `scripts/release/*`, never tag, never
+  trigger the release workflows, never upload to R2 unless the user asks in that turn.
+  Runbook, bucket layout and invariants: [`docs/RELEASING.md`](./docs/RELEASING.md).

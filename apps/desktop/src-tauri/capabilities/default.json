@@ -1,7 +1,7 @@
 {
   "$schema": "../gen/schemas/desktop-schema.json",
   "identifier": "default",
-  "description": "Tide desktop shell: open external links, remember window state, restart/exit.",
+  "description": "Tide desktop shell: open external links, remember window state, restart/exit, self-update.",
   "windows": ["main"],
   "permissions": [
     "core:default",
@@ -10,6 +10,8 @@
     "core:webview:allow-webview-close",
     "shell:allow-open",
     "process:allow-restart",
-    "process:allow-exit"
+    "process:allow-exit",
+    "dialog:default",
+    "updater:default"
   ]
 }

@@ -23,8 +23,10 @@
         display: flex; flex-direction: column; align-items: center; justify-content: center; gap: 12px;
         -webkit-user-select: none; user-select: none;
       }
-      /* the whole surface is draggable: the window uses an overlay titlebar */
-      body::before { content: ""; position: fixed; inset: 0 0 auto 0; height: 36px; -webkit-app-region: drag; }
+      /* The window uses an overlay titlebar, so the top strip must drag it.
+         Tauri picks this up from data-tauri-drag-region on a real element —
+         -webkit-app-region is an Electron mechanism and does nothing here. */
+      .drag { position: fixed; inset: 0 0 auto 0; height: 36px; z-index: 10; }
       .mark { font-size: 20px; font-weight: 600; letter-spacing: 0.02em; }
       .dots { display: flex; gap: 5px; }
       .dots i { width: 5px; height: 5px; border-radius: 50%; background: var(--accent); opacity: 0.25; animation: p 1.2s infinite ease-in-out; }
@@ -37,6 +39,7 @@
     </style>
   </head>
   <body data-state="starting">
+    <div data-tauri-drag-region class="drag"></div>
     <div class="mark">Tide</div>
     <div class="dots"><i></i><i></i><i></i></div>
     <div id="msg">starting the local server…</div>

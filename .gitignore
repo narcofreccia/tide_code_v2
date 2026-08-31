@@ -6,3 +6,7 @@ coverage
 .tide-dev
 apps/desktop/src-tauri/target
 apps/desktop/src-tauri/binaries
+
+# release-time secrets (see docs/RELEASING.md); the .example is committed
+.env.build
+!.env.build.example

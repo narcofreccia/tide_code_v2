@@ -5,6 +5,7 @@
 //! else — orchestration, providers, git, files — lives in the server.
 
 mod server_supervisor;
+mod updater;
 
 use server_supervisor::{Supervisor, LOADING_HTML};
 use tauri::{Manager, RunEvent, WindowEvent};
@@ -17,6 +18,8 @@ pub fn run() {
     let app = tauri::Builder::default()
         .plugin(tauri_plugin_shell::init())
         .plugin(tauri_plugin_process::init())
+        .plugin(tauri_plugin_dialog::init())
+        .plugin(tauri_plugin_updater::Builder::new().build())
         .plugin(tauri_plugin_window_state::Builder::default().build())
         .register_uri_scheme_protocol(LOADING_SCHEME, |_ctx, _req| {
             tauri::http::Response::builder()

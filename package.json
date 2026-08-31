@@ -14,7 +14,9 @@
     "test": "pnpm -r test",
     "desktop:dev": "pnpm --filter @tide/desktop tauri dev",
     "desktop:build": "pnpm --filter @tide/desktop tauri build",
-    "desktop:sidecar": "./scripts/build-server-sidecar.sh"
+    "desktop:sidecar": "./scripts/build-server-sidecar.sh",
+    "release:mac": "./scripts/release/build_release.sh",
+    "release:bump": "./scripts/release/bump_version.sh"
   },
   "devDependencies": {
     "typescript": "^5.9.0",
