@@ -329,3 +329,57 @@ export function selectProjectTotals(model: ReadModel, projectId: string, now = D
     ...(maxContextPercent === undefined ? {} : { maxContextPercent }),
   };
 }
+
+// ---- Mission Control ----
+
+/** A thread with a turn in flight, plus when that turn started. */
+export interface RunningThread {
+  thread: Thread;
+  /** `startedAt` of the active turn, falling back to when it was requested */
+  startedAt: number;
+  turn: Turn;
+}
+
+/**
+ * Threads with a turn in flight, longest-running first — the "Now" strip. Expert
+ * and delegate threads are included: they are real work happening right now.
+ */
+export function selectRunningThreads(model: ReadModel, projectId?: string): RunningThread[] {
+  const out: RunningThread[] = [];
+  for (const thread of Object.values(model.threads)) {
+    if (thread.archivedAt !== undefined) continue;
+    if (projectId !== undefined && thread.projectId !== projectId) continue;
+    if (thread.status !== "running") continue;
+    const turn = selectActiveTurn(model, thread.id);
+    if (!turn) continue;
+    out.push({ thread, turn, startedAt: turn.startedAt ?? turn.requestedAt });
+  }
+  return out.sort((a, b) => a.startedAt - b.startedAt || a.thread.id.localeCompare(b.thread.id));
+}
+
+/**
+ * The project's `limit` most recently touched top-level threads. Expert / lead /
+ * delegate threads are left out; they belong to their session or caller.
+ */
+export function selectRecentThreads(model: ReadModel, projectId: string, limit = 3): Thread[] {
+  return Object.values(model.threads)
+    .filter((t) => t.projectId === projectId && t.archivedAt === undefined && t.role === undefined)
+    .sort((a, b) => b.updatedAt - a.updatedAt || a.id.localeCompare(b.id))
+    .slice(0, limit);
+}
+
+/** How many of the project's threads carry a PR, by state. */
+export interface PrCounts {
+  open: number;
+  merged: number;
+  closed: number;
+}
+
+export function selectPrCounts(model: ReadModel, projectId: string): PrCounts {
+  const counts: PrCounts = { open: 0, merged: 0, closed: 0 };
+  for (const thread of Object.values(model.threads)) {
+    if (thread.projectId !== projectId || thread.archivedAt !== undefined) continue;
+    if (thread.pr) counts[thread.pr.state] += 1;
+  }
+  return counts;
+}

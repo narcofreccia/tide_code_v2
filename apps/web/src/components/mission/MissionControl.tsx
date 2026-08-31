@@ -1,72 +1,60 @@
-import { compareByAttention } from "@tide/client";
-import type { Thread } from "@tide/contracts";
+import { selectProjects } from "@tide/client";
 import { useModel } from "../../state/model.ts";
 import { useUi } from "../../state/ui.ts";
-import { relativeTime } from "../../lib/relativeTime.ts";
-import { NewThreadPopover } from "../shell/NewThreadPopover.tsx";
-import { Pill } from "../ui/Pill.tsx";
-import { StatusGlyph } from "../ui/StatusGlyph.tsx";
-import { PrGlyph, WorktreeGlyph } from "../ui/VcsBadges.tsx";
-import { ExpertsSection } from "./ExpertsSection.tsx";
-import { Inbox } from "./Inbox.tsx";
+import { InboxColumn } from "./InboxColumn.tsx";
+import { MissionEmpty } from "./MissionEmpty.tsx";
+import { NowStrip } from "./NowStrip.tsx";
+import { ProjectCard } from "./ProjectCard.tsx";
 import { ProjectTotals } from "./ProjectTotals.tsx";
+import { ProvidersStrip } from "./ProvidersStrip.tsx";
 import styles from "./MissionControl.module.css";
 
-/** Landing view: every active thread across projects, needs-you first. */
+/**
+ * The landing view. Now (what is running) on top, then two columns: the Inbox on
+ * the left — every waiting card rendered inline so it can be answered here — and
+ * the projects plus the harness roster on the right. The project scope comes from
+ * the top bar's switcher; this view only reflects it.
+ */
 export function MissionControl() {
   const model = useModel((s) => s.model);
   const selectedProjectId = useUi((s) => s.selectedProjectId);
-  const selectThread = useUi((s) => s.selectThread);
-
-  const threads: Thread[] = Object.values(model.threads)
-    .filter((t) => t.archivedAt === undefined)
-    .filter((t) => selectedProjectId === null || t.projectId === selectedProjectId)
-    // expert / lead / delegate threads live under their session or caller, not here
-    .filter((t) => t.role === undefined)
-    .sort(compareByAttention);
-
-  const targetProjectId = selectedProjectId ?? Object.keys(model.projects)[0];
+  const projects = selectProjects(model).filter(
+    (p) => selectedProjectId === null || p.id === selectedProjectId,
+  );
+  const scoped = selectedProjectId === null ? undefined : selectedProjectId;
 
   return (
     <section className={styles.view} aria-label="Mission Control">
-      <Inbox />
-
-      <ProjectTotals {...(selectedProjectId === null ? {} : { projectId: selectedProjectId })} />
-
-      <ExpertsSection projectId={selectedProjectId ?? undefined} />
-
-      <div className={styles.header}>
-        <h2 className={styles.heading}>Threads</h2>
-        <div className={styles.new}>
-          <NewThreadPopover projectId={targetProjectId} align="end" />
+      <div className={styles.head}>
+        <h1 className={styles.pageTitle}>Mission Control</h1>
+        <span className={styles.scope}>
+          {scoped === undefined ? "All projects" : (model.projects[scoped]?.title ?? "—")}
+        </span>
+        <div className={styles.headTotals}>
+          <ProjectTotals aggregate {...(scoped === undefined ? {} : { projectId: scoped })} />
         </div>
       </div>
 
-      {threads.length === 0 ? (
-        <p className={styles.empty}>
-          No active threads. {targetProjectId ? "Start one above." : "Add a project in the rail first."}
-        </p>
+      {projects.length === 0 ? (
+        <MissionEmpty />
       ) : (
-        <ul className={styles.list}>
-          {threads.map((t) => (
-            <li key={t.id}>
-              <button type="button" className={styles.row} onClick={() => selectThread(t.id)}>
-                <StatusGlyph
-                  status={t.status}
-                  {...(t.attention ? { attention: t.attention } : {})}
-                  {...(t.interrupting === true ? { interrupting: true } : {})}
-                />
-                <span className={styles.title}>{t.title}</span>
-                {t.interrupting === true ? <span className={styles.interrupting}>interrupting…</span> : null}
-                <WorktreeGlyph thread={t} />
-                <PrGlyph pr={t.pr} />
-                <span className={styles.project}>{model.projects[t.projectId]?.title ?? "—"}</span>
-                <Pill>{t.provider}</Pill>
-                <span className={styles.time}>{relativeTime(t.updatedAt)}</span>
-              </button>
-            </li>
-          ))}
-        </ul>
+        <>
+          <NowStrip {...(scoped === undefined ? {} : { projectId: scoped })} />
+          <div className={styles.columns}>
+            <div className={styles.column}>
+              <InboxColumn {...(scoped === undefined ? {} : { projectId: scoped })} />
+            </div>
+            <div className={styles.column}>
+              <section className={styles.section} aria-label="Projects">
+                <h2 className={styles.label}>Projects</h2>
+                {projects.map((project) => (
+                  <ProjectCard key={project.id} project={project} />
+                ))}
+              </section>
+              <ProvidersStrip />
+            </div>
+          </div>
+        </>
       )}
     </section>
   );

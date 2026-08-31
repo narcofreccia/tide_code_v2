@@ -35,7 +35,7 @@ export function loginCommand(hint: string | undefined): string | undefined {
 }
 
 /** Runs the command in a new terminal of the selected thread, else copies it. */
-async function runOrCopy(command: string): Promise<void> {
+export async function runOrCopy(command: string): Promise<void> {
   const threadId = useUi.getState().selectedThreadId;
   if (!threadId) return copyTerminalCommand(command);
   const ptyId = await createPty(threadId, 80, 24);

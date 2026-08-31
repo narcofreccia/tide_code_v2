@@ -7,6 +7,7 @@ import { ThreadPills } from "../thread/ThreadPills.tsx";
 import { Button } from "../ui/Button.tsx";
 import { Kbd } from "../ui/Kbd.tsx";
 import { Select, type SelectOption } from "../ui/Select.tsx";
+import { Logo } from "./Logo.tsx";
 import { ThreadTitle } from "./ThreadTitle.tsx";
 import styles from "./TopBar.module.css";
 
@@ -16,6 +17,7 @@ export function TopBar() {
   const selectedProjectId = useUi((s) => s.selectedProjectId);
   const selectProject = useUi((s) => s.selectProject);
   const showMission = useUi((s) => s.showMission);
+  const selectThread = useUi((s) => s.selectThread);
   const thread = useSelectedThread();
 
   const projectOptions: SelectOption<string>[] = [
@@ -27,6 +29,19 @@ export function TopBar() {
     // Tauri v2 drags from this attribute (not `-webkit-app-region`), and only when
     // the event target *is* the element carrying it — so children stay clickable.
     <header className={styles.bar} data-tauri-drag-region>
+      <Button
+        variant="quiet"
+        className={styles.logo}
+        title="Mission Control (⌘0)"
+        aria-label="Tide — Mission Control"
+        onClick={() => {
+          selectThread(null);
+          showMission();
+        }}
+      >
+        <Logo size={18} />
+      </Button>
+
       <Button className={styles.palette} title="Command palette" aria-label="Command palette" onClick={openPalette}>
         <Kbd>⌘K</Kbd>
       </Button>

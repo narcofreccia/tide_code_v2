@@ -29,6 +29,14 @@
 .bar input,
 .bar textarea { user-select: text; }
 
+.logo {
+  display: flex;
+  align-items: center;
+  padding: 0 var(--sp-1);
+  color: var(--muted);
+}
+.logo:hover { color: var(--text); }
+
 .palette { padding: 0 6px; }
 .switcher { max-width: 180px; }
 .idle { color: var(--muted); }
