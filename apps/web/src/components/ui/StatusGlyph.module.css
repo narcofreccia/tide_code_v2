@@ -15,3 +15,4 @@
   50% { opacity: 0.35; }
 }
 .needsYou { color: var(--warn); }
+.interrupting { color: var(--warn); animation: pulse 0.9s ease-in-out infinite; }

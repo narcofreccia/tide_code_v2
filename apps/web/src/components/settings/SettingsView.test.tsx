@@ -62,6 +62,6 @@ describe("Settings view", () => {
     );
 
     fireEvent.click(screen.getByText("Remote"));
-    expect(screen.getByText(/lands in a later phase/)).toBeDefined();
+    expect(screen.getByText(/tide-server --host 0.0.0.0/)).toBeDefined();
   });
 });

@@ -21,3 +21,9 @@
 .delegateRow { display: flex; align-items: center; gap: var(--sp-2); width: 100%; text-align: left; }
 .delegateTitle { flex: 1; min-width: 0; overflow: hidden; text-overflow: ellipsis; white-space: nowrap; }
 .delegatedBy { background: none; border: none; padding: 0; color: var(--accent); font: inherit; }
+
+.menu {
+  display: flex;
+  flex-direction: column;
+  min-width: 180px;
+}

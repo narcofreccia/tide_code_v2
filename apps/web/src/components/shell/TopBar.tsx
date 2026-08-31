@@ -1,4 +1,5 @@
 import { selectProjects } from "@tide/client";
+import { openPalette } from "../../lib/commands.ts";
 import { useModel } from "../../state/model.ts";
 import { useUi } from "../../state/ui.ts";
 import { useSelectedThread } from "../../state/hooks.ts";
@@ -18,7 +19,7 @@ export function TopBar() {
 
   return (
     <header className={styles.bar}>
-      <Button className={styles.palette} disabled title="Command palette (coming soon)">
+      <Button className={styles.palette} title="Command palette" aria-label="Command palette" onClick={openPalette}>
         <Kbd>⌘K</Kbd>
       </Button>
 

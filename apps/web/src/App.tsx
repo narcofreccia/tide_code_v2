@@ -13,6 +13,8 @@ import { useSelectedThread } from "./state/hooks.ts";
 import { useUi } from "./state/ui.ts";
 import { ToastHost } from "./components/ui/Toast.tsx";
 import { QuickOpen } from "./components/shell/QuickOpen.tsx";
+import { CommandPaletteHost } from "./components/shell/CommandPalette.tsx";
+import { ThreadDialogHost } from "./components/thread/ThreadDialogs.tsx";
 import { useWorkbench } from "./state/workbench.ts";
 import { useKeyboardMap } from "./lib/useKeyboardMap.ts";
 import styles from "./App.module.css";
@@ -70,6 +72,8 @@ export function App() {
       <StatusBar />
       <ToastHost />
       <QuickOpenHost />
+      <CommandPaletteHost />
+      <ThreadDialogHost />
       <ExpertsDialogHost />
     </div>
   );

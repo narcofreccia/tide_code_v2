@@ -16,9 +16,42 @@ export function updateThread(threadId: string, patch: ThreadPatch): void {
   void dispatch({ type: "thread.update", threadId, ...patch }).catch(() => undefined);
 }
 
-export function archiveThread(threadId: string): void {
-  void dispatch({ type: "thread.archive", threadId }).catch(() => undefined);
+/**
+ * Archives a thread. `keepWorktree` is only meaningful for worktree threads —
+ * the dialog asks, threads without one archive straight away.
+ */
+export function archiveThread(threadId: string, keepWorktree?: boolean): void {
+  void dispatch({
+    type: "thread.archive",
+    threadId,
+    ...(keepWorktree === undefined ? {} : { keepWorktree }),
+  }).catch(() => undefined);
   useUi.getState().selectThread(null);
+}
+
+/** Opens the archive confirmation for worktree threads; archives the rest now. */
+export function requestArchive(thread: { id: string; worktreePath?: string }): void {
+  if (thread.worktreePath === undefined) {
+    archiveThread(thread.id);
+    return;
+  }
+  useUi.getState().setThreadDialog({ kind: "archive", threadId: thread.id });
+}
+
+/** Removes the thread's worktree directory now; the branch is kept unless asked. */
+export function detachWorktree(threadId: string, deleteBranch: boolean): void {
+  dispatch({
+    type: "worktree.detach",
+    threadId,
+    ...(deleteBranch ? { deleteBranch: true } : {}),
+  })
+    .then(() => {
+      invalidateThread(threadId);
+      showToast(deleteBranch ? "Worktree removed, branch deleted" : "Worktree removed, branch kept");
+    })
+    .catch((error: unknown) => {
+      showToast(`Detach failed: ${error instanceof Error ? error.message : String(error)}`);
+    });
 }
 
 /** Selects the thread a dispatch created, if it created one. */

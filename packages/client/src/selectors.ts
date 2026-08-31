@@ -275,3 +275,57 @@ export function selectDelegates(model: ReadModel, threadId: string): Thread[] {
     .filter((t) => t.delegatedBy === threadId && t.archivedAt === undefined)
     .sort((a, b) => a.createdAt - b.createdAt || a.id.localeCompare(b.id));
 }
+
+// ---- glass-box totals (P6) ----
+
+/** Compact per-project numbers for the Mission Control totals strip. */
+export interface ProjectTotals {
+  threads: number;
+  running: number;
+  needsYou: number;
+  /** summed `totalCostUsd` of threads touched today */
+  costTodayUsd: number;
+  /** highest context usage across the project's threads; percentages don't add up */
+  maxContextPercent?: number;
+}
+
+function isSameDay(a: number, b: number): boolean {
+  const x = new Date(a);
+  const y = new Date(b);
+  return (
+    x.getFullYear() === y.getFullYear() && x.getMonth() === y.getMonth() && x.getDate() === y.getDate()
+  );
+}
+
+/**
+ * Totals over a project's non-archived threads. `now` is injectable so the
+ * "today" window is testable. Context is reported as the max, never a sum.
+ */
+export function selectProjectTotals(model: ReadModel, projectId: string, now = Date.now()): ProjectTotals {
+  const threads = Object.values(model.threads).filter(
+    (t) => t.projectId === projectId && t.archivedAt === undefined,
+  );
+  let running = 0;
+  let needsYou = 0;
+  let costTodayUsd = 0;
+  let maxContextPercent: number | undefined;
+  for (const thread of threads) {
+    if (thread.status === "running") running += 1;
+    if (thread.attention !== undefined) needsYou += 1;
+    if (thread.totalCostUsd !== undefined && isSameDay(thread.updatedAt, now)) {
+      costTodayUsd += thread.totalCostUsd;
+    }
+    const context = thread.contextUsage;
+    if (context && context.window > 0) {
+      const percent = Math.round((context.used / context.window) * 100);
+      if (maxContextPercent === undefined || percent > maxContextPercent) maxContextPercent = percent;
+    }
+  }
+  return {
+    threads: threads.length,
+    running,
+    needsYou,
+    costTodayUsd,
+    ...(maxContextPercent === undefined ? {} : { maxContextPercent }),
+  };
+}

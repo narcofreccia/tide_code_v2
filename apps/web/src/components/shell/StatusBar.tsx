@@ -81,7 +81,11 @@ export function StatusBar() {
         {LABEL[status] ?? status}
       </span>
       <span className={styles.mono}>{environmentId ?? "no environment"}</span>
-      {thread ? <span className={styles.item}>thread: {turnStatus ?? thread.status}</span> : null}
+      {thread ? (
+        <span className={styles.item}>
+          thread: {thread.interrupting === true ? "interrupting…" : (turnStatus ?? thread.status)}
+        </span>
+      ) : null}
       {thread ? <ThreadStats thread={thread} /> : null}
       {thread ? <GitStatus thread={thread} /> : null}
       {thread ? <EditorPosition threadId={thread.id} /> : null}

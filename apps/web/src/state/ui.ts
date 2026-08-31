@@ -14,6 +14,12 @@ export const SETTINGS_SECTIONS: SettingsSection[] = [
   "about",
 ];
 
+/** A thread-scoped modal the palette or the thread header can raise. */
+export interface ThreadDialog {
+  kind: "archive" | "detach";
+  threadId: string;
+}
+
 interface UiState {
   view: View;
   selectedProjectId: string | null;
@@ -25,6 +31,10 @@ interface UiState {
   /** project the create-experts dialog is open for, null when closed */
   newExpertsProjectId: string | null;
   newProjectOpen: boolean;
+  /** ⌘K command palette */
+  paletteOpen: boolean;
+  /** archive / detach confirmation, null when none is open */
+  threadDialog: ThreadDialog | null;
   focusMode: FocusMode;
   railCollapsed: boolean;
   /** thread column share of the split, 0.2–0.8 */
@@ -47,6 +57,8 @@ interface UiState {
   closeSettings: () => void;
   setSettingsSection: (section: SettingsSection) => void;
   setNewProjectOpen: (open: boolean) => void;
+  setPaletteOpen: (open: boolean) => void;
+  setThreadDialog: (dialog: ThreadDialog | null) => void;
   setFocusMode: (mode: FocusMode) => void;
   toggleRail: () => void;
   setSplitRatio: (ratio: number) => void;
@@ -67,6 +79,8 @@ export const useUi = create<UiState>()(
       expertsReturnTo: "mission",
       newExpertsProjectId: null,
       newProjectOpen: false,
+      paletteOpen: false,
+      threadDialog: null,
       focusMode: "split",
       railCollapsed: false,
       splitRatio: 0.45,
@@ -99,6 +113,8 @@ export const useUi = create<UiState>()(
       closeSettings: () => set((s) => (s.view === "settings" ? { view: s.settingsReturnTo } : s)),
       setSettingsSection: (settingsSection) => set({ settingsSection }),
       setNewProjectOpen: (newProjectOpen) => set({ newProjectOpen }),
+      setPaletteOpen: (paletteOpen) => set({ paletteOpen }),
+      setThreadDialog: (threadDialog) => set({ threadDialog }),
       setFocusMode: (focusMode) => set({ focusMode }),
       toggleRail: () => set((s) => ({ railCollapsed: !s.railCollapsed })),
       setSplitRatio: (ratio) => set({ splitRatio: Math.min(0.8, Math.max(0.2, ratio)) }),

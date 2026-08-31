@@ -34,7 +34,10 @@ function currentProjectId(): string | undefined {
  * (composer, cards, Monaco) and appear in the table only.
  */
 export const SHORTCUTS: Shortcut[] = [
-  { id: "palette", keys: "⌘K", label: "Command palette", group: "Navigation" },
+  {
+    id: "palette", keys: "⌘K", label: "Command palette", group: "Navigation", key: "k", shift: false,
+    run: () => ui().setPaletteOpen(true),
+  },
   { id: "new-thread", keys: "⌘N", label: "New thread", group: "Navigation" },
   {
     id: "new-experts", keys: "⌘⇧X", label: "New experts session", group: "Navigation", key: "x", shift: true,

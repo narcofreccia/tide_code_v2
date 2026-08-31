@@ -23,6 +23,7 @@ export {
   selectExpertsSessions,
   selectInbox,
   selectProjects,
+  selectProjectTotals,
   selectThreadMessages,
   selectThreadsByProject,
   selectThreadsNeedingAttention,
@@ -31,6 +32,7 @@ export {
   selectTurnPrompt,
   type ExpertsBoard,
   type InboxItem,
+  type ProjectTotals,
   type TimelineItem,
   type TimelineNode,
 } from "./selectors.ts";

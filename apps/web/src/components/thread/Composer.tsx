@@ -19,12 +19,13 @@ export function Composer({ thread }: { thread: Thread }) {
   const [cursor, setCursor] = useState(0);
   const input = useRef<HTMLTextAreaElement>(null);
   const running = thread.status === "running";
+  const interrupting = thread.interrupting === true;
   const matches = useMentionMatches(thread.id, mention?.query);
 
   useEffect(() => registerComposerFocus(() => input.current?.focus()), []);
 
   useEffect(() => {
-    if (!running) return undefined;
+    if (!running || interrupting) return undefined;
     const onKey = (e: KeyboardEvent): void => {
       if (e.key !== "Escape") return;
       e.preventDefault();
@@ -32,7 +33,7 @@ export function Composer({ thread }: { thread: Thread }) {
     };
     window.addEventListener("keydown", onKey);
     return () => window.removeEventListener("keydown", onKey);
-  }, [running, thread.id]);
+  }, [running, interrupting, thread.id]);
 
   const sync = (value: string, caret: number): void => {
     setText(value);
@@ -119,10 +120,16 @@ export function Composer({ thread }: { thread: Thread }) {
       <div className={styles.actions}>
         <ThreadPills thread={thread} />
         <span className={styles.hint}>
-          <Kbd>{running ? "Esc" : "⌘↵"}</Kbd> {running ? "stop" : "send"}
+          {interrupting ? (
+            <span className={styles.interrupting}>interrupting…</span>
+          ) : (
+            <>
+              <Kbd>{running ? "Esc" : "⌘↵"}</Kbd> {running ? "stop" : "send"}
+            </>
+          )}
         </span>
         {running ? (
-          <Button variant="primary" onClick={() => interruptTurn(thread.id)}>
+          <Button variant="primary" disabled={interrupting} onClick={() => interruptTurn(thread.id)}>
             Stop
           </Button>
         ) : (

@@ -2,14 +2,16 @@ import { useEffect, useState } from "react";
 import type { Thread } from "@tide/contracts";
 import { useLatestTurnStatus } from "../../state/hooks.ts";
 import {
-  archiveThread,
   copyTerminalCommand,
   createThread,
   fetchTerminalCommand,
+  requestArchive,
 } from "../../lib/threadActions.ts";
+import { useUi } from "../../state/ui.ts";
 import { DelegatedBy, DelegatesPopover } from "./Delegates.tsx";
 import { Button } from "../ui/Button.tsx";
 import { Pill } from "../ui/Pill.tsx";
+import { Popover } from "../ui/Popover.tsx";
 import { StatusGlyph } from "../ui/StatusGlyph.tsx";
 import { PrBadge } from "../ui/VcsBadges.tsx";
 import styles from "./ThreadHeader.module.css";
@@ -43,7 +45,11 @@ export function ThreadHeader({ thread }: { thread: Thread }) {
 
   return (
     <header className={styles.header}>
-      <StatusGlyph status={thread.status} {...(thread.attention ? { attention: thread.attention } : {})} />
+      <StatusGlyph
+        status={thread.status}
+        {...(thread.attention ? { attention: thread.attention } : {})}
+        {...(thread.interrupting === true ? { interrupting: true } : {})}
+      />
       <span className={styles.branch} title={thread.worktreePath ?? "no worktree"}>
         {thread.worktreePath === undefined ? "" : "⎇ "}
         {thread.branch ?? "no worktree"}
@@ -51,7 +57,7 @@ export function ThreadHeader({ thread }: { thread: Thread }) {
       {thread.pr ? <PrBadge pr={thread.pr} /> : null}
       {thread.delegatedBy ? <DelegatedBy parentThreadId={thread.delegatedBy} /> : null}
       <DelegatesPopover threadId={thread.id} />
-      <Pill>{turnStatus ?? thread.status}</Pill>
+      <Pill>{thread.interrupting === true ? "interrupting…" : (turnStatus ?? thread.status)}</Pill>
       {percent === undefined ? null : <span className={styles.stat}>ctx {percent}%</span>}
       {thread.totalCostUsd === undefined ? null : (
         <span className={styles.stat}>${thread.totalCostUsd.toFixed(2)}</span>
@@ -74,9 +80,26 @@ export function ThreadHeader({ thread }: { thread: Thread }) {
         >
           + child
         </Button>
-        <Button variant="quiet" onClick={() => archiveThread(thread.id)}>
+        <Button variant="quiet" onClick={() => requestArchive(thread)}>
           Archive
         </Button>
+        <Popover label="⋯" title="More actions" align="end" variant="quiet">
+          {(close) => (
+            <div className={styles.menu}>
+              <Button
+                variant="quiet"
+                disabled={thread.worktreePath === undefined}
+                title={thread.worktreePath ?? "This thread has no worktree"}
+                onClick={() => {
+                  close();
+                  useUi.getState().setThreadDialog({ kind: "detach", threadId: thread.id });
+                }}
+              >
+                Detach worktree…
+              </Button>
+            </div>
+          )}
+        </Popover>
       </div>
     </header>
   );

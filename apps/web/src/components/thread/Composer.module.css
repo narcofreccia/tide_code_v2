@@ -21,3 +21,5 @@
   padding-top: var(--sp-2);
 }
 .hint { margin-left: auto; display: inline-flex; align-items: center; gap: var(--sp-1); color: var(--muted); }
+
+.interrupting { color: var(--warn); }

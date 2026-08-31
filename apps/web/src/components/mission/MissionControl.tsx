@@ -9,6 +9,7 @@ import { StatusGlyph } from "../ui/StatusGlyph.tsx";
 import { PrGlyph, WorktreeGlyph } from "../ui/VcsBadges.tsx";
 import { ExpertsSection } from "./ExpertsSection.tsx";
 import { Inbox } from "./Inbox.tsx";
+import { ProjectTotals } from "./ProjectTotals.tsx";
 import styles from "./MissionControl.module.css";
 
 /** Landing view: every active thread across projects, needs-you first. */
@@ -30,6 +31,8 @@ export function MissionControl() {
     <section className={styles.view} aria-label="Mission Control">
       <Inbox />
 
+      <ProjectTotals {...(selectedProjectId === null ? {} : { projectId: selectedProjectId })} />
+
       <ExpertsSection projectId={selectedProjectId ?? undefined} />
 
       <div className={styles.header}>
@@ -48,8 +51,13 @@ export function MissionControl() {
           {threads.map((t) => (
             <li key={t.id}>
               <button type="button" className={styles.row} onClick={() => selectThread(t.id)}>
-                <StatusGlyph status={t.status} {...(t.attention ? { attention: t.attention } : {})} />
+                <StatusGlyph
+                  status={t.status}
+                  {...(t.attention ? { attention: t.attention } : {})}
+                  {...(t.interrupting === true ? { interrupting: true } : {})}
+                />
                 <span className={styles.title}>{t.title}</span>
+                {t.interrupting === true ? <span className={styles.interrupting}>interrupting…</span> : null}
                 <WorktreeGlyph thread={t} />
                 <PrGlyph pr={t.pr} />
                 <span className={styles.project}>{model.projects[t.projectId]?.title ?? "—"}</span>

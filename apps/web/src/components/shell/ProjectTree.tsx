@@ -35,7 +35,11 @@ function ThreadRow({ thread, siblings }: { thread: Thread; siblings: Thread[] })
         }`}
         onClick={() => selectThread(thread.id)}
       >
-        <StatusGlyph status={thread.status} {...(thread.attention ? { attention: thread.attention } : {})} />
+        <StatusGlyph
+          status={thread.status}
+          {...(thread.attention ? { attention: thread.attention } : {})}
+          {...(thread.interrupting === true ? { interrupting: true } : {})}
+        />
         {thread.role ? (
           <span className={styles.roleGlyph} title={thread.role} aria-label={thread.role} role="img">
             {ROLE_GLYPH[thread.role]}
