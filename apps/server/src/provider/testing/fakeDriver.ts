@@ -127,6 +127,7 @@ export class FakeSession implements ProviderSession {
   async close(): Promise<void> {
     this.closed = true;
     this.control.closed.push(this.options.threadId);
+    this.control.received(`close:${this.options.threadId}`, undefined);
   }
 }
 

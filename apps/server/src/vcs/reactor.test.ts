@@ -1,4 +1,5 @@
 import { execFile } from "node:child_process";
+import { existsSync } from "node:fs";
 import { mkdtemp, rm, writeFile } from "node:fs/promises";
 import { tmpdir } from "node:os";
 import { join } from "node:path";
@@ -387,3 +388,119 @@ async function requestTurn(h: Harness, threadId: string, text: string): Promise<
   await h.settle();
   return requested.turn.id;
 }
+
+describe("VcsReactor — worktree teardown", () => {
+  /** Thread on a real worktree with a clean tree, ready to be torn down. */
+  async function withWorktree(h: Harness, title = "Fix Login"): Promise<Thread> {
+    const thread = await newThread(h, { useWorktree: true, title });
+    if (thread.worktreePath === undefined) throw new Error("expected a worktree");
+    return thread;
+  }
+
+  it("archiving removes the worktree directory, keeps the branch and clears the path", async () => {
+    const h = await harness();
+    const thread = await withWorktree(h);
+    const { worktreePath, branch } = thread;
+
+    await h.app.engine.dispatch({ type: "thread.archive", threadId: thread.id });
+    await h.settle();
+
+    expect(existsSync(worktreePath!)).toBe(false);
+    expect((await h.repo.git.worktreeList()).map((w) => w.path)).not.toContain(worktreePath);
+    expect(await h.repo.git.revParse(`refs/heads/${branch}`)).toBeDefined();
+    expect(h.model().threads[thread.id]?.worktreePath).toBeUndefined();
+  });
+
+  it("keepWorktree leaves the checkout on disk", async () => {
+    const h = await harness();
+    const thread = await withWorktree(h, "Keep Me");
+
+    await h.app.engine.dispatch({ type: "thread.archive", threadId: thread.id, keepWorktree: true });
+    await h.settle();
+
+    expect(existsSync(thread.worktreePath!)).toBe(true);
+    expect(h.model().threads[thread.id]?.worktreePath).toBe(thread.worktreePath);
+  });
+
+  it("closes the harness session before the directory goes away", async () => {
+    const h = await harness();
+    const thread = await withWorktree(h, "Session Holder");
+    h.control.script(emit({ type: "settled", status: "completed" }));
+    await h.app.engine.dispatch({ type: "turn.request", threadId: thread.id, text: "go" });
+    await h.settle();
+    const closedBefore = h.control.closed.length;
+
+    await h.app.engine.dispatch({ type: "thread.archive", threadId: thread.id });
+    await h.settle();
+    expect(h.control.closed.length).toBeGreaterThan(closedBefore);
+  });
+
+  it("parks uncommitted work on refs/tide/archived/<threadId> before removing a dirty worktree", async () => {
+    const h = await harness();
+    const thread = await withWorktree(h, "Dirty Work");
+    await writeFile(join(thread.worktreePath!, "scratch.txt"), "unsaved work\n", "utf8");
+
+    await h.app.engine.dispatch({ type: "thread.archive", threadId: thread.id });
+    await h.settle();
+
+    expect(existsSync(thread.worktreePath!)).toBe(false);
+    const ref = `refs/tide/archived/${thread.id}`;
+    const sha = await h.repo.git.revParse(ref);
+    expect(sha).toBeDefined();
+    const saved = await h.repo.git.show(sha!, "scratch.txt");
+    expect(saved.content).toBe("unsaved work\n");
+  });
+
+  it("writes no archive ref when the worktree is clean", async () => {
+    const h = await harness();
+    const thread = await withWorktree(h, "Clean");
+    await h.app.engine.dispatch({ type: "thread.archive", threadId: thread.id });
+    await h.settle();
+    expect(await h.repo.git.revParse(`refs/tide/archived/${thread.id}`)).toBeUndefined();
+  });
+
+  it("worktree.detach removes the checkout without archiving the thread", async () => {
+    const h = await harness();
+    const thread = await withWorktree(h, "Detach Only");
+
+    await h.app.engine.dispatch({ type: "worktree.detach", threadId: thread.id });
+    await h.settle();
+
+    expect(existsSync(thread.worktreePath!)).toBe(false);
+    const after = h.model().threads[thread.id];
+    expect(after?.worktreePath).toBeUndefined();
+    expect(after?.archivedAt).toBeUndefined();
+    expect(await h.repo.git.revParse(`refs/heads/${thread.branch}`)).toBeDefined();
+  });
+
+  it("deleteBranch removes a tide/* branch", async () => {
+    const h = await harness();
+    const thread = await withWorktree(h, "Throwaway");
+    expect(thread.branch).toBe("tide/throwaway");
+
+    await h.app.engine.dispatch({ type: "worktree.detach", threadId: thread.id, deleteBranch: true });
+    await h.settle();
+
+    expect(await h.repo.git.revParse("refs/heads/tide/throwaway")).toBeUndefined();
+  });
+
+  it("refuses to delete a branch Tide does not own", async () => {
+    const h = await harness();
+    const thread = await withWorktree(h, "Foreign");
+    // the thread is re-pointed at a branch that is not Tide's to remove
+    await run("git", ["-C", h.repo.dir, "branch", "feature/keepme"], { env: GIT_TEST_ENV });
+    await h.app.engine.dispatch({
+      type: "worktree.attach",
+      threadId: thread.id,
+      worktreePath: thread.worktreePath!,
+      branch: "feature/keepme",
+    });
+    await h.settle();
+
+    await h.app.engine.dispatch({ type: "worktree.detach", threadId: thread.id, deleteBranch: true });
+    await h.settle();
+
+    expect(existsSync(thread.worktreePath!)).toBe(false);
+    expect(await h.repo.git.revParse("refs/heads/feature/keepme")).toBeDefined();
+  });
+});

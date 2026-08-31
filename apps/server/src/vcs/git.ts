@@ -227,6 +227,12 @@ export class Git {
     return out;
   }
 
+  /** `git branch -D`; false when git refused (unknown branch, still checked out). */
+  async deleteBranch(name: string): Promise<boolean> {
+    const r = await this.tryRun(["branch", "-D", name]);
+    return r.code === 0;
+  }
+
   // ---- refs ----
 
   async updateRef(ref: string, sha: string): Promise<void> {

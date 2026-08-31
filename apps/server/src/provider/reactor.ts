@@ -19,11 +19,29 @@ interface ThreadState {
   messageIds: Map<string, string>;
 }
 
+/** Cancels a pending timer. */
+export type CancelTimer = () => void;
+
+/** The message a turn is settled with when the harness never honoured the interrupt. */
+export const INTERRUPT_TIMEOUT_ERROR = "driver did not honour interrupt; session closed";
+
+const DEFAULT_INTERRUPT_TIMEOUT_MS = 30_000;
+
+const realTimer = (fn: () => void, ms: number): CancelTimer => {
+  const timer = setTimeout(fn, ms);
+  timer.unref?.();
+  return () => clearTimeout(timer);
+};
+
 export interface ReactorOptions {
   engine: Engine;
   sessions: SessionDirectory;
   /** awaited before the harness is handed the prompt (P2: the vcs before-checkpoint) */
   beforeTurn?: (threadId: string, turnId: string) => Promise<void>;
+  /** grace period a driver gets to honour an interrupt before the turn is force-settled */
+  interruptTimeoutMs?: number;
+  /** injectable clock so tests drive the interrupt watchdog by hand instead of sleeping */
+  schedule?: (fn: () => void, ms: number) => CancelTimer;
   now?: () => number;
   newId?: () => string;
   log?: (msg: string, data?: unknown) => void;
@@ -41,7 +59,11 @@ export class ProviderReactor {
   #now: () => number;
   #newId: () => string;
   #log: (msg: string, data?: unknown) => void;
+  #interruptTimeoutMs: number;
+  #schedule: (fn: () => void, ms: number) => CancelTimer;
   #threads = new Map<string, ThreadState>();
+  /** turnId -> watchdog cancel, armed while an interrupt is outstanding */
+  #interruptTimers = new Map<string, CancelTimer>();
   #inflight = new Set<Promise<unknown>>();
   #unsubscribe: (() => void) | undefined;
 
@@ -49,6 +71,8 @@ export class ProviderReactor {
     this.#engine = options.engine;
     this.#sessions = options.sessions;
     this.#beforeTurn = options.beforeTurn;
+    this.#interruptTimeoutMs = options.interruptTimeoutMs ?? DEFAULT_INTERRUPT_TIMEOUT_MS;
+    this.#schedule = options.schedule ?? realTimer;
     this.#now = options.now ?? (() => Date.now());
     this.#newId = options.newId ?? (() => defaultNewId());
     this.#log = options.log ?? ((msg, data) => (data === undefined ? console.error(msg) : console.error(msg, data)));
@@ -61,6 +85,8 @@ export class ProviderReactor {
   stop(): void {
     this.#unsubscribe?.();
     this.#unsubscribe = undefined;
+    for (const cancel of this.#interruptTimers.values()) cancel();
+    this.#interruptTimers.clear();
   }
 
   /** Resolves when the engine is drained and no turn or driver call is in flight. */
@@ -93,9 +119,50 @@ export class ProviderReactor {
         return;
       case "turn.interrupt-requested":
         this.#withSession(event.threadId, (s) => s.interrupt());
+        this.#armInterruptWatchdog(event.threadId, event.turnId);
+        return;
+      case "turn.settled":
+        this.#cancelInterruptWatchdog(event.turnId);
         return;
       default:
         return;
+    }
+  }
+
+  // ---- interrupt watchdog ----
+
+  /**
+   * A harness may swallow an interrupt (crashed, wedged, protocol gap). Rather than leave the
+   * thread stuck on `running`/`interrupting` forever, the reactor gives it a grace period and
+   * then settles the turn itself and drops the session, which the next turn reopens.
+   */
+  #armInterruptWatchdog(threadId: string, turnId: string): void {
+    this.#cancelInterruptWatchdog(turnId);
+    this.#interruptTimers.set(
+      turnId,
+      this.#schedule(() => {
+        this.#interruptTimers.delete(turnId);
+        this.#track(this.#forceInterrupt(threadId, turnId));
+      }, this.#interruptTimeoutMs),
+    );
+  }
+
+  #cancelInterruptWatchdog(turnId: string): void {
+    const cancel = this.#interruptTimers.get(turnId);
+    if (cancel === undefined) return;
+    this.#interruptTimers.delete(turnId);
+    cancel();
+  }
+
+  async #forceInterrupt(threadId: string, turnId: string): Promise<void> {
+    const turn = this.#engine.getModel().turns[turnId];
+    if (turn === undefined || turn.settledAt !== undefined) return;
+    this.#log("[reactor] driver ignored the interrupt; settling the turn and closing the session", { threadId, turnId });
+    await this.#dispatch({ type: "turn.settle", turnId, status: "interrupted", error: INTERRUPT_TIMEOUT_ERROR });
+    try {
+      await this.#sessions.close(threadId);
+    } catch (err) {
+      this.#log("[reactor] session close failed", err);
     }
   }
 

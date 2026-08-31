@@ -100,6 +100,15 @@ export class VcsReactor {
       case "turn.settled":
         this.#enqueue(event.threadId, () => this.#recordAfter(event.threadId, event.turnId));
         return;
+      case "thread.archived":
+        // archiving frees the disk unless the user asked to keep the checkout
+        if (event.keepWorktree !== true) this.#enqueue(event.threadId, () => this.#detach(event.threadId, false));
+        return;
+      case "worktree.detach-requested": {
+        const { threadId, deleteBranch } = event;
+        this.#enqueue(threadId, () => this.#detach(threadId, deleteBranch === true));
+        return;
+      }
       case "worktree.attached":
         this.#track(this.#sessions?.close(event.threadId) ?? Promise.resolve());
         return;
@@ -138,6 +147,7 @@ export class VcsReactor {
       this.#log(`[vcs] ${command.type} rejected`, err);
     }
   }
+
 
   #context(threadId: string): { model: ReadModel; thread: Thread; project: Project; cwd: string } | undefined {
     const model = this.#engine.getModel();
@@ -186,6 +196,46 @@ export class VcsReactor {
     } catch (err) {
       this.#log("[vcs] worktree creation failed; thread stays on the project root", err);
     }
+  }
+
+  /**
+   * Tears a thread's worktree down: closes the harness session holding the cwd open, parks any
+   * uncommitted work on a ref so archiving can never lose it, removes the checkout (the branch
+   * survives) and records the fact through the server-internal command path. `deleteBranch` is
+   * honoured only for Tide-owned `tide/*` branches — anything else is refused and logged.
+   */
+  async #detach(threadId: string, deleteBranch: boolean): Promise<void> {
+    const ctx = this.#context(threadId);
+    if (!ctx || ctx.thread.worktreePath === undefined) return;
+    const worktreePath = ctx.thread.worktreePath;
+    try {
+      await this.#sessions?.close(threadId);
+      await this.#preserve(threadId, worktreePath);
+      await this.#worktrees.remove(ctx.project, ctx.thread);
+      if (deleteBranch) await this.#deleteBranch(ctx.project.rootPath, ctx.thread.branch);
+      await this.#dispatch({ type: "worktree.detached", threadId });
+    } catch (err) {
+      this.#log("[vcs] worktree detach failed", err);
+    }
+  }
+
+  /** Uncommitted work in a worktree about to be deleted is parked on `refs/tide/archived/<threadId>`. */
+  async #preserve(threadId: string, worktreePath: string): Promise<void> {
+    const git = this.#git(worktreePath);
+    if (!(await git.isRepo())) return;
+    if ((await git.status()).dirty === 0) return;
+    const sha = await git.snapshot(`tide: archived worktree ${threadId}`);
+    await git.updateRef(`refs/tide/archived/${threadId}`, sha);
+    this.#log(`[vcs] uncommitted work preserved at refs/tide/archived/${threadId}`, sha);
+  }
+
+  async #deleteBranch(rootPath: string, branch: string | undefined): Promise<void> {
+    if (branch === undefined) return;
+    if (!branch.startsWith("tide/")) {
+      this.#log(`[vcs] refusing to delete ${branch}: only tide/* branches are Tide's to remove`);
+      return;
+    }
+    if (!(await this.#git(rootPath).deleteBranch(branch))) this.#log(`[vcs] could not delete branch ${branch}`);
   }
 
   async #recordBefore(threadId: string, turnId: string): Promise<void> {

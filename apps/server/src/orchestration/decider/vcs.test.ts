@@ -180,3 +180,92 @@ describe("decide: pr.update", () => {
     expect(decide(emptyReadModel(), { type: "pr.update", threadId: "nope", pr }, ctx)).toMatchObject({ ok: false, error: { code: "not-found" } });
   });
 });
+
+describe("decide: thread.archive carries keepWorktree", () => {
+  it("omits the flag when the client did not send one", () => {
+    const f = withThread();
+    const { events } = run(f.model, { type: "thread.archive", threadId: f.threadId });
+    expect(events[0]).toMatchObject({ type: "thread.archived", threadId: f.threadId });
+    expect(events[0]).not.toHaveProperty("keepWorktree");
+  });
+
+  it("passes keepWorktree through in both directions", () => {
+    for (const keepWorktree of [true, false]) {
+      const f = withThread();
+      const { events } = run(f.model, { type: "thread.archive", threadId: f.threadId, keepWorktree });
+      expect(events[0]).toMatchObject({ type: "thread.archived", keepWorktree });
+    }
+  });
+});
+
+/** A thread whose worktree the reactor has already reported as attached. */
+function withAttachedWorktree(): Fixture {
+  const base = withThread(true);
+  const model = run(base.model, {
+    type: "worktree.attach",
+    threadId: base.threadId,
+    worktreePath: "/wt/thread",
+    branch: "tide/fix-login",
+    baseBranch: "main",
+  }).model;
+  return { ...base, model };
+}
+
+describe("decide: worktree.detach", () => {
+  it("requests a detach for a thread that has a worktree", () => {
+    const f = withAttachedWorktree();
+    const { model, events } = run(f.model, { type: "worktree.detach", threadId: f.threadId, deleteBranch: true });
+    expect(events[0]).toMatchObject({ type: "worktree.detach-requested", threadId: f.threadId, deleteBranch: true, at: 1000 });
+    // intent only: the path stays until the reactor reports back
+    expect(model.threads[f.threadId]?.worktreePath).toBe("/wt/thread");
+  });
+
+  it("omits deleteBranch when unset", () => {
+    const f = withAttachedWorktree();
+    const { events } = run(f.model, { type: "worktree.detach", threadId: f.threadId });
+    expect(events[0]).not.toHaveProperty("deleteBranch");
+  });
+
+  it("rejects an unknown thread", () => {
+    expect(decide(emptyReadModel(), { type: "worktree.detach", threadId: "nope" }, ctx)).toMatchObject({
+      ok: false,
+      error: { code: "not-found" },
+    });
+  });
+
+  it("rejects a thread with no worktree", () => {
+    const f = withThread();
+    expect(decide(f.model, { type: "worktree.detach", threadId: f.threadId }, ctx)).toMatchObject({
+      ok: false,
+      error: { code: "conflict" },
+    });
+  });
+
+  it("refuses while the thread is running", () => {
+    const f = withAttachedWorktree();
+    const running = run(f.model, { type: "turn.request", threadId: f.threadId, text: "go" }).model;
+    expect(decide(running, { type: "worktree.detach", threadId: f.threadId }, ctx)).toMatchObject({
+      ok: false,
+      error: { code: "busy" },
+    });
+  });
+});
+
+describe("decide: worktree.detached", () => {
+  it("clears the worktree path and is a no-op once detached", () => {
+    const f = withAttachedWorktree();
+    const first = decide(f.model, { type: "worktree.detached", threadId: f.threadId }, ctx);
+    if (!first.ok) throw new Error("expected ok");
+    expect(first.events[0]).toMatchObject({ type: "worktree.detached", threadId: f.threadId });
+    const detached = apply(f.model, first.events);
+    expect(detached.threads[f.threadId]?.worktreePath).toBeUndefined();
+    expect(decide(detached, { type: "worktree.detached", threadId: f.threadId }, ctx)).toMatchObject({ ok: true, events: [] });
+  });
+
+  it("rejects an unknown thread", () => {
+    expect(decide(emptyReadModel(), { type: "worktree.detached", threadId: "nope" }, ctx)).toMatchObject({
+      ok: false,
+      error: { code: "not-found" },
+    });
+  });
+});

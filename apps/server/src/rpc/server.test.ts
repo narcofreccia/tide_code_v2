@@ -7,6 +7,7 @@ import { Engine } from "../orchestration/engine.ts";
 import { EventStore } from "../orchestration/store.ts";
 import { DriverRegistry } from "../provider/registry.ts";
 import { createFakeDriver, type FakeDriverControl } from "../provider/testing/fakeDriver.ts";
+import type { Interfaces } from "./remote.ts";
 import { startServer, type ServerHandle } from "./server.ts";
 
 const TOKEN = "test-token";
@@ -140,6 +141,15 @@ describe("http", () => {
     const res = await fetch(`http://${base}/health`);
     expect(res.status).toBe(200);
     expect(await res.json()).toEqual({ ok: true, environmentId: "env-test", version: "0.0.0-test" });
+  });
+
+  it("serves /pair as a static HTML explainer", async () => {
+    const res = await fetch(`http://${base}/pair`);
+    expect(res.status).toBe(200);
+    expect(res.headers.get("content-type")).toContain("text/html");
+    const html = await res.text();
+    expect(html).toContain(`ws://127.0.0.1:${server.port}/ws`);
+    expect(html).not.toContain(TOKEN); // the token travels in the URL fragment, never through the server
   });
 
   it("requires a bearer token for ws tickets", async () => {
@@ -312,5 +322,46 @@ describe("rpc: providers and the terminal escape hatch", () => {
       command: "claude --resume sess-42 # /term",
     });
     await expect(client.call("thread.terminalCommand", { threadId: "ghost" })).rejects.toMatchObject({ code: "not-found" });
+  });
+});
+
+describe("server.info remote", () => {
+  const INTERFACES = {
+    lo0: [{ address: "127.0.0.1", netmask: "255.0.0.0", family: "IPv4", mac: "00:00:00:00:00:00", internal: true, cidr: "127.0.0.1/8" }],
+    en0: [{ address: "192.168.1.42", netmask: "255.255.255.0", family: "IPv4", mac: "00:00:00:00:00:00", internal: false, cidr: "192.168.1.42/24" }],
+  } as unknown as Interfaces;
+
+  async function withServer(host: string, run: (client: TestClient, handle: ServerHandle) => Promise<void>): Promise<void> {
+    const s = new EventStore(await openDatabase(":memory:"));
+    const e = new Engine({ store: s });
+    const handle = await startServer({ engine: e, store: s, config: { ...config, host }, networkInterfaces: () => INTERFACES });
+    const client = await TestClient.open(`ws://127.0.0.1:${handle.port}/ws?token=${TOKEN}`);
+    try {
+      await run(client, handle);
+    } finally {
+      client.close();
+      await handle.close();
+      s.close();
+    }
+  }
+
+  it("advertises no LAN URLs when bound to loopback, and pairs over 127.0.0.1", async () => {
+    await withServer("127.0.0.1", async (client, handle) => {
+      const info = (await client.call("server.info", {})) as { remote: { host: string; port: number; lanUrls: string[]; pairingUrl?: string } };
+      expect(info.remote).toEqual({
+        host: "127.0.0.1",
+        port: handle.port,
+        lanUrls: [],
+        pairingUrl: `http://127.0.0.1:${handle.port}/pair#token=${TOKEN}`,
+      });
+    });
+  });
+
+  it("lists LAN URLs when bound to 0.0.0.0", async () => {
+    await withServer("0.0.0.0", async (client, handle) => {
+      const info = (await client.call("server.info", {})) as { remote: { lanUrls: string[]; pairingUrl?: string } };
+      expect(info.remote.lanUrls).toEqual([`ws://192.168.1.42:${handle.port}/ws`]);
+      expect(info.remote.pairingUrl).toBe(`http://192.168.1.42:${handle.port}/pair#token=${TOKEN}`);
+    });
   });
 });

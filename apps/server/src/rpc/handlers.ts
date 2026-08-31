@@ -3,6 +3,7 @@ import { CommandError, type Engine } from "../orchestration/engine.ts";
 import type { EventStore } from "../orchestration/store.ts";
 import type { DriverRegistry } from "../provider/registry.ts";
 import { threadCwd } from "../provider/sessions.ts";
+import type { RemoteInfo } from "./remote.ts";
 import { RpcException, type RpcRouter } from "./router.ts";
 
 export interface HandlerDeps {
@@ -14,16 +15,23 @@ export interface HandlerDeps {
   startedAt: number;
   tideHome?: string;
   tools?: { git: boolean; gh: boolean; rg: boolean };
+  /** how clients reach this server; resolved per call because the port is known only after listen */
+  remote?: (options: { includePairing: boolean }) => RemoteInfo;
 }
 
 export function registerHandlers(router: RpcRouter, deps: HandlerDeps): void {
-  router.register("server.info", async () => ({
-    environmentId: deps.environmentId,
-    version: deps.version,
-    startedAt: deps.startedAt,
-    ...(deps.tideHome !== undefined ? { tideHome: deps.tideHome, worktreeRoot: `${deps.tideHome}/worktrees` } : {}),
-    ...(deps.tools !== undefined ? { tools: deps.tools } : {}),
-  }));
+  router.register("server.info", async (_input, ctx) => {
+    // the pairing URL carries the bearer token: user-facing client sockets only
+    const remote = deps.remote?.({ includePairing: ctx.agentThreadId === undefined });
+    return {
+      environmentId: deps.environmentId,
+      version: deps.version,
+      startedAt: deps.startedAt,
+      ...(deps.tideHome !== undefined ? { tideHome: deps.tideHome, worktreeRoot: `${deps.tideHome}/worktrees` } : {}),
+      ...(deps.tools !== undefined ? { tools: deps.tools } : {}),
+      ...(remote !== undefined ? { remote } : {}),
+    };
+  });
 
   router.register("orchestration.dispatch", async (input) => {
     // The schema already accepts only ClientCommand; this is the belt to that brace.

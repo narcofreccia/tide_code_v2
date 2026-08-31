@@ -6,7 +6,7 @@ import { decidePlan } from "./plans.ts";
 import { decideProject } from "./projects.ts";
 import { decideThread } from "./threads.ts";
 import { decideTurn } from "./turns.ts";
-import { decideVcs } from "./vcs.ts";
+import { decideVcs, decideWorktreeDetached } from "./vcs.ts";
 import { fail, type DecideContext, type DecideResult } from "./types.ts";
 
 export type { DecideContext, DecideError, DecideResult } from "./types.ts";
@@ -49,6 +49,7 @@ export function decide(model: ReadModel, command: Command, ctx: DecideContext): 
 
     case "thread.revert":
     case "thread.publish":
+    case "worktree.detach":
     case "worktree.attach":
     case "checkpoint.record":
     case "pr.update":
@@ -62,6 +63,9 @@ export function decide(model: ReadModel, command: Command, ctx: DecideContext): 
     case "experts.threads.bound":
     case "experts.expert.status":
       return decideExperts(model, command, ctx);
+
+    case "worktree.detached":
+      return decideWorktreeDetached(model, command, ctx);
 
     case "experts.finding.post":
     case "experts.message.send":

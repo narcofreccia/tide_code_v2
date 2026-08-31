@@ -48,7 +48,13 @@ export function decideThread(model: ReadModel, command: ThreadCommand, ctx: Deci
       const thread = model.threads[command.threadId];
       if (!thread) return fail("not-found", `unknown thread ${command.threadId}`);
       if (isArchived(thread)) return ok();
-      return ok({ type: "thread.archived", threadId: thread.id, archivedAt: ctx.now });
+      // keepWorktree rides along so the vcs reactor knows whether to tear the worktree down
+      return ok({
+        type: "thread.archived",
+        threadId: thread.id,
+        archivedAt: ctx.now,
+        ...(command.keepWorktree !== undefined ? { keepWorktree: command.keepWorktree } : {}),
+      });
     }
   }
 }

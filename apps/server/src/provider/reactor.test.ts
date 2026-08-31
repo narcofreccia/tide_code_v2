@@ -3,7 +3,7 @@ import type { DomainEvent, EventOf, ReadModel } from "@tide/contracts";
 import { openDatabase } from "../db/sqlite.ts";
 import { Engine } from "../orchestration/engine.ts";
 import { EventStore } from "../orchestration/store.ts";
-import { ProviderReactor } from "./reactor.ts";
+import { INTERRUPT_TIMEOUT_ERROR, ProviderReactor, type CancelTimer } from "./reactor.ts";
 import { DriverRegistry } from "./registry.ts";
 import { SessionDirectory } from "./sessions.ts";
 import { awaitApproval, awaitInterrupt, createFakeDriver, emit, throwStep, type FakeDriverControl } from "./testing/fakeDriver.ts";
@@ -41,14 +41,52 @@ function waitFor(engine: Engine, match: (event: DomainEvent) => boolean): Promis
   });
 }
 
-async function harness(): Promise<Harness> {
+/** Timers the test fires by hand, so the interrupt watchdog is exercised without a sleep. */
+class ManualClock {
+  now = 0;
+  #pending: { fn: () => void; at: number }[] = [];
+
+  schedule = (fn: () => void, ms: number): CancelTimer => {
+    const entry = { fn, at: this.now + ms };
+    this.#pending.push(entry);
+    return () => {
+      const i = this.#pending.indexOf(entry);
+      if (i >= 0) this.#pending.splice(i, 1);
+    };
+  };
+
+  get pending(): number {
+    return this.#pending.length;
+  }
+
+  /** Moves the clock forward and runs everything that came due. */
+  advance(ms: number): void {
+    this.now += ms;
+    const due = this.#pending.filter((e) => e.at <= this.now);
+    this.#pending = this.#pending.filter((e) => e.at > this.now);
+    for (const e of due) e.fn();
+  }
+}
+
+interface HarnessOptions {
+  schedule?: (fn: () => void, ms: number) => CancelTimer;
+  interruptTimeoutMs?: number;
+}
+
+async function harness(options: HarnessOptions = {}): Promise<Harness> {
   const store = new EventStore(await openDatabase(":memory:"));
   const engine = new Engine({ store });
   const { driver, control } = createFakeDriver("claude");
   const registry = new DriverRegistry({ env: { dataDir: ":memory:", log: () => undefined } });
   registry.register(driver);
   const sessions = new SessionDirectory({ registry, autoReap: false, log: () => undefined });
-  const reactor = new ProviderReactor({ engine, sessions, log: () => undefined });
+  const reactor = new ProviderReactor({
+    engine,
+    sessions,
+    log: () => undefined,
+    ...(options.schedule !== undefined ? { schedule: options.schedule } : {}),
+    ...(options.interruptTimeoutMs !== undefined ? { interruptTimeoutMs: options.interruptTimeoutMs } : {}),
+  });
   reactor.start();
 
   const project = pick((await engine.dispatch({ type: "project.create", title: "T", rootPath: "/repo" })).events, "project.created");
@@ -246,5 +284,65 @@ describe("ProviderReactor: plans", () => {
     expect(session?.inputs[0]?.text.startsWith("Implement the following plan.\n\n## Rewrite the parser")).toBe(true);
     const texts = (model.threadMessages[created.thread.id] ?? []).map((id) => model.messages[id]?.text);
     expect(texts).toContain("on it");
+  });
+});
+
+describe("ProviderReactor: interrupt watchdog", () => {
+  /** Drives a turn to the point where the driver is suspended and an interrupt has been sent. */
+  async function interruptedTurn(clock: ManualClock): Promise<{ h: Harness; turnId: string }> {
+    const h = await harness({ schedule: clock.schedule, interruptTimeoutMs: 30_000 });
+    // the driver stalls on an approval nobody answers, so it never notices the interrupt
+    h.control.script(emit({ type: "assistant.delta", messageKey: "m0", delta: "working" }), awaitApproval("never-answered"));
+    const requested = pick((await h.engine.dispatch({ type: "turn.request", threadId: h.threadId, text: "go" })).events, "turn.requested");
+    await waitFor(h.engine, (e) => e.type === "assistant.delta");
+    await h.engine.dispatch({ type: "turn.interrupt", threadId: h.threadId });
+    await h.control.when("interrupt");
+    return { h, turnId: requested.turn.id };
+  }
+
+  it("settles the turn and closes the session when the driver never honours the interrupt", async () => {
+    const clock = new ManualClock();
+    const { h, turnId } = await interruptedTurn(clock);
+    expect(clock.pending).toBe(1);
+    expect(h.engine.getModel().threads[h.threadId]).toMatchObject({ status: "running", interrupting: true });
+
+    const settled = waitFor(h.engine, (e) => e.type === "turn.settled");
+    const closed = h.control.when(`close:${h.threadId}`);
+    clock.advance(30_000);
+    expect(await settled).toMatchObject({ type: "turn.settled", turnId, status: "interrupted", error: INTERRUPT_TIMEOUT_ERROR });
+    await closed;
+
+    const model = h.engine.getModel();
+    expect(model.turns[turnId]).toMatchObject({ status: "interrupted", error: INTERRUPT_TIMEOUT_ERROR });
+    expect(model.threads[h.threadId]?.status).toBe("interrupted");
+    expect(model.threads[h.threadId]?.interrupting).toBeUndefined();
+    expect(h.control.closed).toContain(h.threadId);
+  });
+
+  it("does not fire before the grace period is up", async () => {
+    const clock = new ManualClock();
+    const { h, turnId } = await interruptedTurn(clock);
+    clock.advance(29_999);
+    expect(clock.pending).toBe(1);
+    expect(h.engine.getModel().turns[turnId]?.status).toBe("running");
+  });
+
+  it("cancels the watchdog when the driver does honour the interrupt", async () => {
+    const clock = new ManualClock();
+    const h = await harness({ schedule: clock.schedule, interruptTimeoutMs: 30_000 });
+    h.control.script(
+      emit({ type: "assistant.delta", messageKey: "m0", delta: "working" }),
+      awaitInterrupt(),
+      emit({ type: "settled", status: "interrupted" }),
+    );
+    const streaming = waitFor(h.engine, (e) => e.type === "assistant.delta");
+    const requested = pick((await h.engine.dispatch({ type: "turn.request", threadId: h.threadId, text: "go" })).events, "turn.requested");
+    await streaming;
+    await h.engine.dispatch({ type: "turn.interrupt", threadId: h.threadId });
+    await h.reactor.drain();
+
+    expect(clock.pending).toBe(0);
+    expect(h.engine.getModel().turns[requested.turn.id]?.status).toBe("interrupted");
+    expect(h.control.closed).not.toContain(h.threadId);
   });
 });

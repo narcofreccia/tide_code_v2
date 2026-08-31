@@ -39,6 +39,8 @@ export function aggregateIdOf(event: DomainEvent): string | null {
     case "turn.settled":
     case "worktree.attached":
     case "checkpoint.recorded":
+    case "worktree.detach-requested":
+    case "worktree.detached":
     case "revert.requested":
     case "publish.requested":
     case "pr.updated":

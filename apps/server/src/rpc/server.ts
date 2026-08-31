@@ -12,6 +12,7 @@ import { CheckpointService } from "../vcs/checkpoints.ts";
 import { AgentTokenStore } from "./agentTickets.ts";
 import { registerAgentHandlers } from "./agent.ts";
 import { registerHandlers } from "./handlers.ts";
+import { buildRemoteInfo, pairPage, type Interfaces } from "./remote.ts";
 import { registerVcsHandlers } from "./vcs.ts";
 import { createWorkspaceServices, registerWorkspaceHandlers, type WorkspaceServices } from "./workspace.ts";
 import { RpcRouter } from "./router.ts";
@@ -45,6 +46,8 @@ export interface ServerDeps {
   workspace?: WorkspaceServices;
   /** per-thread agent tokens; the app shares this with the MCP provisioner */
   agentTokens?: AgentTokenStore;
+  /** tests mock the host's network interfaces to assert the LAN URL shape */
+  networkInterfaces?: () => Interfaces;
 }
 
 export interface ServerHandle {
@@ -63,6 +66,17 @@ export async function startServer(deps: ServerDeps): Promise<ServerHandle> {
   const registry =
     deps.registry ?? new DriverRegistry({ env: { dataDir: config.dataDir, log: (msg, data) => (data === undefined ? console.error(msg) : console.error(msg, data)) } });
 
+  // the real port is only known after listen(); every remote lookup reads it late
+  let boundPort = config.port;
+  const remote = ({ includePairing }: { includePairing: boolean }) =>
+    buildRemoteInfo({
+      host: config.host,
+      port: boundPort,
+      token: config.token,
+      includePairing,
+      ...(deps.networkInterfaces !== undefined ? { interfaces: deps.networkInterfaces() } : {}),
+    });
+
   const router = new RpcRouter();
   registerHandlers(router, {
     engine,
@@ -73,6 +87,7 @@ export async function startServer(deps: ServerDeps): Promise<ServerHandle> {
     startedAt,
     tideHome: config.tideHome,
     tools: detectTools(),
+    remote,
   });
   registerAgentHandlers(router, { engine });
   registerVcsHandlers(router, { engine, checkpoints: deps.checkpoints ?? new CheckpointService() });
@@ -105,6 +120,11 @@ export async function startServer(deps: ServerDeps): Promise<ServerHandle> {
     }
     if (req.method === "GET" && url.pathname === "/health") {
       json(res, 200, { ok: true, environmentId: config.environmentId, version: config.version });
+      return;
+    }
+    if (req.method === "GET" && url.pathname === "/pair") {
+      res.writeHead(200, { "content-type": "text/html; charset=utf-8" });
+      res.end(pairPage(remote({ includePairing: false })));
       return;
     }
     if (req.method === "POST" && url.pathname === "/api/auth/ws-ticket") {
@@ -191,6 +211,7 @@ export async function startServer(deps: ServerDeps): Promise<ServerHandle> {
 
   const address = http.address();
   const port = typeof address === "object" && address !== null ? address.port : config.port;
+  boundPort = port;
 
   return {
     port,

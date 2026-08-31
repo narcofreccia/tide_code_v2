@@ -172,6 +172,8 @@ export const CheckpointRecord = Type.Object({
   stats: Type.Optional(CheckpointStats),
 });
 export const PrUpdate = Type.Object({ type: Type.Literal("pr.update"), threadId: Type.String(), pr: PullRequest });
+/** vcs reactor reports that a thread's worktree directory is gone */
+export const WorktreeDetachedReport = Type.Object({ type: Type.Literal("worktree.detached"), threadId: Type.String() });
 
 // ---- agent-originated (via the Tide MCP server; authenticated per thread) ----
 export const ExpertsFindingPost = Type.Object({ type: Type.Literal("experts.finding.post"), sessionId: Type.String(), author: Type.String(), text: Type.String({ minLength: 1 }) });
@@ -206,7 +208,7 @@ export type AgentCommand = Static<typeof AgentCommand>;
 
 export const InternalCommand = Type.Union([
   TurnStart, AssistantAppend, ActivityUpsert, PlanPropose, PlanProgressReport, UsageReport, TurnSettle,
-  WorktreeAttach, CheckpointRecord, PrUpdate,
+  WorktreeAttach, CheckpointRecord, PrUpdate, WorktreeDetachedReport,
   ExpertsThreadsBound, ExpertsExpertStatus,
 ]);
 export type InternalCommand = Static<typeof InternalCommand>;

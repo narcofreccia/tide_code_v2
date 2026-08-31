@@ -5,6 +5,7 @@ type VcsCommand =
   | CommandOf<"thread.revert">
   | CommandOf<"thread.publish">
   | CommandOf<"worktree.attach">
+  | CommandOf<"worktree.detach">
   | CommandOf<"checkpoint.record">
   | CommandOf<"pr.update">;
 
@@ -55,6 +56,19 @@ export function decideVcs(model: ReadModel, command: VcsCommand, ctx: DecideCont
       });
     }
 
+    case "worktree.detach": {
+      const thread = model.threads[command.threadId];
+      if (!thread) return fail("not-found", `unknown thread ${command.threadId}`);
+      if (thread.worktreePath === undefined) return fail("conflict", `thread ${thread.id} has no worktree`);
+      if (thread.status === "running") return fail("busy", `thread ${thread.id} is running`);
+      return ok({
+        type: "worktree.detach-requested",
+        threadId: thread.id,
+        ...(command.deleteBranch !== undefined ? { deleteBranch: command.deleteBranch } : {}),
+        at: ctx.now,
+      });
+    }
+
     case "checkpoint.record": {
       const turn = model.turns[command.turnId];
       if (!turn) return fail("not-found", `unknown turn ${command.turnId}`);
@@ -75,4 +89,13 @@ export function decideVcs(model: ReadModel, command: VcsCommand, ctx: DecideCont
       return ok({ type: "pr.updated", threadId: thread.id, pr: command.pr });
     }
   }
+}
+
+
+/** `worktree.detached` — the reactor's report; idempotent when already detached. */
+export function decideWorktreeDetached(model: ReadModel, command: CommandOf<"worktree.detached">, ctx: DecideContext): DecideResult {
+  const thread = model.threads[command.threadId];
+  if (!thread) return fail("not-found", `unknown thread ${command.threadId}`);
+  if (thread.worktreePath === undefined) return ok();
+  return ok({ type: "worktree.detached", threadId: thread.id, at: ctx.now });
 }
