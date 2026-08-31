@@ -60,8 +60,8 @@
         <h1>Tide v2 — Project Journal</h1>
         <div class="sub">Focused agentic code editor &amp; orchestrator over Claude Code · Codex · OpenCode · Pi. Started 2026-08-30.</div>
         <div class="kpi">
-          <div class="box"><b>P5</b><span>current phase</span></div>
-          <div class="box"><b>58</b><span>commits</span></div>
+          <div class="box"><b>P6</b><span>current phase</span></div>
+          <div class="box"><b>59</b><span>commits</span></div>
           <div class="box"><b>568</b><span>tests passing</span></div>
         </div>
         <div class="howto">
@@ -175,23 +175,30 @@
         </div>
       </details>
 
-      <details class="phase" open>
-        <summary><span class="title"><h3>P5 — Tide MCP server + Experts</h3><small>cross-harness experts board · agent delegation across harnesses · tide-mcp</small></span><span class="badge status wip">wip</span></summary>
+      <details class="phase">
+        <summary><span class="title"><h3>P5 — Tide MCP server + Experts</h3><small>cross-harness experts board · agent delegation across harnesses · tide-mcp</small></span><span class="badge status done">done</span></summary>
         <div class="body">
           <ul class="tasks">
             <li><span class="badge status done">done</span><span class="t">Scope decision (value test): tree-sitter index and project memory <strong>cut</strong> — harnesses have grep/CLAUDE.md/AGENTS.md. P5 = what no harness can do alone: a cross-harness Experts board and <code>tide_delegate</code> (an agent on one harness runs a task on another as a child thread).</span></li>
             <li><span class="badge status done">done</span><span class="t">Contracts: <code>ExpertsSession/ExpertSpec/Finding/Message</code>, <code>Thread.role/expertsSessionId/delegatedBy</code>, client cmds <code>experts.create|start|post|set-phase|archive</code>, agent cmds <code>experts.finding.post|message.send|synthesis.set</code>, <code>thread.delegate</code>, RPC <code>agent.dispatch|context|threadStatus</code></span></li>
             <li><span class="badge status done">done</span><span class="t">Server: decider rules, ExpertsReactor (spawn expert/lead threads, deliver messages as follow-up turns, phase prompts, synthesis → ProposedPlan), per-thread agent tickets, <code>packages/tide-mcp</code> stdio server attached to every session (claude/codex/opencode) — Opus agent</span></li>
             <li><span class="badge status done">done</span><span class="t">Web: Experts view (create team, board with findings + discussion + user post, phase control, expert cards → threads, synthesis → plan card), delegated child threads in the rail — Opus agent</span></li>
-            <li><span class="badge status wip">wip</span><span class="t">Validation (live): Claude-only panel by the server agent — 16 findings via <code>tide_experts_post_finding</code>, lead synthesis → <code>plan.proposed</code>, lead <code>attention: plan</code>. Cross-harness panel (Claude + OpenCode experts, Claude lead): both threads bound and worked; Claude posted 5 findings; the OpenCode expert read/globbed/ran an edge-case script, then hit the <strong>OpenCode Zen rate limit</strong> (8 retries) and settled without posting — account quota, not Tide. Delegation check: see next note.</span></li>
+            <li><span class="badge status done">done</span><span class="t">Validation (live): Claude-only panel by the server agent — 16 findings via <code>tide_experts_post_finding</code>, lead synthesis → <code>plan.proposed</code>, lead <code>attention: plan</code>. Cross-harness panel (Claude + OpenCode experts, Claude lead): both threads bound and worked; Claude posted 5 findings; the OpenCode expert read/globbed/ran an edge-case script, then hit the <strong>OpenCode Zen rate limit</strong> (8 retries) and settled without posting — account quota, not Tide. <strong>Delegation (live):</strong> a Claude thread called <code>mcp__tide__tide_delegate</code> → child thread (role delegate) created in 6s → child replied <code>delegated-ok</code> → delegator polled <code>tide_delegate_status</code> and reported it verbatim, 18s total.</span></li>
           </ul>
           <p class="note">2026-08-31 — P5 contracts by the orchestrator.</p>
         </div>
       </details>
 
-      <details class="phase">
-        <summary><span class="title"><h3>P6 — Glass-box, polish, remote hardening</h3><small>context/cost · palette · themes · --host + pairing</small></span><span class="badge status todo">todo</span></summary>
-        <div class="body"><ul class="tasks"><li><span class="badge status todo">todo</span><span class="t">Context dial + cost from usage events · shortcuts · bearer pairing · docs for Tailscale/SSH</span></li></ul></div>
+      <details class="phase" open>
+        <summary><span class="title"><h3>P6 — Glass-box, polish, remote hardening</h3><small>⌘K palette · pairing · worktree teardown · interrupt signal · release build</small></span><span class="badge status wip">wip</span></summary>
+        <div class="body">
+          <ul class="tasks">
+            <li><span class="badge status todo">todo</span><span class="t">Contracts: <code>thread.archive.keepWorktree</code> / <code>worktree.detach</code> + <code>worktree.detached</code>; <code>Thread.interrupting</code> projected from <code>turn.interrupt-requested</code></span></li>
+            <li><span class="badge status todo">todo</span><span class="t">Server: worktree teardown on archive/detach (remove worktree, keep branch by default), interrupt watchdog (force-settle after 30s if the driver never honours interrupt), <code>server.info.remote</code> (bind host, pairing URL)</span></li>
+            <li><span class="badge status todo">todo</span><span class="t">Web: ⌘K command palette (actions from the shortcut registry + jump to project/thread/session), interrupting state in status/glyph, archive dialog with worktree choice, Settings › Remote pairing URL + copy, Mission Control cost/context totals</span></li>
+            <li><span class="badge status todo">todo</span><span class="t">Release: <code>pnpm desktop:build</code> with the current sidecar (incl. tide-mcp <code>--mcp</code>), docs refresh (README, docs/internals/overview.md), open questions triage</span></li>
+          </ul>
+        </div>
       </details>
 
       <h2>Commit log</h2>
