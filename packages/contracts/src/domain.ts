@@ -157,6 +157,8 @@ export const Thread = Type.Object({
   baseBranch: Type.Optional(Type.String()),
   pr: Type.Optional(PullRequest),
   status: ThreadStatus,
+  /** an interrupt was requested and the harness has not settled yet */
+  interrupting: Type.Optional(Type.Boolean()),
   attention: Type.Optional(AttentionKind),
   latestTurnId: Type.Optional(Type.String()),
   /** the harness's own session id (claude session_id, codex threadId, …) for resume / open-in-terminal */

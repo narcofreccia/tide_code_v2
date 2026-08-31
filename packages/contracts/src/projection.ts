@@ -100,9 +100,18 @@ export function applyEvent(model: ReadModel, event: DomainEvent): ReadModel {
       return event.nativeSessionId !== undefined ? withThread(next, event.threadId, { nativeSessionId: event.nativeSessionId, updatedAt: event.startedAt }) : next;
     }
     case "turn.interrupt-requested":
+      return withThread(model, event.threadId, { interrupting: true, updatedAt: event.at });
     case "revert.requested":
     case "publish.requested":
+    case "worktree.detach-requested":
       return model; // reactor-facing intents; outcomes arrive as their own events
+    case "worktree.detached": {
+      const t = model.threads[event.threadId];
+      if (!t) return model;
+      const next: Thread = { ...t, updatedAt: event.at };
+      delete next.worktreePath;
+      return { ...model, threads: { ...model.threads, [t.id]: next } };
+    }
     case "worktree.attached":
       return withThread(model, event.threadId, {
         worktreePath: event.worktreePath,
@@ -238,6 +247,7 @@ export function applyEvent(model: ReadModel, event: DomainEvent): ReadModel {
       if (t) {
         const patched: Thread = { ...t, status: event.status === "completed" ? "idle" : event.status, updatedAt: event.settledAt };
         delete patched.planProgress;
+        delete patched.interrupting;
         next = { ...next, threads: { ...next.threads, [t.id]: patched } };
       }
       return refreshAttention(next, event.threadId, event.settledAt);

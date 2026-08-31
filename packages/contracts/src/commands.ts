@@ -37,7 +37,18 @@ export const ThreadUpdate = Type.Object({
   mode: Type.Optional(RuntimeMode),
   interaction: Type.Optional(InteractionMode),
 });
-export const ThreadArchive = Type.Object({ type: Type.Literal("thread.archive"), threadId: Type.String() });
+export const ThreadArchive = Type.Object({
+  type: Type.Literal("thread.archive"),
+  threadId: Type.String(),
+  /** default false: the worktree directory is removed (the branch is kept) */
+  keepWorktree: Type.Optional(Type.Boolean()),
+});
+/** remove a thread's worktree directory now (branch kept unless deleteBranch) */
+export const WorktreeDetach = Type.Object({
+  type: Type.Literal("worktree.detach"),
+  threadId: Type.String(),
+  deleteBranch: Type.Optional(Type.Boolean()),
+});
 
 export const TurnRequest = Type.Object({
   type: Type.Literal("turn.request"),
@@ -103,7 +114,7 @@ export const ClientCommand = Type.Union([
   TurnRequest, TurnInterrupt,
   ApprovalRespond, UserInputRespond,
   PlanImplement, PlanDismiss,
-  ThreadRevert, ThreadPublish,
+  ThreadRevert, ThreadPublish, WorktreeDetach,
   ExpertsCreate, ExpertsStart, ExpertsPost, ExpertsSetPhase, ExpertsArchive,
 ]);
 export type ClientCommand = Static<typeof ClientCommand>;

@@ -22,7 +22,7 @@ export const ThreadUpdated = evt("thread.updated", {
   patch: Type.Partial(Type.Pick(Thread, ["title", "provider", "model", "mode", "interaction", "worktreePath", "branch", "baseBranch", "nativeSessionId"])),
   updatedAt: Type.Number(),
 });
-export const ThreadArchived = evt("thread.archived", { threadId: Type.String(), archivedAt: Type.Number() });
+export const ThreadArchived = evt("thread.archived", { threadId: Type.String(), archivedAt: Type.Number(), keepWorktree: Type.Optional(Type.Boolean()) });
 export const ThreadStatusChanged = evt("thread.status-changed", {
   threadId: Type.String(),
   status: Thread.properties.status,
@@ -79,6 +79,8 @@ export const CheckpointRecorded = evt("checkpoint.recorded", {
   stats: Type.Optional(CheckpointStats),
   at: Type.Number(),
 });
+export const WorktreeDetachRequested = evt("worktree.detach-requested", { threadId: Type.String(), deleteBranch: Type.Optional(Type.Boolean()), at: Type.Number() });
+export const WorktreeDetached = evt("worktree.detached", { threadId: Type.String(), at: Type.Number() });
 export const RevertRequested = evt("revert.requested", { threadId: Type.String(), turnId: Type.String(), at: Type.Number() });
 export const PublishRequested = evt("publish.requested", {
   threadId: Type.String(),
@@ -148,6 +150,8 @@ export const DomainEvent = Type.Union([
   PlanProgressed,
   UsageReported,
   WorktreeAttached,
+  WorktreeDetachRequested,
+  WorktreeDetached,
   CheckpointRecorded,
   RevertRequested,
   PublishRequested,

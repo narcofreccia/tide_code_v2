@@ -118,6 +118,8 @@ export const ServerInfo = Type.Object({
   worktreeRoot: Type.Optional(Type.String()),
   /** tools detected on the server host */
   tools: Type.Optional(Type.Object({ git: Type.Boolean(), gh: Type.Boolean(), rg: Type.Boolean() })),
+  /** how clients reach this server; pairingUrl embeds the token — show only to the local user */
+  remote: Type.Optional(Type.Object({ host: Type.String(), port: Type.Number(), lanUrls: Type.Array(Type.String()), pairingUrl: Type.Optional(Type.String()) })),
 });
 
 export const rpcMethods = {
