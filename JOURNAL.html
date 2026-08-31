@@ -256,6 +256,7 @@
 
       <h2>Open questions &amp; follow-ups</h2>
       <ul>
+        <li><strong>R2 prefix <code>tidecode</code> is shared with v1:</strong> v1 artifacts (<code>TideCode.app.tar.gz</code>, two dmgs) are untouched; only <code>latest.json</code> was replaced (v1's build pointed at a placeholder endpoint, so no client read it). v1's manifest is parked at <code>tidecode/v1/latest.json</code>.</li>
         <li><strong>Removed v1 features — status:</strong> deliberately cut, not scheduled: Tutor/voice, router/classifier, custom planner, custom safety engine, region tags, web-search extension (all replaced by harness-native features). Reconsider only on evidence: tree-sitter index as an MCP tool (if harness grep is too slow on very large repos), project memory (cross-harness notes).</li>
         <li><strong>Workspaces (multi-repo):</strong> project stays = one repo (threads run in one cwd; worktrees/checkpoints are per repo). Proposed next round: a named group of projects → grouped rail, filtered Mission Control, Experts reading several repos, <code>tide_delegate</code> defaults across repos (backend ↔ frontend ↔ mobile).</li>
         <li><strong>Next candidates (value-tested):</strong> mobile/remote client over the existing ticket auth (T3 relay-style pairing); Pi MCP passthrough via the bridge extension (caps.mcp for pi); per-turn cost attribution in Mission Control; Codex success fixtures once logged in; `interrupting` timeout surfaced in the UI; palette actions for surface-owned bindings.</li>
