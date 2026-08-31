@@ -1,8 +1,8 @@
 import { afterEach, describe, expect, it } from "vitest";
-import { cleanup, fireEvent, render, screen } from "@testing-library/react";
+import { cleanup, render, screen } from "@testing-library/react";
 import { ProviderCard } from "./ProviderCard.tsx";
 import { PROVIDER_FIXTURE } from "./fixtures.ts";
-import { resetUi } from "../../testHarness.ts";
+import { chooseOption, resetUi } from "../../testHarness.ts";
 import { setProvidersForTest } from "../../state/providers.ts";
 import { useThreadDraft, type ThreadDraft } from "../thread/ProviderPicker.tsx";
 import { PROVIDER_DEFAULTS_STORAGE_KEY, useProviderDefaults } from "../../state/settings.ts";
@@ -21,8 +21,8 @@ describe("per-provider defaults", () => {
   it("persists the chosen model and mode under tide.providerDefaults", () => {
     setProvidersForTest(PROVIDER_FIXTURE);
     render(<ProviderCard status={PROVIDER_FIXTURE[0]!} />);
-    fireEvent.change(screen.getByLabelText("Claude Code default model"), { target: { value: "opus-4-6" } });
-    fireEvent.change(screen.getByLabelText("Claude Code default mode"), { target: { value: "auto" } });
+    chooseOption("Claude Code default model", "Opus 4.6");
+    chooseOption("Claude Code default mode", "auto");
 
     expect(useProviderDefaults.getState().defaults.claude).toEqual({ model: "opus-4-6", mode: "auto" });
     const stored = JSON.parse(window.localStorage.getItem(PROVIDER_DEFAULTS_STORAGE_KEY) ?? "{}") as {

@@ -3,6 +3,7 @@ import type { ProviderKind, ProviderStatusDto, RuntimeMode } from "@tide/contrac
 import { defaultModelOf, providerStatus, unavailableReason, useProviders } from "../../state/providers.ts";
 import { providerDefault, useSettings } from "../../state/settings.ts";
 import { PROVIDERS } from "../../lib/vocab.ts";
+import { Checkbox } from "../ui/Choice.tsx";
 import { Select, type SelectOption } from "../ui/Select.tsx";
 import styles from "./ProviderPicker.module.css";
 
@@ -73,24 +74,28 @@ export function HarnessFields({
 
   return (
     <>
-      <label className={styles.field}>
+      <div className={styles.field}>
         <span className={styles.label}>provider</span>
         <Select
           label={`${name} provider`}
           value={provider}
           options={providerOptions}
           onSelect={(kind) => onChange(draftForProvider(kind, providers))}
+          variant="field"
+          size="md"
         />
-      </label>
-      <label className={styles.field}>
+      </div>
+      <div className={styles.field}>
         <span className={styles.label}>model</span>
         <Select
           label={`${name} model`}
           value={model}
           options={modelOptions}
           onSelect={(next) => onChange({ model: next })}
+          variant="field"
+          size="md"
         />
-      </label>
+      </div>
     </>
   );
 }
@@ -109,14 +114,13 @@ export function ProviderPicker({
     <>
       <HarnessFields name="Thread" provider={draft.provider} model={draft.model} onChange={onChange} />
       {showWorktree ? (
-        <label className={styles.check}>
-          <input
-            type="checkbox"
-            checked={draft.useWorktree}
-            onChange={(e) => onChange({ useWorktree: e.target.checked })}
-          />
+        <Checkbox
+          className={styles.check}
+          checked={draft.useWorktree}
+          onChange={(e) => onChange({ useWorktree: e.target.checked })}
+        >
           use worktree
-        </label>
+        </Checkbox>
       ) : null}
     </>
   );

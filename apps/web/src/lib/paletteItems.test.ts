@@ -2,6 +2,7 @@ import { afterEach, describe, expect, it } from "vitest";
 import type { ReadModel } from "@tide/contracts";
 import { buildPaletteItems, rankPaletteItems } from "./paletteItems.ts";
 import { attachFakeStore, makePlan, makeThread, modelWith, resetUi, makeExpertsSession } from "../testHarness.ts";
+import { useUi } from "../state/ui.ts";
 
 afterEach(() => resetUi());
 
@@ -70,6 +71,29 @@ describe("palette items", () => {
     const empty = rankPaletteItems("", items, ["project:p1", "shortcut:rail"]);
     expect(empty.slice(0, 2).map((i) => i.id)).toEqual(["project:p1", "shortcut:rail"]);
     expect(empty).toHaveLength(items.length);
+  });
+
+  it("hides out-of-context actions and never offers to open itself", () => {
+    const model = fixture();
+    const onMission = buildPaletteItems({ model, selectedThreadId: null }).map((i) => i.id);
+    expect(onMission).not.toContain("shortcut:palette");
+    expect(onMission).not.toContain("shortcut:quick-open");
+    expect(onMission).not.toContain("shortcut:terminal");
+    expect(onMission).not.toContain("shortcut:focus-split");
+    // always-scoped entries survive
+    expect(onMission).toEqual(expect.arrayContaining(["shortcut:mission", "shortcut:rail", "shortcut:theme"]));
+
+    useUi.getState().selectThread("t1");
+    const onThread = buildPaletteItems({ model, selectedThreadId: "t1" }).map((i) => i.id);
+    expect(onThread).toEqual(
+      expect.arrayContaining(["shortcut:focus-split", "shortcut:quick-open", "shortcut:terminal"]),
+    );
+
+    // the workbench is hidden in thread-only focus, so its entries drop out again
+    useUi.getState().setFocusMode("thread");
+    const threadOnly = buildPaletteItems({ model, selectedThreadId: "t1" }).map((i) => i.id);
+    expect(threadOnly).toContain("shortcut:focus-split");
+    expect(threadOnly).not.toContain("shortcut:quick-open");
   });
 
   it("labels a jump target with project, provider and status", () => {

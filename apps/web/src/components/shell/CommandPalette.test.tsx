@@ -66,6 +66,8 @@ describe("CommandPalette", () => {
 
   it("walks the list with the arrow keys", () => {
     attachFakeStore(fixture());
+    // "Focus: …" entries are thread-scoped
+    useUi.getState().selectThread("t1");
     render(<Shell />);
     fireEvent.keyDown(window, { key: "k", metaKey: true });
     const input = screen.getByLabelText("Command");

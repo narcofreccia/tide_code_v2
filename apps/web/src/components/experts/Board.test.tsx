@@ -11,6 +11,7 @@ import {
   makeThread,
   modelWithExperts,
   resetUi,
+  chooseOption,
 } from "../../testHarness.ts";
 import { useUi } from "../../state/ui.ts";
 import { threadTabs } from "../../state/workbench.ts";
@@ -53,7 +54,7 @@ describe("Experts board", () => {
     render(<Board sessionId="x1" />);
 
     fireEvent.change(screen.getByLabelText("Post to the panel"), { target: { value: "  focus on writes  " } });
-    fireEvent.change(screen.getByLabelText("Post to"), { target: { value: "security" } });
+    chooseOption("Post to", "Security");
     fireEvent.click(screen.getByText("Post"));
 
     expect(fake.dispatch).toHaveBeenCalledWith({

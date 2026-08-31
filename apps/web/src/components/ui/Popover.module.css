@@ -1,17 +1,15 @@
 .root { position: relative; display: inline-flex; }
 .panel {
-  position: absolute;
-  top: calc(100% + 4px);
-  left: 0;
-  z-index: 30;
+  z-index: 60;
   min-width: 220px;
+  max-width: min(420px, calc(100vw - 16px));
   display: flex;
   flex-direction: column;
   gap: var(--sp-2);
   padding: var(--sp-3);
+  overflow: auto;
   border: 1px solid var(--border);
   border-radius: var(--radius);
   background: var(--surface);
-  box-shadow: 0 8px 24px rgb(0 0 0 / 0.32);
+  box-shadow: var(--shadow-pop);
 }
-.end { left: auto; right: 0; }

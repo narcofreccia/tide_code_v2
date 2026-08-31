@@ -1,7 +1,7 @@
 import { afterEach, describe, expect, it } from "vitest";
 import { cleanup, fireEvent, render, screen } from "@testing-library/react";
 import { PlanCard } from "./PlanCard.tsx";
-import { attachFakeStore, makePlan, modelWith, resetUi } from "../../testHarness.ts";
+import { attachFakeStore, chooseOption, makePlan, modelWith, resetUi } from "../../testHarness.ts";
 import { setProvidersForTest } from "../../state/providers.ts";
 
 afterEach(() => {
@@ -35,7 +35,7 @@ describe("PlanCard", () => {
     render(<PlanCard plan={makePlan("pl1")} provider="claude" />);
 
     fireEvent.click(screen.getByText("Implement in new thread ▾"));
-    fireEvent.change(screen.getByLabelText("Thread provider"), { target: { value: "codex" } });
+    chooseOption("Thread provider", "codex");
     fireEvent.click(screen.getByText("Go"));
 
     expect(fake.dispatch).toHaveBeenCalledWith({

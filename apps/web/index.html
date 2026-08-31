@@ -1,9 +1,33 @@
 <!doctype html>
-<html lang="en">
+<html lang="en" data-theme="dark">
   <head>
     <meta charset="UTF-8" />
     <meta name="viewport" content="width=device-width, initial-scale=1.0" />
     <title>Tide</title>
+    <script>
+      // Pre-paint pass: the persisted theme wins before React (and the settings
+      // store) load, so the window never flashes the wrong palette. `system`
+      // removes the attribute and lets `prefers-color-scheme` decide.
+      (function () {
+        try {
+          var raw = window.localStorage.getItem("tide.settings");
+          var s = raw ? JSON.parse(raw).state : null;
+          var theme = (s && s.theme) || "dark";
+          if (theme === "system") document.documentElement.removeAttribute("data-theme");
+          else document.documentElement.setAttribute("data-theme", theme);
+          if (s && s.density) document.documentElement.setAttribute("data-density", s.density);
+          if (window.localStorage.getItem("tide.desktop") === "1") {
+            var ua = navigator.userAgent;
+            document.documentElement.setAttribute(
+              "data-desktop",
+              /mac|iphone|ipad/i.test(ua) ? "mac" : /win/i.test(ua) ? "win" : "linux",
+            );
+          }
+        } catch (e) {
+          /* private mode / blocked storage: the dark default in the markup stands */
+        }
+      })();
+    </script>
   </head>
   <body>
     <div id="root"></div>

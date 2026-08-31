@@ -2,6 +2,7 @@ import { useState } from "react";
 import type { ActivityOf } from "@tide/contracts";
 import { respondUserInput } from "../../lib/threadActions.ts";
 import { Button } from "../ui/Button.tsx";
+import { Checkbox } from "../ui/Choice.tsx";
 import styles from "./Card.module.css";
 
 type Answer = string | string[];
@@ -64,18 +65,18 @@ export function UserInputCard({ activity }: { activity: ActivityOf<"user-input">
               <div className={styles.options}>
                 {question.options.map((option) =>
                   question.multi ? (
-                    <label key={option.label} className={styles.check}>
-                      <input
-                        type="checkbox"
-                        aria-label={option.label}
-                        checked={(answers[question.id] as string[] | undefined)?.includes(option.label) ?? false}
-                        onChange={() => toggle(question, option.label)}
-                      />
+                    <Checkbox
+                      key={option.label}
+                      className={styles.check}
+                      aria-label={option.label}
+                      checked={(answers[question.id] as string[] | undefined)?.includes(option.label) ?? false}
+                      onChange={() => toggle(question, option.label)}
+                    >
                       {option.label}
                       {option.description ? (
                         <span className={styles.optionHint}>{option.description}</span>
                       ) : null}
-                    </label>
+                    </Checkbox>
                   ) : (
                     <Button
                       key={option.label}

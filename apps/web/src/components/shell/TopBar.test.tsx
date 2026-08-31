@@ -2,7 +2,7 @@ import { afterEach, describe, expect, it } from "vitest";
 import { cleanup, fireEvent, render, screen } from "@testing-library/react";
 import type { Thread } from "@tide/contracts";
 import { TopBar } from "./TopBar.tsx";
-import { attachFakeStore, modelWith, resetUi } from "../../testHarness.ts";
+import { chooseOption, resetUi, attachFakeStore, modelWith } from "../../testHarness.ts";
 import { useUi } from "../../state/ui.ts";
 
 const thread: Thread = {
@@ -20,6 +20,7 @@ const thread: Thread = {
 afterEach(() => {
   cleanup();
   resetUi();
+  delete document.documentElement.dataset.desktop;
 });
 
 describe("TopBar", () => {
@@ -38,11 +39,36 @@ describe("TopBar", () => {
       title: "Router cleanup",
     });
 
-    fireEvent.change(screen.getByLabelText("Provider"), { target: { value: "codex" } });
+    chooseOption("Provider", "codex");
     expect(fake.dispatch).toHaveBeenCalledWith({
       type: "thread.update",
       threadId: "t1",
       provider: "codex",
     });
+  });
+
+  it("switches project through the listbox", () => {
+    attachFakeStore(
+      modelWith({
+        projects: { p1: { id: "p1", title: "Tide", rootPath: "/src/tide", createdAt: 1, updatedAt: 1 } },
+      }),
+    );
+    render(<TopBar />);
+    expect(screen.getByRole("combobox", { name: "Project switcher" }).textContent).toContain("All projects");
+    chooseOption("Project switcher", /^Tide/);
+    expect(useUi.getState().selectedProjectId).toBe("p1");
+    expect(useUi.getState().view).toBe("mission");
+  });
+
+  it("is draggable and takes the traffic-light inset on the mac desktop shell", () => {
+    document.documentElement.dataset.desktop = "mac";
+    attachFakeStore(modelWith({}));
+    render(<TopBar />);
+    const bar = screen.getByRole("banner");
+    // Tauri v2 drags from the attribute; `:root[data-desktop="mac"] .bar`
+    // reserves the 78px inset, so the rule's target must stay the banner.
+    expect(bar.hasAttribute("data-tauri-drag-region")).toBe(true);
+    expect(bar.className).toMatch(/bar/);
+    expect(document.documentElement.matches('[data-desktop="mac"]')).toBe(true);
   });
 });

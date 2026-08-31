@@ -2,7 +2,15 @@ import { afterEach, describe, expect, it } from "vitest";
 import { cleanup, fireEvent, render, screen } from "@testing-library/react";
 import { CreateExpertsDialog } from "./CreateExpertsDialog.tsx";
 import { EXPERT_PRESETS, presetByKey } from "../../lib/expertPresets.ts";
-import { attachFakeStore, makeExpertsSession, modelWith, replyWithEvents, resetUi } from "../../testHarness.ts";
+import {
+  attachFakeStore,
+  chooseOption,
+  makeExpertsSession,
+  modelWith,
+  optionLabels,
+  replyWithEvents,
+  resetUi,
+} from "../../testHarness.ts";
 import { useUi } from "../../state/ui.ts";
 
 afterEach(() => {
@@ -39,7 +47,7 @@ describe("CreateExpertsDialog", () => {
     render(<CreateExpertsDialog projectId="p1" onClose={() => undefined} />);
 
     fireEvent.change(screen.getByLabelText("Topic"), { target: { value: "Topic" } });
-    fireEvent.change(screen.getByLabelText("Preset"), { target: { value: "devil" } });
+    chooseOption("Preset", "Devil's advocate");
     fireEvent.click(screen.getByText("+ add expert"));
     fireEvent.click(screen.getByLabelText("Remove Security"));
     fireEvent.change(screen.getByLabelText("Expert 1 name"), { target: { value: "Chief architect" } });
@@ -65,11 +73,7 @@ describe("CreateExpertsDialog", () => {
   it("offers every built-in persona as a preset", () => {
     attachFakeStore(modelWith({}));
     render(<CreateExpertsDialog projectId="p1" onClose={() => undefined} />);
-    const options = Array.from(
-      (screen.getByLabelText("Preset") as HTMLSelectElement).options,
-      (o) => o.value,
-    );
-    expect(options).toEqual(EXPERT_PRESETS.map((p) => p.key));
+    expect(optionLabels("Preset")).toEqual(EXPERT_PRESETS.map((p) => p.name));
     expect(EXPERT_PRESETS).toHaveLength(6);
   });
 });

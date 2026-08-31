@@ -1,7 +1,7 @@
 import { afterEach, describe, expect, it } from "vitest";
 import { cleanup, fireEvent, render, screen } from "@testing-library/react";
 import { App } from "./App.tsx";
-import { attachFakeStore, modelWith, resetUi } from "./testHarness.ts";
+import { attachFakeStore, makeThread, modelWith, resetUi } from "./testHarness.ts";
 import { useUi } from "./state/ui.ts";
 
 afterEach(() => {
@@ -19,7 +19,9 @@ describe("App shell", () => {
   });
 
   it("switches focus mode with ⌘1/⌘2/⌘3 and toggles the rail with ⌘B", () => {
-    attachFakeStore(modelWith({}));
+    attachFakeStore(modelWith({ threads: { t1: makeThread("t1") } }));
+    // focus modes are thread-scoped: they need one selected
+    useUi.getState().selectThread("t1");
     render(<App />);
     fireEvent.keyDown(window, { key: "1", metaKey: true });
     expect(useUi.getState().focusMode).toBe("thread");
@@ -27,6 +29,17 @@ describe("App shell", () => {
     expect(useUi.getState().focusMode).toBe("workbench");
     fireEvent.keyDown(window, { key: "b", metaKey: true });
     expect(useUi.getState().railCollapsed).toBe(true);
+  });
+
+  it("hides the focus switch on Mission Control and shows it on a thread", () => {
+    attachFakeStore(modelWith({ threads: { t1: makeThread("t1") } }));
+    render(<App />);
+    expect(screen.queryByLabelText("Focus mode")).toBeNull();
+
+    cleanup();
+    useUi.getState().selectThread("t1");
+    render(<App />);
+    expect(screen.getByLabelText("Focus mode")).toBeDefined();
   });
 
   it("shows the thread and workbench columns when a thread is selected", () => {

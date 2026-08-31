@@ -1,4 +1,6 @@
 import { useEffect, useRef, useState } from "react";
+import { createPortal } from "react-dom";
+import { useAnchoredPanel } from "./useAnchoredPanel.ts";
 import styles from "./Menu.module.css";
 
 export interface MenuItem {
@@ -31,6 +33,8 @@ export function ContextMenu({
 }) {
   const root = useRef<HTMLDivElement>(null);
   const [focused, setFocused] = useState(0);
+  // clamped to the viewport: a right-click near the bottom edge still shows the menu
+  const style = useAnchoredPanel(true, root, root, { point: position, gap: 0 });
 
   useEffect(() => {
     const onDown = (e: MouseEvent): void => {
@@ -52,13 +56,13 @@ export function ContextMenu({
 
   const enabled = items.filter((i) => !i.disabled);
 
-  return (
+  return createPortal(
     <div
       ref={root}
       className={styles.menu}
       role="menu"
       aria-label={label}
-      style={{ left: `${position.x}px`, top: `${position.y}px` }}
+      style={style}
       onKeyDown={(e) => {
         if (e.key === "ArrowDown") setFocused((v) => Math.min(enabled.length - 1, v + 1));
         else if (e.key === "ArrowUp") setFocused((v) => Math.max(0, v - 1));
@@ -84,6 +88,7 @@ export function ContextMenu({
           {item.label}
         </button>
       ))}
-    </div>
+    </div>,
+    document.body,
   );
 }

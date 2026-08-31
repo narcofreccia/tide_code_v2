@@ -27,7 +27,7 @@ export const THEME_EVENT = "tide:theme";
 export const useSettings = create<SettingsState>()(
   persist(
     (set) => ({
-      theme: "system",
+      theme: "dark",
       density: "comfortable",
       worktreeByDefault: true,
       setTheme: (theme) => set({ theme }),
@@ -49,6 +49,23 @@ export function applyAppearance(theme: Theme, density: Density): void {
   else root.dataset.theme = theme;
   root.dataset.density = density;
   window.dispatchEvent(new Event(THEME_EVENT));
+}
+
+/** The theme actually painted right now: `system` resolves against the OS. */
+export function effectiveTheme(theme: Theme = useSettings.getState().theme): "dark" | "light" {
+  if (theme !== "system") return theme;
+  if (typeof window === "undefined") return "dark";
+  return window.matchMedia?.("(prefers-color-scheme: light)").matches ? "light" : "dark";
+}
+
+/**
+ * The ⌘⇧L / top-bar toggle. From `system` it resolves what is on screen first,
+ * so the first press always visibly flips.
+ */
+export function toggleTheme(): "dark" | "light" {
+  const next = effectiveTheme() === "dark" ? "light" : "dark";
+  useSettings.getState().setTheme(next);
+  return next;
 }
 
 function sync(state: SettingsState): void {
@@ -89,6 +106,6 @@ export function providerDefault(kind: ProviderKind): ProviderDefault {
 }
 
 export function resetSettings(): void {
-  useSettings.setState({ theme: "system", density: "comfortable", worktreeByDefault: true });
+  useSettings.setState({ theme: "dark", density: "comfortable", worktreeByDefault: true });
   useProviderDefaults.setState({ defaults: {} });
 }

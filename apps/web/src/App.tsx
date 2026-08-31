@@ -3,6 +3,7 @@ import { StatusBar } from "./components/shell/StatusBar.tsx";
 import { SplitPane } from "./components/shell/SplitPane.tsx";
 import { TopBar } from "./components/shell/TopBar.tsx";
 import { FocusModeSwitch } from "./components/shell/FocusModeSwitch.tsx";
+import { ThemeToggle } from "./components/shell/ThemeToggle.tsx";
 import { MissionControl } from "./components/mission/MissionControl.tsx";
 import { ThreadView } from "./components/thread/ThreadView.tsx";
 import { ExpertsView } from "./components/experts/ExpertsView.tsx";
@@ -59,7 +60,8 @@ export function App() {
     <div className={styles.app}>
       <div className={styles.topRow}>
         <TopBar />
-        <div className={styles.focus}>
+        <div className={styles.focus} data-tauri-drag-region>
+          <ThemeToggle />
           <FocusModeSwitch />
         </div>
       </div>

@@ -26,8 +26,8 @@ const DARK: Palette = {
 
 const LIGHT: Palette = {
   bg: "#ffffff",
-  surface2: "#f0f2f5",
-  border: "#dde1e8",
+  surface2: "#e9edf3",
+  border: "#ccd3de",
   text: "#131722",
   muted: "#6a7285",
   accentSoft: "#e2ecfd",

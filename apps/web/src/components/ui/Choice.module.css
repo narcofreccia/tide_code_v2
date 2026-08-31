@@ -1,0 +1,20 @@
+.row {
+  display: flex;
+  align-items: center;
+  gap: var(--sp-2);
+  color: var(--text);
+  cursor: pointer;
+}
+.disabled { color: var(--muted); cursor: default; }
+
+.input {
+  width: 14px;
+  height: 14px;
+  flex: none;
+  margin: 0;
+  accent-color: var(--accent);
+  cursor: inherit;
+}
+.input:disabled { cursor: default; }
+
+.text { min-width: 0; display: inline-flex; align-items: center; gap: var(--sp-2); flex-wrap: wrap; }

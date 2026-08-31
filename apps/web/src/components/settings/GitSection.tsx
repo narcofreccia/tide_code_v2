@@ -2,6 +2,7 @@ import { useEffect } from "react";
 import { DEFAULT_WORKTREE_ROOT, useSettings } from "../../state/settings.ts";
 import { useUi } from "../../state/ui.ts";
 import { ensureStatus, useVcs } from "../../state/vcs.ts";
+import { Checkbox } from "../ui/Choice.tsx";
 import section from "./Section.module.css";
 
 function ghNote(hasGh: boolean | undefined): string {
@@ -33,14 +34,13 @@ export function GitSection() {
           <span className={section.value}>{DEFAULT_WORKTREE_ROOT}</span>
         </li>
         <li className={section.row}>
-          <label className={section.check}>
-            <input
-              type="checkbox"
-              checked={worktreeByDefault}
-              onChange={(event) => setWorktreeByDefault(event.target.checked)}
-            />
+          <Checkbox
+            className={section.check}
+            checked={worktreeByDefault}
+            onChange={(event) => setWorktreeByDefault(event.target.checked)}
+          >
             Create a worktree for new threads by default
-          </label>
+          </Checkbox>
         </li>
         <li className={section.row}>
           <span className={section.label}>Current thread</span>

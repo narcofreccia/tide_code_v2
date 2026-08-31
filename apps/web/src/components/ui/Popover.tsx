@@ -1,10 +1,13 @@
 import { useEffect, useRef, useState } from "react";
+import { createPortal } from "react-dom";
 import { Button } from "./Button.tsx";
+import { useAnchoredPanel } from "./useAnchoredPanel.ts";
 import styles from "./Popover.module.css";
 
 /**
  * Anchored disclosure used by the plan and new-thread pickers. Closes on Escape,
- * on an outside click, and whenever the content calls `close`.
+ * on an outside click, and whenever the content calls `close`. The panel is
+ * portalled and viewport-clamped so overflow containers cannot clip it.
  */
 export function Popover({
   label,
@@ -22,12 +25,16 @@ export function Popover({
   children: (close: () => void) => React.ReactNode;
 }) {
   const [open, setOpen] = useState(false);
-  const root = useRef<HTMLDivElement>(null);
+  const anchor = useRef<HTMLDivElement>(null);
+  const panel = useRef<HTMLDivElement>(null);
+  const style = useAnchoredPanel(open, anchor, panel, { align });
 
   useEffect(() => {
     if (!open) return undefined;
     const onDown = (e: MouseEvent): void => {
-      if (root.current && !root.current.contains(e.target as Node)) setOpen(false);
+      const target = e.target as Node;
+      if (anchor.current?.contains(target) || panel.current?.contains(target)) return;
+      setOpen(false);
     };
     const onKey = (e: KeyboardEvent): void => {
       if (e.key === "Escape") {
@@ -44,7 +51,7 @@ export function Popover({
   }, [open]);
 
   return (
-    <div className={styles.root} ref={root}>
+    <div className={styles.root} ref={anchor}>
       <Button
         variant={variant}
         disabled={disabled}
@@ -55,11 +62,14 @@ export function Popover({
       >
         {label}
       </Button>
-      {open ? (
-        <div className={`${styles.panel} ${align === "end" ? styles.end : ""}`} role="dialog">
-          {children(() => setOpen(false))}
-        </div>
-      ) : null}
+      {open
+        ? createPortal(
+            <div ref={panel} className={styles.panel} style={style} role="dialog">
+              {children(() => setOpen(false))}
+            </div>,
+            document.body,
+          )
+        : null}
     </div>
   );
 }

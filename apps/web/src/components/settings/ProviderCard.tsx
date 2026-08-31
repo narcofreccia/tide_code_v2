@@ -122,24 +122,28 @@ export function ProviderCard({ status }: { status: ProviderStatusDto }) {
       <ModelList status={status} />
 
       <div className={styles.defaults}>
-        <label className={styles.field}>
+        <div className={styles.field}>
           <span className={section.label}>default model</span>
           <Select
             label={`${PROVIDER_LABELS[kind]} default model`}
             value={defaults.model ?? ""}
             options={modelOptions}
             onSelect={(model) => setProviderDefault(kind, { model })}
+            variant="field"
+            size="md"
           />
-        </label>
-        <label className={styles.field}>
+        </div>
+        <div className={styles.field}>
           <span className={section.label}>default mode</span>
           <Select
             label={`${PROVIDER_LABELS[kind]} default mode`}
             value={defaults.mode ?? "approval-required"}
             options={RUNTIME_MODES}
             onSelect={(mode) => setProviderDefault(kind, { mode })}
+            variant="field"
+            size="md"
           />
-        </label>
+        </div>
       </div>
     </article>
   );

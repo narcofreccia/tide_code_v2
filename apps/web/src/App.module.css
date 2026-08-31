@@ -10,7 +10,15 @@
   border-bottom: 1px solid var(--border);
   background: var(--surface);
 }
-.focus { padding: 0 var(--sp-2); }
+.focus {
+  display: flex;
+  align-items: center;
+  gap: var(--sp-2);
+  padding: 0 var(--sp-2);
+}
+/* Same drag contract as TopBar: `data-tauri-drag-region` on the slot in App.tsx. */
+:root[data-desktop] .focus { -webkit-app-region: drag; user-select: none; }
+:root[data-desktop] .focus button { -webkit-app-region: no-drag; }
 .body {
   display: grid;
   grid-template-columns: 240px minmax(0, 1fr);

@@ -1,6 +1,7 @@
 import { useState } from "react";
 import { dispatch } from "../../state/model.ts";
 import { Button } from "../ui/Button.tsx";
+import { basename, FolderPicker } from "./FolderPicker.tsx";
 import styles from "./AddProjectForm.module.css";
 
 export function AddProjectForm({ onDone }: { onDone: () => void }) {
@@ -8,6 +9,7 @@ export function AddProjectForm({ onDone }: { onDone: () => void }) {
   const [rootPath, setRootPath] = useState("");
   const [error, setError] = useState<string | null>(null);
   const [busy, setBusy] = useState(false);
+  const [picking, setPicking] = useState(false);
 
   const submit = (event: React.FormEvent): void => {
     event.preventDefault();
@@ -27,8 +29,20 @@ export function AddProjectForm({ onDone }: { onDone: () => void }) {
       .finally(() => setBusy(false));
   };
 
+  /** Picking a folder names the project too, unless the user already typed a title. */
+  const pick = (path: string): void => {
+    setRootPath(path);
+    setPicking(false);
+    setError(null);
+    if (title.trim() === "") setTitle(basename(path));
+  };
+
   return (
     <form className={styles.form} onSubmit={submit}>
+      <span className={styles.heading}>Add a repository</span>
+      <p className={styles.hint}>
+        A project is a local git repository; threads and worktrees live under it.
+      </p>
       <input
         className={styles.input}
         placeholder="Project title"
@@ -37,13 +51,16 @@ export function AddProjectForm({ onDone }: { onDone: () => void }) {
         onChange={(e) => setTitle(e.target.value)}
         autoFocus
       />
-      <input
-        className={`${styles.input} ${styles.mono}`}
-        placeholder="/absolute/path"
-        aria-label="Project root path"
-        value={rootPath}
-        onChange={(e) => setRootPath(e.target.value)}
-      />
+      <div className={styles.pathRow}>
+        <input
+          className={`${styles.input} ${styles.mono} ${styles.grow}`}
+          placeholder="/absolute/path"
+          aria-label="Project root path"
+          value={rootPath}
+          onChange={(e) => setRootPath(e.target.value)}
+        />
+        <Button onClick={() => setPicking(true)}>Browse…</Button>
+      </div>
       {error ? <p className={styles.error}>{error}</p> : null}
       <div className={styles.actions}>
         <Button type="submit" variant="primary" disabled={busy}>
@@ -53,6 +70,9 @@ export function AddProjectForm({ onDone }: { onDone: () => void }) {
           Cancel
         </Button>
       </div>
+      {picking ? (
+        <FolderPicker initialPath={rootPath.trim()} onPick={pick} onClose={() => setPicking(false)} />
+      ) : null}
     </form>
   );
 }

@@ -76,8 +76,8 @@ describe("Settings › Providers", () => {
     render(<ProvidersSection />);
     const claude = within(screen.getByLabelText("Claude Code"));
     expect(claude.getByText("2 models")).toBeDefined();
-    // once in the model list, once as an option of the default-model select
-    expect(claude.getAllByText("Sonnet 4.6")).toHaveLength(2);
+    // the listbox is closed, so the model list is the only place it shows
+    expect(claude.getAllByText("Sonnet 4.6")).toHaveLength(1);
     expect(claude.getByText("opus")).toBeDefined();
     expect(claude.getByText("default")).toBeDefined();
     expect(within(screen.getByLabelText("Pi")).getByText("No models reported.")).toBeDefined();

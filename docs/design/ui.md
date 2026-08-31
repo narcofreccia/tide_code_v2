@@ -56,7 +56,9 @@ Keyboard, Remote (bind host, pairing token).
 
 - Tokens in `styles/tokens.css`: `--bg`, `--surface`, `--surface-2`, `--border`, `--text`,
   `--muted`, `--accent` (single hue), `--ok`, `--warn`, `--danger`; radii 4/6/10; spacing 4-grid.
-  Dark default, light via `prefers-color-scheme` and an explicit toggle.
+  Dark default (settings default is `dark`, stamped pre-paint by an inline script in
+  `index.html`), light via `prefers-color-scheme` when the user picks System, or an
+  explicit toggle. `--shadow-pop` is the only shadow, and only on popovers.
 - Type: system UI stack 13px base; monospace for paths, commands, diffs.
 - Flat surfaces, hairline borders, no nested cards, no shadows except popovers.
 - Motion only for state: streaming caret, running pulse, drawer slide (120ms).
@@ -68,10 +70,24 @@ Keyboard, Remote (bind host, pairing token).
 `thread/` ThreadHeader, Stream, MessageItem, ActivityRow, ActivityGroup, ApprovalCard,
 UserInputCard, PlanCard, PlanProgress, Composer, MentionPicker · `workbench/` Workbench,
 ChangesTab, DiffView, FileTab (Monaco), FileTree, TerminalDrawer · `experts/` Board, ExpertCard,
-FindingsFeed · `settings/` … · `ui/` Button, Pill, Select, Menu, Dialog, Toast, Kbd.
+FindingsFeed · `settings/` … · `ui/` Button, Pill, Select, Checkbox/Radio (`Choice`), Menu,
+Popover, Dialog, Toast, Kbd.
+
+`Select` is one custom listbox (portalled, `position: fixed`, viewport-clamped via
+`ui/useAnchoredPanel.ts`, which `Popover` and `Menu` share) — never a native `<select>`.
+Two looks: `variant="pill"` (default, 20px, `size="sm"`) for the top bar and composer
+pills, `variant="field"` (28px, full width, `size="md"`) for dialogs and settings rows.
+It grows a filter box when `searchable` or past eight options, and takes `description`,
+`group`, `icon`, `disabled` + `title` per option. `Checkbox`/`Radio` replace bare
+`<input type=checkbox|radio>` everywhere.
+
+`shell/ThemeToggle` sits next to `FocusModeSwitch`; the top row carries
+`data-tauri-drag-region` and `<html data-desktop="mac|win|linux">` reserves the
+traffic-light inset.
 
 ## Keyboard map
 
 `⌘K` palette · `⌘N` new thread · `⌘0` Mission Control · `⌘1/2/3` focus modes · `⌘B` rail ·
 `` ⌘` `` terminal · `⌘↵` send · `Esc` stop turn / close · `y`/`n` approve/deny focused card ·
-`⌘P` open file in worktree · `⌘S` save · `⌘⇧D` toggle unified/split diff · `[` `]` prev/next turn.
+`⌘P` open file in worktree · `⌘S` save · `⌘⇧D` toggle unified/split diff · `[` `]` prev/next turn ·
+`⌘⇧L` toggle light/dark.

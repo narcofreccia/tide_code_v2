@@ -1,0 +1,12 @@
+.toggle {
+  width: 22px;
+  height: 20px;
+  padding: 0;
+  border: 1px solid var(--border);
+  border-radius: var(--radius-sm);
+  background: var(--surface-2);
+  color: var(--muted);
+  font-size: 11px;
+  line-height: 1;
+}
+.toggle:hover { color: var(--text); border-color: var(--accent); }

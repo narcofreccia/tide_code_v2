@@ -1,4 +1,5 @@
 import { vi } from "vitest";
+import { fireEvent, screen, within } from "@testing-library/react";
 import {
   emptyReadModel,
   type Activity,
@@ -55,6 +56,30 @@ export function attachFakeStore(model: ReadModel): FakeStore {
   };
   const detach = attachModelStore(store);
   return { store, dispatch, detach };
+}
+
+/**
+ * Drives the custom listbox `Select`: opens the combobox named `label` and
+ * clicks the option named `option`. Tests used to `fireEvent.change` a native
+ * `<select>`; this is the one-line replacement.
+ */
+export function chooseOption(label: string, option: string | RegExp): void {
+  const trigger = screen.getByRole("combobox", { name: label });
+  fireEvent.click(trigger);
+  const listbox = screen.getByRole("listbox", { name: label });
+  fireEvent.click(within(listbox).getByRole("option", { name: option }));
+}
+
+/** The option labels a `Select` offers, in order. */
+export function optionLabels(label: string): string[] {
+  const trigger = screen.getByRole("combobox", { name: label });
+  fireEvent.click(trigger);
+  const listbox = screen.getByRole("listbox", { name: label });
+  const labels = within(listbox)
+    .getAllByRole("option")
+    .map((node) => node.textContent?.replace(/✓$/, "").trim() ?? "");
+  fireEvent.keyDown(listbox, { key: "Escape" });
+  return labels;
 }
 
 export function resetUi(): void {

@@ -1,7 +1,7 @@
 import { selectExpertsSessions, selectProjects, selectThreadsByProject } from "@tide/client";
 import type { ProposedPlan, ReadModel, Thread } from "@tide/contracts";
 import { fuzzyRank } from "./fuzzy.ts";
-import { SHORTCUTS } from "./shortcuts.ts";
+import { SHORTCUTS, scopeApplies } from "./shortcuts.ts";
 import { showToast } from "../state/toast.ts";
 import { useUi } from "../state/ui.ts";
 import {
@@ -135,9 +135,12 @@ function navigationItems(model: ReadModel): PaletteItem[] {
   return items;
 }
 
-/** Runnable keyboard-map entries; surface-owned ones (⌘↵, y/n) have no action. */
+/**
+ * Runnable keyboard-map entries that apply right now; surface-owned ones (⌘↵, y/n)
+ * have no action, and the palette never offers to open itself.
+ */
 function shortcutItems(): PaletteItem[] {
-  return SHORTCUTS.filter((s) => s.run !== undefined).map((s) => ({
+  return SHORTCUTS.filter((s) => s.run !== undefined && s.id !== "palette" && scopeApplies(s.when)).map((s) => ({
     id: `shortcut:${s.id}`,
     label: s.label,
     group: "Actions" as const,

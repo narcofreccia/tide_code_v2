@@ -102,3 +102,49 @@ export function startClient(): () => void {
     conn.close();
   };
 }
+
+// ---- desktop shell detection ----
+
+export type DesktopPlatform = "mac" | "win" | "linux";
+
+const DESKTOP_KEY = "tide.desktop";
+
+/** Coarse platform bucket; only used to decide chrome insets, never behaviour. */
+export function platformOf(ua: string): DesktopPlatform {
+  if (/mac|iphone|ipad/i.test(ua)) return "mac";
+  if (/win/i.test(ua)) return "win";
+  return "linux";
+}
+
+/**
+ * The page is running inside the Tauri shell when it was handed off with
+ * `?server=` or is served over the shell's own protocol. The answer is sticky:
+ * the shell strips the query on later navigations, so it is persisted once.
+ */
+export function isDesktop(): boolean {
+  const { protocol, href } = window.location;
+  if (protocol === "tauri:" || protocol === "tide-shell:") return true;
+  if (new URL(href).searchParams.has("server")) return true;
+  try {
+    return window.localStorage.getItem(DESKTOP_KEY) === "1";
+  } catch {
+    return false;
+  }
+}
+
+/**
+ * Stamps `data-desktop` on `<html>` so the chrome can reserve room for native
+ * window controls (`styles/tokens.css` + `TopBar.module.css` key off it).
+ * No Tauri imports: the browser build stays real.
+ */
+export function applyDesktopFlag(): DesktopPlatform | null {
+  if (!isDesktop()) return null;
+  const platform = platformOf(window.navigator.userAgent);
+  try {
+    window.localStorage.setItem(DESKTOP_KEY, "1");
+  } catch {
+    /* storage may be unavailable; the attribute still applies for this load */
+  }
+  document.documentElement.dataset.desktop = platform;
+  return platform;
+}

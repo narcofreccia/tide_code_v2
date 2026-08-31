@@ -25,6 +25,8 @@ export function AppearanceSection() {
             value={theme}
             options={THEMES.map((value) => ({ value, label: THEME_LABELS[value] }))}
             onSelect={setTheme}
+            variant="field"
+            size="md"
           />
         </li>
         <li className={section.row}>
@@ -34,6 +36,8 @@ export function AppearanceSection() {
             value={density}
             options={DENSITIES.map((value) => ({ value, label: DENSITY_LABELS[value] }))}
             onSelect={setDensity}
+            variant="field"
+            size="md"
           />
         </li>
       </ul>

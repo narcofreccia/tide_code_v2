@@ -5,16 +5,31 @@
   height: 36px;
   min-width: 0;
   padding: 0 var(--sp-2);
+  user-select: none;
 }
+/*
+ * macOS traffic lights sit at x≈12 with 20px spacing, so the third light ends
+ * around x=72; 78px keeps a hairline of breathing room at the default
+ * `trafficLightPosition`. Windows/Linux keep their native decorations.
+ */
+:root[data-desktop="mac"] .bar { padding-left: 78px; }
+
+/*
+ * Dragging is driven by `data-tauri-drag-region` in the markup, not CSS.
+ * `-webkit-app-region` is kept as a harmless no-op for a possible Electron/web
+ * shell; nothing relies on it.
+ */
+:root[data-desktop] .bar { -webkit-app-region: drag; }
+:root[data-desktop] .bar button,
+:root[data-desktop] .bar input,
+:root[data-desktop] .bar [role="combobox"] {
+  -webkit-app-region: no-drag;
+}
+
+.bar input,
+.bar textarea { user-select: text; }
+
 .palette { padding: 0 6px; }
-.switcher {
-  height: 22px;
-  max-width: 180px;
-  border: 1px solid var(--border);
-  border-radius: var(--radius-sm);
-  background: var(--surface-2);
-  color: var(--text);
-  padding: 0 4px;
-}
+.switcher { max-width: 180px; }
 .idle { color: var(--muted); }
 .pills { display: flex; align-items: center; gap: var(--sp-2); margin-left: auto; }

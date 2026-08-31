@@ -29,6 +29,8 @@ describe("shortcuts registry", () => {
   });
 
   it("dispatches only the entries that carry an action", () => {
+    attachFakeStore(modelWith({ threads: { t1: makeThread("t1") } }));
+    useUi.getState().selectThread("t1");
     expect(press("2")).toBe(true);
     expect(useUi.getState().focusMode).toBe("split");
     expect(press("3")).toBe(true);
@@ -38,8 +40,27 @@ describe("shortcuts registry", () => {
     // ⌘S is table-only (Monaco owns it) and ⌘⇧B is not bound at all
     expect(press("s")).toBe(false);
     expect(press("b", { shiftKey: true })).toBe(false);
-    // thread-scoped bindings do nothing without a selected thread
+    // ⌘` needs the workbench on screen, which "workbench" focus satisfies
+    expect(press("`")).toBe(true);
+  });
+
+  it("does not swallow a key whose entry is out of context", () => {
+    // nothing selected: every thread/workbench-scoped binding declines
+    expect(press("1")).toBe(false);
     expect(press("`")).toBe(false);
+    expect(press("p", { shiftKey: false })).toBe(false);
+    expect(press("d", { shiftKey: true })).toBe(false);
+    // always-scoped ones still run
+    expect(press("0")).toBe(true);
+
+    attachFakeStore(modelWith({ threads: { t1: makeThread("t1") } }));
+    useUi.getState().selectThread("t1");
+    useUi.getState().setFocusMode("thread");
+    // a thread is selected but the workbench is hidden
+    expect(press("1")).toBe(true);
+    expect(press("`")).toBe(false);
+    useUi.getState().setFocusMode("split");
+    expect(press("`")).toBe(true);
   });
 
   it("ignores keys without the ⌘/^ modifier", () => {

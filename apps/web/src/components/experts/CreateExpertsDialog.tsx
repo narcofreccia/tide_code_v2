@@ -114,6 +114,8 @@ export function CreateExpertsDialog({ projectId, onClose }: { projectId: string;
           value={preset}
           options={EXPERT_PRESETS.map((p) => ({ value: p.key, label: p.name }))}
           onSelect={setPreset}
+          variant="field"
+          size="md"
         />
         <Button onClick={() => setExperts((prev) => [...prev, fromPreset(preset, prev, lead.provider)])}>
           + add expert

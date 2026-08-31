@@ -3,6 +3,7 @@ import type { Thread } from "@tide/contracts";
 import { archiveThread, detachWorktree } from "../../lib/threadActions.ts";
 import { useModel } from "../../state/model.ts";
 import { useUi } from "../../state/ui.ts";
+import { Checkbox, Radio } from "../ui/Choice.tsx";
 import { ConfirmDialog } from "../ui/Dialog.tsx";
 import styles from "./ThreadDialogs.module.css";
 
@@ -21,24 +22,22 @@ export function ArchiveThreadDialog({ thread, onClose }: { thread: Thread; onClo
       body={
         <span className={styles.options}>
           <span className={styles.path}>{thread.worktreePath}</span>
-          <label className={styles.option}>
-            <input
-              type="radio"
-              name="archive-worktree"
-              checked={!keepWorktree}
-              onChange={() => setKeepWorktree(false)}
-            />
+          <Radio
+            className={styles.option}
+            name="archive-worktree"
+            checked={!keepWorktree}
+            onChange={() => setKeepWorktree(false)}
+          >
             Remove the worktree directory (branch is kept)
-          </label>
-          <label className={styles.option}>
-            <input
-              type="radio"
-              name="archive-worktree"
-              checked={keepWorktree}
-              onChange={() => setKeepWorktree(true)}
-            />
+          </Radio>
+          <Radio
+            className={styles.option}
+            name="archive-worktree"
+            checked={keepWorktree}
+            onChange={() => setKeepWorktree(true)}
+          >
             Keep worktree
-          </label>
+          </Radio>
         </span>
       }
     />
@@ -62,19 +61,16 @@ export function DetachWorktreeDialog({ thread, onClose }: { thread: Thread; onCl
         <span className={styles.options}>
           <span className={styles.path}>{thread.worktreePath}</span>
           <span>The thread stays; its working directory falls back to the project root.</span>
-          <label
+          <Checkbox
             className={styles.option}
-            title={tideBranch ? undefined : "Only Tide-created tide/* branches can be deleted here"}
+            {...(tideBranch ? {} : { title: "Only Tide-created tide/* branches can be deleted here" })}
+            checked={deleteBranch && tideBranch}
+            disabled={!tideBranch}
+            onChange={(e) => setDeleteBranch(e.target.checked)}
           >
-            <input
-              type="checkbox"
-              checked={deleteBranch && tideBranch}
-              disabled={!tideBranch}
-              onChange={(e) => setDeleteBranch(e.target.checked)}
-            />
             Also delete branch (tide/* only)
             {thread.branch ? <span className={styles.branch}>{thread.branch}</span> : null}
-          </label>
+          </Checkbox>
         </span>
       }
     />
