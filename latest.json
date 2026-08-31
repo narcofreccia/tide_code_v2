@@ -1,0 +1,11 @@
+{
+  "version": "2.0.0-alpha.0",
+  "notes": "v2.0.0-alpha.0",
+  "pub_date": "2026-08-31T06:07:32Z",
+  "platforms": {
+    "darwin-aarch64": {
+      "signature": "dW50cnVzdGVkIGNvbW1lbnQ6IHNpZ25hdHVyZSBmcm9tIHRhdXJpIHNlY3JldCBrZXkKUlVURFlJczZXUGlBMzMyazRLdVJHMXlKZ1d4NlNCVXNpZGRESHkvRHI3SCtjdnFOOW85bGVXcmIyYit1ejNSMmpEanRWNGxtcFA0dU5xWENORkw3UFZUd2lDM1VLSFZUVVEwPQp0cnVzdGVkIGNvbW1lbnQ6IHRpbWVzdGFtcDoxNzg4MTU2MzgyCWZpbGU6VGlkZS5hcHAudGFyLmd6ClhUWC9jMVkyNHltbE9ITEYyUE1jTjBWUS9MZUxwOVJoSS9GK0hPd1N1c0dyVGRtTzZya2VPTVVheStwdFhNZDNHbGFmb3Qvc0pEWGg4SStuOHBYa0JRPT0K",
+      "url": "https://pub-7b3e5bbd605d43adbeb4601a962d84bd.r2.dev/tidecode/mac/tide.app.tar.gz"
+    }
+  }
+}
