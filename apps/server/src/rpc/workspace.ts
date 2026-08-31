@@ -1,5 +1,6 @@
 import type { Engine } from "../orchestration/engine.ts";
 import { threadCwd } from "../provider/sessions.ts";
+import { browseDirectories, type BrowseResult } from "../workspace/browse.ts";
 import { FileService } from "../workspace/files.ts";
 import { PtyManager } from "../workspace/pty/index.ts";
 import { search as runSearch, type SearchOptions, type SearchResult } from "../workspace/search.ts";
@@ -15,6 +16,8 @@ export interface WorkspaceServices {
   search: SearchFn;
   /** thread -> cwd (worktree path, else project root) */
   cwdFor: (threadId: string) => string;
+  /** directory browser for the project picker */
+  browse: (input: { path?: string; showHidden?: boolean }) => Promise<BrowseResult>;
   close(): void;
 }
 
@@ -52,6 +55,7 @@ export function createWorkspaceServices(options: WorkspaceOptions): WorkspaceSer
     ptys,
     search,
     cwdFor,
+    browse: (input) => browseDirectories(options.engine.getModel(), input),
     close() {
       ptys.closeAll();
       watcher.closeAll();
@@ -100,6 +104,13 @@ export function registerWorkspaceHandlers(router: RpcRouter, services: Workspace
     const cwd = cwdFor(input.threadId);
     return watcher.subscribe(cwd, emit);
   });
+
+  router.register("fs.browse", async (input) =>
+    services.browse({
+      ...(input.path !== undefined ? { path: input.path } : {}),
+      ...(input.showHidden !== undefined ? { showHidden: input.showHidden } : {}),
+    }),
+  );
 
   router.register("fs.search", async (input) => {
     const cwd = cwdFor(input.threadId);

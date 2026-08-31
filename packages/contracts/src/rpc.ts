@@ -162,6 +162,19 @@ export const rpcMethods = {
     Type.Object({ threadId: Type.String(), query: Type.String({ minLength: 1 }), regex: Type.Optional(Type.Boolean()), caseSensitive: Type.Optional(Type.Boolean()), glob: Type.Optional(Type.String()), limit: Type.Optional(Type.Number()) }),
     Type.Object({ matches: Type.Array(SearchMatch), truncated: Type.Boolean() }),
   ),
+  /** directory browser for the project picker: absolute paths on the server host, starting at home */
+  "fs.browse": unary(
+    Type.Object({ path: Type.Optional(Type.String()), showHidden: Type.Optional(Type.Boolean()) }),
+    Type.Object({
+      path: Type.String(),
+      parent: Type.Optional(Type.String()),
+      home: Type.String(),
+      isGitRepo: Type.Boolean(),
+      dirs: Type.Array(Type.Object({ name: Type.String(), path: Type.String(), isGitRepo: Type.Boolean() })),
+      /** recently used project roots (from existing projects), newest first */
+      recent: Type.Array(Type.String()),
+    }),
+  ),
   // pty
   "pty.create": unary(
     Type.Object({ threadId: Type.String(), cols: Type.Number(), rows: Type.Number(), shell: Type.Optional(Type.String()) }),
