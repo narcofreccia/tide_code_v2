@@ -34,7 +34,9 @@ jobs:
       - name: Install Tauri system dependencies
         run: |
           sudo apt-get update
-          sudo apt-get install -y libwebkit2gtk-4.1-dev libappindicator3-dev librsvg2-dev patchelf
+          sudo apt-get install -y libwebkit2gtk-4.1-dev libayatana-appindicator3-dev librsvg2-dev patchelf file
+          # linuxdeploy is itself an AppImage and needs FUSE on the runner (ubuntu-24.04 ships libfuse2t64)
+          sudo apt-get install -y libfuse2t64 || sudo apt-get install -y libfuse2
 
       # No `version:` here — pnpm is pinned by `packageManager` in package.json.
       - uses: pnpm/action-setup@v4
@@ -73,9 +75,10 @@ jobs:
 
       - name: Build the Tauri app (AppImage + updater signature)
         env:
+          NO_STRIP: "true"
           TAURI_SIGNING_PRIVATE_KEY: ${{ secrets.TAURI_SIGNING_PRIVATE_KEY }}
           TAURI_SIGNING_PRIVATE_KEY_PASSWORD: ${{ secrets.TAURI_SIGNING_PRIVATE_KEY_PASSWORD }}
-        run: pnpm --filter @tide/desktop exec tauri build --bundles appimage
+        run: pnpm --filter @tide/desktop exec tauri build --bundles appimage --verbose
 
       - name: Smoke test the bundled sidecar
         run: |
