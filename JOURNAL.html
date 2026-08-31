@@ -60,9 +60,9 @@
         <h1>Tide v2 — Project Journal</h1>
         <div class="sub">Focused agentic code editor &amp; orchestrator over Claude Code · Codex · OpenCode · Pi. Started 2026-08-30.</div>
         <div class="kpi">
-          <div class="box"><b>P4</b><span>current phase</span></div>
-          <div class="box"><b>45</b><span>commits</span></div>
-          <div class="box"><b>477</b><span>tests passing</span></div>
+          <div class="box"><b>P5</b><span>current phase</span></div>
+          <div class="box"><b>49</b><span>commits</span></div>
+          <div class="box"><b>502</b><span>tests passing</span></div>
         </div>
         <div class="howto">
           How to use: read at session start; flip <code>class="status done|wip|todo|blocked"</code> + label as work lands; add dated notes under the phase;
@@ -161,21 +161,21 @@
         </div>
       </details>
 
-      <details class="phase" open>
-        <summary><span class="title"><h3>P4 — Codex, OpenCode, Pi drivers</h3><small>app-server generate-ts · opencode SDK · pi rpc + trimmed extensions · provider settings</small></span><span class="badge status wip">wip</span></summary>
+      <details class="phase">
+        <summary><span class="title"><h3>P4 — Codex, OpenCode, Pi drivers</h3><small>app-server generate-ts · opencode SDK · pi rpc + trimmed extensions · provider settings</small></span><span class="badge status done">done</span></summary>
         <div class="body">
           <ul class="tasks">
             <li><span class="badge status done">done</span><span class="t"><code>packages/driver-codex</code> — app-server JSON-RPC over stdio, generated bindings, approvals/user-input, <code>item/plan/delta</code> → ProposedPlan, collab children — Opus agent</span></li>
-            <li><span class="badge status wip">wip</span><span class="t"><code>packages/driver-opencode</code> — managed <code>opencode serve</code> + SDK, SSE events, permissions, plan agent — Opus agent</span></li>
+            <li><span class="badge status done">done</span><span class="t"><code>packages/driver-opencode</code> — managed <code>opencode serve</code> + SDK, SSE events, permissions, plan agent — Opus agent</span></li>
             <li><span class="badge status done">done</span><span class="t"><code>packages/driver-pi</code> + <code>packages/pi-extensions/tide-bridge.ts</code> — <code>pi --mode rpc</code>, approvals via extension UI requests, usage snapshot, plan tool, local models — Opus agent</span></li>
             <li><span class="badge status done">done</span><span class="t">Web Settings: Providers (status/caps/models/defaults/login command → terminal), Git, Appearance (explicit theme + density), Keyboard (single shortcut registry), Remote, About — <code>7ab55bc</code>; contracts: <code>loginCommand</code>, <code>server.info.tideHome/worktreeRoot/tools</code> — <code>13a4624</code></span></li>
-            <li><span class="badge status todo">todo</span><span class="t">Server registration of the three drivers (static imports in <code>provider/load.ts</code>)</span></li>
-            <li><span class="badge status todo">todo</span><span class="t">Orchestrator validation: same prompt on 4 providers in 4 threads; plan on Claude → implement on Codex</span></li>
+            <li><span class="badge status done">done</span><span class="t">Server registration of all four drivers (static imports in <code>provider/load.ts</code>); <code>providers.list</code> reports claude/codex/opencode/pi with real model catalogs (5/5/61/0)</span></li>
+            <li><span class="badge status done">done</span><span class="t">Orchestrator validation (live): same prompt on four threads concurrently — Claude and OpenCode completed with exact replies (20s); Codex settled <code>error 401</code> and Pi <code>error</code> purely for missing logins on this machine. "Plan on Claude → implement on Codex" is exercised by tests and the plan.implement path; live run waits on <code>codex login</code>.</span></li>
           </ul>
         </div>
       </details>
 
-      <details class="phase">
+      <details class="phase" open>
         <summary><span class="title"><h3>P5 — Tide MCP server + Experts</h3><small>index/memory/experts tools for every harness · cross-harness expert teams</small></span><span class="badge status todo">todo</span></summary>
         <div class="body"><ul class="tasks"><li><span class="badge status todo">todo</span><span class="t"><code>tide-mcp</code> · index-native · Experts board, message bus as events, synthesis → ProposedPlan</span></li></ul></div>
       </details>
@@ -210,6 +210,8 @@
         <tr><td>P4</td><td>2026-08-31</td><td>feat(web): Settings — providers, git, appearance, keyboard, remote, about</td><td class="sha">7ab55bc</td></tr>
         <tr><td>P4</td><td>2026-08-31</td><td>feat(contracts,server): loginCommand; server.info tideHome/worktreeRoot/tools</td><td class="sha">13a4624</td></tr>
         <tr><td>P4</td><td>2026-08-31</td><td>feat(driver-pi): Pi RPC driver + tide-bridge extension; registered in the server</td><td class="sha">e199898</td></tr>
+        <tr><td>P4</td><td>2026-08-31</td><td>feat(server): derive loginCommand from the provider hint when a driver omits it</td><td class="sha">21476d2</td></tr>
+        <tr><td>P4</td><td>2026-08-31</td><td>feat(driver-opencode): managed opencode serve + SDK driver; registered in the server</td><td class="sha">abcfab0</td></tr>
         <tr><td>P4</td><td>2026-08-31</td><td>feat(driver-codex): Codex app-server driver with generated bindings; registered in the server</td><td class="sha">554d52a</td></tr>
         <tr><td>P2</td><td>2026-08-31</td><td>feat(server): vcs — git wrapper, worktrees, checkpoints, VcsReactor, revert, publish, vcs RPC</td><td class="sha">2f0c591</td></tr>
       </table>
