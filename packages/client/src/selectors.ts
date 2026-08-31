@@ -2,6 +2,9 @@ import type {
   Activity,
   ActivityOf,
   AttentionKind,
+  ExpertsFinding,
+  ExpertsMessage,
+  ExpertsSession,
   Message,
   Project,
   ProposedPlan,
@@ -217,4 +220,58 @@ export function selectTurnPrompt(model: ReadModel, threadId: string, turnId: str
     if (message.turnId === turnId && message.role === "user") return message.text;
   }
   return undefined;
+}
+
+// ---- experts ----
+
+/** Non-archived experts sessions, newest first (optionally one project's). */
+export function selectExpertsSessions(model: ReadModel, projectId?: string): ExpertsSession[] {
+  return Object.values(model.expertsSessions)
+    .filter((s) => s.phase !== "archived")
+    .filter((s) => projectId === undefined || s.projectId === projectId)
+    .sort((a, b) => b.createdAt - a.createdAt || b.id.localeCompare(a.id));
+}
+
+/** Everything the Experts board renders, with dangling references dropped. */
+export interface ExpertsBoard {
+  session: ExpertsSession;
+  findings: ExpertsFinding[];
+  messages: ExpertsMessage[];
+  /** expert key → its thread, absent until `experts.start` binds one */
+  expertThreads: Record<string, Thread | undefined>;
+  leadThread: Thread | undefined;
+}
+
+/** The board for one session, or undefined when the session is unknown. */
+export function selectExpertsBoard(model: ReadModel, sessionId: string): ExpertsBoard | undefined {
+  const session = model.expertsSessions[sessionId];
+  if (!session) return undefined;
+  const findings: ExpertsFinding[] = [];
+  for (const id of session.findingIds) {
+    const finding = model.expertsFindings[id];
+    if (finding) findings.push(finding);
+  }
+  const messages: ExpertsMessage[] = [];
+  for (const id of session.messageIds) {
+    const message = model.expertsMessages[id];
+    if (message) messages.push(message);
+  }
+  const expertThreads: Record<string, Thread | undefined> = {};
+  for (const expert of session.experts) {
+    expertThreads[expert.key] = expert.threadId ? model.threads[expert.threadId] : undefined;
+  }
+  return {
+    session,
+    findings,
+    messages,
+    expertThreads,
+    leadThread: session.lead.threadId ? model.threads[session.lead.threadId] : undefined,
+  };
+}
+
+/** Threads this thread spawned via `tide_delegate`, oldest first. */
+export function selectDelegates(model: ReadModel, threadId: string): Thread[] {
+  return Object.values(model.threads)
+    .filter((t) => t.delegatedBy === threadId && t.archivedAt === undefined)
+    .sort((a, b) => a.createdAt - b.createdAt || a.id.localeCompare(b.id));
 }

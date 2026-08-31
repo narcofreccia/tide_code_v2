@@ -7,6 +7,7 @@ import { NewThreadPopover } from "../shell/NewThreadPopover.tsx";
 import { Pill } from "../ui/Pill.tsx";
 import { StatusGlyph } from "../ui/StatusGlyph.tsx";
 import { PrGlyph, WorktreeGlyph } from "../ui/VcsBadges.tsx";
+import { ExpertsSection } from "./ExpertsSection.tsx";
 import { Inbox } from "./Inbox.tsx";
 import styles from "./MissionControl.module.css";
 
@@ -19,6 +20,8 @@ export function MissionControl() {
   const threads: Thread[] = Object.values(model.threads)
     .filter((t) => t.archivedAt === undefined)
     .filter((t) => selectedProjectId === null || t.projectId === selectedProjectId)
+    // expert / lead / delegate threads live under their session or caller, not here
+    .filter((t) => t.role === undefined)
     .sort(compareByAttention);
 
   const targetProjectId = selectedProjectId ?? Object.keys(model.projects)[0];
@@ -26,6 +29,8 @@ export function MissionControl() {
   return (
     <section className={styles.view} aria-label="Mission Control">
       <Inbox />
+
+      <ExpertsSection projectId={selectedProjectId ?? undefined} />
 
       <div className={styles.header}>
         <h2 className={styles.heading}>Threads</h2>

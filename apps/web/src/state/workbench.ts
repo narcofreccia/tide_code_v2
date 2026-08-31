@@ -5,6 +5,7 @@ import { persist } from "zustand/middleware";
 export type WorkbenchTab =
   | { kind: "changes" }
   | { kind: "search" }
+  | { kind: "experts" }
   | { kind: "file"; path: string; pinned?: boolean };
 
 export const CHANGES_TAB: WorkbenchTab = { kind: "changes" };
@@ -116,6 +117,18 @@ export function openFileTab(threadId: string, path: string, options: OpenFileOpt
       return { reveal: { ...s.reveal, [key]: { line: options.line ?? 1, column: options.column ?? 1, nonce } } };
     });
   }
+}
+
+/**
+ * The Experts board as a workbench tab, so selecting an expert's thread keeps the
+ * board in view. Mounted right after Changes and never auto-focused.
+ */
+export function openExpertsTab(threadId: string, focus = false): void {
+  const tabs = threadTabs(threadId);
+  const next = tabs.some((t) => t.kind === "experts")
+    ? tabs
+    : [tabs[0] ?? CHANGES_TAB, { kind: "experts" as const }, ...tabs.slice(1)];
+  write(threadId, next, focus ? "experts" : undefined);
 }
 
 export function openSearchTab(threadId: string): void {

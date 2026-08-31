@@ -46,3 +46,4 @@
 .project { color: var(--muted); }
 .time { color: var(--muted); font-variant-numeric: tabular-nums; width: 34px; text-align: right; }
 .empty { color: var(--muted); }
+.section { display: block; }

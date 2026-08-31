@@ -39,15 +39,21 @@ export function useThreadDraft(provider: ProviderKind, model = ""): [ThreadDraft
   return [draft, (patch) => setDraft((prev) => ({ ...prev, ...patch }))];
 }
 
-/** Harness + model + worktree fields, shared by PlanCard and the new-thread popover. */
-export function ProviderPicker({
-  draft,
+/**
+ * The harness + model pair on its own, so surfaces that pick a harness without a
+ * worktree (the Experts panel's lead and expert rows) reuse the same lists.
+ */
+export function HarnessFields({
+  name,
+  provider,
+  model,
   onChange,
-  showWorktree = true,
 }: {
-  draft: ThreadDraft;
+  /** prefixes the accessible labels, e.g. "Thread" → "Thread provider" */
+  name: string;
+  provider: ProviderKind;
+  model: string;
   onChange: (patch: Partial<ThreadDraft>) => void;
-  showWorktree?: boolean;
 }) {
   const providers = useProviders();
   const providerOptions: SelectOption<ProviderKind>[] = PROVIDERS.map((kind) => {
@@ -59,7 +65,7 @@ export function ProviderPicker({
       ...(reason === undefined ? {} : { disabled: true, title: reason }),
     };
   });
-  const models = providerStatus(providers, draft.provider)?.models ?? [];
+  const models = providerStatus(providers, provider)?.models ?? [];
   const modelOptions: SelectOption<string>[] = [
     { value: "", label: "harness default" },
     ...models.map((m) => ({ value: m.id, label: m.label })),
@@ -70,21 +76,38 @@ export function ProviderPicker({
       <label className={styles.field}>
         <span className={styles.label}>provider</span>
         <Select
-          label="Thread provider"
-          value={draft.provider}
+          label={`${name} provider`}
+          value={provider}
           options={providerOptions}
-          onSelect={(provider) => onChange(draftForProvider(provider, providers))}
+          onSelect={(kind) => onChange(draftForProvider(kind, providers))}
         />
       </label>
       <label className={styles.field}>
         <span className={styles.label}>model</span>
         <Select
-          label="Thread model"
-          value={draft.model}
+          label={`${name} model`}
+          value={model}
           options={modelOptions}
-          onSelect={(model) => onChange({ model })}
+          onSelect={(next) => onChange({ model: next })}
         />
       </label>
+    </>
+  );
+}
+
+/** Harness + model + worktree fields, shared by PlanCard and the new-thread popover. */
+export function ProviderPicker({
+  draft,
+  onChange,
+  showWorktree = true,
+}: {
+  draft: ThreadDraft;
+  onChange: (patch: Partial<ThreadDraft>) => void;
+  showWorktree?: boolean;
+}) {
+  return (
+    <>
+      <HarnessFields name="Thread" provider={draft.provider} model={draft.model} onChange={onChange} />
       {showWorktree ? (
         <label className={styles.check}>
           <input

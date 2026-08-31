@@ -2,7 +2,7 @@ import { afterEach, describe, expect, it } from "vitest";
 import { cleanup, render, screen } from "@testing-library/react";
 import { SHORTCUTS, handleShortcut } from "./shortcuts.ts";
 import { KeyboardSection } from "../components/settings/KeyboardSection.tsx";
-import { resetUi } from "../testHarness.ts";
+import { attachFakeStore, makeThread, modelWith, resetUi } from "../testHarness.ts";
 import { useUi } from "../state/ui.ts";
 
 afterEach(() => {
@@ -44,5 +44,17 @@ describe("shortcuts registry", () => {
 
   it("ignores keys without the ⌘/^ modifier", () => {
     expect(handleShortcut(new KeyboardEvent("keydown", { key: "0" }))).toBe(false);
+  });
+
+  it("⌘⇧X opens a new experts session for the current project", () => {
+    attachFakeStore(
+      modelWith({
+        projects: { p1: { id: "p1", title: "Tide", rootPath: "/src/tide", createdAt: 1, updatedAt: 1 } },
+        threads: { t1: makeThread("t1", { projectId: "p1" }) },
+      }),
+    );
+    useUi.getState().selectThread("t1");
+    expect(press("x", { shiftKey: true })).toBe(true);
+    expect(useUi.getState().newExpertsProjectId).toBe("p1");
   });
 });

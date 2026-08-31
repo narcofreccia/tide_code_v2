@@ -14,6 +14,7 @@ import styles from "./Workbench.module.css";
 function label(tab: WorkbenchTab): string {
   if (tab.kind === "changes") return "Changes";
   if (tab.kind === "search") return "Search";
+  if (tab.kind === "experts") return "Board";
   return tab.path.slice(tab.path.lastIndexOf("/") + 1);
 }
 
@@ -116,16 +117,16 @@ export function TabStrip({
             >
               {label(tab)}
             </button>
-            {tab.kind === "search" ? (
+            {tab.kind === "changes" ? null : (
               <button
                 type="button"
                 className={styles.close}
-                aria-label="Close Search"
+                aria-label={`Close ${label(tab)}`}
                 onClick={() => closeTab(threadId, tab)}
               >
                 ×
               </button>
-            ) : null}
+            )}
           </span>
         ),
       )}

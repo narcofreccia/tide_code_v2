@@ -1,0 +1,53 @@
+.field { display: flex; flex-direction: column; gap: var(--sp-1); }
+.label {
+  font-size: 10px;
+  letter-spacing: 0.08em;
+  text-transform: uppercase;
+  color: var(--muted);
+}
+.topic,
+.persona {
+  width: 100%;
+  min-height: 56px;
+  resize: vertical;
+  background: var(--bg);
+  color: var(--text);
+  border: 1px solid var(--border);
+  border-radius: var(--radius);
+  padding: var(--sp-2);
+  font: inherit;
+}
+.leadRow,
+.expertsHead { display: flex; align-items: center; gap: var(--sp-2); flex-wrap: wrap; }
+.list { list-style: none; margin: 0; padding: 0; display: flex; flex-direction: column; gap: var(--sp-2); }
+.row {
+  display: flex;
+  flex-direction: column;
+  gap: var(--sp-1);
+  border: 1px solid var(--border);
+  border-radius: var(--radius);
+  padding: var(--sp-2);
+  background: var(--surface);
+}
+.rowTop { display: flex; align-items: center; gap: var(--sp-2); flex-wrap: wrap; }
+.rowActions { display: flex; align-items: center; gap: var(--sp-1); margin-left: auto; }
+.input {
+  height: 24px;
+  min-width: 96px;
+  flex: 1 1 96px;
+  background: var(--bg);
+  color: var(--text);
+  border: 1px solid var(--border);
+  border-radius: var(--radius-sm);
+  padding: 0 var(--sp-1);
+  font: inherit;
+}
+.disclosure {
+  align-self: flex-start;
+  background: none;
+  border: none;
+  padding: 0;
+  color: var(--muted);
+  font: inherit;
+}
+.actions { display: flex; align-items: center; justify-content: flex-end; gap: var(--sp-2); }

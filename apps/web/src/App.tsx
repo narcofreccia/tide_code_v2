@@ -5,6 +5,8 @@ import { TopBar } from "./components/shell/TopBar.tsx";
 import { FocusModeSwitch } from "./components/shell/FocusModeSwitch.tsx";
 import { MissionControl } from "./components/mission/MissionControl.tsx";
 import { ThreadView } from "./components/thread/ThreadView.tsx";
+import { ExpertsView } from "./components/experts/ExpertsView.tsx";
+import { CreateExpertsDialog } from "./components/experts/CreateExpertsDialog.tsx";
 import { Workbench } from "./components/workbench/Workbench.tsx";
 import { SettingsView } from "./components/settings/SettingsView.tsx";
 import { useSelectedThread } from "./state/hooks.ts";
@@ -18,13 +20,27 @@ import styles from "./App.module.css";
 function Content() {
   const view = useUi((s) => s.view);
   const focusMode = useUi((s) => s.focusMode);
+  const expertsSessionId = useUi((s) => s.selectedExpertsSessionId);
   const thread = useSelectedThread();
 
   if (view === "settings") return <SettingsView />;
+  if (view === "experts" && expertsSessionId) {
+    const board = <ExpertsView sessionId={expertsSessionId} />;
+    if (focusMode === "thread" || !thread) return board;
+    if (focusMode === "workbench") return <Workbench />;
+    return <SplitPane primary={board} secondary={<Workbench />} />;
+  }
   if (view !== "thread" || !thread) return <MissionControl />;
   if (focusMode === "thread") return <ThreadView thread={thread} />;
   if (focusMode === "workbench") return <Workbench />;
   return <SplitPane primary={<ThreadView thread={thread} />} secondary={<Workbench />} />;
+}
+
+function ExpertsDialogHost() {
+  const projectId = useUi((s) => s.newExpertsProjectId);
+  const setNewExpertsProject = useUi((s) => s.setNewExpertsProject);
+  if (projectId === null) return null;
+  return <CreateExpertsDialog projectId={projectId} onClose={() => setNewExpertsProject(null)} />;
 }
 
 function QuickOpenHost() {
@@ -54,6 +70,7 @@ export function App() {
       <StatusBar />
       <ToastHost />
       <QuickOpenHost />
+      <ExpertsDialogHost />
     </div>
   );
 }

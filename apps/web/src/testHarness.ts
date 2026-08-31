@@ -4,6 +4,9 @@ import {
   type Activity,
   type ActivityOf,
   type EventRecord,
+  type ExpertsFinding,
+  type ExpertsMessage,
+  type ExpertsSession,
   type ProposedPlan,
   type Message,
   type ReadModel,
@@ -70,6 +73,9 @@ export function resetUi(): void {
     view: "mission",
     selectedProjectId: null,
     selectedThreadId: null,
+    selectedExpertsSessionId: null,
+    expertsReturnTo: "mission",
+    newExpertsProjectId: null,
     newProjectOpen: false,
     focusMode: "split",
     railCollapsed: false,
@@ -236,4 +242,60 @@ export function mockStream(): { streams: FakeStream[]; streamer: RpcStreamer } {
   }) as unknown as RpcStreamer;
   setRpcStreamer(streamer);
   return { streams, streamer };
+}
+
+// ---- experts fixtures ----
+
+export function makeExpertsSession(id: string, patch: Partial<ExpertsSession> = {}): ExpertsSession {
+  return {
+    id,
+    projectId: "p1",
+    topic: "How should we shard the index?",
+    phase: "exploring",
+    experts: [
+      { key: "architect", name: "Architect", role: "system design", provider: "claude", status: "working" },
+      { key: "security", name: "Security", role: "threat modelling", provider: "codex", status: "idle" },
+    ],
+    lead: { provider: "claude" },
+    findingIds: [],
+    messageIds: [],
+    createdAt: 1,
+    updatedAt: 1,
+    ...patch,
+  };
+}
+
+export function makeFinding(id: string, patch: Partial<ExpertsFinding> = {}): ExpertsFinding {
+  return { id, sessionId: "x1", author: "architect", text: "the seam is the index writer", createdAt: 2, ...patch };
+}
+
+export function makeExpertsMessage(id: string, patch: Partial<ExpertsMessage> = {}): ExpertsMessage {
+  return { id, sessionId: "x1", from: "security", to: "all", text: "what signs the shard map?", createdAt: 3, ...patch };
+}
+
+/** A read model holding one session with its findings, messages and threads. */
+export function modelWithExperts(
+  session: ExpertsSession,
+  findings: ExpertsFinding[] = [],
+  messages: ExpertsMessage[] = [],
+  threads: Thread[] = [],
+): ReadModel {
+  const model = modelWith({ expertsSessions: { [session.id]: session } });
+  for (const finding of findings) model.expertsFindings[finding.id] = finding;
+  for (const message of messages) model.expertsMessages[message.id] = message;
+  for (const thread of threads) model.threads[thread.id] = thread;
+  model.expertsSessions[session.id] = {
+    ...session,
+    findingIds: findings.map((f) => f.id),
+    messageIds: messages.map((m) => m.id),
+  };
+  return model;
+}
+
+/** Makes the fake dispatch answer with the events a real engine would have appended. */
+export function replyWithEvents(fake: FakeStore, events: EventRecord["event"][]): void {
+  fake.dispatch.mockResolvedValue({
+    seq: events.length,
+    events: events.map((event, i) => ({ seq: i + 1, ts: 1, event })),
+  });
 }

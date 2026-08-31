@@ -1,3 +1,4 @@
+import { useModel } from "../state/model.ts";
 import { useUi } from "../state/ui.ts";
 import { closeActiveTab, openSearchTab, setQuickOpen, toggleTree } from "../state/workbench.ts";
 import { toggleDrawer } from "../state/terminals.ts";
@@ -19,6 +20,14 @@ export interface Shortcut {
 const ui = () => useUi.getState();
 const threadId = (): string | null => ui().selectedThreadId;
 
+/** The project ⌘⇧X targets: the rail's selection, else the selected thread's. */
+function currentProjectId(): string | undefined {
+  const model = useModel.getState().model;
+  const id = ui().selectedThreadId;
+  const fromThread = id ? model.threads[id]?.projectId : undefined;
+  return fromThread ?? Object.keys(model.projects)[0];
+}
+
 /**
  * Single source of truth for the keyboard map: `handleShortcut` dispatches from it
  * and Settings › Keyboard renders it. Entries without `run` are owned by a surface
@@ -27,6 +36,15 @@ const threadId = (): string | null => ui().selectedThreadId;
 export const SHORTCUTS: Shortcut[] = [
   { id: "palette", keys: "⌘K", label: "Command palette", group: "Navigation" },
   { id: "new-thread", keys: "⌘N", label: "New thread", group: "Navigation" },
+  {
+    id: "new-experts", keys: "⌘⇧X", label: "New experts session", group: "Navigation", key: "x", shift: true,
+    run: () => {
+      const state = ui();
+      const projectId = state.selectedProjectId ?? currentProjectId();
+      if (projectId === undefined) return false;
+      state.setNewExpertsProject(projectId);
+    },
+  },
   { id: "mission", keys: "⌘0", label: "Mission Control", group: "Navigation", key: "0", run: () => ui().showMission() },
   { id: "settings", keys: "⌘,", label: "Settings", group: "Navigation", key: ",", run: () => ui().showSettings() },
   { id: "focus-thread", keys: "⌘1", label: "Focus: thread", group: "View", key: "1", run: () => ui().setFocusMode("thread") },

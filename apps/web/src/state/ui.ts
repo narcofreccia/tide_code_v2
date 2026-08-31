@@ -2,7 +2,7 @@ import { create } from "zustand";
 import { persist } from "zustand/middleware";
 
 export type FocusMode = "thread" | "split" | "workbench";
-export type View = "mission" | "thread" | "settings";
+export type View = "mission" | "thread" | "settings" | "experts";
 export type SettingsSection = "providers" | "git" | "appearance" | "keyboard" | "remote" | "about";
 
 export const SETTINGS_SECTIONS: SettingsSection[] = [
@@ -18,6 +18,12 @@ interface UiState {
   view: View;
   selectedProjectId: string | null;
   selectedThreadId: string | null;
+  /** the Experts session whose board fills the Thread column (view === "experts") */
+  selectedExpertsSessionId: string | null;
+  /** the view the board was opened from, so Esc goes back */
+  expertsReturnTo: View;
+  /** project the create-experts dialog is open for, null when closed */
+  newExpertsProjectId: string | null;
   newProjectOpen: boolean;
   focusMode: FocusMode;
   railCollapsed: boolean;
@@ -32,6 +38,9 @@ interface UiState {
   settingsReturnTo: View;
   selectProject: (projectId: string | null) => void;
   selectThread: (threadId: string | null) => void;
+  selectExpertsSession: (sessionId: string | null) => void;
+  closeExperts: () => void;
+  setNewExpertsProject: (projectId: string | null) => void;
   showMission: () => void;
   showSettings: () => void;
   toggleSettings: () => void;
@@ -54,6 +63,9 @@ export const useUi = create<UiState>()(
       view: "mission",
       selectedProjectId: null,
       selectedThreadId: null,
+      selectedExpertsSessionId: null,
+      expertsReturnTo: "mission",
+      newExpertsProjectId: null,
       newProjectOpen: false,
       focusMode: "split",
       railCollapsed: false,
@@ -65,6 +77,18 @@ export const useUi = create<UiState>()(
       selectProject: (selectedProjectId) => set({ selectedProjectId }),
       selectThread: (selectedThreadId) =>
         set(selectedThreadId ? { selectedThreadId, view: "thread" } : { selectedThreadId: null, view: "mission" }),
+      selectExpertsSession: (selectedExpertsSessionId) =>
+        set((s) =>
+          selectedExpertsSessionId === null
+            ? { selectedExpertsSessionId: null, view: "mission" }
+            : {
+                selectedExpertsSessionId,
+                view: "experts",
+                ...(s.view === "experts" ? {} : { expertsReturnTo: s.view }),
+              },
+        ),
+      closeExperts: () => set((s) => (s.view === "experts" ? { view: s.expertsReturnTo } : s)),
+      setNewExpertsProject: (newExpertsProjectId) => set({ newExpertsProjectId }),
       showMission: () => set({ view: "mission" }),
       showSettings: () =>
         set((s) => (s.view === "settings" ? s : { view: "settings", settingsReturnTo: s.view })),

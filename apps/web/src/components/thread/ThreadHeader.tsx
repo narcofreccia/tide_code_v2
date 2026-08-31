@@ -7,6 +7,7 @@ import {
   createThread,
   fetchTerminalCommand,
 } from "../../lib/threadActions.ts";
+import { DelegatedBy, DelegatesPopover } from "./Delegates.tsx";
 import { Button } from "../ui/Button.tsx";
 import { Pill } from "../ui/Pill.tsx";
 import { StatusGlyph } from "../ui/StatusGlyph.tsx";
@@ -48,6 +49,8 @@ export function ThreadHeader({ thread }: { thread: Thread }) {
         {thread.branch ?? "no worktree"}
       </span>
       {thread.pr ? <PrBadge pr={thread.pr} /> : null}
+      {thread.delegatedBy ? <DelegatedBy parentThreadId={thread.delegatedBy} /> : null}
+      <DelegatesPopover threadId={thread.id} />
       <Pill>{turnStatus ?? thread.status}</Pill>
       {percent === undefined ? null : <span className={styles.stat}>ctx {percent}%</span>}
       {thread.totalCostUsd === undefined ? null : (

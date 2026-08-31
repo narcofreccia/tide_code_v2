@@ -48,3 +48,16 @@
   font-size: 11px;
 }
 .empty { color: var(--muted); margin: 0; padding: 0 var(--sp-3) var(--sp-2); }
+.experts { display: flex; flex-direction: column; }
+.groupHeading {
+  padding: 0 var(--sp-2);
+  height: 20px;
+  display: flex;
+  align-items: center;
+  font-size: 10px;
+  letter-spacing: 0.08em;
+  text-transform: uppercase;
+  color: var(--muted);
+}
+.roleGlyph { color: var(--muted); font-size: 11px; }
+.needsYou { color: var(--accent); }
