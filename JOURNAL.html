@@ -60,9 +60,9 @@
         <h1>Tide v2 — Project Journal</h1>
         <div class="sub">Focused agentic code editor &amp; orchestrator over Claude Code · Codex · OpenCode · Pi. Started 2026-08-30.</div>
         <div class="kpi">
-          <div class="box"><b>P6</b><span>current phase</span></div>
-          <div class="box"><b>63</b><span>commits</span></div>
-          <div class="box"><b>599</b><span>tests passing</span></div>
+          <div class="box"><b>P0–P6</b><span>done · v2.0.0-alpha.0</span></div>
+          <div class="box"><b>67</b><span>commits</span></div>
+          <div class="box"><b>621</b><span>tests passing</span></div>
         </div>
         <div class="howto">
           How to use: read at session start; flip <code>class="status done|wip|todo|blocked"</code> + label as work lands; add dated notes under the phase;
@@ -190,13 +190,14 @@
       </details>
 
       <details class="phase" open>
-        <summary><span class="title"><h3>P6 — Glass-box, polish, remote hardening</h3><small>⌘K palette · pairing · worktree teardown · interrupt signal · release build</small></span><span class="badge status wip">wip</span></summary>
+        <summary><span class="title"><h3>P6 — Glass-box, polish, remote hardening</h3><small>⌘K palette · pairing · worktree teardown · interrupt signal · release build</small></span><span class="badge status done">done</span></summary>
         <div class="body">
           <ul class="tasks">
             <li><span class="badge status done">done</span><span class="t">Contracts: <code>thread.archive.keepWorktree</code> / <code>worktree.detach</code> + internal <code>worktree.detached</code>; <code>Thread.interrupting</code>; <code>server.info.remote</code></span></li>
             <li><span class="badge status done">done</span><span class="t">Server: worktree teardown on archive/detach (remove worktree, keep branch by default), interrupt watchdog (force-settle after 30s if the driver never honours interrupt), <code>server.info.remote</code> (bind host, pairing URL)</span></li>
-            <li><span class="badge status todo">todo</span><span class="t">Web: ⌘K command palette (actions from the shortcut registry + jump to project/thread/session), interrupting state in status/glyph, archive dialog with worktree choice, Settings › Remote pairing URL + copy, Mission Control cost/context totals</span></li>
-            <li><span class="badge status todo">todo</span><span class="t">Release: <code>pnpm desktop:build</code> with the current sidecar (incl. tide-mcp <code>--mcp</code>), docs refresh (README, docs/internals/overview.md), open questions triage</span></li>
+            <li><span class="badge status done">done</span><span class="t">Web: ⌘K command palette (actions from the shortcut registry + jump to project/thread/session), interrupting state in status/glyph, archive dialog with worktree choice, Settings › Remote pairing URL + copy, Mission Control cost/context totals</span></li>
+            <li><span class="badge status done">done</span><span class="t">Release: sidecar rebuilt (all four drivers, <code>--mcp</code> serves 7 tools to a real MCP client), <code>pnpm desktop:build</code> → <code>Tide.app</code> 69 MB + <code>Tide_2.0.0-alpha.0_aarch64.dmg</code> 27.6 MB (unsigned); docs refreshed (README, <code>docs/internals/overview.md</code>)</span></li>
+            <li><span class="badge status todo">todo</span><span class="t">Andrea: signing/notarization for release; <code>codex login</code> + Pi credentials; browser/desktop walkthrough and UI feedback</span></li>
           </ul>
         </div>
       </details>
@@ -228,6 +229,7 @@
         <tr><td>P4</td><td>2026-08-31</td><td>feat(driver-pi): Pi RPC driver + tide-bridge extension; registered in the server</td><td class="sha">e199898</td></tr>
         <tr><td>P5</td><td>2026-08-31</td><td>feat(contracts): P5 vocabulary — experts, agent commands, delegation, agent RPC</td><td class="sha">3a07d36</td></tr>
         <tr><td>P5</td><td>2026-08-31</td><td>feat(web): Experts — create dialog, board, rail grouping, delegates</td><td class="sha">b224585</td></tr>
+        <tr><td>P6</td><td>2026-08-31</td><td>feat(web): ⌘K palette, interrupting state, archive/detach dialogs, Remote panel, project totals</td><td class="sha">0ef9340</td></tr>
         <tr><td>P6</td><td>2026-08-31</td><td>feat(contracts): P6 — worktree detach/teardown, interrupting flag, server.info.remote</td><td class="sha">61f5433</td></tr>
         <tr><td>P6</td><td>2026-08-31</td><td>docs: architecture overview, README refresh</td><td class="sha">f92d035</td></tr>
         <tr><td>P6</td><td>2026-08-31</td><td>feat(server): worktree teardown on archive, interrupt watchdog, remote info + /pair</td><td class="sha">da0c282</td></tr>
@@ -240,6 +242,7 @@
 
       <h2>Open questions &amp; follow-ups</h2>
       <ul>
+        <li><strong>Next candidates (value-tested):</strong> mobile/remote client over the existing ticket auth (T3 relay-style pairing); Pi MCP passthrough via the bridge extension (caps.mcp for pi); per-turn cost attribution in Mission Control; Codex success fixtures once logged in; `interrupting` timeout surfaced in the UI; palette actions for surface-owned bindings.</li>
         <li>Worktree default: on for every new thread, or opt-in per thread? (Plan says toggle at creation, default on for non-main branches.)</li>
         <li>Pi plan mode: emulate via system prompt + <code>tide_propose_plan</code> tool, or mark <code>planMode=false</code> for Pi in v1?</li>
         <li><code>turn.interrupt-requested</code> is not projected: a driver that never honours <code>interrupt()</code> leaves the thread <em>running</em> with no UI signal. Add an <code>interrupting</code> flag/status in a later contracts pass.</li>
