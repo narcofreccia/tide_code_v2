@@ -17,7 +17,8 @@ worktree; cross-harness Experts brainstorming; remote-ready. Ground-up rewrite o
 `/Users/mac/dev/projects/tide_code` (v1: Tauri + Pi-only, one thread at a time).
 
 **Non-goals (do not add):** Tutor/Learn, voice, model router/classifier, a custom planner,
-a custom safety engine. Planning, sub-agents, workflows and permissions are **harness-native
+a custom safety engine, a tree-sitter symbol index or project-memory store (harnesses
+already have grep/CLAUDE.md/AGENTS.md — cut by the value test in P5). Planning, sub-agents, workflows and permissions are **harness-native
 and surfaced by Tide** — before building a feature, check whether the harness already
 provides it and expose that instead. Every new capability must work for all four drivers.
 
@@ -71,8 +72,9 @@ apps/web           React client (browser + Tauri WebView): components/{shell,mis
 apps/desktop       Tauri shell (P3)
 packages/contracts TypeBox: domain, commands, events, pure projector, rpc method table — SINGLE SOURCE OF TRUTH
 packages/client    WS connection + projection store + selectors (shared by web / future mobile)
-packages/driver-*  one package per harness (P1 claude, P4 codex/opencode/pi)
-packages/pi-extensions, packages/index-native (later)
+packages/driver-*  one package per harness (claude, codex, opencode, pi)
+packages/pi-extensions  the single Pi extension Tide loads (tide-bridge)
+packages/tide-mcp  stdio MCP server attached to every session: experts board tools + tide_delegate (cross-harness delegation)
 docs/design docs/internals   present-tense design + architecture docs
 ```
 
@@ -136,7 +138,7 @@ Installed by the user, never bundled (except Pi): `claude` (Agent SDK), `codex`
 
 P0 skeleton + contracts + engine + shell · P1 Claude driver end-to-end (chat, approvals,
 plan mode → ProposedPlan, subagent activities) · P2 git worktrees + checkpoints + diff + PR ·
-P3 editor + terminal + Tauri shell · P4 Codex/OpenCode/Pi drivers · P5 Tide MCP + Experts ·
+P3 editor + terminal + Tauri shell · P4 Codex/OpenCode/Pi drivers · P5 Tide MCP (experts board + cross-harness delegation) + Experts UI ·
 P6 glass-box + polish + remote hardening. Status: `JOURNAL.html`.
 
 ## 9. How we work (orchestration)
