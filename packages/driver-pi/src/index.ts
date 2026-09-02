@@ -3,7 +3,7 @@ import type { DriverEnv, ProviderDriver, ProviderInstance } from "@tide/contract
 import { PiInstance } from "./instance.ts";
 import type { ChildLike, FetchLike, PiConfig, PiDeps, SpawnLike } from "./types.ts";
 
-export { PiNormalizer, truncate } from "./normalize.ts";
+export { PI_SILENT_EVENTS, PiNormalizer, truncate } from "./normalize.ts";
 export { PiApprovalBroker } from "./approvals.ts";
 export { PiRpc, readJsonl, splitJsonl } from "./rpc.ts";
 export { PiSession, buildSpawn } from "./session.ts";

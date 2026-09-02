@@ -1,4 +1,4 @@
-import type { ApprovalDecision, DriverEnv, NormalizedEvent, OpenSessionOptions, ProviderSession, TurnInput, TurnUsage } from "@tide/contracts";
+import type { ApprovalDecision, DriverEnv, NormalizedEvent, OpenSessionOptions, ProviderSession, ReconfigureResult, SessionSettings, TurnInput, TurnUsage } from "@tide/contracts";
 import { ENV_CWD, ENV_INTERACTION, ENV_LINKED_DIRS, ENV_RUNTIME_MODE, ENV_SYSTEM_PROMPT_APPEND, ENV_THREAD_ID } from "@tide/pi-extensions/protocol";
 import { PiApprovalBroker } from "./approvals.ts";
 import { AsyncQueue } from "./async-queue.ts";
@@ -192,6 +192,17 @@ export class PiSession implements ProviderSession {
   /** pi has no structured user-input request; the broker cancels those dialogs instead. */
   async respondUserInput(_requestId: string, _answers: Record<string, unknown>): Promise<void> {
     this.#env.log("[pi] respondUserInput ignored: pi has no user-input request type");
+  }
+
+  /**
+   * pi takes its runtime mode and plan mode from the process environment
+   * (`TIDE_RUNTIME_MODE` / `TIDE_INTERACTION`, read once by tide-bridge at spawn) and its model
+   * from the `--model` argv, so nothing a live process can be told changes them. The server
+   * therefore closes this session and reopens it with `--session <file>`, which loses no
+   * history.
+   */
+  async reconfigure(_settings: SessionSettings): Promise<ReconfigureResult> {
+    return "reopen";
   }
 
   async interrupt(): Promise<void> {

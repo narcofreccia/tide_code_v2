@@ -25,6 +25,7 @@ export {
   selectProjectLinks,
   selectProjects,
   selectProjectTotals,
+  selectQueuedTurns,
   selectPrCounts,
   selectRecentThreads,
   selectRunningThreads,

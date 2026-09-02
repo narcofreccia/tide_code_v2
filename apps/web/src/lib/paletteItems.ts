@@ -2,13 +2,11 @@ import { selectExpertsSessions, selectProjects, selectThreadsByProject } from "@
 import type { ProposedPlan, ReadModel, Thread } from "@tide/contracts";
 import { fuzzyRank } from "./fuzzy.ts";
 import { SHORTCUTS, scopeApplies } from "./shortcuts.ts";
-import { showToast } from "../state/toast.ts";
+import { openThreadTerminal } from "./openInTerminal.ts";
 import { useUi } from "../state/ui.ts";
 import {
-  copyTerminalCommand,
   createThread,
   detachWorktree,
-  fetchTerminalCommand,
   implementPlan,
   interruptTurn,
   requestArchive,
@@ -45,21 +43,11 @@ function latestPlan(model: ReadModel, threadId: string): ProposedPlan | undefine
   return found;
 }
 
-function openTerminal(threadId: string): void {
-  void fetchTerminalCommand(threadId)
-    .then((command) => {
-      if (command) return copyTerminalCommand(command);
-      showToast("No harness session to resume yet");
-      return undefined;
-    })
-    .catch(() => showToast("Could not resolve the resume command"));
-}
-
 /** Contextual actions for the thread the palette was opened on. */
 function threadItems(model: ReadModel, thread: Thread): PaletteItem[] {
   const ui = useUi.getState();
   const items: PaletteItem[] = [
-    { id: "thread:terminal", label: "Open in terminal", group: "Thread", run: () => openTerminal(thread.id) },
+    { id: "thread:terminal", label: "Open in terminal", group: "Thread", run: () => void openThreadTerminal(thread.id) },
     { id: "thread:archive", label: "Archive…", group: "Thread", run: () => requestArchive(thread) },
     {
       id: "thread:child",

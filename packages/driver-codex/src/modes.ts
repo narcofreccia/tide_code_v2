@@ -24,12 +24,16 @@ export function writableRoots(options: Pick<OpenSessionOptions, "cwd" | "linkedD
  * `docs/internals/providers.md` still lists `unlessTrusted`/`onRequest`/`onFailure`; the
  * server rejects all three ("unknown variant"), and 0.147 has no on-failure policy at all,
  * so `auto` maps to `never` + a workspace-write sandbox: no prompts, still sandboxed.
+ *
+ * `networkAccess` is **the user's own** `[sandbox_workspace_write] network_access` (see
+ * `config-toml.ts`), never a Tide constant: hardcoding `false` took network away from a
+ * user whose Codex config grants it.
  */
-export function policyFor(mode: RuntimeMode, writableRoots: string[]): CodexPolicy {
+export function policyFor(mode: RuntimeMode, writableRoots: string[], networkAccess = false): CodexPolicy {
   const workspaceWrite = {
     type: "workspaceWrite" as const,
     writableRoots,
-    networkAccess: false,
+    networkAccess,
     excludeTmpdirEnvVar: false,
     excludeSlashTmp: false,
   };

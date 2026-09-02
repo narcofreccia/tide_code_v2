@@ -15,6 +15,9 @@ type CanUseTool = (toolName: string, input: Record<string, unknown>, context: { 
 class MockQuery {
   readonly messages = new AsyncQueue<ClaudeMessage>();
   interrupts = 0;
+  permissionModes: string[] = [];
+  models: (string | undefined)[] = [];
+  setPermissionModeImpl: ((mode: string) => Promise<void>) | undefined;
   contextUsage: { totalTokens: number; rawMaxTokens: number } | undefined;
   readonly options: Record<string, unknown>;
   constructor(options: Record<string, unknown>) {
@@ -25,6 +28,13 @@ class MockQuery {
   }
   async interrupt(): Promise<void> {
     this.interrupts++;
+  }
+  async setPermissionMode(mode: string): Promise<void> {
+    if (this.setPermissionModeImpl) await this.setPermissionModeImpl(mode);
+    this.permissionModes.push(mode);
+  }
+  async setModel(model?: string): Promise<void> {
+    this.models.push(model);
   }
   async getContextUsage(): Promise<{ totalTokens: number; rawMaxTokens: number }> {
     if (!this.contextUsage) throw new Error("no context usage");
@@ -290,5 +300,54 @@ describe("ClaudeSession", () => {
     await done;
     await session.close();
     expect(() => session.send({ text: "three" })).toThrow(/closed/);
+  });
+
+  describe("reconfigure", () => {
+    async function runTurn(session: ClaudeSession, query: () => MockQuery): Promise<void> {
+      const events: NormalizedEvent[] = [];
+      const done = collect(session.send({ text: "hi" }), events);
+      await tick();
+      query().init();
+      query().result();
+      await done;
+    }
+
+    it("switches mode and model in place on the live query", async () => {
+      const { session, query } = harness({ mode: "approval-required", model: "sonnet" });
+      await runTurn(session, query);
+      expect(await session.reconfigure({ mode: "auto", interaction: "default", model: "opus" })).toBe("applied");
+      expect(query().permissionModes).toEqual(["auto"]);
+      expect(query().models).toEqual(["opus"]);
+    });
+
+    it("maps plan interaction to the plan permission mode", async () => {
+      const { session, query } = harness({ mode: "full-access" });
+      await runTurn(session, query);
+      expect(await session.reconfigure({ mode: "full-access", interaction: "plan" })).toBe("applied");
+      expect(query().permissionModes).toEqual(["plan"]);
+    });
+
+    it("applies to the not-yet-started query by rebuilding its options", async () => {
+      const { session, query } = harness({ mode: "approval-required" });
+      expect(await session.reconfigure({ mode: "full-access", interaction: "default", model: "opus" })).toBe("applied");
+      const events: NormalizedEvent[] = [];
+      const done = collect(session.send({ text: "hi" }), events);
+      await tick();
+      expect(query().options["permissionMode"]).toBe("bypassPermissions");
+      expect(query().options["model"]).toBe("opus");
+      query().init();
+      query().result();
+      await done;
+    });
+
+    it("asks for a reopen when the installed CLI rejects the control request", async () => {
+      const { session, query, logs } = harness({ mode: "approval-required" });
+      await runTurn(session, query);
+      query().setPermissionModeImpl = async () => {
+        throw new Error("unknown permission mode");
+      };
+      expect(await session.reconfigure({ mode: "auto", interaction: "default" })).toBe("reopen");
+      expect(logs.some((line) => line.includes("reconfigure failed"))).toBe(true);
+    });
   });
 });

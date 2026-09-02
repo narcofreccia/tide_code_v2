@@ -1,6 +1,6 @@
 import { useEffect, useRef, useState } from "react";
 import { groupActivities, selectTimeline, type TimelineItem } from "@tide/client";
-import type { Activity, ActivityOf, ProviderKind } from "@tide/contracts";
+import type { Activity, ActivityOf, ProviderKind, ReadModel, TurnStatus } from "@tide/contracts";
 import { useModel } from "../../state/model.ts";
 import { ActivityGroup } from "./ActivityGroup.tsx";
 import { ActivityRow } from "./ActivityRow.tsx";
@@ -40,6 +40,27 @@ function splitChildren(entries: TimelineItem[]): Split {
   return { top, nested };
 }
 
+const SETTLED: TurnStatus[] = ["completed", "error", "interrupted"];
+
+/**
+ * The messages that carry a turn footer: the last assistant message of every
+ * turn that has settled. A turn still running keeps its numbers to itself.
+ */
+function metaMessageIds(entries: TimelineItem[], model: ReadModel): Set<string> {
+  const last = new Map<string, string>();
+  for (const entry of entries) {
+    if (entry.kind === "message" && entry.message.role === "assistant") {
+      last.set(entry.message.turnId, entry.message.id);
+    }
+  }
+  const out = new Set<string>();
+  for (const [turnId, messageId] of last) {
+    const turn = model.turns[turnId];
+    if (turn && SETTLED.includes(turn.status)) out.add(messageId);
+  }
+  return out;
+}
+
 function lastPendingApprovalId(entries: TimelineItem[]): string | undefined {
   let id: string | undefined;
   for (const entry of entries) {
@@ -56,6 +77,7 @@ export function Stream({ threadId, provider }: { threadId: string; provider: Pro
   const { top, nested } = splitChildren(entries);
   const nodes = groupActivities(top);
   const liveApprovalId = lastPendingApprovalId(entries);
+  const metaIds = metaMessageIds(top, model);
 
   const scroller = useRef<HTMLOListElement>(null);
   const atBottom = useRef(true);
@@ -92,7 +114,17 @@ export function Stream({ threadId, provider }: { threadId: string; provider: Pro
       >
         {nodes.map((node) => {
           if (node.kind === "group") return <ActivityGroup key={node.id} activities={node.activities} />;
-          if (node.kind === "message") return <MessageItem key={node.message.id} message={node.message} />;
+          if (node.kind === "message") {
+            const turn = model.turns[node.message.turnId];
+            return (
+              <MessageItem
+                key={node.message.id}
+                message={node.message}
+                {...(turn === undefined ? {} : { turn })}
+                {...(metaIds.has(node.message.id) ? { showMeta: true } : {})}
+              />
+            );
+          }
           if (node.kind === "plan") return <PlanCard key={node.plan.id} plan={node.plan} provider={provider} />;
           const activity = node.activity;
           if (activity.kind === "approval") {

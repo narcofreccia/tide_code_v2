@@ -95,18 +95,24 @@ describe("normalizer over recorded opencode fixtures", () => {
       "activity:child", // subagent opened
       "activity:tool", // task completed
       "activity:child", // subagent done
-      "activity:user-input",
+      "activity:user-input", // question.replied is dropped: this card already shows the answer
       "assistant.delta",
       "assistant.delta",
       "assistant.delta", // a build that omits `delta` still yields the increment
       "plan.proposed", // plan_exit is captured, never allowed
       "plan.proposed", // and again when the plan message completes
+      "activity:info", // an event type this driver has never seen, surfaced generically
       "usage",
       "settled",
     ]);
 
-    const retry = events.flatMap((event) => (event.type === "activity" && event.activity.kind === "info" ? [event.activity.text] : []));
-    expect(retry).toEqual(["Retrying (attempt 1): Error from provider (Console): Rate limit exceeded. Please try again later."]);
+    const info = events.flatMap((event) => (event.type === "activity" && event.activity.kind === "info" ? [event.activity] : []));
+    expect(info.map((activity) => activity.text)).toEqual([
+      "Retrying (attempt 1): Error from provider (Console): Rate limit exceeded. Please try again later.",
+      "opencode: brand.new.event",
+    ]);
+    // the raw frame rides along so nothing is lost (CLAUDE.md §1a)
+    expect(info[1]?.payload).toEqual({ type: "brand.new.event", properties: { sessionID: "ses_plan" } });
 
     const progress = events.find((event) => event.type === "plan.progress");
     if (progress?.type !== "plan.progress") throw new Error("unreachable");
@@ -146,7 +152,7 @@ describe("normalizer over recorded opencode fixtures", () => {
     if (usage?.type !== "usage") throw new Error("unreachable");
     expect(usage.usage).toEqual({ inputTokens: 1200, outputTokens: 300, cacheReadTokens: 800, cacheWriteTokens: 100, costUsd: 0.011 });
     expect(usage.contextUsage).toEqual({ used: 2400, window: 100_000 });
-    expect(unknown).toBe(1); // only the deliberately unknown frame
+    expect(unknown).toBe(1); // only the deliberately unknown frame — surfaced, not dropped
   });
 
   it("settles as interrupted once marked and reports session errors", () => {

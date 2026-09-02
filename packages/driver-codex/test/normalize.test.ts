@@ -3,7 +3,7 @@ import { dirname, join } from "node:path";
 import { fileURLToPath } from "node:url";
 import { describe, expect, it } from "vitest";
 import type { NormalizedEvent } from "@tide/contracts";
-import { CodexNormalizer } from "../src/normalize.ts";
+import { CODEX_SILENT_NOTIFICATIONS, CodexNormalizer } from "../src/normalize.ts";
 
 const fixtures = join(dirname(fileURLToPath(import.meta.url)), "fixtures");
 
@@ -35,6 +35,7 @@ describe("normalizer over app-server fixtures", () => {
     const { events } = run("basic-turn");
     expect(kinds(events)).toEqual([
       "session",
+      "assistant.reasoning",
       "activity:tool", // ls -1 running
       "activity:tool", // ls -1 completed
       "assistant.delta",
@@ -52,10 +53,14 @@ describe("normalizer over app-server fixtures", () => {
     expect(tools[0]?.input).toEqual({ command: "ls -1", cwd: "/tmp/repo" });
     expect(tools[1]).toMatchObject({ status: "ok", output: "hello.txt\n", durationMs: 42 });
 
-    // both deltas share the item id as their message key; reasoning never leaks in
+    // both deltas share one message key — and so does the reasoning that preceded them, so
+    // the thinking and the answer render as one message
     const deltas = events.flatMap((event) => (event.type === "assistant.delta" ? [event] : []));
-    expect(deltas.map((delta) => delta.messageKey)).toEqual(["item_msg", "item_msg"]);
+    const turnKey = "01a05503-3928-7022-9ee5-cf271c6bf7d0#0";
+    expect(deltas.map((delta) => delta.messageKey)).toEqual([turnKey, turnKey]);
     expect(deltas.map((delta) => delta.delta).join("")).toBe("There is one file.");
+    const reasoning = events.flatMap((event) => (event.type === "assistant.reasoning" ? [event] : []));
+    expect(reasoning.map((event) => event.messageKey)).toEqual([turnKey]);
 
     const usage = events.find((event) => event.type === "usage");
     if (usage?.type !== "usage") throw new Error("unreachable");
@@ -114,6 +119,7 @@ describe("normalizer over app-server fixtures", () => {
       "activity:child", // spawnAgent completed
       "assistant.delta", // main-loop text only
       "activity:info", // model rerouted
+      "activity:info", // pass-through of the unmodelled notification
       "settled",
     ]);
 
@@ -128,6 +134,10 @@ describe("normalizer over app-server fixtures", () => {
     const deltas = events.flatMap((event) => (event.type === "assistant.delta" ? [event.delta] : []));
     expect(deltas).toEqual(["Done."]);
     expect(normalizer.unknownCount).toBe(1);
+    // the unmodelled notification is surfaced generically rather than dropped (§1a)
+    const passthrough = events.flatMap((event) => (event.type === "activity" && event.activity.kind === "info" && event.activity.payload !== undefined ? [event.activity] : []));
+    expect(passthrough).toHaveLength(1);
+    expect(passthrough[0]?.text).toMatch(/^codex: /);
   });
 
   it("edit-turn: patchUpdated feeds the diff, retries are info, interrupted settles as interrupted", () => {
@@ -163,9 +173,31 @@ describe("normalizer over app-server fixtures", () => {
   it("ignores notifications for unrelated threads and never throws on unknown frames", () => {
     const normalizer = new CodexNormalizer({ threadId: "mine" });
     expect(normalizer.next("item/agentMessage/delta", { threadId: "other", itemId: "x", delta: "nope" })).toEqual([]);
-    expect(normalizer.next("brand/new", { threadId: "mine" })).toEqual([]);
+    expect(normalizer.next("brand/new", { threadId: "mine" })).toEqual([
+      { type: "activity", activity: { kind: "info", text: "codex: brand/new", payload: { threadId: "mine" } } },
+    ]);
+    // …while the allowlisted housekeeping notifications stay silent
+    for (const method of CODEX_SILENT_NOTIFICATIONS) expect(normalizer.next(method, { threadId: "mine" })).toEqual([]);
     expect(normalizer.next("item/agentMessage/delta", { threadId: "mine", itemId: "x", delta: "yes" })).toEqual([
-      { type: "assistant.delta", messageKey: "x", delta: "yes" },
+      { type: "assistant.delta", messageKey: "turn#0", delta: "yes" },
+    ]);
+  });
+
+  it("keys reasoning to the message that follows it, and keeps two messages of one turn apart", () => {
+    const normalizer = new CodexNormalizer({ threadId: "t" });
+    normalizer.next("turn/started", { threadId: "t", turn: { id: "turn_9" } });
+    const events = [
+      ...normalizer.next("item/reasoning/summaryTextDelta", { threadId: "t", itemId: "r1", delta: "Thinking… " }),
+      ...normalizer.next("item/agentMessage/delta", { threadId: "t", itemId: "m1", delta: "First." }),
+      ...normalizer.next("item/completed", { threadId: "t", item: { type: "agentMessage", id: "m1", text: "First." } }),
+      ...normalizer.next("item/reasoning/textDelta", { threadId: "t", itemId: "r2", delta: "More." }),
+      ...normalizer.next("item/agentMessage/delta", { threadId: "t", itemId: "m2", delta: "Second." }),
+    ];
+    expect(events).toEqual([
+      { type: "assistant.reasoning", messageKey: "turn_9#0", delta: "Thinking… " },
+      { type: "assistant.delta", messageKey: "turn_9#0", delta: "First." },
+      { type: "assistant.reasoning", messageKey: "turn_9#1", delta: "More." },
+      { type: "assistant.delta", messageKey: "turn_9#1", delta: "Second." },
     ]);
   });
 

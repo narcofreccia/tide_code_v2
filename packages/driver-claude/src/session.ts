@@ -1,5 +1,14 @@
 import { randomUUID } from "node:crypto";
-import type { ApprovalDecision, DriverEnv, NormalizedEvent, OpenSessionOptions, ProviderSession, TurnInput } from "@tide/contracts";
+import type {
+  ApprovalDecision,
+  DriverEnv,
+  NormalizedEvent,
+  OpenSessionOptions,
+  ProviderSession,
+  ReconfigureResult,
+  SessionSettings,
+  TurnInput,
+} from "@tide/contracts";
 import { ApprovalBroker, type CanUseToolContext, type PermissionResultShape } from "./approvals.ts";
 import { AsyncQueue } from "./async-queue.ts";
 import { ClaudeNormalizer } from "./normalize.ts";
@@ -17,7 +26,7 @@ import type { ClaudeConfig, QueryFn, QueryLike } from "./types.ts";
  * strictly one turn at a time (see the `busy` guard below).
  */
 
-const MODE_TO_PERMISSION: Record<string, string> = {
+export const MODE_TO_PERMISSION: Record<string, string> = {
   "approval-required": "default",
   "auto-accept-edits": "acceptEdits",
   auto: "auto",
@@ -80,7 +89,7 @@ export class ClaudeSession implements ProviderSession {
     this.#broker = new ApprovalBroker((event) => this.#emit(event), options.linkedDirs ?? []);
     this.#normalizer = new ClaudeNormalizer({
       partialMessages: true,
-      // status/rate-limit/thinking chatter is expected; only surface it when debugging the driver
+      // the frame itself is passed through to the timeline; this is just driver-debug noise
       onUnknown: (type, subtype) => {
         if (process.env["TIDE_DEBUG_CLAUDE"]) env.log(`[claude] unhandled message ${type}${subtype ? `/${subtype}` : ""}`);
       },
@@ -241,6 +250,41 @@ export class ClaudeSession implements ProviderSession {
       this.#env.log(`[claude] getContextUsage failed: ${error instanceof Error ? error.message : String(error)}`);
       return undefined;
     }
+  }
+
+  /**
+   * Claude switches in place: `setPermissionMode`/`setModel` are streaming-input control
+   * requests on the live Query, so a mode or model change never costs the session. Before
+   * the first turn there is no Query yet — the new values simply go into `#buildOptions`.
+   * Anything the installed CLI rejects falls back to a reopen.
+   */
+  async reconfigure(settings: SessionSettings): Promise<ReconfigureResult> {
+    const permissionMode = settings.interaction === "plan" ? "plan" : (MODE_TO_PERMISSION[settings.mode] ?? "default");
+    const model = settings.model;
+    const modelChanged = model !== this.#options.model;
+    const modeChanged = permissionMode !== this.#permissionMode;
+
+    this.#options = { ...this.#options, mode: settings.mode, interaction: settings.interaction, ...(model !== undefined ? { model } : {}) };
+    if (model === undefined) delete (this.#options as { model?: string }).model;
+    this.#permissionMode = permissionMode;
+
+    const query = this.#query;
+    if (!query) return "applied"; // nothing started yet: #buildOptions carries the new values
+    try {
+      if (modeChanged) {
+        if (!query.setPermissionMode) return "reopen";
+        await query.setPermissionMode.call(query, permissionMode);
+        this.#autoModeFallbackAvailable = false;
+      }
+      if (modelChanged) {
+        if (!query.setModel) return "reopen";
+        await query.setModel.call(query, model ?? this.#config.defaultModel);
+      }
+    } catch (error) {
+      this.#env.log(`[claude] reconfigure failed, reopening: ${error instanceof Error ? error.message : String(error)}`);
+      return "reopen";
+    }
+    return "applied";
   }
 
   async respondApproval(requestId: string, decision: ApprovalDecision): Promise<void> {

@@ -14,6 +14,34 @@ import type { PiEvent } from "./types.ts";
  */
 
 const MAX_OUTPUT = 4000;
+const MAX_PAYLOAD = 4096;
+
+/**
+ * The only pi events Tide drops silently: pure lifecycle bookkeeping with no user-visible
+ * content. Everything else — known-but-unmodelled and outright unknown frames alike — is
+ * passed through as a generic info activity (CLAUDE.md §1a: pass through, don't drop).
+ */
+// tool_execution_update / bash_execution_update are per-output-chunk streaming frames whose
+// content arrives whole on tool_execution_end: passing them through would emit one info activity
+// per chunk, which is duplication rather than an unmodelled event.
+export const PI_SILENT_EVENTS: ReadonlySet<string> = new Set(["agent_start", "agent_end", "queue_update", "tool_execution_update", "bash_execution_update"]);
+
+/** The raw event for the generic renderer; oversized frames degrade to a truncated JSON string. */
+function rawPayload(event: PiEvent): unknown {
+  let json: string;
+  try {
+    json = JSON.stringify(event) ?? "";
+  } catch {
+    return `<unserializable ${event.type} event>`;
+  }
+  if (json.length <= MAX_PAYLOAD) return event;
+  return `${json.slice(0, MAX_PAYLOAD)}… (${json.length - MAX_PAYLOAD} more characters)`;
+}
+
+/** Generic card for a pi event Tide has no model for. */
+function passThrough(event: PiEvent): NormalizedEvent[] {
+  return [{ type: "activity", activity: { kind: "info", text: `pi: ${event.type}`, payload: rawPayload(event) } }];
+}
 
 export function truncate(text: string, max = MAX_OUTPUT): string {
   return text.length <= max ? text : `${text.slice(0, max)}\n… (${text.length - max} more characters)`;
@@ -88,19 +116,13 @@ export class PiNormalizer {
         return [{ type: "activity", activity: { kind: "info", text: `Retrying after a transient error: ${str(event["errorMessage"]) ?? "unknown"}` } }];
       case "extension_error":
         return [{ type: "activity", activity: { kind: "error", text: `Extension error (${str(event["event"]) ?? "?"}): ${str(event["error"]) ?? "unknown"}` } }];
-      case "agent_start":
-      case "agent_end":
-      case "turn_start":
-      case "turn_end":
-      case "queue_update":
-      case "tool_execution_update":
-      case "auto_retry_end":
-      case "bash_execution_update":
-        return [];
       default:
+        if (PI_SILENT_EVENTS.has(event.type)) return [];
+        // Known-but-unmodelled frames (turn_start/_end, auto_retry_end, …) and frames from a
+        // newer pi both land here.
         this.unknownCount += 1;
         this.#options.onUnknown?.(event.type);
-        return [];
+        return passThrough(event);
     }
   }
 
@@ -108,13 +130,15 @@ export class PiNormalizer {
     const delta = event["assistantMessageEvent"];
     if (typeof delta !== "object" || delta === null) return [];
     const record = delta as Record<string, unknown>;
-    // thinking_* and toolcall_* deltas are deliberately dropped: thinking never belongs in the
-    // assistant message, and tool calls arrive whole on tool_execution_start.
-    if (record["type"] !== "text_delta") return [];
+    // toolcall_* deltas are dropped: tool calls arrive whole on tool_execution_start.
+    // text_delta and thinking_delta share one message-scoped key (never the contentIndex, which
+    // differs per content block) so reasoning merges into the message its text belongs to.
+    const kind = record["type"];
+    if (kind !== "text_delta" && kind !== "thinking_delta") return [];
     const text = str(record["delta"]);
     if (text === undefined || text === "") return [];
-    const index = typeof record["contentIndex"] === "number" ? record["contentIndex"] : 0;
-    return [{ type: "assistant.delta", messageKey: `pi-${this.#messageSeq}-${index}`, delta: text }];
+    const messageKey = `pi-${this.#messageSeq}`;
+    return [kind === "thinking_delta" ? { type: "assistant.reasoning", messageKey, delta: text } : { type: "assistant.delta", messageKey, delta: text }];
   }
 
   #messageEnd(event: PiEvent): NormalizedEvent[] {

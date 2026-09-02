@@ -23,3 +23,10 @@
 .hint { margin-left: auto; display: inline-flex; align-items: center; gap: var(--sp-1); color: var(--muted); }
 
 .interrupting { color: var(--warn); }
+
+.queued {
+  color: var(--accent);
+  font-size: 10px;
+  letter-spacing: 0.04em;
+  text-transform: uppercase;
+}

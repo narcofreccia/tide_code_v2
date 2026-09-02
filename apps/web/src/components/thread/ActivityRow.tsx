@@ -24,6 +24,7 @@ type NoteActivity = Extract<Activity, { kind: "info" | "error" }>;
  * command — running the harness's own login right here.
  */
 function ErrorActivity({ activity }: { activity: NoteActivity }) {
+  const [open, setOpen] = useState(false);
   const isError = activity.kind === "error";
   const provider = useModel((s) => s.model.threads[activity.threadId]?.provider);
   const providers = useProviders();
@@ -31,12 +32,27 @@ function ErrorActivity({ activity }: { activity: NoteActivity }) {
   const setSettingsSection = useUi((s) => s.setSettingsSection);
   const auth = isError && AUTH_ERROR.test(activity.text);
   const command = auth && provider ? resolveLoginCommand(providerStatus(providers, provider)) : undefined;
+  // Anything the harness emitted that Tide does not model rides along raw, so it
+  // is shown rather than dropped.
+  const payload = activity.payload === undefined ? "" : formatPayload(activity.payload);
 
   return (
     <li className={styles.item}>
       <div className={`${styles.row} ${isError ? styles.error : styles.info}`}>
         <span className={styles.glyph}>{isError ? "✕" : "·"}</span>
-        <span className={styles.target}>{activity.text}</span>
+        {payload ? (
+          <button
+            type="button"
+            className={`${styles.rowBare} ${styles.target}`}
+            aria-expanded={open}
+            aria-label={activity.text}
+            onClick={() => setOpen((v) => !v)}
+          >
+            {activity.text}
+          </button>
+        ) : (
+          <span className={styles.target}>{activity.text}</span>
+        )}
         {auth ? (
           <Button
             variant="quiet"
@@ -54,6 +70,12 @@ function ErrorActivity({ activity }: { activity: NoteActivity }) {
           </Button>
         ) : null}
       </div>
+      {open && payload ? (
+        <div className={styles.details}>
+          <span className={styles.label}>payload</span>
+          <pre className={styles.pre}>{payload}</pre>
+        </div>
+      ) : null}
     </li>
   );
 }

@@ -15,6 +15,15 @@ export interface CodexConfig {
    * and session tests drive a scripted app-server without launching one.
    */
   spawnImpl?: SpawnFn;
+  /**
+   * Overrides the sandbox network policy read from the user's `~/.codex/config.toml`.
+   * Left unset in production; the tests use it (with `tomlReader`) to pin a value.
+   */
+  networkAccess?: boolean;
+  /** `CODEX_HOME`; defaults to `~/.codex`. */
+  codexHome?: string;
+  /** Test seam: replaces reading `config.toml` from disk. */
+  tomlReader?: (path: string) => string | undefined;
 }
 
 /** The slice of a spawned child process this driver depends on. */

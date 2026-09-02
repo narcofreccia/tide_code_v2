@@ -2,6 +2,7 @@ import type { ProviderKind, Thread } from "@tide/contracts";
 import { INTERACTION_MODES, PROVIDERS, RUNTIME_MODES } from "../../lib/vocab.ts";
 import { updateThread, type ThreadPatch } from "../../lib/threadActions.ts";
 import { defaultModelOf, providerStatus, unavailableReason, useProviders } from "../../state/providers.ts";
+import { showToast } from "../../state/toast.ts";
 import { Select, type SelectOption } from "../ui/Select.tsx";
 import styles from "./ThreadPills.module.css";
 
@@ -30,6 +31,15 @@ export function ThreadPills({ thread }: { thread: Thread }) {
 
   const apply = (patch: ThreadPatch): void => updateThread(thread.id, patch);
 
+  /**
+   * Model / mode / interaction can be changed mid-turn: the harness picks them
+   * up on the next turn, so say so once instead of silently disabling the pill.
+   */
+  const applyNextTurn = (patch: ThreadPatch): void => {
+    apply(patch);
+    if (running) showToast("Applies from the next turn");
+  };
+
   return (
     <div className={styles.pills}>
       <Select
@@ -46,22 +56,19 @@ export function ThreadPills({ thread }: { thread: Thread }) {
         label="Model"
         value={thread.model ?? ""}
         options={modelOptions}
-        disabled={running}
-        onSelect={(model) => apply({ model })}
+        onSelect={(model) => applyNextTurn({ model })}
       />
       <Select
         label="Mode"
         value={thread.mode}
         options={RUNTIME_MODES}
-        disabled={running}
-        onSelect={(mode) => apply({ mode })}
+        onSelect={(mode) => applyNextTurn({ mode })}
       />
       <Select
         label="Interaction"
         value={thread.interaction}
         options={INTERACTION_MODES}
-        disabled={running}
-        onSelect={(interaction) => apply({ interaction })}
+        onSelect={(interaction) => applyNextTurn({ interaction })}
       />
     </div>
   );

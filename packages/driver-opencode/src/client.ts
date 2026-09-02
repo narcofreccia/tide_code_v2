@@ -1,6 +1,6 @@
 import { createOpencodeClient, type OpencodeClient } from "@opencode-ai/sdk";
 import type { ModelRef, OpencodeApi, PromptPart } from "./types.ts";
-import type { OpencodeEvent, PermissionReply, PermissionRule, WireAgent, WireProvider } from "./wire.ts";
+import type { OpencodeEvent, PermissionReply, PermissionRule, WireAgent, WireConfig, WireProvider } from "./wire.ts";
 
 interface SdkResult<T> {
   data?: T;
@@ -79,6 +79,11 @@ export class SdkOpencodeApi implements OpencodeApi {
   async providers(): Promise<{ providers: WireProvider[]; default: Record<string, string> }> {
     const result = await this.#client.config.providers();
     return unwrap(result, "config.providers") as { providers: WireProvider[]; default: Record<string, string> };
+  }
+
+  async config(input: { directory: string }): Promise<WireConfig> {
+    const result = await this.#client.config.get({ query: { directory: input.directory } });
+    return unwrap(result, "config.get") as WireConfig;
   }
 
   async agents(input: { directory: string }): Promise<WireAgent[]> {

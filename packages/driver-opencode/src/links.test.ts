@@ -1,6 +1,7 @@
+import { homedir } from "node:os";
 import { describe, expect, it } from "vitest";
 import type { LinkedDir } from "@tide/contracts";
-import { linkRules, sessionRuleset } from "./permissions.ts";
+import { linkRules, sessionRuleset, userGranularRules } from "./permissions.ts";
 import type { PermissionRule } from "./wire.ts";
 
 const links: LinkedDir[] = [
@@ -19,6 +20,46 @@ const match = (str: string, pattern: string): boolean =>
 
 const evaluate = (permission: string, pattern: string, ruleset: PermissionRule[]): "allow" | "deny" | "ask" =>
   ruleset.findLast((rule) => match(permission, rule.permission) && match(pattern, rule.pattern))?.action ?? "ask";
+
+describe("user config vs Tide's mode rules", () => {
+  // The user's own opencode.json, as `GET /config` serves its `permission` block.
+  const userConfig = {
+    bash: { "git *": "allow" as const, "rm -rf *": "deny" as const },
+    edit: "allow" as const, // a blanket default — deliberately not replayed
+    webfetch: { "*": "allow" as const }, // blanket in map form — also not replayed
+  };
+
+  it("keeps a user's granular allow alive under approval-required", () => {
+    const rules = sessionRuleset("approval-required", "default", "/work/repo", [], userConfig);
+    expect(evaluate("bash", "git status", rules)).toBe("allow");
+    expect(evaluate("bash", "rm -rf /", rules)).toBe("deny");
+    // …while the mode still governs everything the user was not specific about
+    expect(evaluate("bash", "curl example.com", rules)).toBe("ask");
+  });
+
+  it("ignores the user's blanket rules — otherwise the thread's mode selector would be a lie", () => {
+    const rules = sessionRuleset("approval-required", "default", "/work/repo", [], userConfig);
+    expect(rules.some((rule) => rule.pattern === "*" && rule.action === "allow")).toBe(false);
+    expect(evaluate("edit", "src/app.ts", rules)).toBe("ask");
+    expect(evaluate("webfetch", "https://example.com", rules)).toBe("ask");
+  });
+
+  it("puts link rules last, so a read-only link beats a user's granular allow on the same path", () => {
+    const rules = sessionRuleset("auto", "default", "/work/repo", links, { edit: { "/repos/infra/*": "allow" as const } });
+    expect(evaluate("edit", "/repos/infra/main.tf", rules)).toBe("deny");
+    expect(evaluate("edit", "../../repos/infra/main.tf", rules)).toBe("deny");
+  });
+
+  it("expands ~ and $HOME the way opencode does, and skips junk actions", () => {
+    const rules = userGranularRules({ read: { "~/secrets/*": "deny", "$HOME/keys/*": "deny", "ok/*": "nonsense" } as never });
+    expect(rules.map((rule) => rule.pattern)).toEqual([`${homedir()}/secrets/*`, `${homedir()}/keys/*`]);
+  });
+
+  it("degrades to the mode rules alone when the config is unavailable", () => {
+    expect(sessionRuleset("auto", "default", "/work/repo", [], undefined)).toEqual(sessionRuleset("auto", "default", "/work/repo", []));
+    expect(userGranularRules(undefined)).toEqual([]);
+  });
+});
 
 describe("opencode linked-repo ruleset", () => {
   const rules = sessionRuleset("auto-accept-edits", "default", "/work/repo", links);

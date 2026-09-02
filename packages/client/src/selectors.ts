@@ -207,6 +207,11 @@ export function selectThreadTurns(model: ReadModel, threadId: string): Turn[] {
     .sort((a, b) => a.requestedAt - b.requestedAt || a.id.localeCompare(b.id));
 }
 
+/** Turns waiting behind the live one, oldest first — the composer's queue. */
+export function selectQueuedTurns(model: ReadModel, threadId: string): Turn[] {
+  return selectThreadTurns(model, threadId).filter((t) => t.status === "queued");
+}
+
 /** Turns that recorded a checkpoint — the ones a diff can be shown for. */
 export function selectCheckpointTurns(model: ReadModel, threadId: string): Turn[] {
   return selectThreadTurns(model, threadId).filter((t) => t.checkpoint !== undefined);

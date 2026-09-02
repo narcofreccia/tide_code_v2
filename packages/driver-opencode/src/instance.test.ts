@@ -121,6 +121,65 @@ describe("OpencodeInstance", () => {
     await instance.dispose();
   });
 
+  it("replays the user's granular config rules after the mode rules, before the link rules", async () => {
+    const { instance, api } = harness();
+    api.configValue = { permission: { bash: { "git *": "allow" }, edit: "allow" } };
+    const session = await instance.openSession({
+      ...baseOptions,
+      linkedDirs: [{ path: "/repos/infra", label: "infra", access: "read" }],
+    });
+    const rules = api.created[0]?.permission ?? [];
+    const kinds = rules.map((rule) => `${rule.permission}:${rule.pattern}:${rule.action}`);
+    // mode rules → user granular rules → link rules (opencode takes the last match)
+    expect(kinds.slice(0, 4)).toEqual(["edit:*:ask", "bash:*:ask", "webfetch:*:ask", "bash:git *:allow"]);
+    // the user's blanket `edit: allow` is not replayed: it would cancel the thread's mode
+    expect(kinds).not.toContain("edit:*:allow");
+    // the read-only link's edit denies are last, so they win over everything above
+    expect(kinds.at(-1)).toBe("edit:../repos/infra/*:deny");
+    expect(kinds).toContain("edit:/repos/infra/*:deny");
+    await session.close();
+    await instance.dispose();
+  });
+
+  it("opens the session anyway when the config endpoint is missing or fails", async () => {
+    const logs: string[] = [];
+    const api = new FakeOpencodeApi();
+    api.configError = new Error("HTTP 404");
+    const instance = new OpencodeInstance({ serverUrl: "http://127.0.0.1:4096", apiImpl: api }, { dataDir: tmpdir(), log: (msg) => logs.push(msg) });
+    const session = await instance.openSession(baseOptions);
+    expect(api.created[0]?.permission).toEqual([
+      { permission: "edit", pattern: "*", action: "ask" },
+      { permission: "bash", pattern: "*", action: "ask" },
+      { permission: "webfetch", pattern: "*", action: "ask" },
+    ]);
+    expect(logs.some((line) => line.includes("could not read the user's config permissions"))).toBe(true);
+    await session.close();
+    await instance.dispose();
+  });
+
+  it("cannot re-apply a mode to a resumed session, and says so", async () => {
+    const { instance, api } = harness();
+    // the thread was opened in approval-required and the user switched it to auto
+    const session = await instance.openSession({ ...baseOptions, mode: "auto", resume: "ses_old" });
+    // opencode stores the ruleset on the session record at creation; there is no route that
+    // updates it, so the driver must not pretend otherwise — it creates nothing…
+    expect(api.created).toHaveLength(0);
+    // …and `reconfigure` tells the server to close and reopen instead of applying in place.
+    if (!session.reconfigure) throw new Error("opencode sessions must implement reconfigure");
+    await expect(session.reconfigure({ mode: "auto", interaction: "default" })).resolves.toBe("reopen");
+
+    // A *fresh* session in the new mode is what actually carries the new ruleset.
+    const fresh = await instance.openSession({ ...baseOptions, mode: "auto" });
+    expect(api.created[0]?.permission).toEqual([
+      { permission: "edit", pattern: "*", action: "allow" },
+      { permission: "bash", pattern: "*", action: "allow" },
+      { permission: "webfetch", pattern: "*", action: "allow" },
+    ]);
+    await fresh.close();
+    await session.close();
+    await instance.dispose();
+  });
+
   it("offers the terminal escape hatch", () => {
     const { instance } = harness();
     expect(instance.terminalCommand("ses_1", "/tmp/my repo")).toBe("cd '/tmp/my repo' && opencode --session ses_1");

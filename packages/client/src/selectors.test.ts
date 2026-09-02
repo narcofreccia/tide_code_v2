@@ -18,6 +18,7 @@ import {
   selectInbox,
   selectThreadsNeedingAttention,
   selectProjectLinks,
+  selectQueuedTurns,
   selectThreadLinks,
   selectTimeline,
   type TimelineItem,
@@ -148,6 +149,33 @@ describe("selectActiveTurn", () => {
   it("returns undefined once the turn settled", () => {
     const model = build({ threads: [thread("t1", { latestTurnId: "u1" })], turns: [turn("completed")] });
     expect(selectActiveTurn(model, "t1")).toBeUndefined();
+  });
+});
+
+describe("selectQueuedTurns", () => {
+  const t = (id: string, status: Turn["status"], requestedAt: number): Turn => ({
+    id,
+    threadId: "t1",
+    status,
+    requestedAt,
+  });
+
+  it("returns only queued turns of the thread, oldest first", () => {
+    const model = build({
+      threads: [thread("t1"), thread("t2")],
+      turns: [
+        t("u3", "queued", 30),
+        t("u2", "queued", 20),
+        t("u1", "running", 10),
+        { ...t("u9", "queued", 5), threadId: "t2" },
+      ],
+    });
+    expect(selectQueuedTurns(model, "t1").map((x) => x.id)).toEqual(["u2", "u3"]);
+  });
+
+  it("is empty when nothing waits", () => {
+    const model = build({ threads: [thread("t1")], turns: [t("u1", "running", 1)] });
+    expect(selectQueuedTurns(model, "t1")).toEqual([]);
   });
 });
 

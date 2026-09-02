@@ -25,13 +25,23 @@ Rail toggle `⌘B`. Terminal drawer `` ⌘` ``. Palette `⌘K`.
 projects with status glyph, provider, last activity, needs-attention badge; the Inbox at the
 top. This is the landing view. "New thread" from here asks project → provider → worktree?.
 
-"Open in terminal" copies the harness's own resume command to the clipboard (`claude --resume
-<id>` / `codex resume` / `opencode` in the worktree) until it opens a PTY tab directly.
+"Open in terminal" opens a new PTY tab in the terminal drawer, on the thread's worktree (or
+the project root), and types the harness's own resume command into it (`claude --resume <id>` /
+`codex resume` / `opencode`). When no PTY can be created the command is copied instead.
 
 **Thread**: one chronological stream. Messages are plain (user right-aligned muted block,
 assistant as prose). Activities are single lines `▸ Read src/foo.ts` / `▸ Bash pnpm test ✓ 2.1s`,
 expandable; consecutive activities collapse into a group ("read 4 files"). Subagent /
 collab children render as an indented group with a "open as thread" link. Cards:
+The composer sends while the thread is running: the turn is **queued** behind the live one
+(`⌘↵` reads "queue", `Esc` still stops). A queued user message carries a `queued` pill and an
+`×` that drops it. Images can be pasted or dropped into the composer (max 8, ~5 MB each) when
+the harness accepts them; they show as thumbnails before sending and as `🖼 image/png · 120 KB`
+pills on the sent message. Assistant extended thinking renders as a collapsed "Thinking"
+disclosure above the answer. A settled turn gets a subtle footer under its last assistant
+message: duration, tokens in/out, cost, or the error that ended it. Model / mode / interaction
+can be changed mid-turn — they apply from the next turn, and the pill says so.
+
 - Approval: tool, target (path/command), diff preview when it is an edit, `Allow` `Allow for session` `Deny`, keyboard `y/n`.
 - User input (AskUserQuestion / codex user-input): options as buttons or free text.
 - Proposed plan: markdown, `Implement in new thread ▾` (provider · model · worktree checkbox) · `Keep planning`. Never auto-executes.

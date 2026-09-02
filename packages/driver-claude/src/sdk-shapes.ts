@@ -67,6 +67,16 @@ export interface SystemOtherMessage {
   error?: string;
   /** compact_boundary */
   compact_metadata?: { trigger?: string; pre_tokens?: number; post_tokens?: number };
+  /** task_started | task_updated | task_progress (background tasks / subagents) */
+  task_id?: string;
+  description?: string;
+  subagent_type?: string;
+  summary?: string;
+  last_tool_name?: string;
+  /** housekeeping tasks the CLI itself hides from the transcript */
+  ambient?: boolean;
+  skip_transcript?: boolean;
+  patch?: { status?: string; description?: string; error?: string };
 }
 
 export interface AssistantMessage {

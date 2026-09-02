@@ -1,4 +1,11 @@
-import type { ApprovalDecision, InteractionMode, LinkAccess, ProviderKind, RuntimeMode } from "@tide/contracts";
+import type {
+  ApprovalDecision,
+  ImageInput,
+  InteractionMode,
+  LinkAccess,
+  ProviderKind,
+  RuntimeMode,
+} from "@tide/contracts";
 import { call, dispatch, type DispatchResult } from "../state/model.ts";
 import { dispatchOrToast } from "./dispatchOrToast.ts";
 import { showToast } from "../state/toast.ts";
@@ -93,8 +100,22 @@ export async function createThread(
   selectCreatedThread(result);
 }
 
-export async function sendTurn(threadId: string, text: string): Promise<void> {
-  await dispatch({ type: "turn.request", threadId, text });
+/**
+ * Sends a prompt. The server queues it when the thread is already running, so
+ * this is also how a follow-up is stacked behind the live turn.
+ */
+export async function sendTurn(threadId: string, text: string, images?: ImageInput[]): Promise<void> {
+  await dispatch({
+    type: "turn.request",
+    threadId,
+    text,
+    ...(images === undefined || images.length === 0 ? {} : { images }),
+  });
+}
+
+/** Drops a turn that is still waiting in the queue; its message disappears. */
+export function dequeueTurn(turnId: string): void {
+  dispatchOrToast("Removing the queued turn", { type: "turn.dequeue", turnId });
 }
 
 export function interruptTurn(threadId: string): void {

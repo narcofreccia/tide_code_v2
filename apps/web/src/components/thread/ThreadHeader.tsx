@@ -1,12 +1,8 @@
 import { useEffect, useState } from "react";
 import type { Thread } from "@tide/contracts";
 import { useLatestTurnStatus } from "../../state/hooks.ts";
-import {
-  copyTerminalCommand,
-  createThread,
-  fetchTerminalCommand,
-  requestArchive,
-} from "../../lib/threadActions.ts";
+import { createThread, fetchTerminalCommand, requestArchive } from "../../lib/threadActions.ts";
+import { runInThreadTerminal } from "../../lib/openInTerminal.ts";
 import { useUi } from "../../state/ui.ts";
 import { DelegatedBy, DelegatesPopover } from "./Delegates.tsx";
 import { Button } from "../ui/Button.tsx";
@@ -68,7 +64,7 @@ export function ThreadHeader({ thread }: { thread: Thread }) {
           disabled={command === undefined}
           title={command ?? NO_COMMAND}
           onClick={() => {
-            if (command) void copyTerminalCommand(command);
+            if (command) void runInThreadTerminal(thread.id, command);
           }}
         >
           Open in terminal

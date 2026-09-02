@@ -13,7 +13,28 @@ import type {
 } from "./sdk-shapes.ts";
 
 const MAX_OUTPUT_CHARS = 4096;
+const MAX_PAYLOAD_CHARS = 4096;
 const SUBAGENT_TOOLS = new Set(["Task", "Agent"]);
+
+/**
+ * The only frames dropped without a trace (CLAUDE.md §1a: unknown events are passed
+ * through, not swallowed). Everything here is content-free housekeeping the CLI emits
+ * per request; anything else that is not modelled becomes a generic `info` activity
+ * carrying the raw frame.
+ */
+const TASK_STATUS: Record<string, "running" | "done" | "error"> = {
+  pending: "running",
+  running: "running",
+  paused: "running",
+  completed: "done",
+  failed: "error",
+  killed: "error",
+};
+
+const SILENT_SYSTEM_SUBTYPES = new Set([
+  "status", // per-request spinner state (requesting/…)
+  "thinking_tokens", // live thinking-token estimate for a progress pill
+]);
 
 export interface NormalizerOptions {
   /** true when the session runs with `includePartialMessages` (assistant text arrives as deltas) */
@@ -31,6 +52,17 @@ interface TrackedTool {
 
 export function truncate(text: string, max = MAX_OUTPUT_CHARS): string {
   return text.length <= max ? text : `${text.slice(0, max)}\n… [truncated ${text.length - max} chars]`;
+}
+
+/** Raw harness frame for a pass-through info activity; large frames degrade to truncated JSON. */
+export function rawPayload(value: unknown): unknown {
+  let json: string;
+  try {
+    json = JSON.stringify(value) ?? "";
+  } catch {
+    return String(value);
+  }
+  return json.length <= MAX_PAYLOAD_CHARS ? value : truncate(json, MAX_PAYLOAD_CHARS);
 }
 
 function toolResultText(block: ToolResultBlock): string {
@@ -68,6 +100,7 @@ export class ClaudeNormalizer {
   #opts: NormalizerOptions;
   #streamMessageId: string | undefined;
   #tools = new Map<string, TrackedTool>();
+  #tasks = new Map<string, { name: string; childKey: string; description?: string }>();
   #interrupted = false;
   unknownCount = 0;
 
@@ -95,14 +128,18 @@ export class ClaudeNormalizer {
       case "rate_limit_event":
         return this.#rateLimit(message as { rate_limit_info?: { status?: string; rateLimitType?: string; utilization?: number } });
       default:
-        return this.#unknown(message.type, (message as { subtype?: string }).subtype);
+        return this.#unknown(message, message.type, (message as { subtype?: string }).subtype);
     }
   }
 
-  #unknown(type: string, subtype?: string): NormalizedEvent[] {
+  /**
+   * Pass-through for anything Tide does not model: the row still appears, generically,
+   * carrying the raw frame (CLAUDE.md §1a "pass through, don't translate").
+   */
+  #unknown(raw: unknown, type: string, subtype?: string): NormalizedEvent[] {
     this.unknownCount++;
     this.#opts.onUnknown?.(type, subtype);
-    return [];
+    return [{ type: "activity", activity: { kind: "info", text: `claude: ${type}${subtype ? `/${subtype}` : ""}`, payload: rawPayload(raw) } }];
   }
 
   #info(text: string): NormalizedEvent[] {
@@ -126,13 +163,62 @@ export class ClaudeNormalizer {
       const trigger = other.compact_metadata?.trigger ?? "auto";
       return this.#info(`Context compacted (${trigger})`);
     }
-    return this.#unknown("system", other.subtype);
+    if (other.subtype === "task_started" || other.subtype === "task_updated" || other.subtype === "task_progress") {
+      return this.#task(other);
+    }
+    if (SILENT_SYSTEM_SUBTYPES.has(other.subtype)) return [];
+    return this.#unknown(other, "system", other.subtype);
+  }
+
+  /**
+   * Background tasks / subagents (`SDKTaskStarted|Updated|Progress`). A task with an id
+   * becomes a child activity; it is keyed by `tool_use_id` when the CLI gives one, so a
+   * foreground `Task` tool call and its task frames land on the *same* child row.
+   * `ambient`/`skip_transcript` tasks are the CLI's own housekeeping and stay hidden.
+   */
+  #task(message: SystemOtherMessage): NormalizedEvent[] {
+    if (message.ambient === true || message.skip_transcript === true) return [];
+    const taskId = message.task_id;
+    if (taskId === undefined) return this.#unknown(message, "system", message.subtype);
+
+    if (message.subtype === "task_started") {
+      const childKey = message.tool_use_id ?? taskId;
+      const name = message.description ?? message.subagent_type ?? "Background task";
+      const entry = { name, childKey, ...(message.subagent_type ? { description: message.subagent_type } : {}) };
+      this.#tasks.set(taskId, entry);
+      return [{ type: "activity", activity: { kind: "child", childKey, name, status: "running", ...(entry.description ? { description: entry.description } : {}) } }];
+    }
+
+    const tracked = this.#tasks.get(taskId);
+    // later frames carry no tool_use_id: the child row is the one task_started opened
+    const childKey = tracked?.childKey ?? message.tool_use_id ?? taskId;
+    const name = message.patch?.description ?? message.description ?? tracked?.name ?? "Background task";
+    if (message.subtype === "task_progress") {
+      const summary = message.summary ?? (message.last_tool_name ? `Running ${message.last_tool_name}` : undefined);
+      return [
+        {
+          type: "activity",
+          activity: { kind: "child", childKey, name, status: "running", ...(tracked?.description ? { description: tracked.description } : {}), ...(summary ? { summary: truncate(summary, 1000) } : {}) },
+        },
+      ];
+    }
+    const status = TASK_STATUS[message.patch?.status ?? "running"] ?? "running";
+    if (status !== "running") this.#tasks.delete(taskId);
+    const summary = message.patch?.error;
+    return [
+      {
+        type: "activity",
+        activity: { kind: "child", childKey, name, status, ...(tracked?.description ? { description: tracked.description } : {}), ...(summary ? { summary: truncate(summary, 1000) } : {}) },
+      },
+    ];
   }
 
   #rateLimit(message: { rate_limit_info?: { status?: string; rateLimitType?: string; utilization?: number } }): NormalizedEvent[] {
     const info = message.rate_limit_info;
     // The CLI emits one of these per request; only the non-nominal ones are worth a row.
-    if (!info || info.status === "allowed" || info.status === undefined) return this.#unknown("rate_limit_event");
+    // A nominal (`allowed`) rate-limit frame is per-request housekeeping — the one message
+    // type dropped outright rather than passed through.
+    if (!info || info.status === "allowed" || info.status === undefined) return [];
     const pct = typeof info.utilization === "number" ? ` (${Math.round(info.utilization)}% used)` : "";
     return this.#info(`Rate limit ${info.status}${info.rateLimitType ? ` on ${info.rateLimitType}` : ""}${pct}`);
   }
@@ -147,10 +233,16 @@ export class ClaudeNormalizer {
       return [];
     }
     if (event.type !== "content_block_delta") return [];
-    const delta = (event as { index: number; delta: { type: string; text?: string } }).delta;
-    // Thinking deltas are intentionally dropped for now (no reasoning surface yet).
+    const delta = (event as { index: number; delta: { type: string; text?: string; thinking?: string } }).delta;
+    // The key is the *message* id, not the block index: reasoning and the text that follows
+    // it are different content blocks of one message and must merge into one bubble.
+    const key = this.#streamMessageId ?? message.uuid ?? "msg";
+    if (delta.type === "thinking_delta") {
+      const thinking = delta.thinking;
+      if (typeof thinking !== "string" || thinking === "") return [];
+      return [{ type: "assistant.reasoning", messageKey: key, delta: thinking }];
+    }
     if (delta.type !== "text_delta" || typeof delta.text !== "string" || delta.text === "") return [];
-    const key = `${this.#streamMessageId ?? message.uuid ?? "msg"}-${(event as { index: number }).index}`;
     return [{ type: "assistant.delta", messageKey: key, delta: delta.text }];
   }
 
@@ -158,13 +250,21 @@ export class ClaudeNormalizer {
     const events: NormalizedEvent[] = [];
     const blocks = message.message.content ?? [];
     const parent = message.parent_tool_use_id;
-    blocks.forEach((block: ContentBlock, index: number) => {
+    const messageKey = message.message.id ?? message.uuid ?? "msg";
+    blocks.forEach((block: ContentBlock) => {
       if (block.type === "text") {
         // Fallback path: without includePartialMessages the whole text lands here at once.
         if (this.#opts.partialMessages || parent !== null) return;
         const text = (block as { text?: string }).text;
         if (typeof text !== "string" || text === "") return;
-        events.push({ type: "assistant.delta", messageKey: `${message.message.id ?? message.uuid ?? "msg"}-${index}`, delta: text });
+        events.push({ type: "assistant.delta", messageKey, delta: text });
+        return;
+      }
+      if (block.type === "thinking") {
+        if (this.#opts.partialMessages || parent !== null) return;
+        const thinking = (block as { thinking?: string }).thinking;
+        if (typeof thinking !== "string" || thinking === "") return;
+        events.push({ type: "assistant.reasoning", messageKey, delta: thinking });
         return;
       }
       if (block.type !== "tool_use") return;

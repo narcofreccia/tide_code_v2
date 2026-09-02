@@ -1,6 +1,6 @@
 import type { ProviderStatusDto } from "@tide/contracts";
 import { copyTerminalCommand } from "./threadActions.ts";
-import { createPty, setDrawerOpen, writePty } from "../state/terminals.ts";
+import { runInThreadTerminal } from "./openInTerminal.ts";
 import { useUi } from "../state/ui.ts";
 
 /** Legacy shape: some drivers only backtick the command in the hint ("Run `claude /login`"). */
@@ -23,8 +23,5 @@ export function resolveLoginCommand(status: ProviderStatusDto | undefined): stri
 export async function runOrCopy(command: string): Promise<void> {
   const threadId = useUi.getState().selectedThreadId;
   if (!threadId) return copyTerminalCommand(command);
-  const ptyId = await createPty(threadId, 80, 24);
-  if (!ptyId) return copyTerminalCommand(command);
-  setDrawerOpen(true);
-  writePty(ptyId, `${command}\n`);
+  return runInThreadTerminal(threadId, command);
 }

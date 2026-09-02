@@ -31,6 +31,7 @@ export interface SdkModelInfo {
 export interface QueryLike extends AsyncIterable<ClaudeMessage> {
   interrupt?: () => Promise<void>;
   setPermissionMode?: (mode: string) => Promise<void>;
+  setModel?: (model?: string) => Promise<void>;
   supportedModels?: () => Promise<SdkModelInfo[]>;
   getContextUsage?: () => Promise<ContextUsageReport>;
 }

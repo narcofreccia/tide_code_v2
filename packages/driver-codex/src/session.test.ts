@@ -9,12 +9,17 @@ import type { CodexConfig, SpawnFn, TimerLike } from "./types.ts";
 const THREAD = "thread-1";
 const TURN = "turn-1";
 
-async function harness(overrides: Partial<OpenSessionOptions> = {}, config: Partial<CodexConfig> = {}): Promise<{ session: CodexSession; server: FakeAppServer; logs: string[] }> {
+async function harness(
+  overrides: Partial<OpenSessionOptions> = {},
+  config: Partial<CodexConfig> = {},
+  configure?: (server: FakeAppServer) => void,
+): Promise<{ session: CodexSession; server: FakeAppServer; logs: string[] }> {
   const logs: string[] = [];
   const env: DriverEnv = { dataDir: tmpdir(), log: (message) => logs.push(message) };
-  const { spawn, last } = fakeSpawn();
+  const { spawn, last } = fakeSpawn(configure);
   const options: OpenSessionOptions = { threadId: "t1", cwd: "/tmp/repo", mode: "approval-required", interaction: "default", mcpServers: [], ...overrides };
-  const session = await CodexSession.open({ spawnImpl: spawn, ...config }, env, options, "/usr/bin/codex");
+  // `networkAccess` pinned so the tests never read the developer's own ~/.codex/config.toml
+  const session = await CodexSession.open({ spawnImpl: spawn, networkAccess: false, ...config }, env, options, "/usr/bin/codex");
   return { session, server: last(), logs };
 }
 
@@ -98,7 +103,7 @@ describe("codex session", () => {
     completeTurn(server);
     await done;
     expect(events).toEqual([
-      { type: "assistant.delta", messageKey: "m1", delta: "codex-ok" },
+      { type: "assistant.delta", messageKey: "turn#0", delta: "codex-ok" },
       { type: "settled", status: "completed" },
     ]);
     // the stream ended, so a follow-up turn is allowed again
@@ -304,6 +309,47 @@ describe("codex session", () => {
       { type: "image", url: "data:image/png;base64,AAAB" },
       { type: "text", text: "what is this?", text_elements: [] },
     ]);
+    completeTurn(server);
+    await done;
+    await session.close();
+  });
+
+  it("sends the plan collaboration mode even when no model is pinned", async () => {
+    // Regression: `collaborationMode` used to be gated on a non-empty model, so a thread on
+    // the default model silently lost plan mode.
+    const { session, server } = await harness({ interaction: "plan" }, {}, (fake) => {
+      fake.model = "";
+    });
+    const { done } = collect(session.send({ text: "plan it" }));
+    await tick();
+    const params = server.calls("turn/start")[0]!;
+    expect(params).not.toHaveProperty("model");
+    expect(params["collaborationMode"]).toMatchObject({ mode: "plan" });
+    completeTurn(server);
+    await done;
+    await session.close();
+  });
+
+  it("carries the user's sandbox network_access into the workspace-write policy", async () => {
+    const { session, server } = await harness({}, { networkAccess: true });
+    const { done } = collect(session.send({ text: "hi" }));
+    await tick();
+    expect(server.calls("turn/start")[0]?.["sandboxPolicy"]).toMatchObject({ type: "workspaceWrite", networkAccess: true });
+    completeTurn(server);
+    await done;
+    await session.close();
+  });
+
+  it("reconfigures in place: model, mode and plan mode all ride on the next turn/start", async () => {
+    const { session, server } = await harness();
+    expect(await session.reconfigure({ mode: "full-access", interaction: "plan", model: "gpt-5.6-codex" })).toBe("applied");
+    const { done } = collect(session.send({ text: "hi" }));
+    await tick();
+    const params = server.calls("turn/start")[0]!;
+    expect(params["model"]).toBe("gpt-5.6-codex");
+    expect(params["approvalPolicy"]).toBe("never");
+    expect(params["sandboxPolicy"]).toEqual({ type: "dangerFullAccess" });
+    expect(params["collaborationMode"]).toMatchObject({ mode: "plan", settings: { model: "gpt-5.6-codex" } });
     completeTurn(server);
     await done;
     await session.close();

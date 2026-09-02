@@ -125,10 +125,11 @@ export class FakeAppServer implements ChildLike {
 }
 
 /** A `spawnImpl` that hands out (and records) `FakeAppServer`s. */
-export function fakeSpawn(): { spawn: SpawnFn; servers: FakeAppServer[]; last: () => FakeAppServer } {
+export function fakeSpawn(configure?: (server: FakeAppServer) => void): { spawn: SpawnFn; servers: FakeAppServer[]; last: () => FakeAppServer } {
   const servers: FakeAppServer[] = [];
   const spawn: SpawnFn = (_command, args, options) => {
     const server = new FakeAppServer();
+    configure?.(server);
     server.args.push(...args);
     server.env = options.env;
     servers.push(server);

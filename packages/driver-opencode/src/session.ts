@@ -1,4 +1,13 @@
-import type { ApprovalDecision, DriverEnv, NormalizedEvent, OpenSessionOptions, ProviderSession, TurnInput } from "@tide/contracts";
+import type {
+  ApprovalDecision,
+  DriverEnv,
+  NormalizedEvent,
+  OpenSessionOptions,
+  ProviderSession,
+  ReconfigureResult,
+  SessionSettings,
+  TurnInput,
+} from "@tide/contracts";
 import { AsyncQueue } from "./async-queue.ts";
 import { OpencodeNormalizer } from "./normalize.ts";
 import { replyFor } from "./permissions.ts";
@@ -172,6 +181,19 @@ export class OpencodeSession implements ProviderSession {
     });
     this.#questions.delete(requestId);
     await this.#deps.api.respondQuestion({ directory: this.#directory, requestId, answers: payload });
+  }
+
+  /**
+   * Nothing a `SessionSettings` change touches can be applied in place. Verified against
+   * opencode 1.1.36: the permission ruleset is only accepted by `Session.create`
+   * (`{parentID, title, permission}`), `PATCH /session/:id` validates `{title?, time?}`
+   * only, and `SessionPrompt.PromptInput` carries no ruleset — so a mode change cannot
+   * reach a live session. The agent (`plan` vs `build`) is likewise fixed by
+   * `OpencodeInstance.openSession`. Answering `reopen` makes the server close this session
+   * and open a new one with `resume`, which is the only way the new settings take effect.
+   */
+  async reconfigure(_settings: SessionSettings): Promise<ReconfigureResult> {
+    return "reopen";
   }
 
   async interrupt(): Promise<void> {

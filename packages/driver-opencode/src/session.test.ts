@@ -174,6 +174,15 @@ describe("OpencodeSession", () => {
     await session.close();
   });
 
+  it("answers `reopen` to every reconfigure — opencode fixes the ruleset at session.create", async () => {
+    const { session } = harness();
+    // `PATCH /session/:id` validates `{title?, time?}` only and `PromptInput` carries no
+    // ruleset (opencode 1.1.36), so nothing about mode/interaction can be applied in place.
+    await expect(session.reconfigure({ mode: "auto", interaction: "default" })).resolves.toBe("reopen");
+    await expect(session.reconfigure({ mode: "approval-required", interaction: "plan", model: "opencode/small" })).resolves.toBe("reopen");
+    await session.close();
+  });
+
   it("disconnects only its own MCP registrations on close", async () => {
     const { session, api } = harness({}, { mcpNames: ["tide-t1"] });
     await session.close();

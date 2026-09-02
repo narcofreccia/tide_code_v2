@@ -6,7 +6,7 @@ import { OpencodeSession } from "./session.ts";
 import { shellQuote } from "./shell.ts";
 import { buildStatus } from "./status.ts";
 import type { ModelRef, OpencodeApi, OpencodeConfig } from "./types.ts";
-import type { WireProvider } from "./wire.ts";
+import type { WirePermissionConfig, WireProvider } from "./wire.ts";
 
 const STATUS_TTL_MS = 60_000;
 const CATALOG_TTL_MS = 60_000;
@@ -97,6 +97,21 @@ export class OpencodeInstance implements ProviderInstance {
     return { model, ...(typeof window === "number" && window > 0 ? { contextWindow: window } : {}) };
   }
 
+  /**
+   * The user's own `permission` block, read best-effort. A server too old to serve
+   * `GET /config`, an unparseable config or any transport failure must never stop a thread
+   * from opening — the session then gets Tide's mode rules alone, exactly as before.
+   */
+  async #userPermission(directory: string): Promise<WirePermissionConfig | undefined> {
+    try {
+      const config = await (await this.api()).config({ directory });
+      return config.permission;
+    } catch (error) {
+      this.#env.log(`[opencode] could not read the user's config permissions: ${error instanceof Error ? error.message : String(error)}`);
+      return undefined;
+    }
+  }
+
   async openSession(options: OpenSessionOptions): Promise<ProviderSession> {
     const api = await this.api();
     const agent = options.interaction === "plan" ? "plan" : "build";
@@ -107,13 +122,17 @@ export class OpencodeInstance implements ProviderInstance {
       const created = await api.createSession({
         directory: options.cwd,
         title: `Tide ${options.threadId}`,
-        permission: sessionRuleset(options.mode, options.interaction, options.cwd, options.linkedDirs ?? []),
+        permission: sessionRuleset(options.mode, options.interaction, options.cwd, options.linkedDirs ?? [], await this.#userPermission(options.cwd)),
       });
       sessionId = created.id;
     } else {
-      // opencode stores the permission ruleset on the session at creation and `PATCH /session`
-      // only takes a title, so a resumed session keeps the mode it was opened with.
-      this.#env.log(`[opencode] resuming ${sessionId}; its original permission ruleset still applies`);
+      // opencode stores the permission ruleset on the session record at creation: `PATCH
+      // /session/:id` validates `{title?, time?}` only and the prompt body carries no
+      // ruleset, so a resumed session keeps the rules it was *created* with — a mode change
+      // on a resumed thread does not reach opencode. `OpencodeSession.reconfigure` therefore
+      // answers `reopen`, and the agent (`plan`/`build`) below is the part that does follow
+      // the thread's current interaction mode.
+      this.#env.log(`[opencode] resuming ${sessionId} as agent ${agent}; opencode keeps the permission ruleset this session was created with (mode ${options.mode} is not re-applied)`);
     }
 
     // MCP registrations are keyed by name on the shared per-directory server, and `POST /mcp`

@@ -6,6 +6,7 @@ import type {
   WireMessageError,
   WirePart,
   WirePermission,
+  WireReasoningPart,
   WireQuestionRequest,
   WireTextPart,
   WireTodo,
@@ -15,6 +16,35 @@ import type {
 
 const MAX_OUTPUT_CHARS = 4096;
 const SUBAGENT_TOOLS = new Set(["task", "subtask", "agent"]);
+
+/**
+ * The only events dropped without a trace. Each is either pure housekeeping or a duplicate
+ * of something Tide already renders — the same test the other drivers apply to their own
+ * noise. Everything else, including event types this driver has never seen, is surfaced as
+ * a generic `info` row carrying the raw event (CLAUDE.md §1a "pass through, don't translate,
+ * when unsure"), so a new opencode release never goes silent.
+ */
+export const SILENT_EVENTS = new Set([
+  "server.heartbeat", // liveness ping, no content
+  "file.watcher.updated", // the workbench watches the worktree itself
+  "session.updated", // session metadata (title, timestamps) the read model already holds
+  "permission.replied", // the approval card already shows the decision (cf. Codex `serverRequest/resolved`)
+  "question.replied", // ditto for the user-input card
+  "question.rejected", // ditto
+  "file.edited", // one per file write; the write tool activity and the checkpoint diff carry it (cf. Codex `turn/diff/updated`)
+  "session.diff", // Tide computes diffs from git, not from the harness
+  "server.connected", // the SSE subscription is re-established every turn, so this is one row per turn
+]);
+
+/**
+ * Event types the driver knows about but deliberately does not map to a first-class row.
+ * They still reach the user as pass-through `info` rows — they just are not "unknown", so
+ * they do not count towards `unknownCount` or trip the unknown-event log.
+ * `message.removed` / `message.part.removed` are real content changes and stay visible.
+ */
+const KNOWN_UNTRANSLATED = new Set(["message.removed", "message.part.removed", ...SILENT_EVENTS]);
+
+const MAX_PAYLOAD_CHARS = 4096;
 
 export interface NormalizerOptions {
   /** only events carrying this session id are translated */
@@ -36,6 +66,22 @@ interface TrackedTool {
 
 export function truncate(text: string, max = MAX_OUTPUT_CHARS): string {
   return text.length <= max ? text : `${text.slice(0, max)}\n… [truncated ${text.length - max} chars]`;
+}
+
+/**
+ * The raw event carried on a pass-through row. Small events go through as-is (the UI can
+ * render them); anything bigger than ~4 KB of JSON is replaced by its truncated JSON text
+ * so one huge event cannot bloat the event log.
+ */
+export function passthroughPayload(event: OpencodeEvent): unknown {
+  let json: string;
+  try {
+    json = JSON.stringify(event) ?? "";
+  } catch {
+    return { type: event.type };
+  }
+  if (json.length <= MAX_PAYLOAD_CHARS) return event;
+  return `${json.slice(0, MAX_PAYLOAD_CHARS)}… [truncated ${json.length - MAX_PAYLOAD_CHARS} chars]`;
 }
 
 function errorText(error: WireMessageError | undefined): string | undefined {
@@ -84,6 +130,14 @@ export class OpencodeNormalizer {
   #toolByCall = new Map<string, TrackedTool>();
   /** messageID -> partID -> full text so far (assistant text, for plan markdown) */
   #messageParts = new Map<string, Map<string, string>>();
+  /** partID -> reasoning text so far, kept out of `#messageParts` so plans stay text-only */
+  #reasoningParts = new Map<string, string>();
+  /**
+   * messageID -> the `messageKey` every streamed part of that message uses. opencode emits
+   * reasoning and text as separate parts with separate ids; Tide wants them in one message,
+   * so the first streamed part of a message fixes the key and the rest reuse it.
+   */
+  #messageKeys = new Map<string, string>();
   #completed = new Set<string>();
   /** messageID -> role, so a user message's own text parts never stream back as assistant text */
   #roles = new Map<string, string>();
@@ -93,6 +147,7 @@ export class OpencodeNormalizer {
   #interrupted = false;
   #retryAttempt = 0;
   #settled = false;
+  /** event types with no mapping at all in this driver — surfaced generically, never dropped */
   unknownCount = 0;
 
   constructor(options: NormalizerOptions) {
@@ -127,23 +182,23 @@ export class OpencodeNormalizer {
         return this.#sessionError(event.properties as { sessionID?: string; error?: WireMessageError });
       case "session.idle":
         return this.#owned(event.properties) ? this.#settle() : [];
-      case "permission.replied":
-      case "question.replied":
-      case "question.rejected":
-      case "session.updated":
-      case "session.diff":
-      case "message.removed":
-      case "message.part.removed":
-      case "file.edited":
-      case "file.watcher.updated":
-      case "server.connected":
-      case "server.heartbeat":
-        return [];
       default:
-        this.unknownCount++;
-        this.#opts.onUnknown?.(event.type);
-        return [];
+        // Everything the driver does not translate is still shown, unless it is on the
+        // housekeeping allowlist. Unknown types additionally bump `unknownCount`.
+        if (!KNOWN_UNTRANSLATED.has(event.type)) {
+          this.unknownCount++;
+          this.#opts.onUnknown?.(event.type);
+        }
+        return this.#passthrough(event);
     }
+  }
+
+  /** Generic `info` row for an event this driver has no specific mapping for. */
+  #passthrough(event: OpencodeEvent): NormalizedEvent[] {
+    if (SILENT_EVENTS.has(event.type)) return [];
+    // an event without properties belongs to no session — it is about the server itself
+    if (event.properties !== undefined && !this.#owned(event.properties)) return [];
+    return [{ type: "activity", activity: { kind: "info", text: `opencode: ${event.type}`, payload: passthroughPayload(event) } }];
   }
 
   #owned(properties: unknown): boolean {
@@ -177,6 +232,7 @@ export class OpencodeNormalizer {
   #partUpdated(part: WirePart, delta: string | undefined): NormalizedEvent[] {
     if (part.sessionID !== this.#opts.sessionId) return [];
     if (part.type === "text") return this.#textPart(part as WireTextPart, delta);
+    if (part.type === "reasoning") return this.#reasoningPart(part as WireReasoningPart, delta);
     if (part.type === "tool") return this.#toolPart(part as WireToolPart);
     if (part.type === "subtask") {
       const subtask = part as { id: string; agent: string; description: string };
@@ -199,7 +255,29 @@ export class OpencodeNormalizer {
     parts.set(part.id, part.text);
     this.#messageParts.set(part.messageID, parts);
     if (increment === "") return [];
-    return [{ type: "assistant.delta", messageKey: part.id, delta: increment }];
+    return [{ type: "assistant.delta", messageKey: this.#messageKey(part.messageID, part.id), delta: increment }];
+  }
+
+  /**
+   * Extended thinking. It is emitted on the *same* `messageKey` as the message's text, so
+   * the reasoning and the answer that follows it land in one assistant message.
+   */
+  #reasoningPart(part: WireReasoningPart, delta: string | undefined): NormalizedEvent[] {
+    if (this.#roles.get(part.messageID) === "user") return [];
+    const text = part.text ?? "";
+    const previous = this.#reasoningParts.get(part.id) ?? "";
+    const increment = delta ?? (text.startsWith(previous) ? text.slice(previous.length) : text);
+    this.#reasoningParts.set(part.id, text);
+    if (increment === "") return [];
+    return [{ type: "assistant.reasoning", messageKey: this.#messageKey(part.messageID, part.id), delta: increment }];
+  }
+
+  /** The first streamed part of a message names it; later parts of that message reuse the name. */
+  #messageKey(messageId: string, partId: string): string {
+    const existing = this.#messageKeys.get(messageId);
+    if (existing !== undefined) return existing;
+    this.#messageKeys.set(messageId, partId);
+    return partId;
   }
 
   #textOf(messageId: string): string {

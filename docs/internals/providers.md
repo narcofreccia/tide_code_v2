@@ -15,6 +15,59 @@ runs the user's installed CLI/SDK and their subscription.
 `InteractionMode.plan` → Claude `permissionMode: "plan"`; Codex `collaborationMode`/plan;
 OpenCode `plan` agent; Pi = system-prompt + `tide_propose_plan` tool.
 
+### Reconfigure between turns
+
+When a thread's model, runtime mode or interaction changes, the server calls
+`ProviderSession.reconfigure(settings)` before the next turn. `applied` means the harness
+switched in place; `reopen` means the server closes the session and opens a new one with
+`resume` (lossless — the harness's own session id carries the transcript).
+
+| | result | why |
+|---|---|---|
+| Claude | `applied` | the Query control plane switches live: `setPermissionMode(mode)` + `setModel(model)`. Before the first turn there is no Query yet, so the new values just go into the next `query()` options. A control request the installed CLI rejects (missing method, or it throws) degrades to `reopen`. |
+| Codex | `applied` | `turn/start` carries `model`, `approvalPolicy`, `sandboxPolicy` and `collaborationMode` **per turn**; the session stores the new settings and the next turn sends them. |
+| OpenCode | `reopen` | the permission ruleset and the agent (`plan` vs `build`) are fixed at `session.create`, and `PATCH /session` only takes a title. **Caveat:** a reopen that resumes the same native session still runs the creation-time ruleset, so a mode change only really lands on a brand-new opencode session — see the OpenCode section. |
+| Pi | `reopen` | mode and interaction reach tide-bridge through the process environment (`TIDE_RUNTIME_MODE`/`TIDE_INTERACTION`) at spawn, and the model through argv. |
+
+### Reasoning
+
+Extended thinking is surfaced as `assistant.reasoning` and **shares its `messageKey` with the
+text that follows**, so the thinking and the answer render as one message.
+
+| | source | message key |
+|---|---|---|
+| Claude | `content_block_delta` / `thinking_delta` (and whole `thinking` blocks when partial messages are off) | the *message* id (`message_start.message.id`), never the block index — thinking and text are different blocks of one message |
+| Codex | `item/reasoning/textDelta` + `summaryTextDelta` | `<turnId>#<slot>`: reasoning is written to the turn's open message slot, the next `agentMessage` claims that slot, and a completed message opens the next one. Codex reasoning and the message it precedes are separate *items*, so the item id cannot be the key; the slot keeps two agent messages of one turn apart while still merging each with its own reasoning. |
+| OpenCode | `reasoning` parts of the assistant message | the id of the **first streamed reasoning-or-text part** of that message; every later part of the same `messageID` reuses it (reasoning normally arrives first, so the text merges onto it) |
+| Pi | `thinking_delta` deltas | the per-message key (`pi-<n>`, bumped on `message_start`), with the `contentIndex` dropped so thinking and text merge |
+
+### Unknown events pass through
+
+Per CLAUDE.md §1a a harness event Tide does not model is **rendered generically, not
+dropped**: it becomes an `info` activity `"<provider>: <event type>"` carrying the raw frame
+in `InfoActivity.payload` (JSON-truncated at ~4 KB). Each driver keeps a short, explicit
+allowlist of frames that are dropped silently, because they are content-free housekeeping or
+pure duplication of something Tide already renders:
+
+- **Claude** — `system/status`, `system/thinking_tokens`, and a nominal (`status: "allowed"`)
+  `rate_limit_event`. `SDKTaskStarted/Updated/Progress` are modelled as child-activity
+  progress keyed by the spawning `tool_use_id` (so a foreground `Task` and its task frames
+  land on one row); the CLI's own `ambient` / `skip_transcript` tasks stay hidden.
+- **Codex** — `thread/status/changed`, `thread/settings/updated`, `serverRequest/resolved`,
+  `turn/diff/updated`, `remoteControl/status/changed` (`CODEX_SILENT_NOTIFICATIONS`).
+- **OpenCode** (`SILENT_EVENTS`) — `server.heartbeat`, `file.watcher.updated`,
+  `session.updated`, `permission.replied`, `question.replied`, `question.rejected`,
+  `file.edited`, `session.diff`, `server.connected`. The last six duplicate rows Tide
+  already draws (the approval/user-input cards, the write tool activity, the git-computed
+  checkpoint diff) or would fire once per turn. `message.removed` / `message.part.removed`
+  are real content changes and still pass through.
+- **Pi** — `agent_start`, `agent_end`, `queue_update`, `tool_execution_update`,
+  `bash_execution_update` (`PI_SILENT_EVENTS`); the last two are per-output-chunk streaming
+  frames whose content arrives whole on `tool_execution_end`.
+
+`unknownCount` now counts every frame that took the pass-through path (known-but-unmodelled
+as well as genuinely new), not only unrecognised types.
+
 **Login.** Each driver reports `ProviderStatus.loginCommand` — the exact shell command the UI
 offers to run — whenever the CLI is installed but signed out; the install case fills `hint`
 only. Claude `claude auth login`, Codex `codex login`, OpenCode `opencode auth login`, Pi `pi`
@@ -43,6 +96,8 @@ on close.
 - Start `codex app-server` (stdio JSON-RPC 2.0, newline-delimited). Handshake: `initialize {clientInfo}` → response → `initialized` notification.
 - `thread/start {model, cwd, approvalPolicy, sandbox: "read-only"|"workspace-write"|"danger-full-access"}` → `thread/started`; `thread/resume {threadId}`; `turn/start {threadId, input:[{type:"text",text}], cwd, model, effort?, approvalPolicy, sandboxPolicy:{type:"workspaceWrite",writableRoots,…}, collaborationMode?}`; `turn/interrupt {threadId, turnId}`.
 - **`approvalPolicy` values:** `"untrusted" | "on-request" | {granular:…} | "never"` — there is **no** on-failure policy. Tide mapping: approval-required → `untrusted`+workspace-write; auto-accept-edits → `on-request`+workspace-write; auto → `never`+workspace-write; full-access → `never`+`dangerFullAccess`.
+- **`collaborationMode` is sent on every `turn/start`**, pinned model or not. Gating it on a pinned model silently dropped plan mode for every thread running the default model; `settings.model` carries the thread's *resolved* model (the one `thread/start` reported), which is what Codex would have used anyway.
+- **Sandbox network access is the user's, not Tide's.** `sandboxPolicy.networkAccess` comes from `[sandbox_workspace_write] network_access` in `$CODEX_HOME/config.toml` (default `~/.codex`), read once per session by `config-toml.ts` — a one-key TOML lookup, no dependency. Absent file or absent key ⇒ `false`, which is Codex's own default for a `workspace-write` sandbox. Hardcoding `false` used to take network away from a user whose Codex config grants it (CLAUDE.md §1a).
 - **Plan mode:** `turn/start.collaborationMode = {mode:"plan"|"default", settings:{model, reasoning_effort, developer_instructions:null}}` (absent from the ts-rs bindings but parsed strictly by the server; `null` instructions = Codex's native plan prompt). Streaming plan text = `item/plan/delta` → ProposedPlan. Plan/todo progress = `turn/plan/updated` (steps `pending|inProgress|completed`).
 - Notifications: `turn/started`, `item/started`, `item/agentMessage/delta`, `item/commandExecution/outputDelta`, `item/fileChange/outputDelta|patchUpdated`, `item/reasoning/*Delta`, `item/mcpToolCall/progress`, `item/completed` (authoritative), `turn/completed {status: completed|interrupted|failed}`, `thread/tokenUsage/updated {total, last, modelContextWindow}` (`last` = turn usage; `total`+window = context gauge), `model/rerouted`, `thread/settings/updated`.
 - Server→client requests (must be answered or the turn hangs): `item/commandExecution/requestApproval`, `item/fileChange/requestApproval` → `accept|acceptForSession|decline|cancel` (no persistent grant; `acceptAlways` ⇒ `acceptForSession`); `item/permissions/requestApproval` → `{permissions, scope}` (decline = empty grant); `item/tool/requestUserInput` → `{answers:{[questionId]:{answers:string[]}}}` by option label; also `mcpServer/elicitation/request`, `item/tool/call`, `attestation/generate`, `account/chatgptAuthTokens/refresh`, legacy `applyPatchApproval`/`execCommandApproval`.
@@ -62,7 +117,13 @@ on close.
 - **The SSE subscription is the session's lifeline and is re-established per turn.** It is the only channel a turn's events arrive on, so when the stream ends — error or clean close — the driver drops its handle and the next `send()` subscribes again. A stream that stayed dead made every later turn hang with a prompt nobody was listening to.
 - **MCP registration is per thread: `<name>-<threadId>`.** `POST /mcp` is in-memory on the per-directory server (it does **not** write the user's `opencode.json` — only the `opencode mcp add` CLI does) and *replaces* any entry with the same name, closing the old client. Two threads on one cwd registering plain `tide` would leave one live server holding whichever agent token registered last, so the other thread would act under a foreign identity. Trade-offs of the per-thread name: tools reach the model as `<name with non-alphanumerics → `_`>_<tool>`, i.e. `tide-<threadId>_tide_delegate`; and since every server registered for a directory is visible to every session in it, sibling threads sharing a cwd do see each other's tide tools — each with its own correct token. Cleanup on session close is `POST /mcp/{name}/disconnect` (SDK 1.18 has `mcp.status/add/connect/disconnect` and **no remove**): it closes the client, drops it from the directory's client map and leaves the status `disabled`.
 - Plan mode = `plan` agent; ProposedPlan = the plan agent's completed assistant message, and a `plan_exit` permission is recorded as a plan and **auto-rejected** (Tide never lets the harness flip into editing).
-- Permission mapping: approval-required → edit/bash/webfetch `ask`; auto-accept-edits → edit `allow`, bash/webfetch `ask`; auto → all `allow`; full-access → `*` allow. Resumed sessions keep their original ruleset (`PATCH /session` only takes a title). Escape hatch: `opencode -s <sessionId>`.
+- **Permission mapping** — the session ruleset sent to `POST /session`, in evaluation order
+  (opencode takes the **last** match): **Tide's mode rules → the user's granular rules → Tide's link rules.**
+  - Mode rules: approval-required → edit/bash/webfetch `*` `ask`; auto-accept-edits → edit `allow`, bash/webfetch `ask`; auto → all three `allow`; full-access → one `{permission:"*", pattern:"*", action:"allow"}`. `interaction: "plan"` keeps only the `ask` rules. `permission: "*"` is valid: `PermissionNext.Rule.permission` is a free-form string matched with `Wildcard.match`, and opencode's own defaults are built the same way.
+  - **The mode rules cannot be dropped.** The built-in agents' baseline is `fromConfig({"*": "allow", doom_loop:"ask", external_directory:{…}, question:"deny", plan_enter:"deny", plan_exit:"deny", read:{…}})` (verified in the 1.1.36 binary), so *something* always matches and `evaluate`'s no-match `ask` never applies. Emitting no rules for approval-required would silently run the thread as **auto**.
+  - **The user's own rules are replayed after Tide's** (`GET /config` → `cfg.permission`), but only the *granular* ones — an entry with a real pattern, e.g. `{"bash": {"git *": "allow", "rm -rf *": "deny"}}`. A blanket rule (a bare action, or pattern `*`) is the user's terminal-wide default; letting it win would make Tide's per-thread mode selector a lie. `~`/`$HOME` prefixes are expanded exactly as `PermissionNext.expand` does. The call is best-effort: an old server or any failure logs and falls back to mode rules alone.
+  - Link rules stay last, so a read-only link's `edit: deny` always wins (W1).
+- **A mode change cannot reach a resumed session.** `session.create` is the only writer of `session.permission`; `PATCH /session/:id` validates `{title?, time?}` only and `PromptInput` carries no permission field ("you can set permissions on the session itself now"). So `reconfigure` answers `reopen`, but a reopen that *resumes* the same native session still runs the creation-time ruleset — honouring a mode change needs a brand-new opencode session, at the cost of the native history. Escape hatch: `opencode -s <sessionId>`.
 
 ## Pi — `pi --mode rpc` (0.78+)
 
@@ -90,10 +151,12 @@ read-only link is the part each driver has to add.
 
 - **OpenCode**, verified against 1.1.36's `src/permission/next.ts`: `PermissionNext.evaluate`
   takes the **last** matching rule (`merged.findLast(...)`) and the ruleset is
-  `merge(agent.permission, session.permission)`, so Tide's session rules win; the default
-  with no match is `ask`. `Wildcard.match` compiles `*` to `.*` (it crosses `/`), so one
-  `<path>/*` covers a tree. Permission keys include `read`, `edit`, `glob`, `grep`, `list`,
-  `bash`, `external_directory`. Anything outside the project first hits
+  `merge(agent.permission, session.permission)`, so Tide's session rules win. `evaluate`'s
+  no-match default is `ask`, but in practice it never fires: the agent baseline contains
+  `"*": "allow"`, so a rule always matches. `Wildcard.match` compiles `*` to `.*` (it crosses
+  `/`), so one `<path>/*` covers a tree. Permission keys include `read`, `edit`, `glob`,
+  `grep`, `list`, `bash`, `webfetch`, `websearch`, `codesearch`, `external_directory`,
+  `doom_loop`, `question`, `plan_enter`, `plan_exit`. Anything outside the project first hits
   `external_directory`, asked with the **absolute** glob of the target's parent dir — so
   allowing `<link>/*` there is what makes a link reachable at all. `edit` is asked with the
   path **relative to the worktree**, so read-only denies are emitted in both forms.

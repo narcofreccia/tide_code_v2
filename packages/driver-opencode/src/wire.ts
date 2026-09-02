@@ -70,6 +70,17 @@ export interface WireTextPart {
   time?: { start?: number; end?: number };
 }
 
+/** `MessageV2.ReasoningPart` (opencode 1.1.36): same streaming shape as a text part. */
+export interface WireReasoningPart {
+  id: string;
+  sessionID: string;
+  messageID: string;
+  type: "reasoning";
+  text: string;
+  metadata?: Record<string, unknown>;
+  time?: { start?: number; end?: number };
+}
+
 export interface WireToolPart {
   id: string;
   sessionID: string;
@@ -104,10 +115,10 @@ export interface WireOtherPart {
   id: string;
   sessionID: string;
   messageID: string;
-  type: "reasoning" | "file" | "step-start" | "snapshot" | "patch" | "agent" | "retry" | "compaction" | (string & {});
+  type: "file" | "step-start" | "snapshot" | "patch" | "agent" | "retry" | "compaction" | (string & {});
 }
 
-export type WirePart = WireTextPart | WireToolPart | WireSubtaskPart | WireStepFinishPart | WireOtherPart;
+export type WirePart = WireTextPart | WireReasoningPart | WireToolPart | WireSubtaskPart | WireStepFinishPart | WireOtherPart;
 
 /** `permission.asked` (1.1.x) and `permission.updated` (sdk 1.18) unified. */
 export interface WirePermission {
@@ -186,11 +197,26 @@ export interface WireAgent {
   builtIn?: boolean;
 }
 
+export type PermissionAction = "allow" | "deny" | "ask";
+
 /** `{ permission, pattern, action }` triples accepted by `POST /session`'s `permission`. */
 export interface PermissionRule {
   permission: string;
   pattern: string;
-  action: "allow" | "deny" | "ask";
+  action: PermissionAction;
+}
+
+/**
+ * The `permission` block of the user's own config as `GET /config` serves it
+ * (`Config.Permission`, opencode 1.1.36): one entry per permission key, whose value is
+ * either a bare action (the key's blanket default) or a `{pattern: action}` map. The
+ * server has already normalised a top-level bare string into `{"*": action}`.
+ */
+export type WirePermissionConfig = Record<string, PermissionAction | Record<string, PermissionAction>>;
+
+/** The slice of `GET /config` this driver reads. */
+export interface WireConfig {
+  permission?: WirePermissionConfig;
 }
 
 export type PermissionReply = "once" | "always" | "reject";

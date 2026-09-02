@@ -89,7 +89,9 @@ describe("normalizer over recorded fixtures", () => {
       "activity:child", // child done
       "activity:info", // permission_denied
       "activity:info", // api_retry
+      "assistant.reasoning",
       "assistant.delta",
+      "activity:info", // pass-through of the unmodelled frame
       "usage",
       "settled",
     ]);
@@ -112,10 +114,53 @@ describe("normalizer over recorded fixtures", () => {
     const deltas = events.flatMap((event) => (event.type === "assistant.delta" ? [event] : []));
     expect(deltas).toHaveLength(1);
     expect(deltas[0]?.delta).toBe("Done.");
-    expect(deltas[0]?.messageKey).toBe("msg_04-1");
+    expect(deltas[0]?.messageKey).toBe("msg_04");
 
-    // one rate-limit-free stream: only the genuinely unknown frame is counted
+    // one rate-limit-free stream: only the genuinely unknown frame is counted, and it is
+    // surfaced generically rather than dropped (CLAUDE.md §1a)
     expect(unknown).toBe(1);
+    const passthrough = events.flatMap((event) => (event.type === "activity" && event.activity.kind === "info" && event.activity.payload !== undefined ? [event.activity] : []));
+    expect(passthrough).toHaveLength(1);
+    expect(passthrough[0]?.text).toBe("claude: future_message_kind_we_do_not_know/whatever");
+    expect(passthrough[0]?.payload).toMatchObject({ type: "future_message_kind_we_do_not_know" });
+  });
+
+  it("synthetic-reasoning: thinking shares the message key with the text that follows", () => {
+    const { events, unknown } = run("synthetic-reasoning");
+    const reasoning = events.flatMap((event) => (event.type === "assistant.reasoning" ? [event] : []));
+    expect(reasoning.map((event) => event.delta).join("")).toBe("Let me check the parser.");
+    const deltas = events.flatMap((event) => (event.type === "assistant.delta" ? [event] : []));
+    expect(deltas).toHaveLength(1);
+    // one message: reasoning and text merge because the key is the message id, not the block
+    expect(new Set([...reasoning, ...deltas].map((event) => event.messageKey))).toEqual(new Set(["msg_r1"]));
+
+    // background tasks become a child row keyed by the spawning tool call
+    const children = events.flatMap((event) => (event.type === "activity" && event.activity.kind === "child" ? [event.activity] : []));
+    expect(children).toEqual([
+      { kind: "child", childKey: "toolu_bg", name: "Watch the build", status: "running", description: "Explore" },
+      { kind: "child", childKey: "toolu_bg", name: "Watch the build", status: "running", description: "Explore", summary: "Running Bash" },
+      { kind: "child", childKey: "toolu_bg", name: "Watch the build", status: "done", description: "Explore" },
+    ]);
+
+    // `status`/`thinking_tokens` and the ambient task are the allowlisted silent drops;
+    // only the genuinely new system subtype is passed through
+    const info = events.flatMap((event) => (event.type === "activity" && event.activity.kind === "info" ? [event.activity] : []));
+    expect(info.map((activity) => activity.text)).toEqual(["claude: system/brand_new_thing"]);
+    expect(unknown).toBe(1);
+  });
+
+  it("surfaces whole thinking blocks when partial messages are off", () => {
+    const normalizer = new ClaudeNormalizer({ partialMessages: false });
+    const events = normalizer.next({
+      type: "assistant",
+      parent_tool_use_id: null,
+      uuid: "u1",
+      message: { id: "msg_t", content: [{ type: "thinking", thinking: "hmm" }, { type: "text", text: "hello" }] },
+    } as ClaudeMessage);
+    expect(events).toEqual([
+      { type: "assistant.reasoning", messageKey: "msg_t", delta: "hmm" },
+      { type: "assistant.delta", messageKey: "msg_t", delta: "hello" },
+    ]);
   });
 
   it("falls back to whole-text deltas when partial messages are off", () => {
@@ -126,13 +171,15 @@ describe("normalizer over recorded fixtures", () => {
       uuid: "u1",
       message: { id: "msg_x", content: [{ type: "text", text: "hello" }] },
     } as ClaudeMessage);
-    expect(events).toEqual([{ type: "assistant.delta", messageKey: "msg_x-0", delta: "hello" }]);
+    expect(events).toEqual([{ type: "assistant.delta", messageKey: "msg_x", delta: "hello" }]);
   });
 
   it("settles as interrupted once marked, and never throws on unknown frames", () => {
     const normalizer = new ClaudeNormalizer({ partialMessages: true });
     normalizer.markInterrupted();
-    expect(normalizer.next({ type: "totally_new" } as ClaudeMessage)).toEqual([]);
+    expect(normalizer.next({ type: "totally_new" } as ClaudeMessage)).toEqual([
+      { type: "activity", activity: { kind: "info", text: "claude: totally_new", payload: { type: "totally_new" } } },
+    ]);
     const events = normalizer.next({
       type: "result",
       subtype: "success",

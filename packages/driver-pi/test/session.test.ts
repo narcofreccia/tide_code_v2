@@ -269,6 +269,13 @@ describe("PiSession", () => {
     expect(prompt?.["images"]).toEqual([{ type: "image", data: "AAA", mimeType: "image/png" }]);
     await session.close();
   });
+
+  it("answers reconfigure with `reopen`: mode/interaction are baked into the process env at spawn", async () => {
+    const { session } = await open(() => undefined);
+    expect(await session.reconfigure?.({ mode: "auto", interaction: "plan", model: "openai/gpt-5.5" })).toBe("reopen");
+    expect(await session.reconfigure?.({ mode: "approval-required", interaction: "default" })).toBe("reopen");
+    await session.close();
+  });
 });
 
 describe("buildSpawn", () => {

@@ -1,5 +1,15 @@
-import type { ApprovalDecision, DriverEnv, NormalizedEvent, OpenSessionOptions, ProviderSession, TurnInput } from "@tide/contracts";
+import type {
+  ApprovalDecision,
+  DriverEnv,
+  NormalizedEvent,
+  OpenSessionOptions,
+  ProviderSession,
+  ReconfigureResult,
+  SessionSettings,
+  TurnInput,
+} from "@tide/contracts";
 import { AppServer, mergedEnv } from "./app-server.ts";
+import { readSandboxNetworkAccess } from "./config-toml.ts";
 import { ApprovalBroker } from "./approvals.ts";
 import { AsyncQueue } from "./async-queue.ts";
 import type { RequestId } from "./jsonrpc.ts";
@@ -29,15 +39,18 @@ export class CodexSession implements ProviderSession {
   #normalizer: CodexNormalizer;
   #mailbox: AsyncQueue<NormalizedEvent> | undefined;
   #model: string;
+  /** the user's `[sandbox_workspace_write] network_access`, resolved once per session */
+  #networkAccess: boolean;
   #turnActive = false;
   #closed = false;
   #interruptRequested = false;
 
-  private constructor(env: DriverEnv, options: OpenSessionOptions, server: AppServer, model: string) {
+  private constructor(env: DriverEnv, options: OpenSessionOptions, server: AppServer, model: string, networkAccess: boolean) {
     this.#env = env;
     this.#options = options;
     this.#server = server;
     this.#model = model;
+    this.#networkAccess = networkAccess;
     this.#normalizer = new CodexNormalizer({
       onUnknown: (method) => {
         if (process.env["TIDE_DEBUG_CODEX"]) env.log(`[codex] unhandled notification ${method}`);
@@ -72,7 +85,8 @@ export class CodexSession implements ProviderSession {
       },
     });
 
-    const policy = policyFor(options.mode, writableRoots(options));
+    const networkAccess = config.networkAccess ?? readSandboxNetworkAccess(config.codexHome, config.tomlReader);
+    const policy = policyFor(options.mode, writableRoots(options), networkAccess);
     const started =
       options.resume !== undefined
         ? await server.request<ThreadResumeResponse>("thread/resume", {
@@ -91,7 +105,7 @@ export class CodexSession implements ProviderSession {
             ...(options.systemPromptAppend ? { developerInstructions: options.systemPromptAppend } : {}),
           });
 
-    session = new CodexSession(env, options, server, started.model ?? options.model ?? config.defaultModel ?? "");
+    session = new CodexSession(env, options, server, started.model ?? options.model ?? config.defaultModel ?? "", networkAccess);
     session.nativeSessionId = started.thread.id;
     for (const buffered of notifications) session.#notification(buffered.method, buffered.params);
     for (const buffered of requests) session.#request(buffered.method, buffered.params, buffered.id);
@@ -151,7 +165,7 @@ export class CodexSession implements ProviderSession {
   }
 
   async #startTurn(input: TurnInput, mailbox: AsyncQueue<NormalizedEvent>): Promise<void> {
-    const policy = policyFor(this.#options.mode, writableRoots(this.#options));
+    const policy = policyFor(this.#options.mode, writableRoots(this.#options), this.#networkAccess);
     try {
       await this.#server.request<TurnStartResponse>("turn/start", {
         threadId: this.nativeSessionId,
@@ -160,12 +174,27 @@ export class CodexSession implements ProviderSession {
         approvalPolicy: policy.approvalPolicy,
         sandboxPolicy: policy.sandboxPolicy,
         ...(this.#model !== "" ? { model: this.#model } : {}),
-        ...(this.#model !== "" ? { collaborationMode: collaborationModeFor(this.#options.interaction, this.#model) } : {}),
+        // ALWAYS sent, pinned model or not: `collaborationMode` is the only thing that puts
+        // Codex in plan mode, and gating it on a pinned model silently dropped plan mode for
+        // every thread on the default model. `settings.model` is the thread's resolved model
+        // (from `thread/start`), which is what Codex would have used anyway.
+        collaborationMode: collaborationModeFor(this.#options.interaction, this.#model),
       });
     } catch (error) {
       mailbox.push({ type: "settled", status: this.#interruptRequested ? "interrupted" : "error", error: error instanceof Error ? error.message : String(error) });
       mailbox.close();
     }
+  }
+
+  /**
+   * Codex takes model, approval/sandbox policy and collaboration (plan) mode **per turn** on
+   * `turn/start`, so nothing has to be reopened: the new settings are stored and the next
+   * turn carries them.
+   */
+  async reconfigure(settings: SessionSettings): Promise<ReconfigureResult> {
+    this.#options = { ...this.#options, mode: settings.mode, interaction: settings.interaction, ...(settings.model !== undefined ? { model: settings.model } : {}) };
+    if (settings.model !== undefined && settings.model !== "") this.#model = settings.model;
+    return "applied";
   }
 
   async respondApproval(requestId: string, decision: ApprovalDecision): Promise<void> {

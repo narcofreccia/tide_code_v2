@@ -1,4 +1,4 @@
-import type { OpencodeEvent, PermissionReply, PermissionRule, WireAgent, WireProvider } from "./wire.ts";
+import type { OpencodeEvent, PermissionReply, PermissionRule, WireAgent, WireConfig, WireProvider } from "./wire.ts";
 
 export interface OpencodeConfig {
   /** absolute path to the `opencode` binary; auto-detected when omitted */
@@ -47,6 +47,14 @@ export interface OpencodeApi {
   /** long-lived SSE subscription for one directory; ends when `signal` aborts */
   subscribe(input: { directory: string; signal: AbortSignal }): Promise<AsyncIterable<OpencodeEvent>>;
   providers(): Promise<{ providers: WireProvider[]; default: Record<string, string> }>;
+  /**
+   * `GET /config` — the user's own merged global+project `opencode.json`. Only its
+   * `permission` block is read, so Tide's per-thread mode rules do not clobber the granular
+   * rules the user wrote. Every caller must treat a failure as "no config" (see
+   * `OpencodeInstance.openSession`): an older server or an unreadable config must never
+   * stop a session from opening.
+   */
+  config(input: { directory: string }): Promise<WireConfig>;
   agents(input: { directory: string }): Promise<WireAgent[]>;
   /** registers an MCP server for a directory (`POST /mcp`); tools appear on the next turn */
   addMcpServer(input: { directory: string; name: string; command: string[]; env?: Record<string, string> }): Promise<void>;

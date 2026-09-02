@@ -5,8 +5,11 @@ import {
   attachFakeStore,
   makeApproval,
   makeThread,
+  makeMessage,
   makeTool,
+  makeTurn,
   modelWithTimeline,
+  modelWithTurns,
   resetUi,
 } from "../../testHarness.ts";
 
@@ -59,5 +62,25 @@ describe("Stream", () => {
     render(<Stream threadId="t1" provider="claude" />);
     expect(screen.getByText("Allowed Edit")).toBeDefined();
     expect(screen.getAllByText("Allow")).toHaveLength(1);
+  });
+
+  it("puts the turn footer under the last assistant message of a settled turn", () => {
+    const turn = makeTurn("u1", {
+      status: "completed",
+      startedAt: 0,
+      settledAt: 2000,
+      usage: { inputTokens: 100, outputTokens: 20 },
+    });
+    attachFakeStore(
+      modelWithTurns(thread, [turn], [
+        makeMessage("m1", { role: "assistant", text: "first" }),
+        makeMessage("m2", { role: "assistant", text: "second" }),
+      ]),
+    );
+    render(<Stream threadId="t1" provider="claude" />);
+
+    expect(screen.getAllByText("2.0s")).toHaveLength(1);
+    const footer = screen.getByText("2.0s").closest("li");
+    expect(footer?.textContent).toContain("second");
   });
 });

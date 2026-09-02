@@ -1,0 +1,60 @@
+import { describe, expect, it } from "vitest";
+import { parseSandboxNetworkAccess, readSandboxNetworkAccess } from "./config-toml.ts";
+import { policyFor } from "./modes.ts";
+
+describe("codex sandbox network access", () => {
+  it("reads the key out of its section", () => {
+    const toml = `
+model = "gpt-5.6"
+
+[sandbox_workspace_write]
+writable_roots = ["/tmp"]
+network_access = true
+`;
+    expect(parseSandboxNetworkAccess(toml)).toBe(true);
+  });
+
+  it("ignores the same key in another section, and comments", () => {
+    const toml = `
+[other]
+network_access = true
+
+[sandbox_workspace_write]
+# network_access = true
+network_access = false
+`;
+    expect(parseSandboxNetworkAccess(toml)).toBe(false);
+  });
+
+  it("understands the inline-table form", () => {
+    expect(parseSandboxNetworkAccess('sandbox_workspace_write = { network_access = true, exclude_slash_tmp = false }')).toBe(true);
+  });
+
+  it("is undefined when the key is absent", () => {
+    expect(parseSandboxNetworkAccess("[sandbox_workspace_write]\nwritable_roots = []\n")).toBeUndefined();
+    expect(parseSandboxNetworkAccess("")).toBeUndefined();
+  });
+
+  it("defaults to Codex's own default (no network) when there is no config.toml", () => {
+    expect(readSandboxNetworkAccess("/nowhere", () => undefined)).toBe(false);
+  });
+
+  it("reads config.toml from CODEX_HOME", () => {
+    const seen: string[] = [];
+    const value = readSandboxNetworkAccess("/custom/.codex", (path) => {
+      seen.push(path);
+      return "[sandbox_workspace_write]\nnetwork_access = true\n";
+    });
+    expect(seen).toEqual(["/custom/.codex/config.toml"]);
+    expect(value).toBe(true);
+  });
+
+  it("policyFor carries the flag into every workspace-write sandbox", () => {
+    for (const mode of ["approval-required", "auto-accept-edits", "auto"] as const) {
+      expect(policyFor(mode, ["/repo"], true).sandboxPolicy).toMatchObject({ type: "workspaceWrite", networkAccess: true });
+      expect(policyFor(mode, ["/repo"]).sandboxPolicy).toMatchObject({ networkAccess: false });
+    }
+    // full-access has no workspace sandbox to configure
+    expect(policyFor("full-access", ["/repo"], true).sandboxPolicy).toEqual({ type: "dangerFullAccess" });
+  });
+});

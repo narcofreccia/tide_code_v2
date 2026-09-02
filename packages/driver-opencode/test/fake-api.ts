@@ -1,6 +1,6 @@
 import { AsyncQueue } from "../src/async-queue.ts";
 import type { ModelRef, OpencodeApi, PromptPart } from "../src/types.ts";
-import type { OpencodeEvent, PermissionReply, PermissionRule, WireAgent, WireProvider } from "../src/wire.ts";
+import type { OpencodeEvent, PermissionReply, PermissionRule, WireAgent, WireConfig, WireProvider } from "../src/wire.ts";
 
 export interface PromptCall {
   directory: string;
@@ -33,6 +33,9 @@ export class FakeOpencodeApi implements OpencodeApi {
   subscribes = 0;
   sessionId = "ses_fake";
   promptError: Error | undefined;
+  configValue: WireConfig = {};
+  /** set to make `GET /config` fail the way an older server does */
+  configError: Error | undefined;
   providerCatalog: { providers: WireProvider[]; default: Record<string, string> } = {
     providers: [
       {
@@ -99,6 +102,11 @@ export class FakeOpencodeApi implements OpencodeApi {
 
   async agents(): Promise<WireAgent[]> {
     return this.agentList;
+  }
+
+  async config(): Promise<WireConfig> {
+    if (this.configError) throw this.configError;
+    return this.configValue;
   }
 
   async addMcpServer(input: { name: string; command: string[] }): Promise<void> {

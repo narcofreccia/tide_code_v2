@@ -65,4 +65,45 @@ describe("error activities", () => {
     expect(screen.queryByText("Open Settings › Providers")).toBeNull();
     expect(screen.queryByText("Run login")).toBeNull();
   });
+
+  it("expands an unmodelled info event's raw payload", () => {
+    setup();
+    setProvidersForTest(PROVIDER_FIXTURE);
+    const info: Activity = {
+      id: "a2",
+      threadId: "t1",
+      turnId: "u1",
+      createdAt: 1,
+      updatedAt: 1,
+      kind: "info",
+      text: "harness: compaction",
+      payload: { kind: "compaction", removed: 12 },
+    };
+    render(
+      <ul>
+        <ActivityRow activity={info} />
+      </ul>,
+    );
+
+    const toggle = screen.getByRole("button", { name: "harness: compaction" });
+    expect(toggle.getAttribute("aria-expanded")).toBe("false");
+    fireEvent.click(toggle);
+
+    expect(screen.getByText("payload")).toBeDefined();
+    expect(screen.getByText(/"removed": 12/)).toBeDefined();
+  });
+
+  it("keeps a payload-less info line unexpandable", () => {
+    setup();
+    setProvidersForTest(PROVIDER_FIXTURE);
+    const info: Activity = {
+      id: "a3", threadId: "t1", turnId: "u1", createdAt: 1, updatedAt: 1, kind: "info", text: "just a note",
+    };
+    render(
+      <ul>
+        <ActivityRow activity={info} />
+      </ul>,
+    );
+    expect(screen.queryByRole("button", { name: "just a note" })).toBeNull();
+  });
 });
