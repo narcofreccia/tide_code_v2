@@ -56,6 +56,30 @@ describe("SessionDirectory", () => {
     expect(sessions.size).toBe(1);
   });
 
+  it("applies changed mode/model in place when the driver can", async () => {
+    const { sessions, claude } = setup();
+    claude.reconfigureResult = "applied";
+    const a = await sessions.getOrOpen(thread(), project);
+    const b = await sessions.getOrOpen(thread({ mode: "auto", model: "opus" }), project);
+    expect(b).toBe(a);
+    expect(claude.reconfigures).toEqual([{ threadId: "t1", settings: { mode: "auto", interaction: "default", model: "opus" } }]);
+    // same settings again: no second reconfigure call
+    await sessions.getOrOpen(thread({ mode: "auto", model: "opus" }), project);
+    expect(claude.reconfigures).toHaveLength(1);
+    expect(claude.opened).toHaveLength(1);
+  });
+
+  it("reopens with resume when the driver cannot switch live", async () => {
+    const { sessions, claude } = setup();
+    await sessions.getOrOpen(thread({ nativeSessionId: "sess-9" }), project);
+    const b = await sessions.getOrOpen(thread({ nativeSessionId: "sess-9", interaction: "plan" }), project);
+    expect(claude.closed).toEqual(["t1"]);
+    expect(claude.opened).toHaveLength(2);
+    expect(claude.opened[1]).toMatchObject({ resume: "sess-9", interaction: "plan" });
+    expect(b).toBe(claude.sessions[1]);
+    expect(sessions.size).toBe(1);
+  });
+
   it("reaps sessions untouched for the idle window", async () => {
     const { sessions, claude, clock } = setup();
     await sessions.getOrOpen(thread(), project);

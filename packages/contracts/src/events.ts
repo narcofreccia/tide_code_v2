@@ -1,5 +1,5 @@
 import { Type, type Static } from "typebox";
-import { Activity, ApprovalDecision, CheckpointStats, ExpertsFinding, ExpertsMessage, ExpertsPhase, ExpertsSession, Message, Project, ProjectLink, ProposedPlan, ProviderKind, PullRequest, Thread, Turn, TurnUsage } from "./domain.ts";
+import { Activity, ApprovalDecision, CheckpointStats, ExpertsFinding, ExpertsMessage, ExpertsPhase, ExpertsSession, ImageInput, Message, Project, ProjectLink, ProposedPlan, ProviderKind, PullRequest, Thread, Turn, TurnUsage } from "./domain.ts";
 
 // Events = persisted facts. Payloads are self-contained so the projector
 // never needs to look anything up outside the event.
@@ -32,7 +32,10 @@ export const ThreadStatusChanged = evt("thread.status-changed", {
   updatedAt: Type.Number(),
 });
 
-export const TurnRequested = evt("turn.requested", { turn: Turn, userMessage: Message });
+/** `turn.status` is `queued` when another turn of the thread is still running. Image bytes live
+ *  only here (the projector keeps metadata on the message); the provider reactor reads them. */
+export const TurnRequested = evt("turn.requested", { turn: Turn, userMessage: Message, images: Type.Optional(Type.Array(ImageInput)) });
+export const TurnDequeued = evt("turn.dequeued", { turnId: Type.String(), threadId: Type.String(), at: Type.Number() });
 export const TurnStarted = evt("turn.started", {
   turnId: Type.String(),
   threadId: Type.String(),
@@ -125,6 +128,13 @@ export const AssistantDelta = evt("assistant.delta", {
   delta: Type.String(),
   at: Type.Number(),
 });
+export const AssistantReasoningDelta = evt("assistant.reasoning-delta", {
+  turnId: Type.String(),
+  threadId: Type.String(),
+  messageId: Type.String(),
+  delta: Type.String(),
+  at: Type.Number(),
+});
 export const TurnSettled = evt("turn.settled", {
   turnId: Type.String(),
   threadId: Type.String(),
@@ -142,9 +152,11 @@ export const DomainEvent = Type.Union([
   ThreadArchived,
   ThreadStatusChanged,
   TurnRequested,
+  TurnDequeued,
   TurnStarted,
   TurnInterruptRequested,
   AssistantDelta,
+  AssistantReasoningDelta,
   ActivityUpserted,
   ApprovalResponded,
   UserInputResponded,

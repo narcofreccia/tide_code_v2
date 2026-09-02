@@ -1,4 +1,4 @@
-import type { McpServerSpec, Project, ProviderKind, ProviderSession, Thread } from "@tide/contracts";
+import type { McpServerSpec, Project, ProviderKind, ProviderSession, SessionSettings, Thread } from "@tide/contracts";
 import { composeSystemPromptAppend, linkedRepoPreamble, resolveLinkedDirs } from "./links.ts";
 import type { DriverRegistry } from "./registry.ts";
 
@@ -10,7 +10,17 @@ interface Entry {
   kind: ProviderKind;
   cwd: string;
   session: ProviderSession;
+  /** what the harness is currently running with; compared against the thread on every turn */
+  settings: SessionSettings;
   lastUsedAt: number;
+}
+
+export function settingsOf(thread: Thread): SessionSettings {
+  return { ...(thread.model !== undefined ? { model: thread.model } : {}), mode: thread.mode, interaction: thread.interaction };
+}
+
+function sameSettings(a: SessionSettings, b: SessionSettings): boolean {
+  return a.model === b.model && a.mode === b.mode && a.interaction === b.interaction;
 }
 
 export interface SessionDirectoryOptions {
@@ -75,10 +85,22 @@ export class SessionDirectory {
     const existing = this.#entries.get(thread.id);
     if (existing) {
       if (existing.kind === thread.provider && existing.cwd === cwd) {
-        existing.lastUsedAt = this.#now();
-        return existing.session;
+        const wanted = settingsOf(thread);
+        if (sameSettings(existing.settings, wanted)) {
+          existing.lastUsedAt = this.#now();
+          return existing.session;
+        }
+        // model/mode/plan changed under a live session: switch in place when the driver can,
+        // otherwise reopen (resume keeps the harness's own context)
+        const result = existing.session.reconfigure ? await this.#reconfigure(existing, wanted) : "reopen";
+        if (result === "applied") {
+          existing.settings = wanted;
+          existing.lastUsedAt = this.#now();
+          return existing.session;
+        }
+        this.#log(`[provider] reopening ${thread.provider} session for ${thread.id} to apply new settings`);
       }
-      // provider (or worktree) changed under the thread: drop the stale session
+      // provider (or worktree, or settings) changed under the thread: drop the stale session
       await this.close(thread.id);
     }
     const inflight = this.#opening.get(thread.id);
@@ -106,9 +128,18 @@ export class SessionDirectory {
       ...(linkedDirs.length > 0 ? { linkedDirs } : {}),
       ...(systemPromptAppend !== undefined ? { systemPromptAppend } : {}),
     });
-    this.#entries.set(thread.id, { threadId: thread.id, kind: thread.provider, cwd, session, lastUsedAt: this.#now() });
+    this.#entries.set(thread.id, { threadId: thread.id, kind: thread.provider, cwd, session, settings: settingsOf(thread), lastUsedAt: this.#now() });
     this.#lastKind.set(thread.id, thread.provider);
     return session;
+  }
+
+  async #reconfigure(entry: Entry, wanted: SessionSettings): Promise<"applied" | "reopen"> {
+    try {
+      return await entry.session.reconfigure!(wanted);
+    } catch (err) {
+      this.#log("[provider] reconfigure failed; reopening", err);
+      return "reopen";
+    }
   }
 
   touch(threadId: string): void {

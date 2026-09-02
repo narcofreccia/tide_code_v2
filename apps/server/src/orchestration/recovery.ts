@@ -17,7 +17,7 @@ export interface RecoveryReport {
 /** Turns the harness may still have been working on when the process went away. */
 export function unsettledTurns(model: ReadModel): Turn[] {
   return Object.values(model.turns)
-    .filter((turn) => turn.status === "requested" || turn.status === "running")
+    .filter((turn) => turn.status === "queued" || turn.status === "requested" || turn.status === "running")
     .sort((a, b) => a.requestedAt - b.requestedAt);
 }
 

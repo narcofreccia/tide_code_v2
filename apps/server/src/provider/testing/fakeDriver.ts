@@ -8,6 +8,8 @@ import type {
   ProviderKind,
   ProviderSession,
   ProviderStatus,
+  ReconfigureResult,
+  SessionSettings,
   TurnInput,
 } from "@tide/contracts";
 
@@ -129,6 +131,12 @@ export class FakeSession implements ProviderSession {
     this.control.closed.push(this.options.threadId);
     this.control.received(`close:${this.options.threadId}`, undefined);
   }
+
+  /** Answers with `control.reconfigureResult`; undefined = "this driver cannot switch live". */
+  async reconfigure(settings: SessionSettings): Promise<ReconfigureResult> {
+    this.control.reconfigures.push({ threadId: this.options.threadId, settings });
+    return this.control.reconfigureResult ?? "reopen";
+  }
 }
 
 /** Test-facing handle: script turns, observe driver calls, await them deterministically. */
@@ -140,6 +148,8 @@ export class FakeDriverControl {
   readonly userInputs: { requestId: string; answers: Record<string, unknown> }[] = [];
   readonly interrupts: string[] = [];
   readonly closed: string[] = [];
+  readonly reconfigures: { threadId: string; settings: SessionSettings }[] = [];
+  reconfigureResult: ReconfigureResult | undefined;
   statusResult: ProviderStatus;
   statusError: Error | undefined;
   createError: Error | undefined;

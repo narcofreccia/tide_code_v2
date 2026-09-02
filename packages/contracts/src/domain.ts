@@ -35,6 +35,8 @@ export const AttentionKind = Type.Union([Type.Literal("approval"), Type.Literal(
 export type AttentionKind = Static<typeof AttentionKind>;
 
 export const TurnStatus = Type.Union([
+  /** waiting behind a running turn of the same thread; promoted to requested when it settles */
+  Type.Literal("queued"),
   Type.Literal("requested"),
   Type.Literal("running"),
   Type.Literal("completed"),
@@ -199,11 +201,19 @@ export const Message = Type.Object({
   turnId: Type.String(),
   role: MessageRole,
   text: Type.String(),
+  /** extended-thinking / reasoning that preceded `text` (assistant only) */
+  reasoning: Type.Optional(Type.String()),
+  /** image attachments (user only). Metadata only — the bytes ride on the turn.requested event. */
+  attachments: Type.Optional(Type.Array(Type.Object({ mediaType: Type.String(), bytes: Type.Number() }))),
   createdAt: Type.Number(),
   /** true while the assistant is still streaming into this message */
   streaming: Type.Optional(Type.Boolean()),
 });
 export type Message = Static<typeof Message>;
+
+/** A base64 image handed to the harness with the prompt. */
+export const ImageInput = Type.Object({ mediaType: Type.String(), data: Type.String() });
+export type ImageInput = Static<typeof ImageInput>;
 
 export const TurnUsage = Type.Object({
   inputTokens: Type.Number(),
@@ -302,6 +312,8 @@ export const InfoActivity = Type.Object({
   ...ActivityBase,
   kind: Type.Union([Type.Literal("info"), Type.Literal("error")]),
   text: Type.String(),
+  /** raw harness payload for events Tide does not model (rendered generically, expandable) */
+  payload: Type.Optional(Type.Unknown()),
 });
 export const Activity = Type.Union([ToolActivity, ApprovalActivity, UserInputActivity, ChildActivity, InfoActivity]);
 export type Activity = Static<typeof Activity>;

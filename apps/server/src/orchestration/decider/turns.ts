@@ -3,9 +3,11 @@ import { fail, isArchived, ok, type DecideContext, type DecideResult } from "./t
 
 type TurnCommand =
   | CommandOf<"turn.request">
+  | CommandOf<"turn.dequeue">
   | CommandOf<"turn.interrupt">
   | CommandOf<"turn.start">
   | CommandOf<"assistant.append">
+  | CommandOf<"assistant.reasoning.append">
   | CommandOf<"usage.report">
   | CommandOf<"turn.settle">;
 
@@ -18,17 +20,27 @@ export function decideTurn(model: ReadModel, command: TurnCommand, ctx: DecideCo
       const thread = model.threads[command.threadId];
       if (!thread) return fail("not-found", `unknown thread ${command.threadId}`);
       if (isArchived(thread)) return fail("conflict", `thread ${thread.id} is archived`);
-      if (thread.status === "running") return fail("busy", `thread ${thread.id} already has a running turn`);
-      const turn: Turn = { id: ctx.newId(), threadId: thread.id, status: "requested", requestedAt: ctx.now };
+      // a follow-up typed while the harness is busy waits its turn instead of being refused
+      const queued = thread.status === "running";
+      const turn: Turn = { id: ctx.newId(), threadId: thread.id, status: queued ? "queued" : "requested", requestedAt: ctx.now };
+      const images = command.images ?? [];
       const userMessage: Message = {
         id: ctx.newId(),
         threadId: thread.id,
         turnId: turn.id,
         role: "user",
         text: command.text,
+        ...(images.length > 0 ? { attachments: images.map((img) => ({ mediaType: img.mediaType, bytes: Math.floor((img.data.length * 3) / 4) })) } : {}),
         createdAt: ctx.now,
       };
-      return ok({ type: "turn.requested", turn, userMessage });
+      return ok({ type: "turn.requested", turn, userMessage, ...(images.length > 0 ? { images } : {}) });
+    }
+
+    case "turn.dequeue": {
+      const turn = model.turns[command.turnId];
+      if (!turn) return fail("not-found", `unknown turn ${command.turnId}`);
+      if (turn.status !== "queued") return fail("conflict", `turn ${turn.id} is ${turn.status}, only queued turns can be dequeued`);
+      return ok({ type: "turn.dequeued", turnId: turn.id, threadId: turn.threadId, at: ctx.now });
     }
 
     case "turn.interrupt": {
@@ -65,6 +77,20 @@ export function decideTurn(model: ReadModel, command: TurnCommand, ctx: DecideCo
       if (SETTLED.has(turn.status)) return fail("conflict", `turn ${turn.id} is already settled`);
       return ok({
         type: "assistant.delta",
+        turnId: turn.id,
+        threadId: turn.threadId,
+        messageId: command.messageId,
+        delta: command.delta,
+        at: ctx.now,
+      });
+    }
+
+    case "assistant.reasoning.append": {
+      const turn = model.turns[command.turnId];
+      if (!turn) return fail("not-found", `unknown turn ${command.turnId}`);
+      if (SETTLED.has(turn.status)) return fail("conflict", `turn ${turn.id} is already settled`);
+      return ok({
+        type: "assistant.reasoning-delta",
         turnId: turn.id,
         threadId: turn.threadId,
         messageId: command.messageId,

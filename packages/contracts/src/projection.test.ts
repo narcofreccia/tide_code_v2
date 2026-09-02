@@ -61,3 +61,40 @@ describe("projection — P1 activities, plans, attention", () => {
     expect(m2.plans["pl1"]?.implementationThreadId).toBe("t2");
   });
 });
+
+describe("projection — W2 queued turns, dequeue, reasoning", () => {
+  const base = replay(emptyReadModel(), [
+    rec(1, { type: "project.created", project: { id: "p1", title: "T", rootPath: "/x", createdAt: 1, updatedAt: 1 } }),
+    rec(2, { type: "thread.created", thread: { id: "t1", projectId: "p1", title: "New", provider: "claude", mode: "approval-required", interaction: "default", status: "idle", createdAt: 2, updatedAt: 2 } }),
+    rec(3, { type: "turn.requested", turn: { id: "u1", threadId: "t1", status: "requested", requestedAt: 3 }, userMessage: { id: "m1", threadId: "t1", turnId: "u1", role: "user", text: "first", createdAt: 3 } }),
+    rec(4, { type: "turn.requested", turn: { id: "u2", threadId: "t1", status: "queued", requestedAt: 4 }, userMessage: { id: "m2", threadId: "t1", turnId: "u2", role: "user", text: "second", attachments: [{ mediaType: "image/png", bytes: 12 }], createdAt: 4 }, images: [{ mediaType: "image/png", data: "AAAA" }] }),
+  ]);
+  it("a queued turn does not take over the thread; settling promotes it", () => {
+    expect(base.threads["t1"]).toMatchObject({ status: "running", latestTurnId: "u1" });
+    expect(base.threadTimeline["t1"]?.map((e) => e.id)).toEqual(["m1", "m2"]);
+    expect(base.messages["m2"]?.attachments).toEqual([{ mediaType: "image/png", bytes: 12 }]);
+    const m = applyRecord(base, rec(5, { type: "turn.settled", turnId: "u1", threadId: "t1", status: "completed", settledAt: 5 }));
+    expect(m.threads["t1"]).toMatchObject({ status: "running", latestTurnId: "u2" });
+    expect(m.turns["u2"]?.status).toBe("requested");
+    const m2 = applyRecord(m, rec(6, { type: "turn.settled", turnId: "u2", threadId: "t1", status: "completed", settledAt: 6 }));
+    expect(m2.threads["t1"]?.status).toBe("idle");
+  });
+  it("dequeue removes the turn and its message", () => {
+    const m = applyRecord(base, rec(5, { type: "turn.dequeued", turnId: "u2", threadId: "t1", at: 5 }));
+    expect(m.turns["u2"]).toBeUndefined();
+    expect(m.messages["m2"]).toBeUndefined();
+    expect(m.threadMessages["t1"]).toEqual(["m1"]);
+    expect(m.threadTimeline["t1"]?.map((e) => e.id)).toEqual(["m1"]);
+    const settled = applyRecord(m, rec(6, { type: "turn.settled", turnId: "u1", threadId: "t1", status: "completed", settledAt: 6 }));
+    expect(settled.threads["t1"]).toMatchObject({ status: "idle", latestTurnId: "u1" });
+  });
+  it("reasoning deltas open the message and precede its text", () => {
+    const m = replay(base, [
+      rec(5, { type: "assistant.reasoning-delta", turnId: "u1", threadId: "t1", messageId: "a1", delta: "think", at: 5 }),
+      rec(6, { type: "assistant.reasoning-delta", turnId: "u1", threadId: "t1", messageId: "a1", delta: "ing", at: 6 }),
+      rec(7, { type: "assistant.delta", turnId: "u1", threadId: "t1", messageId: "a1", delta: "answer", at: 7 }),
+    ]);
+    expect(m.messages["a1"]).toMatchObject({ reasoning: "thinking", text: "answer", streaming: true });
+    expect(m.threadTimeline["t1"]?.map((e) => e.id)).toEqual(["m1", "m2", "a1"]);
+  });
+});

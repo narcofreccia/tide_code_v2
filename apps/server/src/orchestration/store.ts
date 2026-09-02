@@ -33,8 +33,10 @@ export function aggregateIdOf(event: DomainEvent): string | null {
     case "turn.requested":
       return event.turn.threadId;
     case "turn.started":
+    case "turn.dequeued":
     case "turn.interrupt-requested":
     case "assistant.delta":
+    case "assistant.reasoning-delta":
     case "approval.responded":
     case "user-input.responded":
     case "plan.progressed":

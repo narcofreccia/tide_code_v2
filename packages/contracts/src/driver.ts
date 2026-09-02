@@ -72,6 +72,15 @@ export interface TurnInput {
   images?: { mediaType: string; data: string }[];
 }
 
+/** The thread settings a live session must honour from the next turn on. */
+export interface SessionSettings {
+  model?: string;
+  mode: RuntimeMode;
+  interaction: InteractionMode;
+}
+/** `applied` = the harness switched in place; `reopen` = the directory must close and reopen (with resume). */
+export type ReconfigureResult = "applied" | "reopen";
+
 /** Activity as produced by a driver: the reactor fills id/threadId/turnId/timestamps. */
 export type DriverActivity =
   | (Omit<Extract<Activity, { kind: "tool" }>, "id" | "threadId" | "turnId" | "createdAt" | "updatedAt"> & { id?: string })
@@ -83,6 +92,8 @@ export type DriverActivity =
 export type NormalizedEvent =
   | { type: "session"; nativeSessionId: string; model?: string }
   | { type: "assistant.delta"; messageKey: string; delta: string }
+  /** extended-thinking / reasoning text, attached to the same message as the following text */
+  | { type: "assistant.reasoning"; messageKey: string; delta: string }
   | { type: "activity"; activity: DriverActivity }
   | { type: "plan.proposed"; markdown: string }
   | { type: "plan.progress"; steps: { text: string; status: "pending" | "in_progress" | "completed" }[] }
@@ -97,6 +108,11 @@ export interface ProviderSession {
   respondUserInput(requestId: string, answers: Record<string, unknown>): Promise<void>;
   interrupt(): Promise<void>;
   close(): Promise<void>;
+  /**
+   * Called between turns when the thread's model/mode/interaction changed. Optional: a driver
+   * that omits it (or answers `reopen`) gets closed and reopened with `resume` by the server.
+   */
+  reconfigure?(settings: SessionSettings): Promise<ReconfigureResult>;
 }
 
 export interface ProviderInstance {

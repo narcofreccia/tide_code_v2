@@ -142,10 +142,33 @@ describe("decide: turns", () => {
     expect(next.threads[threadId]?.status).toBe("running");
   });
 
-  it("rejects a second turn while one is running", () => {
+  it("queues a second turn while one is running; dequeue drops it", () => {
     const { model, threadId } = withThread();
-    const running = run(model, { type: "turn.request", threadId, text: "one" }).model;
-    expect(decide(running, { type: "turn.request", threadId, text: "two" }, ctx)).toMatchObject({ ok: false, error: { code: "busy" } });
+    const first = run(model, { type: "turn.request", threadId, text: "one" });
+    const firstTurn = first.events[0]?.type === "turn.requested" ? first.events[0].turn.id : "";
+    const second = run(first.model, { type: "turn.request", threadId, text: "two", images: [{ mediaType: "image/png", data: "AAAA" }] });
+    const evt = second.events[0];
+    if (evt?.type !== "turn.requested") throw new Error("expected turn.requested");
+    expect(evt.turn.status).toBe("queued");
+    expect(evt.images).toEqual([{ mediaType: "image/png", data: "AAAA" }]);
+    expect(evt.userMessage.attachments).toEqual([{ mediaType: "image/png", bytes: 3 }]);
+    expect(second.model.threads[threadId]?.latestTurnId).toBe(firstTurn);
+    expect(decide(second.model, { type: "turn.dequeue", turnId: firstTurn }, ctx)).toMatchObject({ ok: false, error: { code: "conflict" } });
+    const dequeued = run(second.model, { type: "turn.dequeue", turnId: evt.turn.id });
+    expect(dequeued.events[0]).toMatchObject({ type: "turn.dequeued", turnId: evt.turn.id, threadId });
+    expect(dequeued.model.turns[evt.turn.id]).toBeUndefined();
+    expect(decide(dequeued.model, { type: "turn.dequeue", turnId: evt.turn.id }, ctx)).toMatchObject({ ok: false, error: { code: "not-found" } });
+  });
+
+  it("appends reasoning to the assistant message of a live turn only", () => {
+    const { model, threadId } = withThread();
+    const { model: live, events } = run(model, { type: "turn.request", threadId, text: "one" });
+    const turnId = events[0]?.type === "turn.requested" ? events[0].turn.id : "";
+    const next = run(live, { type: "assistant.reasoning.append", turnId, messageId: "a1", delta: "hmm" });
+    expect(next.events[0]).toMatchObject({ type: "assistant.reasoning-delta", turnId, threadId, messageId: "a1", delta: "hmm" });
+    expect(next.model.messages["a1"]).toMatchObject({ reasoning: "hmm", text: "" });
+    const settled = run(next.model, { type: "turn.settle", turnId, status: "completed" }).model;
+    expect(decide(settled, { type: "assistant.reasoning.append", turnId, messageId: "a1", delta: "x" }, ctx)).toMatchObject({ ok: false, error: { code: "conflict" } });
   });
 
   it("rejects a turn on a missing or archived thread", () => {

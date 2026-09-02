@@ -1,5 +1,5 @@
 import { Type, type Static } from "typebox";
-import { Activity, ApprovalDecision, CheckpointStats, ExpertSpec, ExpertsPhase, InteractionMode, LinkAccess, ProviderKind, PullRequest, RuntimeMode, TurnUsage } from "./domain.ts";
+import { Activity, ApprovalDecision, CheckpointStats, ExpertSpec, ExpertsPhase, ImageInput, InteractionMode, LinkAccess, ProviderKind, PullRequest, RuntimeMode, TurnUsage } from "./domain.ts";
 
 // Commands = validated intents. ClientCommand may arrive over RPC; InternalCommand is
 // issued only by server reactors (driver ingestion) and is rejected at the RPC boundary.
@@ -73,12 +73,16 @@ export const WorktreeDetach = Type.Object({
   deleteBranch: Type.Optional(Type.Boolean()),
 });
 
+/** While the thread is running the turn is queued and runs when the current one settles. */
 export const TurnRequest = Type.Object({
   type: Type.Literal("turn.request"),
   threadId: Type.String(),
   text: Type.String({ minLength: 1 }),
+  images: Type.Optional(Type.Array(ImageInput, { maxItems: 8 })),
 });
 export const TurnInterrupt = Type.Object({ type: Type.Literal("turn.interrupt"), threadId: Type.String() });
+/** Drops a turn that is still queued (never sent to the harness). */
+export const TurnDequeue = Type.Object({ type: Type.Literal("turn.dequeue"), turnId: Type.String() });
 
 export const ApprovalRespond = Type.Object({
   type: Type.Literal("approval.respond"),
@@ -134,7 +138,7 @@ export const ExpertsArchive = Type.Object({ type: Type.Literal("experts.archive"
 export const ClientCommand = Type.Union([
   ProjectCreate, ProjectUpdate, ProjectArchive, ProjectLinkAdd, ProjectLinkUpdate, ProjectLinkRemove,
   ThreadCreate, ThreadUpdate, ThreadArchive,
-  TurnRequest, TurnInterrupt,
+  TurnRequest, TurnInterrupt, TurnDequeue,
   ApprovalRespond, UserInputRespond,
   PlanImplement, PlanDismiss,
   ThreadRevert, ThreadPublish, WorktreeDetach,
@@ -152,6 +156,12 @@ export const TurnStart = Type.Object({
 });
 export const AssistantAppend = Type.Object({
   type: Type.Literal("assistant.append"),
+  turnId: Type.String(),
+  messageId: Type.String(),
+  delta: Type.String(),
+});
+export const AssistantReasoningAppend = Type.Object({
+  type: Type.Literal("assistant.reasoning.append"),
   turnId: Type.String(),
   messageId: Type.String(),
   delta: Type.String(),
@@ -232,7 +242,7 @@ export const AgentCommand = Type.Union([ExpertsFindingPost, ExpertsMessageSend, 
 export type AgentCommand = Static<typeof AgentCommand>;
 
 export const InternalCommand = Type.Union([
-  TurnStart, AssistantAppend, ActivityUpsert, PlanPropose, PlanProgressReport, UsageReport, TurnSettle,
+  TurnStart, AssistantAppend, AssistantReasoningAppend, ActivityUpsert, PlanPropose, PlanProgressReport, UsageReport, TurnSettle,
   WorktreeAttach, CheckpointRecord, PrUpdate, WorktreeDetachedReport,
   ExpertsThreadsBound, ExpertsExpertStatus,
 ]);

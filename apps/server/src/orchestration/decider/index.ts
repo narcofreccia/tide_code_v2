@@ -32,9 +32,11 @@ export function decide(model: ReadModel, command: Command, ctx: DecideContext): 
       return decideThread(model, command, ctx);
 
     case "turn.request":
+    case "turn.dequeue":
     case "turn.interrupt":
     case "turn.start":
     case "assistant.append":
+    case "assistant.reasoning.append":
     case "usage.report":
     case "turn.settle":
       return decideTurn(model, command, ctx);

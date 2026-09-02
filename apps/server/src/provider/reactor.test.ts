@@ -114,6 +114,48 @@ async function harness(options: HarnessOptions = {}): Promise<Harness> {
 const activitiesOf = (model: ReadModel, threadId: string) =>
   (model.threadTimeline[threadId] ?? []).filter((e) => e.kind === "activity").map((e) => model.activities[e.id]);
 
+describe("ProviderReactor: queued turns and reasoning", () => {
+  it("runs a queued follow-up after the live turn settles, on the same session, in order", async () => {
+    const h = await harness();
+    h.control.script(emit({ type: "assistant.reasoning", messageKey: "m0", delta: "let me think" }), emit({ type: "assistant.delta", messageKey: "m0", delta: "one" }), awaitInterrupt(), emit({ type: "settled", status: "completed" }));
+    h.control.script(emit({ type: "assistant.delta", messageKey: "m1", delta: "two" }), emit({ type: "settled", status: "completed" }));
+    const first = pick((await h.engine.dispatch({ type: "turn.request", threadId: h.threadId, text: "first" })).events, "turn.requested");
+    const second = pick((await h.engine.dispatch({ type: "turn.request", threadId: h.threadId, text: "second", images: [{ mediaType: "image/png", data: "AAAA" }] })).events, "turn.requested");
+    expect(second.turn.status).toBe("queued");
+    const streamed = waitFor(h.engine, (e) => e.type === "assistant.delta");
+    await streamed;
+    expect(h.engine.getModel().threads[h.threadId]).toMatchObject({ status: "running", latestTurnId: first.turn.id });
+    // the queued one has not been sent to the harness yet
+    expect(h.control.sessionFor(h.threadId)?.inputs).toHaveLength(1);
+    await h.engine.dispatch({ type: "turn.interrupt", threadId: h.threadId });
+    await h.reactor.drain();
+    const model = h.engine.getModel();
+    expect(model.turns[first.turn.id]?.status).toBe("completed");
+    expect(model.turns[second.turn.id]?.status).toBe("completed");
+    expect(model.threads[h.threadId]?.status).toBe("idle");
+    const session = h.control.sessionFor(h.threadId);
+    expect(session?.inputs.map((i) => i.text)).toEqual(["first", "second"]);
+    expect(session?.inputs[1]?.images).toEqual([{ mediaType: "image/png", data: "AAAA" }]);
+    const assistant = (model.threadMessages[h.threadId] ?? []).map((id) => model.messages[id]).filter((m) => m?.role === "assistant");
+    expect(assistant.map((m) => [m?.reasoning, m?.text])).toEqual([["let me think", "one"], [undefined, "two"]]);
+  });
+
+  it("never sends a dequeued turn", async () => {
+    const h = await harness();
+    h.control.script(emit({ type: "assistant.delta", messageKey: "m0", delta: "one" }), awaitInterrupt(), emit({ type: "settled", status: "completed" }));
+    const streamed = waitFor(h.engine, (e) => e.type === "assistant.delta");
+    await h.engine.dispatch({ type: "turn.request", threadId: h.threadId, text: "first" });
+    const second = pick((await h.engine.dispatch({ type: "turn.request", threadId: h.threadId, text: "second" })).events, "turn.requested");
+    await h.engine.dispatch({ type: "turn.dequeue", turnId: second.turn.id });
+    await streamed;
+    await h.engine.dispatch({ type: "turn.interrupt", threadId: h.threadId });
+    await h.reactor.drain();
+    expect(h.control.sessionFor(h.threadId)?.inputs.map((i) => i.text)).toEqual(["first"]);
+    expect(h.engine.getModel().threads[h.threadId]).toMatchObject({ status: "idle" });
+    expect(h.engine.getModel().turns[second.turn.id]).toBeUndefined();
+  });
+});
+
 describe("ProviderReactor: a full turn", () => {
   it("starts the turn, assembles deltas, upserts the tool row and settles", async () => {
     const h = await harness();

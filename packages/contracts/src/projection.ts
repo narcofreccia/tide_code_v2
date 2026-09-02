@@ -100,7 +100,29 @@ export function applyEvent(model: ReadModel, event: DomainEvent): ReadModel {
         threadMessages: { ...model.threadMessages, [turn.threadId]: [...list, userMessage.id] },
       };
       next = appendTimeline(next, turn.threadId, { kind: "message", id: userMessage.id });
+      // a queued turn waits its turn: the running one keeps latestTurnId until it settles
+      if (turn.status === "queued") return withThread(next, turn.threadId, { updatedAt: turn.requestedAt });
       return withThread(next, turn.threadId, { latestTurnId: turn.id, status: "running", updatedAt: turn.requestedAt });
+    }
+    case "turn.dequeued": {
+      const turn = model.turns[event.turnId];
+      if (!turn) return model;
+      const turns = { ...model.turns };
+      delete turns[turn.id];
+      const messages = { ...model.messages };
+      const dropped = new Set((model.threadMessages[event.threadId] ?? []).filter((id) => messages[id]?.turnId === turn.id));
+      for (const id of dropped) delete messages[id];
+      return withThread(
+        {
+          ...model,
+          turns,
+          messages,
+          threadMessages: { ...model.threadMessages, [event.threadId]: (model.threadMessages[event.threadId] ?? []).filter((id) => !dropped.has(id)) },
+          threadTimeline: { ...model.threadTimeline, [event.threadId]: (model.threadTimeline[event.threadId] ?? []).filter((e) => !(e.kind === "message" && dropped.has(e.id))) },
+        },
+        event.threadId,
+        { updatedAt: event.at },
+      );
     }
     case "turn.started": {
       const turn = model.turns[event.turnId];
@@ -192,6 +214,19 @@ export function applyEvent(model: ReadModel, event: DomainEvent): ReadModel {
       }
       return next;
     }
+    case "assistant.reasoning-delta": {
+      const existing = model.messages[event.messageId];
+      const msg = existing
+        ? { ...existing, reasoning: (existing.reasoning ?? "") + event.delta }
+        : { id: event.messageId, threadId: event.threadId, turnId: event.turnId, role: "assistant" as const, text: "", reasoning: event.delta, createdAt: event.at, streaming: true };
+      let next: ReadModel = { ...model, messages: { ...model.messages, [msg.id]: msg } };
+      if (!existing) {
+        const list = model.threadMessages[event.threadId] ?? [];
+        next = { ...next, threadMessages: { ...next.threadMessages, [event.threadId]: [...list, msg.id] } };
+        next = appendTimeline(next, event.threadId, { kind: "message", id: msg.id });
+      }
+      return next;
+    }
     case "activity.upserted":
       return upsertActivity(model, event.activity);
     case "approval.responded": {
@@ -260,6 +295,15 @@ export function applyEvent(model: ReadModel, event: DomainEvent): ReadModel {
         const patched: Thread = { ...t, status: event.status === "completed" ? "idle" : event.status, updatedAt: event.settledAt };
         delete patched.planProgress;
         delete patched.interrupting;
+        // the oldest queued turn becomes the live one; the thread never goes idle in between
+        const queued = Object.values(next.turns)
+          .filter((x) => x.threadId === t.id && x.status === "queued")
+          .sort((a, b) => a.requestedAt - b.requestedAt)[0];
+        if (queued) {
+          next = { ...next, turns: { ...next.turns, [queued.id]: { ...queued, status: "requested" } } };
+          patched.latestTurnId = queued.id;
+          patched.status = "running";
+        }
         next = { ...next, threads: { ...next.threads, [t.id]: patched } };
       }
       return refreshAttention(next, event.threadId, event.settledAt);

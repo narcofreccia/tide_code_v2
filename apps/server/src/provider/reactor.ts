@@ -5,6 +5,7 @@ import {
   type InternalCommand,
   type NormalizedEvent,
   type ProviderSession,
+  type TurnInput,
 } from "@tide/contracts";
 import type { Engine } from "../orchestration/engine.ts";
 import { activityKey, mergeActivity } from "./activities.ts";
@@ -106,11 +107,12 @@ export class ProviderReactor {
   #onRecord(record: EventRecord): void {
     const event = record.event;
     switch (event.type) {
-      case "turn.requested":
-        this.#enqueue(event.turn.threadId, () =>
-          this.#runTurn(event.turn.threadId, event.turn.id, event.userMessage.text),
-        );
+      case "turn.requested": {
+        const input: TurnInput = { text: event.userMessage.text, ...(event.images ? { images: event.images } : {}) };
+        // queued turns ride the same per-thread chain: they start when the running one settles
+        this.#enqueue(event.turn.threadId, () => this.#runTurn(event.turn.threadId, event.turn.id, input));
         return;
+      }
       case "approval.responded":
         this.#withSession(
           event.threadId,
@@ -236,7 +238,9 @@ export class ProviderReactor {
     }
   }
 
-  async #runTurn(threadId: string, turnId: string, text: string): Promise<void> {
+  async #runTurn(threadId: string, turnId: string, input: TurnInput): Promise<void> {
+    // dequeued while waiting, or settled by recovery/shutdown: nothing to run
+    if (this.#engine.getModel().turns[turnId]?.status !== "requested") return;
     // Gives the vcs reactor its window to snapshot the working tree before the first tool
     // call, and to attach a worktree, so the session below opens in the final cwd.
     if (this.#beforeTurn) {
@@ -271,7 +275,7 @@ export class ProviderReactor {
     try {
       const session = await this.#sessions.getOrOpen(thread, project);
       if (session.nativeSessionId !== undefined) await start(session.nativeSessionId);
-      for await (const event of session.send({ text })) {
+      for await (const event of session.send(input)) {
         if (event.type === "session") {
           await start(event.nativeSessionId, event.model);
           continue;
@@ -311,6 +315,16 @@ export class ProviderReactor {
           state.messageIds.set(key, messageId);
         }
         await this.#dispatch({ type: "assistant.append", turnId, messageId, delta: event.delta });
+        return false;
+      }
+      case "assistant.reasoning": {
+        const key = `${turnId}:${event.messageKey}`;
+        let messageId = state.messageIds.get(key);
+        if (messageId === undefined) {
+          messageId = this.#newId();
+          state.messageIds.set(key, messageId);
+        }
+        await this.#dispatch({ type: "assistant.reasoning.append", turnId, messageId, delta: event.delta });
         return false;
       }
       case "activity": {

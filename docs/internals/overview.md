@@ -28,9 +28,15 @@ order is total and `seq` is the only cursor clients need (reconnect = `fromSeq`)
 
 Reactors subscribe to events and issue further commands; they hold no business rules:
 - `ProviderReactor` — `turn.requested` → open/resume a driver session (in the thread's worktree
-  cwd) → translate `NormalizedEvent`s into internal commands (`assistant.append`, `activity.upsert`,
-  `plan.propose`, `usage.report`, `turn.settle`). Approvals and interrupts are forwarded
-  out-of-band so they never queue behind the running turn.
+  cwd) → translate `NormalizedEvent`s into internal commands (`assistant.append`,
+  `assistant.reasoning.append`, `activity.upsert`, `plan.propose`, `usage.report`, `turn.settle`).
+  Approvals and interrupts are forwarded out-of-band so they never queue behind the running turn.
+  A `turn.request` sent while the thread is running is **queued** (`Turn.status: queued`) and
+  promoted when the live turn settles; `turn.dequeue` drops it. Before each turn the
+  `SessionDirectory` compares the thread's model/mode/interaction with what the session was
+  opened with and either calls the driver's `reconfigure()` or reopens the session with `resume`.
+  On startup a recovery pass settles every turn a previous process left `queued`/`requested`/
+  `running`; `close()` interrupts and settles in-flight turns before the store closes.
 - `VcsReactor` — worktree per thread, `before`/`after` checkpoints as `refs/tide/checkpoints/…`
   (the before-snapshot gates the turn), revert, publish (commit/push/`gh pr`), teardown on archive.
 - `ExpertsReactor` — delivers board messages as follow-up turns (mailbox per thread), tracks
