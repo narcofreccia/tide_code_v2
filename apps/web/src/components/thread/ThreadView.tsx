@@ -7,7 +7,7 @@ import styles from "./ThreadView.module.css";
 
 export function ThreadView({ thread }: { thread: Thread }) {
   return (
-    <section className={styles.column} aria-label="Thread">
+    <section className={styles.column} aria-label="Thread" data-thread-column>
       <ThreadHeader thread={thread} />
       {thread.planProgress ? <PlanProgress progress={thread.planProgress} /> : null}
       <Stream threadId={thread.id} provider={thread.provider} />

@@ -4,6 +4,8 @@ import type { OpencodeApi, OpencodeConfig } from "./types.ts";
 import type { WireAgent, WireProvider } from "./wire.ts";
 
 export const LOGIN_HINT = "Run `opencode auth login` in a terminal";
+/** Verified against `opencode auth --help` (opencode 1.1.36). */
+export const LOGIN_COMMAND = "opencode auth login";
 export const INSTALL_HINT = "Install opencode: https://opencode.ai";
 
 /**
@@ -77,7 +79,7 @@ export async function buildStatus(config: OpencodeConfig, env: DriverEnv, probe:
       installed: true,
       loggedIn: models.length > 0,
       ...(version !== undefined ? { version } : {}),
-      ...(models.length > 0 ? {} : { hint: LOGIN_HINT }),
+      ...(models.length > 0 ? {} : { hint: LOGIN_HINT, loginCommand: LOGIN_COMMAND }),
       models,
       caps: capsFor(agents),
     };
@@ -89,6 +91,7 @@ export async function buildStatus(config: OpencodeConfig, env: DriverEnv, probe:
       loggedIn: false,
       ...(cliVersion !== undefined ? { version: cliVersion } : {}),
       hint: LOGIN_HINT,
+      loginCommand: LOGIN_COMMAND,
       models: [],
       caps: { ...OPENCODE_CAPS },
     };

@@ -1,12 +1,62 @@
 import { useState } from "react";
 import type { Activity } from "@tide/contracts";
 import { formatDuration, formatPayload, shortenPath, toolFilePath, toolGlyph, toolTarget } from "../../lib/activity.ts";
+import { resolveLoginCommand, runOrCopy } from "../../lib/providerLogin.ts";
 import { useModel } from "../../state/model.ts";
+import { providerStatus, useProviders } from "../../state/providers.ts";
+import { useUi } from "../../state/ui.ts";
 import { openFileTab } from "../../state/workbench.ts";
 import { normalizePastedPath } from "../../lib/mentions.ts";
+import { Button } from "../ui/Button.tsx";
 import styles from "./ActivityRow.module.css";
 
 const MARK: Record<string, string> = { ok: "✓", error: "✕", running: "…" };
+
+/** A harness that refuses because nobody is logged in says so in these words. */
+const AUTH_ERROR = /401|not logged in|unauthenticated|login/i;
+
+/** The two plain-text lines: `info` and `error` share one activity shape. */
+type NoteActivity = Extract<Activity, { kind: "info" | "error" }>;
+
+/**
+ * An error line the user can act on: an auth failure is a login problem, not a
+ * mystery, so it offers the settings page and — when the driver told us the
+ * command — running the harness's own login right here.
+ */
+function ErrorActivity({ activity }: { activity: NoteActivity }) {
+  const isError = activity.kind === "error";
+  const provider = useModel((s) => s.model.threads[activity.threadId]?.provider);
+  const providers = useProviders();
+  const showSettings = useUi((s) => s.showSettings);
+  const setSettingsSection = useUi((s) => s.setSettingsSection);
+  const auth = isError && AUTH_ERROR.test(activity.text);
+  const command = auth && provider ? resolveLoginCommand(providerStatus(providers, provider)) : undefined;
+
+  return (
+    <li className={styles.item}>
+      <div className={`${styles.row} ${isError ? styles.error : styles.info}`}>
+        <span className={styles.glyph}>{isError ? "✕" : "·"}</span>
+        <span className={styles.target}>{activity.text}</span>
+        {auth ? (
+          <Button
+            variant="quiet"
+            onClick={() => {
+              setSettingsSection("providers");
+              showSettings();
+            }}
+          >
+            Open Settings › Providers
+          </Button>
+        ) : null}
+        {command ? (
+          <Button variant="quiet" title={command} onClick={() => void runOrCopy(command)}>
+            Run login
+          </Button>
+        ) : null}
+      </div>
+    </li>
+  );
+}
 
 /** One 24px stream line: `▸ Read src/foo.ts` / `❯ Bash pnpm test ✓ 2.1s`. */
 export function ActivityRow({ activity }: { activity: Activity }) {
@@ -14,14 +64,7 @@ export function ActivityRow({ activity }: { activity: Activity }) {
   const cwd = useModel((s) => s.model.threads[activity.threadId]?.worktreePath);
 
   if (activity.kind === "info" || activity.kind === "error") {
-    return (
-      <li className={styles.item}>
-        <div className={`${styles.row} ${activity.kind === "error" ? styles.error : styles.info}`}>
-          <span className={styles.glyph}>{activity.kind === "error" ? "✕" : "·"}</span>
-          <span className={styles.target}>{activity.text}</span>
-        </div>
-      </li>
-    );
+    return <ErrorActivity activity={activity} />;
   }
   if (activity.kind !== "tool") return null;
 

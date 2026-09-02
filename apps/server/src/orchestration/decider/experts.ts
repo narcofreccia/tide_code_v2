@@ -10,7 +10,7 @@ import type {
   Thread,
 } from "@tide/contracts";
 import { discussionPrompt, explorationPrompt, synthesisPrompt } from "../../experts/prompts.ts";
-import { fail, isArchived, ok, turnRequested, type DecideContext, type DecideResult } from "./types.ts";
+import { fail, isArchived, lacksTideMcp, NO_TIDE_MCP_MESSAGE, ok, turnRequested, type DecideContext, type DecideResult } from "./types.ts";
 
 type ExpertsCommand =
   | CommandOf<"experts.create">
@@ -54,7 +54,10 @@ export function decideExperts(model: ReadModel, command: ExpertsCommand, ctx: De
         }
         if (keys.has(spec.key)) return fail("invalid-command", `duplicate expert key ${spec.key}`);
         keys.add(spec.key);
+        // the whole panel talks through the Tide MCP board; a harness without it never reports back
+        if (lacksTideMcp(spec.provider)) return fail("invalid-command", NO_TIDE_MCP_MESSAGE);
       }
+      if (lacksTideMcp(command.lead.provider)) return fail("invalid-command", NO_TIDE_MCP_MESSAGE);
       const session: ExpertsSession = {
         id: ctx.newId(),
         projectId: project.id,

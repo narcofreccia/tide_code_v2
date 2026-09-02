@@ -1,9 +1,10 @@
 import { tmpdir } from "node:os";
 import { describe, expect, it } from "vitest";
 import type { DriverEnv, NormalizedEvent, OpenSessionOptions } from "@tide/contracts";
+import { AppServer } from "./app-server.ts";
 import { fakeSpawn, type FakeAppServer } from "./fake-app-server.ts";
 import { CodexSession } from "./session.ts";
-import type { CodexConfig } from "./types.ts";
+import type { CodexConfig, SpawnFn, TimerLike } from "./types.ts";
 
 const THREAD = "thread-1";
 const TURN = "turn-1";
@@ -15,6 +16,29 @@ async function harness(overrides: Partial<OpenSessionOptions> = {}, config: Part
   const options: OpenSessionOptions = { threadId: "t1", cwd: "/tmp/repo", mode: "approval-required", interaction: "default", mcpServers: [], ...overrides };
   const session = await CodexSession.open({ spawnImpl: spawn, ...config }, env, options, "/usr/bin/codex");
   return { session, server: last(), logs };
+}
+
+/** Deterministic stand-in for `setTimeout`: the test decides when a deadline fires. */
+function fakeTimers(): TimerLike & { run(): void; pending: number } {
+  const scheduled = new Map<number, () => void>();
+  let next = 1;
+  return {
+    setTimeout(fn) {
+      const handle = next++;
+      scheduled.set(handle, fn);
+      return handle;
+    },
+    clearTimeout(handle) {
+      scheduled.delete(handle as number);
+    },
+    run() {
+      for (const fn of [...scheduled.values()]) fn();
+      scheduled.clear();
+    },
+    get pending() {
+      return scheduled.size;
+    },
+  };
 }
 
 /** Collects the turn's events, letting the test drive the server between yields. */
@@ -53,7 +77,8 @@ describe("codex session", () => {
     });
     expect(server.calls("thread/resume")[0]).toMatchObject({ threadId: "thread-existing", approvalPolicy: "never", sandbox: "danger-full-access" });
     expect(server.calls("thread/start")).toHaveLength(0);
-    expect(server.args).toEqual(["app-server", "-c", 'mcp_servers.tide.command="node"', "-c", 'mcp_servers.tide.args=["mcp.js"]', "-c", 'mcp_servers.tide.env.TOKEN="x"']);
+    expect(server.args).toEqual(["app-server", "-c", 'mcp_servers.tide.command="node"', "-c", 'mcp_servers.tide.args=["mcp.js"]', "-c", 'mcp_servers.tide.env_vars=["TOKEN"]']);
+    expect(server.env["TOKEN"]).toBe("x");
     await session.close();
   });
 
@@ -194,6 +219,81 @@ describe("codex session", () => {
     expect(events).toEqual([{ type: "settled", status: "error", error: "no active model" }]);
     await session.close();
     expect(() => session.send({ text: "hi" })).toThrow(/closed/);
+  });
+
+  it("settles the running turn when the app-server dies instead of leaving it hanging", async () => {
+    const { session, server } = await harness();
+    const { events, done } = collect(session.send({ text: "hi" }));
+    await tick();
+    expect(server.calls("turn/start")).toHaveLength(1);
+
+    // turn/start already resolved, so rejecting pending calls settles nothing on its own
+    server.exit(9);
+    await done;
+
+    expect(events.at(-1)).toEqual({ type: "settled", status: "error", error: "codex app-server exited (code 9)" });
+    expect(() => session.send({ text: "again" })).toThrow(/closed/);
+  });
+
+  it("reports a dead app-server as interrupted when the user asked to interrupt", async () => {
+    const { session, server } = await harness();
+    const { events, done } = collect(session.send({ text: "hi" }));
+    await tick();
+    await session.interrupt();
+    server.exit(null);
+    await done;
+    expect(events.at(-1)).toEqual({ type: "settled", status: "interrupted", error: "codex app-server exited (code null)" });
+  });
+
+  it("gives up on an app-server that never answers initialize, and kills it", async () => {
+    const timers = fakeTimers();
+    const { spawn, last } = fakeSpawn();
+    // the fake answers synchronously, so it has to be muted before the handshake is written
+    const mute: SpawnFn = (command, args, options) => {
+      const server = spawn(command, args, options) as FakeAppServer;
+      server.silentMethods.add("initialize");
+      return server;
+    };
+    const started = AppServer.start({
+      binaryPath: "/usr/bin/codex",
+      cwd: "/tmp/repo",
+      env: {},
+      spawn: mute,
+      log: () => undefined,
+      timers,
+      initializeTimeoutMs: 45_000,
+    });
+    timers.run();
+    await expect(started).rejects.toThrow(/did not answer initialize within 45000ms/);
+    expect(last().killed).toBeGreaterThan(0);
+  });
+
+  it("escalates SIGTERM to SIGKILL when the app-server refuses to exit", async () => {
+    const timers = fakeTimers();
+    const { spawn, last } = fakeSpawn();
+    const server = await AppServer.start({ binaryPath: "/usr/bin/codex", cwd: "/tmp/repo", env: {}, spawn, log: () => undefined, timers, killGraceMs: 5_000 });
+    last().ignoreSigterm = true;
+    server.close();
+    expect(last().signals).toEqual(["SIGTERM"]);
+    timers.run();
+    expect(last().signals).toEqual(["SIGTERM", "SIGKILL"]);
+  });
+
+  it("does not SIGKILL an app-server that exited on SIGTERM", async () => {
+    const timers = fakeTimers();
+    const { spawn, last } = fakeSpawn();
+    const server = await AppServer.start({ binaryPath: "/usr/bin/codex", cwd: "/tmp/repo", env: {}, spawn, log: () => undefined, timers });
+    server.close();
+    expect(last().signals).toEqual(["SIGTERM"]);
+    expect(timers.pending).toBe(0);
+  });
+
+  it("passes MCP secrets through the app-server's environment, never on its command line", async () => {
+    const { session, server } = await harness({ mcpServers: [{ name: "tide", command: "node", args: ["mcp.js"], env: { TIDE_AGENT_TOKEN: "s3cret" } }] });
+    expect(server.args.join(" ")).not.toContain("s3cret");
+    expect(server.args).toContain('mcp_servers.tide.env_vars=["TIDE_AGENT_TOKEN"]');
+    expect(server.env["TIDE_AGENT_TOKEN"]).toBe("s3cret");
+    await session.close();
   });
 
   it("sends images as data-url input parts alongside the text", async () => {

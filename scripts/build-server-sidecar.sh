@@ -19,9 +19,11 @@
 #   so the compiled binary uses Bun's built-in driver and needs no native module. The
 #   `node:sqlite` branch is marked external below so the bundler does not try to resolve it.
 # * node-pty is a native (N-API) module. `bun build --compile` cannot embed a .node file,
-#   so it is externalised too; the server only imports it lazily for the terminal feature
-#   and degrades gracefully when the import fails. Terminals are therefore unavailable in
-#   the bundled sidecar until a prebuilt .node is shipped alongside it.
+#   so it is externalised; the server only imports it lazily and degrades gracefully when
+#   the import fails. Terminals still work in the bundled sidecar: apps/server/src/workspace/
+#   pty/manager.ts picks the Bun backend (Bun.spawn's `terminal` option, bunBackend.ts)
+#   whenever `globalThis.Bun` exists on a non-Windows platform, so node-pty is only the
+#   Node/Windows path.
 # * KNOWN LIMITATION (Windows): Bun's PTY support is macOS/Linux only, so the
 #   windows-x64 sidecar has NO terminal at all — the server reports the terminal
 #   feature as `unavailable` and every other feature works normally. Fixing this
@@ -95,7 +97,7 @@ case "${1:-}" in
     build_one "$(triple_for "$2")"
     ;;
   -h|--help)
-    sed -n '2,30p' "${BASH_SOURCE[0]}"
+    sed -n '2,31p' "${BASH_SOURCE[0]}"
     ;;
   "")
     build_one "$HOST_TRIPLE"

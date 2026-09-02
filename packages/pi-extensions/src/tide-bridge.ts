@@ -10,6 +10,7 @@ import {
   PLAN_PREFIX,
   PLAN_TOOL_NAME,
   USAGE_PREFIX,
+  blockedInPlanMode,
   classifyTool,
   needsApproval,
   parseLinkedDirs,
@@ -74,7 +75,10 @@ export default function tideBridge(pi: ExtensionAPI): void {
       return { block: true, reason: `read-only linked repo: ${readOnly.label} (${readOnly.path}) is linked read-only; do not modify it.` };
     }
 
-    if (plan) {
+    // Plan mode refuses known writes and mutating commands only. A tool Tide does not model
+    // is not evidence of a write, and a read-only shell command is research — both take the
+    // normal approval path instead of being refused outright (CLAUDE.md §1a).
+    if (plan && blockedInPlanMode(event.toolName, event.input)) {
       return {
         block: true,
         reason: `Plan mode: \`${event.toolName}\` may not run. Keep researching with read-only tools, then call ${PLAN_TOOL_NAME}.`,

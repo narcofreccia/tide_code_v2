@@ -96,6 +96,19 @@ describe("ClaudeSession", () => {
     expect(session.nativeSessionId).toBe("session-1");
   });
 
+  it("uses the claude_code preset system prompt even when nothing is appended", async () => {
+    // An omitted `systemPrompt` means "empty custom prompt" to the SDK, which would strip the
+    // Claude Code system prompt entirely (CLAUDE.md §1a: never cripple the harness).
+    const { session, query } = harness();
+    const events: NormalizedEvent[] = [];
+    const done = collect(session.send({ text: "hi" }), events);
+    await tick();
+    expect(query().options["systemPrompt"]).toEqual({ type: "preset", preset: "claude_code" });
+    query().init();
+    query().result();
+    await done;
+  });
+
   it("maps plan interaction to plan mode regardless of runtime mode", async () => {
     const { session, query } = harness({ mode: "full-access", interaction: "plan" });
     const events: NormalizedEvent[] = [];

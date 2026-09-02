@@ -50,5 +50,11 @@ export interface OpencodeApi {
   agents(input: { directory: string }): Promise<WireAgent[]>;
   /** registers an MCP server for a directory (`POST /mcp`); tools appear on the next turn */
   addMcpServer(input: { directory: string; name: string; command: string[]; env?: Record<string, string> }): Promise<void>;
+  /**
+   * Tears one down again (`POST /mcp/{name}/disconnect`). opencode 1.18's API has no *remove*:
+   * disconnect closes the client, drops it from the directory's client map and leaves the
+   * status entry as `disabled`, which is enough to stop the process and hide its tools.
+   */
+  disconnectMcpServer(input: { directory: string; name: string }): Promise<void>;
   health(): Promise<{ healthy: boolean; version?: string }>;
 }

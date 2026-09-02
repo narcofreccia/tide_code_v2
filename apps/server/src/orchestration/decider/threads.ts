@@ -70,6 +70,8 @@ export function decideThread(model: ReadModel, command: ThreadCommand, ctx: Deci
       const thread = model.threads[command.threadId];
       if (!thread) return fail("not-found", `unknown thread ${command.threadId}`);
       if (isArchived(thread)) return ok();
+      // archiving tears the worktree down, so it must never run under a live harness
+      if (thread.status === "running") return fail("busy", `thread ${thread.id} is running`);
       // keepWorktree rides along so the vcs reactor knows whether to tear the worktree down
       return ok({
         type: "thread.archived",

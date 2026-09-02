@@ -65,6 +65,11 @@ export class CodexSession implements ProviderSession {
       // Buffer anything that arrives before the constructor has run.
       onNotification: (method, params) => (session ? session.#notification(method, params) : notifications.push({ method, params })),
       onRequest: (method, params, id) => (session ? session.#request(method, params, id) : requests.push({ method, params, id })),
+      // The child can die at any point, including after `turn/start` has already resolved —
+      // rejecting pending JSON-RPC calls would then settle nothing and the turn would hang.
+      onExit: (reason) => {
+        if (session) session.#died(reason);
+      },
     });
 
     const policy = policyFor(options.mode, writableRoots(options));
@@ -95,6 +100,15 @@ export class CodexSession implements ProviderSession {
 
   #emit(event: NormalizedEvent): void {
     this.#mailbox?.push(event);
+  }
+
+  /** The app-server is gone: end whatever turn was running rather than waiting forever. */
+  #died(reason: string): void {
+    if (this.#closed) return;
+    this.#closed = true;
+    this.#broker.cancelAll();
+    this.#mailbox?.push({ type: "settled", status: this.#interruptRequested ? "interrupted" : "error", error: reason });
+    this.#mailbox?.close();
   }
 
   #notification(method: string, params: unknown): void {

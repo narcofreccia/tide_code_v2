@@ -45,6 +45,22 @@ describe("Settings › Providers", () => {
     expect(screen.getByText("Copy login command")).toBeDefined();
   });
 
+  it("prefers the driver's own loginCommand over the backticked hint", () => {
+    render(<ProviderCard status={{ ...LOGGED_OUT, loginCommand: "claude /login" }} />);
+    expect(screen.getByText("claude /login")).toBeDefined();
+    expect(screen.queryByText("claude auth login")).toBeNull();
+  });
+
+  it("never presents an install hint as a login command", () => {
+    render(
+      <ProviderCard
+        status={{ ...LOGGED_OUT, installed: false, hint: "install it with `npm i -g @openai/codex`" }}
+      />,
+    );
+    expect(screen.queryByText("npm i -g @openai/codex")).toBeNull();
+    expect(screen.queryByText("Copy login command")).toBeNull();
+  });
+
   it("runs the login command in a terminal of the selected thread", async () => {
     useUi.setState({ selectedThreadId: "t1", view: "thread" });
     const caller = mockRpc({

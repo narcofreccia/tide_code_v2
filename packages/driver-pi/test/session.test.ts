@@ -67,6 +67,65 @@ describe("PiSession", () => {
     await session.close();
   });
 
+  it("settles the running turn when pi dies instead of leaving it hanging", async () => {
+    const { session, pi } = await open((command, self) => {
+      if (command["type"] !== "prompt") return;
+      // prompt is acknowledged, so the turn is live and nothing is pending when pi dies
+      self.emitLine({ type: "response", id: command["id"], command: "prompt", success: true });
+    });
+    const events: NormalizedEvent[] = [];
+    const done = (async () => {
+      for await (const event of session.send({ text: "hello" })) events.push(event);
+    })();
+    await new Promise((resolve) => setImmediate(resolve));
+    pi().exit(137);
+    await done;
+    expect(events.at(-1)).toEqual({ type: "settled", status: "error", error: "pi exited with code 137" });
+    await session.close();
+  });
+
+  it("reports a dead pi as interrupted when the user asked to interrupt", async () => {
+    const { session, pi } = await open((command, self) => {
+      if (command["type"] !== "prompt") return;
+      self.emitLine({ type: "response", id: command["id"], command: "prompt", success: true });
+    });
+    const events: NormalizedEvent[] = [];
+    const done = (async () => {
+      for await (const event of session.send({ text: "long job" })) events.push(event);
+    })();
+    await new Promise((resolve) => setImmediate(resolve));
+    await session.interrupt();
+    pi().exit(null);
+    await done;
+    expect(events.at(-1)).toEqual({ type: "settled", status: "interrupted", error: "pi exited with code null" });
+  });
+
+  it("shows a confirm from one of the user's own extensions as an approval card", async () => {
+    const { session, pi } = await open((command, self) => {
+      if (command["type"] !== "prompt") return;
+      self.emitLine({ type: "response", id: command["id"], command: "prompt", success: true });
+      // no TIDE_META: this used to be answered "no" behind the user's back
+      self.emitLine({ type: "extension_ui_request", id: "ui-42", method: "confirm", title: "Deploy to staging?", message: "This pushes the current branch." });
+    });
+    const events: NormalizedEvent[] = [];
+    const done = (async () => {
+      for await (const event of session.send({ text: "deploy" })) events.push(event);
+    })();
+    await new Promise((resolve) => setImmediate(resolve));
+
+    const approval = events.flatMap((event) => (event.type === "activity" && event.activity.kind === "approval" ? [event.activity] : []))[0];
+    expect(approval).toMatchObject({ requestId: "ui-42", toolName: "Deploy to staging?", status: "pending", description: "This pushes the current branch." });
+    expect(pi().sent.some((command) => command["type"] === "extension_ui_response")).toBe(false);
+
+    await session.respondApproval("ui-42", "accept");
+    await new Promise((resolve) => setImmediate(resolve));
+    expect(pi().sent.at(-1)).toEqual({ type: "extension_ui_response", id: "ui-42", confirmed: true });
+
+    pi().emitLine({ type: "agent_settled" });
+    await done;
+    await session.close();
+  });
+
   it("turns a TIDE_META confirm into an approval activity and answers extension_ui_response", async () => {
     const { session, pi } = await open((command, self) => {
       if (command["type"] !== "prompt") return;

@@ -1,6 +1,7 @@
 import { afterEach, describe, expect, it, vi } from "vitest";
 import { act, cleanup, fireEvent, render, screen, waitFor } from "@testing-library/react";
 import { mockRpc, mockStream, resetUi } from "../../../testHarness.ts";
+import { useModel } from "../../../state/model.ts";
 import { setDrawerOpen, useTerminals } from "../../../state/terminals.ts";
 import { TerminalDrawer } from "./TerminalDrawer.tsx";
 
@@ -91,6 +92,28 @@ describe("TerminalDrawer", () => {
 
     act(() => attach?.push({ kind: "exit", code: 3 }));
     expect(terms[0]?.written.join("")).toContain("[exited code 3]");
+  });
+
+  it("re-attaches and re-lists after the connection comes back", async () => {
+    const rpc = mockRpc({ "pty.list": () => ({ ptys: [{ ptyId: "p1", alive: true }] }) });
+    const { streams } = mockStream();
+    setDrawerOpen(true);
+    useModel.setState({ status: "open" });
+    render(<TerminalDrawer threadId="t1" />);
+    await waitFor(() => expect(streams.filter((s) => s.method === "pty.attach")).toHaveLength(1));
+    const listCalls = rpc.mock.calls.filter(([method]) => method === "pty.list").length;
+
+    act(() => {
+      streams[0]?.end(new Error("connection lost"));
+      useModel.setState({ status: "reconnecting" });
+      useModel.setState({ status: "open" });
+    });
+
+    await waitFor(() => expect(streams.filter((s) => s.method === "pty.attach")).toHaveLength(2));
+    await waitFor(() =>
+      expect(rpc.mock.calls.filter(([method]) => method === "pty.list").length).toBe(listCalls + 1),
+    );
+    useModel.setState({ status: "closed" });
   });
 
   it("kills a pty when its tab is closed", async () => {

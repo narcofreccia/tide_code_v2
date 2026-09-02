@@ -21,6 +21,8 @@ export const CODEX_CAPS = {
 } as const;
 
 export const LOGIN_HINT = "Run `codex login` in a terminal";
+/** Verified against `codex --help` (codex-cli 0.147): login is its own subcommand. */
+export const LOGIN_COMMAND = "codex login";
 export const INSTALL_HINT = "Install Codex: run `npm i -g @openai/codex` in a terminal";
 
 async function exec(file: string, args: string[], timeout = 10_000, env?: NodeJS.ProcessEnv): Promise<string | undefined> {
@@ -105,7 +107,7 @@ export async function buildStatus(config: CodexConfig, env: DriverEnv): Promise<
     installed: true,
     loggedIn,
     ...(version ? { version } : {}),
-    ...(loggedIn ? {} : { hint: LOGIN_HINT }),
+    ...(loggedIn ? {} : { hint: LOGIN_HINT, loginCommand: LOGIN_COMMAND }),
     models,
     caps: { ...CODEX_CAPS },
   };

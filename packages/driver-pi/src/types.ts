@@ -20,6 +20,15 @@ export interface ChildLike {
   once(event: "exit" | "error", listener: (...args: never[]) => void): unknown;
 }
 
+/**
+ * Test seam for the driver's wall-clock deadlines (the SIGKILL escalation), so tests drive
+ * them deterministically instead of sleeping.
+ */
+export interface TimerLike {
+  setTimeout: (fn: () => void, ms: number) => unknown;
+  clearTimeout: (handle: unknown) => void;
+}
+
 export type SpawnLike = (command: string, args: string[], options: { cwd: string; env: NodeJS.ProcessEnv }) => ChildLike;
 export type FetchLike = (url: string, init?: { signal?: AbortSignal }) => Promise<{ ok: boolean; json(): Promise<unknown> }>;
 

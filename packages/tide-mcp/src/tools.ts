@@ -57,21 +57,21 @@ export const TOOL_DEFINITIONS: ToolDefinition[] = [
   {
     name: "tide_delegate",
     description:
-      "Hand a self-contained task to another coding harness as a new Tide thread, and get back its threadId. Use it for work that is worth running in parallel or that another harness is better at. Pass `repo` with the label of one of this project's linked repositories to run the delegate inside that repository instead. It returns immediately: poll tide_delegate_status for the result.",
+      "Hand a self-contained task to another coding harness as a new Tide thread, and get back its threadId. Use it for work that is worth running in parallel or that another harness is better at. Only claude, codex and opencode can be delegated to — pi has no Tide bridge and would never report back. Pass `repo` with the label of one of this project's writable linked repositories to run the delegate inside that repository instead. It returns immediately: poll tide_delegate_status for the result.",
     inputSchema: {
       type: "object",
       properties: {
-        provider: { type: "string", enum: ["claude", "codex", "opencode", "pi"], description: "Which harness runs the task." },
+        provider: { type: "string", enum: ["claude", "codex", "opencode"], description: "Which harness runs the task." },
         prompt: str("The complete task description; the new thread has none of your context."),
         model: str("Optional model id for that harness."),
         mode: {
           type: "string",
           enum: ["approval-required", "auto-accept-edits", "auto", "full-access"],
-          description: "Permission mode for the new thread. Defaults to auto.",
+          description: "Permission mode for the new thread. Defaults to your own mode, and is never allowed to exceed it.",
         },
         title: str("Optional short title for the new thread."),
         useWorktree: { type: "boolean", description: "Run the task in its own git worktree." },
-        repo: str("Label of a linked repository to run the delegate in; it becomes that thread's main repo. Omit to use this project's repo."),
+        repo: str("Label of a writable linked repository to run the delegate in; it becomes that thread's main repo. Read-only links are refused. Omit to use this project's repo."),
       },
       required: ["provider", "prompt"],
     },

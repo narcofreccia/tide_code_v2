@@ -1,7 +1,7 @@
 import { selectProjects } from "@tide/client";
 import { PROVIDER_LABELS, PROVIDERS } from "../../lib/vocab.ts";
 import { useModel } from "../../state/model.ts";
-import { providerStatus, useProviders } from "../../state/providers.ts";
+import { providerStatus, useProviderRoster } from "../../state/providers.ts";
 import { useUi } from "../../state/ui.ts";
 import { Logo } from "../shell/Logo.tsx";
 import { NewThreadPopover } from "../shell/NewThreadPopover.tsx";
@@ -42,7 +42,7 @@ function Row({
  */
 export function MissionEmpty() {
   const model = useModel((s) => s.model);
-  const providers = useProviders();
+  const { providers, loading, error } = useProviderRoster();
   const setNewProjectOpen = useUi((s) => s.setNewProjectOpen);
   const railCollapsed = useUi((s) => s.railCollapsed);
   const toggleRail = useUi((s) => s.toggleRail);
@@ -51,10 +51,19 @@ export function MissionEmpty() {
 
   const projects = selectProjects(model);
   const firstProject = projects[0];
-  const ready = PROVIDERS.filter((kind) => {
-    const status = providerStatus(providers, kind);
-    return status?.installed === true && status.loggedIn === true;
-  });
+  const ready = loading
+    ? []
+    : PROVIDERS.filter((kind) => {
+        const status = providerStatus(providers, kind);
+        return status?.installed === true && status.loggedIn === true;
+      });
+  const harnessHint = loading
+    ? "Checking harnesses…"
+    : error
+      ? `Could not reach the server: ${error}`
+      : ready.length > 0
+        ? `Ready: ${ready.map((kind) => PROVIDER_LABELS[kind]).join(", ")}`
+        : "None of the four are logged in yet.";
 
   const addRepository = (): void => {
     if (railCollapsed) toggleRail();
@@ -82,11 +91,7 @@ export function MissionEmpty() {
           done={ready.length > 0}
           step="2"
           label="Log in to a harness"
-          hint={
-            ready.length > 0
-              ? `Ready: ${ready.map((kind) => PROVIDER_LABELS[kind]).join(", ")}`
-              : "None of the four are logged in yet."
-          }
+          hint={harnessHint}
           action={
             <Button
               onClick={() => {

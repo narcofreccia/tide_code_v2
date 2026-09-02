@@ -35,9 +35,22 @@ function withThread(useWorktree = false): Fixture {
   return { model: t.model, projectId: project.project.id, threadId: thread.thread.id };
 }
 
-/** A thread with one settled turn that carries a before-checkpoint. */
-function withCheckpointedTurn(): Fixture & { turnId: string } {
-  const base = withThread();
+/** A thread whose worktree the reactor has already reported as attached. */
+function withAttachedWorktree(): Fixture {
+  const base = withThread(true);
+  const model = run(base.model, {
+    type: "worktree.attach",
+    threadId: base.threadId,
+    worktreePath: "/wt/thread",
+    branch: "tide/fix-login",
+    baseBranch: "main",
+  }).model;
+  return { ...base, model };
+}
+
+/** A thread with one settled turn that carries a before-checkpoint, on a worktree by default. */
+function withCheckpointedTurn(worktree = true): Fixture & { turnId: string } {
+  const base = worktree ? withAttachedWorktree() : withThread();
   const requested = run(base.model, { type: "turn.request", threadId: base.threadId, text: "go" });
   const event = requested.events[0];
   if (event?.type !== "turn.requested") throw new Error("expected turn.requested");
@@ -147,6 +160,14 @@ describe("decide: thread.revert", () => {
       error: { code: "busy" },
     });
   });
+
+  it("refuses a thread that has no worktree: the checkout would be the user's own", () => {
+    const f = withCheckpointedTurn(false);
+    expect(decide(f.model, { type: "thread.revert", threadId: f.threadId, turnId: f.turnId }, ctx)).toMatchObject({
+      ok: false,
+      error: { code: "conflict", message: expect.stringContaining("main checkout") },
+    });
+  });
 });
 
 describe("decide: thread.publish", () => {
@@ -163,6 +184,14 @@ describe("decide: thread.publish", () => {
     expect(decide(running, { type: "thread.publish", threadId: f.threadId }, ctx)).toMatchObject({ ok: false, error: { code: "busy" } });
     const archived = run(f.model, { type: "thread.archive", threadId: f.threadId }).model;
     expect(decide(archived, { type: "thread.publish", threadId: f.threadId }, ctx)).toMatchObject({ ok: false, error: { code: "conflict" } });
+  });
+
+  it("refuses a thread that has no worktree: it would commit and push the user's own branch", () => {
+    const f = withCheckpointedTurn(false);
+    expect(decide(f.model, { type: "thread.publish", threadId: f.threadId }, ctx)).toMatchObject({
+      ok: false,
+      error: { code: "conflict", message: expect.stringContaining("main checkout") },
+    });
   });
 });
 
@@ -189,6 +218,12 @@ describe("decide: thread.archive carries keepWorktree", () => {
     expect(events[0]).not.toHaveProperty("keepWorktree");
   });
 
+  it("refuses to archive a running thread: the worktree would go under a live harness", () => {
+    const f = withThread(true);
+    const running = run(f.model, { type: "turn.request", threadId: f.threadId, text: "go" }).model;
+    expect(decide(running, { type: "thread.archive", threadId: f.threadId }, ctx)).toMatchObject({ ok: false, error: { code: "busy" } });
+  });
+
   it("passes keepWorktree through in both directions", () => {
     for (const keepWorktree of [true, false]) {
       const f = withThread();
@@ -197,19 +232,6 @@ describe("decide: thread.archive carries keepWorktree", () => {
     }
   });
 });
-
-/** A thread whose worktree the reactor has already reported as attached. */
-function withAttachedWorktree(): Fixture {
-  const base = withThread(true);
-  const model = run(base.model, {
-    type: "worktree.attach",
-    threadId: base.threadId,
-    worktreePath: "/wt/thread",
-    branch: "tide/fix-login",
-    baseBranch: "main",
-  }).model;
-  return { ...base, model };
-}
 
 describe("decide: worktree.detach", () => {
   it("requests a detach for a thread that has a worktree", () => {

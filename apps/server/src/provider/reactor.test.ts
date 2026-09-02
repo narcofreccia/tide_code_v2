@@ -186,6 +186,33 @@ describe("ProviderReactor: approvals and questions", () => {
     expect(activitiesOf(model, h.threadId)[0]).toMatchObject({ kind: "approval", status: "resolved", decision: "accept", toolName: "Bash" });
   });
 
+  it("settles the turn with an error when the session behind an approval is gone", async () => {
+    const h = await harness();
+    h.control.script(
+      emit({ type: "activity", activity: { kind: "approval", requestId: "r1", toolName: "Bash", input: { command: "ls" }, status: "pending" } }),
+      awaitApproval("r1"),
+      emit({ type: "settled", status: "completed" }),
+    );
+    const pending = waitFor(h.engine, (e) => e.type === "activity.upserted" && e.activity.kind === "approval");
+    const requested = pick((await h.engine.dispatch({ type: "turn.request", threadId: h.threadId, text: "danger" })).events, "turn.requested");
+    await pending;
+
+    // the harness died (or was reaped) while the user was deciding; its turn never returns,
+    // so the outcome is awaited on the event itself rather than on the stuck driver
+    await h.sessions.close(h.threadId);
+    const settled = waitFor(h.engine, (e) => e.type === "turn.settled");
+    await h.engine.dispatch({ type: "approval.respond", threadId: h.threadId, requestId: "r1", decision: "accept" });
+    await settled;
+
+    const model = h.engine.getModel();
+    expect(h.control.approvals).toEqual([]);
+    expect(model.turns[requested.turn.id]).toMatchObject({ status: "error", error: "the harness session is gone; start a new turn" });
+    expect(model.threads[h.threadId]?.status).toBe("error");
+    expect(model.threads[h.threadId]?.attention).toBeUndefined();
+    const error = activitiesOf(model, h.threadId).find((a) => a?.kind === "error");
+    expect(error?.kind === "error" ? error.text : "").toBe("the harness session is gone; start a new turn");
+  });
+
   it("forwards user-input answers to the same activity row", async () => {
     const h = await harness();
     h.control.script(

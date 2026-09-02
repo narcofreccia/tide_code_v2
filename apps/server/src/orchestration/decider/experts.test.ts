@@ -53,6 +53,21 @@ const sessionOf = (panel: Panel) => {
 };
 
 describe("decide: experts.create", () => {
+  it("refuses pi as an expert or as the lead: it has no Tide MCP bridge to reach the board", () => {
+    const created = run(emptyReadModel(), { type: "project.create", title: "T", rootPath: "/repo" });
+    const project = created.events[0];
+    if (project?.type !== "project.created") throw new Error("expected project.created");
+    const base = { type: "experts.create" as const, projectId: project.project.id, topic: "cache?" };
+
+    expect(
+      decide(created.model, { ...base, experts: [{ key: "perf", name: "Pat", role: "perf", provider: "pi" }], lead: { provider: "claude" } }, ctx),
+    ).toMatchObject({ ok: false, error: { code: "invalid-command", message: expect.stringContaining("pi has no Tide MCP bridge") } });
+
+    expect(
+      decide(created.model, { ...base, experts: [{ key: "perf", name: "Pat", role: "perf", provider: "claude" }], lead: { provider: "pi" } }, ctx),
+    ).toMatchObject({ ok: false, error: { code: "invalid-command" } });
+  });
+
   it("creates a setup-phase session with pending experts", () => {
     const panel = withSession();
     const session = sessionOf(panel);

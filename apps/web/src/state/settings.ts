@@ -19,7 +19,7 @@ interface SettingsState {
 }
 
 export const SETTINGS_STORAGE_KEY = "tide.settings";
-/** Documented default; the server does not expose the worktree root yet. */
+/** Shown until `server.info` answers with the server's own `worktreeRoot`. */
 export const DEFAULT_WORKTREE_ROOT = "~/.tide/worktrees";
 /** Fired whenever the explicit theme changes, so Monaco/xterm can re-read tokens. */
 export const THEME_EVENT = "tide:theme";

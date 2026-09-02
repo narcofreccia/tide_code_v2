@@ -69,7 +69,14 @@ export class PiSession implements ProviderSession {
         if (process.env["TIDE_DEBUG_PI"]) env.log(`[pi] unhandled event ${type}`);
       },
     });
-    this.#rpc = new PiRpc(child, { onLine: (line) => this.#route(line as PiEvent), log: (message) => env.log(message) });
+    this.#rpc = new PiRpc(child, {
+      onLine: (line) => this.#route(line as PiEvent),
+      log: (message) => env.log(message),
+      // pi can die mid-turn (crash, OOM, a killed terminal). Failing the pending requests is
+      // not enough: `prompt` has already resolved by then, so the mailbox would stay open
+      // forever and the thread would sit "running" with nothing on the other end.
+      onExit: (error) => this.#died(error),
+    });
     this.#broker = new PiApprovalBroker(
       (event) => this.#emit(event),
       (id, body) => this.#rpc.notify({ type: "extension_ui_response", id, ...body }),
@@ -87,6 +94,15 @@ export class PiSession implements ProviderSession {
 
   #emit(event: NormalizedEvent): void {
     this.#mailbox?.push(event);
+  }
+
+  /** The pi process is gone: settle whatever turn was running instead of hanging on it. */
+  #died(error: Error): void {
+    if (this.#closed) return;
+    this.#closed = true;
+    this.#broker.cancelAll();
+    this.#mailbox?.push({ type: "settled", status: this.#interruptRequested ? "interrupted" : "error", error: error.message });
+    this.#mailbox?.close();
   }
 
   #route(line: PiEvent): void {

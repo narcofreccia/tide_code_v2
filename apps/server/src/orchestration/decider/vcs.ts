@@ -14,12 +14,20 @@ type VcsCommand =
  * *facts* the vcs reactor reports back (worktree attached, checkpoint recorded, PR
  * updated); it never touches git itself.
  */
+/**
+ * Both git-destructive commands operate on the thread's checkout: revert runs
+ * `read-tree --reset -u` + `clean -fd`, publish commits and pushes everything in it. Without a
+ * worktree that checkout *is* the user's main working copy, so the safe answer is to refuse.
+ */
+const NEEDS_WORKTREE = "runs in the main checkout; revert/publish require a worktree";
+
 export function decideVcs(model: ReadModel, command: VcsCommand, ctx: DecideContext): DecideResult {
   switch (command.type) {
     case "thread.revert": {
       const thread = model.threads[command.threadId];
       if (!thread) return fail("not-found", `unknown thread ${command.threadId}`);
       if (isArchived(thread)) return fail("conflict", `thread ${thread.id} is archived`);
+      if (thread.worktreePath === undefined) return fail("conflict", `thread ${thread.id} ${NEEDS_WORKTREE}`);
       const turn = model.turns[command.turnId];
       if (!turn) return fail("not-found", `unknown turn ${command.turnId}`);
       if (turn.threadId !== thread.id) return fail("conflict", `turn ${turn.id} does not belong to thread ${thread.id}`);
@@ -32,6 +40,7 @@ export function decideVcs(model: ReadModel, command: VcsCommand, ctx: DecideCont
       const thread = model.threads[command.threadId];
       if (!thread) return fail("not-found", `unknown thread ${command.threadId}`);
       if (isArchived(thread)) return fail("conflict", `thread ${thread.id} is archived`);
+      if (thread.worktreePath === undefined) return fail("conflict", `thread ${thread.id} ${NEEDS_WORKTREE}`);
       if (thread.status === "running") return fail("busy", `thread ${thread.id} is running`);
       return ok({
         type: "publish.requested",

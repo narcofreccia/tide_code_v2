@@ -1,5 +1,6 @@
 import type { ApprovalDecision, InteractionMode, LinkAccess, ProviderKind, RuntimeMode } from "@tide/contracts";
 import { call, dispatch, type DispatchResult } from "../state/model.ts";
+import { dispatchOrToast } from "./dispatchOrToast.ts";
 import { showToast } from "../state/toast.ts";
 import { useUi } from "../state/ui.ts";
 import { ensureStatus, invalidateThread } from "../state/vcs.ts";
@@ -13,7 +14,7 @@ export interface ThreadPatch {
 }
 
 export function updateThread(threadId: string, patch: ThreadPatch): void {
-  void dispatch({ type: "thread.update", threadId, ...patch }).catch(() => undefined);
+  dispatchOrToast("Updating the thread", { type: "thread.update", threadId, ...patch });
 }
 
 /**
@@ -21,11 +22,11 @@ export function updateThread(threadId: string, patch: ThreadPatch): void {
  * the dialog asks, threads without one archive straight away.
  */
 export function archiveThread(threadId: string, keepWorktree?: boolean): void {
-  void dispatch({
+  dispatchOrToast("Archiving the thread", {
     type: "thread.archive",
     threadId,
     ...(keepWorktree === undefined ? {} : { keepWorktree }),
-  }).catch(() => undefined);
+  });
   useUi.getState().selectThread(null);
 }
 
@@ -97,11 +98,11 @@ export async function sendTurn(threadId: string, text: string): Promise<void> {
 }
 
 export function interruptTurn(threadId: string): void {
-  void dispatch({ type: "turn.interrupt", threadId }).catch(() => undefined);
+  dispatchOrToast("Stopping the turn", { type: "turn.interrupt", threadId });
 }
 
 export function respondApproval(threadId: string, requestId: string, decision: ApprovalDecision): void {
-  void dispatch({ type: "approval.respond", threadId, requestId, decision }).catch(() => undefined);
+  dispatchOrToast("Answering the approval", { type: "approval.respond", threadId, requestId, decision });
 }
 
 export function respondUserInput(
@@ -109,7 +110,7 @@ export function respondUserInput(
   requestId: string,
   answers: Record<string, unknown>,
 ): void {
-  void dispatch({ type: "user-input.respond", threadId, requestId, answers }).catch(() => undefined);
+  dispatchOrToast("Answering the question", { type: "user-input.respond", threadId, requestId, answers });
 }
 
 export interface ImplementPlanOptions {
@@ -133,7 +134,7 @@ export async function implementPlan(planId: string, options: ImplementPlanOption
 }
 
 export function dismissPlan(planId: string): void {
-  void dispatch({ type: "plan.dismiss", planId }).catch(() => undefined);
+  dispatchOrToast("Dismissing the plan", { type: "plan.dismiss", planId });
 }
 
 /** Escape hatch: copy the harness's own resume command for this thread. */

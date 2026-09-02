@@ -1,6 +1,7 @@
 import { create } from "zustand";
 import { persist } from "zustand/middleware";
 import { call } from "./model.ts";
+import { onReconnect } from "./reconnect.ts";
 import { showToast } from "./toast.ts";
 
 export interface PtyTab {
@@ -118,6 +119,12 @@ export function writePty(ptyId: string, data: string): void {
 export function resizePty(ptyId: string, cols: number, rows: number): void {
   void call("pty.resize", { ptyId, cols, rows }).catch(() => undefined);
 }
+
+// ptys outlive the socket on the server, so a reconnect re-lists them instead of
+// leaving `loaded` blocking a fresh read.
+onReconnect(() => {
+  for (const threadId of Object.keys(useTerminals.getState().loaded)) void ensurePtys(threadId, true);
+});
 
 export function resetTerminals(): void {
   useTerminals.setState({ drawerOpen: false, height: 240, tabs: {}, active: {}, loaded: {} });

@@ -16,7 +16,14 @@ interface Written {
 export class FakeAppServer implements ChildLike {
   readonly written: Written[] = [];
   readonly args: string[] = [];
+  /** the environment the driver spawned this server with */
+  env: NodeJS.ProcessEnv = {};
+  /** every signal `kill` was called with, oldest first */
+  readonly signals: (NodeJS.Signals | undefined)[] = [];
   killed = 0;
+  /** when true, `kill` does NOT make the child exit — used to drive the SIGKILL escalation */
+  ignoreSigterm = false;
+  exited = false;
   model = "gpt-5.6-sol";
   threadId = "thread-1";
   turnId = "turn-1";
@@ -25,6 +32,8 @@ export class FakeAppServer implements ChildLike {
 
   #listeners: ((chunk: unknown) => void)[] = [];
   #exit: ((arg: unknown) => void)[] = [];
+  /** methods the fake simply never answers (used for the handshake-timeout test) */
+  silentMethods = new Set<string>();
 
   readonly stdin = {
     write: (data: string): void => {
@@ -49,9 +58,18 @@ export class FakeAppServer implements ChildLike {
     if (event === "exit") this.#exit.push(listener);
   }
 
-  kill(): void {
+  kill(signal?: NodeJS.Signals): void {
     this.killed++;
-    for (const listener of this.#exit) listener(0);
+    this.signals.push(signal);
+    if (this.ignoreSigterm && signal === "SIGTERM") return;
+    this.exit(0);
+  }
+
+  /** The child dies on its own (crash, OOM, `codex` upgrade mid-turn). */
+  exit(code: number | null): void {
+    if (this.exited) return;
+    this.exited = true;
+    for (const listener of this.#exit) listener(code);
   }
 
   /** Calls written by the driver, oldest first. */
@@ -78,6 +96,7 @@ export class FakeAppServer implements ChildLike {
   }
 
   #answer(message: Written): void {
+    if (message.method !== undefined && this.silentMethods.has(message.method)) return;
     const failure = message.method !== undefined ? this.failMethods.get(message.method) : undefined;
     if (failure !== undefined) {
       this.emit({ jsonrpc: "2.0", id: message.id, error: { code: -32600, message: failure } });
@@ -108,9 +127,10 @@ export class FakeAppServer implements ChildLike {
 /** A `spawnImpl` that hands out (and records) `FakeAppServer`s. */
 export function fakeSpawn(): { spawn: SpawnFn; servers: FakeAppServer[]; last: () => FakeAppServer } {
   const servers: FakeAppServer[] = [];
-  const spawn: SpawnFn = (_command, args) => {
+  const spawn: SpawnFn = (_command, args, options) => {
     const server = new FakeAppServer();
     server.args.push(...args);
+    server.env = options.env;
     servers.push(server);
     return server;
   };

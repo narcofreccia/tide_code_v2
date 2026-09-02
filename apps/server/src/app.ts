@@ -3,6 +3,7 @@ import { ExpertsReactor } from "./experts/reactor.ts";
 import { TideMcpProvisioner } from "./mcp/provision.ts";
 import { AgentTokenStore } from "./rpc/agentTickets.ts";
 import { Engine } from "./orchestration/engine.ts";
+import { recoverUnsettledTurns, SHUTDOWN_ERROR, unsettledTurns } from "./orchestration/recovery.ts";
 import { openEventStore, type EventStore } from "./orchestration/store.ts";
 import { registerBundledDrivers } from "./provider/load.ts";
 import { ProviderReactor } from "./provider/reactor.ts";
@@ -25,6 +26,8 @@ export interface AppOptions {
   listen?: boolean;
   /** tests inject a fake GitHub CLI */
   gh?: GhLike;
+  /** how long close() waits for in-flight reactor work before giving up */
+  shutdownTimeoutMs?: number;
   log?: (msg: string, data?: unknown) => void;
 }
 
@@ -62,6 +65,8 @@ export async function createApp(options: AppOptions): Promise<App> {
   const environmentId = persisted ?? config.environmentId;
 
   const engine = new Engine({ store });
+  // Before any reactor subscribes: nothing can honour a turn the previous process left running.
+  await recoverUnsettledTurns(engine, { log });
   const registry = new DriverRegistry({ env: { dataDir: config.dataDir, log } });
   if (options.registerDrivers) await options.registerDrivers(registry);
   else await registerBundledDrivers(registry, config.providers, log);
@@ -102,7 +107,16 @@ export async function createApp(options: AppOptions): Promise<App> {
   const server =
     options.listen === false
       ? undefined
-      : await startServer({ engine, store, registry, checkpoints, workspace, agentTokens, config: { ...config, environmentId } });
+      : await startServer({
+          engine,
+          store,
+          registry,
+          checkpoints,
+          workspace,
+          agentTokens,
+          ...(options.gh !== undefined ? { gh: options.gh } : {}),
+          config: { ...config, environmentId },
+        });
   if (server) mcp.setUrl(`ws://${config.host}:${server.port}/ws`);
 
   return {
@@ -122,14 +136,56 @@ export async function createApp(options: AppOptions): Promise<App> {
     workspace,
     server,
     async close() {
+      // 1. no new turn can be picked up: the reactors stop listening and the socket goes away
       reactor.stop();
       experts.stop();
       vcs.stop();
-      workspace.close();
       await server?.close();
+
+      // 2. whatever is mid-flight is asked to stop and then settled, so a restart finds a
+      //    clean log instead of a thread wedged on `running`
+      for (const turn of unsettledTurns(engine.getModel())) {
+        try {
+          await sessions.peek(turn.threadId)?.interrupt();
+        } catch (err) {
+          log("[app] interrupt on shutdown failed", err);
+        }
+        try {
+          await engine.dispatch({ type: "turn.settle", turnId: turn.id, status: "interrupted", error: SHUTDOWN_ERROR });
+        } catch (err) {
+          log("[app] settle on shutdown failed", err);
+        }
+      }
+
+      // 3. give the reactors a bounded window to finish their git/driver work before the
+      //    store they write into is closed under them
+      await withTimeout(Promise.all([reactor.drain(), vcs.drain()]), options.shutdownTimeoutMs ?? DEFAULT_SHUTDOWN_TIMEOUT_MS, log);
+
+      workspace.close();
       await sessions.closeAll();
       await registry.dispose();
       store.close();
     },
   };
+}
+
+const DEFAULT_SHUTDOWN_TIMEOUT_MS = 5_000;
+
+/** Never let a wedged reactor hold the process open; the store must close either way. */
+async function withTimeout(work: Promise<unknown>, ms: number, log: (msg: string, data?: unknown) => void): Promise<void> {
+  let timer: ReturnType<typeof setTimeout> | undefined;
+  const bail = new Promise<"timeout">((resolve) => {
+    timer = setTimeout(() => resolve("timeout"), ms);
+    timer.unref?.();
+  });
+  // handled up front: when the timeout wins, a later rejection must not surface unhandled
+  const guarded = work.then(
+    () => "done" as const,
+    (err: unknown) => {
+      log("[app] reactor drain failed during shutdown", err);
+      return "done" as const;
+    },
+  );
+  if ((await Promise.race([guarded, bail])) === "timeout") log("[app] shutdown timed out waiting for reactors to drain");
+  if (timer) clearTimeout(timer);
 }

@@ -2,7 +2,8 @@ import { tmpdir } from "node:os";
 import { describe, expect, it } from "vitest";
 import type { DriverEnv, OpenSessionOptions } from "@tide/contracts";
 import { FakeOpencodeApi } from "../test/fake-api.ts";
-import { OpencodeInstance, parseModelId } from "./instance.ts";
+import { mcpServerName, OpencodeInstance, parseModelId } from "./instance.ts";
+import { LOGIN_COMMAND, LOGIN_HINT } from "./status.ts";
 import type { OpencodeConfig } from "./types.ts";
 
 const env: DriverEnv = { dataDir: tmpdir(), log: () => undefined };
@@ -70,13 +71,41 @@ describe("OpencodeInstance", () => {
     });
     expect(session.nativeSessionId).toBe("ses_fake");
     expect(api.created[0]).toMatchObject({ directory: "/repo", permission: [{ permission: "edit", pattern: "*", action: "ask" }, { permission: "bash", pattern: "*", action: "ask" }, { permission: "webfetch", pattern: "*", action: "ask" }] });
-    expect(api.mcp).toEqual([{ name: "tide", command: ["node", "mcp.js"] }]);
+    expect(api.mcp).toEqual([{ name: "tide-t1", command: ["node", "mcp.js"] }]);
 
     const events = session.send({ text: "hi" })[Symbol.asyncIterator]();
     const first = await events.next();
     expect(first.value).toEqual({ type: "session", nativeSessionId: "ses_fake", model: "opencode/big-pickle" });
     expect(api.prompts[0]?.agent).toBe("build");
     await session.close();
+    await instance.dispose();
+  });
+
+  it("offers the exact login command when opencode has no usable provider", async () => {
+    const { instance, api } = harness();
+    api.providerCatalog = { providers: [], default: {} };
+    const status = await instance.status();
+    expect(status.installed).toBe(true);
+    expect(status.loggedIn).toBe(false);
+    expect(status.hint).toBe(LOGIN_HINT);
+    // verified against `opencode auth --help` (opencode 1.1.36)
+    expect(status.loginCommand).toBe(LOGIN_COMMAND);
+    await instance.dispose();
+  });
+
+  it("scopes each thread's MCP registration to that thread and tears it down on close", async () => {
+    const { instance, api } = harness();
+    const servers = [{ name: "tide", command: "node", args: ["mcp.js"], env: { TIDE_AGENT_TOKEN: "t1-token" } }];
+    // both threads share one cwd, so one shared "tide" name would leave a single live server
+    // holding whichever agent token registered last
+    const first = await instance.openSession({ ...baseOptions, threadId: "t1", mcpServers: servers });
+    const second = await instance.openSession({ ...baseOptions, threadId: "t2", mcpServers: servers });
+    expect(api.mcp.map((entry) => entry.name)).toEqual([mcpServerName("tide", "t1"), mcpServerName("tide", "t2")]);
+
+    await first.close();
+    expect(api.mcpDisconnected).toEqual([{ directory: "/repo", name: "tide-t1" }]);
+    await second.close();
+    expect(api.mcpDisconnected.map((entry) => entry.name)).toEqual(["tide-t1", "tide-t2"]);
     await instance.dispose();
   });
 

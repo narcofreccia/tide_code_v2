@@ -12,7 +12,7 @@ Three regions + top bar + status bar. Two regions collapse.
 |---|---|---|
 | Top bar | 36px | `⌘K` palette button · project switcher · thread title (inline rename) · right: provider / model / mode / interaction pills · turn state (Stop) |
 | Rail | 240px → 48px icons | **Inbox** (approvals, questions, plans-ready across all threads, with count) · projects → threads (child threads nested) · `+ thread` per project · bottom: Settings, connection |
-| Thread | flexible, primary | header (branch/worktree, PR badge, actions: archive, open in Finder, new child) · pinned plan progress while running · stream of messages + activities · inline cards (approval, user-input, proposed plan) · composer |
+| Thread | flexible, primary | header (branch/worktree, PR badge, actions: open in terminal, new child, archive, detach worktree) · pinned plan progress while running · stream of messages + activities · inline cards (approval, user-input, proposed plan) · composer |
 | Workbench | flexible, secondary | tabs: **Changes** (default) · open files (Monaco) · tree toggle · terminal drawer |
 | Status bar | 24px | `⎇ branch (worktree)` · context % + cost · diff stats · provider health · connection |
 
@@ -24,6 +24,9 @@ Rail toggle `⌘B`. Terminal drawer `` ⌘` ``. Palette `⌘K`.
 **Mission Control** (no thread selected, or `⌘0`): grid/list of all active threads across
 projects with status glyph, provider, last activity, needs-attention badge; the Inbox at the
 top. This is the landing view. "New thread" from here asks project → provider → worktree?.
+
+"Open in terminal" copies the harness's own resume command to the clipboard (`claude --resume
+<id>` / `codex resume` / `opencode` in the worktree) until it opens a PTY tab directly.
 
 **Thread**: one chronological stream. Messages are plain (user right-aligned muted block,
 assistant as prose). Activities are single lines `▸ Read src/foo.ts` / `▸ Bash pnpm test ✓ 2.1s`,

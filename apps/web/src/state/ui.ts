@@ -31,6 +31,8 @@ interface UiState {
   /** project the create-experts dialog is open for, null when closed */
   newExpertsProjectId: string | null;
   newProjectOpen: boolean;
+  /** project the ⌘K / ⌘N new-thread dialog is open for, null when closed */
+  newThreadProjectId: string | null;
   /** project whose "Linked repositories" editor is open, null when closed */
   linksProjectId: string | null;
   /** ⌘K command palette */
@@ -59,6 +61,7 @@ interface UiState {
   closeSettings: () => void;
   setSettingsSection: (section: SettingsSection) => void;
   setNewProjectOpen: (open: boolean) => void;
+  setNewThreadProject: (projectId: string | null) => void;
   setLinksProject: (projectId: string | null) => void;
   setPaletteOpen: (open: boolean) => void;
   setThreadDialog: (dialog: ThreadDialog | null) => void;
@@ -82,6 +85,7 @@ export const useUi = create<UiState>()(
       expertsReturnTo: "mission",
       newExpertsProjectId: null,
       newProjectOpen: false,
+      newThreadProjectId: null,
       linksProjectId: null,
       paletteOpen: false,
       threadDialog: null,
@@ -117,6 +121,7 @@ export const useUi = create<UiState>()(
       closeSettings: () => set((s) => (s.view === "settings" ? { view: s.settingsReturnTo } : s)),
       setSettingsSection: (settingsSection) => set({ settingsSection }),
       setNewProjectOpen: (newProjectOpen) => set({ newProjectOpen }),
+      setNewThreadProject: (newThreadProjectId) => set({ newThreadProjectId }),
       setLinksProject: (linksProjectId) => set({ linksProjectId }),
       setPaletteOpen: (paletteOpen) => set({ paletteOpen }),
       setThreadDialog: (threadDialog) => set({ threadDialog }),

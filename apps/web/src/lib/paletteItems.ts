@@ -135,12 +135,17 @@ function navigationItems(model: ReadModel): PaletteItem[] {
   return items;
 }
 
+/** The palette never offers to open itself, and lists ⌘N as a project-scoped item. */
+const SURFACED_ELSEWHERE = new Set(["palette", "new-thread"]);
+
 /**
  * Runnable keyboard-map entries that apply right now; surface-owned ones (⌘↵, y/n)
- * have no action, and the palette never offers to open itself.
+ * have no action.
  */
 function shortcutItems(): PaletteItem[] {
-  return SHORTCUTS.filter((s) => s.run !== undefined && s.id !== "palette" && scopeApplies(s.when)).map((s) => ({
+  return SHORTCUTS.filter(
+    (s) => s.run !== undefined && !SURFACED_ELSEWHERE.has(s.id) && scopeApplies(s.when),
+  ).map((s) => ({
     id: `shortcut:${s.id}`,
     label: s.label,
     group: "Actions" as const,
@@ -153,8 +158,16 @@ function shortcutItems(): PaletteItem[] {
 }
 
 /** Project-scoped actions; the palette only offers them when a project is in scope. */
-function projectItems(projectId: string): PaletteItem[] {
+function projectItems(model: ReadModel, projectId: string): PaletteItem[] {
   return [
+    {
+      id: "project:new-thread",
+      label: "New thread…",
+      group: "Actions",
+      kbd: "⌘N",
+      ...(model.projects[projectId] ? { detail: model.projects[projectId].title } : {}),
+      run: () => useUi.getState().setNewThreadProject(projectId),
+    },
     {
       id: "project:links",
       label: "Manage linked repositories…",
@@ -177,7 +190,7 @@ export function buildPaletteItems({ model, selectedThreadId, selectedProjectId }
   const projectId = thread?.projectId ?? selectedProjectId ?? undefined;
   return [
     ...(thread ? threadItems(model, thread) : []),
-    ...(projectId !== undefined && model.projects[projectId] ? projectItems(projectId) : []),
+    ...(projectId !== undefined && model.projects[projectId] ? projectItems(model, projectId) : []),
     ...shortcutItems(),
     ...navigationItems(model),
   ];

@@ -94,6 +94,11 @@ export class SdkOpencodeApi implements OpencodeApi {
     unwrapVoid(result, "mcp.add");
   }
 
+  async disconnectMcpServer(input: { directory: string; name: string }): Promise<void> {
+    const result = await this.#client.mcp.disconnect({ path: { name: input.name }, query: { directory: input.directory } });
+    unwrapVoid(result, "mcp.disconnect");
+  }
+
   async health(): Promise<{ healthy: boolean; version?: string }> {
     const response = await fetch(`${this.#baseUrl}/global/health`);
     if (!response.ok) throw new Error(`opencode health check failed: HTTP ${response.status}`);

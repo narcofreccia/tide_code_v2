@@ -1,5 +1,6 @@
 import { describe, expect, it } from "vitest";
 import { PiRpc, splitJsonl } from "../src/index.ts";
+import type { TimerLike } from "../src/types.ts";
 import type { PiLine } from "../src/types.ts";
 import { fakePi } from "./fake-pi.ts";
 
@@ -71,5 +72,64 @@ describe("request/response correlation", () => {
     const pi = fakePi((command, self) => self.emitLine({ type: "response", id: command["id"], command: "set_model", success: false, error: "Model not found" }));
     const rpc = new PiRpc(pi, { onLine: () => undefined, log: () => undefined });
     expect(await rpc.data({ type: "set_model" })).toBeUndefined();
+  });
+});
+
+describe("child lifecycle", () => {
+  /** Deterministic stand-in for `setTimeout`: the test decides when the grace period ends. */
+  function fakeTimers(): TimerLike & { run(): void; pending: number } {
+    const scheduled = new Map<number, () => void>();
+    let next = 1;
+    return {
+      setTimeout(fn) {
+        const handle = next++;
+        scheduled.set(handle, fn);
+        return handle;
+      },
+      clearTimeout(handle) {
+        scheduled.delete(handle as number);
+      },
+      run() {
+        for (const fn of [...scheduled.values()]) fn();
+        scheduled.clear();
+      },
+      get pending() {
+        return scheduled.size;
+      },
+    };
+  }
+
+  it("escalates SIGTERM to SIGKILL when pi refuses to exit", () => {
+    const pi = fakePi();
+    pi.ignoreSigterm = true;
+    const timers = fakeTimers();
+    const rpc = new PiRpc(pi, { onLine: () => undefined, log: () => undefined, timers, killGraceMs: 5_000 });
+    rpc.close();
+    expect(pi.signals).toEqual(["SIGTERM"]);
+    timers.run();
+    expect(pi.signals).toEqual(["SIGTERM", "SIGKILL"]);
+  });
+
+  it("does not SIGKILL a pi that exited on SIGTERM", () => {
+    const pi = fakePi();
+    const timers = fakeTimers();
+    const rpc = new PiRpc(pi, { onLine: () => undefined, log: () => undefined, timers });
+    rpc.close();
+    expect(pi.signals).toEqual(["SIGTERM"]);
+    expect(timers.pending).toBe(0);
+  });
+
+  it("tells the owner the child died, but stays quiet when Tide closed it deliberately", () => {
+    const deaths: string[] = [];
+    const pi = fakePi();
+    new PiRpc(pi, { onLine: () => undefined, log: () => undefined, onExit: (error) => deaths.push(error.message) });
+    pi.exit(9);
+    expect(deaths).toEqual(["pi exited with code 9"]);
+
+    const other = fakePi();
+    const closed: string[] = [];
+    const rpc = new PiRpc(other, { onLine: () => undefined, log: () => undefined, onExit: (error) => closed.push(error.message) });
+    rpc.close();
+    expect(closed).toEqual([]);
   });
 });

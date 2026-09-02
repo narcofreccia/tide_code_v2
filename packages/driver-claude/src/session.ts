@@ -122,7 +122,10 @@ export class ClaudeSession implements ProviderSession {
       // Edits under a read-only link are denied in `canUseTool` instead — see links.ts.
       ...(options.linkedDirs && options.linkedDirs.length > 0 ? { additionalDirectories: options.linkedDirs.map((dir) => dir.path) } : {}),
       ...(this.#permissionMode === "bypassPermissions" ? { allowDangerouslySkipPermissions: true } : {}),
-      ...(options.systemPromptAppend ? { systemPrompt: { type: "preset", preset: "claude_code", append: options.systemPromptAppend } } : {}),
+      // ALWAYS set, append or not: the SDK reads an omitted `systemPrompt` as an *empty custom*
+      // prompt, which would silently strip the Claude Code system prompt — the definition of
+      // crippling the harness (CLAUDE.md §1a). The preset is the only non-crippling value.
+      systemPrompt: { type: "preset", preset: "claude_code", ...(options.systemPromptAppend ? { append: options.systemPromptAppend } : {}) },
       ...(this.#binaryPath ? { pathToClaudeCodeExecutable: this.#binaryPath } : {}),
       // Deliberately NOT set: `settingSources` and `strictMcpConfig`. Tide must not strip the
       // user's settings, skills, hooks, plugins or project `.claude/` config (CLAUDE.md §1a).

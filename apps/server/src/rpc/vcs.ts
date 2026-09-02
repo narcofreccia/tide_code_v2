@@ -14,7 +14,12 @@ export interface VcsHandlerDeps {
   checkpoints: CheckpointService;
   gh?: GhLike;
   git?: (cwd: string) => Git;
+  /** injectable clock so the PR-refresh throttle is testable without waiting a minute */
+  now?: () => number;
 }
+
+/** How often one thread's pull request may be re-read from GitHub. */
+const PR_REFRESH_MS = 60_000;
 
 interface ThreadContext {
   thread: Thread;
@@ -35,6 +40,30 @@ function linkIdFor(project: Project, path: string): string | undefined {
 export function registerVcsHandlers(router: RpcRouter, deps: VcsHandlerDeps): void {
   const gh = deps.gh ?? new Gh();
   const git = deps.git ?? ((cwd: string) => new Git(cwd));
+  const now = deps.now ?? (() => Date.now());
+  /** threadId -> last time its PR state was refreshed */
+  const lastPrRefresh = new Map<string, number>();
+
+  /**
+   * The vcs reactor only writes `pr.update` while publishing, so a PR merged or closed on
+   * GitHub afterwards would show as `open` forever. Status is the natural place to notice —
+   * throttled per thread, and never allowed to fail the call.
+   */
+  const refreshPr = async (ctx: ThreadContext, branch: string | undefined): Promise<void> => {
+    const pr = ctx.thread.pr;
+    if (pr === undefined || branch === undefined) return;
+    const at = now();
+    const last = lastPrRefresh.get(ctx.thread.id);
+    if (last !== undefined && at - last < PR_REFRESH_MS) return;
+    lastPrRefresh.set(ctx.thread.id, at);
+    try {
+      const view = await gh.prView(ctx.cwd, branch);
+      if (view === undefined || view.state === pr.state) return;
+      await deps.engine.dispatch({ type: "pr.update", threadId: ctx.thread.id, pr: { ...pr, ...view, updatedAt: now() } });
+    } catch {
+      // gh being unavailable or unhappy must never break vcs.status
+    }
+  };
 
   const context = (threadId: string): ThreadContext => {
     const model = deps.engine.getModel();
@@ -60,6 +89,7 @@ export function registerVcsHandlers(router: RpcRouter, deps: VcsHandlerDeps): vo
       repo.hasRemote(),
       gh.hasGh(),
     ]);
+    await refreshPr(ctx, ctx.thread.branch ?? branch);
     return {
       cwd: ctx.cwd,
       isRepo: true,

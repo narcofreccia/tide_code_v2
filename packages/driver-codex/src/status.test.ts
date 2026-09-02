@@ -3,8 +3,8 @@ import { describe, expect, it } from "vitest";
 import type { DriverEnv } from "@tide/contracts";
 import { fakeSpawn } from "./fake-app-server.ts";
 import { codexDriver } from "./index.ts";
-import { CODEX_CAPS, INSTALL_HINT, LOGIN_HINT, parseVersion, toModelInfo } from "./status.ts";
-import { mcpConfigArgs } from "./app-server.ts";
+import { CODEX_CAPS, INSTALL_HINT, LOGIN_COMMAND, LOGIN_HINT, parseVersion, toModelInfo } from "./status.ts";
+import { mcpEnvAndArgs } from "./app-server.ts";
 import { collaborationModeFor, policyFor } from "./modes.ts";
 
 const env: DriverEnv = { dataDir: tmpdir(), log: () => undefined };
@@ -40,6 +40,7 @@ describe("status", () => {
     expect(status.installed).toBe(true);
     expect(status.loggedIn).toBe(true);
     expect(status.hint).toBeUndefined();
+    expect(status.loginCommand).toBeUndefined();
     expect(status.models).toEqual([{ id: "gpt-5.6-sol", label: "GPT-5.6-Sol", family: "gpt-5.6", default: true }]);
     expect(status.caps).toEqual({ ...CODEX_CAPS });
     expect(servers[0]?.killed).toBe(1);
@@ -60,6 +61,7 @@ describe("status", () => {
     expect(status.installed).toBe(true);
     expect(status.loggedIn).toBe(false);
     expect(status.hint).toBe(LOGIN_HINT);
+    expect(status.loginCommand).toBe(LOGIN_COMMAND);
     await instance.dispose();
   });
 
@@ -68,6 +70,8 @@ describe("status", () => {
     const status = await instance.status();
     expect(status.installed).toBe(false);
     expect(status.hint).toBe(INSTALL_HINT);
+    // a missing binary is an install problem, not a login one
+    expect(status.loginCommand).toBeUndefined();
     expect(status.models).toEqual([]);
     await instance.dispose();
   });
@@ -100,14 +104,26 @@ describe("mode mapping", () => {
   });
 
   it("adds MCP servers as merging dotted -c overrides, leaving the user's own untouched", () => {
-    expect(mcpConfigArgs([{ name: "tide", command: "node", args: ["a b.js"], env: { K: "v" } }])).toEqual([
-      "-c",
-      'mcp_servers.tide.command="node"',
-      "-c",
-      'mcp_servers.tide.args=["a b.js"]',
-      "-c",
-      'mcp_servers.tide.env.K="v"',
-    ]);
-    expect(mcpConfigArgs([])).toEqual([]);
+    expect(mcpEnvAndArgs([{ name: "tide", command: "node", args: ["a b.js"], env: { K: "v" } }])).toEqual({
+      args: ["-c", 'mcp_servers.tide.command="node"', "-c", 'mcp_servers.tide.args=["a b.js"]', "-c", 'mcp_servers.tide.env_vars=["K"]'],
+      env: { K: "v" },
+    });
+    expect(mcpEnvAndArgs([])).toEqual({ args: [], env: {} });
+  });
+
+  it("keeps MCP secrets off argv, and only falls back to the visible form on a value collision", () => {
+    const { args, env } = mcpEnvAndArgs(
+      [
+        { name: "tide", command: "node", env: { TIDE_AGENT_TOKEN: "s3cret" } },
+        { name: "other", command: "node", env: { TIDE_AGENT_TOKEN: "different" } },
+      ],
+      () => undefined,
+    );
+    // the first server's value is forwarded through the app-server's own environment…
+    expect(env).toEqual({ TIDE_AGENT_TOKEN: "s3cret" });
+    expect(args).toContain('mcp_servers.tide.env_vars=["TIDE_AGENT_TOKEN"]');
+    expect(args.join(" ")).not.toContain("s3cret");
+    // …the second cannot be, since one process env holds one value per name
+    expect(args).toContain('mcp_servers.other.env.TIDE_AGENT_TOKEN="different"');
   });
 });

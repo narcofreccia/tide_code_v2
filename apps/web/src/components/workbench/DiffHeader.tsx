@@ -5,7 +5,7 @@ import { Kbd } from "../ui/Kbd.tsx";
 import { Popover } from "../ui/Popover.tsx";
 import { PrBadge } from "../ui/VcsBadges.tsx";
 import { publishThread, revertTurn } from "../../lib/threadActions.ts";
-import { ALL_CHANGES, type TurnSelection } from "../../state/vcs.ts";
+import { ALL_CHANGES, ensureStatus, type TurnSelection } from "../../state/vcs.ts";
 import { useUi } from "../../state/ui.ts";
 import { openFileTab } from "../../state/workbench.ts";
 import { firstChangedLine } from "../../lib/diff.ts";
@@ -47,12 +47,26 @@ function RevertAction({ thread, turn, running }: { thread: Thread; turn: Turn | 
   );
 }
 
-function PublishAction({ thread, running, prompt }: { thread: Thread; running: boolean; prompt: string }) {
+/**
+ * Commit / commit + push + PR. Stays available after a PR exists — follow-up turns
+ * still have to reach the branch — and then updates the open PR instead of opening one.
+ */
+function PublishAction({
+  thread,
+  running,
+  prompt,
+  hasPr,
+}: {
+  thread: Thread;
+  running: boolean;
+  prompt: string;
+  hasPr: boolean;
+}) {
   const [title, setTitle] = useState(thread.title);
   const [body, setBody] = useState(prompt);
   return (
     <Popover
-      label="Commit…"
+      label={hasPr ? "Commit & update PR" : "Commit…"}
       title={running ? "Wait for the turn to finish" : "Commit, or commit + push + PR"}
       variant="quiet"
       disabled={running}
@@ -96,7 +110,7 @@ function PublishAction({ thread, running, prompt }: { thread: Thread; running: b
                 void publishThread(thread.id, { title, body, commitOnly: false });
               }}
             >
-              Commit + push + PR
+              {hasPr ? "Commit + push + update PR" : "Commit + push + PR"}
             </Button>
           </div>
         </div>
@@ -133,6 +147,11 @@ export function DiffHeader({
 }) {
   const sideBySide = useUi((s) => s.diffSideBySide);
   const toggle = useUi((s) => s.toggleDiffSideBySide);
+  // the header claims to re-read git state, so it re-reads both halves of it
+  const refresh = (): void => {
+    onRefresh();
+    ensureStatus(thread.id, true);
+  };
   const total = (diff?.files ?? []).reduce(
     (acc, f) => ({ additions: acc.additions + f.additions, deletions: acc.deletions + f.deletions }),
     { additions: 0, deletions: 0 },
@@ -175,17 +194,23 @@ export function DiffHeader({
         >
           Open in editor
         </Button>
-        <RevertAction thread={thread} turn={selectedTurn} running={running} />
-        {thread.pr ? (
-          <>
-            <PrBadge pr={thread.pr} />
-            <Button variant="quiet" onClick={onRefresh} title="Re-read git status">
-              Refresh
-            </Button>
-          </>
+        {thread.worktreePath === undefined ? (
+          <span className={styles.hint}>Runs in the main checkout — revert and PR need a worktree</span>
         ) : (
-          <PublishAction thread={thread} running={running} prompt={prompt} />
+          <>
+            <RevertAction thread={thread} turn={selectedTurn} running={running} />
+            {thread.pr ? <PrBadge pr={thread.pr} /> : null}
+            <PublishAction
+              thread={thread}
+              running={running}
+              prompt={prompt}
+              hasPr={thread.pr !== undefined}
+            />
+          </>
         )}
+        <Button variant="quiet" onClick={refresh} title="Re-read the diff and git status">
+          Refresh
+        </Button>
       </div>
     </div>
   );

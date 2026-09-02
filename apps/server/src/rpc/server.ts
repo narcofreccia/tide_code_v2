@@ -9,6 +9,7 @@ import type { Engine } from "../orchestration/engine.ts";
 import type { EventStore } from "../orchestration/store.ts";
 import { DriverRegistry } from "../provider/registry.ts";
 import { CheckpointService } from "../vcs/checkpoints.ts";
+import type { GhLike } from "../vcs/gh.ts";
 import { AgentTokenStore } from "./agentTickets.ts";
 import { registerAgentHandlers } from "./agent.ts";
 import { registerHandlers } from "./handlers.ts";
@@ -42,6 +43,8 @@ export interface ServerDeps {
   registry?: DriverRegistry;
   /** omitted in tests that don't exercise git: a stand-alone service is used */
   checkpoints?: CheckpointService;
+  /** tests inject a fake GitHub CLI; shared with the vcs reactor by the app */
+  gh?: GhLike;
   /** files/watcher/search/terminals; the app builds these once and owns their lifetime */
   workspace?: WorkspaceServices;
   /** per-thread agent tokens; the app shares this with the MCP provisioner */
@@ -90,7 +93,11 @@ export async function startServer(deps: ServerDeps): Promise<ServerHandle> {
     remote,
   });
   registerAgentHandlers(router, { engine });
-  registerVcsHandlers(router, { engine, checkpoints: deps.checkpoints ?? new CheckpointService() });
+  registerVcsHandlers(router, {
+    engine,
+    checkpoints: deps.checkpoints ?? new CheckpointService(),
+    ...(deps.gh !== undefined ? { gh: deps.gh } : {}),
+  });
   const workspace = deps.workspace ?? createWorkspaceServices({ engine });
   const ownsWorkspace = deps.workspace === undefined;
   registerWorkspaceHandlers(router, workspace);

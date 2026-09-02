@@ -3,7 +3,8 @@ import { Terminal } from "@xterm/xterm";
 import { FitAddon } from "@xterm/addon-fit";
 import { WebLinksAddon } from "@xterm/addon-web-links";
 import "@xterm/xterm/css/xterm.css";
-import { stream } from "../../../state/model.ts";
+import { stream, type StreamControl } from "../../../state/model.ts";
+import { onReconnect } from "../../../state/reconnect.ts";
 import { markExited, resizePty, writePty } from "../../../state/terminals.ts";
 import { subscribeTheme } from "../monaco/themes.ts";
 import styles from "./TerminalDrawer.module.css";
@@ -54,14 +55,24 @@ export function TerminalView({ threadId, ptyId }: { threadId: string; ptyId: str
 
     const input = term.onData((data) => writePty(ptyId, data));
 
-    const control = stream("pty.attach", { ptyId }, (chunk) => {
-      if (chunk.kind === "data") term.write(chunk.data);
-      else {
-        term.write(`\r\n[exited code ${chunk.code ?? 0}]\r\n`);
-        markExited(threadId, ptyId);
-      }
+    const attach = (): StreamControl => {
+      const handle = stream("pty.attach", { ptyId }, (chunk) => {
+        if (chunk.kind === "data") term.write(chunk.data);
+        else {
+          term.write(`\r\n[exited code ${chunk.code ?? 0}]\r\n`);
+          markExited(threadId, ptyId);
+        }
+      });
+      handle.done.catch(() => undefined);
+      return handle;
+    };
+    // the attach dies with the socket; on reconnect the pty is still alive on the
+    // server, so re-attaching replays its scrollback into the same terminal
+    let control = attach();
+    const offReconnect = onReconnect(() => {
+      control.cancel();
+      control = attach();
     });
-    control.done.catch(() => undefined);
 
     let timer: ReturnType<typeof setTimeout> | undefined;
     const onResize = (): void => {
@@ -89,6 +100,7 @@ export function TerminalView({ threadId, ptyId }: { threadId: string; ptyId: str
       window.removeEventListener("resize", onResize);
       unsubscribeTheme();
       observer?.disconnect();
+      offReconnect();
       input.dispose();
       control.cancel();
       term.dispose();

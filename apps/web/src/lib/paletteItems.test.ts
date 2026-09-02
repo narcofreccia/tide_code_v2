@@ -20,6 +20,23 @@ function fixture(): ReadModel {
 }
 
 describe("palette items", () => {
+  it("offers New thread… once, with the ⌘N hint, when a project is in scope", () => {
+    const model = fixture();
+    const withProject = buildPaletteItems({ model, selectedThreadId: "t1" });
+    const item = withProject.find((i) => i.id === "project:new-thread");
+    expect(item?.label).toBe("New thread…");
+    expect(item?.kbd).toBe("⌘N");
+    expect(item?.detail).toBe("Tide");
+    // the keyboard-map entry is not offered a second time
+    expect(withProject.filter((i) => i.id === "shortcut:new-thread")).toHaveLength(0);
+
+    item?.run();
+    expect(useUi.getState().newThreadProjectId).toBe("p1");
+
+    const noProject = buildPaletteItems({ model: modelWith({}), selectedThreadId: null });
+    expect(noProject.some((i) => i.id === "project:new-thread")).toBe(false);
+  });
+
   it("covers all three sources", () => {
     const items = buildPaletteItems({ model: fixture(), selectedThreadId: null });
     const ids = items.map((i) => i.id);

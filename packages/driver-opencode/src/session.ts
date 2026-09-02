@@ -11,6 +11,10 @@ export interface SessionDeps {
   agent: string;
   model?: ModelRef;
   contextWindow?: number;
+  /** thread-scoped MCP registrations to tear down on close (see `OpencodeInstance`) */
+  mcpNames?: string[];
+  /** the instance's bookkeeping hook, so `dispose()` does not close a session twice */
+  onClosed?: (session: OpencodeSession) => void;
 }
 
 function promptParts(input: TurnInput): PromptPart[] {
@@ -101,17 +105,25 @@ export class OpencodeSession implements ProviderSession {
     }
   }
 
+  /**
+   * The SSE stream is the only place a turn's events appear, so a dead subscription is a
+   * dead session. Whenever the stream ends — cleanly or with an error — the handle is
+   * cleared so the *next* `send()` subscribes again instead of prompting into the void.
+   */
   async #ensureSubscription(): Promise<void> {
     if (this.#subscription !== undefined) return;
     const stream = await this.#deps.api.subscribe({ directory: this.#directory, signal: this.#abort.signal });
     this.#subscription = (async () => {
       try {
         for await (const event of stream) this.#onEvent(event);
+        if (!this.#closed) this.#env.log("[opencode] event stream ended; the next turn resubscribes");
       } catch (error) {
         if (this.#closed) return;
         this.#env.log(`[opencode] event stream ended: ${error instanceof Error ? error.message : String(error)}`);
         this.#mailbox?.push({ type: "settled", status: "error", error: "opencode event stream ended before the turn settled" });
         this.#mailbox?.close();
+      } finally {
+        if (!this.#closed) this.#subscription = undefined;
       }
     })();
   }
@@ -177,5 +189,16 @@ export class OpencodeSession implements ProviderSession {
     this.#mailbox?.close();
     this.#abort.abort();
     await this.#subscription?.catch(() => undefined);
+    this.#subscription = undefined;
+    // MCP registrations live on the shared per-directory server, so this thread's own must
+    // go when it does — otherwise its agent token stays connected for the next thread.
+    for (const name of this.#deps.mcpNames ?? []) {
+      try {
+        await this.#deps.api.disconnectMcpServer({ directory: this.#directory, name });
+      } catch (error) {
+        this.#env.log(`[opencode] could not disconnect MCP server ${name}: ${error instanceof Error ? error.message : String(error)}`);
+      }
+    }
+    this.#deps.onClosed?.(this);
   }
 }

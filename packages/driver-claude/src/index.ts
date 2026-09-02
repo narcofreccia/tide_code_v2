@@ -8,7 +8,7 @@ export { ApprovalBroker, EXIT_PLAN_DENY_MESSAGE } from "./approvals.ts";
 export { unifiedDiff } from "./diff.ts";
 export { previewDiff } from "./edit-preview.ts";
 export { shellQuote } from "./shell.ts";
-export { CLAUDE_CAPS, LOGIN_HINT, parseVersion } from "./status.ts";
+export { CLAUDE_CAPS, LOGIN_COMMAND, LOGIN_HINT, parseVersion } from "./status.ts";
 export type { ClaudeConfig, QueryFn, QueryLike } from "./types.ts";
 export type { ClaudeMessage } from "./sdk-shapes.ts";
 

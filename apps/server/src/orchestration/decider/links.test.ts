@@ -146,7 +146,7 @@ describe("decide: delegation into a linked repo", () => {
     const { model, threadId } = seed();
     const existing = run(model, { type: "project.create", title: "Web", rootPath: "/repos/frontend" });
     const projectId = existing.events[0]?.type === "project.created" ? existing.events[0].project.id : "";
-    const { events } = run(existing.model, { type: "thread.delegate", fromThreadId: threadId, provider: "pi", prompt: "ship it", repo: "frontend" });
+    const { events } = run(existing.model, { type: "thread.delegate", fromThreadId: threadId, provider: "opencode", prompt: "ship it", repo: "frontend" });
     expect(events.some((e) => e.type === "project.created")).toBe(false);
     const thread = events.find((e) => e.type === "thread.created");
     expect(thread?.type === "thread.created" && thread.thread.projectId).toBe(projectId);
@@ -154,18 +154,64 @@ describe("decide: delegation into a linked repo", () => {
 
   it("matches the label case-insensitively and rejects an unknown one", () => {
     const { model, threadId } = seed();
-    expect(decide(model, { type: "thread.delegate", fromThreadId: threadId, provider: "pi", prompt: "x", repo: "FrontEnd" }, ctx).ok).toBe(true);
-    expect(decide(model, { type: "thread.delegate", fromThreadId: threadId, provider: "pi", prompt: "x", repo: "nope" }, ctx)).toMatchObject({
+    expect(decide(model, { type: "thread.delegate", fromThreadId: threadId, provider: "codex", prompt: "x", repo: "FrontEnd" }, ctx).ok).toBe(true);
+    expect(decide(model, { type: "thread.delegate", fromThreadId: threadId, provider: "codex", prompt: "x", repo: "nope" }, ctx)).toMatchObject({
       ok: false,
       error: { code: "not-found" },
     });
   });
 
+  it("refuses a read-only link as the delegate's main repo", () => {
+    const { model, threadId } = seed();
+    expect(decide(model, { type: "thread.delegate", fromThreadId: threadId, provider: "codex", prompt: "x", repo: "infra" }, ctx)).toMatchObject({
+      ok: false,
+      error: { code: "invalid-command", message: expect.stringContaining("read-only") },
+    });
+  });
+
   it("stays in the caller's own project when no repo is named", () => {
     const { model, threadId, projectId } = seed();
-    const { events } = run(model, { type: "thread.delegate", fromThreadId: threadId, provider: "pi", prompt: "x" });
+    const { events } = run(model, { type: "thread.delegate", fromThreadId: threadId, provider: "codex", prompt: "x" });
     expect(events.some((e) => e.type === "project.created")).toBe(false);
     const thread = events.find((e) => e.type === "thread.created");
     expect(thread?.type === "thread.created" && thread.thread.projectId).toBe(projectId);
+  });
+});
+
+describe("decide: delegation privileges", () => {
+  /** A parent thread created with `mode`, ready to delegate. */
+  const parent = (mode: "approval-required" | "auto-accept-edits" | "auto" | "full-access"): { model: ReadModel; threadId: string } => {
+    const base = withLinks();
+    const created = run(base.model, { type: "thread.create", projectId: base.projectId, provider: "claude", mode });
+    return { model: created.model, threadId: created.events[0]?.type === "thread.created" ? created.events[0].thread.id : "" };
+  };
+
+  const delegatedMode = (model: ReadModel, threadId: string, mode?: "approval-required" | "auto-accept-edits" | "auto" | "full-access"): string => {
+    const { events } = run(model, { type: "thread.delegate", fromThreadId: threadId, provider: "codex", prompt: "x", ...(mode !== undefined ? { mode } : {}) });
+    const thread = events.find((e) => e.type === "thread.created");
+    return thread?.type === "thread.created" ? thread.thread.mode : "";
+  };
+
+  it("never lets a delegate be more privileged than the thread that spawned it", () => {
+    const p = parent("approval-required");
+    expect(delegatedMode(p.model, p.threadId, "full-access")).toBe("approval-required");
+    expect(delegatedMode(p.model, p.threadId, "auto")).toBe("approval-required");
+  });
+
+  it("honours a mode at or below the parent's, and inherits it when none is asked for", () => {
+    const p = parent("full-access");
+    expect(delegatedMode(p.model, p.threadId, "auto")).toBe("auto");
+    expect(delegatedMode(p.model, p.threadId)).toBe("full-access");
+    const q = parent("auto-accept-edits");
+    expect(delegatedMode(q.model, q.threadId)).toBe("auto-accept-edits");
+    expect(delegatedMode(q.model, q.threadId, "approval-required")).toBe("approval-required");
+  });
+
+  it("refuses pi, which has no Tide MCP bridge to report back through", () => {
+    const p = parent("auto");
+    expect(decide(p.model, { type: "thread.delegate", fromThreadId: p.threadId, provider: "pi", prompt: "x" }, ctx)).toMatchObject({
+      ok: false,
+      error: { code: "invalid-command", message: expect.stringContaining("pi has no Tide MCP bridge") },
+    });
   });
 });

@@ -7,10 +7,12 @@ import type { Emit, PiUiRequest } from "./types.ts";
 /**
  * Translates pi's extension UI sub-protocol into Tide activities.
  *
- *  - `confirm` whose message starts with `TIDE_META:` → an `approval` activity. The activity's
- *    `requestId` is pi's own `extension_ui_request.id`, because that is the value that has to
- *    come back in `extension_ui_response`. (`meta.requestId` is the extension's own counter,
- *    kept for log correlation.)
+ *  - `confirm` → an `approval` activity. The activity's `requestId` is pi's own
+ *    `extension_ui_request.id`, because that is the value that has to come back in
+ *    `extension_ui_response`. (`meta.requestId` is the extension's own counter, kept for log
+ *    correlation.) A `TIDE_META:` first line carries the tool name, input and diff; a confirm
+ *    from one of the user's own extensions has none, so its title becomes the tool name and
+ *    the message becomes the description — it is still asked, never auto-declined.
  *  - `notify` starting with `TIDE_PLAN:` / `TIDE_USAGE:` → data, never rendered.
  *  - anything else → an info activity, and dialogs are cancelled so pi cannot block forever.
  *
@@ -71,27 +73,25 @@ export class PiApprovalBroker {
   #confirm(request: PiUiRequest): void {
     const message = request.message ?? "";
     const meta = parseApprovalMeta(message);
-    if (!meta) {
-      // A confirm from some other extension of the user's. Surface it, then decline: Tide has
-      // no card for it yet, and answering "yes" on the user's behalf would be worse.
-      this.#emit({ type: "activity", activity: { kind: "info", text: `pi asked: ${request.title ?? message}` } });
-      this.#respond(request.id, { confirmed: false });
-      return;
-    }
-    if (this.#sessionAllow.has(meta.toolName)) {
+    // A confirm from one of the user's own extensions. It is still a yes/no question aimed at
+    // the user, so it becomes a normal approval card rather than a silent "no" — auto-declining
+    // it broke every extension that asks anything (CLAUDE.md §1a: pass through, don't translate).
+    const toolName = meta?.toolName ?? request.title ?? "pi";
+    if (this.#sessionAllow.has(toolName)) {
       this.#respond(request.id, { confirmed: true });
       return;
     }
 
-    const diff = meta.diff ?? (isDiffTool(meta.toolName) ? previewDiff(meta.toolName, meta.input, this.#cwd) : undefined);
-    const description = approvalDescription(message);
+    const input = meta ? meta.input : { message };
+    const diff = meta ? (meta.diff ?? (isDiffTool(meta.toolName) ? previewDiff(meta.toolName, meta.input, this.#cwd) : undefined)) : undefined;
+    const description = meta ? approvalDescription(message) : message.trim() === "" ? undefined : message;
     this.#emit({
       type: "activity",
       activity: {
         kind: "approval",
         requestId: request.id,
-        toolName: meta.toolName,
-        input: meta.input,
+        toolName,
+        input,
         status: "pending",
         ...(request.title ? { title: request.title } : {}),
         ...(description ? { description } : {}),
@@ -103,7 +103,7 @@ export class PiApprovalBroker {
     this.#pending.set(request.id, pending);
     void pending.promise.then((decision) => {
       this.#pending.delete(request.id);
-      if (decision === "acceptForSession" || decision === "acceptAlways") this.#sessionAllow.add(meta.toolName);
+      if (decision === "acceptForSession" || decision === "acceptAlways") this.#sessionAllow.add(toolName);
       const confirmed = decision === "accept" || decision === "acceptForSession" || decision === "acceptAlways";
       this.#respond(request.id, confirmed ? { confirmed: true } : { confirmed: false });
     });

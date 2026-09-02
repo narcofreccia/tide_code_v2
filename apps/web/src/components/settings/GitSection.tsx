@@ -1,4 +1,5 @@
 import { useEffect } from "react";
+import { useServerInfo } from "../../lib/useServerInfo.ts";
 import { DEFAULT_WORKTREE_ROOT, useSettings } from "../../state/settings.ts";
 import { useUi } from "../../state/ui.ts";
 import { ensureStatus, useVcs } from "../../state/vcs.ts";
@@ -16,6 +17,7 @@ function ghNote(hasGh: boolean | undefined): string {
 export function GitSection() {
   const threadId = useUi((s) => s.selectedThreadId);
   const status = useVcs((s) => (threadId ? s.statuses[threadId]?.data : undefined));
+  const info = useServerInfo();
   const worktreeByDefault = useSettings((s) => s.worktreeByDefault);
   const setWorktreeByDefault = useSettings((s) => s.setWorktreeByDefault);
 
@@ -31,7 +33,7 @@ export function GitSection() {
       <ul className={section.rows}>
         <li className={section.row}>
           <span className={section.label}>Worktree root</span>
-          <span className={section.value}>{DEFAULT_WORKTREE_ROOT}</span>
+          <span className={section.value}>{info?.worktreeRoot ?? DEFAULT_WORKTREE_ROOT}</span>
         </li>
         <li className={section.row}>
           <Checkbox
@@ -51,11 +53,6 @@ export function GitSection() {
           <span className={section.note}>{ghNote(status?.hasGh)}</span>
         </li>
       </ul>
-      <p className={section.note}>
-        The worktree root is a server setting; Tide reads it from the server once
-        <code className={section.code}> server.info </code>
-        exposes it.
-      </p>
     </div>
   );
 }

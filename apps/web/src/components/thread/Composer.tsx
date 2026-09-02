@@ -1,6 +1,10 @@
 import { useEffect, useRef, useState } from "react";
 import type { Thread } from "@tide/contracts";
 import { interruptTurn, sendTurn } from "../../lib/threadActions.ts";
+import { errorText } from "../../lib/dispatchOrToast.ts";
+import { showToast } from "../../state/toast.ts";
+import { useUi } from "../../state/ui.ts";
+import { useWorkbench } from "../../state/workbench.ts";
 import { registerComposerFocus } from "../../lib/composerFocus.ts";
 import { applyMention, expandMentions, findMentionQuery, normalizePastedPath } from "../../lib/mentions.ts";
 import { Button } from "../ui/Button.tsx";
@@ -13,22 +17,58 @@ import styles from "./Composer.module.css";
 const MIN_ROWS = 3;
 const MAX_ROWS = 8;
 
+/** Any layer that owns Escape ahead of the thread: dialog, popover, palette, picker. */
+function anOverlayIsOpen(): boolean {
+  const ui = useUi.getState();
+  if (
+    ui.paletteOpen ||
+    ui.threadDialog !== null ||
+    ui.newProjectOpen ||
+    ui.newThreadProjectId !== null ||
+    ui.linksProjectId !== null ||
+    ui.newExpertsProjectId !== null ||
+    useWorkbench.getState().quickOpen
+  ) {
+    return true;
+  }
+  // Popover panels and modals are portalled and both carry role="dialog"
+  return typeof document !== "undefined" && document.querySelector('[role="dialog"]') !== null;
+}
+
+/**
+ * True while focus sits in the composer or anywhere else in the thread column.
+ * Focus nowhere in particular counts too, so Esc still stops the turn before the
+ * user has clicked anything; focus in the workbench or a side surface does not.
+ */
+function threadColumnHasFocus(composer: HTMLElement | null): boolean {
+  if (typeof document === "undefined") return false;
+  const active = document.activeElement;
+  if (active === null || active === document.body) return true;
+  if (!(active instanceof Element)) return false;
+  return composer?.contains(active) === true || active.closest("[data-thread-column]") !== null;
+}
+
 export function Composer({ thread }: { thread: Thread }) {
   const [text, setText] = useState("");
   const [busy, setBusy] = useState(false);
   const [mention, setMention] = useState<{ start: number; query: string; caret: number } | undefined>(undefined);
   const [cursor, setCursor] = useState(0);
   const input = useRef<HTMLTextAreaElement>(null);
+  const root = useRef<HTMLDivElement>(null);
   const running = thread.status === "running";
   const interrupting = thread.interrupting === true;
   const matches = useMentionMatches(thread.id, mention?.query);
 
   useEffect(() => registerComposerFocus(() => input.current?.focus()), []);
 
+  // Esc is also "close" for dialogs, popovers, the palette and Settings; stopping
+  // the turn is only what it means while the thread column itself owns the focus.
   useEffect(() => {
     if (!running || interrupting) return undefined;
     const onKey = (e: KeyboardEvent): void => {
-      if (e.key !== "Escape") return;
+      if (e.key !== "Escape" || e.defaultPrevented) return;
+      if (anOverlayIsOpen()) return;
+      if (!threadColumnHasFocus(root.current)) return;
       e.preventDefault();
       interruptTurn(thread.id);
     };
@@ -62,7 +102,7 @@ export function Composer({ thread }: { thread: Thread }) {
     setBusy(true);
     sendTurn(thread.id, expandMentions(value))
       .then(() => setText(""))
-      .catch(() => undefined)
+      .catch((error: unknown) => showToast(`Sending failed: ${errorText(error)}`))
       .finally(() => setBusy(false));
   };
 
@@ -90,7 +130,7 @@ export function Composer({ thread }: { thread: Thread }) {
   const rows = Math.min(MAX_ROWS, Math.max(MIN_ROWS, text.split("\n").length));
 
   return (
-    <div className={styles.composer}>
+    <div className={styles.composer} ref={root}>
       {mention ? <MentionPicker matches={matches} cursor={cursor} onPick={pick} /> : null}
       <textarea
         ref={input}

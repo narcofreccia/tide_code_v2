@@ -13,6 +13,7 @@ import {
   detectOllama,
   ensureLocalProvider,
   INSTALL_HINT,
+  LOGIN_COMMAND,
   LOGIN_HINT,
   mergeModels,
   parseLocalModelId,
@@ -138,6 +139,23 @@ describe("status()", () => {
   it("puts a runnable command first in every hint", () => {
     expect(/`([^`]+)`/.exec(LOGIN_HINT)?.[1]).toBe("pi");
     expect(/`([^`]+)`/.exec(INSTALL_HINT)?.[1]).toBe("npm i -g @earendil-works/pi-coding-agent");
+  });
+
+  it("offers the runnable login command as its own field, not only buried in the hint", () => {
+    // pi has no non-interactive login; the user runs `pi` and types /login, which the hint says
+    expect(LOGIN_COMMAND).toBe("pi");
+    expect(LOGIN_HINT).toContain("/login");
+  });
+
+  it("sets loginCommand only when pi is installed but has no credentials", async () => {
+    const instance = createPiInstance({ binaryPath: "/usr/bin/env" }, env, {
+      spawn: () => fakePi(),
+      // no local model servers answer, so login rests on credentials alone
+      fetch: async () => ({ ok: false, json: async () => undefined }),
+    });
+    const status = await instance.status();
+    expect(status.loginCommand).toBe(status.installed && !status.loggedIn ? LOGIN_COMMAND : undefined);
+    await instance.dispose();
   });
 });
 

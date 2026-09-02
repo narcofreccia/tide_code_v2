@@ -1,17 +1,17 @@
 import type { ProviderStatusDto } from "@tide/contracts";
 import { PROVIDERS, PROVIDER_LABELS } from "../../lib/vocab.ts";
-import { providerStatus, useProviders } from "../../state/providers.ts";
+import { providerStatus, useProviderRoster } from "../../state/providers.ts";
 import { useUi } from "../../state/ui.ts";
-import { loginCommand, runOrCopy } from "../settings/ProviderCard.tsx";
+import { resolveLoginCommand, runOrCopy } from "../../lib/providerLogin.ts";
 import { Button } from "../ui/Button.tsx";
 import styles from "./MissionControl.module.css";
 
 /** `✓ ready · ⚠ not logged in · ✕ not installed` — the whole harness roster in one line. */
-export function providerChipState(status: ProviderStatusDto | undefined): {
-  glyph: string;
-  text: string;
-  tone: string;
-} {
+export function providerChipState(
+  status: ProviderStatusDto | undefined,
+  loading = false,
+): { glyph: string; text: string; tone: string } {
+  if (loading) return { glyph: "·", text: "checking…", tone: "off" };
   if (!status || !status.installed) return { glyph: "✕", text: "not installed", tone: "off" };
   if (!status.loggedIn) return { glyph: "⚠", text: "not logged in", tone: "warn" };
   return { glyph: "✓", text: "ready", tone: "ok" };
@@ -23,7 +23,7 @@ export function providerChipState(status: ProviderStatusDto | undefined): {
  * selected thread's terminal (and copies it when there is no thread).
  */
 export function ProvidersStrip() {
-  const providers = useProviders();
+  const { providers, loading } = useProviderRoster();
   const showSettings = useUi((s) => s.showSettings);
   const setSettingsSection = useUi((s) => s.setSettingsSection);
 
@@ -38,8 +38,8 @@ export function ProvidersStrip() {
       <ul className={styles.chips}>
         {PROVIDERS.map((kind) => {
           const status = providerStatus(providers, kind);
-          const { glyph, text, tone } = providerChipState(status);
-          const command = status?.loginCommand ?? loginCommand(status?.hint);
+          const { glyph, text, tone } = providerChipState(status, loading);
+          const command = loading ? undefined : resolveLoginCommand(status);
           return (
             <li key={kind} className={styles.chip}>
               <button
@@ -55,7 +55,7 @@ export function ProvidersStrip() {
                 <span>{PROVIDER_LABELS[kind]}</span>
                 <span className={styles.chipHint}>{text}</span>
               </button>
-              {status?.installed === true && status.loggedIn === false && command ? (
+              {command ? (
                 <Button variant="quiet" onClick={() => void runOrCopy(command)}>
                   Run {command}
                 </Button>

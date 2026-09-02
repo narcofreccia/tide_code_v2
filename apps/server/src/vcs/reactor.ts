@@ -46,6 +46,8 @@ export class VcsReactor {
   #newId: () => string;
   #log: (msg: string, data?: unknown) => void;
   #queues = new Map<string, Promise<void>>();
+  /** threadId -> why its worktree could not be created; surfaced on that thread's first turn */
+  #worktreeFailures = new Map<string, string>();
   #inflight = new Set<Promise<unknown>>();
   #unsubscribe: (() => void) | undefined;
 
@@ -170,6 +172,11 @@ export class VcsReactor {
       this.#log(`[vcs] ${kind}: ${text}`, threadId);
       return;
     }
+    await this.#post(threadId, turnId, kind, text);
+  }
+
+  /** Same, but on a turn the caller already holds (the before-checkpoint path). */
+  async #post(threadId: string, turnId: string, kind: "info" | "error", text: string): Promise<void> {
     const at = this.#now();
     const activity: Activity = { id: this.#newId(), threadId, turnId, kind, text, createdAt: at, updatedAt: at };
     await this.#dispatch({ type: "activity.upsert", activity });
@@ -178,8 +185,9 @@ export class VcsReactor {
   // ---- handlers ----
 
   /**
-   * Worktree creation has no turn to attach an activity to, so a failure can only be logged;
-   * the thread simply stays on the project root and every later turn works there.
+   * Worktree creation happens before the thread has a turn, so a failure is remembered here and
+   * reported as an error activity on the thread's first turn (see `#recordBefore`): the thread
+   * silently falling back to the project's main checkout is exactly what the user must know.
    */
   async #createWorktree(threadId: string): Promise<void> {
     const ctx = this.#context(threadId);
@@ -194,8 +202,22 @@ export class VcsReactor {
         baseBranch: info.baseBranch,
       });
     } catch (err) {
+      this.#worktreeFailures.set(threadId, message(err));
       this.#log("[vcs] worktree creation failed; thread stays on the project root", err);
     }
+  }
+
+  /** Reports a remembered worktree failure once, on the first turn that follows it. */
+  async #reportWorktreeFailure(threadId: string, turnId: string): Promise<void> {
+    const reason = this.#worktreeFailures.get(threadId);
+    if (reason === undefined) return;
+    this.#worktreeFailures.delete(threadId);
+    await this.#post(
+      threadId,
+      turnId,
+      "error",
+      `Worktree could not be created (${reason}); this thread runs in the project's main checkout — revert and publish are disabled.`,
+    );
   }
 
   /**
@@ -239,6 +261,7 @@ export class VcsReactor {
   }
 
   async #recordBefore(threadId: string, turnId: string): Promise<void> {
+    await this.#reportWorktreeFailure(threadId, turnId);
     const ctx = this.#context(threadId);
     if (!ctx || !(await this.#git(ctx.cwd).isRepo())) {
       this.#checkpoints.release(turnId);

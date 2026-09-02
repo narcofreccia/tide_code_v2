@@ -34,6 +34,7 @@ import { resetWorkbench } from "./state/workbench.ts";
 import { resetTerminals } from "./state/terminals.ts";
 import { resetSearch } from "./state/search.ts";
 import { resetSettings } from "./state/settings.ts";
+import { resetReconnect } from "./state/reconnect.ts";
 
 export interface FakeStore {
   store: ModelStore;
@@ -84,6 +85,7 @@ export function optionLabels(label: string): string[] {
 
 export function resetUi(): void {
   resetProviders();
+  resetReconnect();
   resetVcs();
   resetFiles();
   resetDocs();
@@ -102,6 +104,7 @@ export function resetUi(): void {
     expertsReturnTo: "mission",
     newExpertsProjectId: null,
     newProjectOpen: false,
+    newThreadProjectId: null,
     linksProjectId: null,
     paletteOpen: false,
     threadDialog: null,
@@ -252,20 +255,38 @@ export interface FakeStream {
   params: unknown;
   /** pushes one chunk to the subscriber */
   push: (chunk: unknown) => void;
+  /** ends the stream as the server would; with an error it rejects `done` */
+  end: (error?: unknown) => void;
   cancelled: boolean;
 }
 
-/** Records every `stream()` call and hands the test a way to push chunks. */
+/**
+ * Records every `stream()` call and hands the test a way to push chunks and to
+ * end the stream. `done` stays pending until `end()` or `cancel()`, like a real
+ * subscription — owners key their re-subscribe logic off it.
+ */
 export function mockStream(): { streams: FakeStream[]; streamer: RpcStreamer } {
   const streams: FakeStream[] = [];
   const streamer = ((method: StreamMethodName, params: unknown, onChunk: (chunk: unknown) => void): StreamControl => {
-    const entry: FakeStream = { method, params, push: onChunk, cancelled: false };
+    let settle!: (error?: unknown) => void;
+    const done = new Promise<void>((resolve, reject) => {
+      settle = (error?: unknown) => (error === undefined ? resolve() : reject(error));
+    });
+    done.catch(() => undefined);
+    const entry: FakeStream = {
+      method,
+      params,
+      push: onChunk,
+      end: (error?: unknown) => settle(error),
+      cancelled: false,
+    };
     streams.push(entry);
     return {
       cancel: () => {
         entry.cancelled = true;
+        settle();
       },
-      done: Promise.resolve(),
+      done,
     };
   }) as unknown as RpcStreamer;
   setRpcStreamer(streamer);

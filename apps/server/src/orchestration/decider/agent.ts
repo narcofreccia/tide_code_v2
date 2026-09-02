@@ -1,7 +1,7 @@
-import type { CommandOf, DomainEvent, ExpertsFinding, ExpertsMessage, Project, ProposedPlan, ReadModel, Thread } from "@tide/contracts";
+import type { CommandOf, DomainEvent, ExpertsFinding, ExpertsMessage, Project, ProposedPlan, ReadModel, RuntimeMode, Thread } from "@tide/contracts";
 import { delegatePrompt } from "../../experts/prompts.ts";
 import { recipientKeys } from "./experts.ts";
-import { fail, isArchived, ok, turnRequested, type DecideContext, type DecideResult } from "./types.ts";
+import { fail, isArchived, lacksTideMcp, NO_TIDE_MCP_MESSAGE, ok, turnRequested, type DecideContext, type DecideResult } from "./types.ts";
 
 type AgentCommand =
   | CommandOf<"experts.finding.post">
@@ -84,6 +84,8 @@ export function decideAgent(model: ReadModel, command: AgentCommand, ctx: Decide
     case "thread.delegate": {
       const from = model.threads[command.fromThreadId];
       if (!from) return fail("not-found", `unknown thread ${command.fromThreadId}`);
+      // the delegate reports back through the Tide MCP server; a harness without it never can
+      if (lacksTideMcp(command.provider)) return fail("invalid-command", NO_TIDE_MCP_MESSAGE);
       const home = model.projects[from.projectId];
       if (!home) return fail("not-found", `unknown project ${from.projectId}`);
       if (isArchived(home)) return fail("conflict", `project ${home.id} is archived`);
@@ -96,6 +98,10 @@ export function decideAgent(model: ReadModel, command: AgentCommand, ctx: Decide
         const wanted = command.repo.trim().toLowerCase();
         const link = (home.links ?? []).find((l) => l.label.trim().toLowerCase() === wanted);
         if (!link) return fail("not-found", `no linked repository labelled ${command.repo} on project ${home.id}`);
+        // a read-only link must not be laundered into a full-write main project
+        if (link.access === "read") {
+          return fail("invalid-command", `link ${link.label} is read-only; delegate cannot run with it as its main repo`);
+        }
         const existing = Object.values(model.projects).find((p) => !isArchived(p) && p.rootPath === link.path);
         if (existing) project = existing;
         else {
@@ -110,7 +116,7 @@ export function decideAgent(model: ReadModel, command: AgentCommand, ctx: Decide
         title: command.title ?? `Delegated by ${from.title}`,
         provider: command.provider,
         ...(command.model !== undefined ? { model: command.model } : {}),
-        mode: command.mode ?? "auto",
+        mode: clampMode(command.mode, from.mode),
         interaction: "default",
         role: "delegate",
         delegatedBy: from.id,
@@ -125,4 +131,21 @@ export function decideAgent(model: ReadModel, command: AgentCommand, ctx: Decide
       );
     }
   }
+}
+
+/**
+ * A delegate may never be more privileged than the thread that spawned it: an
+ * `approval-required` parent cannot hand out `full-access`. With no mode requested the child
+ * simply inherits the parent's.
+ */
+const MODE_RANK: Record<RuntimeMode, number> = {
+  "approval-required": 0,
+  "auto-accept-edits": 1,
+  auto: 2,
+  "full-access": 3,
+};
+
+export function clampMode(requested: RuntimeMode | undefined, parent: RuntimeMode): RuntimeMode {
+  if (requested === undefined) return parent;
+  return MODE_RANK[requested] > MODE_RANK[parent] ? parent : requested;
 }

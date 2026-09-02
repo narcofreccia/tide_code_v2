@@ -97,6 +97,20 @@
       <h2>Phase board</h2>
 
       <details class="phase" open>
+        <summary><span class="title"><h3>R2 — Full audit &amp; fixes</h3><small>2026-09-03 audit · wave 1 safety/crippling · wave 2 truthful controls · wave 3 live proof</small></span><span class="badge status wip">wip</span></summary>
+        <div class="body">
+          <p class="note">2026-09-03 — Full audit (orchestrator + 3 Explore agents, every critical re-verified in code). Verdict: architecture sound (772 tests, exhaustive decider/projector, real-git tests, 0 files &gt;600 LOC) — <strong>no drawing board</strong> — but not yet safe for daily use. Full report: the plan file <code>~/.claude/plans/typed-puzzling-cocke.md</code>. Headlines: (A1) Claude runs with an <em>empty</em> system prompt when a project has no links (SDK treats omitted <code>systemPrompt</code> as empty, not the preset); (B1/B2) revert/publish on a worktree-less thread hit the user's main checkout (<code>read-tree --reset -u</code> + <code>clean -fd</code>, <code>add -A</code> + push current branch); (B3) worktree-creation failure silently falls back to main checkout; (C1) no restart recovery — threads stay <code>running</code> forever; (C2/C3) Codex/Pi process death mid-turn never settles; (A2) mode/model pill changes never reach a live session; (A3/A4) reasoning dropped + unknown events dropped in all drivers; (A5) Pi has no Tide MCP yet is offered as expert/delegate; (E) no follow-up queueing; (D) ⌘N unbound, "Open in terminal" only copies, Commit/PR vanishes after first PR, fs.watch/pty die on reconnect, command failures swallowed.</p>
+          <ul class="tasks">
+            <li><span class="badge status wip">wip</span><span class="t"><b>Wave 1 — drivers</b> (Opus): Claude preset system prompt always; Codex/Pi exit → settle + SIGKILL escalation + Codex init timeout; Codex token off argv; OpenCode SSE resubscribe + per-thread MCP name; <code>loginCommand</code> populated; tide-bridge over-blocking + user confirms</span></li>
+            <li><span class="badge status wip">wip</span><span class="t"><b>Wave 1 — server</b> (Opus): revert/publish require a worktree; worktree failure surfaced as error activity; archive-while-running rejected; restart recovery + graceful shutdown; approval with no session → settle; Pi excluded from experts/delegate; delegate mode clamp + read-only repo guard; PR state refresh</span></li>
+            <li><span class="badge status wip">wip</span><span class="t"><b>Wave 1 — web</b> (Opus): hide revert/PR on main-checkout threads; Commit &amp; update PR after a PR exists; failures → toasts; ⌘N; fs.watch/pty resubscribe on reconnect; honest provider roster; worktree root from server.info; actionable 401 errors; Esc scoping</span></li>
+            <li><span class="badge status todo">todo</span><span class="t"><b>Wave 2</b> (contracts by orchestrator): live mode/model/interaction changes (SPI <code>setMode/setModel</code> + per-turn overrides); follow-up queueing; reasoning surface; generic pass-through of unknown events; images on <code>turn.request</code>; "Open in terminal" opens a PTY tab; OpenCode agent choice + rule narrowing; Codex network access from user config</span></li>
+            <li><span class="badge status todo">todo</span><span class="t"><b>Wave 3</b>: Andrea <code>codex login</code> + Pi credentials → record real Codex/Pi fixtures, four-provider live run; checkpoint-ref GC on archive; experts mailbox persistence/timeouts; component tests for ThreadHeader/ThreadPills/DiffHeader</span></li>
+          </ul>
+        </div>
+      </details>
+
+      <details class="phase">
         <summary><span class="title"><h3>R1 — First-run fixes &amp; release pipeline</h3><small>title bar inset · dark default + toggle · custom Select · R2 release (mac local, windows/linux CI)</small></span><span class="badge status wip">wip</span></summary>
         <div class="body">
           <ul class="tasks">

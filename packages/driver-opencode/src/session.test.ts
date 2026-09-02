@@ -150,6 +150,36 @@ describe("OpencodeSession", () => {
     expect(events.at(-1)).toEqual({ type: "settled", status: "interrupted" });
   });
 
+
+  it("resubscribes on the next turn after the event stream errors", async () => {
+    const { session, api } = harness();
+    const first: NormalizedEvent[] = [];
+    const firstDone = collect(session.send({ text: "one" }), first);
+    await tick();
+    expect(api.subscribes).toBe(1);
+
+    api.failStream(new Error("connection reset"));
+    await firstDone;
+    expect(first.at(-1)).toEqual({ type: "settled", status: "error", error: "opencode event stream ended before the turn settled" });
+
+    // without clearing the dead handle the second turn would prompt into a stream nobody reads
+    const second: NormalizedEvent[] = [];
+    const secondDone = collect(session.send({ text: "two" }), second);
+    await tick();
+    expect(api.subscribes).toBe(2);
+    expect(api.prompts).toHaveLength(2);
+    api.idle();
+    await secondDone;
+    expect(second.at(-1)).toEqual({ type: "settled", status: "completed" });
+    await session.close();
+  });
+
+  it("disconnects only its own MCP registrations on close", async () => {
+    const { session, api } = harness({}, { mcpNames: ["tide-t1"] });
+    await session.close();
+    expect(api.mcpDisconnected).toEqual([{ directory: "/repo", name: "tide-t1" }]);
+  });
+
   it("refuses a second concurrent turn and reports prompt failures as an error settle", async () => {
     const { session, api } = harness();
     const events: NormalizedEvent[] = [];

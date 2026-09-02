@@ -58,7 +58,16 @@ export const SHORTCUTS: Shortcut[] = [
     when: "always",
     run: () => ui().setPaletteOpen(true),
   },
-  { id: "new-thread", keys: "⌘N", label: "New thread", group: "Navigation", when: "always" },
+  {
+    id: "new-thread", keys: "⌘N", label: "New thread", group: "Navigation", key: "n", shift: false,
+    when: "always",
+    run: () => {
+      const state = ui();
+      const projectId = state.selectedProjectId ?? currentProjectId();
+      if (projectId === undefined) return false;
+      state.setNewThreadProject(projectId);
+    },
+  },
   {
     id: "new-experts", keys: "⌘⇧X", label: "New experts session", group: "Navigation", key: "x", shift: true,
     when: "always",

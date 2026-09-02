@@ -12,25 +12,27 @@ interface ProvidersState {
   requested: boolean;
 }
 
-/** Placeholder used before `providers.list` answers, so pickers stay usable. */
-const FALLBACK: ProviderStatusDto[] = PROVIDERS.map((kind) => ({
-  kind,
-  installed: true,
-  loggedIn: true,
-  models: [],
-  caps: {
-    planMode: true,
-    subagents: true,
-    mcp: true,
-    images: true,
-    resume: true,
-    contextUsage: true,
-    openInTerminal: true,
-  },
-}));
+const NO_CAPS: ProviderStatusDto["caps"] = {
+  planMode: false,
+  subagents: false,
+  mcp: false,
+  images: false,
+  resume: false,
+  contextUsage: false,
+  openInTerminal: false,
+};
+
+/**
+ * What the roster looks like when the server could not be asked. A harness is
+ * never presented as ready unless the server said so, so a failed probe reads as
+ * "not installed" with the reason attached rather than as four working harnesses.
+ */
+function unknownRoster(hint: string): ProviderStatusDto[] {
+  return PROVIDERS.map((kind) => ({ kind, installed: false, loggedIn: false, models: [], caps: NO_CAPS, hint }));
+}
 
 export const useProvidersStore = create<ProvidersState>(() => ({
-  providers: FALLBACK,
+  providers: [],
   loading: false,
   error: null,
   requested: false,
@@ -43,19 +45,35 @@ export function loadProviders(refresh = false): void {
   useProvidersStore.setState({ loading: true, requested: true, error: null });
   call("providers.list", refresh ? { refresh: true } : {})
     .then((providers) => useProvidersStore.setState({ providers, loading: false }))
-    .catch((err: unknown) =>
-      useProvidersStore.setState({
-        loading: false,
-        error: err instanceof Error ? err.message : String(err),
-      }),
-    );
+    .catch((err: unknown) => {
+      const error = err instanceof Error ? err.message : String(err);
+      useProvidersStore.setState({ loading: false, error, providers: unknownRoster(error) });
+    });
+}
+
+export interface ProviderRoster {
+  providers: ProviderStatusDto[];
+  /** the first `providers.list` has not answered yet — nothing is known */
+  loading: boolean;
+  error: string | null;
+}
+
+/**
+ * The roster with its liveness: until the server answers, callers must show
+ * "checking" rather than guessing, so the UI never offers a harness that may not
+ * be there. Triggers the single `providers.list` call on first use.
+ */
+export function useProviderRoster(): ProviderRoster {
+  const providers = useProvidersStore((s) => s.providers);
+  const loading = useProvidersStore((s) => s.loading);
+  const error = useProvidersStore((s) => s.error);
+  useEffect(() => loadProviders(), []);
+  return { providers, loading: loading || (providers.length === 0 && error === null), error };
 }
 
 /** Cached harness roster; triggers the single `providers.list` call on first use. */
 export function useProviders(): ProviderStatusDto[] {
-  const providers = useProvidersStore((s) => s.providers);
-  useEffect(() => loadProviders(), []);
-  return providers;
+  return useProviderRoster().providers;
 }
 
 export function providerStatus(
@@ -84,5 +102,5 @@ export function setProvidersForTest(providers: ProviderStatusDto[]): void {
 }
 
 export function resetProviders(): void {
-  useProvidersStore.setState({ providers: FALLBACK, loading: false, error: null, requested: false });
+  useProvidersStore.setState({ providers: [], loading: false, error: null, requested: false });
 }

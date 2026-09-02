@@ -35,7 +35,12 @@ afterEach(async () => {
   while (cleanups.length > 0) await cleanups.pop()?.();
 });
 
-async function setup(): Promise<Setup> {
+interface SetupOptions {
+  gh?: GhLike;
+  now?: () => number;
+}
+
+async function setup(options: SetupOptions = {}): Promise<Setup> {
   const repo = await createTempRepo("tide-rpc-vcs-");
   const store: EventStore = await openEventStore(":memory:");
   cleanups.push(() => repo.cleanup(), async () => store.close());
@@ -44,7 +49,13 @@ async function setup(): Promise<Setup> {
   const checkpoints = new CheckpointService({ git });
 
   const router = new RpcRouter();
-  registerVcsHandlers(router, { engine, checkpoints, gh: noGh, git });
+  registerVcsHandlers(router, {
+    engine,
+    checkpoints,
+    gh: options.gh ?? noGh,
+    git,
+    ...(options.now !== undefined ? { now: options.now } : {}),
+  });
 
   const project = (await engine.dispatch({ type: "project.create", title: "Repo", rootPath: repo.dir })).events[0]?.event;
   if (project?.type !== "project.created") throw new Error("expected project.created");
@@ -89,6 +100,57 @@ describe("rpc vcs.status", () => {
     const s = await setup();
     const { error } = await s.call("vcs.status", { threadId: "nope" });
     expect(error?.code).toBe("not-found");
+  });
+
+  it("refreshes a stale pull request state, at most once a minute", async () => {
+    /** `gh` that reports the PR as merged and counts how often it was asked. */
+    class FakeGh implements GhLike {
+      views = 0;
+      async hasGh(): Promise<boolean> {
+        return true;
+      }
+      async prCreate(): Promise<{ url: string; number: number }> {
+        throw new Error("not used");
+      }
+      async prView(): Promise<PrRef | undefined> {
+        this.views++;
+        return { url: "https://github.com/o/r/pull/7", number: 7, state: "merged" };
+      }
+    }
+    const gh = new FakeGh();
+    let now = 1_000_000;
+    const s = await setup({ gh, now: () => now });
+    await s.engine.dispatch({
+      type: "pr.update",
+      threadId: s.threadId,
+      pr: { url: "https://github.com/o/r/pull/7", number: 7, state: "open", updatedAt: now },
+    });
+
+    await s.call<VcsStatus>("vcs.status", { threadId: s.threadId });
+    expect(gh.views).toBe(1);
+    expect(s.engine.getModel().threads[s.threadId]?.pr).toMatchObject({ number: 7, state: "merged" });
+
+    // a second call moments later must not hit the network again
+    await s.call<VcsStatus>("vcs.status", { threadId: s.threadId });
+    expect(gh.views).toBe(1);
+
+    now += 60_001;
+    await s.call<VcsStatus>("vcs.status", { threadId: s.threadId });
+    expect(gh.views).toBe(2);
+  });
+
+  it("does not ask gh about a thread that has no pull request", async () => {
+    let views = 0;
+    const gh: GhLike = {
+      ...noGh,
+      async prView() {
+        views++;
+        return undefined;
+      },
+    };
+    const s = await setup({ gh });
+    await s.call<VcsStatus>("vcs.status", { threadId: s.threadId });
+    expect(views).toBe(0);
   });
 });
 

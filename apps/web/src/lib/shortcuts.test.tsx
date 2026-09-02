@@ -44,6 +44,20 @@ describe("shortcuts registry", () => {
     expect(press("`")).toBe(true);
   });
 
+  it("⌘N opens the new-thread form for the project in scope", () => {
+    // no project at all: the key is left to the browser/shell
+    expect(press("n")).toBe(false);
+
+    attachFakeStore(
+      modelWith({
+        projects: { p1: { id: "p1", title: "Tide", rootPath: "/src/tide", createdAt: 1, updatedAt: 1 } },
+        threads: { t1: makeThread("t1") },
+      }),
+    );
+    expect(press("n")).toBe(true);
+    expect(useUi.getState().newThreadProjectId).toBe("p1");
+  });
+
   it("does not swallow a key whose entry is out of context", () => {
     // nothing selected: every thread/workbench-scoped binding declines
     expect(press("1")).toBe(false);

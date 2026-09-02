@@ -112,10 +112,18 @@ export class ProviderReactor {
         );
         return;
       case "approval.responded":
-        this.#withSession(event.threadId, (s) => s.respondApproval(event.requestId, event.decision));
+        this.#withSession(
+          event.threadId,
+          (s) => s.respondApproval(event.requestId, event.decision),
+          () => this.#sessionGone(event.threadId),
+        );
         return;
       case "user-input.responded":
-        this.#withSession(event.threadId, (s) => s.respondUserInput(event.requestId, event.answers));
+        this.#withSession(
+          event.threadId,
+          (s) => s.respondUserInput(event.requestId, event.answers),
+          () => this.#sessionGone(event.threadId),
+        );
         return;
       case "turn.interrupt-requested":
         this.#withSession(event.threadId, (s) => s.interrupt());
@@ -186,11 +194,27 @@ export class ProviderReactor {
     this.#track(state.queue);
   }
 
+  /**
+   * The projector resolves an approval/answer as soon as the user responds, so a response the
+   * harness never receives would leave the UI reporting success while nothing happened. The
+   * turn is settled with an error instead, and the user is told to start a new one.
+   */
+  async #sessionGone(threadId: string): Promise<void> {
+    const model = this.#engine.getModel();
+    const turnId = model.threads[threadId]?.latestTurnId;
+    if (turnId === undefined) return;
+    const text = "the harness session is gone; start a new turn";
+    await this.#dispatch({ type: "activity.upsert", activity: this.#errorActivity(threadId, turnId, text) });
+    if (model.turns[turnId]?.settledAt !== undefined) return;
+    await this.#dispatch({ type: "turn.settle", turnId, status: "error", error: text });
+  }
+
   /** Out-of-band driver calls: they must not wait behind the running turn. */
-  #withSession(threadId: string, call: (session: ProviderSession) => Promise<void>): void {
+  #withSession(threadId: string, call: (session: ProviderSession) => Promise<void>, onMissing?: () => Promise<void>): void {
     const session = this.#sessions.peek(threadId);
     if (!session) {
       this.#log("[reactor] no live session for thread", threadId);
+      if (onMissing) this.#track(onMissing());
       return;
     }
     this.#track(

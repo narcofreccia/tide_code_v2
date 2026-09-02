@@ -34,6 +34,52 @@ function load(env: Record<string, string>): Map<string, Handler> {
 const toolCall = (on: Map<string, Handler>, toolName: string, input: Record<string, unknown>): Promise<unknown> =>
   on.get("tool_call")!({ toolName, toolCallId: "c1", input }, { ui: { confirm: async () => true }, getContextUsage: () => undefined });
 
+/** A `tool_call` whose confirm answer the test controls, recording whether it was asked. */
+function toolCallAsking(on: Map<string, Handler>, toolName: string, input: Record<string, unknown>, answer = true): { result: Promise<unknown>; asked: string[] } {
+  const asked: string[] = [];
+  const ctx = { ui: { confirm: async (title: string) => (asked.push(title), answer) }, getContextUsage: () => undefined };
+  return { result: on.get("tool_call")!({ toolName, toolCallId: "c1", input }, ctx), asked };
+}
+
+describe("tide-bridge plan mode", () => {
+  const plan = { [ENV_RUNTIME_MODE]: "approval-required", [ENV_INTERACTION]: "plan", [ENV_CWD]: "/work/repo" };
+
+  it("blocks known writes and mutating commands", async () => {
+    const on = load(plan);
+    expect(await toolCall(on, "write", { path: "a.ts" })).toMatchObject({ block: true });
+    expect(await toolCall(on, "bash", { command: "rm -rf build" })).toMatchObject({ block: true });
+  });
+
+  it("lets a tool it does not model reach the approval path instead of refusing it", async () => {
+    const on = load(plan);
+    // hard-blocking every unmodelled tool made the user's own extension and MCP tools unusable
+    // while planning — exactly the crippling CLAUDE.md §1a forbids
+    const { result, asked } = toolCallAsking(on, "some_mcp_tool", { q: 1 });
+    expect(await result).toBeUndefined();
+    expect(asked).toEqual(["Allow some_mcp_tool?"]);
+  });
+
+  it("declining an unmodelled tool still blocks it, with the user's reason", async () => {
+    const on = load(plan);
+    const { result } = toolCallAsking(on, "some_mcp_tool", { q: 1 }, false);
+    expect(await result).toMatchObject({ block: true, reason: "Denied by the user in Tide" });
+  });
+
+  it("runs read-only shell research without asking or blocking", async () => {
+    const on = load({ ...plan, [ENV_RUNTIME_MODE]: "auto" });
+    const { result, asked } = toolCallAsking(on, "bash", { command: "git status" });
+    expect(await result).toBeUndefined();
+    expect(asked).toEqual([]);
+  });
+
+  it("still enforces the read-only link while planning", async () => {
+    const on = load({ ...plan, [ENV_LINKED_DIRS]: JSON.stringify(links) });
+    expect(await toolCall(on, "edit", { path: "/repos/infra/main.tf" })).toMatchObject({ block: true, reason: expect.stringContaining("read-only linked repo") });
+    // and for a tool Tide does not model that names a path under that link
+    expect(await toolCall(on, "some_mcp_tool", { path: "/repos/infra/main.tf" })).toMatchObject({ block: true });
+  });
+});
+
 describe("tide-bridge linked repos", () => {
   const base = { [ENV_RUNTIME_MODE]: "auto", [ENV_CWD]: "/work/repo", [ENV_LINKED_DIRS]: JSON.stringify(links) };
 

@@ -1,6 +1,12 @@
 import { useState } from "react";
 import type { ProviderKind, ProviderStatusDto, RuntimeMode } from "@tide/contracts";
-import { defaultModelOf, providerStatus, unavailableReason, useProviders } from "../../state/providers.ts";
+import {
+  defaultModelOf,
+  providerStatus,
+  unavailableReason,
+  useProviderRoster,
+  useProviders,
+} from "../../state/providers.ts";
 import { providerDefault, useSettings } from "../../state/settings.ts";
 import { PROVIDERS } from "../../lib/vocab.ts";
 import { Checkbox } from "../ui/Choice.tsx";
@@ -56,13 +62,14 @@ export function HarnessFields({
   model: string;
   onChange: (patch: Partial<ThreadDraft>) => void;
 }) {
-  const providers = useProviders();
+  const { providers, loading } = useProviderRoster();
+  // nothing is known before `providers.list` answers, so nothing is offered
   const providerOptions: SelectOption<ProviderKind>[] = PROVIDERS.map((kind) => {
     const status = providerStatus(providers, kind);
-    const reason = status ? unavailableReason(status) : undefined;
+    const reason = loading ? "Checking harnesses…" : status ? unavailableReason(status) : "not installed";
     return {
       value: kind,
-      label: reason ? `${kind} · ${reason}` : kind,
+      label: reason ? `${kind} · ${loading ? "checking…" : reason}` : kind,
       ...(reason === undefined ? {} : { disabled: true, title: reason }),
     };
   });

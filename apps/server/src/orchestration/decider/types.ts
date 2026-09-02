@@ -25,3 +25,12 @@ export function turnRequested(threadId: string, text: string, ctx: DecideContext
   const userMessage: Message = { id: ctx.newId(), threadId, turnId: turn.id, role: "user", text, createdAt: ctx.now };
   return { type: "turn.requested", turn, userMessage };
 }
+
+/**
+ * Providers that cannot host a Tide MCP session yet (driver-pi reports `caps.mcp:false` and
+ * never receives the Tide MCP server), so they can neither sit on an experts panel nor be
+ * delegated to: they would hang `working` forever with no way to report back.
+ */
+export const NO_TIDE_MCP: readonly string[] = ["pi"];
+export const NO_TIDE_MCP_MESSAGE = "pi has no Tide MCP bridge yet; choose claude, codex or opencode";
+export const lacksTideMcp = (provider: string): boolean => NO_TIDE_MCP.includes(provider);

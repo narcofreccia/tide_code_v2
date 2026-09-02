@@ -130,7 +130,7 @@ describe("VcsReactor — worktrees", () => {
     expect(h.control.opened[0]?.cwd).toBe(thread.worktreePath);
   });
 
-  it("leaves the thread on the project root when the worktree cannot be created", async () => {
+  it("reports the failure on the first turn and leaves the thread on the project root", async () => {
     const h = await harness();
     const dir = await mkdtemp(join(tmpdir(), "tide-plain-"));
     cleanups.push(() => rm(dir, { recursive: true, force: true }));
@@ -141,7 +141,24 @@ describe("VcsReactor — worktrees", () => {
     ).events[0]?.event;
     if (thread?.type !== "thread.created") throw new Error("expected thread.created");
     await h.settle();
-    expect(h.model().threads[thread.thread.id]?.worktreePath).toBeUndefined();
+    const threadId = thread.thread.id;
+    expect(h.model().threads[threadId]?.worktreePath).toBeUndefined();
+    // nothing to say yet: the failure has no turn to hang off
+    expect(activitiesOf(h.model(), threadId)).toHaveLength(0);
+
+    h.control.script(emit({ type: "settled", status: "completed" }));
+    const first = await requestTurn(h, threadId, "go");
+    const errors = activitiesOf(h.model(), threadId).filter((a) => a.kind === "error");
+    expect(errors).toHaveLength(1);
+    expect(errors[0]).toMatchObject({ turnId: first });
+    expect(errors[0]?.kind === "error" ? errors[0].text : "").toMatch(
+      /^Worktree could not be created \(.+\); this thread runs in the project's main checkout — revert and publish are disabled\.$/,
+    );
+
+    // and it is said once, not on every turn
+    h.control.script(emit({ type: "settled", status: "completed" }));
+    await requestTurn(h, threadId, "again");
+    expect(activitiesOf(h.model(), threadId).filter((a) => a.kind === "error")).toHaveLength(1);
   });
 
   it("reopens the harness session in the worktree when one attaches mid-thread", async () => {

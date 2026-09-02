@@ -1,8 +1,9 @@
 import { afterEach, describe, expect, it } from "vitest";
-import { cleanup, fireEvent, render, screen, waitFor, within } from "@testing-library/react";
+import { act, cleanup, fireEvent, render, screen, waitFor, within } from "@testing-library/react";
 import type { Project, ProjectLink, ReadModel } from "@tide/contracts";
 import { attachFakeStore, modelWith, resetUi } from "../../testHarness.ts";
-import { NewThreadPopover } from "./NewThreadPopover.tsx";
+import { NewThreadDialogHost, NewThreadPopover } from "./NewThreadPopover.tsx";
+import { useUi } from "../../state/ui.ts";
 import { choicesPayload, defaultChoices, isDefaultChoices } from "./ThreadLinkPicker.tsx";
 
 afterEach(() => {
@@ -89,5 +90,26 @@ describe("NewThreadPopover links", () => {
     await waitFor(() => expect(fake.dispatch).toHaveBeenCalled());
     const command = fake.dispatch.mock.calls[0]?.[0] as Record<string, unknown>;
     expect(command["links"]).toEqual([{ linkId: "web", access: "read" }]);
+  });
+});
+
+describe("NewThreadDialogHost", () => {
+  it("stays closed until ⌘N / the palette names a project", () => {
+    attachFakeStore(fixture());
+    const { container } = render(<NewThreadDialogHost />);
+    expect(container.firstChild).toBeNull();
+  });
+
+  it("creates the thread and closes", async () => {
+    const fake = attachFakeStore(fixture());
+    render(<NewThreadDialogHost />);
+    act(() => useUi.getState().setNewThreadProject("p1"));
+
+    expect(screen.getByRole("dialog", { name: "New thread" })).toBeDefined();
+    fireEvent.click(screen.getByText("Create thread"));
+
+    await waitFor(() => expect(fake.dispatch).toHaveBeenCalled());
+    expect((fake.dispatch.mock.calls[0]?.[0] as Record<string, unknown>)["type"]).toBe("thread.create");
+    expect(useUi.getState().newThreadProjectId).toBeNull();
   });
 });

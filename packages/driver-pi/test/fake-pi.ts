@@ -9,11 +9,15 @@ import type { ChildLike } from "../src/types.ts";
 export interface FakePi extends ChildLike {
   /** every command the driver wrote to stdin, parsed */
   readonly sent: Record<string, unknown>[];
+  /** every signal `kill` was called with, oldest first */
+  readonly signals: (NodeJS.Signals | undefined)[];
+  /** when true, `kill` does NOT make the child exit — used to drive the SIGKILL escalation */
+  ignoreSigterm: boolean;
   /** writes one NDJSON line to the driver */
   emitLine(line: Record<string, unknown>): void;
   /** writes a raw string to stdout (for framing tests) */
   writeRaw(chunk: string): void;
-  exit(code: number): void;
+  exit(code: number | null): void;
 }
 
 export type Script = (command: Record<string, unknown>, pi: FakePi) => void;
@@ -23,10 +27,14 @@ export function fakePi(script: Script = () => undefined): FakePi {
   const stderr = new PassThrough();
   const emitter = new EventEmitter();
   const sent: Record<string, unknown>[] = [];
+  const signals: (NodeJS.Signals | undefined)[] = [];
   let buffer = "";
+  let exited = false;
 
   const pi: FakePi = {
     sent,
+    signals,
+    ignoreSigterm: false,
     stdout,
     stderr,
     stdin: {
@@ -48,7 +56,10 @@ export function fakePi(script: Script = () => undefined): FakePi {
         return undefined;
       },
     },
-    kill() {
+    kill(signal?: NodeJS.Signals) {
+      signals.push(signal);
+      if (pi.ignoreSigterm && signal === "SIGTERM") return true;
+      pi.exit(0);
       return true;
     },
     once(event: "exit" | "error", listener: (...args: never[]) => void) {
@@ -62,6 +73,8 @@ export function fakePi(script: Script = () => undefined): FakePi {
       stdout.write(chunk);
     },
     exit(code) {
+      if (exited) return;
+      exited = true;
       emitter.emit("exit", code);
     },
   };

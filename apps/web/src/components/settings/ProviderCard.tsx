@@ -1,9 +1,8 @@
 import type { ProviderStatusDto } from "@tide/contracts";
 import { PROVIDER_LABELS, RUNTIME_MODES } from "../../lib/vocab.ts";
-import { copyTerminalCommand } from "../../lib/threadActions.ts";
+import { resolveLoginCommand, runOrCopy } from "../../lib/providerLogin.ts";
 import { loadProviders } from "../../state/providers.ts";
 import { useProviderDefaults } from "../../state/settings.ts";
-import { createPty, setDrawerOpen, writePty } from "../../state/terminals.ts";
 import { useUi } from "../../state/ui.ts";
 import { Button } from "../ui/Button.tsx";
 import { Pill } from "../ui/Pill.tsx";
@@ -27,21 +26,6 @@ export function statusOf(p: ProviderStatusDto): { glyph: string; text: string; t
   if (!p.loggedIn) return { glyph: "◐", text: "Installed · not logged in", tone: "warn" };
   const version = p.version ? ` · v${p.version.replace(/^v/, "")}` : "";
   return { glyph: "●", text: `Installed · logged in${version}`, tone: "ok" };
-}
-
-/** Drivers put their login command in the hint, backticked ("Run `claude auth login`"). */
-export function loginCommand(hint: string | undefined): string | undefined {
-  return hint?.match(/`([^`]+)`/)?.[1];
-}
-
-/** Runs the command in a new terminal of the selected thread, else copies it. */
-export async function runOrCopy(command: string): Promise<void> {
-  const threadId = useUi.getState().selectedThreadId;
-  if (!threadId) return copyTerminalCommand(command);
-  const ptyId = await createPty(threadId, 80, 24);
-  if (!ptyId) return copyTerminalCommand(command);
-  setDrawerOpen(true);
-  writePty(ptyId, `${command}\n`);
 }
 
 function ModelList({ status }: { status: ProviderStatusDto }) {
@@ -78,7 +62,7 @@ export function ProviderCard({ status }: { status: ProviderStatusDto }) {
   const setProviderDefault = useProviderDefaults((s) => s.setProviderDefault);
   const threadId = useUi((s) => s.selectedThreadId);
   const { glyph, text, tone } = statusOf(status);
-  const command = loginCommand(status.hint);
+  const command = resolveLoginCommand(status);
   const modelOptions: SelectOption<string>[] = [
     { value: "", label: "harness default" },
     ...status.models.map((m) => ({ value: m.id, label: m.label })),

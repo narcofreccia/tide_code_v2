@@ -18,6 +18,18 @@ export function parseModelId(id: string): ModelRef | undefined {
   return { providerID: id.slice(0, slash), modelID: id.slice(slash + 1) };
 }
 
+/**
+ * Thread-scoped MCP registration name. opencode exposes MCP tools to the model as
+ * `<serverName with non-alphanumerics replaced by _>_<toolName>`, so this also renames the
+ * tools (`tide-<threadId>_tide_delegate`). Every server registered for a directory is
+ * visible to every session in that directory, so sibling threads sharing a cwd do see each
+ * other's tide tools — but each one keeps its own token, which the single shared name could
+ * not do (see docs/internals/providers.md).
+ */
+export function mcpServerName(serverName: string, threadId: string): string {
+  return `${serverName}-${threadId}`;
+}
+
 export class OpencodeInstance implements ProviderInstance {
   readonly kind = "opencode" as const;
 
@@ -104,20 +116,39 @@ export class OpencodeInstance implements ProviderInstance {
       this.#env.log(`[opencode] resuming ${sessionId}; its original permission ruleset still applies`);
     }
 
+    // MCP registrations are keyed by name on the shared per-directory server, and `POST /mcp`
+    // *replaces* an existing entry of the same name. Two threads on one cwd registering plain
+    // "tide" would leave one live server holding whichever agent token registered last — the
+    // other thread would then act under a foreign identity. The thread id makes them distinct.
+    const mcpNames: string[] = [];
     for (const server of options.mcpServers) {
+      const name = mcpServerName(server.name, options.threadId);
       try {
         await api.addMcpServer({
           directory: options.cwd,
-          name: server.name,
+          name,
           command: [server.command, ...(server.args ?? [])],
           ...(server.env ? { env: server.env } : {}),
         });
+        mcpNames.push(name);
       } catch (error) {
-        this.#env.log(`[opencode] could not register MCP server ${server.name}: ${error instanceof Error ? error.message : String(error)}`);
+        this.#env.log(`[opencode] could not register MCP server ${name}: ${error instanceof Error ? error.message : String(error)}`);
       }
     }
 
-    const session = new OpencodeSession(this.#env, options, { api, agent, ...(model ? { model } : {}), ...(contextWindow !== undefined ? { contextWindow } : {}) }, sessionId);
+    const session = new OpencodeSession(
+      this.#env,
+      options,
+      {
+        api,
+        agent,
+        ...(model ? { model } : {}),
+        ...(contextWindow !== undefined ? { contextWindow } : {}),
+        ...(mcpNames.length > 0 ? { mcpNames } : {}),
+        onClosed: (closed) => this.#sessions.delete(closed),
+      },
+      sessionId,
+    );
     this.#sessions.add(session);
     return session;
   }

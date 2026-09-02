@@ -24,7 +24,7 @@ export const ENV_LINKED_DIRS = "TIDE_LINKED_DIRS";
 /** pi has no `systemPromptAppend` option; the bridge appends this in `before_agent_start`. */
 export const ENV_SYSTEM_PROMPT_APPEND = "TIDE_SYSTEM_PROMPT_APPEND";
 
-export type ToolClass = "read" | "write" | "command";
+export type ToolClass = "read" | "write" | "command" | "unknown";
 export type RuntimeMode = "approval-required" | "auto-accept-edits" | "auto" | "full-access";
 
 export interface ApprovalMeta {
@@ -40,19 +40,61 @@ const READ_TOOLS = new Set(["read", "ls", "grep", "find", "glob", "todo_read", "
 const WRITE_TOOLS = new Set(["edit", "write", "multi_edit", "apply_patch", "notebook_edit", "todo_write"]);
 const COMMAND_TOOLS = new Set(["bash", "powershell", "shell", "run_command"]);
 
-/** Unknown tools (extension tools, MCP tools in P5) count as writes: ask rather than assume. */
+/**
+ * Unknown tools (the user's own extension tools, MCP tools in P5) are their own class. They
+ * are treated as writes for *approval* — ask rather than assume — but they are never hard
+ * blocked, because "not in Tide's table" is not evidence that a tool mutates anything, and
+ * blocking it would cripple the harness (CLAUDE.md §1a).
+ */
 export function classifyTool(toolName: string): ToolClass {
   if (COMMAND_TOOLS.has(toolName)) return "command";
   if (READ_TOOLS.has(toolName)) return "read";
   if (WRITE_TOOLS.has(toolName)) return "write";
-  return "write";
+  return "unknown";
 }
 
 /** Mirrors the Pi column of the RuntimeMode table in docs/internals/providers.md. */
 export function needsApproval(mode: RuntimeMode, toolClass: ToolClass): boolean {
   if (toolClass === "read") return false;
   if (mode === "approval-required") return true;
-  if (mode === "auto-accept-edits") return toolClass === "command";
+  // an unknown tool could be a command as easily as an edit, so it keeps asking here
+  if (mode === "auto-accept-edits") return toolClass === "command" || toolClass === "unknown";
+  return false;
+}
+
+const READ_ONLY_COMMANDS = new Set([
+  "ls", "cat", "head", "tail", "wc", "grep", "rg", "find", "fd", "pwd", "which", "echo", "file", "stat", "tree", "du", "df", "diff", "sort", "uniq", "cut", "awk", "sed", "basename", "dirname", "realpath", "env", "date", "printenv",
+]);
+const READ_ONLY_GIT = new Set(["status", "log", "diff", "show", "branch", "remote", "blame", "describe", "ls-files", "rev-parse", "config"]);
+/** Redirections and background/edit operators make even an allowlisted head unsafe. */
+const MUTATING_SYNTAX = /[>`]|\$\(|\bsudo\b/;
+
+/**
+ * Is this shell command read-only enough to run while planning? Deliberately conservative:
+ * an allowlisted head on every segment, no redirection, no command substitution. Anything
+ * unrecognised answers `false` and takes the normal approval path — this decides *plan-mode
+ * blocking only*, never whether an approval is needed.
+ */
+export function isReadOnlyCommand(input: unknown): boolean {
+  if (typeof input !== "object" || input === null) return false;
+  const command = (input as Record<string, unknown>)["command"];
+  if (typeof command !== "string" || command.trim() === "") return false;
+  if (MUTATING_SYNTAX.test(command)) return false;
+  const segments = command.split(/\|\||&&|[|;]/);
+  return segments.every((segment) => {
+    const words = segment.trim().split(/\s+/).filter((word) => word !== "");
+    const head = words[0];
+    if (head === undefined) return false;
+    if (head === "git") return words[1] !== undefined && READ_ONLY_GIT.has(words[1]);
+    return READ_ONLY_COMMANDS.has(head);
+  });
+}
+
+/** In plan mode only these are refused outright; everything else goes to the approval path. */
+export function blockedInPlanMode(toolName: string, input: unknown): boolean {
+  const toolClass = classifyTool(toolName);
+  if (toolClass === "write") return true;
+  if (toolClass === "command") return !isReadOnlyCommand(input);
   return false;
 }
 
@@ -165,7 +207,11 @@ export function toolTargetPath(input: unknown): string | undefined {
  */
 export function readOnlyLinkFor(toolName: string, input: unknown, cwd: string, links: LinkedDirWire[]): LinkedDirWire | undefined {
   if (links.length === 0) return undefined;
-  if (classifyTool(toolName) !== "write") return undefined;
+  // `unknown` is included: a tool Tide does not model that names a concrete path under a
+  // read-only link is exactly the case the link is meant to stop. Path-less tools are
+  // unaffected, so this adds no false blocks.
+  const toolClass = classifyTool(toolName);
+  if (toolClass !== "write" && toolClass !== "unknown") return undefined;
   const path = toolTargetPath(input);
   if (path === undefined) return undefined;
   const target = absolutize(cwd, path);

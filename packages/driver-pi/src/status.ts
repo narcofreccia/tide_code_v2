@@ -32,6 +32,12 @@ export const PI_CAPS = {
  * signing in happens with `/login` inside the TUI, so the runnable command is plain `pi`.
  */
 export const LOGIN_HINT = "Run `pi` once and sign in with /login, or set ANTHROPIC_API_KEY / OPENAI_API_KEY / GEMINI_API_KEY";
+/**
+ * pi has no non-interactive login subcommand (`pi auth` only prints existing credentials),
+ * so the runnable command is plain `pi`; the user types `/login` once it is up, which the
+ * hint spells out.
+ */
+export const LOGIN_COMMAND = "pi";
 export const INSTALL_HINT = "Install pi: `npm i -g @earendil-works/pi-coding-agent`";
 
 const API_KEY_ENV = ["ANTHROPIC_API_KEY", "OPENAI_API_KEY", "GEMINI_API_KEY"];
@@ -164,7 +170,7 @@ export async function buildStatus(config: PiConfig, env: DriverEnv, deps: PiDeps
     installed: true,
     loggedIn,
     ...(version ? { version } : {}),
-    ...(loggedIn ? {} : { hint: LOGIN_HINT }),
+    ...(loggedIn ? {} : { hint: LOGIN_HINT, loginCommand: LOGIN_COMMAND }),
     models: mergeModels(fromPi, local),
     caps: { ...PI_CAPS },
   };

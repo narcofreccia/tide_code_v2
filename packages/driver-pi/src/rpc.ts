@@ -1,5 +1,5 @@
 import { StringDecoder } from "node:string_decoder";
-import type { ChildLike, PiLine, PiResponse } from "./types.ts";
+import type { ChildLike, PiLine, PiResponse, TimerLike } from "./types.ts";
 
 /**
  * NDJSON transport for `pi --mode rpc`.
@@ -37,9 +37,24 @@ export function readJsonl(stream: NodeJS.ReadableStream, onLine: (line: string) 
   });
 }
 
+/** How long a SIGTERM'd pi has to exit before it is SIGKILLed. */
+export const KILL_GRACE_MS = 5_000;
+
+const REAL_TIMERS: TimerLike = {
+  setTimeout: (fn, ms) => setTimeout(fn, ms),
+  clearTimeout: (handle) => clearTimeout(handle as ReturnType<typeof setTimeout>),
+};
+
 export interface PiRpcOptions {
   onLine: (line: PiLine) => void;
   log: (message: string, data?: unknown) => void;
+  /**
+   * The child died on its own. Rejecting the pending requests is not enough: a `prompt` that
+   * already resolved leaves the turn's mailbox open with nothing left to fill it.
+   */
+  onExit?: (error: Error) => void;
+  killGraceMs?: number;
+  timers?: TimerLike;
 }
 
 export class PiRpc {
@@ -48,14 +63,17 @@ export class PiRpc {
   #pending = new Map<string, { resolve: (value: PiResponse) => void; reject: (error: Error) => void }>();
   #counter = 0;
   #exited: Error | undefined;
+  #closing = false;
+  #childExited = false;
+  #killTimer: unknown;
 
   constructor(child: ChildLike, options: PiRpcOptions) {
     this.#child = child;
     this.#options = options;
     if (child.stdout) readJsonl(child.stdout, (line) => this.#handle(line));
     if (child.stderr) readJsonl(child.stderr, (line) => options.log(`[pi:stderr] ${line}`));
-    child.once("exit", ((code: number | null) => this.#fail(new Error(`pi exited with code ${code ?? "null"}`))) as never);
-    child.once("error", ((error: Error) => this.#fail(error)) as never);
+    child.once("exit", ((code: number | null) => this.#died(new Error(`pi exited with code ${code ?? "null"}`))) as never);
+    child.once("error", ((error: Error) => this.#died(error)) as never);
   }
 
   #handle(raw: string): void {
@@ -83,6 +101,18 @@ export class PiRpc {
     this.#exited ??= error;
     for (const waiter of this.#pending.values()) waiter.reject(error);
     this.#pending.clear();
+  }
+
+  /** The child is gone: drop the SIGKILL timer and tell the session so it can settle its turn. */
+  #died(error: Error): void {
+    const first = !this.#childExited;
+    this.#childExited = true;
+    this.#fail(error);
+    if (this.#killTimer !== undefined) {
+      (this.#options.timers ?? REAL_TIMERS).clearTimeout(this.#killTimer);
+      this.#killTimer = undefined;
+    }
+    if (first && !this.#closing) this.#options.onExit?.(error);
   }
 
   /** Fire-and-forget; used for `extension_ui_response`, which pi never answers. */
@@ -114,17 +144,32 @@ export class PiRpc {
     }
   }
 
+  /** SIGTERM, then SIGKILL if pi is still alive `killGraceMs` later. */
   close(): void {
+    this.#closing = true;
     this.#fail(this.#exited ?? new Error("pi session closed"));
     try {
       this.#child.stdin?.end();
     } catch {
       // a closed pipe is fine
     }
+    if (this.#childExited) return;
     try {
-      this.#child.kill();
+      this.#child.kill("SIGTERM");
     } catch {
-      // already gone
+      return; // already gone
     }
+    if (this.#childExited) return;
+    const timers = this.#options.timers ?? REAL_TIMERS;
+    this.#killTimer = timers.setTimeout(() => {
+      this.#killTimer = undefined;
+      if (this.#childExited) return;
+      this.#options.log("[pi] did not exit after SIGTERM; sending SIGKILL");
+      try {
+        this.#child.kill("SIGKILL");
+      } catch {
+        // already gone
+      }
+    }, this.#options.killGraceMs ?? KILL_GRACE_MS);
   }
 }

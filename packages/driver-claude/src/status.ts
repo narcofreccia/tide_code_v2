@@ -19,6 +19,8 @@ export const CLAUDE_CAPS = {
 } as const;
 
 export const LOGIN_HINT = "Run `claude auth login` in a terminal";
+/** Verified against `claude auth --help` (Claude Code 2.1.x): `login` is a subcommand of `auth`. */
+export const LOGIN_COMMAND = "claude auth login";
 
 /**
  * Fallback only. Real ids come from the CLI (`supportedModels()`); this list is aliases —
@@ -137,7 +139,7 @@ export async function buildStatus(config: ClaudeConfig, env: DriverEnv, queryFn:
     installed: true,
     loggedIn,
     ...(version ? { version } : {}),
-    ...(loggedIn ? {} : { hint: LOGIN_HINT }),
+    ...(loggedIn ? {} : { hint: LOGIN_HINT, loginCommand: LOGIN_COMMAND }),
     models,
     caps: { ...CLAUDE_CAPS },
   };

@@ -2,6 +2,7 @@ import ReactMarkdown from "react-markdown";
 import remarkGfm from "remark-gfm";
 import type { ProposedPlan, ProviderKind } from "@tide/contracts";
 import { dismissPlan, implementPlan } from "../../lib/threadActions.ts";
+import { runOrToast } from "../../lib/dispatchOrToast.ts";
 import { focusComposer } from "../../lib/composerFocus.ts";
 import { useUi } from "../../state/ui.ts";
 import { Button } from "../ui/Button.tsx";
@@ -38,12 +39,14 @@ export function PlanCard({ plan, provider }: { plan: ProposedPlan; provider: Pro
                     variant="primary"
                     onClick={() => {
                       close();
-                      void implementPlan(plan.id, {
-                        provider: draft.provider,
-                        ...(draft.model === "" ? {} : { model: draft.model }),
-                        ...(draft.mode === undefined ? {} : { mode: draft.mode }),
-                        useWorktree: draft.useWorktree,
-                      }).catch(() => undefined);
+                      runOrToast("Implementing the plan", () =>
+                        implementPlan(plan.id, {
+                          provider: draft.provider,
+                          ...(draft.model === "" ? {} : { model: draft.model }),
+                          ...(draft.mode === undefined ? {} : { mode: draft.mode }),
+                          useWorktree: draft.useWorktree,
+                        }),
+                      );
                     }}
                   >
                     Go

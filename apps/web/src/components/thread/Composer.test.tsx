@@ -2,6 +2,7 @@ import { afterEach, describe, expect, it } from "vitest";
 import { cleanup, fireEvent, render, screen } from "@testing-library/react";
 import { Composer } from "./Composer.tsx";
 import { attachFakeStore, makeThread, modelWith, resetUi } from "../../testHarness.ts";
+import { useUi } from "../../state/ui.ts";
 
 afterEach(() => {
   cleanup();
@@ -29,8 +30,33 @@ describe("Composer", () => {
   it("interrupts on Esc while running", () => {
     const fake = attachFakeStore(modelWith({}));
     render(<Composer thread={makeThread("t1", { status: "running" })} />);
+    screen.getByLabelText("Message").focus();
     fireEvent.keyDown(window, { key: "Escape" });
     expect(fake.dispatch).toHaveBeenCalledWith({ type: "turn.interrupt", threadId: "t1" });
+  });
+
+  it("leaves Esc to the overlay that owns it", () => {
+    const fake = attachFakeStore(modelWith({}));
+    render(<Composer thread={makeThread("t1", { status: "running" })} />);
+    screen.getByLabelText("Message").focus();
+    useUi.getState().setPaletteOpen(true);
+
+    fireEvent.keyDown(window, { key: "Escape" });
+
+    expect(fake.dispatch).not.toHaveBeenCalled();
+  });
+
+  it("ignores Esc pressed outside the thread column", () => {
+    const fake = attachFakeStore(modelWith({}));
+    const outside = document.createElement("button");
+    document.body.append(outside);
+    render(<Composer thread={makeThread("t1", { status: "running" })} />);
+    outside.focus();
+
+    fireEvent.keyDown(window, { key: "Escape" });
+
+    expect(fake.dispatch).not.toHaveBeenCalled();
+    outside.remove();
   });
 
   it("disables the pills while running", () => {

@@ -28,6 +28,15 @@ export interface ChildLike {
 
 export type SpawnFn = (command: string, args: string[], options: { cwd: string; env: NodeJS.ProcessEnv }) => ChildLike;
 
+/**
+ * Test seam for every wall-clock deadline in the driver (handshake timeout, SIGKILL
+ * escalation), so the tests drive them deterministically instead of sleeping.
+ */
+export interface TimerLike {
+  setTimeout: (fn: () => void, ms: number) => unknown;
+  clearTimeout: (handle: unknown) => void;
+}
+
 /** Native knobs a `RuntimeMode` maps to (see `modes.ts`). */
 export interface CodexPolicy {
   approvalPolicy: AskForApproval;

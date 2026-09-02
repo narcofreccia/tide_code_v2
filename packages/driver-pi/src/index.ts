@@ -12,7 +12,7 @@ export { resolveBridgePath } from "./bridge-path.ts";
 export { unifiedDiff } from "./diff.ts";
 export { isDiffTool, previewDiff } from "./edit-preview.ts";
 export { shellQuote } from "./shell.ts";
-export { INSTALL_HINT, LOGIN_HINT, PI_CAPS, detectBinary, detectLogin, mergeModels, parseVersion, workspaceBinary } from "./status.ts";
+export { INSTALL_HINT, LOGIN_COMMAND, LOGIN_HINT, PI_CAPS, detectBinary, detectLogin, mergeModels, parseVersion, workspaceBinary } from "./status.ts";
 export {
   LMSTUDIO_BASE_URL,
   LMSTUDIO_MODELS_URL,
@@ -26,7 +26,7 @@ export {
   parseLocalModelId,
   readModelsJson,
 } from "./local-models.ts";
-export type { ChildLike, FetchLike, PiConfig, PiDeps, SpawnLike } from "./types.ts";
+export type { ChildLike, FetchLike, PiConfig, PiDeps, SpawnLike, TimerLike } from "./types.ts";
 
 /** node's `spawn` narrowed to the slice the driver uses (declared boundary, CLAUDE.md §5). */
 const nodeSpawn: SpawnLike = (command, args, options) => spawn(command, args, { ...options, stdio: ["pipe", "pipe", "pipe"] }) as unknown as ChildLike;

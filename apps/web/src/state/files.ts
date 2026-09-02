@@ -2,6 +2,7 @@ import { useEffect } from "react";
 import { create } from "zustand";
 import type { FsChange, FsEntry } from "@tide/contracts";
 import { call, stream, type StreamControl } from "./model.ts";
+import { onReconnect } from "./reconnect.ts";
 import { showToast } from "./toast.ts";
 
 export interface Entry<T> {
@@ -143,11 +144,33 @@ export async function deleteEntry(threadId: string, path: string): Promise<boole
 type ChangeListener = (change: FsChange) => void;
 
 interface Watcher {
-  control: StreamControl;
+  /** undefined once the server stream ended: a dead watcher is never left cached */
+  control: StreamControl | undefined;
   listeners: Set<ChangeListener>;
 }
 
 const watchers = new Map<string, Watcher>();
+
+/** Opens the server stream and drops it from the cache the moment it ends. */
+function openWatch(threadId: string): StreamControl {
+  const control = stream("fs.watch", { threadId }, (change) => onChange(threadId, change));
+  const forget = (): void => {
+    const watcher = watchers.get(threadId);
+    if (watcher?.control === control) watcher.control = undefined;
+  };
+  control.done.then(forget, forget);
+  return control;
+}
+
+// The connection layer does not resume streams, so a reconnect re-opens every
+// watch that still has subscribers; otherwise the editor never sees another
+// external change.
+onReconnect(() => {
+  for (const [threadId, watcher] of watchers) {
+    watcher.control?.cancel();
+    watcher.control = openWatch(threadId);
+  }
+});
 
 function onChange(threadId: string, change: FsChange): void {
   const dir = parentDir(change.path);
@@ -167,11 +190,9 @@ function onChange(threadId: string, change: FsChange): void {
 export function subscribeWatch(threadId: string, listener?: ChangeListener): () => void {
   let watcher = watchers.get(threadId);
   if (!watcher) {
-    const listeners = new Set<ChangeListener>();
-    const control = stream("fs.watch", { threadId }, (change) => onChange(threadId, change));
-    control.done.catch(() => undefined);
-    watcher = { control, listeners };
+    watcher = { control: undefined, listeners: new Set<ChangeListener>() };
     watchers.set(threadId, watcher);
+    watcher.control = openWatch(threadId);
   }
   const entry = watcher;
   if (listener) entry.listeners.add(listener);
@@ -182,7 +203,7 @@ export function subscribeWatch(threadId: string, listener?: ChangeListener): () 
     if (listener) entry.listeners.delete(listener);
     if (entry.listeners.size === 0 && watchers.get(threadId) === entry) {
       watchers.delete(threadId);
-      entry.control.cancel();
+      entry.control?.cancel();
     }
   };
 }
@@ -264,7 +285,7 @@ export function useFileIndex(threadId: string | undefined): Entry<FileIndex> {
 }
 
 export function resetFiles(): void {
-  for (const [, watcher] of watchers) watcher.control.cancel();
+  for (const [, watcher] of watchers) watcher.control?.cancel();
   watchers.clear();
   useFiles.setState({ dirs: {}, expanded: {}, indexes: {}, selected: {} });
 }
