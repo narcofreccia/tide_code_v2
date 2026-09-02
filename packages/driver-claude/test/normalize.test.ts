@@ -190,3 +190,12 @@ describe("normalizer over recorded fixtures", () => {
     expect(events.at(-1)).toEqual({ type: "settled", status: "interrupted" });
   });
 });
+
+describe("silent frames", () => {
+  it("drops command_lifecycle bookkeeping without a pass-through row", () => {
+    const n = new ClaudeNormalizer({ partialMessages: true });
+    const before = n.unknownCount;
+    expect(n.next({ type: "command_lifecycle", uuid: "u1", subtype: "started", session_id: "s" } as never)).toEqual([]);
+    expect(n.unknownCount).toBe(before);
+  });
+});

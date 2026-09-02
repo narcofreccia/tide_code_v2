@@ -31,6 +31,11 @@ const TASK_STATUS: Record<string, "running" | "done" | "error"> = {
   killed: "error",
 };
 
+/** Top-level frames that are pure bookkeeping for the SDK's own message queue. */
+const SILENT_MESSAGE_TYPES = new Set([
+  "command_lifecycle", // queued/started/completed/cancelled per user-message uuid — one per prompt, no content
+]);
+
 const SILENT_SYSTEM_SUBTYPES = new Set([
   "status", // per-request spinner state (requesting/…)
   "thinking_tokens", // live thinking-token estimate for a progress pill
@@ -128,6 +133,7 @@ export class ClaudeNormalizer {
       case "rate_limit_event":
         return this.#rateLimit(message as { rate_limit_info?: { status?: string; rateLimitType?: string; utilization?: number } });
       default:
+        if (SILENT_MESSAGE_TYPES.has(message.type)) return [];
         return this.#unknown(message, message.type, (message as { subtype?: string }).subtype);
     }
   }
