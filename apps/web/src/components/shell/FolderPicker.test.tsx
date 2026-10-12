@@ -154,3 +154,32 @@ describe("Add a repository", () => {
     });
   });
 });
+
+describe("New project", () => {
+  it("creates the folder through project.init and selects the project", async () => {
+    attachFakeStore(modelWith({}));
+    const calls: unknown[] = [];
+    mockBrowse();
+    mockRpc({
+      "fs.browse": (p: never) => listing((p as BrowseParams).path ?? HOME, [{ name: "notes" }]),
+      "project.init": (params: never) => {
+        calls.push(params);
+        return { projectId: "p-new", rootPath: `${HOME}/my-app` };
+      },
+    });
+    render(<AddProjectForm onDone={() => undefined} />);
+    fireEvent.click(screen.getByLabelText("New project"));
+    expect(screen.getByText(/runs git init/)).toBeDefined();
+    fireEvent.click(screen.getByText("Browse…"));
+    await screen.findAllByRole("option");
+    expect(screen.getByText("Choose where to create the project")).toBeDefined();
+    fireEvent.click(screen.getByText("Create here"));
+    expect(screen.getByLabelText<HTMLInputElement>("Parent folder").value).toBe(HOME);
+    fireEvent.change(screen.getByLabelText("Folder name"), { target: { value: "my app" } });
+    fireEvent.click(screen.getByText("Create project"));
+    expect(screen.getByText(/letters, digits/)).toBeDefined();
+    fireEvent.change(screen.getByLabelText("Folder name"), { target: { value: "my-app" } });
+    fireEvent.click(screen.getByText("Create project"));
+    await waitFor(() => expect(calls).toEqual([{ parentPath: HOME, name: "my-app" }]));
+  });
+});

@@ -32,10 +32,13 @@ export function FolderPicker({
   initialPath,
   onPick,
   onClose,
+  purpose = "repo",
 }: {
   initialPath?: string;
   onPick: (path: string) => void;
   onClose: () => void;
+  /** `repo`: pick an existing repository; `parent`: pick where a new project folder will be created */
+  purpose?: "repo" | "parent";
 }) {
   const [listing, setListing] = useState<Listing | null>(null);
   const [error, setError] = useState<string | null>(null);
@@ -82,7 +85,7 @@ export function FolderPicker({
   };
 
   return (
-    <Dialog title="Choose a repository folder" onCancel={onClose}>
+    <Dialog title={purpose === "parent" ? "Choose where to create the project" : "Choose a repository folder"} onCancel={onClose}>
       <nav className={styles.crumbs} aria-label="Path">
         {(listing ? breadcrumbs(listing.path) : []).map((crumb) => (
           <Button
@@ -152,8 +155,11 @@ export function FolderPicker({
         </div>
       ) : null}
 
-      {listing && !listing.isGitRepo ? (
-        <p className={styles.note}>Not a git repository — Tide works best with repos.</p>
+      {listing && purpose === "repo" && !listing.isGitRepo ? (
+        <p className={styles.note}>Not a git repository: no worktrees, checkpoints or merge-back here. To start from scratch use "New project".</p>
+      ) : null}
+      {listing && purpose === "parent" && listing.isGitRepo ? (
+        <p className={styles.note}>This folder is already a repository; the new project would be nested inside it.</p>
       ) : null}
 
       <div className={styles.actions}>
@@ -175,7 +181,7 @@ export function FolderPicker({
           disabled={listing === null}
           onClick={() => listing && onPick(listing.path)}
         >
-          Use this folder
+          {purpose === "parent" ? "Create here" : "Use this folder"}
         </Button>
       </div>
     </Dialog>

@@ -171,6 +171,12 @@ export const rpcMethods = {
   /** validated command -> persisted events */
   /** client commands only; internal commands are rejected with `forbidden` */
   "orchestration.dispatch": unary(Type.Object({ command: ClientCommand }), DispatchResult),
+  /** Start a project from nothing: creates `<parentPath>/<name>` (must not exist, or be an empty dir), runs
+   *  `git init -b main` + an empty first commit so the first thread gets a worktree, then `project.create`. */
+  "project.init": unary(
+    Type.Object({ parentPath: Type.String({ minLength: 1 }), name: Type.String({ minLength: 1, maxLength: 128 }), title: Type.Optional(Type.String({ minLength: 1 })) }),
+    Type.Object({ projectId: Type.String(), rootPath: Type.String() }),
+  ),
   /** installed/logged-in state + models per harness (cached server-side) */
   "providers.list": unary(Type.Object({ refresh: Type.Optional(Type.Boolean()) }), Type.Array(ProviderStatusDto)),
   /** escape hatch: shell command that reopens the thread's harness session in a terminal */

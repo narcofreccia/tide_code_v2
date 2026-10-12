@@ -62,7 +62,7 @@
         <div class="kpi">
           <div class="box"><b>R3</b><span>currency &amp; merge-back · landed, live-proven</span></div>
           <div class="box"><b>85</b><span>commits (incl. this one)</span></div>
-          <div class="box"><b>1234</b><span>tests passing</span></div>
+          <div class="box"><b>1238</b><span>tests passing</span></div>
         </div>
         <div class="howto">
           How to use: read at session start; flip <code>class="status done|wip|todo|blocked"</code> + label as work lands; add dated notes under the phase;
@@ -107,6 +107,7 @@
             <li><span class="badge status done">done</span><span class="t"><b>Wave 4 — glass-box + debt</b>: "$ today" = today's settled turns, lifetime + by-provider rollups, cache tokens in the footer, rate-limit badges (thread + providers strip), Inbox lists every pending item with age + triage sort + "possibly stuck" chip, All threads view (+archived read-only), project rename/archive, server-side settings (Decisions section), hash routing, pairing form + http LAN link, ListPicker/Dialog consolidation, zero inline styles / raw shadows (Opus) — 67b5878; <b>desktop</b> (Sonnet): backoff + restart cap with Retry splash, stable port (no webview reload), process group SIGTERM→SIGKILL, <code>TIDE_HOME/logs/server.log</code>, single instance, CSP, periodic non-blocking updater — 97c5a05</span></li>
             <li><span class="badge status done">done</span><span class="t"><b>Wave 5 — Jev triage</b> (Sonnet): <code>apps/server/src/decisions/</code> (client ported from places-finder, <code>TriageReactor</code> batching one request per project, 2 s debounce, 10-min stuck sweep) → <code>thread.triaged</code>; opt-in (Settings › Decisions + key, 0600 on disk); annotates only — 9951d2a. <em>Not yet run against the real TypeSafe API.</em></span></li>
             <li><span class="badge status done">done</span><span class="t"><b>Live validation (Claude Max, scratch repo, 2026-10-12)</b>: worktree thread, two turns (6.9 s / 1.2 s) — turn costs $0.1312 + $0.0057 = thread $0.1368 (deltas, not cumulative), ctx 26k/1M, rate limit <code>five_hour 31% used</code> on the gauge; duplicate <code>requestId</code> refused <code>conflict</code>; <code>thread.merge squash</code> landed <code>12121dd</code> on <code>main</code> in 0.2 s with the user's checkout fast-forwarded and clean. Full suite: typecheck clean, 1234 tests (server 392, web 389, client 43, pi 92+112, codex 69, claude 51 live-green, opencode 66, mcp 9, contracts 11).</span></li>
+            <li><span class="badge status done">done</span><span class="t"><b>New project from nothing</b> (orchestrator, 2026-10-12): RPC <code>project.init {parentPath,name,title?}</code> → creates the folder (must be new or empty), <code>git init -b main</code> + empty first commit, <code>project.create</code>; "Add a repository" form gains an Existing / New project switch and the picker a "Create here" mode. Live: new repo → first worktree thread branched <code>tide/first</code> from <code>main</code>. <code>docs/TRIAL.md</code> explains what Tide does to a repo before Andrea points it at a real one.</span></li>
             <li><span class="badge status todo">todo</span><span class="t"><b>Andrea</b>: <code>codex login</code> → re-record Codex success fixtures; Pi credentials (or Ollama) → four-provider live run; TypeSafe key → first live triage request; desktop walkthrough (Retry splash, updater progress, Monaco/terminal under the new CSP); decide Pi project trust (RPC mode skips a project's <code>.pi/</code> config in untrusted worktrees — Tide does not answer trust for the user).</span></li>
           </ul>
         </div>
@@ -299,6 +300,8 @@
         <tr><td>R3</td><td>2026-10-12</td><td>feat(web,client): merge-back UI, truthful cost rollups, rate-limit badges, multi-item Inbox, All threads, server settings, hash routing, pairing, ListPicker/Dialog</td><td class="sha">67b5878</td></tr>
         <tr><td>R3</td><td>2026-10-12</td><td>feat(server): Inbox triage via TypeSafe decisions model — opt-in, annotates only</td><td class="sha">9951d2a</td></tr>
         <tr><td>R3</td><td>2026-10-12</td><td>feat(driver-opencode): rewrite for OpenCode 2; docs: providers.md refreshed</td><td class="sha">c914cf9</td></tr>
+        <tr><td>R3</td><td>2026-10-12</td><td>docs(journal,providers): R3 phase</td><td class="sha">915f85c</td></tr>
+        <tr><td>R3</td><td>2026-10-12</td><td>feat: project.init — new project from nothing; docs/TRIAL.md</td><td class="sha">(this)</td></tr>
       </table>
 
       <h2>Open questions &amp; follow-ups</h2>
