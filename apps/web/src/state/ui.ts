@@ -2,12 +2,14 @@ import { create } from "zustand";
 import { persist } from "zustand/middleware";
 
 export type FocusMode = "thread" | "split" | "workbench";
-export type View = "mission" | "thread" | "settings" | "experts";
-export type SettingsSection = "providers" | "git" | "appearance" | "keyboard" | "remote" | "about";
+/** `threads` is the per-project "All threads" list opened from Mission Control. */
+export type View = "mission" | "thread" | "settings" | "experts" | "threads";
+export type SettingsSection = "providers" | "git" | "decisions" | "appearance" | "keyboard" | "remote" | "about";
 
 export const SETTINGS_SECTIONS: SettingsSection[] = [
   "providers",
   "git",
+  "decisions",
   "appearance",
   "keyboard",
   "remote",
@@ -28,6 +30,8 @@ interface UiState {
   selectedExpertsSessionId: string | null;
   /** the view the board was opened from, so Esc goes back */
   expertsReturnTo: View;
+  /** project whose "All threads" list fills the content area (view === "threads") */
+  allThreadsProjectId: string | null;
   /** project the create-experts dialog is open for, null when closed */
   newExpertsProjectId: string | null;
   newProjectOpen: boolean;
@@ -56,6 +60,8 @@ interface UiState {
   closeExperts: () => void;
   setNewExpertsProject: (projectId: string | null) => void;
   showMission: () => void;
+  /** opens the "All threads" list of a project; null goes back to Mission Control */
+  showAllThreads: (projectId: string | null) => void;
   showSettings: () => void;
   toggleSettings: () => void;
   closeSettings: () => void;
@@ -83,6 +89,7 @@ export const useUi = create<UiState>()(
       selectedThreadId: null,
       selectedExpertsSessionId: null,
       expertsReturnTo: "mission",
+      allThreadsProjectId: null,
       newExpertsProjectId: null,
       newProjectOpen: false,
       newThreadProjectId: null,
@@ -112,6 +119,8 @@ export const useUi = create<UiState>()(
       closeExperts: () => set((s) => (s.view === "experts" ? { view: s.expertsReturnTo } : s)),
       setNewExpertsProject: (newExpertsProjectId) => set({ newExpertsProjectId }),
       showMission: () => set({ view: "mission" }),
+      showAllThreads: (allThreadsProjectId) =>
+        set(allThreadsProjectId === null ? { allThreadsProjectId, view: "mission" } : { allThreadsProjectId, view: "threads" }),
       showSettings: () =>
         set((s) => (s.view === "settings" ? s : { view: "settings", settingsReturnTo: s.view })),
       toggleSettings: () =>

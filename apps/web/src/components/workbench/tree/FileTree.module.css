@@ -17,17 +17,7 @@
   border-bottom: 1px solid var(--border);
 }
 .heading { color: var(--muted); font-size: 11px; text-transform: uppercase; letter-spacing: 0.04em; }
-.action {
-  margin-left: auto;
-  width: 18px;
-  height: 18px;
-  background: transparent;
-  border: 0;
-  border-radius: var(--radius-sm);
-  color: var(--muted);
-  cursor: pointer;
-}
-.action:hover { background: var(--surface-2); color: var(--text); }
+.action { margin-left: auto; }
 .list {
   flex: 1;
   min-height: 0;
@@ -58,3 +48,18 @@
 .glyph { width: 14px; color: var(--muted); font-family: var(--font-mono); font-size: 11px; }
 .name { overflow: hidden; text-overflow: ellipsis; white-space: nowrap; }
 .note { margin: 0; padding: var(--sp-2); color: var(--muted); }
+
+/* indent by depth (4px + 12px per level); TreeRow clamps data-depth at 12 */
+.row[data-depth="0"] { padding-left: 4px; }
+.row[data-depth="1"] { padding-left: 16px; }
+.row[data-depth="2"] { padding-left: 28px; }
+.row[data-depth="3"] { padding-left: 40px; }
+.row[data-depth="4"] { padding-left: 52px; }
+.row[data-depth="5"] { padding-left: 64px; }
+.row[data-depth="6"] { padding-left: 76px; }
+.row[data-depth="7"] { padding-left: 88px; }
+.row[data-depth="8"] { padding-left: 100px; }
+.row[data-depth="9"] { padding-left: 112px; }
+.row[data-depth="10"] { padding-left: 124px; }
+.row[data-depth="11"] { padding-left: 136px; }
+.row[data-depth="12"] { padding-left: 148px; }

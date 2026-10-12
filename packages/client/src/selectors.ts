@@ -1,7 +1,6 @@
 import type {
   Activity,
   ActivityOf,
-  AttentionKind,
   ExpertsFinding,
   ExpertsMessage,
   ExpertsSession,
@@ -98,54 +97,7 @@ export function selectThreadsNeedingAttention(model: ReadModel, projectId?: stri
     .sort(compareByAttention);
 }
 
-/** One inbox row: the thread plus the thing that is waiting on the user. */
-export interface InboxItem {
-  thread: Thread;
-  attention: AttentionKind;
-  /** the pending approval / user-input activity behind `attention` */
-  activity?: ActivityOf<"approval"> | ActivityOf<"user-input">;
-  /** the proposed plan behind `attention` */
-  plan?: ProposedPlan;
-}
-
-function pendingActivity(
-  model: ReadModel,
-  threadId: string,
-  kind: "approval" | "user-input",
-): ActivityOf<"approval"> | ActivityOf<"user-input"> | undefined {
-  for (const entry of model.threadTimeline[threadId] ?? []) {
-    if (entry.kind !== "activity") continue;
-    const a = model.activities[entry.id];
-    if (a && a.kind === kind && a.status === "pending") return a;
-  }
-  return undefined;
-}
-
-function proposedPlan(model: ReadModel, threadId: string): ProposedPlan | undefined {
-  for (const entry of model.threadTimeline[threadId] ?? []) {
-    if (entry.kind !== "plan") continue;
-    const p = model.plans[entry.id];
-    if (p && p.status === "proposed") return p;
-  }
-  return undefined;
-}
-
-/** Everything waiting on the user, needs-you first then most recent. */
-export function selectInbox(model: ReadModel, projectId?: string): InboxItem[] {
-  const out: InboxItem[] = [];
-  for (const thread of selectThreadsNeedingAttention(model, projectId)) {
-    const attention = thread.attention;
-    if (attention === undefined) continue;
-    if (attention === "plan") {
-      const plan = proposedPlan(model, thread.id);
-      out.push({ thread, attention, ...(plan ? { plan } : {}) });
-      continue;
-    }
-    const activity = pendingActivity(model, thread.id, attention === "approval" ? "approval" : "user-input");
-    out.push({ thread, attention, ...(activity ? { activity } : {}) });
-  }
-  return out;
-}
+// selectInbox / InboxItem live in inboxSelectors.ts (re-exported below)
 
 // ---- activity grouping ----
 
@@ -283,59 +235,7 @@ export function selectDelegates(model: ReadModel, threadId: string): Thread[] {
     .sort((a, b) => a.createdAt - b.createdAt || a.id.localeCompare(b.id));
 }
 
-// ---- glass-box totals (P6) ----
-
-/** Compact per-project numbers for the Mission Control totals strip. */
-export interface ProjectTotals {
-  threads: number;
-  running: number;
-  needsYou: number;
-  /** summed `totalCostUsd` of threads touched today */
-  costTodayUsd: number;
-  /** highest context usage across the project's threads; percentages don't add up */
-  maxContextPercent?: number;
-}
-
-function isSameDay(a: number, b: number): boolean {
-  const x = new Date(a);
-  const y = new Date(b);
-  return (
-    x.getFullYear() === y.getFullYear() && x.getMonth() === y.getMonth() && x.getDate() === y.getDate()
-  );
-}
-
-/**
- * Totals over a project's non-archived threads. `now` is injectable so the
- * "today" window is testable. Context is reported as the max, never a sum.
- */
-export function selectProjectTotals(model: ReadModel, projectId: string, now = Date.now()): ProjectTotals {
-  const threads = Object.values(model.threads).filter(
-    (t) => t.projectId === projectId && t.archivedAt === undefined,
-  );
-  let running = 0;
-  let needsYou = 0;
-  let costTodayUsd = 0;
-  let maxContextPercent: number | undefined;
-  for (const thread of threads) {
-    if (thread.status === "running") running += 1;
-    if (thread.attention !== undefined) needsYou += 1;
-    if (thread.totalCostUsd !== undefined && isSameDay(thread.updatedAt, now)) {
-      costTodayUsd += thread.totalCostUsd;
-    }
-    const context = thread.contextUsage;
-    if (context && context.window > 0) {
-      const percent = Math.round((context.used / context.window) * 100);
-      if (maxContextPercent === undefined || percent > maxContextPercent) maxContextPercent = percent;
-    }
-  }
-  return {
-    threads: threads.length,
-    running,
-    needsYou,
-    costTodayUsd,
-    ...(maxContextPercent === undefined ? {} : { maxContextPercent }),
-  };
-}
+// ---- glass-box totals: see glassBoxSelectors.ts (re-exported below) ----
 
 // ---- Mission Control ----
 
@@ -380,15 +280,43 @@ export interface PrCounts {
   open: number;
   merged: number;
   closed: number;
+  /** threads whose branch landed on its base — a merged PR or a local merge-back */
+  landed: number;
+}
+
+/** True once the thread's work is on its base branch, by PR or by `thread.merge`. */
+export function isThreadMerged(thread: Thread): boolean {
+  return thread.mergedAt !== undefined || thread.merge?.status === "merged" || thread.pr?.state === "merged";
 }
 
 export function selectPrCounts(model: ReadModel, projectId: string): PrCounts {
-  const counts: PrCounts = { open: 0, merged: 0, closed: 0 };
+  const counts: PrCounts = { open: 0, merged: 0, closed: 0, landed: 0 };
   for (const thread of Object.values(model.threads)) {
     if (thread.projectId !== projectId || thread.archivedAt !== undefined) continue;
     if (thread.pr) counts[thread.pr.state] += 1;
+    if (isThreadMerged(thread)) counts.landed += 1;
   }
   return counts;
+}
+
+/**
+ * Every top-level-or-not thread of a project for the "All threads" list, most
+ * recently active first. `archived` flips it to the archived ones (newest
+ * archive first); nothing else filters — expert and delegate threads are work too.
+ */
+export function selectAllThreads(
+  model: ReadModel,
+  projectId: string,
+  options: { archived?: boolean } = {},
+): Thread[] {
+  const archived = options.archived === true;
+  return Object.values(model.threads)
+    .filter((t) => t.projectId === projectId && (t.archivedAt !== undefined) === archived)
+    .sort((a, b) =>
+      archived
+        ? (b.archivedAt ?? 0) - (a.archivedAt ?? 0) || a.id.localeCompare(b.id)
+        : b.updatedAt - a.updatedAt || a.id.localeCompare(b.id),
+    );
 }
 
 // ---- linked repositories (W1) ----
@@ -424,3 +352,14 @@ export function selectThreadLinks(model: ReadModel, threadId: string): ResolvedT
   }
   return out;
 }
+
+export { selectInbox, type InboxItem } from "./inboxSelectors.ts";
+export {
+  selectCostRollup,
+  selectProjectTotals,
+  selectProviderRateLimits,
+  worstRateLimit,
+  type CostRollup,
+  type ProjectTotals,
+  type ProviderCost,
+} from "./glassBoxSelectors.ts";

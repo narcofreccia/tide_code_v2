@@ -1,6 +1,7 @@
 import { useEffect, useMemo, useState } from "react";
 import type { FsEntry } from "@tide/contracts";
 import { ContextMenu, type MenuItem, type MenuPosition } from "../../ui/Menu.tsx";
+import { Button } from "../../ui/Button.tsx";
 import { ConfirmDialog, PromptDialog } from "../../ui/Dialog.tsx";
 import {
   baseName,
@@ -117,15 +118,15 @@ export function FileTree({ threadId }: { threadId: string }) {
     <div className={styles.tree}>
       <div className={styles.head}>
         <span className={styles.heading}>Files</span>
-        <button
-          type="button"
+        <Button
+          variant="quiet"
           className={styles.action}
           title="New file in the worktree root"
           aria-label="New file"
           onClick={() => setPending({ kind: "new-file", dir: "" })}
         >
           +
-        </button>
+        </Button>
       </div>
       {root?.error ? <p className={styles.note}>{root.error}</p> : null}
       {root?.loading && rows.length === 0 ? <p className={styles.note}>Loading…</p> : null}

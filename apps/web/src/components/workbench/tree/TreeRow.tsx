@@ -2,6 +2,9 @@ import type { FsEntry } from "@tide/contracts";
 import { fileGlyph } from "../../../lib/fileIcons.ts";
 import styles from "./FileTree.module.css";
 
+/** Deeper rows stop indenting; FileTree.module.css carries one rule per level. */
+export const MAX_INDENT = 12;
+
 export interface TreeRowModel {
   entry: FsEntry;
   depth: number;
@@ -35,7 +38,7 @@ export function TreeRow({
         className={[styles.row, selected ? styles.selected : "", entry.ignored ? styles.ignored : ""]
           .filter(Boolean)
           .join(" ")}
-        style={{ paddingLeft: `${4 + depth * 12}px` }}
+        data-depth={Math.min(depth, MAX_INDENT)}
         title={entry.path}
         tabIndex={-1}
         onClick={() => {

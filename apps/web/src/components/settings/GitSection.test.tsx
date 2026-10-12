@@ -1,5 +1,5 @@
 import { afterEach, describe, expect, it } from "vitest";
-import { cleanup, render, screen, waitFor } from "@testing-library/react";
+import { cleanup, fireEvent, render, screen, waitFor } from "@testing-library/react";
 import { GitSection } from "./GitSection.tsx";
 import { attachFakeStore, mockRpc, modelWith, resetUi } from "../../testHarness.ts";
 
@@ -31,5 +31,25 @@ describe("Settings › Git", () => {
     render(<GitSection />);
 
     await waitFor(() => expect(screen.getByText("~/.tide/worktrees")).toBeDefined());
+  });
+});
+
+describe("Settings › Git worktree default", () => {
+  it("is read from and written to the server", async () => {
+    attachFakeStore(modelWith({}));
+    const rpc = mockRpc({
+      "server.info": () => ({ version: "0.0.0", environmentId: "env-1" }),
+      "settings.set": () => ({
+        providerDefaults: {},
+        worktreeByDefault: false,
+        decisions: { enabled: false, hasKey: false },
+      }),
+    });
+    render(<GitSection />);
+    const box = screen.getByLabelText("Create a worktree for new threads by default") as HTMLInputElement;
+    expect(box.checked).toBe(true);
+    fireEvent.click(box);
+    expect(rpc).toHaveBeenCalledWith("settings.set", { patch: { worktreeByDefault: false } });
+    await waitFor(() => expect(box.checked).toBe(false));
   });
 });

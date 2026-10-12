@@ -1,0 +1,15 @@
+.cost { display: inline-flex; align-items: center; flex-wrap: wrap; gap: var(--sp-2) var(--sp-3); }
+.figure { font-variant-numeric: tabular-nums; white-space: nowrap; }
+.providers { display: inline-flex; flex-wrap: wrap; gap: var(--sp-1); }
+.provider {
+  display: inline-flex;
+  align-items: center;
+  height: 16px;
+  padding: 0 5px;
+  border: 1px solid var(--border);
+  border-radius: var(--radius-sm);
+  font-size: 10px;
+  color: var(--muted);
+  font-variant-numeric: tabular-nums;
+  white-space: nowrap;
+}

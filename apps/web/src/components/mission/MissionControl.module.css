@@ -24,7 +24,7 @@
 .headTotals { margin-left: auto; }
 
 /* ---- section furniture ---- */
-.section { display: block; margin-top: var(--sp-4); }
+.section { display: block; margin-top: var(--sp-4); outline: none; }
 .label {
   margin: 0 0 var(--sp-2);
   font-size: 11px;
@@ -127,13 +127,25 @@
   text-overflow: ellipsis;
   white-space: nowrap;
 }
-.jump {
+.jump { flex: none; }
+.waiting {
   margin-left: auto;
-  padding: 0;
-  background: transparent;
-  border: none;
-  color: var(--accent);
-  font: inherit;
+  flex: none;
+  color: var(--muted);
+  font-size: 11px;
+  font-variant-numeric: tabular-nums;
+  white-space: nowrap;
+}
+.stuck {
+  flex: none;
+  height: 16px;
+  padding: 0 5px;
+  border: 1px solid var(--warn);
+  border-radius: var(--radius-sm);
+  color: var(--warn);
+  font-size: 10px;
+  line-height: 14px;
+  white-space: nowrap;
 }
 .cards { list-style: none; margin: 0; padding: var(--sp-2); }
 
@@ -192,14 +204,9 @@
   font-size: 11px;
 }
 .actions { display: flex; align-items: center; gap: var(--sp-2); margin-top: var(--sp-3); }
-.link {
-  margin-left: auto;
-  padding: 0;
-  background: transparent;
-  border: none;
-  color: var(--accent);
-  font: inherit;
-}
+.pushRight { margin-left: auto; }
+.costRow { margin: 0 0 var(--sp-2); color: var(--muted); font-size: 11px; }
+.menu { display: flex; flex-direction: column; align-items: stretch; min-width: 160px; }
 .experts { margin-top: var(--sp-3); border-top: 1px solid var(--border); padding-top: var(--sp-2); }
 .expertsRow {
   display: flex;

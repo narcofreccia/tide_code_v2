@@ -39,11 +39,9 @@ describe("Composer @mentions", () => {
     fireEvent.change(input, { target: { value: "look at @rout" } });
     fireEvent.mouseDown(await screen.findByRole("option", { name: /router\.ts/ }));
     fireEvent.keyDown(input, { key: "Enter", metaKey: true });
-    expect(fake.dispatch).toHaveBeenCalledWith({
-      type: "turn.request",
-      threadId: "t1",
-      text: "look at `src/router.ts`",
-    });
+    expect(fake.dispatch).toHaveBeenCalledWith(
+      expect.objectContaining({ type: "turn.request", threadId: "t1", text: "look at `src/router.ts`" }),
+    );
   });
 
   it("normalises a pasted absolute path inside the worktree", () => {

@@ -58,13 +58,9 @@ export function PlanCard({ plan, provider }: { plan: ProposedPlan; provider: Pro
             <Button onClick={() => dismissPlan(plan.id)}>Dismiss</Button>
           </div>
         ) : plan.implementationThreadId ? (
-          <button
-            type="button"
-            className={styles.link}
-            onClick={() => selectThread(plan.implementationThreadId ?? null)}
-          >
+          <Button variant="link" onClick={() => selectThread(plan.implementationThreadId ?? null)}>
             open implementation thread
-          </button>
+          </Button>
         ) : null}
       </section>
     </li>

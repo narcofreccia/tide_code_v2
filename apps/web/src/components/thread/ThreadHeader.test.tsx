@@ -104,3 +104,38 @@ describe("ThreadHeader", () => {
     expect(useUi.getState().threadDialog).toEqual({ kind: "detach", threadId: "t1" });
   });
 });
+
+describe("ThreadHeader glass-box and merge state", () => {
+  it("explains ctx% with the raw token counts on hover", () => {
+    mockRpc({ "thread.terminalCommand": () => ({}) });
+    mount({ contextUsage: { used: 41_000, window: 200_000 } });
+    expect(screen.getByText("ctx 21%").getAttribute("title")).toBe("41,000 / 200,000 tokens of context used");
+  });
+
+  it("shows a limited rate-limit badge with the reset and the harness note", () => {
+    mockRpc({ "thread.terminalCommand": () => ({}) });
+    const resetsAt = Date.now() + 2 * 3600 * 1000;
+    mount({ rateLimit: { status: "limited", resetsAt, note: "5-hour limit reached", at: 1 } });
+    const badge = screen.getByLabelText(/rate limit limited/);
+    expect(badge.textContent).toBe("⛔ limited · resets in 2h");
+    expect(badge.getAttribute("title")).toContain("5-hour limit reached");
+  });
+
+  it("hides an ok rate limit", () => {
+    mockRpc({ "thread.terminalCommand": () => ({}) });
+    mount({ rateLimit: { status: "ok", at: 1 } });
+    expect(screen.queryByLabelText(/rate limit/)).toBeNull();
+  });
+
+  it("reads ✓ merged once the branch landed", () => {
+    mockRpc({ "thread.terminalCommand": () => ({}) });
+    mount({ branch: "tide/t1", mergedAt: 5, merge: { status: "merged", strategy: "squash", at: 5 } });
+    expect(screen.getAllByLabelText("merged").map((n) => n.textContent)).toEqual(["✓", "✓ merged"]);
+  });
+
+  it("flags a conflicted merge", () => {
+    mockRpc({ "thread.terminalCommand": () => ({}) });
+    mount({ branch: "tide/t1", merge: { status: "conflicted", strategy: "merge", files: ["a"], at: 5 } });
+    expect(screen.getByLabelText("conflicted").textContent).toBe("⚠ conflicted");
+  });
+});

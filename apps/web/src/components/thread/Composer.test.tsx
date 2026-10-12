@@ -30,7 +30,12 @@ describe("Composer", () => {
     const input = screen.getByLabelText("Message");
     fireEvent.change(input, { target: { value: "go" } });
     fireEvent.keyDown(input, { key: "Enter", metaKey: true });
-    expect(fake.dispatch).toHaveBeenCalledWith({ type: "turn.request", threadId: "t1", text: "go" });
+    expect(fake.dispatch).toHaveBeenCalledWith({
+      type: "turn.request",
+      threadId: "t1",
+      text: "go",
+      requestId: expect.stringMatching(/^[0-9A-Z]{26}$/),
+    });
   });
 
   it("becomes Stop while the thread runs and interrupts the turn", () => {
@@ -89,7 +94,9 @@ describe("Composer", () => {
       fireEvent.click(screen.getByText("Queue"));
     });
 
-    expect(fake.dispatch).toHaveBeenCalledWith({ type: "turn.request", threadId: "t1", text: "and then this" });
+    expect(fake.dispatch).toHaveBeenCalledWith(
+      expect.objectContaining({ type: "turn.request", threadId: "t1", text: "and then this" }),
+    );
     expect(screen.getByText("queued")).toBeDefined();
     expect(screen.getByText("Stop")).toBeDefined();
   });
@@ -146,5 +153,48 @@ describe("Composer", () => {
     expect(input.rows).toBe(3);
     fireEvent.change(input, { target: { value: "a\n".repeat(20) } });
     expect(input.rows).toBe(8);
+  });
+});
+
+describe("Composer idempotent send", () => {
+  it("retries a failed send with the same requestId, and a new draft gets a new one", async () => {
+    const fake = attachFakeStore(modelWith({}));
+    fake.dispatch.mockRejectedValueOnce(new Error("socket closed"));
+    render(<Composer thread={makeThread("t1")} />);
+    const input = screen.getByLabelText("Message");
+    fireEvent.change(input, { target: { value: "go" } });
+    await act(async () => {
+      fireEvent.keyDown(input, { key: "Enter", metaKey: true });
+    });
+    await act(async () => {
+      fireEvent.keyDown(input, { key: "Enter", metaKey: true });
+    });
+    const ids = fake.dispatch.mock.calls.map((c) => (c[0] as { requestId: string }).requestId);
+    expect(ids).toHaveLength(2);
+    expect(ids[0]).toBe(ids[1]);
+
+    fireEvent.change(input, { target: { value: "next" } });
+    await act(async () => {
+      fireEvent.keyDown(input, { key: "Enter", metaKey: true });
+    });
+    const third = (fake.dispatch.mock.calls[2]?.[0] as { requestId: string }).requestId;
+    expect(third).not.toBe(ids[0]);
+  });
+
+  it("treats a refused retry whose turn already landed as sent", async () => {
+    const model = modelWith({});
+    const fake = attachFakeStore(model);
+    fake.dispatch.mockImplementationOnce(async (command: unknown) => {
+      const { requestId } = command as { requestId: string };
+      model.turns.u1 = { id: "u1", threadId: "t1", status: "running", requestedAt: 1, requestId };
+      throw new Error("conflict");
+    });
+    render(<Composer thread={makeThread("t1")} />);
+    const input = screen.getByLabelText("Message") as HTMLTextAreaElement;
+    fireEvent.change(input, { target: { value: "go" } });
+    await act(async () => {
+      fireEvent.keyDown(input, { key: "Enter", metaKey: true });
+    });
+    expect(input.value).toBe("");
   });
 });

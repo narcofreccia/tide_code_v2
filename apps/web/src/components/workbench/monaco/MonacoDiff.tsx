@@ -5,7 +5,7 @@ import { preferredTheme, subscribeTheme } from "./themes.ts";
 
 setupMonaco();
 
-/** Follows the OS colour scheme, like the rest of the shell. */
+/** Follows the painted theme: the explicit Settings choice (`data-theme`), else the OS scheme. */
 function useThemeName(): string {
   const [name, setName] = useState(preferredTheme);
   useEffect(() => subscribeTheme(() => setName(preferredTheme())), []);

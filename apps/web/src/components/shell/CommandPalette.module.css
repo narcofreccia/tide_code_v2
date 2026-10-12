@@ -1,51 +1,4 @@
-.scrim {
-  position: fixed;
-  inset: 0;
-  z-index: 90;
-  display: flex;
-  justify-content: center;
-  align-items: flex-start;
-  padding-top: 12vh;
-  background: rgba(0, 0, 0, 0.4);
-}
-.panel {
-  width: min(640px, 94vw);
-  max-height: 64vh;
-  display: flex;
-  flex-direction: column;
-  background: var(--surface-2);
-  border: 1px solid var(--border);
-  border-radius: var(--radius-lg);
-  box-shadow: 0 12px 40px rgba(0, 0, 0, 0.4);
-  overflow: hidden;
-}
-.input {
-  height: 34px;
-  padding: 0 var(--sp-3);
-  background: transparent;
-  border: 0;
-  border-bottom: 1px solid var(--border);
-  color: var(--text);
-  font: inherit;
-}
-.input:focus-visible { outline: none; }
-.list { flex: 1; min-height: 0; margin: 0; padding: var(--sp-1); list-style: none; overflow: auto; }
-.row {
-  display: flex;
-  align-items: baseline;
-  gap: var(--sp-2);
-  width: 100%;
-  height: var(--row-h);
-  padding: 0 var(--sp-2);
-  background: transparent;
-  border: 0;
-  border-radius: var(--radius-sm);
-  color: var(--text);
-  font: inherit;
-  text-align: left;
-  cursor: pointer;
-}
-.active { background: var(--accent-soft); }
+/* Row content of the ⌘K palette; the shell and list come from ui/Dialog + ui/ListPicker. */
 .group {
   width: 52px;
   flex: none;
@@ -64,4 +17,3 @@
   text-overflow: ellipsis;
   white-space: nowrap;
 }
-.note { margin: 0; padding: var(--sp-2) var(--sp-3); color: var(--muted); }

@@ -79,6 +79,18 @@ describe("MessageItem", () => {
       expect(screen.getByText("$0.0123")).toBeDefined();
     });
 
+    it("adds cache tokens (read + write) and spells them out on hover", () => {
+      attachFakeStore(modelWith({}));
+      const turn = makeTurn("u1", {
+        status: "completed",
+        settledAt: 2,
+        usage: { inputTokens: 1200, outputTokens: 340, cacheReadTokens: 8000, cacheWriteTokens: 512 },
+      });
+      render(<MessageItem message={makeMessage("m1", { role: "assistant" })} turn={turn} showMeta />);
+      const tokens = screen.getByText("↑1.2k ↓340 ⟳8.5k");
+      expect(tokens.getAttribute("title")).toBe("in 1,200 · out 340 · cache read 8,000 · cache write 512");
+    });
+
     it("shows the error that ended the turn", () => {
       attachFakeStore(modelWith({}));
       const turn = makeTurn("u1", { status: "error", error: "context window exceeded", settledAt: 2 });

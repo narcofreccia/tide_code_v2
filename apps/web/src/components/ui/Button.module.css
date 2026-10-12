@@ -16,3 +16,13 @@
 .ghost:hover:not(:disabled) { border-color: var(--accent); }
 .quiet { color: var(--muted); padding: 0 4px; }
 .quiet:hover:not(:disabled) { color: var(--text); }
+.link {
+  height: auto;
+  padding: 0;
+  border: none;
+  background: transparent;
+  color: var(--accent);
+  font: inherit;
+  text-align: left;
+}
+.link:hover:not(:disabled) { text-decoration: underline; }

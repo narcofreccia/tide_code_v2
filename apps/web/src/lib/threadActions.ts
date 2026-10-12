@@ -3,10 +3,12 @@ import type {
   ImageInput,
   InteractionMode,
   LinkAccess,
+  MergeStrategy,
   ProviderKind,
   RuntimeMode,
 } from "@tide/contracts";
-import { call, dispatch, type DispatchResult } from "../state/model.ts";
+import { newId } from "@tide/contracts";
+import { call, dispatch, useModel, type DispatchResult } from "../state/model.ts";
 import { dispatchOrToast } from "./dispatchOrToast.ts";
 import { showToast } from "../state/toast.ts";
 import { useUi } from "../state/ui.ts";
@@ -102,15 +104,30 @@ export async function createThread(
 
 /**
  * Sends a prompt. The server queues it when the thread is already running, so
- * this is also how a follow-up is stacked behind the live turn.
+ * this is also how a follow-up is stacked behind the live turn. `requestId` is
+ * the idempotency key: the caller keeps the same one when it retries a send
+ * that failed in flight, so a reconnect can never run the prompt twice.
  */
-export async function sendTurn(threadId: string, text: string, images?: ImageInput[]): Promise<void> {
+export async function sendTurn(
+  threadId: string,
+  text: string,
+  images?: ImageInput[],
+  requestId: string = newId(),
+): Promise<void> {
   await dispatch({
     type: "turn.request",
     threadId,
     text,
+    requestId,
     ...(images === undefined || images.length === 0 ? {} : { images }),
   });
+}
+
+/** True when a turn with this idempotency key already reached the server. */
+export function turnRequestLanded(threadId: string, requestId: string): boolean {
+  return Object.values(useModel.getState().model.turns).some(
+    (t) => t.threadId === threadId && t.requestId === requestId,
+  );
 }
 
 /** Drops a turn that is still waiting in the queue; its message disappears. */
@@ -192,6 +209,8 @@ export interface PublishOptions {
   body?: string;
   /** commit without pushing or opening a PR */
   commitOnly?: boolean;
+  /** after opening the PR, let GitHub merge it with this strategy once checks pass */
+  mergeWhenGreen?: MergeStrategy;
 }
 
 /** Commits the worktree, and unless `commitOnly` pushes and opens/updates the PR. */
@@ -203,11 +222,43 @@ export async function publishThread(threadId: string, options: PublishOptions = 
       ...(options.title === undefined ? {} : { title: options.title }),
       ...(options.body === undefined ? {} : { body: options.body }),
       ...(options.commitOnly === undefined ? {} : { commitOnly: options.commitOnly }),
+      ...(options.mergeWhenGreen === undefined || options.commitOnly === true
+        ? {}
+        : { mergeWhenGreen: options.mergeWhenGreen }),
     });
     invalidateThread(threadId);
     ensureStatus(threadId, true);
-    showToast(options.commitOnly ? "Committed" : "Committed, pushed, PR updated");
+    showToast(
+      options.commitOnly
+        ? "Committed"
+        : options.mergeWhenGreen
+          ? "Committed, pushed, PR set to merge when green"
+          : "Committed, pushed, PR updated",
+    );
   } catch (error) {
     showToast(`Publish failed: ${error instanceof Error ? error.message : String(error)}`);
+  }
+}
+
+export interface MergeOptions {
+  strategy?: MergeStrategy;
+  /** remove the thread's branch (and worktree) once merged */
+  deleteBranch?: boolean;
+}
+
+/**
+ * Merges the thread's branch back into its base (or merges its PR). The outcome
+ * arrives later on `thread.merge`; only a refusal to start is reported here.
+ */
+export async function mergeThread(threadId: string, options: MergeOptions = {}): Promise<void> {
+  try {
+    await dispatch({
+      type: "thread.merge",
+      threadId,
+      ...(options.strategy === undefined ? {} : { strategy: options.strategy }),
+      ...(options.deleteBranch === true ? { deleteBranch: true } : {}),
+    });
+  } catch (error) {
+    showToast(`Merge failed: ${error instanceof Error ? error.message : String(error)}`);
   }
 }

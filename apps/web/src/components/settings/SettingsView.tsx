@@ -4,6 +4,7 @@ import { Button } from "../ui/Button.tsx";
 import { Kbd } from "../ui/Kbd.tsx";
 import { ProvidersSection } from "./ProvidersSection.tsx";
 import { GitSection } from "./GitSection.tsx";
+import { DecisionsSection } from "./DecisionsSection.tsx";
 import { AppearanceSection } from "./AppearanceSection.tsx";
 import { KeyboardSection } from "./KeyboardSection.tsx";
 import { RemoteSection } from "./RemoteSection.tsx";
@@ -13,6 +14,7 @@ import styles from "./SettingsView.module.css";
 const LABELS: Record<SettingsSection, string> = {
   providers: "Providers",
   git: "Git",
+  decisions: "Decisions",
   appearance: "Appearance",
   keyboard: "Keyboard",
   remote: "Remote",
@@ -25,6 +27,8 @@ function Body({ section }: { section: SettingsSection }) {
       return <ProvidersSection />;
     case "git":
       return <GitSection />;
+    case "decisions":
+      return <DecisionsSection />;
     case "appearance":
       return <AppearanceSection />;
     case "keyboard":

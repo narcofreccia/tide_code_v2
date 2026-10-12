@@ -29,3 +29,4 @@
   font-size: 12px;
   resize: vertical;
 }
+.choices { display: flex; flex-wrap: wrap; gap: var(--sp-1) var(--sp-3); }

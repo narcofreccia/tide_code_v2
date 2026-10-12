@@ -40,16 +40,6 @@
   border-radius: 50%;
   background: var(--warn);
 }
-.close {
-  width: 16px;
-  height: 16px;
-  background: transparent;
-  border: 0;
-  border-radius: var(--radius-sm);
-  color: var(--muted);
-  cursor: pointer;
-}
-.close:hover { background: var(--surface-2); color: var(--text); }
 .running { color: var(--warn); font-size: 11px; margin-left: var(--sp-2); }
 .spacer { flex: 1; }
 .iconToggle {

@@ -22,3 +22,5 @@
 .open { color: var(--accent); }
 .merged { color: var(--ok); }
 .closed { color: var(--danger); }
+.merging { color: var(--accent); }
+.conflicted { color: var(--warn); }

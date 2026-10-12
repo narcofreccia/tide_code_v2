@@ -1,42 +1,50 @@
-import { selectProjects, selectProjectTotals, type ProjectTotals as Totals } from "@tide/client";
+import { selectCostRollup, selectProjects, selectProjectTotals, type ProjectTotals as Totals } from "@tide/client";
 import { useModel } from "../../state/model.ts";
+import { CostSummary } from "./CostSummary.tsx";
 import styles from "./MissionControl.module.css";
 
-/** Folds per-project totals into one; context is the max, never a sum. */
-function fold(parts: Totals[]): Totals {
-  const total: Totals = { threads: 0, running: 0, needsYou: 0, costTodayUsd: 0 };
+/** Folds per-project counts into one; context is the max, never a sum. Cost is recomputed, not folded. */
+function foldCounts(parts: Totals[]): Pick<Totals, "threads" | "running" | "needsYou" | "maxContextPercent"> {
+  let threads = 0;
+  let running = 0;
+  let needsYou = 0;
   let maxContextPercent: number | undefined;
   for (const part of parts) {
-    total.threads += part.threads;
-    total.running += part.running;
-    total.needsYou += part.needsYou;
-    total.costTodayUsd += part.costTodayUsd;
+    threads += part.threads;
+    running += part.running;
+    needsYou += part.needsYou;
     if (part.maxContextPercent !== undefined) {
       maxContextPercent = Math.max(maxContextPercent ?? 0, part.maxContextPercent);
     }
   }
-  return maxContextPercent === undefined ? total : { ...total, maxContextPercent };
+  return { threads, running, needsYou, ...(maxContextPercent === undefined ? {} : { maxContextPercent }) };
 }
 
-function Values({ totals }: { totals: Totals }) {
+function Values({
+  counts,
+  cost,
+}: {
+  counts: Pick<Totals, "threads" | "running" | "needsYou" | "maxContextPercent">;
+  cost: { todayUsd: number; lifetimeUsd: number; byProvider: Totals["costByProvider"] };
+}) {
   return (
     <>
-      <span className={styles.totalsValue}>{totals.running} running</span>
-      <span className={styles.totalsValue}>{totals.needsYou} needs you</span>
-      <span className={styles.totalsValue}>{totals.threads} threads</span>
-      <span className={styles.totalsValue}>${totals.costTodayUsd.toFixed(2)} today</span>
+      <span className={styles.totalsValue}>{counts.running} running</span>
+      <span className={styles.totalsValue}>{counts.needsYou} needs you</span>
+      <span className={styles.totalsValue}>{counts.threads} threads</span>
       <span className={styles.totalsValue}>
-        {totals.maxContextPercent === undefined ? "ctx —" : `max ctx ${totals.maxContextPercent}%`}
+        {counts.maxContextPercent === undefined ? "ctx —" : `max ctx ${counts.maxContextPercent}%`}
       </span>
+      <CostSummary {...cost} />
     </>
   );
 }
 
 /**
- * Glass-box strip: what the visible projects are spending right now. `aggregate`
- * folds them into the single line the Mission Control header carries; without it
- * each project keeps its own row. Context is the max across threads — summing
- * percentages of different windows is meaningless.
+ * Glass-box strip: what the visible projects are spending. `aggregate` folds
+ * them into the single line the Mission Control header carries; without it
+ * each project keeps its own row. Cost is per settled turn (today = settled
+ * today), split by the harness that ran it.
  */
 export function ProjectTotals({ projectId, aggregate }: { projectId?: string; aggregate?: boolean }) {
   const model = useModel((s) => s.model);
@@ -45,21 +53,28 @@ export function ProjectTotals({ projectId, aggregate }: { projectId?: string; ag
   const totals = projects.map((p) => selectProjectTotals(model, p.id));
 
   if (aggregate === true) {
+    const cost = selectCostRollup(model, projects.map((p) => p.id));
     return (
       <div className={styles.totals} aria-label="Project totals">
-        <Values totals={fold(totals)} />
+        <Values counts={foldCounts(totals)} cost={cost} />
       </div>
     );
   }
 
   return (
     <ul className={styles.totalsList} aria-label="Project totals">
-      {projects.map((project, i) => (
-        <li key={project.id} className={styles.totals}>
-          <span className={styles.totalsProject}>{project.title}</span>
-          <Values totals={totals[i] as Totals} />
-        </li>
-      ))}
+      {projects.map((project, i) => {
+        const t = totals[i] as Totals;
+        return (
+          <li key={project.id} className={styles.totals}>
+            <span className={styles.totalsProject}>{project.title}</span>
+            <Values
+              counts={t}
+              cost={{ todayUsd: t.costTodayUsd, lifetimeUsd: t.costLifetimeUsd, byProvider: t.costByProvider }}
+            />
+          </li>
+        );
+      })}
     </ul>
   );
 }

@@ -1,6 +1,6 @@
 import { describe, expect, it } from "vitest";
 import { emptyReadModel, type ReadModel, type Thread, type Turn } from "@tide/contracts";
-import { selectPrCounts, selectRecentThreads, selectRunningThreads } from "./selectors.ts";
+import { isThreadMerged, selectAllThreads, selectPrCounts, selectRecentThreads, selectRunningThreads } from "./selectors.ts";
 
 const thread = (id: string, patch: Partial<Thread> = {}): Thread => ({
   id,
@@ -100,6 +100,31 @@ describe("selectPrCounts", () => {
       thread("e", { pr: pr("open"), projectId: "p2" }),
       thread("f"),
     ]);
-    expect(selectPrCounts(model, "p1")).toEqual({ open: 2, merged: 1, closed: 0 });
+    expect(selectPrCounts(model, "p1")).toEqual({ open: 2, merged: 1, closed: 0, landed: 1 });
+  });
+});
+
+describe("merge-back and the All threads list", () => {
+  it("counts landed threads from a merged PR or a local merge-back", () => {
+    const model = build([
+      thread("t1", { pr: { url: "u", number: 1, state: "merged", updatedAt: 1 } }),
+      thread("t2", { mergedAt: 5, merge: { status: "merged", strategy: "squash", at: 5 } }),
+      thread("t3", { merge: { status: "conflicted", strategy: "merge", files: ["a.ts"], at: 5 } }),
+      thread("t4", { pr: { url: "u", number: 2, state: "open", updatedAt: 1 } }),
+    ]);
+    expect(selectPrCounts(model, "p1")).toEqual({ open: 1, merged: 1, closed: 0, landed: 2 });
+    expect(isThreadMerged(model.threads.t3 as Thread)).toBe(false);
+  });
+
+  it("lists every live thread by activity, or the archived ones by archive time", () => {
+    const model = build([
+      thread("t1", { updatedAt: 5 }),
+      thread("t2", { updatedAt: 9, role: "expert" }),
+      thread("t3", { archivedAt: 3 }),
+      thread("t4", { archivedAt: 7 }),
+      thread("t5", { projectId: "p2" }),
+    ]);
+    expect(selectAllThreads(model, "p1").map((t) => t.id)).toEqual(["t2", "t1"]);
+    expect(selectAllThreads(model, "p1", { archived: true }).map((t) => t.id)).toEqual(["t4", "t3"]);
   });
 });

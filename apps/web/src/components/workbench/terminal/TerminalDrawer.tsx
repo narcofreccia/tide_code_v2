@@ -1,4 +1,4 @@
-import { Suspense, lazy, useEffect, useRef } from "react";
+import { Suspense, lazy, useEffect, useLayoutEffect, useRef } from "react";
 import {
   createPty,
   ensurePtys,
@@ -8,6 +8,7 @@ import {
   toggleDrawer,
   useTerminals,
 } from "../../../state/terminals.ts";
+import { Button } from "../../ui/Button.tsx";
 import { Kbd } from "../../ui/Kbd.tsx";
 import styles from "./TerminalDrawer.module.css";
 
@@ -50,6 +51,12 @@ export function TerminalDrawer({ threadId }: { threadId: string }) {
   const tabs = useTerminals((s) => s.tabs[threadId]) ?? [];
   const active = useTerminals((s) => s.active[threadId]);
   const onDrag = useDragHeight();
+  const drawer = useRef<HTMLDivElement>(null);
+
+  // the height is a CSS custom property, not an inline style object
+  useLayoutEffect(() => {
+    drawer.current?.style.setProperty("--drawer-h", `${height}px`);
+  }, [open, height]);
 
   useEffect(() => {
     if (open) void ensurePtys(threadId);
@@ -60,7 +67,7 @@ export function TerminalDrawer({ threadId }: { threadId: string }) {
   const current = tabs.find((t) => t.ptyId === active) ?? tabs[0];
 
   return (
-    <div className={styles.drawer} style={{ height: `${height}px` }} aria-label="Terminal">
+    <div ref={drawer} className={styles.drawer} aria-label="Terminal">
       <div
         className={styles.grip}
         role="separator"
@@ -81,28 +88,26 @@ export function TerminalDrawer({ threadId }: { threadId: string }) {
               {title(tab.ptyId, tab.title, index)}
               {tab.alive ? "" : " ·exited"}
             </button>
-            <button
-              type="button"
-              className={styles.close}
+            <Button
+              variant="quiet"
               aria-label={`Close ${title(tab.ptyId, tab.title, index)}`}
               onClick={() => void killPty(threadId, tab.ptyId)}
             >
               ×
-            </button>
+            </Button>
           </span>
         ))}
-        <button
-          type="button"
-          className={styles.add}
+        <Button
+          variant="quiet"
           aria-label="New terminal"
           title="New terminal"
           onClick={() => void createPty(threadId, DEFAULT_COLS, DEFAULT_ROWS)}
         >
           +
-        </button>
-        <button type="button" className={styles.hide} onClick={toggleDrawer} title="Hide terminal">
+        </Button>
+        <Button variant="quiet" className={styles.hide} onClick={toggleDrawer} title="Hide terminal">
           Hide <Kbd>⌘`</Kbd>
-        </button>
+        </Button>
       </div>
       <div className={styles.body}>
         {current ? (

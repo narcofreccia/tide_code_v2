@@ -4,6 +4,7 @@ import type { Activity, ActivityOf } from "@tide/contracts";
 import { useUi } from "../../state/ui.ts";
 import { ActivityGroup } from "./ActivityGroup.tsx";
 import { ActivityRow } from "./ActivityRow.tsx";
+import { Button } from "../ui/Button.tsx";
 import styles from "./ActivityRow.module.css";
 
 const MARK: Record<string, string> = { done: "✓", error: "✕", running: "…" };
@@ -30,13 +31,13 @@ export function ChildGroup({ child, activities }: { child: ActivityOf<"child">; 
           <span className={`${styles.mark} ${tone}`}>{MARK[child.status] ?? ""}</span>
         </button>
         {child.childThreadId === undefined ? null : (
-          <button
-            type="button"
-            className={styles.link}
+          <Button
+            variant="link"
+            className={styles.childLink}
             onClick={() => selectThread(child.childThreadId ?? null)}
           >
             open as thread
-          </button>
+          </Button>
         )}
       </div>
       {open && nodes.length > 0 ? (

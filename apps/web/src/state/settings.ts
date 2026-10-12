@@ -1,6 +1,6 @@
 import { create } from "zustand";
 import { persist } from "zustand/middleware";
-import type { ProviderKind, RuntimeMode } from "@tide/contracts";
+import { resetServerSettings } from "./serverSettings.ts";
 
 export type Theme = "system" | "dark" | "light";
 export type Density = "comfortable" | "compact";
@@ -11,11 +11,8 @@ export const DENSITIES: Density[] = ["comfortable", "compact"];
 interface SettingsState {
   theme: Theme;
   density: Density;
-  /** Git: pre-checks "use worktree" in the new-thread and plan pickers */
-  worktreeByDefault: boolean;
   setTheme: (theme: Theme) => void;
   setDensity: (density: Density) => void;
-  setWorktreeByDefault: (value: boolean) => void;
 }
 
 export const SETTINGS_STORAGE_KEY = "tide.settings";
@@ -29,12 +26,11 @@ export const useSettings = create<SettingsState>()(
     (set) => ({
       theme: "dark",
       density: "comfortable",
-      worktreeByDefault: true,
       setTheme: (theme) => set({ theme }),
       setDensity: (density) => set({ density }),
-      setWorktreeByDefault: (worktreeByDefault) => set({ worktreeByDefault }),
     }),
-    { name: SETTINGS_STORAGE_KEY },
+    // provider defaults and worktreeByDefault moved to the server (state/serverSettings.ts)
+    { name: SETTINGS_STORAGE_KEY, partialize: (s) => ({ theme: s.theme, density: s.density }) },
   ),
 );
 
@@ -75,37 +71,7 @@ function sync(state: SettingsState): void {
 sync(useSettings.getState());
 useSettings.subscribe(sync);
 
-// ---- per-provider defaults ----
-
-export interface ProviderDefault {
-  /** empty string means "let the harness choose" */
-  model?: string;
-  mode?: RuntimeMode;
-}
-
-interface ProviderDefaultsState {
-  defaults: Partial<Record<ProviderKind, ProviderDefault>>;
-  setProviderDefault: (kind: ProviderKind, patch: ProviderDefault) => void;
-}
-
-export const PROVIDER_DEFAULTS_STORAGE_KEY = "tide.providerDefaults";
-
-export const useProviderDefaults = create<ProviderDefaultsState>()(
-  persist(
-    (set) => ({
-      defaults: {},
-      setProviderDefault: (kind, patch) =>
-        set((s) => ({ defaults: { ...s.defaults, [kind]: { ...s.defaults[kind], ...patch } } })),
-    }),
-    { name: PROVIDER_DEFAULTS_STORAGE_KEY },
-  ),
-);
-
-export function providerDefault(kind: ProviderKind): ProviderDefault {
-  return useProviderDefaults.getState().defaults[kind] ?? {};
-}
-
 export function resetSettings(): void {
-  useSettings.setState({ theme: "dark", density: "comfortable", worktreeByDefault: true });
-  useProviderDefaults.setState({ defaults: {} });
+  useSettings.setState({ theme: "dark", density: "comfortable" });
+  resetServerSettings();
 }

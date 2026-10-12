@@ -90,3 +90,35 @@
   letter-spacing: 0.04em;
   font-size: 11px;
 }
+
+/* inline forms: Decisions API key, Remote › Connect to another server */
+.form {
+  display: flex;
+  flex-direction: column;
+  gap: var(--sp-2);
+  padding: var(--sp-3);
+  border: 1px solid var(--border);
+  border-radius: var(--radius);
+  background: var(--surface);
+}
+.formRow {
+  display: flex;
+  align-items: center;
+  gap: var(--sp-2);
+}
+.input {
+  flex: 1;
+  min-width: 0;
+  height: var(--row-h);
+  padding: 0 var(--sp-2);
+  background: var(--bg);
+  border: 1px solid var(--border);
+  border-radius: var(--radius-sm);
+  color: var(--text);
+  font: inherit;
+  font-family: var(--font-mono);
+}
+.input:focus { outline: none; border-color: var(--accent); }
+.ok { color: var(--ok); }
+.stack { display: flex; flex-direction: column; gap: 2px; min-width: 0; }
+.secondary { color: var(--muted); font-family: var(--font-mono); font-size: 11px; overflow-wrap: anywhere; }

@@ -1,14 +1,37 @@
 import { TideConnection, createModelStore } from "@tide/client";
 import { attachModelStore, setEnvironmentId, setRpcCaller, setRpcStreamer } from "../state/model.ts";
+import { loadProviders, resetProviders } from "../state/providers.ts";
+import { loadServerSettings, resetServerSettings } from "../state/serverSettings.ts";
 
-const TOKEN_KEY = "tide.devToken";
-const URL_KEY = "tide.serverUrl";
+export const TOKEN_KEY = "tide.devToken";
+export const URL_KEY = "tide.serverUrl";
 const DEFAULT_URL = "ws://127.0.0.1:3777/ws";
 
-/** `?server=` (the desktop shell's supervised server) > localStorage > build env. */
+/** `http://host:port` → `ws://host:port/ws`; `https:` → `wss:`. */
+export function wsUrlFor(httpUrl: string): string {
+  const url = new URL(httpUrl);
+  const protocol = url.protocol === "https:" ? "wss:" : "ws:";
+  return `${protocol}//${url.host}/ws`;
+}
+
+/**
+ * Where to connect when nothing names a server: the build env, else — when the
+ * page is served by tide-server itself (not the vite dev server, which lives on
+ * another port) — the page's own origin, else the local default.
+ */
+export function defaultServerUrl(
+  location: { protocol: string; href: string },
+  env: { DEV: boolean; VITE_TIDE_URL?: string | undefined },
+): string {
+  if (env.VITE_TIDE_URL) return env.VITE_TIDE_URL;
+  if (!env.DEV && (location.protocol === "http:" || location.protocol === "https:")) return wsUrlFor(location.href);
+  return DEFAULT_URL;
+}
+
+/** `?server=` (the desktop shell's supervised server, or a pairing link) > localStorage > derived default. */
 export function resolveServerUrl(): string {
   const fromQuery = new URL(window.location.href).searchParams.get("server");
-  const fallback = import.meta.env.VITE_TIDE_URL || DEFAULT_URL;
+  const fallback = defaultServerUrl(window.location, import.meta.env);
   try {
     if (fromQuery) window.localStorage.setItem(URL_KEY, fromQuery);
     else return window.localStorage.getItem(URL_KEY) || fallback;
@@ -71,6 +94,42 @@ export function makeTicketGetter(wsUrl: string, token: string): () => Promise<st
   };
 }
 
+/**
+ * The page URL another device opens to reach this server: the server's own
+ * `http://` origin, told where the socket is with `?server=`.
+ */
+export function pairingPageUrl(lanUrl: string): string {
+  const page = new URL(lanUrl);
+  page.pathname = "/";
+  // `paired` tells isDesktop() this `?server=` came from a pairing link, not the shell
+  page.search = `?server=${encodeURIComponent(wsUrlFor(lanUrl))}&paired=1`;
+  return page.toString();
+}
+
+let stopClient: (() => void) | undefined;
+
+/**
+ * Points this client at another server: persists the URL and token, drops the
+ * `?server=` / `?token=` hand-off (it would win over storage) and reconnects in place.
+ */
+export function connectTo(serverUrl: string, token: string): void {
+  try {
+    window.localStorage.setItem(URL_KEY, serverUrl);
+    window.localStorage.setItem(TOKEN_KEY, token);
+  } catch {
+    /* storage may be unavailable; nothing would survive a reload anyway */
+  }
+  const url = new URL(window.location.href);
+  url.searchParams.delete("server");
+  url.searchParams.delete("token");
+  window.history.replaceState(null, "", url.pathname + url.search + url.hash);
+  stopClient?.();
+  resetProviders();
+  resetServerSettings();
+  startClient();
+  loadProviders();
+}
+
 export function startClient(): () => void {
   const url = resolveServerUrl();
   const token = resolveDevToken();
@@ -90,17 +149,22 @@ export function startClient(): () => void {
       .call("server.info", {})
       .then((info) => setEnvironmentId(info.environmentId))
       .catch(() => setEnvironmentId(null));
+    // a server without settings.get keeps the defaults; nothing to tell the user
+    loadServerSettings().catch(() => undefined);
   });
 
   void conn.connect().catch(() => undefined);
 
-  return () => {
+  const stop = (): void => {
     setRpcCaller(undefined);
     setRpcStreamer(undefined);
     detach();
     store.dispose();
     conn.close();
+    if (stopClient === stop) stopClient = undefined;
   };
+  stopClient = stop;
+  return stop;
 }
 
 // ---- desktop shell detection ----
@@ -124,7 +188,8 @@ export function platformOf(ua: string): DesktopPlatform {
 export function isDesktop(): boolean {
   const { protocol, href } = window.location;
   if (protocol === "tauri:" || protocol === "tide-shell:") return true;
-  if (new URL(href).searchParams.has("server")) return true;
+  const params = new URL(href).searchParams;
+  if (params.has("server") && !params.has("paired")) return true;
   try {
     return window.localStorage.getItem(DESKTOP_KEY) === "1";
   } catch {

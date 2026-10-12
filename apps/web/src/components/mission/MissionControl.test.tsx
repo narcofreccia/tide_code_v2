@@ -33,8 +33,9 @@ function fixture(): ReadModel {
       t3: makeThread("t3", { title: "Plan ready", attention: "plan", updatedAt: 200 }),
     },
   });
-  model.activities["a1"] = makeApproval("a1", { threadId: "t2" });
-  model.plans["pl1"] = makePlan("pl1", { threadId: "t3" });
+  // the plan has waited longer than the approval
+  model.activities["a1"] = makeApproval("a1", { threadId: "t2", createdAt: 50 });
+  model.plans["pl1"] = makePlan("pl1", { threadId: "t3", createdAt: 10 });
   model.threadTimeline["t1"] = [];
   model.threadTimeline["t2"] = [{ kind: "activity", id: "a1" }];
   model.threadTimeline["t3"] = [{ kind: "plan", id: "pl1" }];
@@ -53,7 +54,7 @@ describe("Mission Control", () => {
     expect(totals).toContain("3 threads");
   });
 
-  it("renders each waiting item's real card inline, newest first", () => {
+  it("renders each waiting item's real card inline, longest-waiting first", () => {
     attachFakeStore(fixture());
     render(<MissionControl />);
     const inbox = within(screen.getByLabelText("Inbox"));
@@ -86,10 +87,14 @@ describe("Mission Control", () => {
     render(<MissionControl />);
     const plan = screen.getByLabelText("Inbox: Plan ready");
     const approval = screen.getByLabelText("Inbox: Waiting on approval");
+    const inbox = screen.getByLabelText("Inbox");
     expect(plan.dataset["focused"]).toBe("true");
+    // scoped to the inbox: arrows elsewhere on the page do not move it
     fireEvent.keyDown(window, { key: "ArrowDown" });
+    expect(plan.dataset["focused"]).toBe("true");
+    fireEvent.keyDown(inbox, { key: "ArrowDown" });
     expect(approval.dataset["focused"]).toBe("true");
-    fireEvent.keyDown(window, { key: "ArrowUp" });
+    fireEvent.keyDown(inbox, { key: "ArrowUp" });
     expect(plan.dataset["focused"]).toBe("true");
   });
 
@@ -191,7 +196,7 @@ describe("Mission Control — projects", () => {
     expect(useUi.getState().selectedThreadId).toBe("t1");
   });
 
-  it("opens the new-thread popover and scopes the rail from the card", () => {
+  it("opens the new-thread popover and the All threads list from the card", () => {
     attachFakeStore(fixture());
     render(<MissionControl />);
     const card = within(screen.getByLabelText("Project Tide"));
@@ -199,7 +204,8 @@ describe("Mission Control — projects", () => {
     expect(screen.getByText("Create thread")).toBeDefined();
 
     fireEvent.click(card.getByLabelText("All threads in Tide"));
-    expect(useUi.getState().selectedProjectId).toBe("p1");
+    expect(useUi.getState().view).toBe("threads");
+    expect(useUi.getState().allThreadsProjectId).toBe("p1");
   });
 
   it("raises the experts dialog from the card", () => {
@@ -246,5 +252,22 @@ describe("Mission Control — providers", () => {
     fireEvent.click(strip.getByLabelText("Claude Code: ready"));
     expect(useUi.getState().view).toBe("settings");
     expect(useUi.getState().settingsSection).toBe("providers");
+  });
+
+  it("shows the worst rate limit across a provider's threads, attention-coloured when limited", () => {
+    const model = fixture();
+    model.threads["t1"] = { ...model.threads["t1"]!, rateLimit: { status: "warning", remainingPct: 20, at: 1 } };
+    model.threads["t2"] = {
+      ...model.threads["t2"]!,
+      rateLimit: { status: "limited", resetsAt: Date.now() + 90 * 60_000, note: "5-hour limit", at: 2 },
+    };
+    attachFakeStore(model);
+    setProvidersForTest([{ kind: "claude", installed: true, loggedIn: true, models: [], caps }]);
+    render(<MissionControl />);
+    const strip = within(screen.getByLabelText("Providers"));
+    const badge = strip.getByLabelText(/rate limit limited/);
+    expect(badge.textContent).toBe("⛔ limited · resets in 2h");
+    expect(badge.getAttribute("title")).toContain("5-hour limit");
+    expect(strip.getAllByLabelText(/rate limit/)).toHaveLength(1);
   });
 });

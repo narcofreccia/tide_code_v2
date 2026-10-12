@@ -1,0 +1,31 @@
+/* Shared picker list: ⌘K palette, ⌘P quick open, `@` mentions. */
+.input {
+  flex: none;
+  height: 34px;
+  padding: 0 var(--sp-3);
+  background: transparent;
+  border: 0;
+  border-bottom: 1px solid var(--border);
+  color: var(--text);
+  font: inherit;
+}
+.input:focus-visible { outline: none; }
+.list { flex: 1; min-height: 0; margin: 0; padding: var(--sp-1); list-style: none; overflow: auto; }
+.row {
+  display: flex;
+  align-items: baseline;
+  gap: var(--sp-2);
+  width: 100%;
+  height: var(--row-h);
+  padding: 0 var(--sp-2);
+  background: transparent;
+  border: 0;
+  border-radius: var(--radius-sm);
+  color: var(--text);
+  font: inherit;
+  text-align: left;
+  cursor: pointer;
+}
+.dense { height: 22px; }
+.active { background: var(--accent-soft); }
+.note { margin: 0; padding: var(--sp-2) var(--sp-3); color: var(--muted); }

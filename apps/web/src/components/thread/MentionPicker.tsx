@@ -1,6 +1,8 @@
 import { useMemo } from "react";
 import { fuzzyRank } from "../../lib/fuzzy.ts";
 import { useFileIndex } from "../../state/files.ts";
+import { ListPickerList, PickerNote } from "../ui/ListPicker.tsx";
+import { PathRow } from "../ui/PathRow.tsx";
 import styles from "./MentionPicker.module.css";
 
 const LIMIT = 8;
@@ -21,7 +23,7 @@ export function useMentionMatches(threadId: string, query: string | undefined): 
   return { paths: matches, indexing: index.loading && paths.length === 0 };
 }
 
-/** The `@` file picker floating above the composer; the composer owns the caret. */
+/** The `@` file picker floating above the composer; the composer owns the caret and cursor. */
 export function MentionPicker({
   matches,
   cursor,
@@ -34,33 +36,24 @@ export function MentionPicker({
   if (matches.indexing) {
     return (
       <div className={styles.picker}>
-        <p className={styles.note}>Indexing…</p>
+        <PickerNote>Indexing…</PickerNote>
       </div>
     );
   }
   if (matches.paths.length === 0) return null;
 
   return (
-    <div className={styles.picker} role="listbox" aria-label="Mention a file">
-      <ul className={styles.list}>
-        {matches.paths.map((path, i) => (
-          <li key={path}>
-            <button
-              type="button"
-              role="option"
-              aria-selected={i === cursor}
-              className={`${styles.row} ${i === cursor ? styles.active : ""}`}
-              onMouseDown={(e) => {
-                e.preventDefault();
-                onPick(path);
-              }}
-            >
-              <span className={styles.name}>{path.slice(path.lastIndexOf("/") + 1)}</span>
-              <span className={styles.dir}>{path.slice(0, path.lastIndexOf("/"))}</span>
-            </button>
-          </li>
-        ))}
-      </ul>
+    <div className={styles.picker}>
+      <ListPickerList
+        items={matches.paths}
+        itemKey={(path) => path}
+        renderItem={(path) => <PathRow path={path} />}
+        active={cursor}
+        onPick={onPick}
+        label="Mention a file"
+        pickOn="mousedown"
+        dense
+      />
     </div>
   );
 }

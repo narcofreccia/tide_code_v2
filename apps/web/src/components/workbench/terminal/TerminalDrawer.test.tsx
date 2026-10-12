@@ -128,4 +128,18 @@ describe("TerminalDrawer", () => {
     fireEvent.click(close);
     await waitFor(() => expect(rpc).toHaveBeenCalledWith("pty.kill", { ptyId: "p1" }));
   });
+
+  it("sizes itself through a --drawer-h custom property, not an inline height", () => {
+    mockRpc({ "pty.list": () => ({ ptys: [] }) });
+    act(() => {
+      useTerminals.setState({ height: 310 });
+      setDrawerOpen(true);
+    });
+    render(<TerminalDrawer threadId="t1" />);
+    const drawer = screen.getByLabelText("Terminal");
+    expect(drawer.style.getPropertyValue("--drawer-h")).toBe("310px");
+    expect(drawer.style.height).toBe("");
+    act(() => useTerminals.setState({ height: 200 }));
+    expect(drawer.style.getPropertyValue("--drawer-h")).toBe("200px");
+  });
 });

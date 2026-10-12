@@ -1,4 +1,5 @@
-import { resolveServerUrl } from "../../lib/bootstrap.ts";
+import { useState } from "react";
+import { connectTo, pairingPageUrl, resolveServerUrl, wsUrlFor } from "../../lib/bootstrap.ts";
 import { useServerInfo } from "../../lib/useServerInfo.ts";
 import { useModel } from "../../state/model.ts";
 import { showToast } from "../../state/toast.ts";
@@ -14,7 +15,53 @@ async function copy(value: string, what: string): Promise<void> {
   showToast(`Copied ${what}`);
 }
 
-/** Read-only: what this client talks to and how another device reaches it. */
+/** Points this client at another tide-server; URL and token are kept in localStorage. */
+function ConnectForm() {
+  const [url, setUrl] = useState("");
+  const [token, setToken] = useState("");
+  const target = url.trim();
+  return (
+    <form
+      className={section.form}
+      aria-label="Connect to another server"
+      onSubmit={(event) => {
+        event.preventDefault();
+        if (target === "") return;
+        // a pasted page URL (http://host:3777) is turned into its socket URL
+        const ws = /^https?:/i.test(target) ? wsUrlFor(target) : target;
+        connectTo(ws, token.trim());
+        setToken("");
+        showToast(`Connecting to ${ws}`);
+      }}
+    >
+      <div className={section.formRow}>
+        <input
+          className={section.input}
+          aria-label="Server URL"
+          placeholder="ws://192.168.1.20:3777/ws"
+          value={url}
+          onChange={(event) => setUrl(event.target.value)}
+        />
+      </div>
+      <div className={section.formRow}>
+        <input
+          className={section.input}
+          type="password"
+          autoComplete="off"
+          aria-label="Server token"
+          placeholder="token (printed by tide-server)"
+          value={token}
+          onChange={(event) => setToken(event.target.value)}
+        />
+        <Button type="submit" variant="primary" disabled={target === ""}>
+          Connect
+        </Button>
+      </div>
+    </form>
+  );
+}
+
+/** What this client talks to, how another device reaches it, and how to switch servers. */
 export function RemoteSection() {
   const info = useServerInfo();
   const environmentId = useModel((s) => s.environmentId);
@@ -51,14 +98,20 @@ export function RemoteSection() {
       </div>
       {remote && remote.lanUrls.length > 0 ? (
         <ul className={section.rows} aria-label="LAN URLs">
-          {remote.lanUrls.map((url) => (
-            <li key={url} className={section.row}>
-              <span className={section.value}>{url}</span>
-              <Button variant="quiet" onClick={() => void copy(url, "LAN URL")}>
-                Copy
-              </Button>
-            </li>
-          ))}
+          {remote.lanUrls.map((url) => {
+            const page = pairingPageUrl(url);
+            return (
+              <li key={url} className={section.row}>
+                <span className={section.stack}>
+                  <span className={section.value}>{page}</span>
+                  <span className={section.secondary}>{wsUrlFor(url)}</span>
+                </span>
+                <Button variant="quiet" onClick={() => void copy(page, "LAN URL")}>
+                  Copy
+                </Button>
+              </li>
+            );
+          })}
         </ul>
       ) : (
         <p className={section.note}>
@@ -84,6 +137,11 @@ export function RemoteSection() {
           </p>
         </>
       ) : null}
+
+      <div className={section.head}>
+        <h3 className={section.title}>Connect to another server</h3>
+      </div>
+      <ConnectForm />
 
       <p className={section.note}>
         <strong>Tailscale</strong> — the safest way in from outside the LAN: run{" "}

@@ -96,12 +96,15 @@ export function resetUi(): void {
   setRpcCaller(undefined);
   setRpcStreamer(undefined);
   window.localStorage.clear();
+  // the hash router restores views from the address bar; tests start from none
+  window.history.replaceState(null, "", window.location.pathname);
   useUi.setState({
     view: "mission",
     selectedProjectId: null,
     selectedThreadId: null,
     selectedExpertsSessionId: null,
     expertsReturnTo: "mission",
+    allThreadsProjectId: null,
     newExpertsProjectId: null,
     newProjectOpen: false,
     newThreadProjectId: null,

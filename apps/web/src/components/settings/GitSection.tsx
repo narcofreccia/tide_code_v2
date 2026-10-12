@@ -1,6 +1,7 @@
 import { useEffect } from "react";
 import { useServerInfo } from "../../lib/useServerInfo.ts";
-import { DEFAULT_WORKTREE_ROOT, useSettings } from "../../state/settings.ts";
+import { DEFAULT_WORKTREE_ROOT } from "../../state/settings.ts";
+import { setWorktreeByDefault, useServerSettings } from "../../state/serverSettings.ts";
 import { useUi } from "../../state/ui.ts";
 import { ensureStatus, useVcs } from "../../state/vcs.ts";
 import { Checkbox } from "../ui/Choice.tsx";
@@ -13,13 +14,12 @@ function ghNote(hasGh: boolean | undefined): string {
     : "`gh` not found — install GitHub CLI to open PRs from Tide.";
 }
 
-/** Read-only for now: where worktrees live, the new-thread default, and `gh` detection. */
+/** Where worktrees live, the server-side new-thread default, and `gh` detection. */
 export function GitSection() {
   const threadId = useUi((s) => s.selectedThreadId);
   const status = useVcs((s) => (threadId ? s.statuses[threadId]?.data : undefined));
   const info = useServerInfo();
-  const worktreeByDefault = useSettings((s) => s.worktreeByDefault);
-  const setWorktreeByDefault = useSettings((s) => s.setWorktreeByDefault);
+  const worktreeByDefault = useServerSettings((s) => s.settings.worktreeByDefault);
 
   useEffect(() => {
     if (threadId) ensureStatus(threadId);
@@ -39,7 +39,7 @@ export function GitSection() {
           <Checkbox
             className={section.check}
             checked={worktreeByDefault}
-            onChange={(event) => setWorktreeByDefault(event.target.checked)}
+            onChange={(event) => void setWorktreeByDefault(event.target.checked)}
           >
             Create a worktree for new threads by default
           </Checkbox>

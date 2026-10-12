@@ -5,6 +5,7 @@ import { TopBar } from "./components/shell/TopBar.tsx";
 import { FocusModeSwitch } from "./components/shell/FocusModeSwitch.tsx";
 import { ThemeToggle } from "./components/shell/ThemeToggle.tsx";
 import { MissionControl } from "./components/mission/MissionControl.tsx";
+import { AllThreads } from "./components/mission/AllThreads.tsx";
 import { ThreadView } from "./components/thread/ThreadView.tsx";
 import { ExpertsView } from "./components/experts/ExpertsView.tsx";
 import { CreateExpertsDialog } from "./components/experts/CreateExpertsDialog.tsx";
@@ -20,15 +21,19 @@ import { ThreadDialogHost } from "./components/thread/ThreadDialogs.tsx";
 import { ProjectLinksDialogHost } from "./components/mission/ProjectLinks.tsx";
 import { useWorkbench } from "./state/workbench.ts";
 import { useKeyboardMap } from "./lib/useKeyboardMap.ts";
+import { useHashRoute } from "./lib/useHashRoute.ts";
+import { useMergeOutcomeToasts } from "./lib/mergeToasts.ts";
 import styles from "./App.module.css";
 
 function Content() {
   const view = useUi((s) => s.view);
   const focusMode = useUi((s) => s.focusMode);
   const expertsSessionId = useUi((s) => s.selectedExpertsSessionId);
+  const allThreadsProjectId = useUi((s) => s.allThreadsProjectId);
   const thread = useSelectedThread();
 
   if (view === "settings") return <SettingsView />;
+  if (view === "threads" && allThreadsProjectId) return <AllThreads projectId={allThreadsProjectId} />;
   if (view === "experts" && expertsSessionId) {
     const board = <ExpertsView sessionId={expertsSessionId} />;
     if (focusMode === "thread" || !thread) return board;
@@ -57,6 +62,8 @@ function QuickOpenHost() {
 
 export function App() {
   useKeyboardMap();
+  useHashRoute();
+  useMergeOutcomeToasts();
   const railCollapsed = useUi((s) => s.railCollapsed);
   return (
     <div className={styles.app}>

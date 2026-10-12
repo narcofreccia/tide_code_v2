@@ -58,11 +58,9 @@ describe("ThreadView", () => {
     const fake = mount();
     fireEvent.change(screen.getByLabelText("Message"), { target: { value: " ship it " } });
     fireEvent.click(screen.getByText("Send"));
-    expect(fake.dispatch).toHaveBeenCalledWith({
-      type: "turn.request",
-      threadId: "t1",
-      text: "ship it",
-    });
+    expect(fake.dispatch).toHaveBeenCalledWith(
+      expect.objectContaining({ type: "turn.request", threadId: "t1", text: "ship it" }),
+    );
   });
 
   it("sends on ⌘+Enter", () => {
@@ -70,7 +68,9 @@ describe("ThreadView", () => {
     const input = screen.getByLabelText("Message");
     fireEvent.change(input, { target: { value: "go" } });
     fireEvent.keyDown(input, { key: "Enter", metaKey: true });
-    expect(fake.dispatch).toHaveBeenCalledWith({ type: "turn.request", threadId: "t1", text: "go" });
+    expect(fake.dispatch).toHaveBeenCalledWith(
+      expect.objectContaining({ type: "turn.request", threadId: "t1", text: "go" }),
+    );
   });
 
   it("dispatches thread.archive and returns to Mission Control", () => {

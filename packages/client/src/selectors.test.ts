@@ -196,15 +196,20 @@ describe("selectThreadsNeedingAttention", () => {
 });
 
 describe("selectInbox", () => {
-  it("attaches the pending approval and the proposed plan", () => {
+  it("lists every pending card of a thread, not just the first, with the plan", () => {
     const model = build({
       threads: [thread("t1", { attention: "approval", updatedAt: 10 }), thread("t2", { attention: "plan", updatedAt: 20 })],
-      activities: [approval("a1"), approval("a0", { status: "resolved" })],
-      plans: [plan("pl1", { threadId: "t2" }), plan("pl0", { threadId: "t2", status: "dismissed" })],
+      activities: [
+        approval("a1", { createdAt: 5 }),
+        approval("a0", { status: "resolved" }),
+        approval("a2", { createdAt: 7 }),
+      ],
+      plans: [plan("pl1", { threadId: "t2", createdAt: 6 }), plan("pl0", { threadId: "t2", status: "dismissed" })],
       timeline: {
         t1: [
           { kind: "activity", id: "a0" },
           { kind: "activity", id: "a1" },
+          { kind: "activity", id: "a2" },
         ],
         t2: [
           { kind: "plan", id: "pl0" },
@@ -213,9 +218,26 @@ describe("selectInbox", () => {
       },
     });
     const inbox = selectInbox(model);
-    expect(inbox.map((i) => i.thread.id)).toEqual(["t2", "t1"]);
-    expect(inbox[0]?.plan?.id).toBe("pl1");
-    expect(inbox[1]?.activity?.id).toBe("a1");
+    // oldest wait first when nothing is triaged
+    expect(inbox.map((i) => i.key)).toEqual(["a1", "pl1", "a2"]);
+    expect(inbox.map((i) => i.since)).toEqual([5, 6, 7]);
+    expect(inbox[1]?.plan?.id).toBe("pl1");
+    expect(inbox[0]?.activity?.id).toBe("a1");
+  });
+
+  it("sorts by triage urgency first, then by age, and keeps a bare row for a flag without a card", () => {
+    const model = build({
+      threads: [
+        thread("t1", { attention: "approval" }),
+        thread("t2", { attention: "question", triage: { needsUser: 0.9, stuck: 0.1, urgency: 0.8, at: 1 } }),
+        thread("t3", { attention: "plan", updatedAt: 3, triage: { needsUser: 0.5, stuck: 0.7, urgency: 0.2, at: 1 } }),
+      ],
+      activities: [approval("a1", { createdAt: 1 }), approval("q1", { threadId: "t2", createdAt: 9 })],
+      timeline: { t1: [{ kind: "activity", id: "a1" }], t2: [{ kind: "activity", id: "q1" }] },
+    });
+    const inbox = selectInbox(model);
+    expect(inbox.map((i) => i.key)).toEqual(["q1", "thread:t3", "a1"]);
+    expect(inbox[1]?.attention).toBe("plan");
   });
 });
 

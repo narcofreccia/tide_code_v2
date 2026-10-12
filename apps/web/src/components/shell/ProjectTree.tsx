@@ -6,8 +6,8 @@ import { relativeTime } from "../../lib/relativeTime.ts";
 import { Button } from "../ui/Button.tsx";
 import { NewThreadPopover } from "./NewThreadPopover.tsx";
 import { ExpertsGroup, sessionThreadIds } from "./ExpertsGroup.tsx";
-import { StatusGlyph } from "../ui/StatusGlyph.tsx";
-import { PrGlyph, WorktreeGlyph } from "../ui/VcsBadges.tsx";
+import { ThreadGlyph } from "../ui/StatusGlyph.tsx";
+import { MergeGlyph, PrGlyph, WorktreeGlyph } from "../ui/VcsBadges.tsx";
 import styles from "./ProjectTree.module.css";
 
 const ROLE_GLYPH: Record<NonNullable<Thread["role"]>, string> = {
@@ -35,11 +35,7 @@ function ThreadRow({ thread, siblings }: { thread: Thread; siblings: Thread[] })
         }`}
         onClick={() => selectThread(thread.id)}
       >
-        <StatusGlyph
-          status={thread.status}
-          {...(thread.attention ? { attention: thread.attention } : {})}
-          {...(thread.interrupting === true ? { interrupting: true } : {})}
-        />
+        <ThreadGlyph thread={thread} />
         {thread.role ? (
           <span className={styles.roleGlyph} title={thread.role} aria-label={thread.role} role="img">
             {ROLE_GLYPH[thread.role]}
@@ -48,6 +44,7 @@ function ThreadRow({ thread, siblings }: { thread: Thread; siblings: Thread[] })
         <span className={styles.threadTitle}>{thread.title}</span>
         <WorktreeGlyph thread={thread} />
         <PrGlyph pr={thread.pr} />
+        <MergeGlyph thread={thread} />
         <span className={styles.provider}>{thread.provider}</span>
         <span className={styles.time}>{relativeTime(thread.updatedAt)}</span>
       </button>

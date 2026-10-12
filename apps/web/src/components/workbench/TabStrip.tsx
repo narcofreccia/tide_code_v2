@@ -9,6 +9,7 @@ import {
   togglePin,
   type WorkbenchTab,
 } from "../../state/workbench.ts";
+import { Button } from "../ui/Button.tsx";
 import styles from "./Workbench.module.css";
 
 function label(tab: WorkbenchTab): string {
@@ -61,14 +62,9 @@ function FileTabButton({
         {tab.pinned ? <span className={styles.pin} aria-label="pinned">📌</span> : null}
         {dirty ? <span className={styles.dot} aria-label="unsaved changes" /> : null}
       </button>
-      <button
-        type="button"
-        className={styles.close}
-        aria-label={`Close ${label(tab)}`}
-        onClick={() => closeTab(threadId, tab)}
-      >
+      <Button variant="quiet" aria-label={`Close ${label(tab)}`} onClick={() => closeTab(threadId, tab)}>
         ×
-      </button>
+      </Button>
     </span>
   );
 }
@@ -118,14 +114,9 @@ export function TabStrip({
               {label(tab)}
             </button>
             {tab.kind === "changes" ? null : (
-              <button
-                type="button"
-                className={styles.close}
-                aria-label={`Close ${label(tab)}`}
-                onClick={() => closeTab(threadId, tab)}
-              >
+              <Button variant="quiet" aria-label={`Close ${label(tab)}`} onClick={() => closeTab(threadId, tab)}>
                 ×
-              </button>
+              </Button>
             )}
           </span>
         ),

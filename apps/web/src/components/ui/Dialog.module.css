@@ -17,7 +17,19 @@
   background: var(--surface-2);
   border: 1px solid var(--border);
   border-radius: var(--radius-lg);
-  box-shadow: 0 12px 40px rgba(0, 0, 0, 0.4);
+  box-shadow: var(--shadow-pop);
+}
+.paletteScrim { z-index: 90; padding-top: 12vh; }
+.palette {
+  width: min(640px, 94vw);
+  max-height: 64vh;
+  display: flex;
+  flex-direction: column;
+  background: var(--surface-2);
+  border: 1px solid var(--border);
+  border-radius: var(--radius-lg);
+  box-shadow: var(--shadow-pop);
+  overflow: hidden;
 }
 .title { margin: 0; font-size: 13px; font-weight: 600; }
 .body { margin: 0; color: var(--muted); }

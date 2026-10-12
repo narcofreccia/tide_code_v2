@@ -7,7 +7,7 @@ import {
   useProviderRoster,
   useProviders,
 } from "../../state/providers.ts";
-import { providerDefault, useSettings } from "../../state/settings.ts";
+import { providerDefault, worktreeByDefault } from "../../state/serverSettings.ts";
 import { PROVIDERS } from "../../lib/vocab.ts";
 import { Checkbox } from "../ui/Choice.tsx";
 import { Select, type SelectOption } from "../ui/Select.tsx";
@@ -23,7 +23,8 @@ export interface ThreadDraft {
 }
 
 /**
- * The per-provider defaults from Settings › Providers win over the harness's own
+ * The per-provider defaults from Settings › Providers (server-side, shared with
+ * every client) win over the harness's own
  * default model; an explicit `model` argument wins over both.
  */
 export function draftForProvider(
@@ -41,7 +42,7 @@ export function useThreadDraft(provider: ProviderKind, model = ""): [ThreadDraft
   const providers = useProviders();
   const [draft, setDraft] = useState<ThreadDraft>(() => ({
     ...draftForProvider(provider, providers, model),
-    useWorktree: useSettings.getState().worktreeByDefault,
+    useWorktree: worktreeByDefault(),
   }));
   return [draft, (patch) => setDraft((prev) => ({ ...prev, ...patch }))];
 }

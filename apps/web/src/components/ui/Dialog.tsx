@@ -2,16 +2,23 @@ import { useEffect, useRef, useState } from "react";
 import { Button } from "./Button.tsx";
 import styles from "./Dialog.module.css";
 
-/** Modal shell: centred panel over a scrim, Escape cancels, focus starts inside. */
+/**
+ * Modal shell: centred panel over a scrim, Escape cancels, focus starts inside.
+ * `variant="palette"` is the flush, top-anchored look of ⌘K / ⌘P: no padding and
+ * no visible title (it stays the accessible name).
+ */
 export function Dialog({
   title,
   onCancel,
   children,
+  variant = "form",
 }: {
   title: string;
   onCancel: () => void;
   children: React.ReactNode;
+  variant?: "form" | "palette";
 }) {
+  const palette = variant === "palette";
   useEffect(() => {
     const onKey = (e: KeyboardEvent): void => {
       if (e.key !== "Escape") return;
@@ -23,15 +30,15 @@ export function Dialog({
   }, [onCancel]);
 
   return (
-    <div className={styles.scrim} onMouseDown={onCancel}>
+    <div className={`${styles.scrim} ${palette ? styles.paletteScrim : ""}`} onMouseDown={onCancel}>
       <div
-        className={styles.panel}
+        className={palette ? styles.palette : styles.panel}
         role="dialog"
         aria-modal="true"
         aria-label={title}
         onMouseDown={(e) => e.stopPropagation()}
       >
-        <h2 className={styles.title}>{title}</h2>
+        {palette ? null : <h2 className={styles.title}>{title}</h2>}
         {children}
       </div>
     </div>

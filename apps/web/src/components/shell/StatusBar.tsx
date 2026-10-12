@@ -1,6 +1,7 @@
 import type { Thread } from "@tide/contracts";
 import { useModel } from "../../state/model.ts";
 import { useLatestTurnStatus, useSelectedThread } from "../../state/hooks.ts";
+import { contextTitle } from "../../lib/glassBox.ts";
 import { ConnectionDot } from "../ui/ConnectionDot.tsx";
 import { PrBadge } from "../ui/VcsBadges.tsx";
 import { useSelectedDiffStats, useVcsStatus } from "../../state/vcs.ts";
@@ -21,7 +22,7 @@ function ThreadStats({ thread }: { thread: Thread }) {
   const cost = thread.totalCostUsd;
   if (percent === undefined && cost === undefined) return null;
   return (
-    <span className={styles.item}>
+    <span className={styles.item} {...(context && percent !== undefined ? { title: contextTitle(context) } : {})}>
       {percent === undefined ? null : `ctx ${percent}%`}
       {percent !== undefined && cost !== undefined ? " · " : ""}
       {cost === undefined ? null : `$${cost.toFixed(2)}`}

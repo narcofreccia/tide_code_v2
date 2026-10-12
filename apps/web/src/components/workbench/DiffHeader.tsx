@@ -1,9 +1,12 @@
 import { useState } from "react";
-import type { DiffFile, DiffResult, ReadModel, Thread, Turn } from "@tide/contracts";
+import type { DiffFile, DiffResult, MergeStrategy, ReadModel, Thread, Turn } from "@tide/contracts";
 import { Button } from "../ui/Button.tsx";
 import { Kbd } from "../ui/Kbd.tsx";
 import { Popover } from "../ui/Popover.tsx";
+import { Radio } from "../ui/Choice.tsx";
 import { PrBadge } from "../ui/VcsBadges.tsx";
+import { MERGE_STRATEGIES } from "../../lib/merge.ts";
+import { MergeAction } from "./MergeAction.tsx";
 import { publishThread, revertTurn } from "../../lib/threadActions.ts";
 import { ALL_CHANGES, ensureStatus, type TurnSelection } from "../../state/vcs.ts";
 import { useUi } from "../../state/ui.ts";
@@ -47,6 +50,12 @@ function RevertAction({ thread, turn, running }: { thread: Thread; turn: Turn | 
   );
 }
 
+/** GitHub auto-merge (`gh pr merge --auto`) once checks pass; off leaves the PR open. */
+const WHEN_GREEN: { value: MergeStrategy | "off"; label: string; title: string }[] = [
+  { value: "off", label: "Off", title: "Open the PR and leave it" },
+  ...MERGE_STRATEGIES.map((s) => ({ value: s.value, label: s.label, title: `${s.description}, once checks pass` })),
+];
+
 /**
  * Commit / commit + push + PR. Stays available after a PR exists — follow-up turns
  * still have to reach the branch — and then updates the open PR instead of opening one.
@@ -64,6 +73,7 @@ function PublishAction({
 }) {
   const [title, setTitle] = useState(thread.title);
   const [body, setBody] = useState(prompt);
+  const [whenGreen, setWhenGreen] = useState<MergeStrategy | "off">("off");
   return (
     <Popover
       label={hasPr ? "Commit & update PR" : "Commit…"}
@@ -93,6 +103,22 @@ function PublishAction({
               onChange={(e) => setBody(e.target.value)}
             />
           </label>
+          <div className={styles.field} role="radiogroup" aria-label="Merge when green">
+            <span className={styles.label}>Merge when green</span>
+            <div className={styles.choices}>
+              {WHEN_GREEN.map((option) => (
+                <Radio
+                  key={option.value}
+                  name={`when-green-${thread.id}`}
+                  checked={whenGreen === option.value}
+                  title={option.title}
+                  onChange={() => setWhenGreen(option.value)}
+                >
+                  {option.label}
+                </Radio>
+              ))}
+            </div>
+          </div>
           <div className={styles.confirmRow}>
             <Button
               variant="quiet"
@@ -107,7 +133,12 @@ function PublishAction({
               variant="primary"
               onClick={() => {
                 close();
-                void publishThread(thread.id, { title, body, commitOnly: false });
+                void publishThread(thread.id, {
+                  title,
+                  body,
+                  commitOnly: false,
+                  ...(whenGreen === "off" ? {} : { mergeWhenGreen: whenGreen }),
+                });
               }}
             >
               {hasPr ? "Commit + push + update PR" : "Commit + push + PR"}
@@ -208,6 +239,7 @@ export function DiffHeader({
             />
           </>
         )}
+        <MergeAction thread={thread} running={running} />
         <Button variant="quiet" onClick={refresh} title="Re-read the diff and git status">
           Refresh
         </Button>

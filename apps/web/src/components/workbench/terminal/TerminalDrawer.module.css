@@ -2,6 +2,7 @@
   display: flex;
   flex-direction: column;
   flex: 0 0 auto;
+  height: var(--drawer-h, 240px);
   min-height: 100px;
   border-top: 1px solid var(--border);
   background: var(--surface);
@@ -34,30 +35,7 @@
   cursor: pointer;
 }
 .activeTab { color: var(--text); background: var(--surface-2); border-color: var(--border); }
-.close, .add {
-  width: 18px;
-  height: 18px;
-  background: transparent;
-  border: 0;
-  border-radius: var(--radius-sm);
-  color: var(--muted);
-  cursor: pointer;
-}
-.close:hover, .add:hover { background: var(--surface-2); color: var(--text); }
-.hide {
-  display: inline-flex;
-  align-items: center;
-  gap: var(--sp-1);
-  margin-left: auto;
-  height: 20px;
-  padding: 0 var(--sp-2);
-  background: transparent;
-  border: 0;
-  color: var(--muted);
-  font: inherit;
-  font-size: 11px;
-  cursor: pointer;
-}
+.hide { margin-left: auto; font-size: 11px; }
 .body { flex: 1; min-height: 0; padding: var(--sp-1) var(--sp-2); overflow: hidden; }
 .surface { width: 100%; height: 100%; }
 .note { margin: 0; padding: var(--sp-2); color: var(--muted); }

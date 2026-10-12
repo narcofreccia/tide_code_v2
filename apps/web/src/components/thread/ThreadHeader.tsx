@@ -8,8 +8,10 @@ import { DelegatedBy, DelegatesPopover } from "./Delegates.tsx";
 import { Button } from "../ui/Button.tsx";
 import { Pill } from "../ui/Pill.tsx";
 import { Popover } from "../ui/Popover.tsx";
-import { StatusGlyph } from "../ui/StatusGlyph.tsx";
-import { PrBadge } from "../ui/VcsBadges.tsx";
+import { RateLimitBadge } from "../ui/RateLimitBadge.tsx";
+import { ThreadGlyph } from "../ui/StatusGlyph.tsx";
+import { MergeGlyph, PrBadge } from "../ui/VcsBadges.tsx";
+import { contextTitle } from "../../lib/glassBox.ts";
 import styles from "./ThreadHeader.module.css";
 
 const NO_COMMAND = "No harness session to resume yet";
@@ -41,23 +43,25 @@ export function ThreadHeader({ thread }: { thread: Thread }) {
 
   return (
     <header className={styles.header}>
-      <StatusGlyph
-        status={thread.status}
-        {...(thread.attention ? { attention: thread.attention } : {})}
-        {...(thread.interrupting === true ? { interrupting: true } : {})}
-      />
+      <ThreadGlyph thread={thread} />
       <span className={styles.branch} title={thread.worktreePath ?? "no worktree"}>
         {thread.worktreePath === undefined ? "" : "⎇ "}
         {thread.branch ?? "no worktree"}
       </span>
       {thread.pr ? <PrBadge pr={thread.pr} /> : null}
+      <MergeGlyph thread={thread} />
       {thread.delegatedBy ? <DelegatedBy parentThreadId={thread.delegatedBy} /> : null}
       <DelegatesPopover threadId={thread.id} />
       <Pill>{thread.interrupting === true ? "interrupting…" : (turnStatus ?? thread.status)}</Pill>
-      {percent === undefined ? null : <span className={styles.stat}>ctx {percent}%</span>}
+      {percent === undefined || !context ? null : (
+        <span className={styles.stat} title={contextTitle(context)}>
+          ctx {percent}%
+        </span>
+      )}
       {thread.totalCostUsd === undefined ? null : (
         <span className={styles.stat}>${thread.totalCostUsd.toFixed(2)}</span>
       )}
+      <RateLimitBadge limit={thread.rateLimit} />
       <div className={styles.actions}>
         <Button
           variant="quiet"

@@ -1,7 +1,8 @@
 import { useEffect, useRef, useState } from "react";
 import { selectQueuedTurns } from "@tide/client";
 import type { Thread } from "@tide/contracts";
-import { interruptTurn, sendTurn } from "../../lib/threadActions.ts";
+import { newId } from "@tide/contracts";
+import { interruptTurn, sendTurn, turnRequestLanded } from "../../lib/threadActions.ts";
 import { errorText } from "../../lib/dispatchOrToast.ts";
 import { showToast } from "../../state/toast.ts";
 import { useModel } from "../../state/model.ts";
@@ -63,6 +64,8 @@ export function Composer({ thread }: { thread: Thread }) {
   const [justQueued, setJustQueued] = useState(false);
   const input = useRef<HTMLTextAreaElement>(null);
   const root = useRef<HTMLDivElement>(null);
+  // idempotency key of the draft in flight: a retry of the same text reuses it
+  const pending = useRef<{ text: string; requestId: string } | undefined>(undefined);
   const attachments = useAttachments();
   const providers = useProviders();
   const status = providerStatus(providers, thread.provider);
@@ -128,14 +131,23 @@ export function Composer({ thread }: { thread: Thread }) {
     if ((!value && attachments.images.length === 0) || busy) return;
     const wasRunning = running;
     const images = attachments.images.map((image) => ({ mediaType: image.mediaType, data: image.data }));
+    const prompt = expandMentions(value);
+    if (pending.current?.text !== prompt) pending.current = { text: prompt, requestId: newId() };
+    const { requestId } = pending.current;
+    const sent = (): void => {
+      pending.current = undefined;
+      setText("");
+      attachments.clear();
+      setJustQueued(wasRunning);
+    };
     setBusy(true);
-    sendTurn(thread.id, expandMentions(value), images)
-      .then(() => {
-        setText("");
-        attachments.clear();
-        setJustQueued(wasRunning);
+    sendTurn(thread.id, prompt, images, requestId)
+      .then(sent)
+      .catch((error: unknown) => {
+        // the first attempt landed before the socket dropped: the retry was refused, not lost
+        if (turnRequestLanded(thread.id, requestId)) sent();
+        else showToast(`Sending failed: ${errorText(error)}`);
       })
-      .catch((error: unknown) => showToast(`Sending failed: ${errorText(error)}`))
       .finally(() => setBusy(false));
   };
 

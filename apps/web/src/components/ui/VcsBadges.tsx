@@ -1,3 +1,4 @@
+import { isThreadMerged } from "@tide/client";
 import type { PullRequest, Thread } from "@tide/contracts";
 import styles from "./VcsBadges.module.css";
 
@@ -37,5 +38,26 @@ export function PrBadge({ pr }: { pr: PullRequest }) {
     >
       #{pr.number} {pr.state}
     </a>
+  );
+}
+
+/**
+ * Merge-back state for rows: `⟳ merging`, `⚠ conflicted`, `✕ merge failed`, or
+ * `✓ merged` when the branch landed without a merged PR saying so already.
+ */
+export function MergeGlyph({ thread }: { thread: Thread }) {
+  const status = thread.merge?.status;
+  let glyph: string;
+  let text: string;
+  let tone: string | undefined;
+  if (status === "merging") [glyph, text, tone] = ["⟳", "merging", styles.merging];
+  else if (status === "conflicted") [glyph, text, tone] = ["⚠", "conflicted", styles.conflicted];
+  else if (status === "error") [glyph, text, tone] = ["✕", "merge failed", styles.closed];
+  else if (isThreadMerged(thread) && thread.pr?.state !== "merged") [glyph, text, tone] = ["✓", "merged", styles.merged];
+  else return null;
+  return (
+    <span className={`${styles.glyph} ${tone ?? ""}`} title={text} aria-label={text} role="img">
+      {glyph} {text}
+    </span>
   );
 }

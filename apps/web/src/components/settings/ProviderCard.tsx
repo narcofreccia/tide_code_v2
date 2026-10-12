@@ -2,7 +2,7 @@ import type { ProviderStatusDto } from "@tide/contracts";
 import { PROVIDER_LABELS, RUNTIME_MODES } from "../../lib/vocab.ts";
 import { resolveLoginCommand, runOrCopy } from "../../lib/providerLogin.ts";
 import { loadProviders } from "../../state/providers.ts";
-import { useProviderDefaults } from "../../state/settings.ts";
+import { setProviderDefault, useServerSettings } from "../../state/serverSettings.ts";
 import { useUi } from "../../state/ui.ts";
 import { Button } from "../ui/Button.tsx";
 import { Pill } from "../ui/Pill.tsx";
@@ -58,8 +58,7 @@ function ModelList({ status }: { status: ProviderStatusDto }) {
 /** One harness: status, login affordance, capabilities, models and per-provider defaults. */
 export function ProviderCard({ status }: { status: ProviderStatusDto }) {
   const kind = status.kind;
-  const defaults = useProviderDefaults((s) => s.defaults[kind]) ?? {};
-  const setProviderDefault = useProviderDefaults((s) => s.setProviderDefault);
+  const defaults = useServerSettings((s) => s.settings.providerDefaults[kind]) ?? {};
   const threadId = useUi((s) => s.selectedThreadId);
   const { glyph, text, tone } = statusOf(status);
   const command = resolveLoginCommand(status);
@@ -112,7 +111,7 @@ export function ProviderCard({ status }: { status: ProviderStatusDto }) {
             label={`${PROVIDER_LABELS[kind]} default model`}
             value={defaults.model ?? ""}
             options={modelOptions}
-            onSelect={(model) => setProviderDefault(kind, { model })}
+            onSelect={(model) => void setProviderDefault(kind, { model })}
             variant="field"
             size="md"
           />
@@ -123,7 +122,7 @@ export function ProviderCard({ status }: { status: ProviderStatusDto }) {
             label={`${PROVIDER_LABELS[kind]} default mode`}
             value={defaults.mode ?? "approval-required"}
             options={RUNTIME_MODES}
-            onSelect={(mode) => setProviderDefault(kind, { mode })}
+            onSelect={(mode) => void setProviderDefault(kind, { mode })}
             variant="field"
             size="md"
           />

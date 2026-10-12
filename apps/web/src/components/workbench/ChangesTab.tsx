@@ -17,6 +17,7 @@ import { Button } from "../ui/Button.tsx";
 import { DiffHeader } from "./DiffHeader.tsx";
 import { DiffPane } from "./DiffPane.tsx";
 import { FileList } from "./FileList.tsx";
+import { MergeState } from "./MergeState.tsx";
 import styles from "./ChangesTab.module.css";
 
 const EMPTY = "No changes in this thread yet.";
@@ -99,6 +100,7 @@ function ChangesFor({ thread }: { thread: Thread }) {
         file={selectedFile}
         onRefresh={diff.refresh}
       />
+      <MergeState thread={thread} running={running} />
       {diff.error ? (
         <p className={styles.error}>
           {diff.error}

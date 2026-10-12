@@ -1,4 +1,7 @@
+import { selectProviderRateLimits } from "@tide/client";
 import type { ProviderStatusDto } from "@tide/contracts";
+import { useModel } from "../../state/model.ts";
+import { RateLimitBadge } from "../ui/RateLimitBadge.tsx";
 import { PROVIDERS, PROVIDER_LABELS } from "../../lib/vocab.ts";
 import { providerStatus, useProviderRoster } from "../../state/providers.ts";
 import { useUi } from "../../state/ui.ts";
@@ -18,12 +21,15 @@ export function providerChipState(
 }
 
 /**
- * The four harnesses Tide drives. A chip opens Settings › Providers; a harness
+ * The four harnesses Tide drives, each with its rate-limit state when a thread
+ * reported one that is not ok. A chip opens Settings › Providers; a harness
  * that is installed but logged out offers to run its own login command in the
  * selected thread's terminal (and copies it when there is no thread).
  */
 export function ProvidersStrip() {
   const { providers, loading } = useProviderRoster();
+  // the subscription is shared: the worst status across that harness's threads
+  const limits = selectProviderRateLimits(useModel((s) => s.model));
   const showSettings = useUi((s) => s.showSettings);
   const setSettingsSection = useUi((s) => s.setSettingsSection);
 
@@ -55,6 +61,7 @@ export function ProvidersStrip() {
                 <span>{PROVIDER_LABELS[kind]}</span>
                 <span className={styles.chipHint}>{text}</span>
               </button>
+              <RateLimitBadge limit={limits[kind]} />
               {command ? (
                 <Button variant="quiet" onClick={() => void runOrCopy(command)}>
                   Run {command}
