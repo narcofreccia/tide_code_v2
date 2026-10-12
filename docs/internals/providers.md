@@ -27,7 +27,7 @@ switched in place; `reopen` means the server closes the session and opens a new 
 |---|---|---|
 | Claude | `applied` | the Query control plane switches live: `setPermissionMode(mode)` + `setModel(model)`. Before the first turn there is no Query yet, so the new values just go into the next `query()` options. A control request the installed CLI rejects (missing method, or it throws) degrades to `reopen`. |
 | Codex | `applied` | `turn/start` carries `model`, `approvalPolicy`, `sandboxPolicy` and `collaborationMode` **per turn**; the session stores the new settings and the next turn sends them. |
-| OpenCode | `reopen` | the permission ruleset and the agent (`plan` vs `build`) are fixed at `session.create`, and `PATCH /session` only takes a title. **Caveat:** a reopen that resumes the same native session still runs the creation-time ruleset, so a mode change only really lands on a brand-new opencode session — see the OpenCode section. |
+| OpenCode | `applied` | OpenCode 2: model, agent and the session permission ruleset change in place on a live session (`PATCH /session/:id`, verified with `GET /session/:id`); any failure answers `reopen`. A resumed session gets the thread's current settings re-applied when it opens. |
 | Pi | `applied` | the model goes through pi's `set_model` RPC; mode and plan-mode changes go through the bridge command `/tide-config`, sent as a prompt (pi runs extension commands without a model call and answers `handled`). `reopen` only when `get_commands` does not list `/tide-config` or the model id is unknown. |
 
 ### Reasoning
@@ -39,7 +39,7 @@ text that follows**, so the thinking and the answer render as one message.
 |---|---|---|
 | Claude | `content_block_delta` / `thinking_delta` (and whole `thinking` blocks when partial messages are off) | the *message* id (`message_start.message.id`), never the block index — thinking and text are different blocks of one message |
 | Codex | `item/reasoning/textDelta` + `summaryTextDelta` | `<turnId>#<slot>`: reasoning is written to the turn's open message slot, the next `agentMessage` claims that slot, and a completed message opens the next one. Codex reasoning and the message it precedes are separate *items*, so the item id cannot be the key; the slot keeps two agent messages of one turn apart while still merging each with its own reasoning. |
-| OpenCode | `reasoning` parts of the assistant message | the id of the **first streamed reasoning-or-text part** of that message; every later part of the same `messageID` reuses it (reasoning normally arrives first, so the text merges onto it) |
+| OpenCode | `reasoning` parts of the assistant message | `assistantMessageID` of the v2 event, so reasoning and text of one message share a key |
 | Pi | `thinking_delta` deltas | the per-message key (`pi-<n>`, bumped on `message_start`), with the `contentIndex` dropped so thinking and text merge |
 
 ### Unknown events pass through
@@ -56,12 +56,10 @@ pure duplication of something Tide already renders:
   land on one row); the CLI's own `ambient` / `skip_transcript` tasks stay hidden.
 - **Codex** — `thread/status/changed`, `thread/settings/updated`, `serverRequest/resolved`,
   `turn/diff/updated`, `remoteControl/status/changed` (`CODEX_SILENT_NOTIFICATIONS`).
-- **OpenCode** (`SILENT_EVENTS`) — `server.heartbeat`, `file.watcher.updated`,
-  `session.updated`, `permission.replied`, `question.replied`, `question.rejected`,
-  `file.edited`, `session.diff`, `server.connected`. The last six duplicate rows Tide
-  already draws (the approval/user-input cards, the write tool activity, the git-computed
-  checkpoint diff) or would fire once per turn. `message.removed` / `message.part.removed`
-  are real content changes and still pass through.
+- **OpenCode** — see the OpenCode 2 section (`SILENT_EVENTS` lists the v2 housekeeping frames:
+  execution/step started, text/reasoning started/ended, tool input events, `usage.updated`,
+  `session.status`/`idle`/`renamed`/`viewed`, replies to Tide's own asks). `session.revert.*`
+  and `worktree.*` pass through as info rows.
 - **Pi** — `agent_start`, `agent_end`, `turn_start`, `turn_end`, `queue_update`,
   `tool_execution_update`, `bash_execution_update` (`PI_SILENT_EVENTS`); the last two are
   per-output-chunk streaming frames whose content arrives whole on `tool_execution_end`.
