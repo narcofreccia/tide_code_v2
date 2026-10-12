@@ -34,6 +34,9 @@
       .dots i:nth-child(3) { animation-delay: 0.3s; }
       @keyframes p { 0%, 80%, 100% { opacity: 0.25; } 40% { opacity: 1; } }
       #msg { color: var(--muted); font-family: ui-monospace, SFMono-Regular, Menlo, monospace; font-size: 12px; text-align: center; max-width: 70ch; padding: 0 24px; }
+      #retry { display: none; font: inherit; color: var(--text); background: transparent; border: 1px solid var(--muted); border-radius: 6px; padding: 4px 14px; cursor: pointer; }
+      #retry:hover { border-color: var(--accent); }
+      body[data-state="failed"] #retry { display: block; }
       body[data-state="failed"] .dots { display: none; }
       body[data-state="failed"] #msg { color: var(--danger); white-space: pre-wrap; }
     </style>
@@ -43,6 +46,7 @@
     <div class="mark">Tide</div>
     <div class="dots"><i></i><i></i><i></i></div>
     <div id="msg">starting the local server…</div>
+    <button id="retry" type="button">Retry</button>
     <script>
       // Desktop-only page. The shell pushes status straight into this hook (see
       // server_supervisor.rs); the `tide://server-status` event is used when the
@@ -51,6 +55,15 @@
         document.body.dataset.state = state;
         document.getElementById("msg").textContent = message || state;
       };
+      // Retry is a plain fetch: the shell's scheme handler forwards it to the supervisor.
+      document.getElementById("retry").onclick = function () {
+        window.__tideStatus("starting", "starting the local server…");
+        fetch("retry").catch(function () {});
+      };
+      // Anything pushed before this page finished loading is fetched from the shell.
+      fetch("status").then(function (r) { return r.json(); }).then(function (s) {
+        if (s && s.state) window.__tideStatus(s.state, s.message);
+      }).catch(function () {});
       if (window.__TAURI__ && window.__TAURI__.event) {
         window.__TAURI__.event
           .listen("tide://server-status", function (e) {
