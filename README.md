@@ -22,6 +22,8 @@ approvals across all threads; cross-harness Experts panels; agents delegating ta
 harnesses; "Open in terminal" escape hatches everywhere. See `docs/internals/overview.md`
 and `docs/design/ui.md`.
 
+New here? Start with [`QUICKSTART.md`](QUICKSTART.md); what Tide does to a repo is in [`docs/TRIAL.md`](docs/TRIAL.md).
+
 ## Dev
 
 ```sh
