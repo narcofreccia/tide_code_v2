@@ -1,4 +1,4 @@
-import type { Activity, AttentionKind, ExpertsSession, ReadModel, Thread, TimelineEntry } from "./domain.ts";
+import type { Activity, AttentionKind, ExpertsSession, ReadModel, Thread, TimelineEntry, TurnUsage } from "./domain.ts";
 import type { DomainEvent, EventRecord } from "./events.ts";
 
 // Pure projector shared by server and clients. Returns a new model; never
@@ -44,6 +44,31 @@ function refreshAttention(model: ReadModel, threadId: string, at: number): ReadM
   return { ...model, threads: { ...model.threads, [threadId]: next } };
 }
 
+/** Latest *pending* activity with this requestId: ids repeat across harness processes, so a resolved one never matches. */
+function findPendingByRequest<K extends "approval" | "user-input">(model: ReadModel, kind: K, threadId: string, requestId: string): Activity | undefined {
+  const timeline = model.threadTimeline[threadId] ?? [];
+  for (let i = timeline.length - 1; i >= 0; i--) {
+    const e = timeline[i];
+    if (e?.kind !== "activity") continue;
+    const a = model.activities[e.id];
+    if (a && a.kind === kind && a.requestId === requestId && a.status === "pending") return a;
+  }
+  return undefined;
+}
+
+function addUsage(prev: TurnUsage | undefined, delta: TurnUsage): TurnUsage {
+  if (!prev) return delta;
+  const sum = (a?: number, b?: number): number | undefined => (a === undefined && b === undefined ? undefined : (a ?? 0) + (b ?? 0));
+  const out: TurnUsage = { inputTokens: prev.inputTokens + delta.inputTokens, outputTokens: prev.outputTokens + delta.outputTokens };
+  const cr = sum(prev.cacheReadTokens, delta.cacheReadTokens);
+  const cw = sum(prev.cacheWriteTokens, delta.cacheWriteTokens);
+  const cost = sum(prev.costUsd, delta.costUsd);
+  if (cr !== undefined) out.cacheReadTokens = cr;
+  if (cw !== undefined) out.cacheWriteTokens = cw;
+  if (cost !== undefined) out.costUsd = cost;
+  return out;
+}
+
 function upsertActivity(model: ReadModel, activity: Activity): ReadModel {
   const exists = activity.id in model.activities;
   let next: ReadModel = { ...model, activities: { ...model.activities, [activity.id]: activity } };
@@ -84,12 +109,15 @@ export function applyEvent(model: ReadModel, event: DomainEvent): ReadModel {
         threadMessages: { ...model.threadMessages, [event.thread.id]: [] },
         threadTimeline: { ...model.threadTimeline, [event.thread.id]: [] },
       };
-    case "thread.updated":
-      return withThread(model, event.threadId, { ...event.patch, updatedAt: event.updatedAt });
+    case "thread.updated": {
+      const t = model.threads[event.threadId];
+      if (!t) return model;
+      const next: Thread = { ...t, ...event.patch, updatedAt: event.updatedAt };
+      if (event.clearNativeSession) delete next.nativeSessionId;
+      return { ...model, threads: { ...model.threads, [t.id]: next } };
+    }
     case "thread.archived":
       return withThread(model, event.threadId, { archivedAt: event.archivedAt, updatedAt: event.archivedAt });
-    case "thread.status-changed":
-      return withThread(model, event.threadId, { status: event.status, updatedAt: event.updatedAt });
     case "turn.requested": {
       const { turn, userMessage } = event;
       const list = model.threadMessages[turn.threadId] ?? [];
@@ -162,8 +190,25 @@ export function applyEvent(model: ReadModel, event: DomainEvent): ReadModel {
           : { before: turn.checkpoint?.before ?? event.ref, after: event.ref, ...(event.stats !== undefined ? { stats: event.stats } : {}) };
       return { ...model, turns: { ...model.turns, [turn.id]: { ...turn, checkpoint } } };
     }
-    case "pr.updated":
-      return withThread(model, event.threadId, { pr: event.pr, updatedAt: event.pr.updatedAt });
+    case "pr.updated": {
+      const patch: Partial<Thread> = { pr: event.pr, updatedAt: event.pr.updatedAt };
+      if (event.pr.state === "merged" && model.threads[event.threadId]?.mergedAt === undefined) patch.mergedAt = event.pr.updatedAt;
+      return withThread(model, event.threadId, patch);
+    }
+    case "merge.requested":
+      return withThread(model, event.threadId, { merge: { status: "merging", strategy: event.strategy, at: event.at }, updatedAt: event.at });
+    case "merge.completed":
+      return withThread(model, event.threadId, {
+        merge: { status: "merged", strategy: event.strategy, at: event.at, ...(event.sha !== undefined ? { sha: event.sha } : {}) },
+        mergedAt: event.at,
+        updatedAt: event.at,
+      });
+    case "merge.conflicted":
+      return withThread(model, event.threadId, { merge: { status: "conflicted", strategy: event.strategy, files: event.files, at: event.at }, updatedAt: event.at });
+    case "merge.failed":
+      return withThread(model, event.threadId, { merge: { status: "error", strategy: event.strategy, error: event.error, at: event.at }, updatedAt: event.at });
+    case "thread.triaged":
+      return withThread(model, event.threadId, { triage: event.triage, updatedAt: event.triage.at });
     case "experts.created":
       return { ...model, expertsSessions: { ...model.expertsSessions, [event.session.id]: event.session } };
     case "experts.threads-bound": {
@@ -230,12 +275,12 @@ export function applyEvent(model: ReadModel, event: DomainEvent): ReadModel {
     case "activity.upserted":
       return upsertActivity(model, event.activity);
     case "approval.responded": {
-      const a = Object.values(model.activities).find((x) => x.kind === "approval" && x.requestId === event.requestId && x.threadId === event.threadId);
+      const a = event.activityId !== undefined ? model.activities[event.activityId] : findPendingByRequest(model, "approval", event.threadId, event.requestId);
       if (!a || a.kind !== "approval") return model;
       return upsertActivity(model, { ...a, status: "resolved", decision: event.decision, updatedAt: event.at });
     }
     case "user-input.responded": {
-      const a = Object.values(model.activities).find((x) => x.kind === "user-input" && x.requestId === event.requestId && x.threadId === event.threadId);
+      const a = event.activityId !== undefined ? model.activities[event.activityId] : findPendingByRequest(model, "user-input", event.threadId, event.requestId);
       if (!a || a.kind !== "user-input") return model;
       return upsertActivity(model, { ...a, status: "resolved", answers: event.answers, updatedAt: event.at });
     }
@@ -256,13 +301,15 @@ export function applyEvent(model: ReadModel, event: DomainEvent): ReadModel {
     case "plan.progressed":
       return withThread(model, event.threadId, { planProgress: { steps: event.steps, updatedAt: event.at }, updatedAt: event.at });
     case "usage.reported": {
+      // every report is a delta: a turn's usage is the sum of its reports, a thread's cost the sum of its turns'
       const turn = model.turns[event.turnId];
       let next: ReadModel = model;
-      if (turn && event.usage) next = { ...next, turns: { ...next.turns, [turn.id]: { ...turn, usage: event.usage } } };
+      if (turn && event.usage) next = { ...next, turns: { ...next.turns, [turn.id]: { ...turn, usage: addUsage(turn.usage, event.usage) } } };
       const t = next.threads[event.threadId];
       if (!t) return next;
       const patch: Partial<Thread> = { updatedAt: event.at };
       if (event.contextUsage) patch.contextUsage = event.contextUsage;
+      if (event.rateLimit) patch.rateLimit = event.rateLimit;
       if (event.usage?.costUsd !== undefined) patch.totalCostUsd = (t.totalCostUsd ?? 0) + event.usage.costUsd;
       return withThread(next, event.threadId, patch);
     }

@@ -29,6 +29,7 @@ export function decide(model: ReadModel, command: Command, ctx: DecideContext): 
     case "thread.create":
     case "thread.update":
     case "thread.archive":
+    case "thread.triage":
       return decideThread(model, command, ctx);
 
     case "turn.request":
@@ -54,6 +55,8 @@ export function decide(model: ReadModel, command: Command, ctx: DecideContext): 
 
     case "thread.revert":
     case "thread.publish":
+    case "thread.merge":
+    case "merge.report":
     case "worktree.detach":
     case "worktree.attach":
     case "checkpoint.record":
@@ -65,7 +68,6 @@ export function decide(model: ReadModel, command: Command, ctx: DecideContext): 
     case "experts.post":
     case "experts.set-phase":
     case "experts.archive":
-    case "experts.threads.bound":
     case "experts.expert.status":
       return decideExperts(model, command, ctx);
 

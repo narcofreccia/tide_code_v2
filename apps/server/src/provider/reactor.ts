@@ -350,6 +350,7 @@ export class ProviderReactor {
           turnId,
           ...(event.usage !== undefined ? { usage: event.usage } : {}),
           ...(event.contextUsage !== undefined ? { contextUsage: event.contextUsage } : {}),
+          ...(event.rateLimit !== undefined ? { rateLimit: event.rateLimit } : {}),
         });
         return false;
       case "settled":

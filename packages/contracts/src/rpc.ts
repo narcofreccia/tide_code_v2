@@ -8,6 +8,18 @@ import { ProviderKind, ReadModel } from "./domain.ts";
 export const RpcRequest = Type.Object({ id: Type.String(), method: Type.String(), params: Type.Unknown() });
 export type RpcRequest = Static<typeof RpcRequest>;
 // server -> client (exactly one of result/error/chunk/end per frame)
+/** The only machine codes a server may put on the wire. Add here, never invent ad hoc. */
+export const RPC_ERROR_CODES = [
+  "invalid-command", // decider rejected the command's content
+  "not-found",
+  "conflict", // state does not allow it (already settled, archived, duplicate requestId, …)
+  "busy", // a live turn blocks it
+  "forbidden", // this connection / caller may not do it
+  "invalid-params", // malformed frame or RPC params
+  "method-not-found",
+  "internal",
+] as const;
+export type RpcErrorCode = (typeof RPC_ERROR_CODES)[number];
 export const RpcError = Type.Object({ code: Type.String(), message: Type.String(), data: Type.Optional(Type.Unknown()) });
 export type RpcError = Static<typeof RpcError>;
 export const RpcFrame = Type.Union([

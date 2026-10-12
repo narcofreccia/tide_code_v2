@@ -23,7 +23,8 @@ function resolveLinks(project: Project, requested: ThreadLink[] | undefined): { 
 type ThreadCommand =
   | CommandOf<"thread.create">
   | CommandOf<"thread.update">
-  | CommandOf<"thread.archive">;
+  | CommandOf<"thread.archive">
+  | CommandOf<"thread.triage">;
 
 export function decideThread(model: ReadModel, command: ThreadCommand, ctx: DecideContext): DecideResult {
   switch (command.type) {
@@ -63,7 +64,16 @@ export function decideThread(model: ReadModel, command: ThreadCommand, ctx: Deci
         ...(command.mode !== undefined ? { mode: command.mode } : {}),
         ...(command.interaction !== undefined ? { interaction: command.interaction } : {}),
       };
-      return ok({ type: "thread.updated", threadId: thread.id, patch, updatedAt: ctx.now });
+      const providerChanged = command.provider !== undefined && command.provider !== thread.provider;
+      if (providerChanged && thread.status === "running") return fail("busy", `thread ${thread.id} is running; switch provider once it settles`);
+      return ok({ type: "thread.updated", threadId: thread.id, patch, ...(providerChanged ? { clearNativeSession: true } : {}), updatedAt: ctx.now });
+    }
+
+    case "thread.triage": {
+      const thread = model.threads[command.threadId];
+      if (!thread) return fail("not-found", `unknown thread ${command.threadId}`);
+      if (isArchived(thread)) return ok();
+      return ok({ type: "thread.triaged", threadId: thread.id, triage: command.triage });
     }
 
     case "thread.archive": {

@@ -258,13 +258,13 @@ describe("rpc", () => {
   it("errors on malformed JSON", async () => {
     const pending = client.nextUnmatched();
     client.sendRaw("{not json");
-    expect(await pending).toEqual({ id: "", error: { code: "bad-request", message: "malformed JSON frame" } });
+    expect(await pending).toEqual({ id: "", error: { code: "invalid-params", message: "malformed JSON frame" } });
   });
 
   it("errors on a frame that is not an RpcRequest", async () => {
     const pending = client.nextUnmatched();
     client.sendRaw(JSON.stringify({ nope: true }));
-    expect(await pending).toMatchObject({ id: "", error: { code: "bad-request" } });
+    expect(await pending).toMatchObject({ id: "", error: { code: "invalid-params" } });
   });
 
   it("returns the model from model.get", async () => {

@@ -4,6 +4,8 @@ import { fail, isArchived, ok, type DecideContext, type DecideResult } from "./t
 type VcsCommand =
   | CommandOf<"thread.revert">
   | CommandOf<"thread.publish">
+  | CommandOf<"thread.merge">
+  | CommandOf<"merge.report">
   | CommandOf<"worktree.attach">
   | CommandOf<"worktree.detach">
   | CommandOf<"checkpoint.record">
@@ -48,8 +50,38 @@ export function decideVcs(model: ReadModel, command: VcsCommand, ctx: DecideCont
         ...(command.title !== undefined ? { title: command.title } : {}),
         ...(command.body !== undefined ? { body: command.body } : {}),
         ...(command.commitOnly !== undefined ? { commitOnly: command.commitOnly } : {}),
+        ...(command.mergeWhenGreen !== undefined ? { mergeWhenGreen: command.mergeWhenGreen } : {}),
         at: ctx.now,
       });
+    }
+
+    case "thread.merge": {
+      const thread = model.threads[command.threadId];
+      if (!thread) return fail("not-found", `unknown thread ${command.threadId}`);
+      if (isArchived(thread)) return fail("conflict", `thread ${thread.id} is archived`);
+      if (thread.worktreePath === undefined || thread.branch === undefined) return fail("conflict", `thread ${thread.id} has no branch to merge back`);
+      if (thread.status === "running") return fail("busy", `thread ${thread.id} is running`);
+      if (thread.merge?.status === "merging") return fail("busy", `thread ${thread.id} is already merging`);
+      if (thread.mergedAt !== undefined) return fail("conflict", `thread ${thread.id} is already merged`);
+      return ok({
+        type: "merge.requested",
+        threadId: thread.id,
+        strategy: command.strategy ?? "squash",
+        ...(command.deleteBranch !== undefined ? { deleteBranch: command.deleteBranch } : {}),
+        at: ctx.now,
+      });
+    }
+
+    case "merge.report": {
+      const thread = model.threads[command.threadId];
+      if (!thread) return fail("not-found", `unknown thread ${command.threadId}`);
+      const strategy = thread.merge?.strategy;
+      if (thread.merge?.status !== "merging" || strategy === undefined) return fail("conflict", `thread ${thread.id} has no merge in flight`);
+      if (command.outcome === "merged") {
+        return ok({ type: "merge.completed", threadId: thread.id, strategy, ...(command.sha !== undefined ? { sha: command.sha } : {}), ...(command.branchDeleted !== undefined ? { branchDeleted: command.branchDeleted } : {}), at: ctx.now });
+      }
+      if (command.outcome === "conflicted") return ok({ type: "merge.conflicted", threadId: thread.id, strategy, files: command.files ?? [], at: ctx.now });
+      return ok({ type: "merge.failed", threadId: thread.id, strategy, error: command.error ?? "merge failed", at: ctx.now });
     }
 
     case "worktree.attach": {

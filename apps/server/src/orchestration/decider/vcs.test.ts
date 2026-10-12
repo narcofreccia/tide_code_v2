@@ -291,3 +291,85 @@ describe("decide: worktree.detached", () => {
     });
   });
 });
+
+describe("decide: R3 — request ids, late prompts, provider switch, merge-back", () => {
+  it("rejects a turn.request that repeats a requestId on the same thread", () => {
+    const base = withThread();
+    const first = run(base.model, { type: "turn.request", threadId: base.threadId, text: "go", requestId: "req-1" });
+    const dup = decide(first.model, { type: "turn.request", threadId: base.threadId, text: "go again", requestId: "req-1" }, ctx);
+    expect(dup).toMatchObject({ ok: false, error: { code: "conflict" } });
+    const other = withThread();
+    expect(decide(other.model, { type: "turn.request", threadId: other.threadId, text: "go", requestId: "req-1" }, ctx).ok).toBe(true);
+  });
+  it("refuses to run a thread whose worktree was detached", () => {
+    const base = withAttachedWorktree();
+    const detached = run(base.model, { type: "worktree.detached", threadId: base.threadId }).model;
+    expect(decide(detached, { type: "turn.request", threadId: base.threadId, text: "go" }, ctx)).toMatchObject({ ok: false, error: { code: "conflict" } });
+  });
+  it("drops a late pending approval on a settled turn", () => {
+    const f = withCheckpointedTurn();
+    const late = decide(f.model, {
+      type: "activity.upsert",
+      activity: { id: "late", kind: "approval", threadId: f.threadId, turnId: f.turnId, requestId: "9", toolName: "Bash", input: {}, status: "pending", createdAt: 1, updatedAt: 1 },
+    }, ctx);
+    expect(late).toMatchObject({ ok: false, error: { code: "conflict" } });
+    const tool = decide(f.model, {
+      type: "activity.upsert",
+      activity: { id: "tool", kind: "tool", threadId: f.threadId, turnId: f.turnId, toolUseId: "x", toolName: "Read", input: {}, status: "ok", createdAt: 1, updatedAt: 1 },
+    }, ctx);
+    expect(tool.ok).toBe(true);
+  });
+  it("a repeated requestId answers the newest pending approval and pins it by activityId", () => {
+    const base = withThread();
+    const requested = run(base.model, { type: "turn.request", threadId: base.threadId, text: "go" });
+    const ev = requested.events[0];
+    if (ev?.type !== "turn.requested") throw new Error("expected turn.requested");
+    const turnId = ev.turn.id;
+    let model = run(requested.model, { type: "turn.start", turnId, provider: "codex" }).model;
+    const approval = (id: string) => ({ id, kind: "approval" as const, threadId: base.threadId, turnId, requestId: "0", toolName: "Bash", input: {}, status: "pending" as const, createdAt: 1, updatedAt: 1 });
+    model = run(model, { type: "activity.upsert", activity: approval("a1") }).model;
+    model = run(model, { type: "approval.respond", threadId: base.threadId, requestId: "0", decision: "accept" }).model;
+    model = run(model, { type: "activity.upsert", activity: approval("a2") }).model;
+    const second = run(model, { type: "approval.respond", threadId: base.threadId, requestId: "0", decision: "decline" });
+    expect(second.events[0]).toMatchObject({ type: "approval.responded", activityId: "a2", decision: "decline" });
+    expect(second.model.activities["a2"]).toMatchObject({ status: "resolved", decision: "decline" });
+    expect(second.model.activities["a1"]).toMatchObject({ decision: "accept" });
+  });
+  it("switching provider clears the native session id and is refused while running", () => {
+    const base = withThread();
+    const requested = run(base.model, { type: "turn.request", threadId: base.threadId, text: "go" });
+    const ev = requested.events[0];
+    if (ev?.type !== "turn.requested") throw new Error("expected turn.requested");
+    let model = run(requested.model, { type: "turn.start", turnId: ev.turn.id, provider: "claude", nativeSessionId: "claude-sess" }).model;
+    expect(decide(model, { type: "thread.update", threadId: base.threadId, provider: "codex" }, ctx)).toMatchObject({ ok: false, error: { code: "busy" } });
+    model = run(model, { type: "turn.settle", turnId: ev.turn.id, status: "completed" }).model;
+    const sameProvider = run(model, { type: "thread.update", threadId: base.threadId, model: "opus" });
+    expect(sameProvider.events[0]).not.toHaveProperty("clearNativeSession");
+    const switched = run(model, { type: "thread.update", threadId: base.threadId, provider: "codex" });
+    expect(switched.events[0]).toMatchObject({ type: "thread.updated", clearNativeSession: true });
+    expect(switched.model.threads[base.threadId]?.nativeSessionId).toBeUndefined();
+  });
+  it("merge-back: requires a branch, defaults to squash, reports once, refuses a second merge", () => {
+    const plain = withThread();
+    expect(decide(plain.model, { type: "thread.merge", threadId: plain.threadId }, ctx)).toMatchObject({ ok: false, error: { code: "conflict" } });
+    const wt = withAttachedWorktree();
+    const requested = run(wt.model, { type: "thread.merge", threadId: wt.threadId, deleteBranch: true });
+    expect(requested.events[0]).toMatchObject({ type: "merge.requested", strategy: "squash", deleteBranch: true });
+    expect(decide(requested.model, { type: "thread.merge", threadId: wt.threadId }, ctx)).toMatchObject({ ok: false, error: { code: "busy" } });
+    const conflicted = run(requested.model, { type: "merge.report", threadId: wt.threadId, outcome: "conflicted", files: ["a.ts"] });
+    expect(conflicted.events[0]).toMatchObject({ type: "merge.conflicted", files: ["a.ts"], strategy: "squash" });
+    expect(decide(conflicted.model, { type: "merge.report", threadId: wt.threadId, outcome: "merged" }, ctx)).toMatchObject({ ok: false, error: { code: "conflict" } });
+    const retry = run(conflicted.model, { type: "thread.merge", threadId: wt.threadId, strategy: "rebase" });
+    const merged = run(retry.model, { type: "merge.report", threadId: wt.threadId, outcome: "merged", sha: "abc", branchDeleted: true });
+    expect(merged.events[0]).toMatchObject({ type: "merge.completed", strategy: "rebase", sha: "abc", branchDeleted: true });
+    expect(merged.model.threads[wt.threadId]?.mergedAt).toBe(1000);
+    expect(decide(merged.model, { type: "thread.merge", threadId: wt.threadId }, ctx)).toMatchObject({ ok: false, error: { code: "conflict" } });
+  });
+  it("publish carries mergeWhenGreen; triage lands on the thread", () => {
+    const wt = withAttachedWorktree();
+    const pub = run(wt.model, { type: "thread.publish", threadId: wt.threadId, mergeWhenGreen: "squash" });
+    expect(pub.events[0]).toMatchObject({ type: "publish.requested", mergeWhenGreen: "squash" });
+    const triaged = run(wt.model, { type: "thread.triage", threadId: wt.threadId, triage: { needsUser: 0.2, stuck: 0.8, urgency: 0.6, at: 5 } });
+    expect(triaged.model.threads[wt.threadId]?.triage?.stuck).toBe(0.8);
+  });
+});

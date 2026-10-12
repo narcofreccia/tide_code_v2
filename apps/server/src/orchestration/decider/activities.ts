@@ -6,19 +6,30 @@ type ActivityCommand =
   | CommandOf<"approval.respond">
   | CommandOf<"user-input.respond">;
 
+const SETTLED = new Set(["completed", "interrupted", "error"]);
+
+/**
+ * Newest activity with this requestId on the thread. Harness request ids restart with the
+ * process (Codex counts from 0), so an old resolved one must never shadow a live request:
+ * the search walks the timeline backwards and prefers a pending match.
+ */
 function findPending<K extends "approval" | "user-input">(
   model: ReadModel,
   kind: K,
   threadId: string,
   requestId: string,
 ): ActivityOf<K> | undefined {
-  for (const activity of Object.values(model.activities) as Activity[]) {
-    if (activity.kind !== kind) continue;
-    if (activity.threadId !== threadId) continue;
-    if (activity.requestId !== requestId) continue;
-    return activity as ActivityOf<K>;
+  let resolved: ActivityOf<K> | undefined;
+  const timeline = model.threadTimeline[threadId] ?? [];
+  for (let i = timeline.length - 1; i >= 0; i--) {
+    const entry = timeline[i];
+    if (entry?.kind !== "activity") continue;
+    const activity = model.activities[entry.id] as Activity | undefined;
+    if (!activity || activity.kind !== kind || activity.requestId !== requestId) continue;
+    if (activity.status === "pending") return activity as ActivityOf<K>;
+    resolved ??= activity as ActivityOf<K>;
   }
-  return undefined;
+  return resolved;
 }
 
 export function decideActivity(model: ReadModel, command: ActivityCommand, ctx: DecideContext): DecideResult {
@@ -31,6 +42,10 @@ export function decideActivity(model: ReadModel, command: ActivityCommand, ctx: 
       if (turn.threadId !== activity.threadId) {
         return fail("conflict", `turn ${turn.id} does not belong to thread ${activity.threadId}`);
       }
+      // a settled turn's prompts can never be answered: accepting one would wedge `attention`
+      if (SETTLED.has(turn.status) && (activity.kind === "approval" || activity.kind === "user-input") && activity.status === "pending") {
+        return fail("conflict", `turn ${turn.id} is already ${turn.status}; late ${activity.kind} ignored`);
+      }
       return ok({ type: "activity.upserted", activity });
     }
 
@@ -42,6 +57,7 @@ export function decideActivity(model: ReadModel, command: ActivityCommand, ctx: 
         type: "approval.responded",
         threadId: command.threadId,
         requestId: command.requestId,
+        activityId: activity.id,
         decision: command.decision,
         at: ctx.now,
       });
@@ -55,6 +71,7 @@ export function decideActivity(model: ReadModel, command: ActivityCommand, ctx: 
         type: "user-input.responded",
         threadId: command.threadId,
         requestId: command.requestId,
+        activityId: activity.id,
         answers: command.answers,
         at: ctx.now,
       });

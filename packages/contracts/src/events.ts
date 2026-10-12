@@ -1,5 +1,5 @@
 import { Type, type Static } from "typebox";
-import { Activity, ApprovalDecision, CheckpointStats, ExpertsFinding, ExpertsMessage, ExpertsPhase, ExpertsSession, ImageInput, Message, Project, ProjectLink, ProposedPlan, ProviderKind, PullRequest, Thread, Turn, TurnUsage } from "./domain.ts";
+import { Activity, ApprovalDecision, CheckpointStats, ExpertsFinding, ExpertsMessage, ExpertsPhase, ExpertsSession, ImageInput, MergeStrategy, Message, Project, ProjectLink, ProposedPlan, ProviderKind, PullRequest, RateLimit, Thread, Triage, Turn, TurnUsage } from "./domain.ts";
 
 // Events = persisted facts. Payloads are self-contained so the projector
 // never needs to look anything up outside the event.
@@ -22,15 +22,12 @@ export const ProjectLinkRemoved = evt("project.link.removed", { projectId: Type.
 export const ThreadCreated = evt("thread.created", { thread: Thread, useWorktree: Type.Optional(Type.Boolean()) });
 export const ThreadUpdated = evt("thread.updated", {
   threadId: Type.String(),
-  patch: Type.Partial(Type.Pick(Thread, ["title", "provider", "model", "mode", "interaction", "worktreePath", "branch", "baseBranch", "nativeSessionId"])),
+  patch: Type.Partial(Type.Pick(Thread, ["title", "provider", "model", "mode", "interaction"])),
+  /** the provider changed: the old harness's session id must not be resumed on the new one */
+  clearNativeSession: Type.Optional(Type.Boolean()),
   updatedAt: Type.Number(),
 });
 export const ThreadArchived = evt("thread.archived", { threadId: Type.String(), archivedAt: Type.Number(), keepWorktree: Type.Optional(Type.Boolean()) });
-export const ThreadStatusChanged = evt("thread.status-changed", {
-  threadId: Type.String(),
-  status: Thread.properties.status,
-  updatedAt: Type.Number(),
-});
 
 /** `turn.status` is `queued` when another turn of the thread is still running. Image bytes live
  *  only here (the projector keeps metadata on the message); the provider reactor reads them. */
@@ -46,15 +43,18 @@ export const TurnStarted = evt("turn.started", {
 });
 export const TurnInterruptRequested = evt("turn.interrupt-requested", { turnId: Type.String(), threadId: Type.String(), at: Type.Number() });
 export const ActivityUpserted = evt("activity.upserted", { activity: Activity });
+/** `activityId` pins the exact pending activity (requestIds repeat across harness processes). */
 export const ApprovalResponded = evt("approval.responded", {
   threadId: Type.String(),
   requestId: Type.String(),
+  activityId: Type.Optional(Type.String()),
   decision: ApprovalDecision,
   at: Type.Number(),
 });
 export const UserInputResponded = evt("user-input.responded", {
   threadId: Type.String(),
   requestId: Type.String(),
+  activityId: Type.Optional(Type.String()),
   answers: Type.Record(Type.String(), Type.Unknown()),
   at: Type.Number(),
 });
@@ -93,8 +93,14 @@ export const PublishRequested = evt("publish.requested", {
   title: Type.Optional(Type.String()),
   body: Type.Optional(Type.String()),
   commitOnly: Type.Optional(Type.Boolean()),
+  mergeWhenGreen: Type.Optional(MergeStrategy),
   at: Type.Number(),
 });
+export const MergeRequested = evt("merge.requested", { threadId: Type.String(), strategy: MergeStrategy, deleteBranch: Type.Optional(Type.Boolean()), at: Type.Number() });
+export const MergeCompleted = evt("merge.completed", { threadId: Type.String(), strategy: MergeStrategy, sha: Type.Optional(Type.String()), branchDeleted: Type.Optional(Type.Boolean()), at: Type.Number() });
+export const MergeConflicted = evt("merge.conflicted", { threadId: Type.String(), strategy: MergeStrategy, files: Type.Array(Type.String()), at: Type.Number() });
+export const MergeFailed = evt("merge.failed", { threadId: Type.String(), strategy: MergeStrategy, error: Type.String(), at: Type.Number() });
+export const ThreadTriaged = evt("thread.triaged", { threadId: Type.String(), triage: Triage });
 export const PrUpdated = evt("pr.updated", { threadId: Type.String(), pr: PullRequest });
 export const ExpertsCreated = evt("experts.created", { session: ExpertsSession });
 export const ExpertsThreadsBoundEvt = evt("experts.threads-bound", {
@@ -119,6 +125,7 @@ export const UsageReported = evt("usage.reported", {
   threadId: Type.String(),
   usage: Type.Optional(TurnUsage),
   contextUsage: Type.Optional(Type.Object({ used: Type.Number(), window: Type.Number() })),
+  rateLimit: Type.Optional(RateLimit),
   at: Type.Number(),
 });
 export const AssistantDelta = evt("assistant.delta", {
@@ -150,7 +157,6 @@ export const DomainEvent = Type.Union([
   ThreadCreated,
   ThreadUpdated,
   ThreadArchived,
-  ThreadStatusChanged,
   TurnRequested,
   TurnDequeued,
   TurnStarted,
@@ -170,6 +176,11 @@ export const DomainEvent = Type.Union([
   CheckpointRecorded,
   RevertRequested,
   PublishRequested,
+  MergeRequested,
+  MergeCompleted,
+  MergeConflicted,
+  MergeFailed,
+  ThreadTriaged,
   PrUpdated,
   ExpertsCreated,
   ExpertsThreadsBoundEvt,

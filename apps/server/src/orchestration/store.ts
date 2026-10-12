@@ -28,7 +28,6 @@ export function aggregateIdOf(event: DomainEvent): string | null {
       return event.thread.id;
     case "thread.updated":
     case "thread.archived":
-    case "thread.status-changed":
       return event.threadId;
     case "turn.requested":
       return event.turn.threadId;
@@ -48,6 +47,11 @@ export function aggregateIdOf(event: DomainEvent): string | null {
     case "worktree.detached":
     case "revert.requested":
     case "publish.requested":
+    case "merge.requested":
+    case "merge.completed":
+    case "merge.conflicted":
+    case "merge.failed":
+    case "thread.triaged":
     case "pr.updated":
       return event.threadId;
     case "activity.upserted":

@@ -1,4 +1,4 @@
-import type { Activity, ApprovalDecision, InteractionMode, ProviderKind, RuntimeMode, TurnUsage } from "./domain.ts";
+import type { Activity, ApprovalDecision, InteractionMode, ProviderKind, RateLimit, RuntimeMode, TurnUsage } from "./domain.ts";
 
 // Provider driver SPI (TypeScript-only; not on the wire). One implementation per
 // harness in packages/driver-*. Drivers translate native protocols into
@@ -97,7 +97,12 @@ export type NormalizedEvent =
   | { type: "activity"; activity: DriverActivity }
   | { type: "plan.proposed"; markdown: string }
   | { type: "plan.progress"; steps: { text: string; status: "pending" | "in_progress" | "completed" }[] }
-  | { type: "usage"; usage?: TurnUsage; contextUsage?: { used: number; window: number } }
+  /**
+   * `usage` is always a DELTA for the turn (the projector sums reports). A harness that reports
+   * cumulative figures (Claude's per-query() totals) must subtract what it already reported.
+   * Several reports per turn are fine (Codex emits one per model request).
+   */
+  | { type: "usage"; usage?: TurnUsage; contextUsage?: { used: number; window: number }; rateLimit?: RateLimit }
   | { type: "settled"; status: "completed" | "interrupted" | "error"; error?: string };
 
 export interface ProviderSession {

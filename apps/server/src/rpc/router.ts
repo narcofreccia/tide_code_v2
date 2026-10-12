@@ -110,11 +110,11 @@ export class RpcConnection {
     try {
       parsed = JSON.parse(raw);
     } catch {
-      this.#error("", "bad-request", "malformed JSON frame");
+      this.#error("", "invalid-params", "malformed JSON frame");
       return;
     }
     if (!Check(RpcRequestSchema, parsed)) {
-      this.#error("", "bad-request", "frame is not an RpcRequest");
+      this.#error("", "invalid-params", "frame is not an RpcRequest");
       return;
     }
     await this.handleRequest(parsed.id, parsed.method, parsed.params);

@@ -146,6 +146,42 @@ export const ExpertsSession = Type.Object({
 });
 export type ExpertsSession = Static<typeof ExpertsSession>;
 
+/** Subscription / API rate-limit status as the harness reports it (Claude rate_limit_event, Codex account/rateLimits). */
+export const RateLimit = Type.Object({
+  status: Type.Union([Type.Literal("ok"), Type.Literal("warning"), Type.Literal("limited")]),
+  /** 0..100, share of the window still available when the harness says */
+  remainingPct: Type.Optional(Type.Number()),
+  resetsAt: Type.Optional(Type.Number()),
+  overage: Type.Optional(Type.Boolean()),
+  /** harness wording, shown verbatim */
+  note: Type.Optional(Type.String()),
+  at: Type.Number(),
+});
+export type RateLimit = Static<typeof RateLimit>;
+
+export const MergeStrategy = Type.Union([Type.Literal("merge"), Type.Literal("squash"), Type.Literal("rebase")]);
+export type MergeStrategy = Static<typeof MergeStrategy>;
+/** Outcome of the last `thread.merge` (merge-back of the thread's branch into its base). */
+export const MergeState = Type.Object({
+  status: Type.Union([Type.Literal("merging"), Type.Literal("merged"), Type.Literal("conflicted"), Type.Literal("error")]),
+  strategy: MergeStrategy,
+  /** files in conflict when status = conflicted */
+  files: Type.Optional(Type.Array(Type.String())),
+  sha: Type.Optional(Type.String()),
+  error: Type.Optional(Type.String()),
+  at: Type.Number(),
+});
+export type MergeState = Static<typeof MergeState>;
+
+/** Calibrated triage answers (0..1 probabilities, urgency 0..1) from the optional decisions model. Never acted on automatically. */
+export const Triage = Type.Object({
+  needsUser: Type.Number(),
+  stuck: Type.Number(),
+  urgency: Type.Number(),
+  at: Type.Number(),
+});
+export type Triage = Static<typeof Triage>;
+
 export const PullRequest = Type.Object({
   url: Type.String(),
   number: Type.Number(),
@@ -185,7 +221,13 @@ export const Thread = Type.Object({
   /** live plan/todo progress reported by the harness during a turn */
   planProgress: Type.Optional(Type.Object({ steps: Type.Array(Type.Object({ text: Type.String(), status: Type.Union([Type.Literal("pending"), Type.Literal("in_progress"), Type.Literal("completed")]) })), updatedAt: Type.Number() })),
   contextUsage: Type.Optional(Type.Object({ used: Type.Number(), window: Type.Number() })),
+  /** sum of per-turn costUsd deltas (usage.reported carries deltas, never cumulative figures) */
   totalCostUsd: Type.Optional(Type.Number()),
+  rateLimit: Type.Optional(RateLimit),
+  merge: Type.Optional(MergeState),
+  /** set once the thread's branch landed on its base (locally or via the PR) */
+  mergedAt: Type.Optional(Type.Number()),
+  triage: Type.Optional(Triage),
   createdAt: Type.Number(),
   updatedAt: Type.Number(),
   archivedAt: Type.Optional(Type.Number()),
@@ -215,6 +257,7 @@ export type Message = Static<typeof Message>;
 export const ImageInput = Type.Object({ mediaType: Type.String(), data: Type.String() });
 export type ImageInput = Static<typeof ImageInput>;
 
+/** Always a delta for the report it rides on; the projector sums reports into Turn.usage. */
 export const TurnUsage = Type.Object({
   inputTokens: Type.Number(),
   outputTokens: Type.Number(),
@@ -238,6 +281,8 @@ export const Turn = Type.Object({
   id: Type.String(),
   threadId: Type.String(),
   status: TurnStatus,
+  /** client idempotency key from turn.request; a repeat on the same thread is rejected */
+  requestId: Type.Optional(Type.String()),
   checkpoint: Type.Optional(Checkpoint),
   provider: Type.Optional(ProviderKind),
   model: Type.Optional(Type.String()),

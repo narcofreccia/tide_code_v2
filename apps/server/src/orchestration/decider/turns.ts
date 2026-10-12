@@ -20,9 +20,23 @@ export function decideTurn(model: ReadModel, command: TurnCommand, ctx: DecideCo
       const thread = model.threads[command.threadId];
       if (!thread) return fail("not-found", `unknown thread ${command.threadId}`);
       if (isArchived(thread)) return fail("conflict", `thread ${thread.id} is archived`);
+      if (thread.worktreePath === undefined && thread.branch !== undefined) {
+        // the worktree was detached: running now would silently edit the user's main checkout
+        return fail("conflict", `thread ${thread.id} has no worktree any more; archive it or start a new thread`);
+      }
+      if (command.requestId !== undefined) {
+        const dup = Object.values(model.turns).find((t) => t.threadId === thread.id && t.requestId === command.requestId);
+        if (dup) return fail("conflict", `turn ${dup.id} already carries requestId ${command.requestId}`);
+      }
       // a follow-up typed while the harness is busy waits its turn instead of being refused
       const queued = thread.status === "running";
-      const turn: Turn = { id: ctx.newId(), threadId: thread.id, status: queued ? "queued" : "requested", requestedAt: ctx.now };
+      const turn: Turn = {
+        id: ctx.newId(),
+        threadId: thread.id,
+        status: queued ? "queued" : "requested",
+        ...(command.requestId !== undefined ? { requestId: command.requestId } : {}),
+        requestedAt: ctx.now,
+      };
       const images = command.images ?? [];
       const userMessage: Message = {
         id: ctx.newId(),

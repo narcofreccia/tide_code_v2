@@ -18,7 +18,6 @@ type ExpertsCommand =
   | CommandOf<"experts.post">
   | CommandOf<"experts.set-phase">
   | CommandOf<"experts.archive">
-  | CommandOf<"experts.threads.bound">
   | CommandOf<"experts.expert.status">;
 
 /** Everyone who can author on the board. */
@@ -157,18 +156,6 @@ export function decideExperts(model: ReadModel, command: ExpertsCommand, ctx: De
       if (!session) return fail("not-found", `unknown experts session ${command.sessionId}`);
       if (session.phase === "archived") return ok(); // idempotent
       return ok({ type: "experts.archived", sessionId: session.id, at: ctx.now });
-    }
-
-    case "experts.threads.bound": {
-      const session = model.expertsSessions[command.sessionId];
-      if (!session) return fail("not-found", `unknown experts session ${command.sessionId}`);
-      return ok({
-        type: "experts.threads-bound",
-        sessionId: session.id,
-        bindings: command.bindings,
-        leadThreadId: command.leadThreadId,
-        at: ctx.now,
-      });
     }
 
     case "experts.expert.status": {

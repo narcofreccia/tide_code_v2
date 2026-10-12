@@ -1,5 +1,5 @@
 import { Type, type Static } from "typebox";
-import { Activity, ApprovalDecision, CheckpointStats, ExpertSpec, ExpertsPhase, ImageInput, InteractionMode, LinkAccess, ProviderKind, PullRequest, RuntimeMode, TurnUsage } from "./domain.ts";
+import { Activity, ApprovalDecision, CheckpointStats, ExpertSpec, ExpertsPhase, ImageInput, InteractionMode, LinkAccess, MergeStrategy, ProviderKind, PullRequest, RateLimit, RuntimeMode, Triage, TurnUsage } from "./domain.ts";
 
 // Commands = validated intents. ClientCommand may arrive over RPC; InternalCommand is
 // issued only by server reactors (driver ingestion) and is rejected at the RPC boundary.
@@ -79,6 +79,8 @@ export const TurnRequest = Type.Object({
   threadId: Type.String(),
   text: Type.String({ minLength: 1 }),
   images: Type.Optional(Type.Array(ImageInput, { maxItems: 8 })),
+  /** idempotency key: a retry with the same id on the same thread is rejected with `conflict` */
+  requestId: Type.Optional(Type.String({ minLength: 1 })),
 });
 export const TurnInterrupt = Type.Object({ type: Type.Literal("turn.interrupt"), threadId: Type.String() });
 /** Drops a turn that is still queued (never sent to the harness). */
@@ -118,6 +120,16 @@ export const ThreadPublish = Type.Object({
   body: Type.Optional(Type.String()),
   /** commit only, no push/PR */
   commitOnly: Type.Optional(Type.Boolean()),
+  /** after opening the PR, enable auto-merge (`gh pr merge --auto`) with this strategy */
+  mergeWhenGreen: Type.Optional(MergeStrategy),
+});
+/** Merge the thread's branch back into its base branch (locally, or via `gh pr merge` when a PR exists). */
+export const ThreadMerge = Type.Object({
+  type: Type.Literal("thread.merge"),
+  threadId: Type.String(),
+  strategy: Type.Optional(MergeStrategy),
+  /** remove the tide/<slug> branch (and the worktree) once merged */
+  deleteBranch: Type.Optional(Type.Boolean()),
 });
 
 // ---- experts (client) ----
@@ -141,7 +153,7 @@ export const ClientCommand = Type.Union([
   TurnRequest, TurnInterrupt, TurnDequeue,
   ApprovalRespond, UserInputRespond,
   PlanImplement, PlanDismiss,
-  ThreadRevert, ThreadPublish, WorktreeDetach,
+  ThreadRevert, ThreadPublish, ThreadMerge, WorktreeDetach,
   ExpertsCreate, ExpertsStart, ExpertsPost, ExpertsSetPhase, ExpertsArchive,
 ]);
 export type ClientCommand = Static<typeof ClientCommand>;
@@ -182,6 +194,7 @@ export const UsageReport = Type.Object({
   turnId: Type.String(),
   usage: Type.Optional(TurnUsage),
   contextUsage: Type.Optional(Type.Object({ used: Type.Number(), window: Type.Number() })),
+  rateLimit: Type.Optional(RateLimit),
 });
 export const TurnSettle = Type.Object({
   type: Type.Literal("turn.settle"),
@@ -207,6 +220,18 @@ export const CheckpointRecord = Type.Object({
 export const PrUpdate = Type.Object({ type: Type.Literal("pr.update"), threadId: Type.String(), pr: PullRequest });
 /** vcs reactor reports that a thread's worktree directory is gone */
 export const WorktreeDetachedReport = Type.Object({ type: Type.Literal("worktree.detached"), threadId: Type.String() });
+/** vcs reactor reports how a thread.merge ended */
+export const MergeReport = Type.Object({
+  type: Type.Literal("merge.report"),
+  threadId: Type.String(),
+  outcome: Type.Union([Type.Literal("merged"), Type.Literal("conflicted"), Type.Literal("error")]),
+  sha: Type.Optional(Type.String()),
+  files: Type.Optional(Type.Array(Type.String())),
+  error: Type.Optional(Type.String()),
+  branchDeleted: Type.Optional(Type.Boolean()),
+});
+/** triage reactor reports the decisions model's answers for a thread */
+export const ThreadTriage = Type.Object({ type: Type.Literal("thread.triage"), threadId: Type.String(), triage: Triage });
 
 // ---- agent-originated (via the Tide MCP server; authenticated per thread) ----
 export const ExpertsFindingPost = Type.Object({ type: Type.Literal("experts.finding.post"), sessionId: Type.String(), author: Type.String(), text: Type.String({ minLength: 1 }) });
@@ -225,12 +250,6 @@ export const ThreadDelegate = Type.Object({
   /** W1: label of one of the calling project's links; the delegate runs with that repo as its main repo */
   repo: Type.Optional(Type.String({ minLength: 1 })),
 });
-export const ExpertsThreadsBound = Type.Object({
-  type: Type.Literal("experts.threads.bound"),
-  sessionId: Type.String(),
-  bindings: Type.Array(Type.Object({ key: Type.String(), threadId: Type.String() })),
-  leadThreadId: Type.String(),
-});
 export const ExpertsExpertStatus = Type.Object({
   type: Type.Literal("experts.expert.status"),
   sessionId: Type.String(),
@@ -243,8 +262,8 @@ export type AgentCommand = Static<typeof AgentCommand>;
 
 export const InternalCommand = Type.Union([
   TurnStart, AssistantAppend, AssistantReasoningAppend, ActivityUpsert, PlanPropose, PlanProgressReport, UsageReport, TurnSettle,
-  WorktreeAttach, CheckpointRecord, PrUpdate, WorktreeDetachedReport,
-  ExpertsThreadsBound, ExpertsExpertStatus,
+  WorktreeAttach, CheckpointRecord, PrUpdate, WorktreeDetachedReport, MergeReport, ThreadTriage,
+  ExpertsExpertStatus,
 ]);
 export type InternalCommand = Static<typeof InternalCommand>;
 
