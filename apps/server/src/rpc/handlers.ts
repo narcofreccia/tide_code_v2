@@ -6,6 +6,7 @@ import type { EventStore } from "../orchestration/store.ts";
 import type { DriverRegistry } from "../provider/registry.ts";
 import { resumableSessionId, threadCwd } from "../provider/sessions.ts";
 import type { RemoteInfo } from "./remote.ts";
+import type { SettingsStore } from "../settings.ts";
 import { RpcException, type RpcRouter } from "./router.ts";
 
 export interface HandlerDeps {
@@ -21,6 +22,7 @@ export interface HandlerDeps {
   remote?: (options: { includePairing: boolean }) => RemoteInfo;
   /** W1: resolves + validates a linked-repo path; injectable so tests need no real directories */
   resolveDir?: (path: string) => Promise<string>;
+  settings?: SettingsStore;
 }
 
 /**
@@ -56,6 +58,18 @@ export function registerHandlers(router: RpcRouter, deps: HandlerDeps): void {
   });
 
   const resolveDir = deps.resolveDir ?? defaultResolveDir;
+
+  // user settings live on the server so every client and every server-created thread agrees
+  router.register("settings.get", async (_input, ctx) => {
+    if (ctx.agentThreadId !== undefined) throw new RpcException("forbidden", "settings are not available to agent sockets");
+    if (!deps.settings) throw new RpcException("internal", "settings store not configured");
+    return deps.settings.get();
+  });
+  router.register("settings.set", async (input, ctx) => {
+    if (ctx.agentThreadId !== undefined) throw new RpcException("forbidden", "settings are not available to agent sockets");
+    if (!deps.settings) throw new RpcException("internal", "settings store not configured");
+    return deps.settings.set(input.patch);
+  });
 
   router.register("orchestration.dispatch", async (input) => {
     // The schema already accepts only ClientCommand; this is the belt to that brace.

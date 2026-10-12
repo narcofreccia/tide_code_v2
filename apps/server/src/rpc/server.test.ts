@@ -369,3 +369,16 @@ describe("server.info remote", () => {
     });
   });
 });
+
+describe("settings rpc", () => {
+  it("get/set round-trip", async () => {
+    const client = await TestClient.open(`ws://${base}/ws?token=${TOKEN}`);
+    try {
+      expect(await client.call("settings.get", {})).toEqual({ providerDefaults: {}, worktreeByDefault: true, decisions: { enabled: false, hasKey: false } });
+      const next = await client.call("settings.set", { patch: { worktreeByDefault: false, providerDefaults: { pi: { model: "x" } }, decisions: { apiKey: "k" } } });
+      expect(next).toEqual({ worktreeByDefault: false, providerDefaults: { pi: { model: "x" } }, decisions: { enabled: false, hasKey: true } });
+    } finally {
+      client.close();
+    }
+  });
+});

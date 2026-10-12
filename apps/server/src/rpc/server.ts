@@ -13,6 +13,7 @@ import type { GhLike } from "../vcs/gh.ts";
 import { AgentTokenStore } from "./agentTickets.ts";
 import { registerAgentHandlers } from "./agent.ts";
 import { registerHandlers } from "./handlers.ts";
+import { SettingsStore } from "../settings.ts";
 import { buildRemoteInfo, pairPage, type Interfaces } from "./remote.ts";
 import { registerVcsHandlers } from "./vcs.ts";
 import { createWorkspaceServices, registerWorkspaceHandlers, type WorkspaceServices } from "./workspace.ts";
@@ -51,6 +52,8 @@ export interface ServerDeps {
   agentTokens?: AgentTokenStore;
   /** tests mock the host's network interfaces to assert the LAN URL shape */
   networkInterfaces?: () => Interfaces;
+  /** user settings; the app shares one store with the decisions client */
+  settings?: SettingsStore;
 }
 
 export interface ServerHandle {
@@ -91,6 +94,7 @@ export async function startServer(deps: ServerDeps): Promise<ServerHandle> {
     tideHome: config.tideHome,
     tools: detectTools(),
     remote,
+    settings: deps.settings ?? new SettingsStore(config.dataDir === ":memory:" ? {} : { path: SettingsStore.pathFor(config.tideHome) }),
   });
   registerAgentHandlers(router, { engine });
   registerVcsHandlers(router, {
