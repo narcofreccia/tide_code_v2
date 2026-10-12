@@ -1,5 +1,7 @@
 import type { ImageInput } from "@tide/contracts";
 import type { ServerConfig } from "./config.ts";
+import { createDecisionClient, type Transport } from "./decisions/client.ts";
+import { TriageReactor } from "./decisions/reactor.ts";
 import { ExpertsReactor } from "./experts/reactor.ts";
 import { TideMcpProvisioner } from "./mcp/provision.ts";
 import { AgentTokenStore } from "./rpc/agentTickets.ts";
@@ -10,6 +12,7 @@ import { registerBundledDrivers } from "./provider/load.ts";
 import { ProviderReactor } from "./provider/reactor.ts";
 import { DriverRegistry } from "./provider/registry.ts";
 import { SessionDirectory } from "./provider/sessions.ts";
+import { SettingsStore } from "./settings.ts";
 import { startServer, type ServerHandle } from "./rpc/server.ts";
 import { createWorkspaceServices, type WorkspaceServices } from "./rpc/workspace.ts";
 import { CheckpointService } from "./vcs/checkpoints.ts";
@@ -27,6 +30,9 @@ export interface AppOptions {
   listen?: boolean;
   /** tests inject a fake GitHub CLI */
   gh?: GhLike;
+  /** tests replace the TypeSafe HTTP transport (and may pass a store with decisions enabled) */
+  decisionsTransport?: Transport;
+  settings?: SettingsStore;
   /** how long close() waits for in-flight reactor work before giving up */
   shutdownTimeoutMs?: number;
   /** tests that restart an app on the same in-memory store */
@@ -43,6 +49,8 @@ export interface App {
   sessions: SessionDirectory;
   reactor: ProviderReactor;
   experts: ExpertsReactor;
+  triage: TriageReactor;
+  settings: SettingsStore;
   agentTokens: AgentTokenStore;
   mcp: TideMcpProvisioner;
   worktrees: WorktreeManager;
@@ -106,6 +114,15 @@ export async function createApp(options: AppOptions): Promise<App> {
   const experts = new ExpertsReactor({ engine, log });
   experts.start();
 
+  // One settings store for the RPC server and the decisions client.
+  const settings = options.settings ?? new SettingsStore({ ...(config.dataDir === ":memory:" ? {} : { path: SettingsStore.pathFor(config.tideHome) }), log });
+  const triage = new TriageReactor({
+    engine,
+    client: createDecisionClient({ settings, log, ...(options.decisionsTransport !== undefined ? { transport: options.decisionsTransport } : {}) }),
+    log,
+  });
+  triage.start();
+
   // After every reactor subscribed: the dead turns' settles must reach the vcs reactor (after-
   // checkpoint), the experts reactor (expert status) and the provider reactor (which runs the
   // queued turn each settle promotes).
@@ -121,6 +138,7 @@ export async function createApp(options: AppOptions): Promise<App> {
           checkpoints,
           workspace,
           agentTokens,
+          settings,
           ...(options.gh !== undefined ? { gh: options.gh } : {}),
           config: { ...config, environmentId },
         });
@@ -135,6 +153,8 @@ export async function createApp(options: AppOptions): Promise<App> {
     sessions,
     reactor,
     experts,
+    triage,
+    settings,
     agentTokens,
     mcp,
     worktrees,
@@ -146,6 +166,7 @@ export async function createApp(options: AppOptions): Promise<App> {
       // 1. no new turn can be picked up: the reactors stop listening and the socket goes away
       reactor.stop();
       experts.stop();
+      triage.stop();
       vcs.stop();
       await server?.close();
 
@@ -167,7 +188,7 @@ export async function createApp(options: AppOptions): Promise<App> {
 
       // 3. give the reactors a bounded window to finish their git/driver work before the
       //    store they write into is closed under them
-      await withTimeout(Promise.all([reactor.drain(), vcs.drain()]), options.shutdownTimeoutMs ?? DEFAULT_SHUTDOWN_TIMEOUT_MS, log);
+      await withTimeout(Promise.all([reactor.drain(), vcs.drain(), triage.drain()]), options.shutdownTimeoutMs ?? DEFAULT_SHUTDOWN_TIMEOUT_MS, log);
 
       workspace.close();
       await sessions.closeAll();

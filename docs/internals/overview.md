@@ -50,6 +50,11 @@ Reactors subscribe to events and issue further commands; they hold no business r
   as error activities), checkpoint-ref GC on archive.
 - `ExpertsReactor` — delivers each board message as a `turn.request` on its recipients (queued
   behind a running turn, so the backlog lives in the log), tracks expert status.
+- `TriageReactor` (`decisions/`) — optional and off by default (`settings.decisions.enabled` plus a
+  TypeSafe key). On `turn.settled`, a pending approval/question, `plan.proposed` and a 10-minute
+  sweep of silent running threads, it batches one System One request per project (debounced 2 s)
+  and dispatches `thread.triage` with calibrated needs-user / stuck / urgency. It only annotates
+  threads so the Inbox can sort: it never blocks, routes or acts, and without a key it does nothing.
 
 ## Domain
 
