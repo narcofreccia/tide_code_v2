@@ -182,6 +182,21 @@ export class PtyManager {
     return out;
   }
 
+  /** Kills every live terminal of a thread (its worktree is going away, or the thread was archived). */
+  killThread(threadId: string): number {
+    let killed = 0;
+    for (const entry of this.#ptys.values()) {
+      if (entry.threadId !== threadId || !entry.alive) continue;
+      try {
+        entry.handle.kill();
+        killed++;
+      } catch (err) {
+        this.#log("[pty] kill failed", err);
+      }
+    }
+    return killed;
+  }
+
   /** Kills every terminal; called when the server closes. */
   closeAll(): void {
     for (const entry of this.#ptys.values()) {

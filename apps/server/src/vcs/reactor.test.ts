@@ -5,13 +5,11 @@ import { tmpdir } from "node:os";
 import { join } from "node:path";
 import { promisify } from "node:util";
 import { afterEach, describe, expect, it } from "vitest";
-import type { Activity, ReadModel, Thread } from "@tide/contracts";
-import { createApp, type App } from "../app.ts";
-import type { ServerConfig } from "../config.ts";
-import { createFakeDriver, effect, emit, type FakeDriverControl } from "../provider/testing/fakeDriver.ts";
+import type { Thread } from "@tide/contracts";
+import { effect, emit } from "../provider/testing/fakeDriver.ts";
 import { Git, WORKTREE } from "./git.ts";
-import type { GhLike, PrCreateInput, PrRef } from "./gh.ts";
-import { createTempRepo, GIT_TEST_ENV, type TempRepo } from "./testing/tempRepo.ts";
+import { GIT_TEST_ENV } from "./testing/tempRepo.ts";
+import { activitiesOf, harness, newThread, requestTurn, type Harness } from "./testing/vcsHarness.ts";
 
 const run = promisify(execFile);
 const cleanups: (() => Promise<void>)[] = [];
@@ -19,104 +17,9 @@ afterEach(async () => {
   while (cleanups.length > 0) await cleanups.pop()?.();
 });
 
-/** Scripted `gh`: records calls, answers from what the test set up. */
-class FakeGh implements GhLike {
-  available = true;
-  existing: PrRef | undefined;
-  created: { cwd: string; input: PrCreateInput }[] = [];
-  viewed: string[] = [];
-  async hasGh(): Promise<boolean> {
-    return this.available;
-  }
-  async prCreate(cwd: string, input: PrCreateInput): Promise<{ url: string; number: number }> {
-    this.created.push({ cwd, input });
-    return { url: "https://github.com/acme/repo/pull/42", number: 42 };
-  }
-  async prView(_cwd: string, branch: string): Promise<PrRef | undefined> {
-    this.viewed.push(branch);
-    return this.existing;
-  }
-}
-
-function baseConfig(tideHome: string): ServerConfig {
-  return {
-    tideHome,
-    dataDir: ":memory:",
-    dbPath: ":memory:",
-    environmentId: "env-vcs",
-    token: "t",
-    host: "127.0.0.1",
-    port: 0,
-    dev: true,
-    printToken: false,
-    corsOrigins: [],
-    version: "0.0.0-test",
-    providers: {},
-  };
-}
-
-interface Harness {
-  app: App;
-  repo: TempRepo;
-  control: FakeDriverControl;
-  gh: FakeGh;
-  projectId: string;
-  model(): ReadModel;
-  settle(): Promise<void>;
-}
-
-async function harness(): Promise<Harness> {
-  const repo = await createTempRepo("tide-reactor-");
-  const tideHome = await mkdtemp(join(tmpdir(), "tide-home-"));
-  const { driver, control } = createFakeDriver("claude");
-  const gh = new FakeGh();
-  const app = await createApp({
-    config: baseConfig(tideHome),
-    listen: false,
-    log: () => undefined,
-    gh,
-    registerDrivers: (registry) => registry.register(driver),
-  });
-  cleanups.push(() => app.close(), () => repo.cleanup(), () => rm(tideHome, { recursive: true, force: true }));
-
-  const created = (await app.engine.dispatch({ type: "project.create", title: "Repo", rootPath: repo.dir })).events[0]?.event;
-  if (created?.type !== "project.created") throw new Error("expected project.created");
-
-  // Both reactors feed the engine, and the provider reactor waits on the vcs one, so a
-  // settled state needs a second pass over each — never a sleep.
-  const settle = async (): Promise<void> => {
-    await app.reactor.drain();
-    await app.vcs.drain();
-    await app.engine.drain();
-    await app.reactor.drain();
-    await app.vcs.drain();
-  };
-  return { app, repo, control, gh, projectId: created.project.id, model: () => app.engine.getModel(), settle };
-}
-
-async function newThread(h: Harness, options: { useWorktree?: boolean; title?: string } = {}): Promise<Thread> {
-  const created = (
-    await h.app.engine.dispatch({
-      type: "thread.create",
-      projectId: h.projectId,
-      provider: "claude",
-      title: options.title ?? "Do the thing",
-      ...(options.useWorktree === true ? { useWorktree: true } : {}),
-    })
-  ).events[0]?.event;
-  if (created?.type !== "thread.created") throw new Error("expected thread.created");
-  await h.settle();
-  const thread = h.model().threads[created.thread.id];
-  if (!thread) throw new Error("thread vanished");
-  return thread;
-}
-
-const activitiesOf = (model: ReadModel, threadId: string): Activity[] =>
-  Object.values(model.activities).filter((a) => a.threadId === threadId);
-
 describe("VcsReactor — worktrees", () => {
   it("creates a worktree for a thread that asked for one and runs the turn inside it", async () => {
-    const h = await harness();
+    const h = await harness(cleanups);
     const thread = await newThread(h, { useWorktree: true, title: "Fix Login" });
 
     expect(thread.branch).toBe("tide/fix-login");
@@ -131,7 +34,7 @@ describe("VcsReactor — worktrees", () => {
   });
 
   it("reports the failure on the first turn and leaves the thread on the project root", async () => {
-    const h = await harness();
+    const h = await harness(cleanups);
     const dir = await mkdtemp(join(tmpdir(), "tide-plain-"));
     cleanups.push(() => rm(dir, { recursive: true, force: true }));
     const created = (await h.app.engine.dispatch({ type: "project.create", title: "Plain", rootPath: dir })).events[0]?.event;
@@ -162,7 +65,7 @@ describe("VcsReactor — worktrees", () => {
   });
 
   it("reopens the harness session in the worktree when one attaches mid-thread", async () => {
-    const h = await harness();
+    const h = await harness(cleanups);
     const thread = await newThread(h);
 
     h.control.script(emit({ type: "settled", status: "completed" }));
@@ -188,7 +91,7 @@ describe("VcsReactor — worktrees", () => {
   });
 
   it("does not create a worktree when the thread did not ask for one", async () => {
-    const h = await harness();
+    const h = await harness(cleanups);
     const thread = await newThread(h);
     expect(thread.worktreePath).toBeUndefined();
     expect(await h.repo.git.worktreeList()).toHaveLength(1);
@@ -197,7 +100,7 @@ describe("VcsReactor — worktrees", () => {
 
 describe("VcsReactor — checkpoints", () => {
   it("snapshots before the turn, after it settles, and reports stats", async () => {
-    const h = await harness();
+    const h = await harness(cleanups);
     const thread = await newThread(h, { useWorktree: true });
 
     h.control.script(
@@ -215,7 +118,7 @@ describe("VcsReactor — checkpoints", () => {
   });
 
   it("the before-snapshot precedes the driver's first side effect", async () => {
-    const h = await harness();
+    const h = await harness(cleanups);
     const thread = await newThread(h, { useWorktree: true });
     h.control.script(
       effect(async (options) => {
@@ -232,7 +135,7 @@ describe("VcsReactor — checkpoints", () => {
   });
 
   it("skips checkpoints when the thread's cwd is not a repository", async () => {
-    const h = await harness();
+    const h = await harness(cleanups);
     const dir = await mkdtemp(join(tmpdir(), "tide-norepo-"));
     cleanups.push(() => rm(dir, { recursive: true, force: true }));
     const created = (await h.app.engine.dispatch({ type: "project.create", title: "NoRepo", rootPath: dir })).events[0]?.event;
@@ -248,7 +151,7 @@ describe("VcsReactor — checkpoints", () => {
 
 describe("VcsReactor — revert", () => {
   it("restores the worktree and posts an info activity", async () => {
-    const h = await harness();
+    const h = await harness(cleanups);
     const thread = await newThread(h, { useWorktree: true });
 
     h.control.script(
@@ -272,7 +175,7 @@ describe("VcsReactor — revert", () => {
   });
 
   it("posts an error activity when the checkpoint is gone", async () => {
-    const h = await harness();
+    const h = await harness(cleanups);
     const thread = await newThread(h, { useWorktree: true });
     h.control.script(emit({ type: "settled", status: "completed" }));
     const turnId = await requestTurn(h, thread.id, "go");
@@ -299,7 +202,7 @@ describe("VcsReactor — publish", () => {
   }
 
   it("commits, pushes and opens a pull request", async () => {
-    const h = await harness();
+    const h = await harness(cleanups);
     await withRemote(h);
     const thread = await newThread(h, { useWorktree: true, title: "Ship It" });
 
@@ -322,7 +225,7 @@ describe("VcsReactor — publish", () => {
   });
 
   it("updates an existing pull request instead of creating a second one", async () => {
-    const h = await harness();
+    const h = await harness(cleanups);
     await withRemote(h);
     h.gh.existing = { url: "https://github.com/acme/repo/pull/7", number: 7, state: "open" };
     const thread = await newThread(h, { useWorktree: true, title: "Again" });
@@ -342,7 +245,7 @@ describe("VcsReactor — publish", () => {
   });
 
   it("commitOnly commits without touching the remote", async () => {
-    const h = await harness();
+    const h = await harness(cleanups);
     await withRemote(h);
     const thread = await newThread(h, { useWorktree: true, title: "Local Only" });
     h.control.script(
@@ -363,7 +266,7 @@ describe("VcsReactor — publish", () => {
   });
 
   it("reports a missing remote instead of failing", async () => {
-    const h = await harness();
+    const h = await harness(cleanups);
     const thread = await newThread(h, { useWorktree: true, title: "No Remote" });
     h.control.script(
       effect(async (options) => {
@@ -380,7 +283,7 @@ describe("VcsReactor — publish", () => {
   });
 
   it("still pushes when gh is not installed", async () => {
-    const h = await harness();
+    const h = await harness(cleanups);
     await withRemote(h);
     h.gh.available = false;
     const thread = await newThread(h, { useWorktree: true, title: "No Gh" });
@@ -399,13 +302,6 @@ describe("VcsReactor — publish", () => {
   });
 });
 
-async function requestTurn(h: Harness, threadId: string, text: string): Promise<string> {
-  const requested = (await h.app.engine.dispatch({ type: "turn.request", threadId, text })).events[0]?.event;
-  if (requested?.type !== "turn.requested") throw new Error("expected turn.requested");
-  await h.settle();
-  return requested.turn.id;
-}
-
 describe("VcsReactor — worktree teardown", () => {
   /** Thread on a real worktree with a clean tree, ready to be torn down. */
   async function withWorktree(h: Harness, title = "Fix Login"): Promise<Thread> {
@@ -415,7 +311,7 @@ describe("VcsReactor — worktree teardown", () => {
   }
 
   it("archiving removes the worktree directory, keeps the branch and clears the path", async () => {
-    const h = await harness();
+    const h = await harness(cleanups);
     const thread = await withWorktree(h);
     const { worktreePath, branch } = thread;
 
@@ -429,7 +325,7 @@ describe("VcsReactor — worktree teardown", () => {
   });
 
   it("keepWorktree leaves the checkout on disk", async () => {
-    const h = await harness();
+    const h = await harness(cleanups);
     const thread = await withWorktree(h, "Keep Me");
 
     await h.app.engine.dispatch({ type: "thread.archive", threadId: thread.id, keepWorktree: true });
@@ -440,7 +336,7 @@ describe("VcsReactor — worktree teardown", () => {
   });
 
   it("closes the harness session before the directory goes away", async () => {
-    const h = await harness();
+    const h = await harness(cleanups);
     const thread = await withWorktree(h, "Session Holder");
     h.control.script(emit({ type: "settled", status: "completed" }));
     await h.app.engine.dispatch({ type: "turn.request", threadId: thread.id, text: "go" });
@@ -453,7 +349,7 @@ describe("VcsReactor — worktree teardown", () => {
   });
 
   it("parks uncommitted work on refs/tide/archived/<threadId> before removing a dirty worktree", async () => {
-    const h = await harness();
+    const h = await harness(cleanups);
     const thread = await withWorktree(h, "Dirty Work");
     await writeFile(join(thread.worktreePath!, "scratch.txt"), "unsaved work\n", "utf8");
 
@@ -469,7 +365,7 @@ describe("VcsReactor — worktree teardown", () => {
   });
 
   it("writes no archive ref when the worktree is clean", async () => {
-    const h = await harness();
+    const h = await harness(cleanups);
     const thread = await withWorktree(h, "Clean");
     await h.app.engine.dispatch({ type: "thread.archive", threadId: thread.id });
     await h.settle();
@@ -477,7 +373,7 @@ describe("VcsReactor — worktree teardown", () => {
   });
 
   it("worktree.detach removes the checkout without archiving the thread", async () => {
-    const h = await harness();
+    const h = await harness(cleanups);
     const thread = await withWorktree(h, "Detach Only");
 
     await h.app.engine.dispatch({ type: "worktree.detach", threadId: thread.id });
@@ -491,7 +387,7 @@ describe("VcsReactor — worktree teardown", () => {
   });
 
   it("deleteBranch removes a tide/* branch", async () => {
-    const h = await harness();
+    const h = await harness(cleanups);
     const thread = await withWorktree(h, "Throwaway");
     expect(thread.branch).toBe("tide/throwaway");
 
@@ -502,7 +398,7 @@ describe("VcsReactor — worktree teardown", () => {
   });
 
   it("refuses to delete a branch Tide does not own", async () => {
-    const h = await harness();
+    const h = await harness(cleanups);
     const thread = await withWorktree(h, "Foreign");
     // the thread is re-pointed at a branch that is not Tide's to remove
     await run("git", ["-C", h.repo.dir, "branch", "feature/keepme"], { env: GIT_TEST_ENV });

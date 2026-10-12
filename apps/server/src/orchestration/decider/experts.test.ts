@@ -53,19 +53,15 @@ const sessionOf = (panel: Panel) => {
 };
 
 describe("decide: experts.create", () => {
-  it("refuses pi as an expert or as the lead: it has no Tide MCP bridge to reach the board", () => {
+  it("accepts pi as an expert and as the lead (native Tide MCP since driver-pi 1.1)", () => {
     const created = run(emptyReadModel(), { type: "project.create", title: "T", rootPath: "/repo" });
     const project = created.events[0];
     if (project?.type !== "project.created") throw new Error("expected project.created");
     const base = { type: "experts.create" as const, projectId: project.project.id, topic: "cache?" };
 
-    expect(
-      decide(created.model, { ...base, experts: [{ key: "perf", name: "Pat", role: "perf", provider: "pi" }], lead: { provider: "claude" } }, ctx),
-    ).toMatchObject({ ok: false, error: { code: "invalid-command", message: expect.stringContaining("pi has no Tide MCP bridge") } });
-
-    expect(
-      decide(created.model, { ...base, experts: [{ key: "perf", name: "Pat", role: "perf", provider: "claude" }], lead: { provider: "pi" } }, ctx),
-    ).toMatchObject({ ok: false, error: { code: "invalid-command" } });
+    // pi hosts the Tide MCP server natively since driver-pi 1.1 (R3), so it can sit on a panel and lead one
+    expect(decide(created.model, { ...base, experts: [{ key: "perf", name: "Pat", role: "perf", provider: "pi" }], lead: { provider: "claude" } }, ctx).ok).toBe(true);
+    expect(decide(created.model, { ...base, experts: [{ key: "perf", name: "Pat", role: "perf", provider: "claude" }], lead: { provider: "pi" } }, ctx).ok).toBe(true);
   });
 
   it("creates a setup-phase session with pending experts", () => {

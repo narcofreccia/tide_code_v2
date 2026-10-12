@@ -61,7 +61,7 @@ export const TOOL_DEFINITIONS: ToolDefinition[] = [
     inputSchema: {
       type: "object",
       properties: {
-        provider: { type: "string", enum: ["claude", "codex", "opencode"], description: "Which harness runs the task." },
+        provider: { type: "string", enum: ["claude", "codex", "opencode", "pi"], description: "Which harness runs the task." },
         prompt: str("The complete task description; the new thread has none of your context."),
         model: str("Optional model id for that harness."),
         mode: {

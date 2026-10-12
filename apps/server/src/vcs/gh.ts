@@ -15,11 +15,21 @@ export interface PrCreateInput {
   head?: string;
 }
 
-/** The slice of the `gh` CLI the publish flow needs; injectable so tests never shell out. */
+export interface PrMergeInput {
+  strategy: "merge" | "squash" | "rebase";
+  deleteBranch?: boolean;
+  /** `--auto`: merge once required checks pass (publish's mergeWhenGreen) */
+  auto?: boolean;
+}
+
+/** The slice of the `gh` CLI the publish/merge flows need; injectable so tests never shell out. */
 export interface GhLike {
   hasGh(): Promise<boolean>;
   prCreate(cwd: string, input: PrCreateInput): Promise<{ url: string; number: number }>;
+  /** `branch` may also be a PR number */
   prView(cwd: string, branch: string): Promise<PrRef | undefined>;
+  /** optional so older fakes keep compiling; without it merges always run locally */
+  prMerge?(cwd: string, number: number, input: PrMergeInput): Promise<void>;
 }
 
 export class GhError extends Error {
@@ -73,6 +83,14 @@ export class Gh implements GhLike {
     if (url === undefined) throw new GhError("gh pr create returned no URL", created.stdout);
     const number = Number(url.split("/").pop());
     return { url, number: Number.isFinite(number) ? number : 0 };
+  }
+
+  async prMerge(cwd: string, number: number, input: PrMergeInput): Promise<void> {
+    const args = ["pr", "merge", String(number), `--${input.strategy}`];
+    if (input.deleteBranch === true) args.push("--delete-branch");
+    if (input.auto === true) args.push("--auto");
+    const r = await run(args, cwd);
+    if (r.code !== 0) throw new GhError("gh pr merge failed", r.stderr);
   }
 
   async prView(cwd: string, branch: string): Promise<PrRef | undefined> {

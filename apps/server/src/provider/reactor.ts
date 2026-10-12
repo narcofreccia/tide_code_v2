@@ -2,6 +2,7 @@ import {
   newId as defaultNewId,
   type Activity,
   type EventRecord,
+  type ImageInput,
   type InternalCommand,
   type NormalizedEvent,
   type ProviderSession,
@@ -14,10 +15,16 @@ import type { SessionDirectory } from "./sessions.ts";
 interface ThreadState {
   /** one turn at a time per thread; different threads run concurrently */
   queue: Promise<void>;
-  /** driver activity key -> activity id, so updates land on the same row */
+  /** `${turnId}:${driver activity key}` -> activity id, so updates land on the same row */
   activityIds: Map<string, string>;
   /** `${turnId}:${messageKey}` -> message id, so deltas assemble into one message */
   messageIds: Map<string, string>;
+}
+
+/** Drops every `${turnId}:…` entry of a settled turn: harness keys (request ids, tool ids) repeat across turns. */
+function dropTurnKeys(map: Map<string, string>, turnId: string): void {
+  const prefix = `${turnId}:`;
+  for (const key of [...map.keys()]) if (key.startsWith(prefix)) map.delete(key);
 }
 
 /** Cancels a pending timer. */
@@ -39,6 +46,11 @@ export interface ReactorOptions {
   sessions: SessionDirectory;
   /** awaited before the harness is handed the prompt (P2: the vcs before-checkpoint) */
   beforeTurn?: (threadId: string, turnId: string) => Promise<void>;
+  /**
+   * Image bytes of a turn whose `turn.requested` this reactor never saw (a queued turn
+   * promoted after a restart). The read model keeps only attachment metadata.
+   */
+  imagesFor?: (turnId: string) => ImageInput[] | undefined;
   /** grace period a driver gets to honour an interrupt before the turn is force-settled */
   interruptTimeoutMs?: number;
   /** injectable clock so tests drive the interrupt watchdog by hand instead of sleeping */
@@ -57,6 +69,9 @@ export class ProviderReactor {
   #engine: Engine;
   #sessions: SessionDirectory;
   #beforeTurn: ((threadId: string, turnId: string) => Promise<void>) | undefined;
+  #imagesFor: ((turnId: string) => ImageInput[] | undefined) | undefined;
+  /** turns already handed to a thread's chain (from `turn.requested` or a promotion) */
+  #known = new Set<string>();
   #now: () => number;
   #newId: () => string;
   #log: (msg: string, data?: unknown) => void;
@@ -72,6 +87,7 @@ export class ProviderReactor {
     this.#engine = options.engine;
     this.#sessions = options.sessions;
     this.#beforeTurn = options.beforeTurn;
+    this.#imagesFor = options.imagesFor;
     this.#interruptTimeoutMs = options.interruptTimeoutMs ?? DEFAULT_INTERRUPT_TIMEOUT_MS;
     this.#schedule = options.schedule ?? realTimer;
     this.#now = options.now ?? (() => Date.now());
@@ -110,9 +126,13 @@ export class ProviderReactor {
       case "turn.requested": {
         const input: TurnInput = { text: event.userMessage.text, ...(event.images ? { images: event.images } : {}) };
         // queued turns ride the same per-thread chain: they start when the running one settles
+        this.#known.add(event.turn.id);
         this.#enqueue(event.turn.threadId, () => this.#runTurn(event.turn.threadId, event.turn.id, input));
         return;
       }
+      case "turn.dequeued":
+        this.#known.delete(event.turnId);
+        return;
       case "approval.responded":
         this.#withSession(
           event.threadId,
@@ -131,12 +151,43 @@ export class ProviderReactor {
         this.#withSession(event.threadId, (s) => s.interrupt());
         this.#armInterruptWatchdog(event.threadId, event.turnId);
         return;
-      case "turn.settled":
+      case "turn.settled": {
         this.#cancelInterruptWatchdog(event.turnId);
+        this.#known.delete(event.turnId);
+        const state = this.#threads.get(event.threadId);
+        if (state) {
+          dropTurnKeys(state.activityIds, event.turnId);
+          dropTurnKeys(state.messageIds, event.turnId);
+        }
+        this.#runPromoted(event.threadId, event.turnId);
         return;
+      }
       default:
         return;
     }
+  }
+
+  /**
+   * The projector promotes the oldest queued turn when the live one settles. Normally that turn
+   * is already waiting on this thread's chain; after a restart (recovery settled the dead turn)
+   * nobody queued it, so it is picked up here from the read model.
+   */
+  #runPromoted(threadId: string, settledTurnId: string): void {
+    const next = this.#engine.getModel().threads[threadId]?.latestTurnId;
+    if (next === undefined || next === settledTurnId) return;
+    this.resume(threadId, next);
+  }
+
+  /** Runs a `requested` turn this reactor never saw requested (promoted after a restart, or left unsent by a graceful shutdown). */
+  resume(threadId: string, next: string): void {
+    const model = this.#engine.getModel();
+    if (this.#known.has(next)) return;
+    if (model.threads[threadId]?.latestTurnId !== next || model.turns[next]?.status !== "requested") return;
+    const message = (model.threadMessages[threadId] ?? []).map((id) => model.messages[id]).find((m) => m?.turnId === next && m.role === "user");
+    const images = this.#imagesFor?.(next);
+    const input: TurnInput = { text: message?.text ?? "", ...(images !== undefined && images.length > 0 ? { images } : {}) };
+    this.#known.add(next);
+    this.#enqueue(threadId, () => this.#runTurn(threadId, next, input));
   }
 
   // ---- interrupt watchdog ----
@@ -274,8 +325,11 @@ export class ProviderReactor {
     let settled = false;
     try {
       const session = await this.#sessions.getOrOpen(thread, project);
+      this.#sessions.touch(threadId);
       if (session.nativeSessionId !== undefined) await start(session.nativeSessionId);
       for await (const event of session.send(input)) {
+        // every sign of life keeps the session off the idle reaper
+        this.#sessions.touch(threadId);
         if (event.type === "session") {
           await start(event.nativeSessionId, event.model);
           continue;
@@ -328,7 +382,9 @@ export class ProviderReactor {
         return false;
       }
       case "activity": {
-        const key = activityKey(event.activity);
+        // scoped to the turn: Codex request ids restart at 0 per process, tool ids may repeat
+        const native = activityKey(event.activity);
+        const key = native === undefined ? undefined : `${turnId}:${native}`;
         let id = event.activity.id ?? (key !== undefined ? state.activityIds.get(key) : undefined);
         id ??= this.#newId();
         if (key !== undefined) state.activityIds.set(key, id);

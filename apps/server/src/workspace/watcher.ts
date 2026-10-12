@@ -86,13 +86,23 @@ export class FsWatcher {
       state.listeners.delete(listener);
       if (state.listeners.size === 0) {
         state.close();
-        this.#watches.delete(cwd);
+        // closeCwd may already have replaced or dropped this watch
+        if (this.#watches.get(cwd) === state) this.#watches.delete(cwd);
       }
     };
   }
 
   get size(): number {
     return this.#watches.size;
+  }
+
+  /** Stops the watch on `cwd` (its directory is being removed); subscribers simply stop receiving. */
+  closeCwd(cwd: string): boolean {
+    const state = this.#watches.get(cwd);
+    if (state === undefined) return false;
+    state.close();
+    this.#watches.delete(cwd);
+    return true;
   }
 
   closeAll(): void {

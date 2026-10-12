@@ -18,6 +18,8 @@ export interface WorkspaceServices {
   cwdFor: (threadId: string) => string;
   /** directory browser for the project picker */
   browse: (input: { path?: string; showHidden?: boolean }) => Promise<BrowseResult>;
+  /** kills the thread's terminals and stops the watch on its worktree (which is going away) */
+  teardown(threadId: string, worktreePath?: string): void;
   close(): void;
 }
 
@@ -30,12 +32,19 @@ export interface WorkspaceOptions {
   log?: (msg: string, data?: unknown) => void;
 }
 
-/** Resolves a thread's working directory from the read model, like the vcs handlers do. */
+/**
+ * Resolves a thread's working directory from the read model, like the vcs handlers do. A thread
+ * whose worktree was detached is refused: falling back to the project root would let the editor
+ * and terminal write into the user's main checkout (the decider refuses `turn.request` alike).
+ */
 export function threadCwdResolver(engine: Engine): (threadId: string) => string {
   return (threadId) => {
     const model = engine.getModel();
     const thread = model.threads[threadId];
     if (!thread) throw new RpcException("not-found", `unknown thread ${threadId}`);
+    if (thread.worktreePath === undefined && thread.branch !== undefined) {
+      throw new RpcException("conflict", `thread ${threadId} has no worktree any more`);
+    }
     const project = model.projects[thread.projectId];
     if (!project) throw new RpcException("not-found", `unknown project ${thread.projectId}`);
     return threadCwd(thread, project);
@@ -49,6 +58,16 @@ export function createWorkspaceServices(options: WorkspaceOptions): WorkspaceSer
   const watcher = options.watcher ?? new FsWatcher(options.log !== undefined ? { log: options.log } : {});
   const ptys = options.ptys ?? new PtyManager(options.log !== undefined ? { log: options.log } : {});
   const search = options.search ?? runSearch;
+  const teardown = (threadId: string, worktreePath?: string): void => {
+    ptys.killThread(threadId);
+    if (worktreePath !== undefined) watcher.closeCwd(worktreePath);
+  };
+  // the vcs reactor calls teardown right before it removes a worktree; these cover the rest
+  const unsubscribe = options.engine.subscribe((record) => {
+    const event = record.event;
+    if (event.type === "thread.archived") teardown(event.threadId, options.engine.getModel().threads[event.threadId]?.worktreePath);
+    else if (event.type === "worktree.detached") ptys.killThread(event.threadId);
+  });
   return {
     files,
     watcher,
@@ -56,7 +75,9 @@ export function createWorkspaceServices(options: WorkspaceOptions): WorkspaceSer
     search,
     cwdFor,
     browse: (input) => browseDirectories(options.engine.getModel(), input),
+    teardown,
     close() {
+      unsubscribe();
       ptys.closeAll();
       watcher.closeAll();
     },

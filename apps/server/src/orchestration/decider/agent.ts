@@ -1,7 +1,7 @@
 import type { CommandOf, DomainEvent, ExpertsFinding, ExpertsMessage, Project, ProposedPlan, ReadModel, RuntimeMode, Thread } from "@tide/contracts";
 import { delegatePrompt } from "../../experts/prompts.ts";
 import { recipientKeys } from "./experts.ts";
-import { fail, isArchived, lacksTideMcp, NO_TIDE_MCP_MESSAGE, ok, turnRequested, type DecideContext, type DecideResult } from "./types.ts";
+import { fail, isArchived, ok, turnRequested, type DecideContext, type DecideResult } from "./types.ts";
 
 type AgentCommand =
   | CommandOf<"experts.finding.post">
@@ -58,7 +58,11 @@ export function decideAgent(model: ReadModel, command: AgentCommand, ctx: Decide
     case "experts.synthesis.set": {
       const session = model.expertsSessions[command.sessionId];
       if (!session) return fail("not-found", `unknown experts session ${command.sessionId}`);
-      if (session.phase === "archived") return fail("conflict", `experts session ${session.id} is archived`);
+      // a synthesis lands while the lead is synthesizing (or, early, while the panel discusses);
+      // never before the panel has explored, never over a finished one
+      if (session.phase !== "synthesizing" && session.phase !== "discussing") {
+        return fail("conflict", `experts session ${session.id} is ${session.phase}; a synthesis needs phase synthesizing or discussing`);
+      }
       const leadThreadId = session.lead.threadId;
       const lead = leadThreadId === undefined ? undefined : model.threads[leadThreadId];
       if (!lead) return fail("conflict", `experts session ${session.id} has no lead thread`);
@@ -84,8 +88,12 @@ export function decideAgent(model: ReadModel, command: AgentCommand, ctx: Decide
     case "thread.delegate": {
       const from = model.threads[command.fromThreadId];
       if (!from) return fail("not-found", `unknown thread ${command.fromThreadId}`);
-      // the delegate reports back through the Tide MCP server; a harness without it never can
-      if (lacksTideMcp(command.provider)) return fail("invalid-command", NO_TIDE_MCP_MESSAGE);
+      if (isArchived(from)) return fail("conflict", `thread ${from.id} is archived`);
+      if (delegationDepth(model, from) + 1 > MAX_DELEGATION_DEPTH) {
+        return fail("forbidden", `delegation depth limit (${MAX_DELEGATION_DEPTH}) reached: a delegate of a delegate cannot delegate further`);
+      }
+      const live = Object.values(model.threads).filter((t) => t.delegatedBy === from.id && !isArchived(t) && t.status === "running").length;
+      if (live >= MAX_LIVE_DELEGATES) return fail("busy", `thread ${from.id} already has ${live} running delegates (limit ${MAX_LIVE_DELEGATES})`);
       const home = model.projects[from.projectId];
       if (!home) return fail("not-found", `unknown project ${from.projectId}`);
       if (isArchived(home)) return fail("conflict", `project ${home.id} is archived`);
@@ -131,6 +139,25 @@ export function decideAgent(model: ReadModel, command: AgentCommand, ctx: Decide
       );
     }
   }
+}
+
+/** root → delegate → delegate-of-delegate; one more hop is refused (runaway recursion guard). */
+export const MAX_DELEGATION_DEPTH = 2;
+/** running delegates one thread may have at once (fan-out guard) */
+export const MAX_LIVE_DELEGATES = 4;
+
+/** Hops from `thread` back to a thread that was not delegated (cycle-safe). */
+export function delegationDepth(model: ReadModel, thread: Thread): number {
+  let depth = 0;
+  const seen = new Set<string>([thread.id]);
+  let current = thread.delegatedBy === undefined ? undefined : model.threads[thread.delegatedBy];
+  while (current !== undefined && !seen.has(current.id)) {
+    depth++;
+    seen.add(current.id);
+    current = current.delegatedBy === undefined ? undefined : model.threads[current.delegatedBy];
+  }
+  // a delegate whose parent is gone still counts its own hop
+  return thread.delegatedBy !== undefined && depth === 0 ? 1 : depth;
 }
 
 /**

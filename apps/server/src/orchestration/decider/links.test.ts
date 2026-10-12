@@ -207,11 +207,8 @@ describe("decide: delegation privileges", () => {
     expect(delegatedMode(q.model, q.threadId, "approval-required")).toBe("approval-required");
   });
 
-  it("refuses pi, which has no Tide MCP bridge to report back through", () => {
+  it("accepts pi as a delegate (driver-pi 1.1 attaches the Tide MCP server natively)", () => {
     const p = parent("auto");
-    expect(decide(p.model, { type: "thread.delegate", fromThreadId: p.threadId, provider: "pi", prompt: "x" }, ctx)).toMatchObject({
-      ok: false,
-      error: { code: "invalid-command", message: expect.stringContaining("pi has no Tide MCP bridge") },
-    });
+    expect(decide(p.model, { type: "thread.delegate", fromThreadId: p.threadId, provider: "pi", prompt: "x" }, ctx).ok).toBe(true);
   });
 });

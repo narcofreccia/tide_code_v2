@@ -104,7 +104,124 @@ describe("createApp — restart recovery", () => {
   });
 });
 
+/** A crashed run that left a live turn *and* a follow-up queued behind it (with an image). */
+async function storeWithQueuedTurn(): Promise<{ store: EventStore; threadId: string; liveId: string; queuedId: string }> {
+  const store = await openEventStore(":memory:");
+  const engine = new Engine({ store });
+  const project = (await engine.dispatch({ type: "project.create", title: "T", rootPath: "/repo" })).events[0]?.event;
+  if (project?.type !== "project.created") throw new Error("expected project.created");
+  const thread = (await engine.dispatch({ type: "thread.create", projectId: project.project.id, provider: "claude" })).events[0]?.event;
+  if (thread?.type !== "thread.created") throw new Error("expected thread.created");
+  const live = (await engine.dispatch({ type: "turn.request", threadId: thread.thread.id, text: "first" })).events[0]?.event;
+  if (live?.type !== "turn.requested") throw new Error("expected turn.requested");
+  await engine.dispatch({ type: "turn.start", turnId: live.turn.id, provider: "claude" });
+  const queued = (
+    await engine.dispatch({ type: "turn.request", threadId: thread.thread.id, text: "second", images: [{ mediaType: "image/png", data: "AAAA" }] })
+  ).events[0]?.event;
+  if (queued?.type !== "turn.requested" || queued.turn.status !== "queued") throw new Error("expected a queued turn");
+  return { store, threadId: thread.thread.id, liveId: live.turn.id, queuedId: queued.turn.id };
+}
+
+describe("createApp — restart recovery of queued turns", () => {
+  it("settles the dead turn and runs the queued one on the harness", async () => {
+    const { store, threadId, liveId, queuedId } = await storeWithQueuedTurn();
+    const { driver, control } = createFakeDriver("claude");
+    control.script(emit({ type: "assistant.delta", messageKey: "m", delta: "answer" }), emit({ type: "settled", status: "completed" }));
+    const app = await createApp({ config, store, listen: false, log: () => undefined, registerDrivers: (r) => r.register(driver) });
+    try {
+      await app.reactor.drain();
+      await app.vcs.drain();
+      const model = app.engine.getModel();
+      expect(model.turns[liveId]).toMatchObject({ status: "error", error: "server restarted while this turn was running" });
+      expect(model.turns[queuedId]?.status).toBe("completed");
+      expect(model.threads[threadId]?.status).toBe("idle");
+      // only the queued prompt reached the harness, with its image read back from the log
+      const inputs = control.sessionFor(threadId)?.inputs ?? [];
+      expect(inputs.map((i) => i.text)).toEqual(["second"]);
+      expect(inputs[0]?.images).toEqual([{ mediaType: "image/png", data: "AAAA" }]);
+    } finally {
+      await app.close();
+    }
+  });
+
+  it("experts whose turns died with the process stop showing as working", async () => {
+    const store = await openEventStore(":memory:");
+    const engine = new Engine({ store });
+    const project = (await engine.dispatch({ type: "project.create", title: "T", rootPath: "/repo" })).events[0]?.event;
+    if (project?.type !== "project.created") throw new Error("expected project.created");
+    const created = (
+      await engine.dispatch({
+        type: "experts.create",
+        projectId: project.project.id,
+        topic: "cache?",
+        experts: [{ key: "perf", name: "Pat", role: "performance", provider: "claude" }],
+        lead: { provider: "claude" },
+      })
+    ).events[0]?.event;
+    if (created?.type !== "experts.created") throw new Error("expected experts.created");
+    await engine.dispatch({ type: "experts.start", sessionId: created.session.id });
+    const session = engine.getModel().expertsSessions[created.session.id];
+    expect(session?.experts[0]?.status).toBe("working");
+    // the harness had picked the expert's turn up (started) when the process died
+    const expertThread = engine.getModel().threads[session?.experts[0]?.threadId ?? ""];
+    await engine.dispatch({ type: "turn.start", turnId: expertThread?.latestTurnId ?? "", provider: "claude" });
+
+    const { driver } = createFakeDriver("claude");
+    const app = await createApp({ config, store, listen: false, log: () => undefined, registerDrivers: (r) => r.register(driver) });
+    try {
+      await app.experts.drain();
+      await app.reactor.drain();
+      expect(app.engine.getModel().expertsSessions[created.session.id]?.experts[0]?.status).toBe("error");
+    } finally {
+      await app.close();
+    }
+  });
+});
+
 describe("app.close — graceful shutdown", () => {
+  it("a queued follow-up survives a graceful shutdown and runs after the restart", async () => {
+    const store = await openEventStore(":memory:");
+    const { driver, control } = createFakeDriver("claude");
+    control.script(
+      emit({ type: "activity", activity: { kind: "approval", requestId: "r1", toolName: "Bash", input: {}, status: "pending" } }),
+      awaitApproval("r1"),
+    );
+    const first = await createApp({ config, store, listen: false, log: () => undefined, shutdownTimeoutMs: 0, registerDrivers: (r) => r.register(driver), keepStoreOpen: true });
+    const project = (await first.engine.dispatch({ type: "project.create", title: "T", rootPath: "/repo" })).events[0]?.event;
+    if (project?.type !== "project.created") throw new Error("expected project.created");
+    const thread = (await first.engine.dispatch({ type: "thread.create", projectId: project.project.id, provider: "claude" })).events[0]?.event;
+    if (thread?.type !== "thread.created") throw new Error("expected thread.created");
+    const threadId = thread.thread.id;
+    const started = new Promise<void>((resolve) => {
+      const off = first.engine.subscribe((record) => {
+        if (record.event.type !== "turn.started") return;
+        off();
+        resolve();
+      });
+    });
+    await first.engine.dispatch({ type: "turn.request", threadId, text: "first" });
+    await started;
+    const queued = (await first.engine.dispatch({ type: "turn.request", threadId, text: "second" })).events[0]?.event;
+    if (queued?.type !== "turn.requested") throw new Error("expected turn.requested");
+    expect(queued.turn.status).toBe("queued");
+    await first.close();
+    // shutdown interrupted the live turn; the projector promoted the queued one but nothing ran it
+    expect(first.engine.getModel().turns[queued.turn.id]).toMatchObject({ status: "requested" });
+
+    const { driver: driver2, control: control2 } = createFakeDriver("claude");
+    control2.script(emit({ type: "assistant.delta", messageKey: "m", delta: "answer" }), emit({ type: "settled", status: "completed" }));
+    const second = await createApp({ config, store, listen: false, log: () => undefined, registerDrivers: (r) => r.register(driver2) });
+    try {
+      await second.reactor.drain();
+      const model = second.engine.getModel();
+      expect(model.turns[queued.turn.id]?.status).toBe("completed");
+      expect(model.threads[threadId]?.status).toBe("idle");
+      expect((control2.sessionFor(threadId)?.inputs ?? []).map((i) => i.text)).toEqual(["second"]);
+    } finally {
+      await second.close();
+    }
+  });
+
   it("interrupts and settles an in-flight turn before the store closes", async () => {
     const { driver, control } = createFakeDriver("claude");
     // the stuck driver below never drains, so the bounded fallback is what ends close() —

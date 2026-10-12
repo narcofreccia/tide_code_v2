@@ -8,9 +8,9 @@ Present tense; kept in sync with the code.
 clients ── typed WS RPC ──▶ tide-server ── drivers ──▶ claude · codex · opencode · pi (the user's own CLIs)
  web (browser / Tauri WebView)      │
  tide-mcp (agents' tools)           ├─ event store (SQLite)  decider → events → projector → read model
-                                    ├─ vcs: worktrees, checkpoints, diff, revert, publish
+                                    ├─ vcs: worktrees, checkpoints, diff, revert, publish, merge-back
                                     ├─ workspace: files, watcher, search, pty
-                                    └─ experts: board, mailbox delivery, synthesis
+                                    └─ experts: board, message delivery as turns, synthesis
 ```
 
 The server (`apps/server`) is the only execution boundary. Every client — the browser app,
@@ -35,12 +35,21 @@ Reactors subscribe to events and issue further commands; they hold no business r
   promoted when the live turn settles; `turn.dequeue` drops it. Before each turn the
   `SessionDirectory` compares the thread's model/mode/interaction with what the session was
   opened with and either calls the driver's `reconfigure()` or reopens the session with `resume`.
-  On startup a recovery pass settles every turn a previous process left `queued`/`requested`/
-  `running`; `close()` interrupts and settles in-flight turns before the store closes.
+  `resume` is only passed when the thread's last started turn ran on the same provider. Every
+  `NormalizedEvent` touches the session; the idle reaper (30 min) never closes a session whose
+  thread has a turn in flight. Activity identity (`req:`/`tool:` keys) is scoped to the turn.
+  On startup, after every reactor has subscribed, a recovery pass settles each turn a previous
+  process left `requested`/`running`; a turn queued behind it is promoted by that settle and run.
+  `close()` interrupts and settles in-flight turns before the store closes.
 - `VcsReactor` — worktree per thread, `before`/`after` checkpoints as `refs/tide/checkpoints/…`
-  (the before-snapshot gates the turn), revert, publish (commit/push/`gh pr`), teardown on archive.
-- `ExpertsReactor` — delivers board messages as follow-up turns (mailbox per thread), tracks
-  expert status.
+  (the before-snapshot gates the turn; a queued turn is snapshotted when promoted), revert,
+  publish (commit/push/`gh pr`, optional `gh pr merge --auto`), merge-back (`vcs/merge.ts`: in a
+  scratch worktree `<TIDE_HOME>/worktrees/.merge-<thread>`, then the base ref moves; a clean
+  checkout of the base is fast-forwarded, a dirty one is left alone; with an open PR,
+  `gh pr merge`), teardown on detach/archive (terminals and watchers first; failures are posted
+  as error activities), checkpoint-ref GC on archive.
+- `ExpertsReactor` — delivers each board message as a `turn.request` on its recipients (queued
+  behind a running turn, so the backlog lives in the log), tracks expert status.
 
 ## Domain
 

@@ -1,4 +1,6 @@
+import { existsSync } from "node:fs";
 import { readdir } from "node:fs/promises";
+import { join } from "node:path";
 import { afterEach, describe, expect, it } from "vitest";
 import { WORKTREE } from "./git.ts";
 import { createTempRepo, type TempRepo } from "./testing/tempRepo.ts";
@@ -24,6 +26,14 @@ describe("Git — repo state", () => {
     expect(await r.git.hasRemote()).toBe(false);
     expect(await r.git.revParse("HEAD")).toMatch(/^[0-9a-f]{40}$/);
     expect(await r.git.revParse("refs/heads/nope")).toBeUndefined();
+  });
+
+  it("show never parses a ref as an option", async () => {
+    const r = await repo();
+    const out = join(r.dir, "pwned.txt");
+    expect((await r.git.show(`--output=${out}`, "README.md")).missing).toBe(true);
+    expect(existsSync(out)).toBe(false);
+    expect((await r.git.show("HEAD", "README.md")).content).toBe("# temp\n");
   });
 
   it("isRepo is false outside a repository", async () => {

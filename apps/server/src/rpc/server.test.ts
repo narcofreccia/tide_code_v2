@@ -321,6 +321,10 @@ describe("rpc: providers and the terminal escape hatch", () => {
       cwd: "/term",
       command: "claude --resume sess-42 # /term",
     });
+    // a claude session id is never offered to another harness's CLI
+    await engine.dispatch({ type: "turn.settle", turnId: requested.turn.id, status: "completed" });
+    await engine.dispatch({ type: "thread.update", threadId, provider: "codex" });
+    expect(await client.call("thread.terminalCommand", { threadId })).toEqual({ cwd: "/term" });
     await expect(client.call("thread.terminalCommand", { threadId: "ghost" })).rejects.toMatchObject({ code: "not-found" });
   });
 });

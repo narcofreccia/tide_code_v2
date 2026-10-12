@@ -125,7 +125,7 @@ describe("experts end to end", () => {
     expect(session?.experts.every((e) => e.status === "idle")).toBe(true);
   });
 
-  it("holds a message for a busy expert and delivers it once the turn settles", async () => {
+  it("queues a message for a busy expert as a turn that runs once the current one settles", async () => {
     const { app, control, sessionId, threads } = await startPanel(async () => undefined);
 
     const running = deferred();
@@ -133,7 +133,7 @@ describe("experts end to end", () => {
       effect(() => {
         running.resolve();
       }),
-        awaitApproval("gate"),
+      awaitApproval("gate"),
       emit({ type: "settled", status: "completed" }),
     ];
     control.scriptFor(threads.api, ...gate);
@@ -145,7 +145,9 @@ describe("experts end to end", () => {
 
     await app.engine.dispatch({ type: "experts.post", sessionId, to: "api", text: "second" });
     await app.experts.drain();
-    expect(app.experts.pending(threads.api)).toHaveLength(1);
+    // the backlog is a queued turn in the event log, not an in-memory mailbox
+    const queued = Object.values(app.engine.getModel().turns).filter((t) => t.threadId === threads.api && t.status === "queued");
+    expect(queued).toHaveLength(1);
 
     await control.sessionFor(threads.api)?.respondApproval("gate", "accept");
     await app.reactor.drain();
@@ -155,7 +157,8 @@ describe("experts end to end", () => {
     const texts = (model.threadMessages[threads.api] ?? []).map((id) => model.messages[id]?.text ?? "");
     expect(texts.some((t) => t.includes("Message from user: first"))).toBe(true);
     expect(texts.some((t) => t.includes("Message from user: second"))).toBe(true);
-    expect(app.experts.pending(threads.api)).toHaveLength(0);
+    expect(Object.values(model.turns).filter((t) => t.threadId === threads.api && t.status !== "completed")).toHaveLength(0);
+    expect(control.sessionFor(threads.api)?.inputs.map((i) => i.text).filter((t) => t.includes("Message from user"))).toHaveLength(2);
     // the other expert was not addressed
     expect((model.threadMessages[threads.perf] ?? []).some((id) => model.messages[id]?.text.includes("Message from user"))).toBe(false);
   });

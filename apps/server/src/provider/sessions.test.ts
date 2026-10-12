@@ -1,5 +1,5 @@
 import { describe, expect, it } from "vitest";
-import type { Project, Thread } from "@tide/contracts";
+import { emptyReadModel, type Project, type ReadModel, type Thread, type Turn } from "@tide/contracts";
 import { DriverRegistry } from "./registry.ts";
 import { SessionDirectory } from "./sessions.ts";
 import { createFakeDriver, type FakeDriverControl } from "./testing/fakeDriver.ts";
@@ -18,15 +18,31 @@ const thread = (patch: Partial<Thread> = {}): Thread => ({
   ...patch,
 });
 
-function setup(): { sessions: SessionDirectory; claude: FakeDriverControl; codex: FakeDriverControl; clock: { t: number } } {
+interface Setup {
+  sessions: SessionDirectory;
+  claude: FakeDriverControl;
+  codex: FakeDriverControl;
+  clock: { t: number };
+  /** the read model the directory consults; tests mutate it in place */
+  state: { model: ReadModel };
+}
+
+function setup(): Setup {
   const clock = { t: 0 };
+  const state = { model: emptyReadModel() };
   const registry = new DriverRegistry({ env: { dataDir: ":memory:", log: () => undefined } });
   const claude = createFakeDriver("claude");
   const codex = createFakeDriver("codex");
   registry.register(claude.driver);
   registry.register(codex.driver);
-  const sessions = new SessionDirectory({ registry, now: () => clock.t, idleMs: 30 * 60_000, autoReap: false, log: () => undefined });
-  return { sessions, claude: claude.control, codex: codex.control, clock };
+  const sessions = new SessionDirectory({ registry, now: () => clock.t, idleMs: 30 * 60_000, autoReap: false, log: () => undefined, model: () => state.model });
+  return { sessions, claude: claude.control, codex: codex.control, clock, state };
+}
+
+/** A model where thread t1 has run one turn on `provider` and is in `status`. */
+function modelWith(t: Thread, turn: Partial<Turn> = {}): ReadModel {
+  const base: Turn = { id: "turn-1", threadId: t.id, status: "completed", provider: "claude", requestedAt: 0, startedAt: 1, ...turn };
+  return { ...emptyReadModel(), threads: { [t.id]: { ...t, latestTurnId: base.id } }, turns: { [base.id]: base } };
 }
 
 describe("SessionDirectory", () => {
@@ -47,7 +63,8 @@ describe("SessionDirectory", () => {
   });
 
   it("closes the old session and opens fresh when the provider changes", async () => {
-    const { sessions, claude, codex } = setup();
+    const { sessions, claude, codex, state } = setup();
+    state.model = modelWith(thread({ nativeSessionId: "sess-9" }));
     await sessions.getOrOpen(thread({ nativeSessionId: "sess-9" }), project);
     await sessions.getOrOpen(thread({ nativeSessionId: "sess-9", provider: "codex" }), project);
     expect(claude.closed).toEqual(["t1"]);
@@ -93,6 +110,34 @@ describe("SessionDirectory", () => {
     expect(claude.closed).toEqual(["t1"]);
     expect(sessions.size).toBe(0);
     expect(sessions.peek("t1")).toBeUndefined();
+  });
+
+  it("never resumes a session id minted by another harness, even on a fresh directory", async () => {
+    const { sessions, codex, claude, state } = setup();
+    // the log says claude minted sess-9; the thread now runs on codex (e.g. a pre-clear log)
+    const switched = thread({ nativeSessionId: "sess-9", provider: "codex" });
+    state.model = modelWith(switched, { provider: "claude" });
+    await sessions.getOrOpen(switched, project);
+    expect(codex.opened[0]?.resume).toBeUndefined();
+    // and the owning harness still resumes it
+    await sessions.close("t1");
+    const back = thread({ nativeSessionId: "sess-9" });
+    state.model = modelWith(back, { provider: "claude" });
+    await sessions.getOrOpen(back, project);
+    expect(claude.opened[0]?.resume).toBe("sess-9");
+  });
+
+  it("never reaps a session whose thread has a turn in flight", async () => {
+    const { sessions, claude, clock, state } = setup();
+    const t = thread({ status: "running" });
+    state.model = modelWith(t, { status: "running" });
+    await sessions.getOrOpen(t, project);
+    clock.t = 120 * 60_000;
+    expect(await sessions.reapIdle()).toEqual([]);
+    expect(claude.closed).toEqual([]);
+    // once the turn settles, the idle rule applies again
+    state.model = modelWith({ ...t, status: "idle" }, { status: "completed" });
+    expect(await sessions.reapIdle()).toEqual(["t1"]);
   });
 
   it("close() and closeAll() release live sessions", async () => {

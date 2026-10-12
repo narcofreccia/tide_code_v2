@@ -4,7 +4,7 @@ import { isInternalCommand, type ClientCommand, type EventRecord } from "@tide/c
 import { CommandError, type Engine } from "../orchestration/engine.ts";
 import type { EventStore } from "../orchestration/store.ts";
 import type { DriverRegistry } from "../provider/registry.ts";
-import { threadCwd } from "../provider/sessions.ts";
+import { resumableSessionId, threadCwd } from "../provider/sessions.ts";
 import type { RemoteInfo } from "./remote.ts";
 import { RpcException, type RpcRouter } from "./router.ts";
 
@@ -82,10 +82,12 @@ export function registerHandlers(router: RpcRouter, deps: HandlerDeps): void {
     const project = model.projects[thread.projectId];
     if (!project) throw new RpcException("not-found", `unknown project ${thread.projectId}`);
     const cwd = threadCwd(thread, project);
-    if (thread.nativeSessionId === undefined) return { cwd };
+    // same rule as the session directory: never resume another harness's session id
+    const sessionId = resumableSessionId(thread, model);
+    if (sessionId === undefined) return { cwd };
     try {
       const instance = await deps.registry.get(thread.provider);
-      const command = instance.terminalCommand(thread.nativeSessionId, cwd);
+      const command = instance.terminalCommand(sessionId, cwd);
       return command === undefined ? { cwd } : { cwd, command };
     } catch {
       // no driver for this harness on this machine: still tell the client where it lives

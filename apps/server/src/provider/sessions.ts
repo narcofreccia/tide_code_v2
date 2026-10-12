@@ -1,4 +1,4 @@
-import type { McpServerSpec, Project, ProviderKind, ProviderSession, SessionSettings, Thread } from "@tide/contracts";
+import type { McpServerSpec, Project, ProviderKind, ProviderSession, ReadModel, SessionSettings, Thread } from "@tide/contracts";
 import { composeSystemPromptAppend, linkedRepoPreamble, resolveLinkedDirs } from "./links.ts";
 import type { DriverRegistry } from "./registry.ts";
 
@@ -34,7 +34,43 @@ export interface SessionDirectoryOptions {
   mcp?: { serversFor(threadId: string): McpServerSpec[]; revoke(threadId: string): void };
   /** false in tests: reapIdle() is then driven by hand against a manual clock */
   autoReap?: boolean;
+  /** the live read model: who owns a native session id, and which threads have a turn in flight */
+  model?: () => ReadModel;
   log?: (msg: string, data?: unknown) => void;
+}
+
+/**
+ * The provider a thread's `nativeSessionId` belongs to: the harness of its most recently
+ * started turn. undefined when no turn has started yet (nothing to contradict the thread).
+ */
+export function nativeSessionOwner(model: ReadModel, threadId: string): ProviderKind | undefined {
+  let owner: { provider: ProviderKind; at: number } | undefined;
+  for (const turn of Object.values(model.turns)) {
+    if (turn.threadId !== threadId || turn.provider === undefined || turn.startedAt === undefined) continue;
+    if (owner === undefined || turn.startedAt >= owner.at) owner = { provider: turn.provider, at: turn.startedAt };
+  }
+  return owner?.provider;
+}
+
+/**
+ * The native session id that may be resumed on the thread's *current* provider. A session id
+ * minted by another harness is never handed over (the decider clears it on a provider switch;
+ * this guards logs written before that rule and any other drift).
+ */
+export function resumableSessionId(thread: Thread, model?: ReadModel): string | undefined {
+  if (thread.nativeSessionId === undefined) return undefined;
+  if (model === undefined) return thread.nativeSessionId;
+  const owner = nativeSessionOwner(model, thread.id);
+  return owner === undefined || owner === thread.provider ? thread.nativeSessionId : undefined;
+}
+
+/** A turn is in flight on the thread: its session must survive however long the turn takes. */
+export function hasLiveTurn(model: ReadModel, threadId: string): boolean {
+  const thread = model.threads[threadId];
+  if (!thread) return false;
+  if (thread.status === "running") return true;
+  const latest = thread.latestTurnId === undefined ? undefined : model.turns[thread.latestTurnId];
+  return latest?.status === "requested" || latest?.status === "running";
 }
 
 /** A thread's cwd is its worktree once P2 lands, the repo root until then. */
@@ -53,9 +89,8 @@ export class SessionDirectory {
   #mcpServers: McpServerSpec[];
   #mcp: { serversFor(threadId: string): McpServerSpec[]; revoke(threadId: string): void } | undefined;
   #log: (msg: string, data?: unknown) => void;
+  #model: (() => ReadModel) | undefined;
   #entries = new Map<string, Entry>();
-  /** last provider a thread actually ran on; resume is only valid for the same one */
-  #lastKind = new Map<string, ProviderKind>();
   #opening = new Map<string, Promise<ProviderSession>>();
   #timer: ReturnType<typeof setInterval> | undefined;
 
@@ -66,6 +101,7 @@ export class SessionDirectory {
     this.#mcpServers = options.mcpServers ?? [];
     this.#mcp = options.mcp;
     this.#log = options.log ?? (() => undefined);
+    this.#model = options.model;
     if (options.autoReap ?? true) {
       this.#timer = setInterval(() => void this.reapIdle(), REAP_INTERVAL_MS);
       this.#timer.unref?.();
@@ -115,12 +151,11 @@ export class SessionDirectory {
     const instance = await this.#registry.get(thread.provider);
     const linkedDirs = resolveLinkedDirs(thread, project);
     const systemPromptAppend = composeSystemPromptAppend(linkedRepoPreamble(project, linkedDirs));
-    const previous = this.#lastKind.get(thread.id);
-    const resumable = thread.nativeSessionId !== undefined && (previous === undefined || previous === thread.provider);
+    const resume = resumableSessionId(thread, this.#model?.());
     const session = await instance.openSession({
       threadId: thread.id,
       cwd,
-      ...(resumable && thread.nativeSessionId !== undefined ? { resume: thread.nativeSessionId } : {}),
+      ...(resume !== undefined ? { resume } : {}),
       ...(thread.model !== undefined ? { model: thread.model } : {}),
       mode: thread.mode,
       interaction: thread.interaction,
@@ -129,7 +164,6 @@ export class SessionDirectory {
       ...(systemPromptAppend !== undefined ? { systemPromptAppend } : {}),
     });
     this.#entries.set(thread.id, { threadId: thread.id, kind: thread.provider, cwd, session, settings: settingsOf(thread), lastUsedAt: this.#now() });
-    this.#lastKind.set(thread.id, thread.provider);
     return session;
   }
 
@@ -160,10 +194,16 @@ export class SessionDirectory {
     }
   }
 
-  /** Closes every session untouched for longer than idleMs. */
+  /**
+   * Closes every session untouched for longer than idleMs. A thread with a turn in flight is
+   * never reaped, however long the harness has been quiet (a long tool call emits nothing).
+   */
   async reapIdle(): Promise<string[]> {
     const cutoff = this.#now() - this.#idleMs;
-    const stale = [...this.#entries.values()].filter((e) => e.lastUsedAt <= cutoff).map((e) => e.threadId);
+    const model = this.#model?.();
+    const stale = [...this.#entries.values()]
+      .filter((e) => e.lastUsedAt <= cutoff && !(model !== undefined && hasLiveTurn(model, e.threadId)))
+      .map((e) => e.threadId);
     for (const threadId of stale) await this.close(threadId);
     return stale;
   }

@@ -1,3 +1,4 @@
+import type { ImageInput } from "@tide/contracts";
 import type { ServerConfig } from "./config.ts";
 import { ExpertsReactor } from "./experts/reactor.ts";
 import { TideMcpProvisioner } from "./mcp/provision.ts";
@@ -28,6 +29,8 @@ export interface AppOptions {
   gh?: GhLike;
   /** how long close() waits for in-flight reactor work before giving up */
   shutdownTimeoutMs?: number;
+  /** tests that restart an app on the same in-memory store */
+  keepStoreOpen?: boolean;
   log?: (msg: string, data?: unknown) => void;
 }
 
@@ -65,8 +68,6 @@ export async function createApp(options: AppOptions): Promise<App> {
   const environmentId = persisted ?? config.environmentId;
 
   const engine = new Engine({ store });
-  // Before any reactor subscribes: nothing can honour a turn the previous process left running.
-  await recoverUnsettledTurns(engine, { log });
   const registry = new DriverRegistry({ env: { dataDir: config.dataDir, log } });
   if (options.registerDrivers) await options.registerDrivers(registry);
   else await registerBundledDrivers(registry, config.providers, log);
@@ -75,10 +76,11 @@ export async function createApp(options: AppOptions): Promise<App> {
   // agent token that is revoked when the session closes.
   const agentTokens = new AgentTokenStore();
   const mcp = new TideMcpProvisioner({ tokens: agentTokens });
-  const sessions = new SessionDirectory({ registry, mcp, log });
+  const sessions = new SessionDirectory({ registry, mcp, log, model: () => engine.getModel() });
 
   // The vcs reactor subscribes first on purpose: it must mark a turn's before-checkpoint
   // gate while `turn.requested` is delivered, before the provider reactor queues the turn.
+  const workspace = createWorkspaceServices({ engine, log });
   const worktrees = new WorktreeManager({ tideHome: config.tideHome, log });
   const checkpoints = new CheckpointService({ log });
   const vcs = new VcsReactor({
@@ -87,6 +89,7 @@ export async function createApp(options: AppOptions): Promise<App> {
     checkpoints,
     sessions,
     ...(options.gh !== undefined ? { gh: options.gh } : {}),
+    onDetach: (threadId, worktreePath) => workspace.teardown(threadId, worktreePath),
     log,
   });
   vcs.start();
@@ -95,6 +98,7 @@ export async function createApp(options: AppOptions): Promise<App> {
     engine,
     sessions,
     beforeTurn: (_threadId, turnId) => checkpoints.beforeReady(turnId),
+    imagesFor: (turnId) => imagesOf(store, turnId),
     log,
   });
   reactor.start();
@@ -102,7 +106,10 @@ export async function createApp(options: AppOptions): Promise<App> {
   const experts = new ExpertsReactor({ engine, log });
   experts.start();
 
-  const workspace = createWorkspaceServices({ engine, log });
+  // After every reactor subscribed: the dead turns' settles must reach the vcs reactor (after-
+  // checkpoint), the experts reactor (expert status) and the provider reactor (which runs the
+  // queued turn each settle promotes).
+  await recoverUnsettledTurns(engine, { log, resume: (threadId, turnId) => reactor.resume(threadId, turnId) });
 
   const server =
     options.listen === false
@@ -144,7 +151,8 @@ export async function createApp(options: AppOptions): Promise<App> {
 
       // 2. whatever is mid-flight is asked to stop and then settled, so a restart finds a
       //    clean log instead of a thread wedged on `running`
-      for (const turn of unsettledTurns(engine.getModel())) {
+      // queued turns were never sent to a harness: they survive the restart and run after recovery
+      for (const turn of unsettledTurns(engine.getModel()).filter((t) => t.status !== "queued")) {
         try {
           await sessions.peek(turn.threadId)?.interrupt();
         } catch (err) {
@@ -164,12 +172,21 @@ export async function createApp(options: AppOptions): Promise<App> {
       workspace.close();
       await sessions.closeAll();
       await registry.dispose();
-      store.close();
+      if (!options.keepStoreOpen) store.close();
     },
   };
 }
 
 const DEFAULT_SHUTDOWN_TIMEOUT_MS = 5_000;
+
+/** Image bytes ride only on `turn.requested`; a turn promoted after a restart reads them back from the log. */
+function imagesOf(store: EventStore, turnId: string): ImageInput[] | undefined {
+  for (const record of store.readAll()) {
+    const event = record.event;
+    if (event.type === "turn.requested" && event.turn.id === turnId) return event.images;
+  }
+  return undefined;
+}
 
 /** Never let a wedged reactor hold the process open; the store must close either way. */
 async function withTimeout(work: Promise<unknown>, ms: number, log: (msg: string, data?: unknown) => void): Promise<void> {

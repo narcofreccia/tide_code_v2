@@ -122,6 +122,7 @@ export function decideTurn(model: ReadModel, command: TurnCommand, ctx: DecideCo
         threadId: turn.threadId,
         ...(command.usage !== undefined ? { usage: command.usage } : {}),
         ...(command.contextUsage !== undefined ? { contextUsage: command.contextUsage } : {}),
+        ...(command.rateLimit !== undefined ? { rateLimit: command.rateLimit } : {}),
         at: ctx.now,
       });
     }

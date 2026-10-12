@@ -6,7 +6,7 @@ import { EventStore } from "../orchestration/store.ts";
 import { INTERRUPT_TIMEOUT_ERROR, ProviderReactor, type CancelTimer } from "./reactor.ts";
 import { DriverRegistry } from "./registry.ts";
 import { SessionDirectory } from "./sessions.ts";
-import { awaitApproval, awaitInterrupt, createFakeDriver, emit, throwStep, type FakeDriverControl } from "./testing/fakeDriver.ts";
+import { awaitApproval, awaitInterrupt, createFakeDriver, effect, emit, throwStep, type FakeDriverControl } from "./testing/fakeDriver.ts";
 
 interface Harness {
   engine: Engine;
@@ -71,6 +71,8 @@ class ManualClock {
 interface HarnessOptions {
   schedule?: (fn: () => void, ms: number) => CancelTimer;
   interruptTimeoutMs?: number;
+  /** clock of the session directory (idle reaping) */
+  now?: () => number;
 }
 
 async function harness(options: HarnessOptions = {}): Promise<Harness> {
@@ -79,7 +81,13 @@ async function harness(options: HarnessOptions = {}): Promise<Harness> {
   const { driver, control } = createFakeDriver("claude");
   const registry = new DriverRegistry({ env: { dataDir: ":memory:", log: () => undefined } });
   registry.register(driver);
-  const sessions = new SessionDirectory({ registry, autoReap: false, log: () => undefined });
+  const sessions = new SessionDirectory({
+    registry,
+    autoReap: false,
+    log: () => undefined,
+    model: () => engine.getModel(),
+    ...(options.now !== undefined ? { now: options.now } : {}),
+  });
   const reactor = new ProviderReactor({
     engine,
     sessions,
@@ -413,5 +421,57 @@ describe("ProviderReactor: interrupt watchdog", () => {
     expect(clock.pending).toBe(0);
     expect(h.engine.getModel().turns[requested.turn.id]?.status).toBe("interrupted");
     expect(h.control.closed).not.toContain(h.threadId);
+  });
+});
+
+describe("ProviderReactor: session lifetime", () => {
+  const MIN = 60_000;
+
+  it("keeps a session alive through a turn longer than the idle window, and reaps it once idle", async () => {
+    const clock = { t: 0 };
+    const h = await harness({ now: () => clock.t });
+    const reaped: string[][] = [];
+    h.control.script(
+      emit({ type: "assistant.delta", messageKey: "m", delta: "working" }),
+      effect(async () => {
+        // 45 quiet minutes inside one turn (a long build): the reaper must leave it alone
+        clock.t = 45 * MIN;
+        reaped.push(await h.sessions.reapIdle());
+      }),
+      emit({ type: "assistant.delta", messageKey: "m", delta: " done" }),
+      emit({ type: "settled", status: "completed" }),
+    );
+    await h.engine.dispatch({ type: "turn.request", threadId: h.threadId, text: "long job" });
+    await h.reactor.drain();
+    expect(reaped).toEqual([[]]);
+    expect(h.engine.getModel().threads[h.threadId]?.status).toBe("idle");
+
+    // the last event touched the session at 45 min: still fresh 29 minutes later
+    clock.t = 74 * MIN;
+    expect(await h.sessions.reapIdle()).toEqual([]);
+    clock.t = 76 * MIN;
+    expect(await h.sessions.reapIdle()).toEqual([h.threadId]);
+    expect(h.control.closed).toEqual([h.threadId]);
+  });
+});
+
+describe("ProviderReactor: activity identity", () => {
+  it("scopes harness request ids to the turn: a reused id \"0\" opens a new row", async () => {
+    const h = await harness();
+    const approval = (status: "pending" | "resolved") =>
+      emit({ type: "activity", activity: { kind: "approval", requestId: "0", toolName: "Bash", input: { n: status }, status } });
+    h.control.script(approval("pending"), approval("resolved"), emit({ type: "settled", status: "completed" }));
+    h.control.script(approval("pending"), emit({ type: "settled", status: "completed" }));
+
+    await h.engine.dispatch({ type: "turn.request", threadId: h.threadId, text: "one" });
+    await h.reactor.drain();
+    await h.engine.dispatch({ type: "turn.request", threadId: h.threadId, text: "two" });
+    await h.reactor.drain();
+
+    const model = h.engine.getModel();
+    const rows = activitiesOf(model, h.threadId).filter((a) => a?.kind === "approval");
+    expect(rows).toHaveLength(2);
+    expect(new Set(rows.map((a) => a?.id)).size).toBe(2);
+    expect(new Set(rows.map((a) => a?.turnId)).size).toBe(2);
   });
 });

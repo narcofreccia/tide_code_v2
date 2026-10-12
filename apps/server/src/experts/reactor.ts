@@ -27,15 +27,14 @@ function sessionOfThread(model: ReadModel, threadId: string): ExpertsSession | u
 }
 
 /**
- * Delivers board traffic to the panel. Messages land on an idle expert as a new turn;
- * an expert mid-turn keeps a per-thread mailbox that is flushed when its turn settles.
- * Everything goes through the engine — the reactor never touches a driver.
+ * Delivers board traffic to the panel: every message becomes a `turn.request` on each
+ * recipient right away. An expert mid-turn gets it as a *queued* turn (the engine queues
+ * follow-ups on a running thread), so the backlog lives in the event log and survives a
+ * restart. Everything goes through the engine — the reactor never touches a driver.
  */
 export class ExpertsReactor {
   #engine: Engine;
   #log: (msg: string, data?: unknown) => void;
-  /** threadId -> messages waiting for the thread to go idle */
-  #mailbox = new Map<string, string[]>();
   #queues = new Map<string, Promise<void>>();
   #inflight = new Set<Promise<unknown>>();
   #unsubscribe: (() => void) | undefined;
@@ -68,11 +67,6 @@ export class ExpertsReactor {
     throw new Error("experts reactor did not drain");
   }
 
-  /** Messages buffered for a thread; exposed for tests and diagnostics. */
-  pending(threadId: string): readonly string[] {
-    return this.#mailbox.get(threadId) ?? [];
-  }
-
   #onRecord(record: EventRecord): void {
     const event = record.event;
     if (event.type === "experts.message-posted") {
@@ -80,8 +74,8 @@ export class ExpertsReactor {
       const session = model.expertsSessions[event.message.sessionId];
       if (!session) return;
       for (const recipient of recipientsOf(session, event.message)) {
-        this.#buffer(recipient.threadId, messageDeliveryPrompt(event.message.from, event.message.text));
-        this.#enqueue(recipient.threadId, () => this.#deliver(recipient.threadId));
+        const text = messageDeliveryPrompt(event.message.from, event.message.text);
+        this.#enqueue(recipient.threadId, () => this.#deliver(recipient.threadId, text));
       }
       return;
     }
@@ -89,7 +83,7 @@ export class ExpertsReactor {
       const model = this.#engine.getModel();
       const thread = model.threads[event.threadId];
       const session = sessionOfThread(model, event.threadId);
-      if (session && thread?.role === "expert") {
+      if (session && thread?.role === "expert" && thread.status !== "running") {
         const expert = session.experts.find((e) => e.threadId === thread.id);
         if (expert) {
           this.#track(
@@ -102,14 +96,7 @@ export class ExpertsReactor {
           );
         }
       }
-      if (session) this.#enqueue(event.threadId, () => this.#deliver(event.threadId));
     }
-  }
-
-  #buffer(threadId: string, text: string): void {
-    const list = this.#mailbox.get(threadId) ?? [];
-    list.push(text);
-    this.#mailbox.set(threadId, list);
   }
 
   #track(promise: Promise<unknown>): void {
@@ -126,23 +113,13 @@ export class ExpertsReactor {
     this.#track(queue);
   }
 
-  async #deliver(threadId: string): Promise<void> {
-    const buffered = this.#mailbox.get(threadId);
-    if (!buffered || buffered.length === 0) return;
+  async #deliver(threadId: string, text: string): Promise<void> {
     const thread = this.#engine.getModel().threads[threadId];
-    if (!thread || thread.archivedAt !== undefined) {
-      this.#mailbox.delete(threadId);
-      return;
-    }
-    if (thread.status === "running") return; // flushed when the turn settles
-    const text = buffered.join("\n\n");
-    this.#mailbox.delete(threadId);
+    if (!thread || thread.archivedAt !== undefined) return;
     try {
+      // a running expert gets this as a queued turn, run when its current one settles
       await this.#engine.dispatch({ type: "turn.request", threadId, text });
     } catch (err) {
-      // put it back so a later settle retries rather than dropping the message
-      const list = this.#mailbox.get(threadId) ?? [];
-      this.#mailbox.set(threadId, [...buffered, ...list]);
       this.#log("[experts] message delivery rejected", err);
     }
   }

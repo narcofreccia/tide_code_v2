@@ -325,9 +325,11 @@ describe("decide: internal turn commands", () => {
       type: "usage.report", turnId: base.turnId,
       usage: { inputTokens: 10, outputTokens: 5, costUsd: 0.25 },
       contextUsage: { used: 1000, window: 200000 },
+      rateLimit: { status: "warning", remainingPct: 10, at: 5 },
     });
     expect(model.turns[base.turnId]?.usage).toMatchObject({ inputTokens: 10, outputTokens: 5 });
     expect(model.threads[base.threadId]).toMatchObject({ totalCostUsd: 0.25, contextUsage: { used: 1000, window: 200000 } });
+    expect(model.threads[base.threadId]?.rateLimit).toEqual({ status: "warning", remainingPct: 10, at: 5 });
   });
 
   it("settles a turn exactly once", () => {

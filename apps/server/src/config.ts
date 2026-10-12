@@ -93,22 +93,31 @@ function readProviders(value: unknown): ProviderConfigs {
   return out;
 }
 
+/** A config problem the user must fix by hand; the server refuses to start. */
+export class ConfigError extends Error {
+  constructor(message: string) {
+    super(message);
+    this.name = "ConfigError";
+  }
+}
+
 /** Reads (or creates, 0600) `<TIDE_HOME>/server.json`: identity, bearer token, driver config. */
 function loadIdentity(tideHome: string): ServerIdentity {
   const file = join(tideHome, "server.json");
   if (existsSync(file)) {
+    // Never silently mint a new identity over an unreadable file: that would rotate the token
+    // (logging out every paired client) and drop the user's driver config without a word.
+    let parsed: unknown;
     try {
-      const parsed = JSON.parse(readFileSync(file, "utf8")) as Record<string, unknown>;
-      if (typeof parsed["environmentId"] === "string" && typeof parsed["token"] === "string") {
-        return {
-          environmentId: parsed["environmentId"],
-          token: parsed["token"],
-          providers: readProviders(parsed["providers"]),
-        };
-      }
-    } catch {
-      /* fall through and rewrite a fresh identity */
+      parsed = JSON.parse(readFileSync(file, "utf8"));
+    } catch (err) {
+      throw new ConfigError(`${file} is not valid JSON (${err instanceof Error ? err.message : String(err)}); fix it or move it aside to generate a new identity`);
     }
+    const raw = typeof parsed === "object" && parsed !== null ? (parsed as Record<string, unknown>) : {};
+    if (typeof raw["environmentId"] !== "string" || typeof raw["token"] !== "string") {
+      throw new ConfigError(`${file} is missing "environmentId" or "token"; fix it or move it aside to generate a new identity`);
+    }
+    return { environmentId: raw["environmentId"], token: raw["token"], providers: readProviders(raw["providers"]) };
   }
   const identity: ServerIdentity = { environmentId: newId(), token: randomBytes(32).toString("hex"), providers: {} };
   writeFileSync(file, `${JSON.stringify(identity, null, 2)}\n`, { mode: 0o600 });

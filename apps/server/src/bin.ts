@@ -1,7 +1,7 @@
 #!/usr/bin/env node
 import { runMcpServer } from "@tide/tide-mcp";
 import { createApp } from "./app.ts";
-import { resolveConfig } from "./config.ts";
+import { ConfigError, resolveConfig } from "./config.ts";
 
 async function main(): Promise<void> {
   const argv = process.argv.slice(2);
@@ -35,6 +35,7 @@ async function main(): Promise<void> {
 }
 
 main().catch((err: unknown) => {
-  console.error(err);
+  if (err instanceof ConfigError) console.error(`tide-server: ${err.message}`);
+  else console.error(err);
   process.exit(1);
 });

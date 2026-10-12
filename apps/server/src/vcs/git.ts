@@ -352,7 +352,8 @@ export class Git {
         return { binary: false, missing: true };
       }
     }
-    const r = await this.runBuffer(["show", `${ref}:${path}`]);
+    // a ref starting with "-" must never be parsed as an option
+    const r = await this.runBuffer(["show", "--end-of-options", `${ref}:${path}`]);
     if (r.code !== 0) return { binary: false, missing: true };
     return isBinary(r.stdout) ? { binary: true, missing: false } : { content: r.stdout.toString("utf8"), binary: false, missing: false };
   }

@@ -100,6 +100,15 @@ export class CheckpointService {
     return { ref, sha };
   }
 
+  /** Deletes every checkpoint ref of a thread (refs are shared by the repo and all its worktrees). */
+  async deleteThreadRefs(repoDir: string, threadId: string): Promise<number> {
+    const git = this.#git(repoDir);
+    if (!(await git.isRepo())) return 0;
+    const refs = await git.listRefs(`refs/tide/checkpoints/${threadId}/`);
+    for (const { ref } of refs) await git.deleteRef(ref);
+    return refs.length;
+  }
+
   /** before → after for one turn; falls back to the live working tree while the turn is running. */
   async turnDiff(cwd: string, turn: Turn): Promise<DiffResult> {
     const before = turn.checkpoint?.before;
