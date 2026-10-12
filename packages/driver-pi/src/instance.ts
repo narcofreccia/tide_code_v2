@@ -1,6 +1,7 @@
 import type { DriverEnv, OpenSessionOptions, ProviderInstance, ProviderSession, ProviderStatus } from "@tide/contracts";
 import { resolveBridgePath } from "./bridge-path.ts";
-import { PiSession, buildSpawn } from "./session.ts";
+import { PiSession } from "./session.ts";
+import { buildSpawn } from "./spawn.ts";
 import { shellQuote } from "./shell.ts";
 import { buildStatus, detectBinary, INSTALL_HINT } from "./status.ts";
 import type { PiConfig, PiDeps } from "./types.ts";
@@ -39,11 +40,11 @@ export class PiInstance implements ProviderInstance {
   }
 
   async openSession(options: OpenSessionOptions): Promise<ProviderSession> {
-    this.#binaryPath ??= await detectBinary(this.#config);
+    this.#binaryPath ??= (await detectBinary(this.#config, this.#deps.probe, this.#env.log))?.path;
     const binary = this.#binaryPath;
     if (!binary) throw new Error(INSTALL_HINT);
     const bridgePath = this.#deps.bridgePath ?? resolveBridgePath();
-    if (!bridgePath) this.#env.log("[pi] tide-bridge not found; approvals and plan mode are unavailable");
+    if (!bridgePath) this.#env.log("[pi] tide-bridge not found; approvals, plan mode, live reconfigure and Tide MCP are unavailable");
     const { args, env } = buildSpawn(options, this.#config, bridgePath);
     this.#env.log(`[pi] ${binary} ${args.join(" ")}`);
     const child = this.#deps.spawn(binary, args, { cwd: options.cwd, env });

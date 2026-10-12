@@ -6,7 +6,14 @@
  *  - approvals: `ctx.ui.confirm(title, message)` → `extension_ui_request {method:"confirm"}`,
  *    answered with `extension_ui_response {id, confirmed}`. `message` line 1 is `TIDE_META:<json>`.
  *  - plan / usage: `ctx.ui.notify(text)` → fire-and-forget `extension_ui_request {method:"notify"}`.
+ *  - live reconfigure: the driver sends `prompt "/tide-config <json>"`; pi runs extension
+ *    commands immediately and answers `disposition:"handled"` without starting a model run
+ *    (docs/rpc-commands.md § prompt), so mode / plan mode change in place.
+ *  - MCP: `TIDE_MCP_SERVERS` (JSON `McpServerWire[]`) → `pi.registerMcpServer()` at load
+ *    (docs/mcp.md § Add servers from extensions). The user's own mcp.json is never touched.
  */
+
+import { isReadOnlyShell } from "./readonly-shell.ts";
 
 export const META_PREFIX = "TIDE_META:";
 export const PLAN_PREFIX = "TIDE_PLAN:";
@@ -24,6 +31,12 @@ export const ENV_LINKED_DIRS = "TIDE_LINKED_DIRS";
 /** pi has no `systemPromptAppend` option; the bridge appends this in `before_agent_start`. */
 export const ENV_SYSTEM_PROMPT_APPEND = "TIDE_SYSTEM_PROMPT_APPEND";
 
+/** JSON array of `McpServerWire`; the bridge registers each with `pi.registerMcpServer()`. */
+export const ENV_MCP_SERVERS = "TIDE_MCP_SERVERS";
+
+/** Extension command the driver uses to change mode / plan mode on a live process. */
+export const CONFIG_COMMAND = "tide-config";
+
 export type ToolClass = "read" | "write" | "command" | "unknown";
 export type RuntimeMode = "approval-required" | "auto-accept-edits" | "auto" | "full-access";
 
@@ -36,7 +49,13 @@ export interface ApprovalMeta {
   diff?: string;
 }
 
-const READ_TOOLS = new Set(["read", "ls", "grep", "find", "glob", "todo_read", "web_search", "web_fetch"]);
+const READ_TOOLS = new Set([
+  "read", "ls", "grep", "find", "glob", "todo_read", "web_search", "web_fetch",
+  // pi 0.99+ built-in MCP resource tools (docs/mcp.md § Use resources: "marked read-only")
+  "list_mcp_resources", "list_mcp_resource_templates", "read_mcp_resource",
+  // pi's tool_search only declares tools; it runs nothing
+  "tool_search",
+]);
 const WRITE_TOOLS = new Set(["edit", "write", "multi_edit", "apply_patch", "notebook_edit", "todo_write"]);
 const COMMAND_TOOLS = new Set(["bash", "powershell", "shell", "run_command"]);
 
@@ -46,7 +65,9 @@ const COMMAND_TOOLS = new Set(["bash", "powershell", "shell", "run_command"]);
  * blocked, because "not in Tide's table" is not evidence that a tool mutates anything, and
  * blocking it would cripple the harness (CLAUDE.md §1a).
  */
-export function classifyTool(toolName: string): ToolClass {
+export function classifyTool(rawName: string): ToolClass {
+  // pi 0.99+ names built-ins `builtin:<name>` in source info; accept either spelling
+  const toolName = rawName.startsWith("builtin:") ? rawName.slice("builtin:".length) : rawName;
   if (COMMAND_TOOLS.has(toolName)) return "command";
   if (READ_TOOLS.has(toolName)) return "read";
   if (WRITE_TOOLS.has(toolName)) return "write";
@@ -62,32 +83,17 @@ export function needsApproval(mode: RuntimeMode, toolClass: ToolClass): boolean 
   return false;
 }
 
-const READ_ONLY_COMMANDS = new Set([
-  "ls", "cat", "head", "tail", "wc", "grep", "rg", "find", "fd", "pwd", "which", "echo", "file", "stat", "tree", "du", "df", "diff", "sort", "uniq", "cut", "awk", "sed", "basename", "dirname", "realpath", "env", "date", "printenv",
-]);
-const READ_ONLY_GIT = new Set(["status", "log", "diff", "show", "branch", "remote", "blame", "describe", "ls-files", "rev-parse", "config"]);
-/** Redirections and background/edit operators make even an allowlisted head unsafe. */
-const MUTATING_SYNTAX = /[>`]|\$\(|\bsudo\b/;
-
 /**
- * Is this shell command read-only enough to run while planning? Deliberately conservative:
- * an allowlisted head on every segment, no redirection, no command substitution. Anything
- * unrecognised answers `false` and takes the normal approval path — this decides *plan-mode
- * blocking only*, never whether an approval is needed.
+ * Is this shell command read-only enough to run while planning? Parse-and-deny (see
+ * `readonly-shell.ts`): every simple command must be an allowlisted program without its
+ * mutating flags, and no output redirection may reach a file. Anything unrecognised answers
+ * `false` and takes the normal approval path — this decides *plan-mode blocking only*, never
+ * whether an approval is needed.
  */
 export function isReadOnlyCommand(input: unknown): boolean {
   if (typeof input !== "object" || input === null) return false;
   const command = (input as Record<string, unknown>)["command"];
-  if (typeof command !== "string" || command.trim() === "") return false;
-  if (MUTATING_SYNTAX.test(command)) return false;
-  const segments = command.split(/\|\||&&|[|;]/);
-  return segments.every((segment) => {
-    const words = segment.trim().split(/\s+/).filter((word) => word !== "");
-    const head = words[0];
-    if (head === undefined) return false;
-    if (head === "git") return words[1] !== undefined && READ_ONLY_GIT.has(words[1]);
-    return READ_ONLY_COMMANDS.has(head);
-  });
+  return typeof command === "string" && isReadOnlyShell(command);
 }
 
 /** In plan mode only these are refused outright; everything else goes to the approval path. */
@@ -216,4 +222,69 @@ export function readOnlyLinkFor(toolName: string, input: unknown, cwd: string, l
   if (path === undefined) return undefined;
   const target = absolutize(cwd, path);
   return links.find((link) => link.access === "read" && isUnder(link.path, target));
+}
+
+// ---- live reconfigure ---------------------------------------------------------------
+
+export interface BridgeConfig {
+  mode: RuntimeMode;
+  plan: boolean;
+}
+
+export function formatConfigCommand(config: BridgeConfig): string {
+  return `/${CONFIG_COMMAND} ${JSON.stringify(config)}`;
+}
+
+/** Parses the argument string of `/tide-config`; undefined when it is not a valid config. */
+export function parseConfigArgs(args: string): BridgeConfig | undefined {
+  try {
+    const parsed: unknown = JSON.parse(args.trim());
+    if (typeof parsed !== "object" || parsed === null) return undefined;
+    const record = parsed as Record<string, unknown>;
+    if (typeof record["plan"] !== "boolean" || typeof record["mode"] !== "string") return undefined;
+    const mode = parseRuntimeMode(record["mode"]);
+    if (mode !== record["mode"]) return undefined;
+    return { mode, plan: record["plan"] };
+  } catch {
+    return undefined;
+  }
+}
+
+// ---- MCP servers ----------------------------------------------------------------------
+
+export interface McpServerWire {
+  name: string;
+  command: string;
+  args?: string[];
+  env?: Record<string, string>;
+}
+
+export function parseMcpServers(raw: string | undefined): McpServerWire[] {
+  if (!raw) return [];
+  try {
+    const parsed: unknown = JSON.parse(raw);
+    if (!Array.isArray(parsed)) return [];
+    return parsed.filter((entry): entry is McpServerWire => {
+      if (typeof entry !== "object" || entry === null) return false;
+      const server = entry as Partial<McpServerWire>;
+      return typeof server.name === "string" && /^[A-Za-z0-9_-]+$/.test(server.name) && typeof server.command === "string";
+    });
+  } catch {
+    return [];
+  }
+}
+
+/**
+ * The `mcpServers` entry handed to `pi.registerMcpServer()`. `exposure: "direct"` because pi's
+ * default (`codemode`) hides tools from the model unless codemode is on (docs/mcp.md § Control
+ * tool exposure); Tide's board/delegation tools must be callable like Claude's and Codex's.
+ */
+export function mcpServerConfig(server: McpServerWire): { command: string; args: string[]; env?: Record<string, string>; exposure: "direct"; description: string } {
+  return {
+    command: server.command,
+    args: server.args ?? [],
+    ...(server.env && Object.keys(server.env).length > 0 ? { env: server.env } : {}),
+    exposure: "direct",
+    description: server.name === "tide" ? "Tide: experts board and cross-harness delegation" : `Attached by Tide (${server.name})`,
+  };
 }

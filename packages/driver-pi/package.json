@@ -10,7 +10,7 @@
     "build": "echo skip"
   },
   "dependencies": {
-    "@earendil-works/pi-coding-agent": "^0.84.0",
+    "@earendil-works/pi-coding-agent": "^1.1.0",
     "@tide/contracts": "workspace:*",
     "@tide/pi-extensions": "workspace:*"
   },

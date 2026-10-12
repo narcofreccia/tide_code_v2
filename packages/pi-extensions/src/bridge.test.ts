@@ -1,17 +1,37 @@
 import { afterEach, describe, expect, it } from "vitest";
-import { ENV_CWD, ENV_INTERACTION, ENV_LINKED_DIRS, ENV_RUNTIME_MODE, ENV_SYSTEM_PROMPT_APPEND, type LinkedDirWire } from "./protocol.ts";
+import { CONFIG_COMMAND, ENV_CWD, ENV_INTERACTION, ENV_LINKED_DIRS, ENV_MCP_SERVERS, ENV_RUNTIME_MODE, ENV_SYSTEM_PROMPT_APPEND, PLAN_TOOL_NAME, formatConfigCommand, type LinkedDirWire } from "./protocol.ts";
 import tideBridge from "./tide-bridge.ts";
 
 type Handler = (event: Record<string, unknown>, ctx: unknown) => Promise<unknown>;
 
+interface Fake {
+  pi: Record<string, unknown>;
+  on: Map<string, Handler>;
+  commands: Map<string, (args: string, ctx: unknown) => Promise<void>>;
+  tools: string[];
+  active: string[];
+  mcp: { name: string; config: Record<string, unknown> }[];
+  annotations: Record<string, { readOnlyHint?: boolean }>;
+}
+
 /** The slice of pi's ExtensionAPI the bridge uses. */
-function fakePi(): { pi: Record<string, unknown>; on: Map<string, Handler> } {
-  const on = new Map<string, Handler>();
-  const pi = {
-    on: (name: string, handler: Handler) => on.set(name, handler),
-    registerTool: () => undefined,
+function fakePi(): Fake {
+  const fake: Fake = { pi: {}, on: new Map(), commands: new Map(), tools: [], active: ["read", "bash", "edit", "write"], mcp: [], annotations: {} };
+  fake.pi = {
+    on: (name: string, handler: Handler) => fake.on.set(name, handler),
+    registerTool: (tool: { name: string }) => {
+      fake.tools.push(tool.name);
+      fake.active.push(tool.name);
+    },
+    registerCommand: (name: string, options: { handler: (args: string, ctx: unknown) => Promise<void> }) => fake.commands.set(name, options.handler),
+    registerMcpServer: (name: string, config: Record<string, unknown>) => fake.mcp.push({ name, config }),
+    getAllTools: () => Object.entries(fake.annotations).map(([name, annotations]) => ({ name, annotations })),
+    getActiveTools: () => [...fake.active],
+    setActiveTools: (names: string[]) => {
+      fake.active = [...names];
+    },
   };
-  return { pi, on };
+  return fake;
 }
 
 const links: LinkedDirWire[] = [
@@ -19,16 +39,21 @@ const links: LinkedDirWire[] = [
   { path: "/repos/infra", label: "infra", access: "read" },
 ];
 
-const KEYS = [ENV_RUNTIME_MODE, ENV_INTERACTION, ENV_CWD, ENV_LINKED_DIRS, ENV_SYSTEM_PROMPT_APPEND];
+const KEYS = [ENV_RUNTIME_MODE, ENV_INTERACTION, ENV_CWD, ENV_LINKED_DIRS, ENV_SYSTEM_PROMPT_APPEND, ENV_MCP_SERVERS];
 afterEach(() => {
   for (const key of KEYS) delete process.env[key];
 });
 
-function load(env: Record<string, string>): Map<string, Handler> {
+function loadFake(env: Record<string, string>, prepare: (fake: Fake) => void = () => undefined): Fake {
   for (const [key, value] of Object.entries(env)) process.env[key] = value;
-  const { pi, on } = fakePi();
-  tideBridge(pi as unknown as Parameters<typeof tideBridge>[0]);
-  return on;
+  const fake = fakePi();
+  prepare(fake);
+  tideBridge(fake.pi as unknown as Parameters<typeof tideBridge>[0]);
+  return fake;
+}
+
+function load(env: Record<string, string>): Map<string, Handler> {
+  return loadFake(env).on;
 }
 
 const toolCall = (on: Map<string, Handler>, toolName: string, input: Record<string, unknown>): Promise<unknown> =>
@@ -111,8 +136,9 @@ describe("tide-bridge linked repos", () => {
     expect(result.systemPrompt).toContain("## Linked repositories");
   });
 
-  it("registers no system-prompt hook when there is nothing to append", () => {
-    expect(load(base).has("before_agent_start")).toBe(false);
+  it("leaves the system prompt alone when there is nothing to append", async () => {
+    // the hook is always registered (plan mode can be switched on live) but adds nothing here
+    expect(await load(base).get("before_agent_start")!({ systemPrompt: "base" }, {})).toBeUndefined();
   });
 
   it("keeps plan mode's own instructions alongside the preamble", async () => {
@@ -122,5 +148,69 @@ describe("tide-bridge linked repos", () => {
     expect(result.systemPrompt).toContain("plan mode");
     // plan mode still blocks every write, link or not
     expect(await toolCall(on, "edit", { path: "/repos/frontend/app.tsx" })).toMatchObject({ block: true });
+  });
+});
+
+describe("tide-bridge MCP", () => {
+  it("registers Tide's MCP servers with pi, with direct exposure, and leaves mcp.json alone", () => {
+    const servers = [{ name: "tide", command: "node", args: ["mcp.js"], env: { TIDE_AGENT_TOKEN: "t" } }];
+    const fake = loadFake({ [ENV_RUNTIME_MODE]: "auto", [ENV_MCP_SERVERS]: JSON.stringify(servers) });
+    expect(fake.mcp).toEqual([{ name: "tide", config: expect.objectContaining({ command: "node", args: ["mcp.js"], env: { TIDE_AGENT_TOKEN: "t" }, exposure: "direct" }) }]);
+  });
+
+  it("skips malformed entries and survives a registration that throws", () => {
+    const fake = loadFake({ [ENV_MCP_SERVERS]: JSON.stringify([{ name: "bad name!", command: "x" }, { name: "ok", command: "x" }]) }, (f) => {
+      f.pi["registerMcpServer"] = () => {
+        throw new Error("name taken");
+      };
+    });
+    expect(fake.commands.has(CONFIG_COMMAND)).toBe(true);
+  });
+
+  it("lets an MCP tool its server marks read-only run without asking", async () => {
+    const fake = loadFake({ [ENV_RUNTIME_MODE]: "approval-required" }, (f) => {
+      f.annotations["mcp__echo__echo"] = { readOnlyHint: true };
+    });
+    const { result, asked } = toolCallAsking(fake.on, "mcp__echo__echo", { text: "hi" });
+    expect(await result).toBeUndefined();
+    expect(asked).toEqual([]);
+    // no hint: still asks
+    expect(toolCallAsking(fake.on, "mcp__echo__other", {}).asked).toEqual(["Allow mcp__echo__other?"]);
+  });
+});
+
+describe("tide-bridge live reconfigure (/tide-config)", () => {
+  const ctx = { ui: { notify: () => undefined } };
+
+  it("turns plan mode on and off without a restart", async () => {
+    const fake = loadFake({ [ENV_RUNTIME_MODE]: "auto", [ENV_INTERACTION]: "default", [ENV_CWD]: "/work/repo" });
+    const command = fake.commands.get(CONFIG_COMMAND)!;
+    expect(fake.tools).toEqual([]);
+    expect(await toolCall(fake.on, "write", { path: "a.ts" })).toBeUndefined();
+
+    await command(formatConfigCommand({ mode: "auto", plan: true }).slice(CONFIG_COMMAND.length + 2), ctx);
+    expect(fake.active).toContain(PLAN_TOOL_NAME);
+    expect(await toolCall(fake.on, "write", { path: "a.ts" })).toMatchObject({ block: true });
+    const prompt = (await fake.on.get("before_agent_start")!({ systemPrompt: "base" }, {})) as { systemPrompt: string };
+    expect(prompt.systemPrompt).toContain("plan mode");
+
+    await command(JSON.stringify({ mode: "auto", plan: false }), ctx);
+    expect(fake.active).not.toContain(PLAN_TOOL_NAME);
+    expect(await toolCall(fake.on, "write", { path: "a.ts" })).toBeUndefined();
+    // on again re-activates the already-registered tool instead of registering it twice
+    await command(JSON.stringify({ mode: "auto", plan: true }), ctx);
+    expect(fake.tools).toEqual([PLAN_TOOL_NAME]);
+    expect(fake.active).toContain(PLAN_TOOL_NAME);
+  });
+
+  it("changes the runtime mode, and ignores a malformed payload", async () => {
+    const fake = loadFake({ [ENV_RUNTIME_MODE]: "auto" });
+    const command = fake.commands.get(CONFIG_COMMAND)!;
+    expect(toolCallAsking(fake.on, "bash", { command: "rm x" }).asked).toEqual([]);
+    await command(JSON.stringify({ mode: "approval-required", plan: false }), ctx);
+    expect(toolCallAsking(fake.on, "bash", { command: "rm x" }).asked).toEqual(["Allow bash?"]);
+    await command("{not json", ctx);
+    await command(JSON.stringify({ mode: "yolo", plan: false }), ctx);
+    expect(toolCallAsking(fake.on, "bash", { command: "rm x" }).asked).toEqual(["Allow bash?"]);
   });
 });

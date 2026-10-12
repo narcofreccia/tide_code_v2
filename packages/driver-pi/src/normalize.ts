@@ -1,14 +1,18 @@
 import type { NormalizedEvent } from "@tide/contracts";
+import { displayToolName } from "./tool-names.ts";
 import type { PiEvent } from "./types.ts";
 
 /**
- * pi agent events → Tide's normalized vocabulary. Event names are the ones listed in
- * docs/rpc.md § Events of @earendil-works/pi-coding-agent 0.84.x:
- *   message_start / message_update / message_end, tool_execution_start / _end,
- *   agent_start / agent_end / agent_settled, compaction_start / _end, extension_error.
+ * pi agent events → Tide's normalized vocabulary. Event names and fields are the ones in
+ * docs/json.md (the canonical event reference since pi 0.99) of
+ * @earendil-works/pi-coding-agent 1.1.x:
+ *   message_start / message_update / message_end, tool_execution_start / _end (`durationMs`,
+ *   1.1), agent_start / agent_end / agent_settled (`aborted`, 1.1), compaction_start / _end,
+ *   auto_retry_start / _end, extension_error (RPC only).
  *
  * `agent_end` is NOT the end of a turn — pi may still retry, compact, or drain queued
- * messages — so the turn settles on `agent_settled`.
+ * messages — so the turn settles on `agent_settled`. Wire `message_update` frames are
+ * delta-only (0.84): the `delta` of text/thinking events is all Tide reads.
  *
  * Extension UI lines (approvals, plan, usage) are handled by approvals.ts, not here.
  */
@@ -24,7 +28,17 @@ const MAX_PAYLOAD = 4096;
 // tool_execution_update / bash_execution_update are per-output-chunk streaming frames whose
 // content arrives whole on tool_execution_end: passing them through would emit one info activity
 // per chunk, which is duplication rather than an unmodelled event.
-export const PI_SILENT_EVENTS: ReadonlySet<string> = new Set(["agent_start", "agent_end", "queue_update", "tool_execution_update", "bash_execution_update"]);
+// turn_start / turn_end bracket one assistant response; their content (the message, the tool
+// results) already arrived on message_* / tool_execution_* frames.
+export const PI_SILENT_EVENTS: ReadonlySet<string> = new Set([
+  "agent_start",
+  "agent_end",
+  "turn_start",
+  "turn_end",
+  "queue_update",
+  "tool_execution_update",
+  "bash_execution_update",
+]);
 
 /** The raw event for the generic renderer; oversized frames degrade to a truncated JSON string. */
 function rawPayload(event: PiEvent): unknown {
@@ -66,6 +80,22 @@ function str(value: unknown): string | undefined {
   return typeof value === "string" ? value : undefined;
 }
 
+/**
+ * bash/powershell results carry `structuredContent {output, truncated, full_output_path}`
+ * since pi 0.99; the model-facing text is already cut, so point at the full log when there is one.
+ */
+function toolOutput(result: unknown): string | undefined {
+  if (typeof result !== "object" || result === null) return undefined;
+  const record = result as Record<string, unknown>;
+  const text = renderContent(record["content"]);
+  const structured = record["structuredContent"];
+  if (typeof structured !== "object" || structured === null) return text;
+  const meta = structured as Record<string, unknown>;
+  const fullPath = str(meta["full_output_path"]) ?? str(meta["fullOutputPath"]);
+  if (meta["truncated"] !== true || !fullPath) return text;
+  return `${text ?? ""}\n(full output: ${fullPath})`.trim();
+}
+
 export interface PiNormalizerOptions {
   onUnknown?: (type: string) => void;
 }
@@ -74,7 +104,10 @@ export class PiNormalizer {
   #options: PiNormalizerOptions;
   #messageSeq = 0;
   #interrupted = false;
+  #aborted = false;
   #stopReason: string | undefined;
+  /** tool_execution_end carries no `args` on the wire (1.1), so the start's input is kept here */
+  #toolArgs = new Map<string, unknown>();
   #errorMessage: string | undefined;
   unknownCount = 0;
 
@@ -89,6 +122,7 @@ export class PiNormalizer {
   /** Resets per-turn state; called by the session before each `prompt`. */
   beginTurn(): void {
     this.#interrupted = false;
+    this.#aborted = false;
     this.#stopReason = undefined;
     this.#errorMessage = undefined;
   }
@@ -107,13 +141,19 @@ export class PiNormalizer {
       case "tool_execution_end":
         return this.#toolEnd(event);
       case "agent_settled":
+        // 1.1: `aborted` says the run ended because it was cancelled (Escape, `abort`, an
+        // extension) — including aborts Tide did not ask for.
+        if (event["aborted"] === true) this.#aborted = true;
         return [this.#settled()];
       case "compaction_start":
         return [{ type: "activity", activity: { kind: "info", text: `Compacting context (${str(event["reason"]) ?? "manual"})` } }];
       case "compaction_end":
-        return [{ type: "activity", activity: { kind: "info", text: "Context compacted" } }];
+        return [this.#compactionEnd(event)];
       case "auto_retry_start":
         return [{ type: "activity", activity: { kind: "info", text: `Retrying after a transient error: ${str(event["errorMessage"]) ?? "unknown"}` } }];
+      case "auto_retry_end":
+        if (event["success"] === false) return [{ type: "activity", activity: { kind: "error", text: `Retries exhausted: ${str(event["finalError"]) ?? "unknown error"}` } }];
+        return [];
       case "extension_error":
         return [{ type: "activity", activity: { kind: "error", text: `Extension error (${str(event["event"]) ?? "?"}): ${str(event["error"]) ?? "unknown"}` } }];
       default:
@@ -151,19 +191,31 @@ export class PiNormalizer {
     return [];
   }
 
+  #compactionEnd(event: PiEvent): NormalizedEvent {
+    if (event["aborted"] === true) return { type: "activity", activity: { kind: "info", text: "Compaction aborted" } };
+    const failure = str(event["errorMessage"]);
+    if (failure) return { type: "activity", activity: { kind: "error", text: `Compaction failed: ${failure}` } };
+    return { type: "activity", activity: { kind: "info", text: "Context compacted" } };
+  }
+
   #toolStart(event: PiEvent): NormalizedEvent[] {
     const toolUseId = str(event["toolCallId"]);
-    const toolName = str(event["toolName"]);
-    if (!toolUseId || !toolName) return [];
-    return [{ type: "activity", activity: { kind: "tool", toolUseId, toolName, input: event["args"] ?? {}, status: "running" } }];
+    const rawName = str(event["toolName"]);
+    if (!toolUseId || !rawName) return [];
+    const input = event["args"] ?? {};
+    this.#toolArgs.set(toolUseId, input);
+    return [{ type: "activity", activity: { kind: "tool", toolUseId, toolName: displayToolName(rawName), input, status: "running" } }];
   }
 
   #toolEnd(event: PiEvent): NormalizedEvent[] {
     const toolUseId = str(event["toolCallId"]);
-    const toolName = str(event["toolName"]);
-    if (!toolUseId || !toolName) return [];
-    const result = event["result"];
-    const output = typeof result === "object" && result !== null ? renderContent((result as Record<string, unknown>)["content"]) : undefined;
+    const rawName = str(event["toolName"]);
+    if (!toolUseId || !rawName) return [];
+    const toolName = displayToolName(rawName);
+    const output = toolOutput(event["result"]);
+    const durationMs = typeof event["durationMs"] === "number" ? event["durationMs"] : undefined;
+    const input = event["args"] ?? this.#toolArgs.get(toolUseId) ?? {};
+    this.#toolArgs.delete(toolUseId);
     return [
       {
         type: "activity",
@@ -171,16 +223,17 @@ export class PiNormalizer {
           kind: "tool",
           toolUseId,
           toolName,
-          input: event["args"] ?? {},
+          input,
           status: event["isError"] === true ? "error" : "ok",
           ...(output ? { output } : {}),
+          ...(durationMs !== undefined ? { durationMs } : {}),
         },
       },
     ];
   }
 
   #settled(): NormalizedEvent {
-    if (this.#interrupted || this.#stopReason === "aborted") return { type: "settled", status: "interrupted" };
+    if (this.#interrupted || this.#aborted || this.#stopReason === "aborted") return { type: "settled", status: "interrupted" };
     if (this.#stopReason === "error") {
       return { type: "settled", status: "error", error: this.#errorMessage ?? "pi reported an error" };
     }

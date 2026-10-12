@@ -38,9 +38,12 @@ export interface PiDeps {
   fetch: FetchLike;
   /** absolute path passed to `pi -e`; defaults to the built tide-bridge of @tide/pi-extensions */
   bridgePath?: string;
+  /** `pi --version` check used when choosing a binary; defaults to running it */
+  probe?: (binary: string) => Promise<string | undefined>;
 }
 
-// ---- pi RPC wire shapes (docs/rpc.md of @earendil-works/pi-coding-agent 0.84.x) ----
+// ---- pi RPC wire shapes (docs/rpc-commands.md, docs/json.md, docs/rpc-extension-ui.md and
+// dist/modes/rpc/rpc-types.d.ts of @earendil-works/pi-coding-agent 1.1.x) ----
 
 export interface PiResponse {
   type: "response";
@@ -59,7 +62,16 @@ export interface PiUiRequest {
   message?: string;
   options?: string[];
   notifyType?: string;
+  /** `input` */
+  placeholder?: string;
+  /** `editor` */
+  prefill?: string;
+  /** ms after which pi resolves the dialog with its default on its own */
+  timeout?: number;
 }
+
+/** `prompt` (0.99+): what pi did with the input. `handled` = no run will start. */
+export type PiPromptDisposition = "started" | "queued" | "handled";
 
 /** Every other stdout line: agent events. Deliberately loose — unknown events pass through. */
 export interface PiEvent {
@@ -90,6 +102,11 @@ export interface PiState {
   sessionFile?: string;
   sessionId?: string;
   isStreaming?: boolean;
+}
+
+export interface PiCommandInfo {
+  name: string;
+  source?: string;
 }
 
 export interface PiModel {

@@ -14,9 +14,11 @@ const run = promisify(execFile);
 export const PI_CAPS = {
   // plan mode is emulated by tide-bridge (system prompt + tide_propose_plan); pi has none native
   planMode: true,
-  // pi has no sub-agent concept, and no MCP wiring in P4 (P5 adds it through an extension)
+  // pi has no sub-agent concept
   subagents: false,
-  mcp: false,
+  // MCP is in pi's core since 0.99 (docs/mcp.md); tide-bridge attaches Tide's server with
+  // `pi.registerMcpServer()` next to the user's own mcp.json servers
+  mcp: true,
   // `prompt` accepts `images: [{type:"image", data, mimeType}]` (docs/rpc.md § prompt)
   images: true,
   // sessions are `.jsonl` files; `--session <path|id>` reopens one
@@ -63,13 +65,56 @@ export function workspaceBinary(from = fileURLToPath(import.meta.url)): string |
   }
 }
 
-/** config.binaryPath → PATH → the workspace's own `@earendil-works/pi-coding-agent`. */
-export async function detectBinary(config: PiConfig): Promise<string | undefined> {
-  if (config.binaryPath && existsSync(config.binaryPath)) return config.binaryPath;
+/** Answers the version a binary reports, or undefined when `--version` fails or crashes. */
+export type VersionProbe = (binary: string) => Promise<string | undefined>;
+
+export const probeVersion: VersionProbe = async (binary) => {
+  const output = await exec(binary, ["--version"], 15_000);
+  return output ? parseVersion(output) : undefined;
+};
+
+export interface DetectedBinary {
+  path: string;
+  version: string;
+}
+
+/** The pi release this driver's protocol handling is written against. */
+export const TESTED_PI_VERSION = "1.1.0";
+
+async function pathBinary(): Promise<string | undefined> {
   const which = await exec("/usr/bin/env", ["which", "pi"], 5_000);
   const resolved = which?.trim().split("\n")[0]?.trim();
-  if (resolved && resolved !== "" && existsSync(resolved)) return resolved;
-  return workspaceBinary();
+  return resolved && resolved !== "" ? resolved : undefined;
+}
+
+function older(version: string, than: string): boolean {
+  const a = version.split(".").map(Number);
+  const b = than.split(".").map(Number);
+  for (let i = 0; i < 3; i += 1) {
+    if ((a[i] ?? 0) !== (b[i] ?? 0)) return (a[i] ?? 0) < (b[i] ?? 0);
+  }
+  return false;
+}
+
+/**
+ * config.binaryPath → the workspace's own `node_modules/.bin/pi` (the version this driver is
+ * pinned to) → PATH. Every candidate must answer `--version` cleanly: a pi that crashes on
+ * start (a global install under an unsupported Node, say) is skipped rather than chosen.
+ */
+export async function detectBinary(config: PiConfig, probe: VersionProbe = probeVersion, log?: (message: string) => void): Promise<DetectedBinary | undefined> {
+  const candidates = [config.binaryPath, workspaceBinary(), await pathBinary()].filter(
+    (candidate, index, all): candidate is string => typeof candidate === "string" && all.indexOf(candidate) === index && existsSync(candidate),
+  );
+  for (const path of candidates) {
+    const version = await probe(path);
+    if (!version) {
+      log?.(`[pi] ${path} --version failed; skipping it`);
+      continue;
+    }
+    if (older(version, TESTED_PI_VERSION)) log?.(`[pi] ${path} is ${version}; this driver targets ${TESTED_PI_VERSION}+`);
+    return { path, version };
+  }
+  return undefined;
 }
 
 export function parseVersion(output: string): string | undefined {
@@ -155,13 +200,12 @@ export function mergeModels(fromPi: ModelInfo[], local: ModelInfo[]): ModelInfo[
 }
 
 export async function buildStatus(config: PiConfig, env: DriverEnv, deps: PiDeps): Promise<ProviderStatus> {
-  const binary = await detectBinary(config);
+  const detected = await detectBinary(config, deps.probe ?? probeVersion, env.log);
   const local = await detectLocalModels(deps.fetch);
-  if (!binary) {
+  if (!detected) {
     return { kind: "pi", installed: false, loggedIn: false, hint: INSTALL_HINT, models: local, caps: { ...PI_CAPS } };
   }
-  const versionOutput = await exec(binary, ["--version"], 15_000);
-  const version = versionOutput ? parseVersion(versionOutput) : undefined;
+  const { path: binary, version } = detected;
   const loggedIn = detectLogin(process.env) || local.length > 0;
   const fromPi = loggedIn ? await listModels(binary, config, deps, env) : [];
 
@@ -169,7 +213,7 @@ export async function buildStatus(config: PiConfig, env: DriverEnv, deps: PiDeps
     kind: "pi",
     installed: true,
     loggedIn,
-    ...(version ? { version } : {}),
+    version,
     ...(loggedIn ? {} : { hint: LOGIN_HINT, loginCommand: LOGIN_COMMAND }),
     models: mergeModels(fromPi, local),
     caps: { ...PI_CAPS },

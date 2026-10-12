@@ -1,10 +1,11 @@
 import type { ApprovalDecision, DriverEnv, NormalizedEvent, OpenSessionOptions, ProviderSession, ReconfigureResult, SessionSettings, TurnInput, TurnUsage } from "@tide/contracts";
-import { ENV_CWD, ENV_INTERACTION, ENV_LINKED_DIRS, ENV_RUNTIME_MODE, ENV_SYSTEM_PROMPT_APPEND, ENV_THREAD_ID } from "@tide/pi-extensions/protocol";
+import { CONFIG_COMMAND, formatConfigCommand } from "@tide/pi-extensions/protocol";
 import { PiApprovalBroker } from "./approvals.ts";
 import { AsyncQueue } from "./async-queue.ts";
 import { PiNormalizer } from "./normalize.ts";
 import { PiRpc } from "./rpc.ts";
-import type { ChildLike, PiConfig, PiDeps, PiEvent, PiSessionStats, PiState, PiUiRequest } from "./types.ts";
+import { splitModelId } from "./spawn.ts";
+import type { ChildLike, PiCommandInfo, PiDeps, PiEvent, PiPromptDisposition, PiResponse, PiSessionStats, PiState, PiUiRequest } from "./types.ts";
 
 /**
  * One long-lived `pi --mode rpc` process per Tide thread.
@@ -12,8 +13,18 @@ import type { ChildLike, PiConfig, PiDeps, PiEvent, PiSessionStats, PiState, PiU
  * pi keeps its own session file, so a process per thread is the natural unit: `send()` is one
  * `prompt` command, events stream until `agent_settled`, and `abort` interrupts. Like the
  * Claude driver, `send()` runs one turn at a time — pi rejects a second `prompt` while
- * streaming unless it is explicitly queued as `steer`/`followUp`, which is a different feature.
+ * streaming unless it is explicitly queued as `steer`/`followUp`, which is a different feature
+ * (the server queues turns itself).
+ *
+ * The `prompt` response's `data.disposition` (pi 0.99+, docs/rpc-commands.md § prompt) decides
+ * how the turn ends: `started`/`queued` → wait for `agent_settled`; `handled` (an extension
+ * command or input handler consumed it) → no run will start, so the turn settles at once.
  */
+
+export function promptDisposition(response: PiResponse): PiPromptDisposition | undefined {
+  const value = (response.data as { disposition?: unknown } | undefined)?.disposition;
+  return value === "started" || value === "queued" || value === "handled" ? value : undefined;
+}
 
 function pushImages(command: Record<string, unknown>, input: TurnInput): void {
   const images = input.images ?? [];
@@ -59,11 +70,17 @@ export class PiSession implements ProviderSession {
   #closed = false;
   #interruptRequested = false;
   #announcedSession = false;
+  #mode: OpenSessionOptions["mode"];
+  #interaction: OpenSessionOptions["interaction"];
+  /** tide-bridge's `/tide-config` is loaded, so mode / plan mode can change in place */
+  #liveConfig = false;
 
   constructor(child: ChildLike, env: DriverEnv, options: OpenSessionOptions) {
     this.#child = child;
     this.#env = env;
     this.#options = options;
+    this.#mode = options.mode;
+    this.#interaction = options.interaction;
     this.#normalizer = new PiNormalizer({
       onUnknown: (type) => {
         if (process.env["TIDE_DEBUG_PI"]) env.log(`[pi] unhandled event ${type}`);
@@ -90,6 +107,8 @@ export class PiSession implements ProviderSession {
     this.nativeSessionId = state?.sessionFile ?? state?.sessionId ?? this.#options.resume;
     this.#model = modelId(state);
     this.#stats = await this.#rpc.data<PiSessionStats>({ type: "get_session_stats" });
+    const commands = await this.#rpc.data<{ commands?: PiCommandInfo[] }>({ type: "get_commands" });
+    this.#liveConfig = (commands?.commands ?? []).some((command) => command.name === CONFIG_COMMAND && command.source === "extension");
   }
 
   #emit(event: NormalizedEvent): void {
@@ -166,6 +185,14 @@ export class PiSession implements ProviderSession {
         if (!response.success) {
           mailbox.push({ type: "settled", status: "error", error: response.error ?? "pi rejected the prompt" });
           mailbox.close();
+          return;
+        }
+        // `handled`: an extension command (`/foo`) or input handler consumed the prompt and no
+        // run starts, so no `agent_settled` will come. `started`/`queued`, and a pre-0.99 pi
+        // that sends no disposition, end on `agent_settled`.
+        if (promptDisposition(response) === "handled") {
+          mailbox.push({ type: "settled", status: "completed" });
+          mailbox.close();
         }
       })
       .catch((error: unknown) => {
@@ -189,20 +216,45 @@ export class PiSession implements ProviderSession {
     this.#broker.respondApproval(requestId, decision);
   }
 
-  /** pi has no structured user-input request; the broker cancels those dialogs instead. */
-  async respondUserInput(_requestId: string, _answers: Record<string, unknown>): Promise<void> {
-    this.#env.log("[pi] respondUserInput ignored: pi has no user-input request type");
+  /** Answers an extension's `select`/`input`/`editor` dialog (see approvals.ts). */
+  async respondUserInput(requestId: string, answers: Record<string, unknown>): Promise<void> {
+    this.#broker.respondUserInput(requestId, answers);
   }
 
   /**
-   * pi takes its runtime mode and plan mode from the process environment
-   * (`TIDE_RUNTIME_MODE` / `TIDE_INTERACTION`, read once by tide-bridge at spawn) and its model
-   * from the `--model` argv, so nothing a live process can be told changes them. The server
-   * therefore closes this session and reopens it with `--session <file>`, which loses no
-   * history.
+   * Live where pi allows it:
+   *  - model → `set_model {provider, modelId}` (docs/rpc-commands.md § set_model);
+   *  - runtime mode / plan mode → tide-bridge's `/tide-config` command, sent as a `prompt`
+   *    that pi answers `disposition:"handled"` without a model call.
+   * Anything that cannot be applied in place (a bare model pattern, an unknown model, a pi
+   * without the bridge command) answers `reopen`: the server restarts the process with
+   * `--session <file>`, which loses no history.
    */
-  async reconfigure(_settings: SessionSettings): Promise<ReconfigureResult> {
-    return "reopen";
+  async reconfigure(settings: SessionSettings): Promise<ReconfigureResult> {
+    if (this.#closed || this.#turnActive) return "reopen";
+    try {
+      if (settings.model !== undefined && settings.model !== this.#model) {
+        const target = splitModelId(settings.model);
+        if (!target) return "reopen";
+        const response = await this.#rpc.request({ type: "set_model", ...target });
+        if (!response.success) {
+          this.#env.log(`[pi] set_model ${settings.model} failed: ${response.error ?? "unknown"}`);
+          return "reopen";
+        }
+        this.#model = modelId({ model: (response.data as PiState["model"]) ?? null }) ?? settings.model;
+      }
+      if (settings.mode !== this.#mode || settings.interaction !== this.#interaction) {
+        if (!this.#liveConfig) return "reopen";
+        const response = await this.#rpc.request({ type: "prompt", message: formatConfigCommand({ mode: settings.mode, plan: settings.interaction === "plan" }) });
+        if (!response.success || promptDisposition(response) !== "handled") return "reopen";
+        this.#mode = settings.mode;
+        this.#interaction = settings.interaction;
+      }
+      return "applied";
+    } catch (error) {
+      this.#env.log(`[pi] reconfigure failed: ${error instanceof Error ? error.message : String(error)}`);
+      return "reopen";
+    }
   }
 
   async interrupt(): Promise<void> {
@@ -223,34 +275,6 @@ export class PiSession implements ProviderSession {
     this.#mailbox?.close();
     this.#rpc.close();
   }
-}
-
-/** Argument vector + environment for one `pi --mode rpc` process. */
-export function buildSpawn(
-  options: OpenSessionOptions,
-  config: PiConfig,
-  bridgePath: string | undefined,
-): { args: string[]; env: NodeJS.ProcessEnv } {
-  const args = ["--mode", "rpc"];
-  if (bridgePath) args.push("-e", bridgePath);
-  for (const extension of config.extraExtensions ?? []) args.push("-e", extension);
-  if (options.resume) args.push("--session", options.resume);
-  const model = options.model ?? config.defaultModel;
-  if (model) args.push("--model", model);
-  return {
-    args,
-    env: {
-      ...process.env,
-      ...config.env,
-      ...options.env,
-      [ENV_RUNTIME_MODE]: options.mode,
-      [ENV_INTERACTION]: options.interaction,
-      [ENV_THREAD_ID]: options.threadId,
-      [ENV_CWD]: options.cwd,
-      ...(options.linkedDirs && options.linkedDirs.length > 0 ? { [ENV_LINKED_DIRS]: JSON.stringify(options.linkedDirs) } : {}),
-      ...(options.systemPromptAppend !== undefined ? { [ENV_SYSTEM_PROMPT_APPEND]: options.systemPromptAppend } : {}),
-    },
-  };
 }
 
 export type { PiDeps };

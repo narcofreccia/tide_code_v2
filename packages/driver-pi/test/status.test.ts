@@ -19,6 +19,7 @@ import {
   parseLocalModelId,
   workspaceBinary,
   detectBinary,
+  TESTED_PI_VERSION,
 } from "../src/index.ts";
 import type { FetchLike } from "../src/types.ts";
 import { baseScript, fakePi } from "./fake-pi.ts";
@@ -123,6 +124,7 @@ describe("status()", () => {
             }
           }),
         fetch: fakeFetch({ [OLLAMA_TAGS_URL]: { models: [{ name: "llama3.1:8b" }] } }),
+        probe: async () => "1.1.0",
       },
     );
     const status = await instance.status();
@@ -130,7 +132,8 @@ describe("status()", () => {
     expect(status.installed).toBe(true);
     expect(status.loggedIn).toBe(true);
     expect(status.models.map((model) => model.id)).toEqual(["openai/gpt-5.5", "ollama/llama3.1:8b"]);
-    expect(status.caps).toMatchObject({ planMode: true, subagents: false, mcp: false, resume: true, contextUsage: true });
+    expect(status.version).toBe("1.1.0");
+    expect(status.caps).toMatchObject({ planMode: true, subagents: false, mcp: true, resume: true, contextUsage: true });
     expect(await instance.status()).toBe(status);
     expect(instance.terminalCommand("/tmp/my sessions/a.jsonl", "/tmp/my repo")).toBe("cd '/tmp/my repo' && pi --session '/tmp/my sessions/a.jsonl'");
     await instance.dispose();
@@ -150,6 +153,7 @@ describe("status()", () => {
   it("sets loginCommand only when pi is installed but has no credentials", async () => {
     const instance = createPiInstance({ binaryPath: "/usr/bin/env" }, env, {
       spawn: () => fakePi(),
+      probe: async () => "1.1.0",
       // no local model servers answer, so login rests on credentials alone
       fetch: async () => ({ ok: false, json: async () => undefined }),
     });
@@ -160,12 +164,28 @@ describe("status()", () => {
 });
 
 describe("binary + model helpers", () => {
-  it("falls back to the workspace's own pi in node_modules/.bin", async () => {
-    expect(workspaceBinary()).toMatch(/node_modules\/\.bin\/pi$/);
-    // an explicit binaryPath wins; a bogus one falls through to PATH / the workspace copy
-    expect(await detectBinary({ binaryPath: "/usr/bin/env" })).toBe("/usr/bin/env");
-    expect(await detectBinary({ binaryPath: "/nowhere/pi" })).toBeTruthy();
+  it("prefers config, then the workspace's own pi, then PATH — skipping any that fail --version", async () => {
+    const workspace = workspaceBinary();
+    expect(workspace).toMatch(/node_modules\/\.bin\/pi$/);
+    const ok = async () => "1.1.0";
+    // an explicit, working binaryPath wins
+    expect(await detectBinary({ binaryPath: "/usr/bin/env" }, ok)).toEqual({ path: "/usr/bin/env", version: "1.1.0" });
+    // a missing one falls through to the workspace copy
+    expect((await detectBinary({ binaryPath: "/nowhere/pi" }, ok))?.path).toBe(workspace);
+    // one that crashes on --version is skipped, with a log line saying so
+    const logs: string[] = [];
+    const crashesFirst = async (binary: string) => (binary === "/usr/bin/env" ? undefined : "1.1.0");
+    expect((await detectBinary({ binaryPath: "/usr/bin/env" }, crashesFirst, (line) => logs.push(line)))?.path).toBe(workspace);
+    expect(logs.some((line) => line.includes("/usr/bin/env --version failed"))).toBe(true);
+    // nothing usable at all → not installed
+    expect(await detectBinary({}, async () => undefined)).toBeUndefined();
   });
+
+  it("the workspace pi really answers --version with the pinned release", async () => {
+    const detected = await detectBinary({});
+    expect(detected?.path).toBe(workspaceBinary());
+    expect(detected?.version).toBe(TESTED_PI_VERSION);
+  }, 30_000);
 
   it("mergeModels keeps pi's own entries and drops duplicate local ids", () => {
     const merged = mergeModels([{ id: "ollama/a", label: "from pi" }], [{ id: "ollama/a", label: "live" }, { id: "ollama/b", label: "live" }]);

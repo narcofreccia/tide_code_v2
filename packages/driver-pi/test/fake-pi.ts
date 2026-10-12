@@ -86,7 +86,7 @@ export function fakePi(script: Script = () => undefined): FakePi {
  * grow by `step` on every stats call, the way a real session's cumulative counters do, so the
  * driver's per-turn delta is observable.
  */
-export function baseScript(overrides: { sessionFile?: string; step?: number; contextWindow?: number } = {}): Script {
+export function baseScript(overrides: { sessionFile?: string; step?: number; contextWindow?: number; commands?: { name: string; source: string }[] } = {}): Script {
   const sessionFile = overrides.sessionFile ?? "/tmp/pi-sessions/thread.jsonl";
   const step = overrides.step ?? 100;
   let calls = 0;
@@ -110,6 +110,9 @@ export function baseScript(overrides: { sessionFile?: string; step?: number; con
             contextUsage: { tokens: 1200, contextWindow: overrides.contextWindow ?? 200_000, percent: 1 },
           },
         });
+        return;
+      case "get_commands":
+        pi.emitLine({ type: "response", id, command: "get_commands", success: true, data: { commands: overrides.commands ?? [] } });
         return;
       case "abort":
         pi.emitLine({ type: "response", id, command: "abort", success: true });

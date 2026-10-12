@@ -1,45 +1,8 @@
-import { tmpdir } from "node:os";
 import { describe, expect, it } from "vitest";
-import type { DriverEnv, NormalizedEvent, OpenSessionOptions } from "@tide/contracts";
+import type { NormalizedEvent } from "@tide/contracts";
 import { META_PREFIX, PLAN_PREFIX, USAGE_PREFIX } from "@tide/pi-extensions/protocol";
-import { buildSpawn, createPiInstance } from "../src/index.ts";
-import type { PiConfig } from "../src/types.ts";
-import { baseScript, fakePi, type FakePi, type Script } from "./fake-pi.ts";
-
-const env: DriverEnv = { dataDir: tmpdir(), log: () => undefined };
-
-const options: OpenSessionOptions = {
-  threadId: "t1",
-  cwd: "/tmp/tide-pi-test",
-  mode: "approval-required",
-  interaction: "default",
-  mcpServers: [],
-};
-
-/** Opens a session over a scripted fake pi; the driver's own commands go through `baseScript`. */
-async function open(script: Script, overrides: Partial<OpenSessionOptions> = {}) {
-  const base = baseScript();
-  let pi!: FakePi;
-  const instance = createPiInstance({} as PiConfig, env, {
-    bridgePath: "/tmp/tide-bridge.js",
-    spawn: () => {
-      pi = fakePi((command, self) => {
-        base(command, self);
-        script(command, self);
-      });
-      return pi;
-    },
-    fetch: async () => ({ ok: false, json: async () => undefined }),
-  });
-  const session = await instance.openSession({ ...options, ...overrides });
-  return { session, instance, pi: () => pi };
-}
-
-async function collect(stream: AsyncIterable<NormalizedEvent>): Promise<NormalizedEvent[]> {
-  const events: NormalizedEvent[] = [];
-  for await (const event of stream) events.push(event);
-  return events;
-}
+import { buildSpawn } from "../src/index.ts";
+import { collect, open, options } from "./harness.ts";
 
 const APPROVAL_META = JSON.stringify({ requestId: "tide-approval-1", toolName: "bash", toolCallId: "call_1", input: { command: "rm -rf build" } });
 
@@ -184,19 +147,6 @@ describe("PiSession", () => {
     await session.close();
   });
 
-  it("cancels a dialog pi's other extensions raise instead of deadlocking", async () => {
-    const { session, pi } = await open((command, self) => {
-      if (command["type"] !== "prompt") return;
-      self.emitLine({ type: "response", id: command["id"], command: "prompt", success: true });
-      self.emitLine({ type: "extension_ui_request", id: "ui-9", method: "select", title: "Pick one", options: ["a", "b"] });
-      self.emitLine({ type: "agent_settled" });
-    });
-    const events = await collect(session.send({ text: "go" }));
-    expect(events.some((event) => event.type === "activity" && event.activity.kind === "info")).toBe(true);
-    expect(pi().sent.some((command) => command["type"] === "extension_ui_response" && command["cancelled"] === true)).toBe(true);
-    await session.close();
-  });
-
   it("maps the plan tool's TIDE_PLAN notify to plan.proposed and ignores TIDE_USAGE noise", async () => {
     const { session } = await open((command, self) => {
       if (command["type"] !== "prompt") return;
@@ -267,13 +217,6 @@ describe("PiSession", () => {
     await collect(session.send({ text: "look", images: [{ mediaType: "image/png", data: "AAA" }] }));
     const prompt = pi().sent.find((command) => command["type"] === "prompt");
     expect(prompt?.["images"]).toEqual([{ type: "image", data: "AAA", mimeType: "image/png" }]);
-    await session.close();
-  });
-
-  it("answers reconfigure with `reopen`: mode/interaction are baked into the process env at spawn", async () => {
-    const { session } = await open(() => undefined);
-    expect(await session.reconfigure?.({ mode: "auto", interaction: "plan", model: "openai/gpt-5.5" })).toBe("reopen");
-    expect(await session.reconfigure?.({ mode: "approval-required", interaction: "default" })).toBe("reopen");
     await session.close();
   });
 });

@@ -1,7 +1,7 @@
 import { describe, expect, it } from "vitest";
 import type { LinkedDir, OpenSessionOptions } from "@tide/contracts";
 import { ENV_CWD, ENV_LINKED_DIRS, ENV_SYSTEM_PROMPT_APPEND, parseLinkedDirs } from "@tide/pi-extensions/protocol";
-import { buildSpawn } from "./session.ts";
+import { buildSpawn } from "./spawn.ts";
 
 const links: LinkedDir[] = [
   { path: "/repos/frontend", label: "frontend", access: "write" },
