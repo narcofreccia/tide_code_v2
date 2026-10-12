@@ -1,7 +1,7 @@
 import { Type, type Static, type TSchema } from "typebox";
 import { AgentCommand, ClientCommand } from "./commands.ts";
 import { EventRecord } from "./events.ts";
-import { ProviderKind, ReadModel } from "./domain.ts";
+import { ProviderKind, ReadModel, RuntimeMode } from "./domain.ts";
 
 // ---- wire envelope ----
 // client -> server
@@ -148,8 +148,26 @@ export const ServerInfo = Type.Object({
   remote: Type.Optional(Type.Object({ host: Type.String(), port: Type.Number(), lanUrls: Type.Array(Type.String()), pairingUrl: Type.Optional(Type.String()) })),
 });
 
+/** User settings that must be visible to every client and to server-created threads (delegates, experts, plan.implement). */
+export const UserSettings = Type.Object({
+  providerDefaults: Type.Record(Type.String(), Type.Object({ model: Type.Optional(Type.String()), mode: Type.Optional(RuntimeMode) })),
+  worktreeByDefault: Type.Boolean(),
+  /** optional decisions model (TypeSafe Jev) used only for Inbox triage; off by default */
+  decisions: Type.Object({ enabled: Type.Boolean(), hasKey: Type.Boolean() }),
+});
+export type UserSettings = Static<typeof UserSettings>;
+export const UserSettingsPatch = Type.Object({
+  providerDefaults: Type.Optional(UserSettings.properties.providerDefaults),
+  worktreeByDefault: Type.Optional(Type.Boolean()),
+  decisions: Type.Optional(Type.Object({ enabled: Type.Optional(Type.Boolean()), apiKey: Type.Optional(Type.String()) })),
+});
+export type UserSettingsPatch = Static<typeof UserSettingsPatch>;
+
 export const rpcMethods = {
   "server.info": unary(Type.Object({}), ServerInfo),
+  /** server-side user settings (stored in TIDE_HOME/settings.json); the API key never leaves the server */
+  "settings.get": unary(Type.Object({}), UserSettings),
+  "settings.set": unary(Type.Object({ patch: UserSettingsPatch }), UserSettings),
   /** validated command -> persisted events */
   /** client commands only; internal commands are rejected with `forbidden` */
   "orchestration.dispatch": unary(Type.Object({ command: ClientCommand }), DispatchResult),
