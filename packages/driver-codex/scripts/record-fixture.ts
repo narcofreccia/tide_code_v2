@@ -7,7 +7,9 @@
  *
  * Requires an installed, logged-in `codex` (`codex login`). Runs in a throwaway temp dir;
  * approvals are auto-accepted. Fixtures recorded without a login capture the failure path
- * only (see test/fixtures/error-turn.ndjson).
+ * only (see test/fixtures/error-turn.ndjson, the one real capture). The `synthetic-*` fixtures
+ * are hand-built to the generated bindings, not recorded; a logged-in run writes the real
+ * `<name>.ndjson` beside them.
  */
 import { appendFileSync, mkdirSync, mkdtempSync, writeFileSync } from "node:fs";
 import { tmpdir } from "node:os";

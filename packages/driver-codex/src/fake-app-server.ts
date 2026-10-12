@@ -29,6 +29,8 @@ export class FakeAppServer implements ChildLike {
   turnId = "turn-1";
   /** methods that should answer with a JSON-RPC error instead of a result */
   failMethods = new Map<string, string>();
+  /** result of `account/rateLimits/read` (the default `{}` carries no snapshot) */
+  rateLimits: unknown = {};
 
   #listeners: ((chunk: unknown) => void)[] = [];
   #exit: ((arg: unknown) => void)[] = [];
@@ -116,6 +118,8 @@ export class FakeAppServer implements ChildLike {
         return { turn: { id: this.turnId, items: [], itemsView: "notLoaded", status: "inProgress" } };
       case "account/read":
         return { account: { type: "chatgpt", email: "dev@example.com", planType: "pro" }, requiresOpenaiAuth: false };
+      case "account/rateLimits/read":
+        return this.rateLimits;
       case "model/list":
         return { data: [{ id: this.model, model: this.model, displayName: "GPT-5.6-Sol", hidden: false, isDefault: true }], nextCursor: null };
       default:

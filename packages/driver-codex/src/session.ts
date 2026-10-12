@@ -9,12 +9,13 @@ import type {
   TurnInput,
 } from "@tide/contracts";
 import { AppServer, mergedEnv } from "./app-server.ts";
-import { readSandboxNetworkAccess } from "./config-toml.ts";
+import { readUserSandboxConfig, type UserSandboxConfig } from "./config-toml.ts";
 import { ApprovalBroker } from "./approvals.ts";
 import { AsyncQueue } from "./async-queue.ts";
 import type { RequestId } from "./jsonrpc.ts";
 import { collaborationModeFor, policyFor, writableRoots } from "./modes.ts";
 import { CodexNormalizer } from "./normalize.ts";
+import { rateLimitFromSnapshot } from "./rate-limits.ts";
 import type { CodexConfig } from "./types.ts";
 import type { ThreadResumeResponse } from "./generated/v2/ThreadResumeResponse.ts";
 import type { ThreadStartResponse } from "./generated/v2/ThreadStartResponse.ts";
@@ -39,18 +40,18 @@ export class CodexSession implements ProviderSession {
   #normalizer: CodexNormalizer;
   #mailbox: AsyncQueue<NormalizedEvent> | undefined;
   #model: string;
-  /** the user's `[sandbox_workspace_write] network_access`, resolved once per session */
-  #networkAccess: boolean;
+  /** the user's own sandbox/approval stance from config.toml, resolved once per session; modes only narrow it */
+  #userConfig: UserSandboxConfig;
   #turnActive = false;
   #closed = false;
   #interruptRequested = false;
 
-  private constructor(env: DriverEnv, options: OpenSessionOptions, server: AppServer, model: string, networkAccess: boolean) {
+  private constructor(env: DriverEnv, options: OpenSessionOptions, server: AppServer, model: string, userConfig: UserSandboxConfig) {
     this.#env = env;
     this.#options = options;
     this.#server = server;
     this.#model = model;
-    this.#networkAccess = networkAccess;
+    this.#userConfig = userConfig;
     this.#normalizer = new CodexNormalizer({
       onUnknown: (method) => {
         if (process.env["TIDE_DEBUG_CODEX"]) env.log(`[codex] unhandled notification ${method}`);
@@ -85,8 +86,9 @@ export class CodexSession implements ProviderSession {
       },
     });
 
-    const networkAccess = config.networkAccess ?? readSandboxNetworkAccess(config.codexHome, config.tomlReader);
-    const policy = policyFor(options.mode, writableRoots(options), networkAccess);
+    const userConfig = readUserSandboxConfig(config.codexHome, config.tomlReader);
+    if (config.networkAccess !== undefined) userConfig.networkAccess = config.networkAccess;
+    const policy = policyFor(options.mode, writableRoots(options), false, userConfig);
     const started =
       options.resume !== undefined
         ? await server.request<ThreadResumeResponse>("thread/resume", {
@@ -105,7 +107,7 @@ export class CodexSession implements ProviderSession {
             ...(options.systemPromptAppend ? { developerInstructions: options.systemPromptAppend } : {}),
           });
 
-    session = new CodexSession(env, options, server, started.model ?? options.model ?? config.defaultModel ?? "", networkAccess);
+    session = new CodexSession(env, options, server, started.model ?? options.model ?? config.defaultModel ?? "", userConfig);
     session.nativeSessionId = started.thread.id;
     for (const buffered of notifications) session.#notification(buffered.method, buffered.params);
     for (const buffered of requests) session.#request(buffered.method, buffered.params, buffered.id);
@@ -138,7 +140,7 @@ export class CodexSession implements ProviderSession {
     const handled = this.#broker.handle({ method, params: payload, id, diffFor: (itemId) => this.#normalizer.patchFor(itemId) });
     if (!handled) {
       this.#env.log(`[codex] declining unmodelled server request ${method}`);
-      this.#broker.reject(id, method);
+      this.#broker.decline(id, method, params);
     }
   }
 
@@ -165,7 +167,7 @@ export class CodexSession implements ProviderSession {
   }
 
   async #startTurn(input: TurnInput, mailbox: AsyncQueue<NormalizedEvent>): Promise<void> {
-    const policy = policyFor(this.#options.mode, writableRoots(this.#options), this.#networkAccess);
+    const policy = policyFor(this.#options.mode, writableRoots(this.#options), false, this.#userConfig);
     try {
       await this.#server.request<TurnStartResponse>("turn/start", {
         threadId: this.nativeSessionId,
@@ -180,9 +182,25 @@ export class CodexSession implements ProviderSession {
         // (from `thread/start`), which is what Codex would have used anyway.
         collaborationMode: collaborationModeFor(this.#options.interaction, this.#model),
       });
+      void this.#readRateLimits(mailbox);
     } catch (error) {
       mailbox.push({ type: "settled", status: this.#interruptRequested ? "interrupted" : "error", error: error instanceof Error ? error.message : String(error) });
       mailbox.close();
+    }
+  }
+
+  /**
+   * `account/rateLimits/read` once per turn, best effort and never awaited: it needs a
+   * ChatGPT login (an API-key or logged-out account just errors), and live updates arrive as
+   * `account/rateLimits/updated` notifications anyway.
+   */
+  async #readRateLimits(mailbox: AsyncQueue<NormalizedEvent>): Promise<void> {
+    try {
+      const response = await this.#server.request<{ rateLimits?: Parameters<typeof rateLimitFromSnapshot>[0] }>("account/rateLimits/read", {});
+      const rateLimit = rateLimitFromSnapshot(response?.rateLimits, Date.now());
+      if (rateLimit && this.#mailbox === mailbox) mailbox.push({ type: "usage", rateLimit });
+    } catch (error) {
+      this.#env.log(`[codex] account/rateLimits/read unavailable: ${error instanceof Error ? error.message : String(error)}`);
     }
   }
 

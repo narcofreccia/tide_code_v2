@@ -18,8 +18,8 @@ async function harness(
   const env: DriverEnv = { dataDir: tmpdir(), log: (message) => logs.push(message) };
   const { spawn, last } = fakeSpawn(configure);
   const options: OpenSessionOptions = { threadId: "t1", cwd: "/tmp/repo", mode: "approval-required", interaction: "default", mcpServers: [], ...overrides };
-  // `networkAccess` pinned so the tests never read the developer's own ~/.codex/config.toml
-  const session = await CodexSession.open({ spawnImpl: spawn, networkAccess: false, ...config }, env, options, "/usr/bin/codex");
+  // `networkAccess` and `tomlReader` pinned so the tests never read the developer's own ~/.codex/config.toml
+  const session = await CodexSession.open({ spawnImpl: spawn, networkAccess: false, tomlReader: () => undefined, ...config }, env, options, "/usr/bin/codex");
   return { session, server: last(), logs };
 }
 
@@ -192,6 +192,92 @@ describe("codex session", () => {
     await tick();
     expect(server.replyTo("srv-9")?.error).toMatchObject({ code: -32601 });
     expect(logs.some((line) => line.includes("attestation/generate"))).toBe(true);
+    completeTurn(server);
+    await done;
+    await session.close();
+  });
+
+  it("declines typed server requests in kind and leaves a pass-through info row", async () => {
+    const { session, server } = await harness();
+    const { events, done } = collect(session.send({ text: "hi" }));
+    await tick();
+    server.serverRequest("d1", "item/tool/call", { threadId: THREAD, turnId: TURN, callId: "c1", tool: "x", arguments: {} });
+    server.serverRequest("d2", "execCommandApproval", { conversationId: THREAD, callId: "c2", command: ["ls"], cwd: "/tmp/repo", parsedCmd: [] });
+    await tick();
+    expect(server.replyTo("d1")?.result).toMatchObject({ success: false, contentItems: [{ type: "inputText" }] });
+    expect(server.replyTo("d2")?.result).toMatchObject({ decision: { denied: { rejection: expect.stringContaining("execCommandApproval") } } });
+    const infos = events.flatMap((event) => (event.type === "activity" && event.activity.kind === "info" ? [event.activity.text] : []));
+    expect(infos).toEqual(["codex: item/tool/call (declined, not handled by Tide)", "codex: execCommandApproval (declined, not handled by Tide)"]);
+    completeTurn(server);
+    await done;
+    await session.close();
+  });
+
+  it("turns a form-mode MCP elicitation into a user-input card and answers it from the schema", async () => {
+    const { session, server } = await harness();
+    const { events, done } = collect(session.send({ text: "go" }));
+    await tick();
+    server.serverRequest("e1", "mcpServer/elicitation/request", {
+      threadId: THREAD,
+      turnId: TURN,
+      serverName: "deploy",
+      mode: "form",
+      _meta: null,
+      message: "Pick a target",
+      requestedSchema: {
+        type: "object",
+        required: ["env"],
+        properties: {
+          env: { type: "string", title: "Environment", oneOf: [{ const: "prod", title: "Production" }, { const: "stg", title: "Staging" }] },
+          note: { type: "string", description: "free text" },
+          dry: { type: "boolean", title: "Dry run" },
+          count: { type: "integer" },
+          tags: { type: "array", items: { enum: ["a", "b"] } },
+          nested: { type: "object", properties: {} },
+        },
+      },
+    });
+    await tick();
+    const card = events.flatMap((event) => (event.type === "activity" && event.activity.kind === "user-input" ? [event.activity] : []))[0];
+    expect(card?.requestId).toBe("e1");
+    expect(card?.questions.map((question) => question.id)).toEqual(["env", "note", "dry", "count", "tags"]);
+    expect(card?.questions[0]).toEqual({ id: "env", text: "[deploy] Pick a target\nEnvironment (required)", options: [{ label: "Production" }, { label: "Staging" }] });
+    expect(card?.questions[4]).toMatchObject({ multi: true, options: [{ label: "a" }, { label: "b" }] });
+
+    await session.respondUserInput("e1", { env: "Production", dry: "Yes", count: "3", tags: ["a", "b"], note: "" });
+    await tick();
+    expect(server.replyTo("e1")?.result).toEqual({ action: "accept", content: { env: "prod", dry: true, count: 3, tags: ["a", "b"] }, _meta: null });
+
+    completeTurn(server);
+    await done;
+    await session.close();
+  });
+
+  it("cancels an elicitation that is interrupted or answered empty, and keeps URL flows as approvals", async () => {
+    const { session, server } = await harness();
+    const { events, done } = collect(session.send({ text: "go" }));
+    await tick();
+    const form = { threadId: THREAD, turnId: TURN, serverName: "s", mode: "form", _meta: null, message: "m", requestedSchema: { type: "object", properties: { a: { type: "string" } } } };
+    server.serverRequest("e2", "mcpServer/elicitation/request", form);
+    server.serverRequest("e3", "mcpServer/elicitation/request", { threadId: THREAD, turnId: TURN, serverName: "s", mode: "url", _meta: null, message: "log in", url: "https://x", elicitationId: "z" });
+    await tick();
+    expect(events.some((event) => event.type === "activity" && event.activity.kind === "approval" && event.activity.requestId === "e3")).toBe(true);
+    await session.respondUserInput("e2", {});
+    await tick();
+    expect(server.replyTo("e2")?.result).toEqual({ action: "cancel", content: null, _meta: null });
+    completeTurn(server);
+    await done;
+    await session.close();
+  });
+
+  it("reads account/rateLimits once per turn and reports the tightest window", async () => {
+    const { session, server } = await harness();
+    server.rateLimits = { rateLimits: { limitId: "codex", limitName: null, primary: { usedPercent: 95, windowDurationMins: 300, resetsAt: 1788141000 }, secondary: { usedPercent: 20, windowDurationMins: 10080, resetsAt: 1788700000 }, rateLimitReachedType: null, spendControlReached: null } };
+    const { events, done } = collect(session.send({ text: "hi" }));
+    await tick();
+    expect(server.calls("account/rateLimits/read")).toHaveLength(1);
+    const limit = events.flatMap((event) => (event.type === "usage" && event.rateLimit ? [event.rateLimit] : []))[0];
+    expect(limit).toMatchObject({ status: "warning", remainingPct: 5, resetsAt: 1788141000000, note: "codex 95% used (5h window)" });
     completeTurn(server);
     await done;
     await session.close();

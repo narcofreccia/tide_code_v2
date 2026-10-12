@@ -31,8 +31,8 @@ function kinds(events: NormalizedEvent[]): string[] {
 }
 
 describe("normalizer over app-server fixtures", () => {
-  it("basic-turn: session, streamed text, one command round trip, usage and settled", () => {
-    const { events } = run("basic-turn");
+  it("synthetic-basic-turn: session, streamed text, one command round trip, usage and settled", () => {
+    const { events } = run("synthetic-basic-turn");
     expect(kinds(events)).toEqual([
       "session",
       "assistant.reasoning",
@@ -65,14 +65,14 @@ describe("normalizer over app-server fixtures", () => {
     const usage = events.find((event) => event.type === "usage");
     if (usage?.type !== "usage") throw new Error("unreachable");
     expect(usage.usage).toEqual({ inputTokens: 900, outputTokens: 300, cacheReadTokens: 700, cacheWriteTokens: 50 });
-    expect(usage.contextUsage).toEqual({ used: 5200, window: 272000 });
+    expect(usage.contextUsage).toEqual({ used: 1200, window: 272000 });
 
     expect(events.at(-1)).toEqual({ type: "settled", status: "completed" });
   });
 
-  it("basic-turn: outputDelta fills in when the item carries no aggregated output", () => {
+  it("synthetic-basic-turn: outputDelta fills in when the item carries no aggregated output", () => {
     const normalizer = new CodexNormalizer();
-    const lines = load("basic-turn").map((line) => {
+    const lines = load("synthetic-basic-turn").map((line) => {
       if (line.method !== "item/completed") return line;
       const params = line.params as { item: { type: string; aggregatedOutput?: string | null } };
       if (params.item.type === "commandExecution") params.item.aggregatedOutput = null;
@@ -84,7 +84,7 @@ describe("normalizer over app-server fixtures", () => {
   });
 
   it("plan-turn: plan item becomes plan.proposed, turn plan becomes plan.progress", () => {
-    const { events } = run("plan-turn");
+    const { events } = run("synthetic-plan-turn");
     expect(kinds(events)).toEqual(["session", "plan.progress", "plan.proposed", "settled"]);
 
     const progress = events.find((event) => event.type === "plan.progress");
@@ -101,7 +101,7 @@ describe("normalizer over app-server fixtures", () => {
 
   it("plan-turn: falls back to accumulated deltas when the plan item carries no text", () => {
     const normalizer = new CodexNormalizer();
-    const events = load("plan-turn").flatMap((line) => {
+    const events = load("synthetic-plan-turn").flatMap((line) => {
       if (line.method === "item/completed") (line.params as { item: { text: string } }).item.text = "";
       return normalizer.next(line.method, line.params);
     });
@@ -111,7 +111,7 @@ describe("normalizer over app-server fixtures", () => {
   });
 
   it("subagent-turn: collab children get child rows and stamp their own activities", () => {
-    const { events, normalizer } = run("subagent-turn");
+    const { events, normalizer } = run("synthetic-subagent-turn");
     expect(kinds(events)).toEqual([
       "session",
       "activity:child", // spawnAgent running
@@ -141,7 +141,7 @@ describe("normalizer over app-server fixtures", () => {
   });
 
   it("edit-turn: patchUpdated feeds the diff, retries are info, interrupted settles as interrupted", () => {
-    const { events, normalizer } = run("edit-turn");
+    const { events, normalizer } = run("synthetic-edit-turn");
     expect(kinds(events)).toEqual(["session", "activity:tool", "activity:tool", "activity:info", "settled"]);
 
     const tools = events.flatMap((event) => (event.type === "activity" && event.activity.kind === "tool" ? [event.activity] : []));
@@ -205,5 +205,39 @@ describe("normalizer over app-server fixtures", () => {
     const normalizer = new CodexNormalizer();
     normalizer.markInterrupted();
     expect(normalizer.next("turn/completed", { threadId: "t", turn: { id: "u", status: "completed" } })).toEqual([{ type: "settled", status: "interrupted" }]);
+  });
+});
+
+describe("token usage deltas and rate limits", () => {
+  const breakdown = (input: number, output: number, cached = 0) => ({ totalTokens: input + output, inputTokens: input, cachedInputTokens: cached, cacheWriteInputTokens: 0, outputTokens: output, reasoningOutputTokens: 0 });
+  const update = (threadId: string, total: ReturnType<typeof breakdown>, last: ReturnType<typeof breakdown>) => ({ threadId, turnId: "t", tokenUsage: { total, last, modelContextWindow: 200_000 } });
+
+  it("emits per-request deltas that sum to the thread total, with context = the last request", () => {
+    const n = new CodexNormalizer({ threadId: "th" });
+    const first = n.next("thread/tokenUsage/updated", update("th", breakdown(1000, 100, 400), breakdown(1000, 100, 400)));
+    const second = n.next("thread/tokenUsage/updated", update("th", breakdown(2500, 250, 1400), breakdown(1500, 150, 1000)));
+    const dup = n.next("thread/tokenUsage/updated", update("th", breakdown(2500, 250, 1400), breakdown(1500, 150, 1000)));
+    expect(first).toEqual([{ type: "usage", usage: { inputTokens: 1000, outputTokens: 100, cacheReadTokens: 400, cacheWriteTokens: 0 }, contextUsage: { used: 1100, window: 200_000 } }]);
+    expect(second).toEqual([{ type: "usage", usage: { inputTokens: 1500, outputTokens: 150, cacheReadTokens: 1000, cacheWriteTokens: 0 }, contextUsage: { used: 1650, window: 200_000 } }]);
+    // a repeated report adds no tokens but still refreshes the context gauge
+    expect(dup).toEqual([{ type: "usage", contextUsage: { used: 1650, window: 200_000 } }]);
+  });
+
+  it("falls back to `last` when the total shrinks (compaction) and keeps child threads out of the gauge", () => {
+    const n = new CodexNormalizer({ threadId: "th" });
+    n.next("thread/tokenUsage/updated", update("th", breakdown(5000, 500), breakdown(5000, 500)));
+    const after = n.next("thread/tokenUsage/updated", update("th", breakdown(900, 90), breakdown(900, 90)));
+    expect(after[0]).toMatchObject({ usage: { inputTokens: 900, outputTokens: 90 } });
+    n.next("thread/started", { thread: { id: "child", parentThreadId: "th" } });
+    const child = n.next("thread/tokenUsage/updated", update("child", breakdown(50, 5), breakdown(50, 5)));
+    expect(child).toEqual([{ type: "usage", usage: { inputTokens: 50, outputTokens: 5, cacheReadTokens: 0, cacheWriteTokens: 0 } }]);
+  });
+
+  it("maps account/rateLimits/updated onto the gauge", () => {
+    const n = new CodexNormalizer({ now: () => 7 });
+    const snapshot = (primary: number) => ({ limitId: "codex", limitName: "Codex", primary: { usedPercent: primary, windowDurationMins: 300, resetsAt: 100 }, secondary: null, rateLimitReachedType: primary >= 100 ? "rate_limit_reached" : null, spendControlReached: null });
+    expect(n.next("account/rateLimits/updated", { rateLimits: snapshot(40) })).toEqual([{ type: "usage", rateLimit: { status: "ok", remainingPct: 60, resetsAt: 100_000, note: "Codex 40% used (5h window)", at: 7 } }]);
+    expect(n.next("account/rateLimits/updated", { rateLimits: snapshot(100) })[0]).toMatchObject({ rateLimit: { status: "limited", remainingPct: 0, note: "Codex: rate limit reached" } });
+    expect(n.next("account/rateLimits/updated", { rateLimits: null })).toEqual([]);
   });
 });

@@ -1,7 +1,9 @@
 import type { ApprovalDecision, NormalizedEvent } from "@tide/contracts";
 import { deferred, type Deferred } from "./async-queue.ts";
 import { truncate } from "./items.ts";
+import { rawPayload } from "./normalize.ts";
 import type { RequestId } from "./jsonrpc.ts";
+import { elicitationForm, type FormQuestion } from "./elicitation.ts";
 import type { ToolRequestUserInputParams } from "./generated/v2/ToolRequestUserInputParams.ts";
 
 /**
@@ -40,7 +42,7 @@ export class ApprovalBroker {
   #respond: (id: RequestId, result: unknown) => void;
   #respondError: (id: RequestId, code: number, message: string) => void;
   #approvals = new Map<string, PendingApproval>();
-  #userInputs = new Map<string, { gate: Deferred<Record<string, unknown>>; questions: ToolRequestUserInputParams["questions"]; id: RequestId }>();
+  #userInputs = new Map<string, Deferred<Record<string, unknown>>>();
 
   constructor(emit: (event: NormalizedEvent) => void, respond: (id: RequestId, result: unknown) => void, respondError: (id: RequestId, code: number, message: string) => void) {
     this.#emit = emit;
@@ -55,6 +57,8 @@ export class ApprovalBroker {
         return this.#approval(context, "Bash", (params) => ({
           command: params["command"],
           cwd: params["cwd"],
+          // 0.162: `writeStdin` = input typed into an existing terminal, not a new command
+          ...(params["kind"] === "writeStdin" ? { kind: "writeStdin" } : {}),
           ...(params["reason"] ? { reason: params["reason"] } : {}),
         }));
       case "item/fileChange/requestApproval":
@@ -129,7 +133,19 @@ export class ApprovalBroker {
     );
   }
 
+  /**
+   * A form-mode elicitation becomes a `UserInputActivity` built from the schema's top-level
+   * fields; `respondUserInput` answers it (no answers = cancel). URL flows, and schemas with
+   * nothing renderable, stay an accept/decline approval card.
+   */
   #elicitation(context: ServerRequestContext): boolean {
+    const form = elicitationForm(context.params);
+    if (form) {
+      return this.#askQuestions(context, form.questions, (answers) => {
+        const content = form.toContent(answers);
+        return content ? { action: "accept", content, _meta: null } : { action: "cancel", content: null, _meta: null };
+      });
+    }
     return this.#park(
       context,
       {
@@ -150,25 +166,25 @@ export class ApprovalBroker {
   #userInput(context: ServerRequestContext): boolean {
     const params = context.params as unknown as ToolRequestUserInputParams;
     const questions = Array.isArray(params.questions) ? params.questions : [];
+    return this.#askQuestions(
+      context,
+      questions.map((question) => ({
+        id: question.id,
+        text: question.question,
+        ...(question.options ? { options: question.options.map((option) => ({ label: option.label, ...(option.description ? { description: option.description } : {}) })) } : {}),
+      })),
+      (answers) => ({ answers: toCodexAnswers(questions, answers) }),
+    );
+  }
+
+  #askQuestions(context: ServerRequestContext, questions: FormQuestion[], reply: (answers: Record<string, unknown>) => unknown): boolean {
     const requestId = String(context.id);
     const gate = deferred<Record<string, unknown>>();
-    this.#userInputs.set(requestId, { gate, questions, id: context.id });
-    this.#emit({
-      type: "activity",
-      activity: {
-        kind: "user-input",
-        requestId,
-        status: "pending",
-        questions: questions.map((question) => ({
-          id: question.id,
-          text: question.question,
-          ...(question.options ? { options: question.options.map((option) => ({ label: option.label, ...(option.description ? { description: option.description } : {}) })) } : {}),
-        })),
-      },
-    });
+    this.#userInputs.set(requestId, gate);
+    this.#emit({ type: "activity", activity: { kind: "user-input", requestId, status: "pending", questions } });
     void gate.promise.then((answers) => {
       this.#userInputs.delete(requestId);
-      this.#respond(context.id, { answers: toCodexAnswers(questions, answers) });
+      this.#respond(context.id, reply(answers));
     });
     return true;
   }
@@ -178,18 +194,35 @@ export class ApprovalBroker {
   }
 
   respondUserInput(requestId: string, answers: Record<string, unknown>): void {
-    this.#userInputs.get(requestId)?.gate.resolve(answers);
+    this.#userInputs.get(requestId)?.resolve(answers);
   }
 
   /** Releases every parked request so a closing session cannot hang the app-server. */
   cancelAll(): void {
     for (const pending of [...this.#approvals.values()]) pending.gate.resolve("cancel");
-    for (const pending of [...this.#userInputs.values()]) pending.gate.resolve({});
+    for (const pending of [...this.#userInputs.values()]) pending.resolve({});
   }
 
-  /** Answers a request we do not model, so the server is never left waiting. */
-  reject(id: RequestId, method: string): void {
-    this.#respondError(id, -32601, `tide does not handle ${method}`);
+  /**
+   * Answers a server request Tide does not model, so the app-server is never left waiting,
+   * and shows a pass-through row. Requests whose response type has a "no" are declined in
+   * kind (a dynamic tool call fails, a legacy approval is denied); the rest get a
+   * method-not-found error.
+   */
+  decline(id: RequestId, method: string, params: unknown): void {
+    this.#emit({ type: "activity", activity: { kind: "info", text: `codex: ${method} (declined, not handled by Tide)`, payload: rawPayload(params) } });
+    const note = `Tide does not handle ${method}`;
+    switch (method) {
+      case "item/tool/call":
+        this.#respond(id, { success: false, contentItems: [{ type: "inputText", text: note }] });
+        return;
+      case "applyPatchApproval":
+      case "execCommandApproval":
+        this.#respond(id, { decision: { denied: { rejection: note } } });
+        return;
+      default:
+        this.#respondError(id, -32601, note);
+    }
   }
 }
 

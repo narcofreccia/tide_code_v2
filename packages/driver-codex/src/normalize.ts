@@ -3,6 +3,8 @@ import { toolActivity, toolShape, truncate } from "./items.ts";
 import type { ItemCompletedNotification } from "./generated/v2/ItemCompletedNotification.ts";
 import type { ItemStartedNotification } from "./generated/v2/ItemStartedNotification.ts";
 import type { ThreadItem } from "./generated/v2/ThreadItem.ts";
+import { rateLimitFromSnapshot } from "./rate-limits.ts";
+import type { TokenUsageBreakdown } from "./generated/v2/TokenUsageBreakdown.ts";
 import type { ThreadTokenUsageUpdatedNotification } from "./generated/v2/ThreadTokenUsageUpdatedNotification.ts";
 import type { TurnCompletedNotification } from "./generated/v2/TurnCompletedNotification.ts";
 
@@ -37,6 +39,8 @@ export interface NormalizerOptions {
   threadId?: string;
   /** called for notifications the normalizer does not model; never throws */
   onUnknown?: (method: string) => void;
+  /** clock for `rateLimit.at` (tests) */
+  now?: () => number;
 }
 
 interface Delta {
@@ -69,6 +73,8 @@ export class CodexNormalizer {
   #messageKeys = new Map<string, string>();
   #patches = new Map<string, string>();
   #interrupted = false;
+  /** last cumulative `total` per thread (main + collab children), to turn totals into deltas */
+  #lastTotal = new Map<string, TokenUsageBreakdown>();
   /** the turn currently running, needed by `turn/interrupt` */
   turnId: string | undefined;
   unknownCount = 0;
@@ -123,6 +129,12 @@ export class CodexNormalizer {
         return this.#planProgress(payload);
       case "thread/tokenUsage/updated":
         return this.#usage(payload as unknown as ThreadTokenUsageUpdatedNotification);
+      case "account/rateLimits/updated": {
+        const limit = rateLimitFromSnapshot((payload as { rateLimits?: Parameters<typeof rateLimitFromSnapshot>[0] }).rateLimits, (this.#options.now ?? Date.now)());
+        return limit ? [{ type: "usage", rateLimit: limit }] : [];
+      }
+      case "model/verification":
+        return this.#info(`Codex requires verification for this model: ${Array.isArray(payload["verifications"]) ? payload["verifications"].join(", ") : "see Codex"}`);
       case "turn/completed":
         return this.#turnCompleted(payload as unknown as TurnCompletedNotification);
       case "error":
@@ -303,23 +315,29 @@ export class CodexNormalizer {
     return steps.length > 0 ? [{ type: "plan.progress", steps }] : [];
   }
 
+  /**
+   * `tokenUsage.total` is cumulative for the whole thread, `last` is the request just made.
+   * Tide wants a per-report delta (a turn can make many model requests): diff `total` against
+   * the previous one per thread; the first report seen for a thread (a resumed one carries
+   * its history in `total`) and any shrinking counter (compaction) fall back to `last`.
+   * `contextUsage.used` is what the next request will carry — the last request's tokens —
+   * not the cumulative total.
+   */
   #usage(notification: ThreadTokenUsageUpdatedNotification): NormalizedEvent[] {
     const usage = notification.tokenUsage;
     if (!usage) return [];
-    const last = usage.last;
+    const previous = this.#lastTotal.get(notification.threadId);
+    this.#lastTotal.set(notification.threadId, usage.total);
+    const shrunk = previous !== undefined && (Object.keys(usage.total) as (keyof TokenUsageBreakdown)[]).some((key) => usage.total[key] < previous[key]);
+    const base: TokenUsageBreakdown | undefined = previous === undefined || shrunk ? undefined : previous;
+    const diff = (key: keyof TokenUsageBreakdown): number => (base === undefined ? usage.last[key] : usage.total[key] - base[key]);
+    const tokens = { inputTokens: diff("inputTokens"), outputTokens: diff("outputTokens"), cacheReadTokens: diff("cachedInputTokens"), cacheWriteTokens: diff("cacheWriteInputTokens") };
+    const empty = tokens.inputTokens === 0 && tokens.outputTokens === 0 && tokens.cacheReadTokens === 0 && tokens.cacheWriteTokens === 0;
     const window = usage.modelContextWindow;
-    return [
-      {
-        type: "usage",
-        usage: {
-          inputTokens: last.inputTokens,
-          outputTokens: last.outputTokens,
-          cacheReadTokens: last.cachedInputTokens,
-          cacheWriteTokens: last.cacheWriteInputTokens,
-        },
-        ...(typeof window === "number" && window > 0 ? { contextUsage: { used: usage.total.totalTokens, window } } : {}),
-      },
-    ];
+    const isMain = this.#threadId === undefined || notification.threadId === this.#threadId;
+    const contextUsage = isMain && typeof window === "number" && window > 0 ? { used: usage.last.totalTokens, window } : undefined;
+    if (empty && !contextUsage) return [];
+    return [{ type: "usage", ...(empty ? {} : { usage: tokens }), ...(contextUsage ? { contextUsage } : {}) }];
   }
 
   #turnCompleted(notification: TurnCompletedNotification): NormalizedEvent[] {

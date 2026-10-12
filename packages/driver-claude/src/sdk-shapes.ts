@@ -1,6 +1,6 @@
 /**
  * Structural mirror of the subset of `@anthropic-ai/claude-agent-sdk`'s `SDKMessage`
- * union that the normalizer reads (sdk.d.ts, 0.3.251).
+ * union that the normalizer reads (sdk.d.ts, 0.3.296).
  *
  * Why re-declare instead of importing `SDKMessage`: the SDK's message types reach into
  * `@anthropic-ai/sdk`'s `BetaMessage`/`BetaRawMessageStreamEvent`, which are optional peer
@@ -119,11 +119,28 @@ export interface ResultMessage {
   total_cost_usd?: number;
   usage?: ClaudeUsage;
   modelUsage?: Record<string, ClaudeModelUsage>;
+  /** set when this turn re-runs/continues one a worker restart interrupted (SDKResult*.resume_reason) */
+  resume_reason?: string;
+  /** error results written before exiting on a known startup failure (SDKResultError.startup_failure_reason) */
+  startup_failure_reason?: string;
+}
+
+/** SDKRateLimitInfo (sdk.d.ts). `unifiedWindows` is emitted by CLI 2.1.296 but not declared in the d.ts. */
+export interface RateLimitInfoShape {
+  status?: string; // allowed | allowed_warning | rejected
+  rateLimitType?: string;
+  utilization?: number;
+  resetsAt?: number; // epoch seconds
+  overageStatus?: string;
+  isUsingOverage?: boolean;
+  overageInUse?: boolean;
+  overageEnabled?: boolean;
+  unifiedWindows?: Record<string, { utilization?: number; resetsAt?: number }>;
 }
 
 export interface RateLimitMessage {
   type: "rate_limit_event";
-  rate_limit_info?: { status?: string; rateLimitType?: string; utilization?: number; resetsAt?: number };
+  rate_limit_info?: RateLimitInfoShape;
 }
 
 export type ClaudeMessage =

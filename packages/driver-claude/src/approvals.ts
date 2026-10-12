@@ -15,6 +15,35 @@ export interface CanUseToolContext {
   description?: string;
   decisionReason?: string;
   suggestions?: unknown[];
+  /** `mcp__*` tools: the serving MCP server (untrusted `name`; sdk.d.ts CanUseTool options) */
+  mcpServer?: { name: string; source: string };
+}
+
+type Destination = "session" | "localSettings";
+
+/**
+ * The CLI's own `suggestions` are the narrowest rule it would write itself (e.g. `Bash(git status:*)`
+ * or a single directory), so "accept for session/always" re-targets them to the requested
+ * destination instead of widening to the whole tool. Mode switches (`setMode`) are dropped —
+ * Tide owns the runtime mode. Without usable suggestions the caller falls back to a tool-wide rule.
+ */
+export function narrowPermissions(suggestions: unknown[] | undefined, destination: Destination): unknown[] | undefined {
+  if (!Array.isArray(suggestions)) return undefined;
+  const kept: unknown[] = [];
+  for (const raw of suggestions) {
+    if (typeof raw !== "object" || raw === null) continue;
+    const update = raw as { type?: string; behavior?: string };
+    if (update.type === "addRules" && update.behavior === "allow") kept.push({ ...update, destination });
+    else if (update.type === "addDirectories") kept.push({ ...update, destination });
+  }
+  return kept.length > 0 ? kept : undefined;
+}
+
+function approvalTitle(context: CanUseToolContext): string | undefined {
+  const server = context.mcpServer;
+  if (!server) return context.title;
+  const origin = `MCP server ${JSON.stringify(server.name).slice(0, 80)} (${server.source})`;
+  return context.title ? `${context.title} - ${origin}` : origin;
 }
 
 const DENY_MESSAGE = "Declined by user in Tide";
@@ -65,7 +94,7 @@ export class ApprovalBroker {
         toolName,
         input,
         status: "pending",
-        ...(context.title ? { title: context.title } : {}),
+        ...(approvalTitle(context) ? { title: approvalTitle(context)! } : {}),
         ...(context.description ?? context.decisionReason ? { description: context.description ?? context.decisionReason! } : {}),
         ...(diff ? { diff } : {}),
       },
@@ -76,9 +105,9 @@ export class ApprovalBroker {
       case "accept":
         return { behavior: "allow", updatedInput: input };
       case "acceptForSession":
-        return { behavior: "allow", updatedInput: input, updatedPermissions: [{ type: "addRules", rules: [{ toolName }], behavior: "allow", destination: "session" }] };
+        return { behavior: "allow", updatedInput: input, updatedPermissions: narrowPermissions(context.suggestions, "session") ?? [{ type: "addRules", rules: [{ toolName }], behavior: "allow", destination: "session" }] };
       case "acceptAlways":
-        return { behavior: "allow", updatedInput: input, updatedPermissions: [{ type: "addRules", rules: [{ toolName }], behavior: "allow", destination: "localSettings" }] };
+        return { behavior: "allow", updatedInput: input, updatedPermissions: narrowPermissions(context.suggestions, "localSettings") ?? [{ type: "addRules", rules: [{ toolName }], behavior: "allow", destination: "localSettings" }] };
       case "cancel":
         return { behavior: "deny", message: DENY_MESSAGE, interrupt: true };
       default:
