@@ -1,109 +1,127 @@
 import { describe, expect, it } from "vitest";
 import type { NormalizedEvent } from "@tide/contracts";
-import { OpencodeNormalizer, SILENT_EVENTS } from "./normalize.ts";
-import type { OpencodeEvent } from "./wire.ts";
+import { OpencodeNormalizer, formQuestions, passthroughPayload } from "./normalize.ts";
+import type { OpencodeEvent, WireTokens } from "./wire.ts";
 
-const SESSION = "ses_1";
+const S = "ses_1";
+const tokens = (input: number, output: number, reasoning = 0, read = 0, write = 0): WireTokens => ({ input, output, reasoning, cache: { read, write } });
+const ev = (type: string, data: Record<string, unknown>, created = 1): OpencodeEvent => ({ id: "evt", created, type, data: { sessionID: S, ...data } }) as unknown as OpencodeEvent;
 
-function make(): OpencodeNormalizer {
-  return new OpencodeNormalizer({ sessionId: SESSION, agent: "build" });
+function run(events: OpencodeEvent[], options: Partial<ConstructorParameters<typeof OpencodeNormalizer>[0]> = {}): { out: NormalizedEvent[]; n: OpencodeNormalizer } {
+  const n = new OpencodeNormalizer({ sessionId: S, ...options });
+  return { out: events.flatMap((event) => n.next(event)), n };
 }
 
-function part(type: string, id: string, messageID: string, text: string, delta?: string): OpencodeEvent {
-  return { type: "message.part.updated", properties: { part: { id, sessionID: SESSION, messageID, type, text } as never, ...(delta !== undefined ? { delta } : {}) } };
-}
-
-const infos = (events: NormalizedEvent[]): Extract<NormalizedEvent, { type: "activity" }>["activity"][] =>
-  events.flatMap((event) => (event.type === "activity" && event.activity.kind === "info" ? [event.activity] : []));
-
-describe("reasoning", () => {
-  it("streams reasoning on the same messageKey as the text that follows it", () => {
-    const normalizer = make();
-    const reasoning = normalizer.next(part("reasoning", "prt_reason", "msg_1", "let me think", "let me think"));
-    const text = normalizer.next(part("text", "prt_text", "msg_1", "hello", "hello"));
-
-    expect(reasoning).toEqual([{ type: "assistant.reasoning", messageKey: "prt_reason", delta: "let me think" }]);
-    // same key -> the reasoning and the answer merge into one assistant message
-    expect(text).toEqual([{ type: "assistant.delta", messageKey: "prt_reason", delta: "hello" }]);
-  });
-
-  it("derives reasoning deltas from the full text when the server omits `delta`, like text parts", () => {
-    const normalizer = make();
-    expect(normalizer.next(part("reasoning", "prt_r", "msg_1", "abc"))).toEqual([{ type: "assistant.reasoning", messageKey: "prt_r", delta: "abc" }]);
-    expect(normalizer.next(part("reasoning", "prt_r", "msg_1", "abcdef"))).toEqual([{ type: "assistant.reasoning", messageKey: "prt_r", delta: "def" }]);
-    // no growth -> no event
-    expect(normalizer.next(part("reasoning", "prt_r", "msg_1", "abcdef"))).toEqual([]);
-  });
-
-  it("keeps reasoning out of the plan markdown", () => {
-    const normalizer = make();
-    normalizer.next(part("reasoning", "prt_r", "msg_1", "thinking about it"));
-    normalizer.next(part("text", "prt_t", "msg_1", "# Plan\n1. go"));
-    const done = normalizer.next({
-      type: "message.updated",
-      properties: { info: { id: "msg_1", sessionID: SESSION, role: "assistant", agent: "plan", time: { created: 1, completed: 2 } } } as never,
-    });
-    expect(done).toEqual([{ type: "plan.proposed", markdown: "# Plan\n1. go" }]);
-  });
-
-  it("keys a message by its first streamed part even when text comes first", () => {
-    const normalizer = make();
-    normalizer.next(part("text", "prt_t", "msg_1", "hi", "hi"));
-    expect(normalizer.next(part("reasoning", "prt_r", "msg_1", "hmm", "hmm"))).toEqual([{ type: "assistant.reasoning", messageKey: "prt_t", delta: "hmm" }]);
-  });
-});
-
-describe("generic pass-through of untranslated events", () => {
-  it("surfaces an unknown event type as an info row carrying the raw event", () => {
-    const normalizer = make();
-    const event: OpencodeEvent = { type: "session.telepathy", properties: { sessionID: SESSION, mood: "curious" } };
-    const events = normalizer.next(event);
-    expect(events).toEqual([{ type: "activity", activity: { kind: "info", text: "opencode: session.telepathy", payload: event } }]);
-    expect(normalizer.unknownCount).toBe(1);
-  });
-
-  it("surfaces known-but-untranslated events too, without counting them as unknown", () => {
-    const normalizer = make();
-    // real content changes stay visible even though the driver has no first-class row
-    const events = normalizer.next({ type: "message.part.removed", properties: { sessionID: SESSION, partID: "prt_1" } });
-    expect(infos(events)[0]).toMatchObject({ kind: "info", text: "opencode: message.part.removed" });
-    expect(normalizer.unknownCount).toBe(0);
-  });
-
-  it("drops only the named housekeeping and already-rendered events", () => {
-    const normalizer = make();
-    expect([...SILENT_EVENTS]).toEqual([
-      "server.heartbeat",
-      "file.watcher.updated",
-      "session.updated",
-      "permission.replied",
-      "question.replied",
-      "question.rejected",
-      "file.edited",
-      "session.diff",
-      "server.connected",
+describe("OpencodeNormalizer", () => {
+  it("ignores other sessions and server-wide events", () => {
+    const { out } = run([
+      { type: "session.text.delta", data: { sessionID: "ses_other", assistantMessageID: "m", ordinal: 0, delta: "x" } } as unknown as OpencodeEvent,
+      { type: "provider.updated", data: {} } as unknown as OpencodeEvent,
     ]);
-    for (const type of SILENT_EVENTS) expect(normalizer.next({ type, properties: { sessionID: SESSION } })).toEqual([]);
-    expect(normalizer.unknownCount).toBe(0);
+    expect(out).toEqual([]);
   });
 
-  it("passes through events with no properties at all", () => {
-    const normalizer = make();
-    expect(infos(normalizer.next({ type: "brand.new.thing" }))[0]).toMatchObject({ text: "opencode: brand.new.thing" });
+  it("puts reasoning and text of one message on the same messageKey", () => {
+    const { out } = run([ev("session.reasoning.delta", { assistantMessageID: "m1", ordinal: 0, delta: "think" }), ev("session.text.delta", { assistantMessageID: "m1", ordinal: 0, delta: "hi" })]);
+    expect(out).toEqual([
+      { type: "assistant.reasoning", messageKey: "m1", delta: "think" },
+      { type: "assistant.delta", messageKey: "m1", delta: "hi" },
+    ]);
   });
 
-  it("ignores another session's events", () => {
-    const normalizer = make();
-    expect(normalizer.next({ type: "message.removed", properties: { sessionID: "ses_other" } })).toEqual([]);
+  it("emits a text block whole when it ended without any delta", () => {
+    const { out } = run([ev("session.text.ended", { assistantMessageID: "m1", ordinal: 0, text: "whole" })]);
+    expect(out).toEqual([{ type: "assistant.delta", messageKey: "m1", delta: "whole" }]);
   });
 
-  it("replaces an oversized payload with its truncated JSON", () => {
-    const normalizer = make();
-    const event: OpencodeEvent = { type: "session.enormous", properties: { sessionID: SESSION, blob: "x".repeat(6000) } };
-    const activity = infos(normalizer.next(event))[0];
-    if (activity?.kind !== "info") throw new Error("expected an info activity");
-    expect(typeof activity.payload).toBe("string");
-    expect(activity.payload as string).toMatch(/… \[truncated \d+ chars]$/);
-    expect((activity.payload as string).length).toBeLessThan(4200);
+  it("reports usage as the delta over the turn's baseline, reasoning counted as output", () => {
+    const { out } = run(
+      [
+        ev("session.step.ended", { assistantMessageID: "m", finish: "stop", cost: 0.01, tokens: tokens(100, 10, 5, 50, 2) }),
+        ev("session.usage.updated", { cost: 0.5, tokens: tokens(1100, 60, 10, 550, 2) }),
+        ev("session.execution.succeeded", {}),
+      ],
+      { contextWindow: 1000, baseline: { cost: 0.4, tokens: tokens(1000, 50, 0, 500, 0) } },
+    );
+    const usage = out.find((event) => event.type === "usage");
+    if (usage?.type !== "usage") throw new Error("no usage");
+    expect(usage.usage).toEqual({ inputTokens: 100, outputTokens: 20, cacheReadTokens: 50, cacheWriteTokens: 2, costUsd: expect.closeTo(0.1, 6) as unknown as number });
+    expect(usage.contextUsage).toEqual({ used: 162, window: 1000 });
+    expect(out.at(-1)).toEqual({ type: "settled", status: "completed" });
+  });
+
+  it("settles a failed execution as an error with the provider's message, once", () => {
+    const { out } = run([
+      ev("session.step.failed", { assistantMessageID: "m", error: { type: "provider.invalid-request", message: "Model x has been deprecated." } }),
+      ev("session.execution.failed", { error: { type: "provider.invalid-request", message: "Model x has been deprecated." } }),
+      ev("session.execution.succeeded", {}),
+    ]);
+    expect(out).toEqual([{ type: "settled", status: "error", error: "provider.invalid-request: Model x has been deprecated." }]);
+  });
+
+  it("settles a user interrupt as interrupted", () => {
+    const { out } = run([
+      ev("session.step.failed", { assistantMessageID: "m", error: { type: "aborted", message: "Step interrupted" } }),
+      ev("session.execution.interrupted", { reason: "user" }),
+    ]);
+    expect(out).toEqual([{ type: "settled", status: "interrupted" }]);
+  });
+
+  it("maps the subagent tool to a child row next to the tool row", () => {
+    const { out } = run([
+      ev("session.tool.input.started", { assistantMessageID: "m", id: "c1", name: "subagent" }),
+      ev("session.tool.called", { assistantMessageID: "m", id: "c1", input: { description: "scan the repo", agent: "explore" } }, 10),
+      ev("session.tool.success", { assistantMessageID: "m", id: "c1", content: [{ type: "text", text: "found it" }] }, 25),
+    ]);
+    const kinds = out.map((event) => (event.type === "activity" ? `${event.activity.kind}:${"status" in event.activity ? event.activity.status : ""}` : event.type));
+    expect(kinds).toEqual(["tool:running", "child:running", "tool:ok", "child:done"]);
+    expect(out[2]).toMatchObject({ activity: { durationMs: 15, output: "found it" } });
+  });
+
+  it("approval cards carry the edit diff from the permission metadata", () => {
+    const { out } = run([
+      ev("permission.asked", { id: "per_1", action: "edit", resources: ["notes.txt"], save: ["*"], metadata: { files: [{ file: "notes.txt", patch: "+tide\n" }] } }),
+    ]);
+    expect(out[0]).toMatchObject({ activity: { kind: "approval", requestId: "per_1", toolName: "edit", diff: "+tide\n", description: "notes.txt" } });
+  });
+
+  it("passes unknown session events and revert/snapshot events through as info rows", () => {
+    const { out, n } = run([ev("session.brand.new", { x: 1 }), ev("session.revert.staged", { revert: { messageID: "m" } }), ev("session.renamed", { title: "t" })]);
+    expect(out.map((event) => (event.type === "activity" && event.activity.kind === "info" ? event.activity.text : event.type))).toEqual([
+      "opencode: session.brand.new",
+      "opencode: session.revert.staged",
+    ]);
+    expect(n.unknownCount).toBe(1);
+  });
+
+  it("surfaces worktree events for the thread's own directory only", () => {
+    const at = (directory: string): OpencodeEvent => ({ type: "worktree.updated", location: { directory }, data: { projectID: "p" } }) as unknown as OpencodeEvent;
+    const { out } = run([at("/repo"), at("/elsewhere")], { directory: "/repo" });
+    expect(out).toHaveLength(1);
+  });
+
+  it("abort() settles a turn whose stream died", () => {
+    const n = new OpencodeNormalizer({ sessionId: S });
+    expect(n.abort("stream gone")).toEqual([{ type: "settled", status: "error", error: "stream gone" }]);
+    expect(n.abort("again")).toEqual([]);
+  });
+
+  it("converts form fields to questions and truncates big pass-through payloads", () => {
+    expect(
+      formQuestions({
+        id: "frm",
+        sessionID: S,
+        title: "Questions",
+        fields: [
+          { key: "q0", type: "string", title: "Indent", description: "Tabs or spaces?", options: [{ value: "Tabs", label: "Tabs" }] },
+          { key: "q1", type: "multiselect", options: [{ value: "a", label: "A" }] },
+          { key: "x", type: "external" },
+        ],
+      }),
+    ).toEqual([
+      { id: "q0", text: "Tabs or spaces?", options: [{ label: "Tabs" }] },
+      { id: "q1", text: "q1", options: [{ label: "A" }], multi: true },
+    ]);
+    expect(typeof passthroughPayload({ type: "x", data: { big: "y".repeat(10_000) } })).toBe("string");
   });
 });

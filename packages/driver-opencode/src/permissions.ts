@@ -1,161 +1,189 @@
 import { homedir } from "node:os";
 import { relative, resolve } from "node:path";
 import type { ApprovalDecision, InteractionMode, LinkedDir, RuntimeMode } from "@tide/contracts";
-import type { PermissionAction, PermissionReply, PermissionRule, WirePermissionConfig } from "./wire.ts";
-
-const ACTIONS = new Set<string>(["allow", "deny", "ask"]);
+import type { PermissionEffect, PermissionReply, PermissionRule, WireConfigEntry } from "./wire.ts";
 
 /**
- * `POST /session` takes a per-session `permission` ruleset (`{permission, pattern, action}`
- * triples) that is layered over the agent's own rules. That is the whole mapping: Tide
- * never writes `opencode.json` into the user's project.
+ * OpenCode 2 permission model (verified in `@opencode/core` 2.0.27, `src/permission.ts`):
+ *  - a rule is `{ action, resource, effect }`; `evaluate` takes `rules.findLast(match)` and
+ *    defaults to `ask`; `Wildcard.match` compiles `*` to `.*` (crossing `/`);
+ *  - the ruleset a call is checked against is `[...agent.permissions, ...session.permissions]`,
+ *    so session rules (the ones Tide sends) are evaluated **last**;
+ *  - agents start from `Agent.Info.default` = `*:* allow` + `.env` asks, then the user's
+ *    top-level `permissions` and the agent's own `agents.<id>.permissions` are appended;
+ *  - a `deny` anywhere in that merged ruleset blocks before saved ("always") rules are read.
  *
- * Verified against the installed opencode 1.1.36 binary:
- *  - a rule's `permission` is a plain `z.string()` matched with `Wildcard.match(asked,
- *    rule.permission)`, so `"*"` is a legal key that matches every permission — opencode's
- *    own agent defaults are built from `{"*": "allow", …}`;
- *  - the ruleset a tool call is evaluated against is
- *    `merge(agent.permission, session.permission ?? [])` and `evaluate` takes
- *    `merged.findLast(...)`, so Tide's session rules are evaluated **last** and win;
- *  - **the built-in agents' baseline is `"*": "allow"`** (`Agent` state:
- *    `fromConfig({"*": "allow", doom_loop: "ask", external_directory: {...}, question:
- *    "deny", plan_enter: "deny", plan_exit: "deny", read: {"*.env": "ask", …}})`, then the
- *    user's `opencode.json` `permission` block). Emitting *no* session rules therefore does
- *    **not** mean "ask" — it means "allow". The `ask` rules below are what makes
- *    approval-required and auto-accept-edits mean anything at all; they are the one place
- *    Tide deliberately overrides the user's own config, because the thread's run mode is a
- *    per-thread choice the user just made in Tide.
+ * Tide's run modes therefore have to be session rules (the agent baseline is allow-all), and
+ * because they are evaluated last they would silently override the user's own rules. To keep
+ * the user's config authoritative, the session ruleset *replays* the user's rules after the
+ * mode rules, each followed by a copy narrowed by the mode: the net effect of every call is
+ * the stricter of (what the user's config says, what the thread's mode says). Tide only ever
+ * narrows — a user `deny` survives `full-access`, and `approval-required` still asks for a
+ * call the user's config allows.
  *
- * Only the three knobs Tide's modes are about are set — `edit`, `bash`, `webfetch` (plus
- * the catch-all for full access). Everything else keeps whatever the user's own config and
- * the selected agent decided, so skills, MCP tools and custom permissions stay live.
+ * Action names are v2's: `shell` (v1 `bash`), `edit` (v1 `write`/`patch`), `subagent` (v1
+ * `task`) — the v1→v2 config migration in core maps exactly these.
  */
-const RULESETS: Record<RuntimeMode, PermissionRule[]> = {
+const MODE_RULES: Record<RuntimeMode, PermissionRule[]> = {
   "approval-required": [
-    { permission: "edit", pattern: "*", action: "ask" },
-    { permission: "bash", pattern: "*", action: "ask" },
-    { permission: "webfetch", pattern: "*", action: "ask" },
+    { action: "edit", resource: "*", effect: "ask" },
+    { action: "shell", resource: "*", effect: "ask" },
+    { action: "webfetch", resource: "*", effect: "ask" },
   ],
   "auto-accept-edits": [
-    { permission: "edit", pattern: "*", action: "allow" },
-    { permission: "bash", pattern: "*", action: "ask" },
-    { permission: "webfetch", pattern: "*", action: "ask" },
+    { action: "edit", resource: "*", effect: "allow" },
+    { action: "shell", resource: "*", effect: "ask" },
+    { action: "webfetch", resource: "*", effect: "ask" },
   ],
   auto: [
-    { permission: "edit", pattern: "*", action: "allow" },
-    { permission: "bash", pattern: "*", action: "allow" },
-    { permission: "webfetch", pattern: "*", action: "allow" },
+    { action: "edit", resource: "*", effect: "allow" },
+    { action: "shell", resource: "*", effect: "allow" },
+    { action: "webfetch", resource: "*", effect: "allow" },
   ],
-  // `"*"` is a wildcard *permission key*, not a literal — `Wildcard.match(asked, "*")`
-  // matches everything, exactly as opencode's own `{"*": "allow"}` agent default does.
-  "full-access": [{ permission: "*", pattern: "*", action: "allow" }],
+  "full-access": [{ action: "*", resource: "*", effect: "allow" }],
 };
 
+const STRICTNESS: Record<PermissionEffect, number> = { allow: 0, ask: 1, deny: 2 };
+
+function stricter(a: PermissionEffect, b: PermissionEffect): PermissionEffect {
+  return STRICTNESS[a] >= STRICTNESS[b] ? a : b;
+}
+
+/** `Wildcard.match` from `@opencode/core` 2.0.27 (`src/util/wildcard.ts`). */
+export function wildcardMatch(input: string, pattern: string): boolean {
+  let escaped = pattern.replaceAll("\\", "/").replace(/[.+^${}()|[\]\\]/g, "\\$&").replace(/\*/g, ".*").replace(/\?/g, ".");
+  if (escaped.endsWith(" .*")) escaped = `${escaped.slice(0, -3)}( .*)?`;
+  return new RegExp(`^${escaped}$`, "s").test(input.replaceAll("\\", "/"));
+}
+
+/** `Permission.evaluate`: last matching rule wins, `ask` when nothing matches. */
+export function evaluate(action: string, resource: string, rules: PermissionRule[]): PermissionEffect {
+  return rules.findLast((rule) => wildcardMatch(action, rule.action) && wildcardMatch(resource, rule.resource))?.effect ?? "ask";
+}
+
 /**
- * In plan mode the `plan` agent's own ruleset is what makes planning safe (`edit: deny`
- * outside the plans dir). A blanket `allow` from the run mode would undo it, so plan
- * sessions keep only the `ask` rules; the plan agent governs the rest.
+ * The mode's rules. In plan mode the `plan` agent's own ruleset (`edit` denied outside its
+ * plans dir) is what keeps planning safe; a mode `allow` would undo it, so only `ask` rules stay.
  */
 export function permissionRuleset(mode: RuntimeMode, interaction: InteractionMode): PermissionRule[] {
-  const rules = RULESETS[mode];
-  return interaction === "plan" ? rules.filter((rule) => rule.action === "ask") : [...rules];
+  const rules = MODE_RULES[mode];
+  return interaction === "plan" ? rules.filter((rule) => rule.effect !== "allow") : rules.map((rule) => ({ ...rule }));
+}
+
+/** `~`/`$HOME` expansion core applies to path actions when loading config permissions. */
+function expandHome(rule: PermissionRule): PermissionRule {
+  if (!["external_directory", "read", "edit"].includes(rule.action)) return rule;
+  const home = homedir();
+  const r = rule.resource;
+  if (r === "~" || r === "$HOME") return { ...rule, resource: home };
+  if (r.startsWith("~/")) return { ...rule, resource: `${home}/${r.slice(2)}` };
+  if (r.startsWith("$HOME/")) return { ...rule, resource: `${home}/${r.slice(6)}` };
+  return rule;
+}
+
+function isRule(value: unknown): value is PermissionRule {
+  if (typeof value !== "object" || value === null) return false;
+  const rule = value as Partial<PermissionRule>;
+  return typeof rule.action === "string" && typeof rule.resource === "string" && (rule.effect === "allow" || rule.effect === "ask" || rule.effect === "deny");
 }
 
 /**
- * W1 linked repos, expressed in opencode's own ruleset — no fallback needed. Verified
- * against opencode 1.1.36's `src/permission/next.ts`:
- *  - `evaluate()` picks the **last** matching rule (`merged.findLast(...)`) and the session
- *    ruleset is merged *after* the agent's (`merge(agent.permission, session.permission)`),
- *    so these rules beat both the mode rules above and the agent defaults;
- *  - `Wildcard.match` compiles `*` to `.*`, which crosses `/` — one `<path>/*` covers a
- *    whole tree;
- *  - reaching outside the project asks `external_directory` with the *absolute* glob of the
- *    target's parent directory, so allowing `<link>/*` is what makes a link readable at all;
- *  - the `edit` permission is asked with the path **relative to the worktree**, so a
- *    read-only link is denied under both its relative and its absolute form.
+ * The user's own rules for one agent, in the order core appends them: every config
+ * document's top-level `permissions`, then that agent's `agents.<id>.permissions`.
  */
-export function linkRules(cwd: string, links: LinkedDir[]): PermissionRule[] {
-  const rules: PermissionRule[] = [];
+export function userRules(entries: WireConfigEntry[] | undefined, agent: string): PermissionRule[] {
+  const docs = (entries ?? []).filter((entry) => entry.type === "document" && entry.info !== undefined);
+  const top = docs.flatMap((entry) => entry.info?.permissions ?? []);
+  const own = docs.flatMap((entry) => entry.info?.agents?.[agent]?.permissions ?? []);
+  return [...top, ...own].filter(isRule).map(expandHome);
+}
+
+/**
+ * Replays the user's rules, each followed (for every mode action it covers) by a copy whose
+ * effect is the stricter of the user's and the mode's. Later user rules still override earlier
+ * ones exactly as in opencode, and for a mode action the narrowed copy is what `findLast` sees.
+ */
+export function narrowedUserRules(user: PermissionRule[], mode: PermissionRule[]): PermissionRule[] {
+  const narrowing = mode.filter((rule) => rule.action !== "*" && rule.effect !== "allow");
+  const out: PermissionRule[] = [];
+  for (const rule of user) {
+    out.push(rule);
+    for (const modeRule of narrowing) {
+      if (!wildcardMatch(modeRule.action, rule.action)) continue;
+      const effect = stricter(rule.effect, modeRule.effect);
+      if (effect === rule.effect && rule.action === modeRule.action) continue;
+      out.push({ action: modeRule.action, resource: rule.resource, effect });
+    }
+  }
+  return out;
+}
+
+function linkGlobs(cwd: string, link: LinkedDir): string[] {
+  const abs = resolve(link.path);
+  const rel = relative(resolve(cwd), abs);
+  return [abs, `${abs}/*`, ...(rel === "" ? [] : [rel, `${rel}/*`])];
+}
+
+/**
+ * W1 linked repos. Verified against core 2.0.27 `file-access`: a path outside the location
+ * is asked as `external_directory` with resource `<absolute dir>/*`, then `read`/`edit` with
+ * the **absolute** path; a path inside it uses the path relative to the location. Both forms
+ * are covered. Allows (read + external_directory) are emitted before the user's rules so a
+ * user `deny` still wins; edit denies for read-only links are emitted last so nothing beats them.
+ */
+export function linkRules(cwd: string, links: LinkedDir[]): { allow: PermissionRule[]; deny: PermissionRule[] } {
+  const allow: PermissionRule[] = [];
+  const deny: PermissionRule[] = [];
   for (const link of links) {
-    const abs = resolve(link.path);
-    const rel = relative(resolve(cwd), abs);
-    const globs = [abs, `${abs}/*`, ...(rel === "" ? [] : [rel, `${rel}/*`])];
-    // reads (and the external-directory gate) are allowed for every link, read-only included
-    for (const pattern of globs) {
-      rules.push({ permission: "external_directory", pattern, action: "allow" });
-      rules.push({ permission: "read", pattern, action: "allow" });
+    for (const resource of linkGlobs(cwd, link)) {
+      allow.push({ action: "external_directory", resource, effect: "allow" });
+      allow.push({ action: "read", resource, effect: "allow" });
+      if (link.access !== "write") deny.push({ action: "edit", resource, effect: "deny" });
     }
-    if (link.access === "write") continue;
-    for (const pattern of globs) rules.push({ permission: "edit", pattern, action: "deny" });
   }
-  return rules;
-}
-
-/** `PermissionNext.expand` (opencode 1.1.36 `src/permission/next.ts`). */
-function expandPattern(pattern: string): string {
-  if (pattern === "~") return homedir();
-  if (pattern.startsWith("~/")) return homedir() + pattern.slice(1);
-  if (pattern.startsWith("$HOME")) return homedir() + pattern.slice(5);
-  return pattern;
+  return { allow, deny };
 }
 
 /**
- * The user's *granular* permission rules, replayed from their own `opencode.json` so Tide's
- * mode rules cannot silently cancel them.
- *
- * Why this is needed: session rules are evaluated after the agent's (which is where the
- * user's config lives), so a blanket `bash:* ask` from a Tide mode would otherwise beat a
- * user's `{"bash": {"git *": "allow"}}`. Re-appending their rules after Tide's restores the
- * precedence those rules have when opencode runs without Tide.
- *
- * Why only the granular ones: a rule whose pattern is `*` is the user's terminal-wide
- * *default* for that permission. Letting it win here would make Tide's per-thread mode
- * selector a lie — picking "approval-required" on a thread would do nothing for a user whose
- * config says `"bash": "allow"`. A pattern-bearing rule (`"git *": "allow"`,
- * `"rm -rf *": "deny"`) is a specific intent about specific calls, which the mode should
- * not clobber. So: blanket rules are dropped, granular rules are kept.
- *
- * Expansion mirrors `PermissionNext.fromConfig`: a bare action is `{"*": action}`, and
- * `~`/`$HOME` prefixes are expanded the way opencode expands them.
- */
-export function userGranularRules(permission: WirePermissionConfig | undefined): PermissionRule[] {
-  const rules: PermissionRule[] = [];
-  for (const [key, value] of Object.entries(permission ?? {})) {
-    // a bare action is the blanket default for that key — dropped by the rule above
-    if (typeof value === "string") continue;
-    if (typeof value !== "object" || value === null) continue;
-    for (const [pattern, action] of Object.entries(value)) {
-      if (pattern === "*" || !ACTIONS.has(action)) continue;
-      rules.push({ permission: key, pattern: expandPattern(pattern), action: action as PermissionAction });
-    }
-  }
-  return rules;
-}
-
-/**
- * The session ruleset actually sent to `POST /session`, in evaluation order (opencode takes
- * the **last** match): Tide's mode rules, then the user's granular rules, then Tide's link
- * rules — so a read-only link's `edit: deny` always wins, W1's whole point.
+ * The session ruleset Tide sends (`POST /api/session` / `PATCH /api/session/:id`), in
+ * evaluation order: mode rules → link allows → the user's rules narrowed by the mode → link denies.
  */
 export function sessionRuleset(
   mode: RuntimeMode,
   interaction: InteractionMode,
   cwd: string,
   links: LinkedDir[] = [],
-  userPermission?: WirePermissionConfig,
+  user: PermissionRule[] = [],
 ): PermissionRule[] {
-  return [...permissionRuleset(mode, interaction), ...userGranularRules(userPermission), ...linkRules(cwd, links)];
+  const modeRules = permissionRuleset(mode, interaction);
+  const linked = linkRules(cwd, links);
+  return [...modeRules, ...linked.allow, ...narrowedUserRules(user, modeRules), ...linked.deny];
 }
 
+/**
+ * `acceptForSession` is emulated by the session (an in-memory grant that auto-answers later
+ * asks with `once`), never `always`: core's `always` writes a project-wide saved rule
+ * (`permission/saved`) that outlives the session and Tide.
+ */
 export function replyFor(decision: ApprovalDecision): PermissionReply {
   switch (decision) {
     case "accept":
-      return "once";
     case "acceptForSession":
+      return "once";
     case "acceptAlways":
-      // opencode has one "remember this" bucket; it persists for the session's project.
       return "always";
     default:
       return "reject";
   }
+}
+
+/** A session-scoped grant: the asked action and the `save` patterns opencode proposed for it. */
+export interface SessionGrant {
+  action: string;
+  patterns: string[];
+}
+
+export function grantCovers(grants: SessionGrant[], action: string, resources: string[]): boolean {
+  if (resources.length === 0) return false;
+  return resources.every((resource) => grants.some((grant) => grant.action === action && grant.patterns.some((pattern) => wildcardMatch(resource, pattern))));
 }

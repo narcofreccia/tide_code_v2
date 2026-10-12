@@ -1,78 +1,73 @@
 import type { DriverActivity, NormalizedEvent, TurnUsage } from "@tide/contracts";
-import type {
-  OpencodeEvent,
-  WireAssistantMessage,
-  WireMessage,
-  WireMessageError,
-  WirePart,
-  WirePermission,
-  WireReasoningPart,
-  WireQuestionRequest,
-  WireTextPart,
-  WireTodo,
-  WireToolPart,
-  WireTokens,
-} from "./wire.ts";
+import type { EventOf, OpencodeEvent, WireForm, WireTokens } from "./wire.ts";
 
 const MAX_OUTPUT_CHARS = 4096;
-const SUBAGENT_TOOLS = new Set(["task", "subtask", "agent"]);
+const MAX_PAYLOAD_CHARS = 4096;
+/** v2 renamed v1 `task` to `subagent` (core's v1 config migration maps `task → subagent`). */
+const SUBAGENT_TOOLS = new Set(["subagent", "task"]);
 
 /**
- * The only events dropped without a trace. Each is either pure housekeeping or a duplicate
- * of something Tide already renders — the same test the other drivers apply to their own
- * noise. Everything else, including event types this driver has never seen, is surfaced as
- * a generic `info` row carrying the raw event (CLAUDE.md §1a "pass through, don't translate,
- * when unsure"), so a new opencode release never goes silent.
+ * Session-scoped events dropped without a trace: housekeeping, Tide's own requests echoed
+ * back, or pieces this normalizer folds into another row. Everything else that names this
+ * session — including event types never seen before — becomes a generic `info` row carrying
+ * the raw event (CLAUDE.md §1a), so a new OpenCode release never goes silent.
  */
 export const SILENT_EVENTS = new Set([
-  "server.heartbeat", // liveness ping, no content
-  "file.watcher.updated", // the workbench watches the worktree itself
-  "session.updated", // session metadata (title, timestamps) the read model already holds
-  "permission.replied", // the approval card already shows the decision (cf. Codex `serverRequest/resolved`)
-  "question.replied", // ditto for the user-input card
-  "question.rejected", // ditto
-  "file.edited", // one per file write; the write tool activity and the checkpoint diff carry it (cf. Codex `turn/diff/updated`)
-  "session.diff", // Tide computes diffs from git, not from the harness
-  "server.connected", // the SSE subscription is re-established every turn, so this is one row per turn
+  "session.inbox.enqueued", // Tide's own prompt, admitted
+  "session.inbox.delivered",
+  "session.execution.started",
+  "session.instructions.updated", // instruction hashes per step
+  "session.step.started",
+  "session.step.streamed",
+  "session.text.started",
+  "session.reasoning.started",
+  "session.reasoning.ended", // deltas already streamed
+  "session.tool.input.started", // folded into the tool row
+  "session.tool.input.delta",
+  "session.tool.input.ended",
+  "session.tool.progress", // shell ids etc.; the tool row's result carries the output
+  "session.usage.updated", // folded into `usage`
+  "session.status", // busy/idle/retry; retry has its own row via `session.retry.scheduled`
+  "session.idle",
+  "session.renamed", // auto title
+  "session.viewed",
+  "session.agent.selected", // Tide's own reconfigure
+  "session.model.selected",
+  "session.permissions",
+  "session.metadata.updated",
+  "permission.replied", // the approval card already shows the decision
+  "form.replied", // ditto for the user-input card
+  "form.cancelled",
+  "session.compaction.started",
+  "session.compaction.delta",
 ]);
 
-/**
- * Event types the driver knows about but deliberately does not map to a first-class row.
- * They still reach the user as pass-through `info` rows — they just are not "unknown", so
- * they do not count towards `unknownCount` or trip the unknown-event log.
- * `message.removed` / `message.part.removed` are real content changes and stay visible.
- */
-const KNOWN_UNTRANSLATED = new Set(["message.removed", "message.part.removed", ...SILENT_EVENTS]);
-
-const MAX_PAYLOAD_CHARS = 4096;
+/** Unscoped events surfaced when they concern the thread's own directory (worktree tools). */
+const LOCATION_EVENTS = new Set(["worktree.updated", "worktree.resolved"]);
 
 export interface NormalizerOptions {
-  /** only events carrying this session id are translated */
   sessionId: string;
-  /** the agent this session runs (`plan` turns produce a ProposedPlan) */
-  agent: string;
-  /** model context window from the provider catalog, when known */
+  /** the session's working directory (for location-scoped pass-through) */
+  directory?: string;
+  /** model context window from the catalog, when known */
   contextWindow?: number;
+  /** cumulative session usage before this turn (`Session.Info` cost/tokens) */
+  baseline?: { cost: number; tokens: WireTokens };
   onUnknown?: (type: string) => void;
 }
 
 interface TrackedTool {
-  toolName: string;
+  name: string;
   input: unknown;
-  status: string;
+  startedAt?: number;
   child: boolean;
-  childName?: string;
 }
 
 export function truncate(text: string, max = MAX_OUTPUT_CHARS): string {
   return text.length <= max ? text : `${text.slice(0, max)}\n… [truncated ${text.length - max} chars]`;
 }
 
-/**
- * The raw event carried on a pass-through row. Small events go through as-is (the UI can
- * render them); anything bigger than ~4 KB of JSON is replaced by its truncated JSON text
- * so one huge event cannot bloat the event log.
- */
+/** The raw event on a pass-through row; anything over ~4 KB of JSON becomes truncated JSON text. */
 export function passthroughPayload(event: OpencodeEvent): unknown {
   let json: string;
   try {
@@ -84,364 +79,298 @@ export function passthroughPayload(event: OpencodeEvent): unknown {
   return `${json.slice(0, MAX_PAYLOAD_CHARS)}… [truncated ${json.length - MAX_PAYLOAD_CHARS} chars]`;
 }
 
-function errorText(error: WireMessageError | undefined): string | undefined {
-  if (!error) return undefined;
-  const message = error.data?.message;
-  return truncate(message !== undefined && message !== "" ? `${error.name}: ${message}` : error.name, 1000);
+function contentText(content: { type: string; text?: string }[] | undefined): string {
+  return (content ?? []).flatMap((part) => (part.type === "text" && typeof part.text === "string" ? [part.text] : [])).join("\n");
 }
 
-function todoStatus(status: string): "pending" | "in_progress" | "completed" {
-  return status === "in_progress" || status === "completed" ? status : "pending";
+function childLabel(input: unknown): string | undefined {
+  if (typeof input !== "object" || input === null) return undefined;
+  for (const key of ["description", "agent", "subagent_type", "prompt"]) {
+    const value = (input as Record<string, unknown>)[key];
+    if (typeof value === "string" && value !== "") return truncate(value, 120);
+  }
+  return undefined;
 }
 
-function permissionKind(permission: WirePermission): string {
-  return permission.permission ?? permission.type ?? "permission";
-}
-
-function permissionPatterns(permission: WirePermission): string[] {
-  if (permission.patterns) return permission.patterns;
-  if (Array.isArray(permission.pattern)) return permission.pattern;
-  return permission.pattern !== undefined ? [permission.pattern] : [];
-}
-
-function permissionDiff(permission: WirePermission): string | undefined {
-  const diff = permission.metadata?.["diff"];
-  return typeof diff === "string" && diff !== "" ? truncate(diff, 20_000) : undefined;
-}
-
-function addTokens(into: WireTokens | undefined, from: WireTokens | undefined): WireTokens | undefined {
-  if (!from) return into;
-  if (!into) return from;
+export function sumTokens(a: WireTokens, b: WireTokens, sign = 1): WireTokens {
   return {
-    input: into.input + from.input,
-    output: into.output + from.output,
-    cache: { read: (into.cache?.read ?? 0) + (from.cache?.read ?? 0), write: (into.cache?.write ?? 0) + (from.cache?.write ?? 0) },
+    input: a.input + sign * b.input,
+    output: a.output + sign * b.output,
+    reasoning: a.reasoning + sign * b.reasoning,
+    cache: { read: a.cache.read + sign * b.cache.read, write: a.cache.write + sign * b.cache.write },
   };
 }
 
+export const ZERO_TOKENS: WireTokens = { input: 0, output: 0, reasoning: 0, cache: { read: 0, write: 0 } };
+
+/** The question tool's form (`metadata.kind: "question"`) as Tide user-input questions. */
+export function formQuestions(form: WireForm): { id: string; text: string; options?: { label: string; description?: string }[]; multi?: boolean }[] {
+  return form.fields
+    .filter((field) => field.type !== "external")
+    .map((field) => ({
+      id: field.key,
+      text: field.description ?? field.title ?? field.key,
+      ...(field.options && field.options.length > 0
+        ? { options: field.options.map((option) => ({ label: option.label, ...(option.description ? { description: option.description } : {}) })) }
+        : {}),
+      ...(field.type === "multiselect" ? { multi: true } : {}),
+    }));
+}
+
 /**
- * Stateful but I/O-free translator from opencode's SSE event stream to `NormalizedEvent`s.
- * State is only what the stream cannot repeat: per-part text (to derive deltas when the
- * server omits `delta`), open tool calls, and the running token/cost total of the turn.
+ * Stateful, I/O-free translator from OpenCode 2's session event stream to `NormalizedEvent`s
+ * for one turn. A turn ends on `session.execution.{succeeded,failed,interrupted}`.
+ *
+ * Usage: `session.usage.updated` carries the session's *cumulative* totals (title generation
+ * included, which `session.step.ended` does not report), so the turn's delta is the last total
+ * minus the baseline the session had when the turn started. Reasoning tokens are reported
+ * separately by OpenCode and counted into `outputTokens` (they are billed as output).
  */
 export class OpencodeNormalizer {
   #opts: NormalizerOptions;
   #tools = new Map<string, TrackedTool>();
-  #toolByCall = new Map<string, TrackedTool>();
-  /** messageID -> partID -> full text so far (assistant text, for plan markdown) */
-  #messageParts = new Map<string, Map<string, string>>();
-  /** partID -> reasoning text so far, kept out of `#messageParts` so plans stay text-only */
-  #reasoningParts = new Map<string, string>();
-  /**
-   * messageID -> the `messageKey` every streamed part of that message uses. opencode emits
-   * reasoning and text as separate parts with separate ids; Tide wants them in one message,
-   * so the first streamed part of a message fixes the key and the rest reuse it.
-   */
-  #messageKeys = new Map<string, string>();
-  #completed = new Set<string>();
-  /** messageID -> role, so a user message's own text parts never stream back as assistant text */
-  #roles = new Map<string, string>();
-  #tokens: WireTokens | undefined;
-  #cost = 0;
+  /** assistantMessageID -> final text of that message (for the plan markdown) */
+  #texts = new Map<string, string>();
+  #streamedText = new Set<string>();
+  #agent: string | undefined;
+  #latest: { cost: number; tokens: WireTokens } | undefined;
+  #lastStep: WireTokens | undefined;
   #error: string | undefined;
   #interrupted = false;
-  #retryAttempt = 0;
   #settled = false;
-  /** event types with no mapping at all in this driver — surfaced generically, never dropped */
   unknownCount = 0;
 
   constructor(options: NormalizerOptions) {
     this.#opts = options;
   }
 
-  /** Marks the turn as user-interrupted so `session.idle` settles as `interrupted`. */
+  /** Marks the turn as user-interrupted so a failure caused by the abort settles as `interrupted`. */
   markInterrupted(): void {
     this.#interrupted = true;
   }
 
+  /** The cumulative usage last seen (the next turn's baseline). */
+  get latestUsage(): { cost: number; tokens: WireTokens } | undefined {
+    return this.#latest;
+  }
+
   next(event: OpencodeEvent): NormalizedEvent[] {
-    switch (event.type) {
-      case "message.updated":
-        return this.#messageUpdated((event.properties as { info: WireMessage }).info);
-      case "message.part.updated": {
-        const properties = event.properties as { part: WirePart; delta?: string };
-        return this.#partUpdated(properties.part, properties.delta);
+    if (this.#settled) return [];
+    const data = (event as { data?: Record<string, unknown> }).data;
+    const sessionId = (data?.["sessionID"] as string | undefined) ?? (data?.["form"] as { sessionID?: string } | undefined)?.sessionID;
+    if (sessionId === undefined) return this.#unscoped(event);
+    if (sessionId !== this.#opts.sessionId) return [];
+    const e = event as OpencodeEvent;
+    switch (e.type) {
+      case "session.text.delta":
+        return this.#text(e as EventOf<"session.text.delta">);
+      case "session.text.ended":
+        return this.#textEnded(e as EventOf<"session.text.ended">);
+      case "session.reasoning.delta": {
+        const d = (e as EventOf<"session.reasoning.delta">).data;
+        return d.delta === "" ? [] : [{ type: "assistant.reasoning", messageKey: d.assistantMessageID, delta: d.delta }];
       }
+      case "session.step.started":
+        this.#agent = (e as EventOf<"session.step.started">).data.agent;
+        return [];
+      case "session.tool.input.started": {
+        const d = (e as EventOf<"session.tool.input.started">).data;
+        this.#tools.set(d.id, { name: d.name, input: {}, child: SUBAGENT_TOOLS.has(d.name) });
+        return [];
+      }
+      case "session.tool.called":
+        return this.#toolCalled(e as EventOf<"session.tool.called">);
+      case "session.tool.success":
+        return this.#toolDone(e as EventOf<"session.tool.success">, "ok");
+      case "session.tool.failed":
+        return this.#toolDone(e as EventOf<"session.tool.failed">, "error");
       case "permission.asked":
-      case "permission.updated":
-        return this.#permission(event.properties as WirePermission);
-      case "question.asked":
-        return this.#question(event.properties as WireQuestionRequest);
-      case "todo.updated":
-        return this.#todos(event.properties as { sessionID: string; todos: WireTodo[] });
-      case "session.compacted":
-        return this.#owned(event.properties) ? [{ type: "activity", activity: { kind: "info", text: "Context compacted" } }] : [];
-      case "session.status":
-        return this.#sessionStatus(event.properties as { sessionID?: string; status?: { type?: string; attempt?: number; message?: string } });
-      case "session.error":
-        return this.#sessionError(event.properties as { sessionID?: string; error?: WireMessageError });
-      case "session.idle":
-        return this.#owned(event.properties) ? this.#settle() : [];
+        return this.#permission(e as EventOf<"permission.asked">);
+      case "form.created":
+        return this.#form((e as EventOf<"form.created">).data.form as unknown as WireForm);
+      case "session.step.ended":
+        this.#lastStep = (e as EventOf<"session.step.ended">).data.tokens;
+        return [];
+      case "session.step.failed": {
+        const d = (e as EventOf<"session.step.failed">).data;
+        if (d.tokens) this.#lastStep = d.tokens;
+        if (d.error.type !== "aborted") this.#error ??= truncate(`${d.error.type}: ${d.error.message}`, 1000);
+        return [];
+      }
+      case "session.usage.updated": {
+        const d = (e as EventOf<"session.usage.updated">).data;
+        this.#latest = { cost: d.cost, tokens: d.tokens };
+        return [];
+      }
+      case "session.retry.scheduled": {
+        const d = (e as EventOf<"session.retry.scheduled">).data;
+        return [{ type: "activity", activity: { kind: "info", text: `Retrying (attempt ${d.attempt}): ${truncate(d.error.message, 300)}` } }];
+      }
+      case "session.compaction.ended":
+        return [{ type: "activity", activity: { kind: "info", text: "Context compacted" } }];
+      case "session.execution.succeeded":
+        return this.#settle(this.#interrupted ? "interrupted" : "completed");
+      case "session.execution.interrupted":
+        return this.#settle("interrupted");
+      case "session.execution.failed": {
+        const error = (e as EventOf<"session.execution.failed">).data.error;
+        if (this.#interrupted || error.type === "aborted") return this.#settle("interrupted");
+        this.#error = truncate(`${error.type}: ${error.message}`, 1000);
+        return this.#settle("error");
+      }
       default:
-        // Everything the driver does not translate is still shown, unless it is on the
-        // housekeeping allowlist. Unknown types additionally bump `unknownCount`.
-        if (!KNOWN_UNTRANSLATED.has(event.type)) {
-          this.unknownCount++;
-          this.#opts.onUnknown?.(event.type);
-        }
-        return this.#passthrough(event);
+        return this.#passthrough(e);
     }
   }
 
-  /** Generic `info` row for an event this driver has no specific mapping for. */
+  /** Ends the turn from outside the stream (the stream died); idempotent. */
+  abort(reason: string): NormalizedEvent[] {
+    this.#error = reason;
+    return this.#settle("error");
+  }
+
   #passthrough(event: OpencodeEvent): NormalizedEvent[] {
     if (SILENT_EVENTS.has(event.type)) return [];
-    // an event without properties belongs to no session — it is about the server itself
-    if (event.properties !== undefined && !this.#owned(event.properties)) return [];
+    // revert/snapshot (`session.revert.*`), compaction failures, subagent forks, skills, …:
+    // shown as they come. Tide keeps its own checkpoints and does not translate these.
+    if (!event.type.startsWith("session.revert.")) {
+      this.unknownCount++;
+      this.#opts.onUnknown?.(event.type);
+    }
     return [{ type: "activity", activity: { kind: "info", text: `opencode: ${event.type}`, payload: passthroughPayload(event) } }];
   }
 
-  #owned(properties: unknown): boolean {
-    if (typeof properties !== "object" || properties === null) return false;
-    const sessionID = (properties as { sessionID?: unknown }).sessionID;
-    return sessionID === undefined || sessionID === this.#opts.sessionId;
+  #unscoped(event: OpencodeEvent): NormalizedEvent[] {
+    if (!LOCATION_EVENTS.has(event.type)) return [];
+    const directory = (event as { location?: { directory?: string } }).location?.directory ?? (event as { data?: { directory?: string } }).data?.directory;
+    if (this.#opts.directory === undefined || directory !== this.#opts.directory) return [];
+    return [{ type: "activity", activity: { kind: "info", text: `opencode: ${event.type}`, payload: passthroughPayload(event) } }];
   }
 
-  #messageUpdated(info: WireMessage): NormalizedEvent[] {
-    if (info.sessionID !== this.#opts.sessionId) return [];
-    this.#roles.set(info.id, info.role);
-    if (info.role !== "assistant") return [];
-    const message = info as WireAssistantMessage;
-    if (message.time.completed === undefined) return [];
-    if (this.#completed.has(message.id)) return [];
-    this.#completed.add(message.id);
-    this.#tokens = addTokens(this.#tokens, message.tokens);
-    this.#cost += message.cost ?? 0;
-    const error = errorText(message.error);
-    if (error !== undefined) {
-      if (message.error?.name === "MessageAbortedError") this.#interrupted = true;
-      else this.#error ??= error;
+  #text(event: EventOf<"session.text.delta">): NormalizedEvent[] {
+    const d = event.data;
+    if (d.delta === "") return [];
+    this.#streamedText.add(`${d.assistantMessageID}:${d.ordinal}`);
+    return [{ type: "assistant.delta", messageKey: d.assistantMessageID, delta: d.delta }];
+  }
+
+  /** Keeps the message text for the plan; emits it whole if no delta was streamed for it. */
+  #textEnded(event: EventOf<"session.text.ended">): NormalizedEvent[] {
+    const d = event.data;
+    const previous = this.#texts.get(d.assistantMessageID);
+    this.#texts.set(d.assistantMessageID, previous === undefined ? d.text : `${previous}${d.text}`);
+    if (this.#streamedText.has(`${d.assistantMessageID}:${d.ordinal}`) || d.text === "") return [];
+    return [{ type: "assistant.delta", messageKey: d.assistantMessageID, delta: d.text }];
+  }
+
+  #toolCalled(event: EventOf<"session.tool.called">): NormalizedEvent[] {
+    const d = event.data;
+    const tracked = this.#tools.get(d.id) ?? { name: "tool", input: {}, child: false };
+    tracked.input = d.input;
+    tracked.startedAt = event.created;
+    this.#tools.set(d.id, tracked);
+    const events: NormalizedEvent[] = [{ type: "activity", activity: { kind: "tool", toolUseId: d.id, toolName: tracked.name, input: d.input, status: "running" } }];
+    if (tracked.child) {
+      const description = childLabel(d.input);
+      events.push({
+        type: "activity",
+        activity: { kind: "child", childKey: d.id, name: description ?? tracked.name, ...(description ? { description } : {}), status: "running" },
+      });
     }
-    const agent = message.agent ?? message.mode ?? this.#opts.agent;
-    const markdown = this.#textOf(message.id);
-    // The plan agent's answer *is* the plan; Tide records it and never implements it here.
-    if (agent === "plan" && markdown.trim() !== "") return [{ type: "plan.proposed", markdown }];
-    return [];
+    return events;
   }
 
-  #partUpdated(part: WirePart, delta: string | undefined): NormalizedEvent[] {
-    if (part.sessionID !== this.#opts.sessionId) return [];
-    if (part.type === "text") return this.#textPart(part as WireTextPart, delta);
-    if (part.type === "reasoning") return this.#reasoningPart(part as WireReasoningPart, delta);
-    if (part.type === "tool") return this.#toolPart(part as WireToolPart);
-    if (part.type === "subtask") {
-      const subtask = part as { id: string; agent: string; description: string };
-      return [
-        {
-          type: "activity",
-          activity: { kind: "child", childKey: subtask.id, name: subtask.agent, description: subtask.description, status: "running" },
-        },
-      ];
-    }
-    return [];
-  }
-
-  #textPart(part: WireTextPart, delta: string | undefined): NormalizedEvent[] {
-    if (part.synthetic === true || this.#roles.get(part.messageID) === "user") return [];
-    const parts = this.#messageParts.get(part.messageID) ?? new Map<string, string>();
-    const previous = parts.get(part.id) ?? "";
-    // `delta` is authoritative when present; otherwise the part carries the full text so far.
-    const increment = delta ?? (part.text.startsWith(previous) ? part.text.slice(previous.length) : part.text);
-    parts.set(part.id, part.text);
-    this.#messageParts.set(part.messageID, parts);
-    if (increment === "") return [];
-    return [{ type: "assistant.delta", messageKey: this.#messageKey(part.messageID, part.id), delta: increment }];
-  }
-
-  /**
-   * Extended thinking. It is emitted on the *same* `messageKey` as the message's text, so
-   * the reasoning and the answer that follows it land in one assistant message.
-   */
-  #reasoningPart(part: WireReasoningPart, delta: string | undefined): NormalizedEvent[] {
-    if (this.#roles.get(part.messageID) === "user") return [];
-    const text = part.text ?? "";
-    const previous = this.#reasoningParts.get(part.id) ?? "";
-    const increment = delta ?? (text.startsWith(previous) ? text.slice(previous.length) : text);
-    this.#reasoningParts.set(part.id, text);
-    if (increment === "") return [];
-    return [{ type: "assistant.reasoning", messageKey: this.#messageKey(part.messageID, part.id), delta: increment }];
-  }
-
-  /** The first streamed part of a message names it; later parts of that message reuse the name. */
-  #messageKey(messageId: string, partId: string): string {
-    const existing = this.#messageKeys.get(messageId);
-    if (existing !== undefined) return existing;
-    this.#messageKeys.set(messageId, partId);
-    return partId;
-  }
-
-  #textOf(messageId: string): string {
-    return [...(this.#messageParts.get(messageId)?.values() ?? [])].join("");
-  }
-
-  #toolPart(part: WireToolPart): NormalizedEvent[] {
-    const state = part.state;
-    if (state.status === "pending") return [];
-    const input = state.input ?? {};
-    const tracked = this.#tools.get(part.id);
-    const child = tracked?.child ?? SUBAGENT_TOOLS.has(part.tool);
-    const childName = tracked?.childName ?? childLabel(part.tool, input);
-    if (tracked?.status === state.status) return [];
-    const entry: TrackedTool = { toolName: part.tool, input, status: state.status, child, ...(childName ? { childName } : {}) };
-    this.#tools.set(part.id, entry);
-    this.#toolByCall.set(part.callID, entry);
-
-    const output = state.status === "completed" ? state.output : state.status === "error" ? state.error : undefined;
-    const status = state.status === "completed" ? "ok" : state.status === "error" ? "error" : "running";
+  #toolDone(event: EventOf<"session.tool.success"> | EventOf<"session.tool.failed">, status: "ok" | "error"): NormalizedEvent[] {
+    const d = event.data;
+    const tracked = this.#tools.get(d.id) ?? { name: "tool", input: {}, child: false };
+    const text = contentText(d.content as { type: string; text?: string }[] | undefined);
+    const failure = "error" in d ? `${d.error.type}: ${d.error.message}` : undefined;
+    const output = text !== "" ? text : failure;
     const activity: DriverActivity = {
       kind: "tool",
-      toolUseId: part.id,
-      toolName: part.tool,
-      input,
+      toolUseId: d.id,
+      toolName: tracked.name,
+      input: tracked.input,
       status,
       ...(output !== undefined && output !== "" ? { output: truncate(output) } : {}),
-      ...(state.time?.start !== undefined && state.time.end !== undefined ? { durationMs: state.time.end - state.time.start } : {}),
+      ...(tracked.startedAt !== undefined ? { durationMs: Math.max(0, event.created - tracked.startedAt) } : {}),
     };
     const events: NormalizedEvent[] = [{ type: "activity", activity }];
-    if (child) {
+    if (tracked.child) {
       events.push({
         type: "activity",
         activity: {
           kind: "child",
-          childKey: part.id,
-          name: childName ?? part.tool,
-          status: status === "ok" ? "done" : status === "error" ? "error" : "running",
-          ...(output !== undefined && output !== "" ? { summary: truncate(output, 1000) } : {}),
+          childKey: d.id,
+          name: childLabel(tracked.input) ?? tracked.name,
+          status: status === "ok" ? "done" : "error",
+          ...(output ? { summary: truncate(output, 1000) } : {}),
         },
       });
     }
     return events;
   }
 
-  #permission(permission: WirePermission): NormalizedEvent[] {
-    if (permission.sessionID !== this.#opts.sessionId) return [];
-    const kind = permissionKind(permission);
-    // `plan_exit` is opencode asking to leave planning and start editing: capture the plan
-    // and never allow it here (the session rejects it; the user promotes it to a thread).
-    if (kind === "plan_exit") {
-      const plan = permission.metadata?.["plan"] ?? permission.metadata?.["text"];
-      const markdown = typeof plan === "string" ? plan : (this.#lastAssistantText() ?? "");
-      return markdown.trim() === "" ? [] : [{ type: "plan.proposed", markdown }];
-    }
-    const callId = permission.tool?.callID ?? permission.callID;
-    // The permission itself only carries patterns; the pending tool call has the real input.
-    const tracked = callId === undefined ? undefined : this.#toolByCall.get(callId);
-    const patterns = permissionPatterns(permission);
-    const diff = permissionDiff(permission);
+  #permission(event: EventOf<"permission.asked">): NormalizedEvent[] {
+    const d = event.data;
+    const tracked = d.source ? this.#tools.get(d.source.id) : undefined;
+    const files = (d.metadata?.["files"] as { patch?: unknown }[] | undefined) ?? [];
+    const diff = files.flatMap((file) => (typeof file.patch === "string" ? [file.patch] : [])).join("\n");
     return [
       {
         type: "activity",
         activity: {
           kind: "approval",
-          requestId: permission.id,
-          toolName: tracked?.toolName ?? kind,
-          input: tracked?.input ?? { ...(patterns.length > 0 ? { patterns } : {}), ...(permission.metadata ? { metadata: permission.metadata } : {}) },
+          requestId: d.id,
+          toolName: tracked?.name ?? d.action,
+          input: tracked?.input ?? { action: d.action, resources: d.resources },
           status: "pending",
-          ...(permission.title ? { title: permission.title } : {}),
-          ...(patterns.length > 0 ? { description: truncate(patterns.join(", "), 300) } : {}),
-          ...(diff ? { diff } : {}),
+          title: d.message ?? `${d.action}: ${truncate(d.resources.join(", "), 200)}`,
+          ...(d.resources.length > 0 ? { description: truncate(d.resources.join(", "), 300) } : {}),
+          ...(diff !== "" ? { diff: truncate(diff, 20_000) } : {}),
         },
       },
     ];
   }
 
-  #lastAssistantText(): string | undefined {
-    let latest: string | undefined;
-    for (const messageId of this.#messageParts.keys()) latest = this.#textOf(messageId);
-    return latest;
+  #form(form: WireForm): NormalizedEvent[] {
+    const questions = formQuestions(form);
+    if (questions.length === 0) return this.#passthrough({ type: "form.created", data: { form } });
+    return [{ type: "activity", activity: { kind: "user-input", requestId: form.id, status: "pending", questions } }];
   }
 
-  #question(request: WireQuestionRequest): NormalizedEvent[] {
-    if (request.sessionID !== this.#opts.sessionId) return [];
-    return [
-      {
-        type: "activity",
-        activity: {
-          kind: "user-input",
-          requestId: request.id,
-          status: "pending",
-          questions: request.questions.map((question, index) => ({
-            id: `q${index}`,
-            text: question.question,
-            options: (question.options ?? []).map((option) => ({ label: option.label, ...(option.description ? { description: option.description } : {}) })),
-            ...(question.multiple === true ? { multi: true } : {}),
-          })),
-        },
-      },
-    ];
-  }
-
-  #todos(properties: { sessionID: string; todos: WireTodo[] }): NormalizedEvent[] {
-    if (properties.sessionID !== this.#opts.sessionId) return [];
-    const steps = properties.todos.map((todo) => ({ text: todo.content, status: todoStatus(todo.status) }));
-    return steps.length > 0 ? [{ type: "plan.progress", steps }] : [];
-  }
-
-  /** Only the non-nominal states are worth a row; `busy`/`idle` are already implied. */
-  #sessionStatus(properties: { sessionID?: string; status?: { type?: string; attempt?: number; message?: string } }): NormalizedEvent[] {
-    if (!this.#owned(properties) || properties.status?.type !== "retry") return [];
-    const attempt = properties.status.attempt ?? 1;
-    if (attempt === this.#retryAttempt) return [];
-    this.#retryAttempt = attempt;
-    const reason = properties.status.message;
-    return [{ type: "activity", activity: { kind: "info", text: `Retrying (attempt ${attempt})${reason ? `: ${truncate(reason, 300)}` : ""}` } }];
-  }
-
-  #sessionError(properties: { sessionID?: string; error?: WireMessageError }): NormalizedEvent[] {
-    if (!this.#owned(properties)) return [];
-    if (properties.error?.name === "MessageAbortedError") {
-      this.#interrupted = true;
-      return this.#settle();
-    }
-    this.#error ??= errorText(properties.error) ?? "opencode reported a session error";
-    return this.#settle();
-  }
-
-  /** Usage first, then exactly one `settled` per turn. */
-  #settle(): NormalizedEvent[] {
+  /** Usage first, then a plan (plan agent), then exactly one `settled`. */
+  #settle(status: "completed" | "interrupted" | "error"): NormalizedEvent[] {
     if (this.#settled) return [];
     this.#settled = true;
     const events: NormalizedEvent[] = [];
     const usage = this.#usage();
-    if (usage) {
-      const window = this.#opts.contextWindow;
-      const used = (this.#tokens?.input ?? 0) + (this.#tokens?.cache?.read ?? 0) + (this.#tokens?.cache?.write ?? 0) + (this.#tokens?.output ?? 0);
-      events.push({ type: "usage", usage, ...(window !== undefined && window > 0 ? { contextUsage: { used, window } } : {}) });
+    const window = this.#opts.contextWindow;
+    const step = this.#lastStep;
+    const contextUsage = window !== undefined && window > 0 && step ? { used: step.input + step.cache.read + step.cache.write + step.output, window } : undefined;
+    if (usage || contextUsage) events.push({ type: "usage", ...(usage ? { usage } : {}), ...(contextUsage ? { contextUsage } : {}) });
+    // The plan agent's final answer *is* the plan; Tide records it and never implements it here.
+    if (status === "completed" && this.#agent === "plan") {
+      const markdown = [...this.#texts.values()].filter((text) => text.trim() !== "").at(-1);
+      if (markdown !== undefined) events.push({ type: "plan.proposed", markdown });
     }
-    if (this.#interrupted) events.push({ type: "settled", status: "interrupted" });
-    else if (this.#error !== undefined) events.push({ type: "settled", status: "error", error: this.#error });
-    else events.push({ type: "settled", status: "completed" });
+    if (status === "error") events.push({ type: "settled", status, error: this.#error ?? "opencode reported a failed execution" });
+    else events.push({ type: "settled", status });
     return events;
   }
 
   #usage(): TurnUsage | undefined {
-    const tokens = this.#tokens;
-    if (!tokens) return undefined;
+    const latest = this.#latest;
+    if (!latest) return undefined;
+    const base = this.#opts.baseline ?? { cost: 0, tokens: ZERO_TOKENS };
+    const t = sumTokens(latest.tokens, base.tokens, -1);
+    const cost = latest.cost - base.cost;
     return {
-      inputTokens: tokens.input,
-      outputTokens: tokens.output,
-      ...(tokens.cache?.read !== undefined ? { cacheReadTokens: tokens.cache.read } : {}),
-      ...(tokens.cache?.write !== undefined ? { cacheWriteTokens: tokens.cache.write } : {}),
-      ...(this.#cost > 0 ? { costUsd: this.#cost } : {}),
+      inputTokens: Math.max(0, t.input),
+      outputTokens: Math.max(0, t.output + t.reasoning),
+      cacheReadTokens: Math.max(0, t.cache.read),
+      cacheWriteTokens: Math.max(0, t.cache.write),
+      ...(cost > 0 ? { costUsd: cost } : {}),
     };
   }
-}
-
-function childLabel(tool: string, input: Record<string, unknown>): string | undefined {
-  if (!SUBAGENT_TOOLS.has(tool)) return undefined;
-  for (const key of ["description", "subagent_type", "agent", "prompt"]) {
-    const value = input[key];
-    if (typeof value === "string" && value !== "") return truncate(value, 120);
-  }
-  return tool;
 }

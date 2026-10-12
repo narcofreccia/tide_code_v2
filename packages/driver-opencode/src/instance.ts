@@ -1,33 +1,46 @@
 import type { DriverEnv, OpenSessionOptions, ProviderInstance, ProviderSession, ProviderStatus } from "@tide/contracts";
-import { SdkOpencodeApi } from "./client.ts";
-import { sessionRuleset } from "./permissions.ts";
-import { OpencodeServer, type SpawnFn } from "./server.ts";
-import { OpencodeSession } from "./session.ts";
+import { HttpOpencodeApi } from "./client.ts";
+import { EventHub } from "./hub.ts";
+import { OpencodeServer, type ServerSeams } from "./server.ts";
+import { agentFor, OpencodeSession, type AgentChoice } from "./session.ts";
 import { shellQuote } from "./shell.ts";
-import { buildStatus } from "./status.ts";
-import type { ModelRef, OpencodeApi, OpencodeConfig } from "./types.ts";
-import type { WirePermissionConfig, WireProvider } from "./wire.ts";
+import { buildStatus, primaryAgents } from "./status.ts";
+import type { OpencodeApi, OpencodeConfig } from "./types.ts";
+import { sessionRuleset, userRules } from "./permissions.ts";
+import type { ModelRef, WireAgent, WireConfigEntry, WireModel, WireTokens } from "./wire.ts";
 
 const STATUS_TTL_MS = 60_000;
 const CATALOG_TTL_MS = 60_000;
+/** instruction entry key Tide owns on a session (`InstructionEntry.Key`: `^[a-z0-9][a-z0-9._-]*$`) */
+export const INSTRUCTION_KEY = "tide";
 
 /** `provider/model`; the model id itself may contain slashes (`openrouter/anthropic/x`). */
 export function parseModelId(id: string): ModelRef | undefined {
   const slash = id.indexOf("/");
   if (slash <= 0 || slash === id.length - 1) return undefined;
-  return { providerID: id.slice(0, slash), modelID: id.slice(slash + 1) };
+  return { providerID: id.slice(0, slash), id: id.slice(slash + 1) };
 }
 
 /**
- * Thread-scoped MCP registration name. opencode exposes MCP tools to the model as
- * `<serverName with non-alphanumerics replaced by _>_<toolName>`, so this also renames the
- * tools (`tide-<threadId>_tide_delegate`). Every server registered for a directory is
- * visible to every session in that directory, so sibling threads sharing a cwd do see each
- * other's tide tools — but each one keeps its own token, which the single shared name could
- * not do (see docs/internals/providers.md).
+ * Thread-scoped MCP registration name: registrations are per location on a shared server, so
+ * two threads on one cwd registering plain "tide" would leave one live server holding
+ * whichever agent token registered last.
  */
 export function mcpServerName(serverName: string, threadId: string): string {
   return `${serverName}-${threadId}`;
+}
+
+/**
+ * Agents for a directory: `plan` for plan mode, and for everything else the user's default
+ * primary agent. `GET /api/agent` lists the selected default first (core 2.0.27
+ * `Agent.list`: `[selectedDefault, ...rest]`, honouring `default_agent`), so custom primary
+ * agents and `default_agent` are respected without Tide reading config itself.
+ */
+export function chooseAgents(agents: WireAgent[]): AgentChoice {
+  const primary = primaryAgents(agents);
+  const build = primary.find((agent) => agent.id !== "plan")?.id ?? "build";
+  const plan = agents.find((agent) => agent.id === "plan")?.id;
+  return { build, ...(plan !== undefined ? { plan } : {}) };
 }
 
 export class OpencodeInstance implements ProviderInstance {
@@ -36,26 +49,28 @@ export class OpencodeInstance implements ProviderInstance {
   #config: OpencodeConfig;
   #env: DriverEnv;
   #server: OpencodeServer;
+  #hub: EventHub;
   #api: OpencodeApi | undefined;
   #apiUrl: string | undefined;
   #status: { at: number; value: ProviderStatus } | undefined;
   #statusInFlight: Promise<ProviderStatus> | undefined;
-  #catalog: { at: number; value: { providers: WireProvider[]; default: Record<string, string> } } | undefined;
+  #catalog = new Map<string, { at: number; value: WireModel[] }>();
   #sessions = new Set<OpencodeSession>();
 
-  constructor(config: OpencodeConfig, env: DriverEnv, spawn?: SpawnFn) {
+  constructor(config: OpencodeConfig, env: DriverEnv, seams: ServerSeams = {}) {
     this.#config = config;
     this.#env = env;
-    this.#server = new OpencodeServer(config, env, spawn);
+    this.#server = new OpencodeServer(config, env, seams);
+    this.#hub = new EventHub(() => this.api(), (msg) => env.log(msg), () => this.#server.invalidate());
   }
 
-  /** Spawns (or reuses) the instance's server and returns a client bound to its URL. */
+  /** Resolves the endpoint (shared service, configured URL or private server) and a client for it. */
   async api(): Promise<OpencodeApi> {
     if (this.#config.apiImpl) return this.#config.apiImpl;
-    const url = await this.#server.url();
-    if (this.#api === undefined || this.#apiUrl !== url) {
-      this.#api = new SdkOpencodeApi(url);
-      this.#apiUrl = url;
+    const endpoint = await this.#server.endpoint();
+    if (this.#api === undefined || this.#apiUrl !== endpoint.url) {
+      this.#api = new HttpOpencodeApi(endpoint);
+      this.#apiUrl = endpoint.url;
     }
     return this.#api;
   }
@@ -63,7 +78,11 @@ export class OpencodeInstance implements ProviderInstance {
   async status(): Promise<ProviderStatus> {
     const cached = this.#status;
     if (cached && Date.now() - cached.at < STATUS_TTL_MS) return cached.value;
-    this.#statusInFlight ??= buildStatus(this.#config, this.#env, async () => ({ api: await this.api(), directory: process.cwd() }))
+    this.#statusInFlight ??= buildStatus(this.#config, this.#env, async () => {
+      const api = await this.api();
+      const version = this.#server.current?.version;
+      return { api, directory: process.cwd(), ...(version !== undefined ? { version } : {}) };
+    })
       .then((value) => {
         this.#status = { at: Date.now(), value };
         return value;
@@ -74,81 +93,86 @@ export class OpencodeInstance implements ProviderInstance {
     return this.#statusInFlight;
   }
 
-  async #providers(): Promise<{ providers: WireProvider[]; default: Record<string, string> }> {
-    const cached = this.#catalog;
+  async #models(directory: string): Promise<WireModel[]> {
+    const cached = this.#catalog.get(directory);
     if (cached && Date.now() - cached.at < CATALOG_TTL_MS) return cached.value;
-    const api = await this.api();
-    const value = await api.providers();
-    this.#catalog = { at: Date.now(), value };
+    const value = await (await this.api()).models({ directory });
+    this.#catalog.set(directory, { at: Date.now(), value });
     return value;
   }
 
-  async #resolveModel(requested: string | undefined): Promise<{ model?: ModelRef; contextWindow?: number }> {
+  /** No pinned model → the session uses OpenCode's own default (agent model / `model` config). */
+  async #resolveModel(directory: string, requested: string | undefined): Promise<{ model?: ModelRef; contextWindow?: number }> {
     const id = requested ?? this.#config.defaultModel;
-    let catalog: { providers: WireProvider[]; default: Record<string, string> } | undefined;
+    let catalog: WireModel[] = [];
     try {
-      catalog = await this.#providers();
+      catalog = await this.#models(directory);
     } catch (error) {
-      this.#env.log(`[opencode] provider catalog unavailable: ${error instanceof Error ? error.message : String(error)}`);
+      this.#env.log(`[opencode] model catalog unavailable: ${error instanceof Error ? error.message : String(error)}`);
     }
     const model = id === undefined ? undefined : parseModelId(id);
-    if (model === undefined) return {};
-    const window = catalog?.providers.find((provider) => provider.id === model.providerID)?.models[model.modelID]?.limit?.context;
+    if (model === undefined) {
+      const fallback = await (await this.api()).defaultModel({ directory }).catch(() => undefined);
+      if (fallback === undefined) return {};
+      const window = fallback.limit?.context;
+      return typeof window === "number" && window > 0 ? { contextWindow: window } : {};
+    }
+    const window = catalog.find((entry) => entry.providerID === model.providerID && entry.id === model.id)?.limit?.context;
     return { model, ...(typeof window === "number" && window > 0 ? { contextWindow: window } : {}) };
   }
 
-  /**
-   * The user's own `permission` block, read best-effort. A server too old to serve
-   * `GET /config`, an unparseable config or any transport failure must never stop a thread
-   * from opening — the session then gets Tide's mode rules alone, exactly as before.
-   */
-  async #userPermission(directory: string): Promise<WirePermissionConfig | undefined> {
-    try {
-      const config = await (await this.api()).config({ directory });
-      return config.permission;
-    } catch (error) {
-      this.#env.log(`[opencode] could not read the user's config permissions: ${error instanceof Error ? error.message : String(error)}`);
-      return undefined;
-    }
+  /** Best-effort reads: an unreadable config or agent list must never stop a thread from opening. */
+  async #directoryContext(api: OpencodeApi, directory: string): Promise<{ config: WireConfigEntry[]; agents: AgentChoice }> {
+    const [config, agents] = await Promise.all([
+      api.config({ directory }).catch((error: unknown) => {
+        this.#env.log(`[opencode] could not read the user's config: ${error instanceof Error ? error.message : String(error)}`);
+        return [] as WireConfigEntry[];
+      }),
+      api.agents({ directory }).catch(() => [] as WireAgent[]),
+    ]);
+    return { config, agents: chooseAgents(agents) };
   }
 
   async openSession(options: OpenSessionOptions): Promise<ProviderSession> {
     const api = await this.api();
-    const agent = options.interaction === "plan" ? "plan" : "build";
-    const { model, contextWindow } = await this.#resolveModel(options.model);
+    const { config, agents } = await this.#directoryContext(api, options.cwd);
+    const { model, contextWindow } = await this.#resolveModel(options.cwd, options.model);
+    const agent = agentFor(agents, options.interaction);
+    if (options.interaction === "plan" && agents.plan === undefined) this.#env.log("[opencode] no `plan` agent on this server; plan turns run on the default agent");
 
     let sessionId = options.resume;
+    let baseline: { cost: number; tokens: WireTokens } | undefined;
+    const permissions = sessionRuleset(options.mode, options.interaction, options.cwd, options.linkedDirs ?? [], userRules(config, agent));
     if (sessionId === undefined) {
       const created = await api.createSession({
         directory: options.cwd,
         title: `Tide ${options.threadId}`,
-        permission: sessionRuleset(options.mode, options.interaction, options.cwd, options.linkedDirs ?? [], await this.#userPermission(options.cwd)),
+        agent,
+        ...(model ? { model } : {}),
+        permissions,
+        metadata: { tideThreadId: options.threadId },
       });
       sessionId = created.id;
     } else {
-      // opencode stores the permission ruleset on the session record at creation: `PATCH
-      // /session/:id` validates `{title?, time?}` only and the prompt body carries no
-      // ruleset, so a resumed session keeps the rules it was *created* with — a mode change
-      // on a resumed thread does not reach opencode. `OpencodeSession.reconfigure` therefore
-      // answers `reopen`, and the agent (`plan`/`build`) below is the part that does follow
-      // the thread's current interaction mode.
-      this.#env.log(`[opencode] resuming ${sessionId} as agent ${agent}; opencode keeps the permission ruleset this session was created with (mode ${options.mode} is not re-applied)`);
+      // v2 changes all of these in place, so a resumed session follows the thread's current settings
+      const existing = await api.getSession({ sessionId });
+      baseline = { cost: existing.cost, tokens: existing.tokens };
+      await api.setPermissions({ sessionId, permissions });
+      if (existing.agent !== agent) await api.switchAgent({ sessionId, agent });
+      if (model && (existing.model?.id !== model.id || existing.model.providerID !== model.providerID)) await api.switchModel({ sessionId, model });
     }
 
-    // MCP registrations are keyed by name on the shared per-directory server, and `POST /mcp`
-    // *replaces* an existing entry of the same name. Two threads on one cwd registering plain
-    // "tide" would leave one live server holding whichever agent token registered last — the
-    // other thread would then act under a foreign identity. The thread id makes them distinct.
+    if (options.systemPromptAppend !== undefined) {
+      await api.putInstruction({ sessionId, key: INSTRUCTION_KEY, value: options.systemPromptAppend }).catch((error: unknown) => {
+        this.#env.log(`[opencode] could not attach Tide's instructions: ${error instanceof Error ? error.message : String(error)}`);
+      });
+    }
+
     const mcpNames: string[] = [];
     for (const server of options.mcpServers) {
       const name = mcpServerName(server.name, options.threadId);
       try {
-        await api.addMcpServer({
-          directory: options.cwd,
-          name,
-          command: [server.command, ...(server.args ?? [])],
-          ...(server.env ? { env: server.env } : {}),
-        });
+        await api.addMcpServer({ directory: options.cwd, name, command: [server.command, ...(server.args ?? [])], ...(server.env ? { env: server.env } : {}) });
         mcpNames.push(name);
       } catch (error) {
         this.#env.log(`[opencode] could not register MCP server ${name}: ${error instanceof Error ? error.message : String(error)}`);
@@ -160,10 +184,14 @@ export class OpencodeInstance implements ProviderInstance {
       options,
       {
         api,
-        agent,
+        hub: this.#hub,
+        agents,
+        config,
         ...(model ? { model } : {}),
         ...(contextWindow !== undefined ? { contextWindow } : {}),
+        ...(baseline ? { baseline } : {}),
         ...(mcpNames.length > 0 ? { mcpNames } : {}),
+        resolveModel: (id) => this.#resolveModel(options.cwd, id),
         onClosed: (closed) => this.#sessions.delete(closed),
       },
       sessionId,
@@ -172,14 +200,22 @@ export class OpencodeInstance implements ProviderInstance {
     return session;
   }
 
+  /**
+   * `opencode --session <id>` (2.0.27 `--help`: "Session ID to continue"). With no `--server`
+   * it attaches to the shared background service, which reads the same session database a
+   * private `opencode serve` writes. A configured `binaryPath` is used verbatim, since the
+   * `opencode` on PATH may still be 1.x.
+   */
   terminalCommand(nativeSessionId: string, cwd: string): string {
-    return `cd ${shellQuote(cwd)} && opencode --session ${shellQuote(nativeSessionId)}`;
+    const binary = this.#config.binaryPath !== undefined ? shellQuote(this.#config.binaryPath) : "opencode";
+    return `cd ${shellQuote(cwd)} && ${binary} --session ${shellQuote(nativeSessionId)}`;
   }
 
   async dispose(): Promise<void> {
     const sessions = [...this.#sessions];
     this.#sessions.clear();
     await Promise.all(sessions.map((session) => session.close()));
+    await this.#hub.close();
     await this.#server.dispose();
   }
 }

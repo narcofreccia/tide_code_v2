@@ -1,222 +1,114 @@
 /**
- * The slice of opencode's HTTP/SSE vocabulary this driver reads, hand-written from the
- * server's own OpenAPI document (`GET /doc` on `opencode serve`, opencode 1.1.36) rather
- * than from `@opencode-ai/sdk`'s generated types: the installed server is ahead of the
- * published SDK and renamed `permission.updated` → `permission.asked`, added
- * `question.asked` and moved `Permission.title` into `patterns`/`metadata`. Both shapes
- * are modelled so the driver keeps working on either build.
+ * The slice of OpenCode 2's HTTP API this driver reads.
  *
- * Everything here is structural and optional-tolerant — unknown events fall through to
- * `OpencodeEvent`'s open case and are ignored rather than dropped loudly (CLAUDE.md §1a
- * "pass through, don't translate, when unsure").
+ * Event shapes come straight from the SDK's generated types (`OpenCodeEvent` re-exported by
+ * `@opencode/sdk` 2.0.27 from `@opencode/client`), imported type-only so nothing of the
+ * in-process host is loaded at runtime. Request/response bodies are hand-written from the
+ * server's own OpenAPI document (`GET /openapi.json` on `opencode serve` 2.0.27): the SDK's
+ * Promise surface is typed through the embedded host and does not narrow request bodies.
+ *
+ * Unknown events stay open-ended (`{ type: string }`) so a new server release is passed
+ * through as an info row instead of being dropped (CLAUDE.md §1a).
  */
+import type { OpenCodeEvent } from "@opencode/sdk";
+
+export type KnownEvent = OpenCodeEvent;
+export type EventOf<T extends KnownEvent["type"]> = Extract<KnownEvent, { type: T }>;
+
+/** What the SSE stream yields: a known event, or anything a newer server invents. */
+export type OpencodeEvent = KnownEvent | { type: string; id?: string; data?: unknown; location?: { directory: string } };
+
+export type PermissionEffect = "allow" | "deny" | "ask";
+
+/** `Permission.Rule` (v2): evaluated with `findLast` over `[...agent.permissions, ...session.permissions]`. */
+export interface PermissionRule {
+  action: string;
+  resource: string;
+  effect: PermissionEffect;
+}
+
+/** `Permission.Reply`. `always` persists a project-wide saved rule (`permission/saved`). */
+export type PermissionReply = "once" | "always" | "reject";
 
 export interface WireTokens {
   input: number;
   output: number;
-  reasoning?: number;
-  cache?: { read?: number; write?: number };
+  reasoning: number;
+  cache: { read: number; write: number };
 }
 
-export interface WireMessageError {
-  name: string;
-  data?: { message?: string };
-}
-
-export interface WireUserMessage {
+export interface ModelRef {
+  providerID: string;
+  /** v2 calls the model id `id` (v1: `modelID`) */
   id: string;
-  sessionID: string;
-  role: "user";
+  variant?: string;
+}
+
+/** `Session.Info` — `cost`/`tokens` are the session's cumulative totals. */
+export interface WireSession {
+  id: string;
+  projectID: string;
   agent?: string;
-  model?: { providerID: string; modelID: string };
-  time: { created: number };
-}
-
-export interface WireAssistantMessage {
-  id: string;
-  sessionID: string;
-  role: "assistant";
-  /** the agent that produced it; `mode` on older builds */
-  agent?: string;
-  mode?: string;
-  modelID?: string;
-  providerID?: string;
-  cost?: number;
-  tokens?: WireTokens;
-  error?: WireMessageError;
-  finish?: string;
-  time: { created: number; completed?: number };
-}
-
-export type WireMessage = WireUserMessage | WireAssistantMessage;
-
-export interface WireToolState {
-  status: "pending" | "running" | "completed" | "error";
-  input?: Record<string, unknown>;
-  output?: string;
-  error?: string;
+  model?: ModelRef;
+  cost: number;
+  tokens: WireTokens;
+  permissions?: PermissionRule[];
+  location: { directory: string };
   title?: string;
-  metadata?: Record<string, unknown>;
-  time?: { start?: number; end?: number };
 }
 
-export interface WireTextPart {
-  id: string;
-  sessionID: string;
-  messageID: string;
-  type: "text";
-  text: string;
-  synthetic?: boolean;
-  time?: { start?: number; end?: number };
-}
-
-/** `MessageV2.ReasoningPart` (opencode 1.1.36): same streaming shape as a text part. */
-export interface WireReasoningPart {
-  id: string;
-  sessionID: string;
-  messageID: string;
-  type: "reasoning";
-  text: string;
-  metadata?: Record<string, unknown>;
-  time?: { start?: number; end?: number };
-}
-
-export interface WireToolPart {
-  id: string;
-  sessionID: string;
-  messageID: string;
-  type: "tool";
-  callID: string;
-  tool: string;
-  state: WireToolState;
-}
-
-export interface WireSubtaskPart {
-  id: string;
-  sessionID: string;
-  messageID: string;
-  type: "subtask";
-  prompt: string;
-  description: string;
-  agent: string;
-}
-
-export interface WireStepFinishPart {
-  id: string;
-  sessionID: string;
-  messageID: string;
-  type: "step-finish";
-  reason?: string;
-  cost?: number;
-  tokens?: WireTokens;
-}
-
-export interface WireOtherPart {
-  id: string;
-  sessionID: string;
-  messageID: string;
-  type: "file" | "step-start" | "snapshot" | "patch" | "agent" | "retry" | "compaction" | (string & {});
-}
-
-export type WirePart = WireTextPart | WireReasoningPart | WireToolPart | WireSubtaskPart | WireStepFinishPart | WireOtherPart;
-
-/** `permission.asked` (1.1.x) and `permission.updated` (sdk 1.18) unified. */
-export interface WirePermission {
-  id: string;
-  sessionID: string;
-  /** 1.1.x: the permission kind, e.g. "bash" | "edit" | "webfetch" | "plan_exit" */
-  permission?: string;
-  /** sdk 1.18 spelling of the same thing */
-  type?: string;
-  title?: string;
-  patterns?: string[];
-  pattern?: string | string[];
-  always?: string[];
-  metadata?: Record<string, unknown>;
-  callID?: string;
-  messageID?: string;
-  tool?: { messageID: string; callID: string };
-}
-
-export interface WireQuestionOption {
-  label: string;
-  description?: string;
-}
-
-export interface WireQuestionInfo {
-  question: string;
-  header?: string;
-  options?: WireQuestionOption[];
-  multiple?: boolean;
-  custom?: boolean;
-}
-
-export interface WireQuestionRequest {
-  id: string;
-  sessionID: string;
-  questions: WireQuestionInfo[];
-  tool?: { messageID: string; callID: string };
-}
-
-export interface WireTodo {
-  id: string;
-  content: string;
-  status: string;
-}
-
-export type OpencodeEvent =
-  | { type: "message.updated"; properties: { info: WireMessage } }
-  | { type: "message.part.updated"; properties: { part: WirePart; delta?: string } }
-  | { type: "permission.asked" | "permission.updated"; properties: WirePermission }
-  | { type: "permission.replied"; properties: { sessionID: string; requestID: string; reply: string } }
-  | { type: "question.asked"; properties: WireQuestionRequest }
-  | { type: "question.replied" | "question.rejected"; properties: { sessionID?: string; requestID: string } }
-  | { type: "todo.updated"; properties: { sessionID: string; todos: WireTodo[] } }
-  | { type: "session.idle"; properties: { sessionID: string } }
-  | { type: "session.error"; properties: { sessionID?: string; error?: WireMessageError } }
-  | { type: "session.compacted"; properties: { sessionID: string } }
-  | { type: string; properties?: Record<string, unknown> };
-
+/** `Model.Info` from `GET /api/model` (only the fields Tide reads). */
 export interface WireModel {
   id: string;
-  name?: string;
-  limit?: { context?: number; output?: number };
+  modelID?: string;
+  providerID: string;
+  name: string;
+  family?: string;
+  enabled?: boolean;
   status?: string;
+  limit?: { context?: number; output?: number };
 }
 
-export interface WireProvider {
-  id: string;
-  name?: string;
-  models: Record<string, WireModel>;
-}
-
+/** `Agent.Info` from `GET /api/agent`; `permissions` is the fully resolved ruleset. */
 export interface WireAgent {
+  id: string;
   name: string;
   description?: string;
-  mode?: "subagent" | "primary" | "all";
-  builtIn?: boolean;
-}
-
-export type PermissionAction = "allow" | "deny" | "ask";
-
-/** `{ permission, pattern, action }` triples accepted by `POST /session`'s `permission`. */
-export interface PermissionRule {
-  permission: string;
-  pattern: string;
-  action: PermissionAction;
+  mode: "subagent" | "primary" | "all";
+  hidden: boolean;
+  permissions?: PermissionRule[];
 }
 
 /**
- * The `permission` block of the user's own config as `GET /config` serves it
- * (`Config.Permission`, opencode 1.1.36): one entry per permission key, whose value is
- * either a bare action (the key's blanket default) or a `{pattern: action}` map. The
- * server has already normalised a top-level bare string into `{"*": action}`.
+ * One `Config.Entry` from `GET /api/config` (a config document or directory, in load order).
+ * Only the keys Tide reads; `permissions` is already the v2 ordered ruleset.
  */
-export type WirePermissionConfig = Record<string, PermissionAction | Record<string, PermissionAction>>;
-
-/** The slice of `GET /config` this driver reads. */
-export interface WireConfig {
-  permission?: WirePermissionConfig;
+export interface WireConfigEntry {
+  type: "document" | "directory" | (string & {});
+  path?: string;
+  info?: {
+    default_agent?: string;
+    permissions?: PermissionRule[];
+    agents?: Record<string, { permissions?: PermissionRule[]; disabled?: boolean }>;
+  };
 }
 
-export type PermissionReply = "once" | "always" | "reject";
+/** `Form.Field` (the subset Tide renders); a question tool call creates a form. */
+export interface WireFormField {
+  key: string;
+  type: "string" | "number" | "integer" | "boolean" | "multiselect" | "external" | (string & {});
+  title?: string;
+  description?: string;
+  options?: { value: string; label: string; description?: string }[];
+  custom?: boolean;
+}
+
+export interface WireForm {
+  id: string;
+  sessionID: string;
+  title: string;
+  metadata?: Record<string, unknown>;
+  fields: WireFormField[];
+}
+
+export type FormValue = string | number | boolean | string[];

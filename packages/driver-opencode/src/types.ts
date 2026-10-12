@@ -1,14 +1,33 @@
-import type { OpencodeEvent, PermissionReply, PermissionRule, WireAgent, WireConfig, WireProvider } from "./wire.ts";
+import type {
+  FormValue,
+  ModelRef,
+  OpencodeEvent,
+  PermissionReply,
+  PermissionRule,
+  WireAgent,
+  WireConfigEntry,
+  WireModel,
+  WireSession,
+} from "./wire.ts";
 
 export interface OpencodeConfig {
-  /** absolute path to the `opencode` binary; auto-detected when omitted */
+  /** absolute path to an OpenCode 2 `opencode` binary; auto-detected when omitted */
   binaryPath?: string;
   /** `provider/model` id used when a thread does not pin one */
   defaultModel?: string;
-  /** extra environment for the spawned server (merged over `process.env`) */
+  /** extra environment for a spawned private server (merged over `process.env`) */
   env?: Record<string, string>;
-  /** attach to an already running `opencode serve` instead of spawning one */
+  /** attach to this server URL instead of discovering the shared service */
   serverUrl?: string;
+  /** Basic-auth password for `serverUrl` (user `opencode`) */
+  serverPassword?: string;
+  /**
+   * `auto` (default): attach to the user's running shared service (`opencode service`), else
+   * spawn a private `opencode serve`. `standalone`: always spawn the private server.
+   */
+  attach?: "auto" | "standalone";
+  /** service registration file; defaults to `$XDG_STATE_HOME/opencode/service.json` */
+  serviceFile?: string;
   /**
    * Test seam: replaces the real HTTP client. Not user-facing — lets the session and
    * instance tests drive a scripted server without spawning one.
@@ -16,53 +35,44 @@ export interface OpencodeConfig {
   apiImpl?: OpencodeApi;
 }
 
-export interface ModelRef {
-  providerID: string;
-  modelID: string;
-}
+export type { ModelRef };
 
-export interface PromptPart {
-  type: "text" | "file";
-  text?: string;
-  mime?: string;
-  filename?: string;
-  url?: string;
+/** One file attachment of a prompt (`PromptInput.FileAttachment`); images go as `data:` URIs. */
+export interface PromptFile {
+  uri: string;
+  name?: string;
 }
 
 /**
- * The slice of the opencode server this driver depends on. Implemented for real over
- * `@opencode-ai/sdk`'s typed client in `client.ts`; faked in tests.
+ * The slice of the OpenCode 2 server this driver depends on. Implemented over plain `fetch`
+ * in `client.ts`; faked in tests.
  *
- * Every call carries `directory`: one server serves every working directory, and the
- * directory query parameter is what scopes sessions, events and tool execution to a
- * worktree (verified against opencode 1.1.36 — a server started in `/tmp` runs a session
- * whose `directory` is another repo, with tools resolving inside that repo).
+ * v2 sessions carry their own `location.directory`, so session routes need no directory;
+ * catalog/config/MCP routes are scoped with `?location[directory]=` (deepObject query).
  */
 export interface OpencodeApi {
-  createSession(input: { directory: string; title?: string; permission?: PermissionRule[] }): Promise<{ id: string }>;
-  promptAsync(input: { directory: string; sessionId: string; agent: string; model?: ModelRef; system?: string; parts: PromptPart[] }): Promise<void>;
-  abort(input: { directory: string; sessionId: string }): Promise<void>;
-  respondPermission(input: { directory: string; sessionId: string; permissionId: string; reply: PermissionReply }): Promise<void>;
-  respondQuestion(input: { directory: string; requestId: string; answers: string[][] }): Promise<void>;
-  /** long-lived SSE subscription for one directory; ends when `signal` aborts */
-  subscribe(input: { directory: string; signal: AbortSignal }): Promise<AsyncIterable<OpencodeEvent>>;
-  providers(): Promise<{ providers: WireProvider[]; default: Record<string, string> }>;
-  /**
-   * `GET /config` — the user's own merged global+project `opencode.json`. Only its
-   * `permission` block is read, so Tide's per-thread mode rules do not clobber the granular
-   * rules the user wrote. Every caller must treat a failure as "no config" (see
-   * `OpencodeInstance.openSession`): an older server or an unreadable config must never
-   * stop a session from opening.
-   */
-  config(input: { directory: string }): Promise<WireConfig>;
+  createSession(input: { directory: string; title?: string; agent?: string; model?: ModelRef; permissions?: PermissionRule[]; metadata?: Record<string, unknown> }): Promise<WireSession>;
+  getSession(input: { sessionId: string }): Promise<WireSession>;
+  /** `PATCH /api/session/:id` — replaces the session ruleset in place */
+  setPermissions(input: { sessionId: string; permissions: PermissionRule[] }): Promise<void>;
+  switchAgent(input: { sessionId: string; agent: string }): Promise<void>;
+  switchModel(input: { sessionId: string; model: ModelRef }): Promise<void>;
+  /** durable per-session instruction entry (`PUT …/instructions/entries/:key`) */
+  putInstruction(input: { sessionId: string; key: string; value: unknown }): Promise<void>;
+  /** admits a prompt; the run itself is observed on the event stream */
+  prompt(input: { sessionId: string; text: string; files?: PromptFile[] }): Promise<void>;
+  interrupt(input: { sessionId: string }): Promise<void>;
+  replyPermission(input: { sessionId: string; requestId: string; decision: PermissionReply; message?: string }): Promise<void>;
+  replyForm(input: { sessionId: string; formId: string; answer: Record<string, FormValue> }): Promise<void>;
+  cancelForm(input: { sessionId: string; formId: string }): Promise<void>;
+  /** the server-wide SSE stream (`GET /api/event`); ends when `signal` aborts */
+  subscribe(input: { signal: AbortSignal }): Promise<AsyncIterable<OpencodeEvent>>;
+  models(input: { directory: string }): Promise<WireModel[]>;
+  defaultModel(input: { directory: string }): Promise<WireModel | undefined>;
   agents(input: { directory: string }): Promise<WireAgent[]>;
-  /** registers an MCP server for a directory (`POST /mcp`); tools appear on the next turn */
+  /** the user's config entries in load order (never written by Tide) */
+  config(input: { directory: string }): Promise<WireConfigEntry[]>;
   addMcpServer(input: { directory: string; name: string; command: string[]; env?: Record<string, string> }): Promise<void>;
-  /**
-   * Tears one down again (`POST /mcp/{name}/disconnect`). opencode 1.18's API has no *remove*:
-   * disconnect closes the client, drops it from the directory's client map and leaves the
-   * status entry as `disabled`, which is enough to stop the process and hide its tools.
-   */
-  disconnectMcpServer(input: { directory: string; name: string }): Promise<void>;
-  health(): Promise<{ healthy: boolean; version?: string }>;
+  removeMcpServer(input: { directory: string; name: string }): Promise<void>;
+  info(): Promise<{ version: string; pid: number }>;
 }

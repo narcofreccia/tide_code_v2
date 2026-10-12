@@ -2,206 +2,170 @@ import { tmpdir } from "node:os";
 import { describe, expect, it } from "vitest";
 import type { DriverEnv, NormalizedEvent, OpenSessionOptions } from "@tide/contracts";
 import { FakeOpencodeApi } from "../test/fake-api.ts";
+import { EventHub } from "./hub.ts";
 import { OpencodeSession, type SessionDeps } from "./session.ts";
 
-function harness(options: Partial<OpenSessionOptions> = {}, deps: Partial<SessionDeps> = {}): { session: OpencodeSession; api: FakeOpencodeApi; logs: string[] } {
+function harness(options: Partial<OpenSessionOptions> = {}, deps: Partial<SessionDeps> = {}): { session: OpencodeSession; api: FakeOpencodeApi; logs: string[]; hub: EventHub } {
   const logs: string[] = [];
   const env: DriverEnv = { dataDir: tmpdir(), log: (msg) => logs.push(msg) };
   const api = new FakeOpencodeApi();
+  const hub = new EventHub(async () => api, (msg) => logs.push(msg));
   const full: OpenSessionOptions = { threadId: "t1", cwd: "/repo", mode: "approval-required", interaction: "default", mcpServers: [], ...options };
-  const session = new OpencodeSession(env, full, { api, agent: "build", ...deps }, api.sessionId);
-  return { session, api, logs };
+  const session = new OpencodeSession(env, full, { api, hub, agents: { build: "build", plan: "plan" }, ...deps }, api.sessionId);
+  return { session, api, logs, hub };
 }
 
 async function collect(stream: AsyncIterable<NormalizedEvent>, sink: NormalizedEvent[]): Promise<void> {
   for await (const event of stream) sink.push(event);
 }
 
-const tick = (): Promise<void> => new Promise((resolve) => setTimeout(resolve, 0));
+/** flushes pending promise chains (pump → hub → mailbox → consumer); everything here is in-memory */
+const settle = (): Promise<void> => new Promise((resolve) => setImmediate(resolve));
 
 describe("OpencodeSession", () => {
-  it("subscribes before prompting and passes agent, model, system prompt and images through", async () => {
-    const { session, api } = harness({ systemPromptAppend: "be terse" }, { model: { providerID: "opencode", modelID: "big-pickle" } });
+  it("subscribes before prompting, sends text and images as data: URIs", async () => {
+    const { session, api } = harness({}, { model: { providerID: "opencode", id: "big-pickle" } });
     const events: NormalizedEvent[] = [];
     const done = collect(session.send({ text: "hi", images: [{ mediaType: "image/png", data: "AAAA" }] }), events);
-    await tick();
-
+    await settle();
     expect(api.subscribes).toBe(1);
-    const prompt = api.prompts[0];
-    expect(prompt?.agent).toBe("build");
-    expect(prompt?.model).toEqual({ providerID: "opencode", modelID: "big-pickle" });
-    expect(prompt?.system).toBe("be terse");
-    expect(prompt?.parts[0]).toEqual({ type: "file", mime: "image/png", filename: "image-1", url: "data:image/png;base64,AAAA" });
-    expect(prompt?.parts[1]).toEqual({ type: "text", text: "hi" });
+    expect(api.prompts[0]).toEqual({ sessionId: "ses_fake", text: "hi", files: [{ uri: "data:image/png;base64,AAAA", name: "image-1" }] });
     expect(events[0]).toEqual({ type: "session", nativeSessionId: "ses_fake", model: "opencode/big-pickle" });
-
-    api.idle();
+    api.succeeded();
     await done;
     expect(events.at(-1)).toEqual({ type: "settled", status: "completed" });
   });
 
-  it("streams text, tool rows and usage, then settles once", async () => {
-    const { session, api } = harness({}, { contextWindow: 1000 });
-    const events: NormalizedEvent[] = [];
-    const done = collect(session.send({ text: "go" }), events);
-    await tick();
-
-    api.text("prt_1", "msg_1", "hel", "hel");
-    api.text("prt_1", "msg_1", "hello", "lo");
-    api.tool("prt_2", "call_1", "bash", { status: "running", input: { command: "ls" }, time: { start: 1 } });
-    api.tool("prt_2", "call_1", "bash", { status: "completed", input: { command: "ls" }, output: "a\nb", time: { start: 1, end: 4 } });
-    api.assistantDone("msg_1");
-    api.idle();
-    await done;
-
-    const deltas = events.filter((event) => event.type === "assistant.delta");
-    expect(deltas.map((delta) => delta.delta).join("")).toBe("hello");
-    expect(new Set(deltas.map((delta) => delta.messageKey))).toEqual(new Set(["prt_1"]));
-
-    const tools = events.flatMap((event) => (event.type === "activity" && event.activity.kind === "tool" ? [event.activity] : []));
-    expect(tools).toHaveLength(2);
-    expect(tools[0]).toMatchObject({ toolUseId: "prt_2", toolName: "bash", status: "running" });
-    expect(tools[1]).toMatchObject({ status: "ok", output: "a\nb", durationMs: 3 });
-
-    const usage = events.find((event) => event.type === "usage");
-    if (usage?.type !== "usage") throw new Error("no usage event");
-    expect(usage.usage).toEqual({ inputTokens: 10, outputTokens: 5, cacheReadTokens: 3, cacheWriteTokens: 1, costUsd: 0.02 });
-    expect(usage.contextUsage).toEqual({ used: 19, window: 1000 });
-    expect(events.filter((event) => event.type === "settled")).toHaveLength(1);
+  it("reuses one hub subscription across turns and carries the usage baseline forward", async () => {
+    const { session, api } = harness({}, { baseline: { cost: 0, tokens: { input: 100, output: 10, reasoning: 0, cache: { read: 0, write: 0 } } } });
+    for (const total of [150, 230]) {
+      const events: NormalizedEvent[] = [];
+      const done = collect(session.send({ text: "go" }), events);
+      await settle();
+      api.usage({ input: total, output: 10, reasoning: 0, cache: { read: 0, write: 0 } });
+      api.succeeded();
+      await done;
+      const usage = events.find((event) => event.type === "usage");
+      expect(usage?.type === "usage" ? usage.usage?.inputTokens : undefined).toBe(total === 150 ? 50 : 80);
+    }
+    expect(api.subscribes).toBe(1);
   });
 
-  it("round-trips an approval: pending activity out, decision in", async () => {
+  it("round-trips an approval and refuses a concurrent turn", async () => {
     const { session, api } = harness();
     const events: NormalizedEvent[] = [];
     const done = collect(session.send({ text: "go" }), events);
-    await tick();
+    await settle();
+    expect(() => session.send({ text: "again" })).toThrow(/busy/);
+    api.toolStart("call_1", "shell", { command: "ls" });
+    api.permissionAsked("per_1", "shell", ["ls"], { save: ["ls *"], source: { type: "tool", messageID: "msg_1", id: "call_1" } });
+    await settle();
+    const approval = events.find((event) => event.type === "activity" && event.activity.kind === "approval");
+    expect(approval).toMatchObject({ activity: { requestId: "per_1", toolName: "shell", input: { command: "ls" } } });
+    await session.respondApproval("per_1", "accept");
+    expect(api.permissionReplies).toEqual([{ requestId: "per_1", decision: "once" }]);
+    api.succeeded();
+    await done;
+  });
 
-    api.tool("prt_2", "call_1", "bash", { status: "running", input: { command: "rm -rf /" } });
-    api.permissionAsked("per_1", "bash", { tool: { messageID: "msg_1", callID: "call_1" }, patterns: ["rm -rf /"] });
-    await tick();
-
-    const approval = events.flatMap((event) => (event.type === "activity" && event.activity.kind === "approval" ? [event.activity] : []))[0];
-    expect(approval).toMatchObject({ requestId: "per_1", toolName: "bash", status: "pending", input: { command: "rm -rf /" } });
-
+  it("accept-for-session answers `once` and auto-accepts later matching asks without a card", async () => {
+    const { session, api } = harness();
+    const events: NormalizedEvent[] = [];
+    const done = collect(session.send({ text: "go" }), events);
+    await settle();
+    api.permissionAsked("per_1", "shell", ["echo a"], { save: ["echo *"] });
+    await settle();
     await session.respondApproval("per_1", "acceptForSession");
-    expect(api.permissions).toEqual([{ permissionId: "per_1", reply: "always" }]);
-    await session.respondApproval("per_1", "decline");
-    expect(api.permissions[1]).toEqual({ permissionId: "per_1", reply: "reject" });
-
-    api.idle();
-    await done;
-  });
-
-  it("answers questions by option label, in the order the harness asked them", async () => {
-    const { session, api } = harness();
-    const events: NormalizedEvent[] = [];
-    const done = collect(session.send({ text: "go" }), events);
-    await tick();
-
-    api.questionAsked("que_1", [
-      { question: "Which framework?", options: [{ label: "Vite" }, { label: "Next" }] },
-      { question: "Which tests?", options: [{ label: "vitest", description: "fast" }], multiple: true },
+    api.permissionAsked("per_2", "shell", ["echo b"], { save: ["echo *"] });
+    api.permissionAsked("per_3", "shell", ["rm b"], { save: ["rm *"] });
+    await settle();
+    expect(api.permissionReplies).toEqual([
+      { requestId: "per_1", decision: "once" },
+      { requestId: "per_2", decision: "once" },
     ]);
-    await tick();
-
-    const input = events.flatMap((event) => (event.type === "activity" && event.activity.kind === "user-input" ? [event.activity] : []))[0];
-    expect(input?.requestId).toBe("que_1");
-    expect(input?.questions[0]).toEqual({ id: "q0", text: "Which framework?", options: [{ label: "Vite" }, { label: "Next" }] });
-    expect(input?.questions[1]).toMatchObject({ id: "q1", multi: true, options: [{ label: "vitest", description: "fast" }] });
-
-    await session.respondUserInput("que_1", { q0: "Vite", q1: ["vitest"] });
-    expect(api.answers).toEqual([{ requestId: "que_1", answers: [["Vite"], ["vitest"]] }]);
-
-    api.idle();
+    const cards = events.flatMap((event) => (event.type === "activity" && event.activity.kind === "approval" ? [event.activity.requestId] : []));
+    expect(cards).toEqual(["per_1", "per_3"]);
+    api.succeeded();
     await done;
   });
 
-  it("auto-rejects plan_exit and records the plan instead of implementing it", async () => {
-    const { session, api } = harness({ interaction: "plan" }, { agent: "plan" });
-    const events: NormalizedEvent[] = [];
-    const done = collect(session.send({ text: "plan it" }), events);
-    await tick();
-
-    api.text("prt_1", "msg_1", "# Plan\n1. do it", "# Plan\n1. do it");
-    api.permissionAsked("per_plan", "plan_exit", { metadata: { plan: "# Plan\n1. do it" } });
-    await tick();
-    expect(api.permissions).toEqual([{ permissionId: "per_plan", reply: "reject" }]);
-
-    api.assistantDone("msg_1", { agent: "plan" });
-    api.idle();
-    await done;
-
-    const plans = events.filter((event) => event.type === "plan.proposed");
-    expect(plans).toHaveLength(2); // once from plan_exit, once when the plan message completed
-    expect(plans[0]).toEqual({ type: "plan.proposed", markdown: "# Plan\n1. do it" });
-    expect(events.some((event) => event.type === "activity" && event.activity.kind === "approval")).toBe(false);
-  });
-
-  it("interrupt aborts the native session and settles as interrupted", async () => {
+  it("answers a question form with option values keyed by field", async () => {
     const { session, api } = harness();
     const events: NormalizedEvent[] = [];
     const done = collect(session.send({ text: "go" }), events);
-    await tick();
+    await settle();
+    api.formCreated("frm_1", [
+      { key: "q0", type: "string", description: "Tabs or spaces?", options: [{ value: "tabs-v", label: "Tabs" }, { value: "spaces-v", label: "Spaces" }], custom: true },
+      { key: "q1", type: "multiselect", options: [{ value: "a", label: "A" }, { value: "b", label: "B" }] },
+    ]);
+    await settle();
+    expect(events.some((event) => event.type === "activity" && event.activity.kind === "user-input")).toBe(true);
+    await session.respondUserInput("frm_1", { q0: "Spaces", q1: ["A", "B"] });
+    expect(api.formReplies).toEqual([{ formId: "frm_1", answer: { q0: "spaces-v", q1: ["a", "b"] } }]);
+    api.succeeded();
+    await done;
+  });
 
+  it("settles with an error when the server's event stream dies mid-turn, and resubscribes next turn", async () => {
+    const { session, api, logs } = harness();
+    const events: NormalizedEvent[] = [];
+    const done = collect(session.send({ text: "go" }), events);
+    await settle();
+    api.failStream();
+    await done;
+    expect(events.at(-1)).toMatchObject({ type: "settled", status: "error" });
+    expect(logs.some((line) => line.includes("resubscribes"))).toBe(true);
+
+    const next: NormalizedEvent[] = [];
+    const again = collect(session.send({ text: "again" }), next);
+    await settle();
+    expect(api.subscribes).toBe(2);
+    api.succeeded();
+    await again;
+    expect(next.at(-1)).toEqual({ type: "settled", status: "completed" });
+  });
+
+  it("settles with the error when the prompt is refused", async () => {
+    const { session, api } = harness();
+    api.promptError = new Error("HTTP 400");
+    const events: NormalizedEvent[] = [];
+    await collect(session.send({ text: "go" }), events);
+    expect(events.at(-1)).toEqual({ type: "settled", status: "error", error: "HTTP 400" });
+  });
+
+  it("interrupts through the API and settles as interrupted", async () => {
+    const { session, api } = harness();
+    const events: NormalizedEvent[] = [];
+    const done = collect(session.send({ text: "go" }), events);
+    await settle();
     await session.interrupt();
-    expect(api.aborts).toBe(1);
-    api.idle();
+    expect(api.interrupts).toBe(1);
+    api.emit("session.execution.interrupted", { reason: "user" });
     await done;
     expect(events.at(-1)).toEqual({ type: "settled", status: "interrupted" });
   });
 
+  it("reconfigures model, agent and ruleset in place", async () => {
+    const { session, api } = harness({}, { resolveModel: async (id) => ({ model: { providerID: "opencode", id: id!.split("/")[1]! }, contextWindow: 10 }) });
+    expect(await session.reconfigure({ model: "opencode/small", mode: "auto", interaction: "plan" })).toBe("applied");
+    expect(api.modelSwitches).toEqual([{ providerID: "opencode", id: "small" }]);
+    expect(api.agentSwitches).toEqual(["plan"]);
+    // plan mode keeps no allow rules even though the mode is `auto`
+    expect(api.rulesets[0]?.permissions.some((rule) => rule.effect === "allow")).toBe(false);
+    expect(session.agent).toBe("plan");
+  });
 
-  it("resubscribes on the next turn after the event stream errors", async () => {
+  it("answers `reopen` when the server refuses an in-place change", async () => {
     const { session, api } = harness();
-    const first: NormalizedEvent[] = [];
-    const firstDone = collect(session.send({ text: "one" }), first);
-    await tick();
-    expect(api.subscribes).toBe(1);
-
-    api.failStream(new Error("connection reset"));
-    await firstDone;
-    expect(first.at(-1)).toEqual({ type: "settled", status: "error", error: "opencode event stream ended before the turn settled" });
-
-    // without clearing the dead handle the second turn would prompt into a stream nobody reads
-    const second: NormalizedEvent[] = [];
-    const secondDone = collect(session.send({ text: "two" }), second);
-    await tick();
-    expect(api.subscribes).toBe(2);
-    expect(api.prompts).toHaveLength(2);
-    api.idle();
-    await secondDone;
-    expect(second.at(-1)).toEqual({ type: "settled", status: "completed" });
-    await session.close();
+    api.switchError = new Error("HTTP 404");
+    expect(await session.reconfigure({ mode: "auto", interaction: "plan" })).toBe("reopen");
   });
 
-  it("answers `reopen` to every reconfigure — opencode fixes the ruleset at session.create", async () => {
-    const { session } = harness();
-    // `PATCH /session/:id` validates `{title?, time?}` only and `PromptInput` carries no
-    // ruleset (opencode 1.1.36), so nothing about mode/interaction can be applied in place.
-    await expect(session.reconfigure({ mode: "auto", interaction: "default" })).resolves.toBe("reopen");
-    await expect(session.reconfigure({ mode: "approval-required", interaction: "plan", model: "opencode/small" })).resolves.toBe("reopen");
-    await session.close();
-  });
-
-  it("disconnects only its own MCP registrations on close", async () => {
+  it("removes its thread-scoped MCP registrations on close", async () => {
     const { session, api } = harness({}, { mcpNames: ["tide-t1"] });
     await session.close();
-    expect(api.mcpDisconnected).toEqual([{ directory: "/repo", name: "tide-t1" }]);
-  });
-
-  it("refuses a second concurrent turn and reports prompt failures as an error settle", async () => {
-    const { session, api } = harness();
-    const events: NormalizedEvent[] = [];
-    const done = collect(session.send({ text: "one" }), events);
-    await tick();
-    expect(() => session.send({ text: "two" })).toThrow(/busy/);
-    api.idle();
-    await done;
-
-    api.promptError = new Error("model not found");
-    const second: NormalizedEvent[] = [];
-    await collect(session.send({ text: "three" }), second);
-    expect(second.at(-1)).toEqual({ type: "settled", status: "error", error: "model not found" });
     await session.close();
+    expect(api.mcpRemoved).toEqual([{ directory: "/repo", name: "tide-t1" }]);
+    expect(() => session.send({ text: "x" })).toThrow(/closed/);
   });
 });

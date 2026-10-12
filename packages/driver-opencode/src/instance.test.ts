@@ -2,37 +2,34 @@ import { tmpdir } from "node:os";
 import { describe, expect, it } from "vitest";
 import type { DriverEnv, OpenSessionOptions } from "@tide/contracts";
 import { FakeOpencodeApi } from "../test/fake-api.ts";
-import { mcpServerName, OpencodeInstance, parseModelId } from "./instance.ts";
+import { chooseAgents, INSTRUCTION_KEY, mcpServerName, OpencodeInstance, parseModelId } from "./instance.ts";
 import { LOGIN_COMMAND, LOGIN_HINT } from "./status.ts";
 import type { OpencodeConfig } from "./types.ts";
 
 const env: DriverEnv = { dataDir: tmpdir(), log: () => undefined };
 
-function harness(config: Partial<OpencodeConfig> = {}): { instance: OpencodeInstance; api: FakeOpencodeApi } {
+function harness(config: Partial<OpencodeConfig> = {}, logs: string[] = []): { instance: OpencodeInstance; api: FakeOpencodeApi } {
   const api = new FakeOpencodeApi();
-  // serverUrl keeps the instance from probing for a real binary; apiImpl replaces HTTP.
-  const instance = new OpencodeInstance({ serverUrl: "http://127.0.0.1:4096", apiImpl: api, ...config }, env);
+  // apiImpl replaces HTTP and skips binary probing; serverUrl keeps discovery out of it
+  const instance = new OpencodeInstance({ serverUrl: "http://127.0.0.1:4096", apiImpl: api, ...config }, { ...env, log: (msg) => logs.push(msg) });
   return { instance, api };
 }
 
 const baseOptions: OpenSessionOptions = { threadId: "t1", cwd: "/repo", mode: "approval-required", interaction: "default", mcpServers: [] };
 
 describe("OpencodeInstance", () => {
-  it("splits provider/model ids, keeping slashes in the model part", () => {
-    expect(parseModelId("opencode/big-pickle")).toEqual({ providerID: "opencode", modelID: "big-pickle" });
-    expect(parseModelId("openrouter/anthropic/claude")).toEqual({ providerID: "openrouter", modelID: "anthropic/claude" });
+  it("splits provider/model ids into v2 model refs, keeping slashes in the model part", () => {
+    expect(parseModelId("opencode/big-pickle")).toEqual({ providerID: "opencode", id: "big-pickle" });
+    expect(parseModelId("openrouter/anthropic/claude")).toEqual({ providerID: "openrouter", id: "anthropic/claude" });
     expect(parseModelId("nope")).toBeUndefined();
-    expect(parseModelId("/leading")).toBeUndefined();
     expect(parseModelId("trailing/")).toBeUndefined();
   });
 
-  it("reports models from the harness catalog and caches the status", async () => {
-    const { instance } = harness();
+  it("reports models from the server catalog (default marked, deprecated hidden) and caches the status", async () => {
+    const { instance, api } = harness();
+    api.modelList.push({ id: "old", providerID: "opencode", name: "Old", status: "deprecated" });
     const status = await instance.status();
-    expect(status.kind).toBe("opencode");
-    expect(status.installed).toBe(true);
-    expect(status.loggedIn).toBe(true);
-    expect(status.version).toBe("1.1.36");
+    expect(status).toMatchObject({ kind: "opencode", installed: true, loggedIn: true });
     expect(status.hint).toBeUndefined();
     expect(status.models).toEqual([
       { id: "opencode/big-pickle", label: "Big Pickle", family: "opencode", default: true },
@@ -43,145 +40,109 @@ describe("OpencodeInstance", () => {
     await instance.dispose();
   });
 
-  it("reports the login hint when no provider has credentials", async () => {
+  it("offers the exact login command when nothing is connected", async () => {
     const { instance, api } = harness();
-    api.providerCatalog = { providers: [], default: {} };
+    api.modelList = [];
     const status = await instance.status();
-    expect(status.loggedIn).toBe(false);
-    expect(status.hint).toBe("Run `opencode auth login` in a terminal");
-    expect(status.models).toEqual([]);
+    expect(status).toMatchObject({ installed: true, loggedIn: false, hint: LOGIN_HINT, loginCommand: LOGIN_COMMAND, models: [] });
     await instance.dispose();
   });
 
-  it("turns off planMode and subagents when the agent catalog does not offer them", async () => {
+  it("turns off planMode and subagents when the agent catalog lacks them", async () => {
     const { instance, api } = harness();
-    api.agentList = [{ name: "build", mode: "primary" }];
+    api.agentList = [{ id: "build", name: "Build", mode: "primary", hidden: false }];
     const status = await instance.status();
     expect(status.caps.planMode).toBe(false);
     expect(status.caps.subagents).toBe(false);
     await instance.dispose();
   });
 
-  it("opens a build session with the mode's ruleset, the pinned model and the thread's MCP servers", async () => {
+  it("honours the user's default primary agent (listed first by the server) and skips hidden ones", () => {
+    expect(chooseAgents([
+      { id: "title", name: "t", mode: "primary", hidden: true },
+      { id: "review", name: "r", mode: "primary", hidden: false },
+      { id: "build", name: "b", mode: "primary", hidden: false },
+      { id: "plan", name: "p", mode: "primary", hidden: false },
+    ])).toEqual({ build: "review", plan: "plan" });
+    expect(chooseAgents([])).toEqual({ build: "build" });
+  });
+
+  it("creates a session with agent, model, mode ruleset, Tide instructions and thread-scoped MCP", async () => {
     const { instance, api } = harness();
     const session = await instance.openSession({
       ...baseOptions,
       model: "opencode/big-pickle",
+      systemPromptAppend: "be terse",
       mcpServers: [{ name: "tide", command: "node", args: ["mcp.js"], env: { A: "1" } }],
     });
     expect(session.nativeSessionId).toBe("ses_fake");
-    expect(api.created[0]).toMatchObject({ directory: "/repo", permission: [{ permission: "edit", pattern: "*", action: "ask" }, { permission: "bash", pattern: "*", action: "ask" }, { permission: "webfetch", pattern: "*", action: "ask" }] });
-    expect(api.mcp).toEqual([{ name: "tide-t1", command: ["node", "mcp.js"] }]);
-
-    const events = session.send({ text: "hi" })[Symbol.asyncIterator]();
-    const first = await events.next();
-    expect(first.value).toEqual({ type: "session", nativeSessionId: "ses_fake", model: "opencode/big-pickle" });
-    expect(api.prompts[0]?.agent).toBe("build");
+    expect(api.created[0]).toMatchObject({
+      directory: "/repo",
+      agent: "build",
+      model: { providerID: "opencode", id: "big-pickle" },
+      metadata: { tideThreadId: "t1" },
+      permissions: [
+        { action: "edit", resource: "*", effect: "ask" },
+        { action: "shell", resource: "*", effect: "ask" },
+        { action: "webfetch", resource: "*", effect: "ask" },
+      ],
+    });
+    expect(api.instructions).toEqual([{ key: INSTRUCTION_KEY, value: "be terse" }]);
+    expect(api.mcp).toEqual([{ directory: "/repo", name: "tide-t1", command: ["node", "mcp.js"] }]);
     await session.close();
+    expect(api.mcpRemoved).toEqual([{ directory: "/repo", name: "tide-t1" }]);
     await instance.dispose();
   });
 
-  it("offers the exact login command when opencode has no usable provider", async () => {
+  it("gives each thread its own MCP registration name", async () => {
     const { instance, api } = harness();
-    api.providerCatalog = { providers: [], default: {} };
-    const status = await instance.status();
-    expect(status.installed).toBe(true);
-    expect(status.loggedIn).toBe(false);
-    expect(status.hint).toBe(LOGIN_HINT);
-    // verified against `opencode auth --help` (opencode 1.1.36)
-    expect(status.loginCommand).toBe(LOGIN_COMMAND);
-    await instance.dispose();
-  });
-
-  it("scopes each thread's MCP registration to that thread and tears it down on close", async () => {
-    const { instance, api } = harness();
-    const servers = [{ name: "tide", command: "node", args: ["mcp.js"], env: { TIDE_AGENT_TOKEN: "t1-token" } }];
-    // both threads share one cwd, so one shared "tide" name would leave a single live server
-    // holding whichever agent token registered last
-    const first = await instance.openSession({ ...baseOptions, threadId: "t1", mcpServers: servers });
-    const second = await instance.openSession({ ...baseOptions, threadId: "t2", mcpServers: servers });
+    const servers = [{ name: "tide", command: "node" }];
+    await instance.openSession({ ...baseOptions, threadId: "t1", mcpServers: servers });
+    await instance.openSession({ ...baseOptions, threadId: "t2", mcpServers: servers });
     expect(api.mcp.map((entry) => entry.name)).toEqual([mcpServerName("tide", "t1"), mcpServerName("tide", "t2")]);
-
-    await first.close();
-    expect(api.mcpDisconnected).toEqual([{ directory: "/repo", name: "tide-t1" }]);
-    await second.close();
-    expect(api.mcpDisconnected.map((entry) => entry.name)).toEqual(["tide-t1", "tide-t2"]);
     await instance.dispose();
   });
 
-  it("uses the plan agent for plan threads and reuses a resumed session id", async () => {
+  it("replays the user's config rules narrowed by the mode, with read-only link denies last", async () => {
     const { instance, api } = harness();
-    const session = await instance.openSession({ ...baseOptions, interaction: "plan", resume: "ses_old" });
+    api.configEntries = [{ type: "document", info: { permissions: [{ action: "shell", resource: "*", effect: "allow" }, { action: "shell", resource: "git *", effect: "allow" }] } }];
+    await instance.openSession({ ...baseOptions, linkedDirs: [{ path: "/repos/infra", label: "infra", access: "read" }] });
+    const kinds = (api.created[0]?.permissions ?? []).map((rule) => `${rule.action}:${rule.resource}:${rule.effect}`);
+    expect(kinds.slice(0, 3)).toEqual(["edit:*:ask", "shell:*:ask", "webfetch:*:ask"]);
+    // the user's blanket allow is kept, then narrowed to the mode's ask
+    expect(kinds).toContain("shell:*:allow");
+    expect(kinds.indexOf("shell:git *:ask")).toBeGreaterThan(kinds.indexOf("shell:git *:allow"));
+    expect(kinds.at(-1)).toBe("edit:../repos/infra/*:deny");
+    await instance.dispose();
+  });
+
+  it("opens anyway when the config cannot be read", async () => {
+    const logs: string[] = [];
+    const { instance, api } = harness({}, logs);
+    api.configError = new Error("HTTP 404");
+    await instance.openSession(baseOptions);
+    expect(api.created[0]?.permissions).toHaveLength(3);
+    expect(logs.some((line) => line.includes("could not read the user's config"))).toBe(true);
+    await instance.dispose();
+  });
+
+  it("re-applies ruleset, agent and model to a resumed session in place, with its usage as baseline", async () => {
+    const { instance, api } = harness();
+    api.existing = { agent: "build", model: { providerID: "opencode", id: "small" }, cost: 1, tokens: { input: 500, output: 5, reasoning: 0, cache: { read: 0, write: 0 } } };
+    const session = await instance.openSession({ ...baseOptions, interaction: "plan", mode: "auto", model: "opencode/big-pickle", resume: "ses_old" });
     expect(api.created).toHaveLength(0);
     expect(session.nativeSessionId).toBe("ses_old");
-    session.send({ text: "plan" })[Symbol.asyncIterator]().next();
-    await new Promise((resolve) => setTimeout(resolve, 0));
-    expect(api.prompts[0]?.agent).toBe("plan");
-    await session.close();
-    await instance.dispose();
-  });
-
-  it("replays the user's granular config rules after the mode rules, before the link rules", async () => {
-    const { instance, api } = harness();
-    api.configValue = { permission: { bash: { "git *": "allow" }, edit: "allow" } };
-    const session = await instance.openSession({
-      ...baseOptions,
-      linkedDirs: [{ path: "/repos/infra", label: "infra", access: "read" }],
-    });
-    const rules = api.created[0]?.permission ?? [];
-    const kinds = rules.map((rule) => `${rule.permission}:${rule.pattern}:${rule.action}`);
-    // mode rules → user granular rules → link rules (opencode takes the last match)
-    expect(kinds.slice(0, 4)).toEqual(["edit:*:ask", "bash:*:ask", "webfetch:*:ask", "bash:git *:allow"]);
-    // the user's blanket `edit: allow` is not replayed: it would cancel the thread's mode
-    expect(kinds).not.toContain("edit:*:allow");
-    // the read-only link's edit denies are last, so they win over everything above
-    expect(kinds.at(-1)).toBe("edit:../repos/infra/*:deny");
-    expect(kinds).toContain("edit:/repos/infra/*:deny");
-    await session.close();
-    await instance.dispose();
-  });
-
-  it("opens the session anyway when the config endpoint is missing or fails", async () => {
-    const logs: string[] = [];
-    const api = new FakeOpencodeApi();
-    api.configError = new Error("HTTP 404");
-    const instance = new OpencodeInstance({ serverUrl: "http://127.0.0.1:4096", apiImpl: api }, { dataDir: tmpdir(), log: (msg) => logs.push(msg) });
-    const session = await instance.openSession(baseOptions);
-    expect(api.created[0]?.permission).toEqual([
-      { permission: "edit", pattern: "*", action: "ask" },
-      { permission: "bash", pattern: "*", action: "ask" },
-      { permission: "webfetch", pattern: "*", action: "ask" },
-    ]);
-    expect(logs.some((line) => line.includes("could not read the user's config permissions"))).toBe(true);
-    await session.close();
-    await instance.dispose();
-  });
-
-  it("cannot re-apply a mode to a resumed session, and says so", async () => {
-    const { instance, api } = harness();
-    // the thread was opened in approval-required and the user switched it to auto
-    const session = await instance.openSession({ ...baseOptions, mode: "auto", resume: "ses_old" });
-    // opencode stores the ruleset on the session record at creation; there is no route that
-    // updates it, so the driver must not pretend otherwise — it creates nothing…
-    expect(api.created).toHaveLength(0);
-    // …and `reconfigure` tells the server to close and reopen instead of applying in place.
+    expect(api.agentSwitches).toEqual(["plan"]);
+    expect(api.modelSwitches).toEqual([{ providerID: "opencode", id: "big-pickle" }]);
+    expect(api.rulesets[0]?.sessionId).toBe("ses_old");
     if (!session.reconfigure) throw new Error("opencode sessions must implement reconfigure");
-    await expect(session.reconfigure({ mode: "auto", interaction: "default" })).resolves.toBe("reopen");
-
-    // A *fresh* session in the new mode is what actually carries the new ruleset.
-    const fresh = await instance.openSession({ ...baseOptions, mode: "auto" });
-    expect(api.created[0]?.permission).toEqual([
-      { permission: "edit", pattern: "*", action: "allow" },
-      { permission: "bash", pattern: "*", action: "allow" },
-      { permission: "webfetch", pattern: "*", action: "allow" },
-    ]);
-    await fresh.close();
-    await session.close();
+    await expect(session.reconfigure({ mode: "approval-required", interaction: "default" })).resolves.toBe("applied");
+    expect(api.agentSwitches).toEqual(["plan", "build"]);
     await instance.dispose();
   });
 
-  it("offers the terminal escape hatch", () => {
-    const { instance } = harness();
-    expect(instance.terminalCommand("ses_1", "/tmp/my repo")).toBe("cd '/tmp/my repo' && opencode --session ses_1");
+  it("offers the terminal escape hatch, using a configured 2.x binary verbatim", () => {
+    expect(harness().instance.terminalCommand("ses_1", "/tmp/my repo")).toBe("cd '/tmp/my repo' && opencode --session ses_1");
+    expect(harness({ binaryPath: "/opt/oc 2/opencode" }).instance.terminalCommand("ses_1", "/r")).toBe("cd /r && '/opt/oc 2/opencode' --session ses_1");
   });
 });

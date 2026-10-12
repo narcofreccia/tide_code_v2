@@ -3,7 +3,9 @@
   "version": "0.0.0",
   "private": true,
   "type": "module",
-  "exports": { ".": "./src/index.ts" },
+  "exports": {
+    ".": "./src/index.ts"
+  },
   "scripts": {
     "typecheck": "tsc --noEmit -p tsconfig.json",
     "test": "vitest run --passWithNoTests",
@@ -11,10 +13,10 @@
     "build": "echo skip"
   },
   "dependencies": {
-    "@opencode-ai/sdk": "^1.18.25",
     "@tide/contracts": "workspace:*"
   },
   "devDependencies": {
-    "@types/node": "^22.0.0"
+    "@types/node": "^22.0.0",
+    "@opencode/sdk": "^2.0.27"
   }
 }

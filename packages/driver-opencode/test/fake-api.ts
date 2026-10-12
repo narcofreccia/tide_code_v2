@@ -1,87 +1,114 @@
 import { AsyncQueue } from "../src/async-queue.ts";
-import type { ModelRef, OpencodeApi, PromptPart } from "../src/types.ts";
-import type { OpencodeEvent, PermissionReply, PermissionRule, WireAgent, WireConfig, WireProvider } from "../src/wire.ts";
+import type { OpencodeApi, PromptFile } from "../src/types.ts";
+import type {
+  FormValue,
+  ModelRef,
+  OpencodeEvent,
+  PermissionReply,
+  PermissionRule,
+  WireAgent,
+  WireConfigEntry,
+  WireFormField,
+  WireModel,
+  WireSession,
+  WireTokens,
+} from "../src/wire.ts";
 
-export interface PromptCall {
-  directory: string;
-  sessionId: string;
-  agent: string;
-  model?: ModelRef;
-  system?: string;
-  parts: PromptPart[];
-}
+const ZERO: WireTokens = { input: 0, output: 0, reasoning: 0, cache: { read: 0, write: 0 } };
 
-/** In-memory stand-in for a running `opencode serve`; the tests drive its event stream. */
+/** In-memory stand-in for an OpenCode 2 server; tests drive its (server-wide) event stream. */
 export class FakeOpencodeApi implements OpencodeApi {
-  /**
-   * One queue per subscription, the way a real SSE connection works: a stream that has ended
-   * stays ended, and resubscribing gets a fresh one. `events` is always the newest.
-   */
   #stream = new AsyncQueue<OpencodeEvent>();
   #streamError: Error | undefined;
-  readonly mcpDisconnected: { directory: string; name: string }[] = [];
+  #seq = 0;
+  readonly created: Parameters<OpencodeApi["createSession"]>[0][] = [];
+  readonly prompts: { sessionId: string; text: string; files?: PromptFile[] }[] = [];
+  readonly permissionReplies: { requestId: string; decision: PermissionReply }[] = [];
+  readonly formReplies: { formId: string; answer: Record<string, FormValue> }[] = [];
+  readonly rulesets: { sessionId: string; permissions: PermissionRule[] }[] = [];
+  readonly agentSwitches: string[] = [];
+  readonly modelSwitches: ModelRef[] = [];
+  readonly instructions: { key: string; value: unknown }[] = [];
+  readonly mcp: { directory: string; name: string; command: string[] }[] = [];
+  readonly mcpRemoved: { directory: string; name: string }[] = [];
+  interrupts = 0;
+  subscribes = 0;
+  sessionId = "ses_fake";
+  promptError: Error | undefined;
+  switchError: Error | undefined;
+  existing: Partial<WireSession> = {};
+  configEntries: WireConfigEntry[] = [];
+  configError: Error | undefined;
+  modelList: WireModel[] = [
+    { id: "big-pickle", providerID: "opencode", name: "Big Pickle", enabled: true, limit: { context: 200_000 } },
+    { id: "small", providerID: "opencode", name: "Small", enabled: true },
+  ];
+  defaultModelValue: WireModel | undefined = { id: "big-pickle", providerID: "opencode", name: "Big Pickle", limit: { context: 200_000 } };
+  agentList: WireAgent[] = [
+    { id: "build", name: "Build", mode: "primary", hidden: false },
+    { id: "plan", name: "Plan", mode: "primary", hidden: false },
+    { id: "explore", name: "Explore", mode: "subagent", hidden: false },
+    { id: "title", name: "Title", mode: "primary", hidden: true },
+  ];
 
   get events(): AsyncQueue<OpencodeEvent> {
     return this.#stream;
   }
-  readonly prompts: PromptCall[] = [];
-  readonly permissions: { permissionId: string; reply: PermissionReply }[] = [];
-  readonly answers: { requestId: string; answers: string[][] }[] = [];
-  readonly mcp: { name: string; command: string[] }[] = [];
-  readonly created: { directory: string; title?: string; permission?: PermissionRule[] }[] = [];
-  aborts = 0;
-  subscribes = 0;
-  sessionId = "ses_fake";
-  promptError: Error | undefined;
-  configValue: WireConfig = {};
-  /** set to make `GET /config` fail the way an older server does */
-  configError: Error | undefined;
-  providerCatalog: { providers: WireProvider[]; default: Record<string, string> } = {
-    providers: [
-      {
-        id: "opencode",
-        name: "OpenCode Zen",
-        models: { "big-pickle": { id: "big-pickle", name: "Big Pickle", limit: { context: 200_000 } }, small: { id: "small", name: "Small" } },
-      },
-    ],
-    default: { opencode: "big-pickle" },
-  };
-  agentList: WireAgent[] = [
-    { name: "build", mode: "primary", builtIn: true },
-    { name: "plan", mode: "primary", builtIn: true },
-    { name: "explore", mode: "subagent", builtIn: true },
-  ];
 
-  async createSession(input: { directory: string; title?: string; permission?: PermissionRule[] }): Promise<{ id: string }> {
+  async createSession(input: Parameters<OpencodeApi["createSession"]>[0]): Promise<WireSession> {
     this.created.push(input);
-    return { id: this.sessionId };
+    return { id: this.sessionId, projectID: "p", cost: 0, tokens: ZERO, location: { directory: input.directory } };
   }
 
-  async promptAsync(input: PromptCall): Promise<void> {
+  async getSession(input: { sessionId: string }): Promise<WireSession> {
+    return { id: input.sessionId, projectID: "p", cost: 0, tokens: ZERO, location: { directory: "/repo" }, ...this.existing };
+  }
+
+  async setPermissions(input: { sessionId: string; permissions: PermissionRule[] }): Promise<void> {
+    if (this.switchError) throw this.switchError;
+    this.rulesets.push(input);
+  }
+
+  async switchAgent(input: { agent: string }): Promise<void> {
+    if (this.switchError) throw this.switchError;
+    this.agentSwitches.push(input.agent);
+  }
+
+  async switchModel(input: { model: ModelRef }): Promise<void> {
+    if (this.switchError) throw this.switchError;
+    this.modelSwitches.push(input.model);
+  }
+
+  async putInstruction(input: { key: string; value: unknown }): Promise<void> {
+    this.instructions.push({ key: input.key, value: input.value });
+  }
+
+  async prompt(input: { sessionId: string; text: string; files?: PromptFile[] }): Promise<void> {
     if (this.promptError) throw this.promptError;
     this.prompts.push(input);
   }
 
-  async abort(): Promise<void> {
-    this.aborts++;
+  async interrupt(): Promise<void> {
+    this.interrupts++;
   }
 
-  async respondPermission(input: { permissionId: string; reply: PermissionReply }): Promise<void> {
-    this.permissions.push({ permissionId: input.permissionId, reply: input.reply });
+  async replyPermission(input: { requestId: string; decision: PermissionReply }): Promise<void> {
+    this.permissionReplies.push({ requestId: input.requestId, decision: input.decision });
   }
 
-  async respondQuestion(input: { requestId: string; answers: string[][] }): Promise<void> {
-    this.answers.push({ requestId: input.requestId, answers: input.answers });
+  async replyForm(input: { formId: string; answer: Record<string, FormValue> }): Promise<void> {
+    this.formReplies.push({ formId: input.formId, answer: input.answer });
   }
 
-  async subscribe(input: { directory: string; signal: AbortSignal }): Promise<AsyncIterable<OpencodeEvent>> {
+  async cancelForm(): Promise<void> {}
+
+  async subscribe(input: { signal: AbortSignal }): Promise<AsyncIterable<OpencodeEvent>> {
     this.subscribes++;
     if (this.subscribes > 1) {
       this.#stream = new AsyncQueue<OpencodeEvent>();
       this.#streamError = undefined;
     }
     const queue = this.#stream;
-    // a real SSE stream ends when the caller aborts; close() waits for that
     input.signal.addEventListener("abort", () => queue.close(), { once: true });
     const self = this;
     return (async function* () {
@@ -90,72 +117,84 @@ export class FakeOpencodeApi implements OpencodeApi {
     })();
   }
 
-  /** Kills the live SSE stream the way a dropped connection does. */
+  /** Kills the live SSE stream the way a dead server does. */
   failStream(error = new Error("connection reset")): void {
     this.#streamError = error;
     this.#stream.close();
   }
 
-  async providers(): Promise<{ providers: WireProvider[]; default: Record<string, string> }> {
-    return this.providerCatalog;
+  async models(): Promise<WireModel[]> {
+    return this.modelList;
+  }
+
+  async defaultModel(): Promise<WireModel | undefined> {
+    return this.defaultModelValue;
   }
 
   async agents(): Promise<WireAgent[]> {
     return this.agentList;
   }
 
-  async config(): Promise<WireConfig> {
+  async config(): Promise<WireConfigEntry[]> {
     if (this.configError) throw this.configError;
-    return this.configValue;
+    return this.configEntries;
   }
 
-  async addMcpServer(input: { name: string; command: string[] }): Promise<void> {
-    this.mcp.push({ name: input.name, command: input.command });
+  async addMcpServer(input: { directory: string; name: string; command: string[] }): Promise<void> {
+    this.mcp.push({ directory: input.directory, name: input.name, command: input.command });
   }
 
-  async disconnectMcpServer(input: { directory: string; name: string }): Promise<void> {
-    this.mcpDisconnected.push(input);
+  async removeMcpServer(input: { directory: string; name: string }): Promise<void> {
+    this.mcpRemoved.push(input);
   }
 
-  async health(): Promise<{ healthy: boolean; version?: string }> {
-    return { healthy: true, version: "1.1.36" };
+  async info(): Promise<{ version: string; pid: number }> {
+    return { version: "2.0.27", pid: 1 };
   }
 
-  // --- event helpers ---
-  text(partId: string, messageId: string, text: string, delta?: string): void {
-    this.events.push({ type: "message.part.updated", properties: { part: { id: partId, sessionID: this.sessionId, messageID: messageId, type: "text", text }, ...(delta !== undefined ? { delta } : {}) } });
+  // --- event helpers (shapes as recorded from opencode 2.0.27) ---
+  emit(type: string, data: Record<string, unknown>, created = ++this.#seq): void {
+    this.events.push({ id: `evt_${created}`, created, type, data: { sessionID: this.sessionId, ...data } } as unknown as OpencodeEvent);
   }
 
-  tool(partId: string, callId: string, tool: string, state: Record<string, unknown>): void {
-    this.events.push({ type: "message.part.updated", properties: { part: { id: partId, sessionID: this.sessionId, messageID: "msg_1", type: "tool", callID: callId, tool, state } as never } });
+  step(agent = "build"): void {
+    this.emit("session.step.started", { assistantMessageID: "msg_1", agent, model: { id: "big-pickle", providerID: "opencode" }, started: 1 });
   }
 
-  permissionAsked(id: string, permission: string, extra: Record<string, unknown> = {}): void {
-    this.events.push({ type: "permission.asked", properties: { id, sessionID: this.sessionId, permission, patterns: ["*"], metadata: {}, always: [], ...extra } as never });
+  text(messageId: string, delta: string, ordinal = 0): void {
+    this.emit("session.text.delta", { assistantMessageID: messageId, ordinal, delta });
   }
 
-  questionAsked(id: string, questions: { question: string; options?: { label: string; description?: string }[]; multiple?: boolean }[]): void {
-    this.events.push({ type: "question.asked", properties: { id, sessionID: this.sessionId, questions } as never });
+  textEnded(messageId: string, text: string, ordinal = 0): void {
+    this.emit("session.text.ended", { assistantMessageID: messageId, ordinal, text });
   }
 
-  assistantDone(messageId: string, extra: Record<string, unknown> = {}): void {
-    this.events.push({
-      type: "message.updated",
-      properties: {
-        info: {
-          id: messageId,
-          sessionID: this.sessionId,
-          role: "assistant",
-          time: { created: 1, completed: 2 },
-          tokens: { input: 10, output: 5, cache: { read: 3, write: 1 } },
-          cost: 0.02,
-          ...extra,
-        },
-      } as never,
-    });
+  toolStart(id: string, name: string, input: Record<string, unknown>, created?: number): void {
+    this.emit("session.tool.input.started", { assistantMessageID: "msg_1", id, name });
+    this.emit("session.tool.called", { assistantMessageID: "msg_1", id, input, executed: false }, created);
   }
 
-  idle(): void {
-    this.events.push({ type: "session.idle", properties: { sessionID: this.sessionId } });
+  toolSuccess(id: string, text: string, created?: number): void {
+    this.emit("session.tool.success", { assistantMessageID: "msg_1", id, content: [{ type: "text", text }], executed: false }, created);
+  }
+
+  permissionAsked(id: string, action: string, resources: string[], extra: Record<string, unknown> = {}): void {
+    this.emit("permission.asked", { id, action, resources, ...extra });
+  }
+
+  formCreated(id: string, fields: WireFormField[]): void {
+    this.emit("form.created", { form: { id, sessionID: this.sessionId, title: "Questions", metadata: { kind: "question" }, fields } });
+  }
+
+  stepEnded(tokens: WireTokens, cost = 0): void {
+    this.emit("session.step.ended", { assistantMessageID: "msg_1", finish: "stop", cost, tokens });
+  }
+
+  usage(tokens: WireTokens, cost = 0): void {
+    this.emit("session.usage.updated", { cost, tokens });
+  }
+
+  succeeded(): void {
+    this.emit("session.execution.succeeded", {});
   }
 }

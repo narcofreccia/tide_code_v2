@@ -1,65 +1,114 @@
 import { describe, expect, it } from "vitest";
-import { permissionRuleset, replyFor } from "./permissions.ts";
-import type { PermissionRule } from "./wire.ts";
+import type { RuntimeMode } from "@tide/contracts";
+import { evaluate, grantCovers, permissionRuleset, replyFor, sessionRuleset, userRules, wildcardMatch } from "./permissions.ts";
+import type { PermissionRule, WireConfigEntry } from "./wire.ts";
 
-/** `Wildcard.match` from opencode 1.1.36 `src/util/wildcard.ts`. */
-const match = (str: string, pattern: string): boolean =>
-  new RegExp(`^${pattern.replace(/[.+^${}()|[\]\\]/g, "\\$&").replace(/\*/g, ".*").replace(/\?/g, ".")}$`, "s").test(str);
+/** `Agent.Info.default` in `@opencode/schema` 2.0.27: allow-all plus `.env` asks. */
+const AGENT_DEFAULT: PermissionRule[] = [
+  { action: "*", resource: "*", effect: "allow" },
+  { action: "read", resource: "*.env", effect: "ask" },
+];
 
-describe("permission mapping", () => {
-  it("maps each runtime mode onto an opencode session ruleset", () => {
+/**
+ * What core actually evaluates: `[...agent.permissions, ...session.permissions]`, where the
+ * agent's list already ends with the user's config rules (core `opencode.config.agent` plugin).
+ */
+function effective(mode: RuntimeMode, user: PermissionRule[], action: string, resource: string): string {
+  const session = sessionRuleset(mode, "default", "/work/repo", [], user);
+  return evaluate(action, resource, [...AGENT_DEFAULT, ...user, ...session]);
+}
+
+describe("mode rules", () => {
+  it("maps each runtime mode onto v2 action names", () => {
     expect(permissionRuleset("approval-required", "default")).toEqual([
-      { permission: "edit", pattern: "*", action: "ask" },
-      { permission: "bash", pattern: "*", action: "ask" },
-      { permission: "webfetch", pattern: "*", action: "ask" },
+      { action: "edit", resource: "*", effect: "ask" },
+      { action: "shell", resource: "*", effect: "ask" },
+      { action: "webfetch", resource: "*", effect: "ask" },
     ]);
-    expect(permissionRuleset("auto-accept-edits", "default")).toContainEqual({ permission: "edit", pattern: "*", action: "allow" });
-    expect(permissionRuleset("auto-accept-edits", "default")).toContainEqual({ permission: "bash", pattern: "*", action: "ask" });
-    expect(permissionRuleset("auto", "default").every((rule) => rule.action === "allow")).toBe(true);
-    expect(permissionRuleset("full-access", "default")).toEqual([{ permission: "*", pattern: "*", action: "allow" }]);
+    expect(permissionRuleset("auto-accept-edits", "default")).toContainEqual({ action: "edit", resource: "*", effect: "allow" });
+    expect(permissionRuleset("auto", "default").every((rule) => rule.effect === "allow")).toBe(true);
+    expect(permissionRuleset("full-access", "default")).toEqual([{ action: "*", resource: "*", effect: "allow" }]);
   });
 
-  it("never widens permissions in plan mode — the plan agent's own denies must survive", () => {
+  it("never adds allows in plan mode — the plan agent's own edit deny must survive", () => {
     expect(permissionRuleset("full-access", "plan")).toEqual([]);
-    expect(permissionRuleset("auto", "plan")).toEqual([]);
-    expect(permissionRuleset("approval-required", "plan").every((rule) => rule.action === "ask")).toBe(true);
+    expect(permissionRuleset("approval-required", "plan").every((rule) => rule.effect === "ask")).toBe(true);
   });
 
-  /**
-   * opencode 1.1.36's built-in agents start from `fromConfig({"*": "allow", …})` and the
-   * user's `opencode.json` is merged after it, so **an empty session ruleset means "allow
-   * everything"**, not "ask". These assertions are the regression guard: dropping the `ask`
-   * rules would silently turn approval-required and auto-accept-edits into full auto.
-   */
-  it("keeps the ask rules that give the restrictive modes their meaning", () => {
-    const agentBaseline: PermissionRule[] = [{ permission: "*", pattern: "*", action: "allow" }];
-    const evaluate = (permission: string, ...rulesets: PermissionRule[][]): string =>
-      rulesets.flat().findLast((rule) => match(permission, rule.permission))?.action ?? "ask";
-
-    for (const permission of ["edit", "bash", "webfetch"]) {
-      expect(evaluate(permission, agentBaseline, permissionRuleset("approval-required", "default"))).toBe("ask");
-    }
-    expect(evaluate("edit", agentBaseline, permissionRuleset("auto-accept-edits", "default"))).toBe("allow");
-    expect(evaluate("bash", agentBaseline, permissionRuleset("auto-accept-edits", "default"))).toBe("ask");
-    // …and permissions Tide says nothing about keep whatever the agent and user config decided
-    expect(evaluate("read", agentBaseline, permissionRuleset("approval-required", "default"))).toBe("allow");
+  it("keeps the ask rules that give restrictive modes their meaning over the allow-all baseline", () => {
+    for (const action of ["edit", "shell", "webfetch"]) expect(effective("approval-required", [], action, "x")).toBe("ask");
+    expect(effective("auto-accept-edits", [], "edit", "src/a.ts")).toBe("allow");
+    expect(effective("auto-accept-edits", [], "shell", "ls")).toBe("ask");
+    expect(effective("approval-required", [], "read", "src/a.ts")).toBe("allow");
   });
+});
 
-  it("uses `*` as a wildcard permission key for full access, the way opencode's own defaults do", () => {
-    // `PermissionNext.Rule.permission` is `z.string()` and `evaluate` matches it with
-    // `Wildcard.match(asked, rule.permission)` (opencode 1.1.36), so `*` is a legal key.
-    const rules = permissionRuleset("full-access", "default");
-    expect(rules).toEqual([{ permission: "*", pattern: "*", action: "allow" }]);
-    for (const permission of ["edit", "bash", "webfetch", "external_directory", "read", "glob", "grep", "list"]) {
-      expect(rules.some((rule) => match(permission, rule.permission))).toBe(true);
+describe("user rules are only ever narrowed", () => {
+  const user: PermissionRule[] = [
+    { action: "shell", resource: "*", effect: "allow" }, // blanket allow
+    { action: "shell", resource: "rm *", effect: "deny" },
+    { action: "edit", resource: "secrets/*", effect: "deny" },
+    { action: "webfetch", resource: "*", effect: "ask" }, // blanket ask
+  ];
+
+  it("a user deny survives every mode, full-access included", () => {
+    for (const mode of ["approval-required", "auto-accept-edits", "auto", "full-access"] as const) {
+      expect(effective(mode, user, "shell", "rm -rf /")).toBe("deny");
+      expect(effective(mode, user, "edit", "secrets/key.pem")).toBe("deny");
     }
   });
 
-  it("maps decisions onto opencode's three replies", () => {
+  it("a user blanket ask survives auto and full-access (the old driver dropped it)", () => {
+    expect(effective("auto", user, "webfetch", "https://x")).toBe("ask");
+    expect(effective("full-access", user, "webfetch", "https://x")).toBe("ask");
+  });
+
+  it("a stricter mode narrows a user allow", () => {
+    expect(effective("approval-required", user, "shell", "git status")).toBe("ask");
+    expect(effective("auto", user, "shell", "git status")).toBe("allow");
+  });
+
+  it("narrows rules written with a wildcard action too, without touching other actions", () => {
+    const wide: PermissionRule[] = [{ action: "*", resource: "*", effect: "allow" }];
+    expect(effective("approval-required", wide, "edit", "a.ts")).toBe("ask");
+    expect(effective("approval-required", wide, "read", "a.ts")).toBe("allow");
+  });
+
+  it("collects the user's rules from config documents: top level, then the agent's own", () => {
+    const entries: WireConfigEntry[] = [
+      { type: "document", info: { permissions: [{ action: "shell", resource: "*", effect: "allow" }], agents: { review: { permissions: [{ action: "edit", resource: "~/x/*", effect: "ask" }] } } } },
+      { type: "directory", path: "/home/u/.config/opencode" },
+      { type: "document", info: { permissions: [{ action: "bogus" } as unknown as PermissionRule] } },
+    ];
+    expect(userRules(entries, "build")).toEqual([{ action: "shell", resource: "*", effect: "allow" }]);
+    const review = userRules(entries, "review");
+    expect(review).toHaveLength(2);
+    expect(review[1]?.resource.endsWith("/x/*")).toBe(true);
+    expect(review[1]?.resource.startsWith("~")).toBe(false);
+    expect(userRules(undefined, "build")).toEqual([]);
+  });
+});
+
+describe("approval replies", () => {
+  it("never answers accept-for-session with the permanent `always`", () => {
     expect(replyFor("accept")).toBe("once");
-    expect(replyFor("acceptForSession")).toBe("always");
+    expect(replyFor("acceptForSession")).toBe("once");
     expect(replyFor("acceptAlways")).toBe("always");
     expect(replyFor("decline")).toBe("reject");
     expect(replyFor("cancel")).toBe("reject");
+  });
+
+  it("session grants cover later asks by action and save pattern", () => {
+    const grants = [{ action: "shell", patterns: ["echo *"] }];
+    expect(grantCovers(grants, "shell", ["echo hi"])).toBe(true);
+    expect(grantCovers(grants, "shell", ["echo hi", "rm x"])).toBe(false);
+    expect(grantCovers(grants, "edit", ["echo hi"])).toBe(false);
+    expect(grantCovers(grants, "shell", [])).toBe(false);
+  });
+
+  it("matches like core's Wildcard (trailing ` *` also matches the bare command)", () => {
+    expect(wildcardMatch("echo", "echo *")).toBe(true);
+    expect(wildcardMatch("a/b/c", "a/*")).toBe(true);
+    expect(wildcardMatch("ab", "a?")).toBe(true);
   });
 });
