@@ -6,6 +6,9 @@
   "engines": { "node": ">=22.13.0" },
   "packageManager": "pnpm@10.30.3",
   "scripts": {
+    "predev": "node scripts/check-node.mjs",
+    "predesktop:dev": "node scripts/check-node.mjs",
+    "predesktop:sidecar": "node scripts/check-node.mjs",
     "dev": "pnpm -r --parallel --filter @tide/server --filter @tide/web dev",
     "dev:server": "pnpm --filter @tide/server dev",
     "dev:web": "pnpm --filter @tide/web dev",

@@ -7,7 +7,7 @@ What Tide does to your repository is in [`docs/TRIAL.md`](docs/TRIAL.md).
 
 ## 1. Prerequisites
 
-- Node 22 (`nvm use` in the repo picks it), pnpm 10.
+- Node 22, pnpm 10. With nvm, run `nvm alias default 22` once so every new terminal starts on 22; the dev commands refuse an older Node with a clear message.
 - At least one harness installed and logged in. Tide never stores provider credentials.
 
 | Harness | Install | Log in | Note |
