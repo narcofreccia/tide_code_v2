@@ -1,0 +1,19 @@
+{"t":"start","provider":"pi","version":"1.1.0","scenario":"handoff-inline","synthetic":true,"note":"hand-authored from driver-pi test/fake-pi.ts and session.test.ts"}
+{"t":"expect_out","match":{"type":"get_state","id":"tide-1"}}
+{"t":"in","frame":{"type":"response","id":"$id","command":"get_state","success":true,"data":{"sessionFile":"/tmp/pi-sessions/handoff.jsonl","sessionId":"abc123","model":{"id":"gpt-5.5","provider":"openai"}}}}
+{"t":"expect_out","match":{"type":"get_session_stats","id":"tide-2"}}
+{"t":"in","frame":{"type":"response","id":"$id","command":"get_session_stats","success":true,"data":{"sessionFile":"/tmp/pi-sessions/handoff.jsonl","tokens":{"input":0,"output":0,"cacheRead":0,"cacheWrite":0},"cost":0,"contextUsage":{"tokens":0,"contextWindow":200000,"percent":0}}}}
+{"t":"expect_out","match":{"type":"get_commands","id":"tide-3"}}
+{"t":"in","frame":{"type":"response","id":"$id","command":"get_commands","success":true,"data":{"commands":[]}}}
+{"t":"expect_out","match":{"type":"get_fork_messages","id":"tide-4"}}
+{"t":"in","frame":{"type":"response","id":"$id","command":"get_fork_messages","success":true,"data":{"messages":[]}}}
+{"t":"expect_out","match":{"type":"prompt","id":"tide-5","message":"/^# Context handoff: history of thread[\\s\\S]*add a --verbose flag to the CLI[\\s\\S]*Added --verbose to cli\\.ts\\.[\\s\\S]*\\n\\n---\\n\\nUser message:\\nnow cover it with a test$/"}}
+{"t":"in","frame":{"type":"response","id":"$id","command":"prompt","success":true}}
+{"t":"in","frame":{"type":"message_start","message":{"role":"assistant"}}}
+{"t":"in","frame":{"type":"message_update","assistantMessageEvent":{"type":"text_delta","contentIndex":0,"delta":"Added a test for --verbose."}}}
+{"t":"in","frame":{"type":"message_end","message":{"role":"assistant","stopReason":"stop"}}}
+{"t":"in","frame":{"type":"agent_settled"}}
+{"t":"expect_out","match":{"type":"get_entries","id":"tide-6"}}
+{"t":"in","frame":{"type":"response","id":"$id","command":"get_entries","success":true,"data":{"entries":[{"type":"message","id":"e1","parentId":null,"message":{"role":"user"}},{"type":"message","id":"e2","parentId":"e1","message":{"role":"assistant","stopReason":"stop"}}],"leafId":"e2"}}}
+{"t":"expect_out","match":{"type":"get_session_stats","id":"tide-7"}}
+{"t":"in","frame":{"type":"response","id":"$id","command":"get_session_stats","success":true,"data":{"sessionFile":"/tmp/pi-sessions/handoff.jsonl","tokens":{"input":100,"output":50,"cacheRead":0,"cacheWrite":0},"cost":0.01,"contextUsage":{"tokens":1200,"contextWindow":200000,"percent":1}}}}

@@ -1,0 +1,25 @@
+{"t":"start","provider":"codex","version":"0.147.0","scenario":"steer-mid-turn","synthetic":true,"note":"hand-authored from driver-codex session-r4 tests; process 1 is the status probe the reactor triggers to read the steer capability"}
+{"t":"expect_out","match":{"method":"initialize"}}
+{"t":"in","frame":{"jsonrpc":"2.0","id":"$id","result":{"userAgent":"replay","codexHome":"/tmp/.codex","platformFamily":"unix","platformOs":"macos"}}}
+{"t":"expect_out","match":{"method":"initialized"}}
+{"t":"expect_out","match":{"method":"thread/start"}}
+{"t":"in","frame":{"jsonrpc":"2.0","id":"$id","result":{"thread":{"id":"thread-1","turns":[]},"model":"gpt-5.6-sol","modelProvider":"openai","cwd":"/repo"}}}
+{"t":"expect_out","match":{"method":"turn/start","params":{"threadId":"thread-1","input":[{"type":"text","text":"build the feature"}]}}}
+{"t":"in","frame":{"jsonrpc":"2.0","id":"$id","result":{"turn":{"id":"turn-7","items":[],"itemsView":"notLoaded","status":"inProgress"}}}}
+{"t":"in","frame":{"jsonrpc":"2.0","method":"turn/started","params":{"threadId":"thread-1","turn":{"id":"turn-7","items":[],"itemsView":"notLoaded","status":"inProgress","error":null}}}}
+{"t":"expect_out","match":{"method":"account/rateLimits/read"}}
+{"t":"in","frame":{"jsonrpc":"2.0","id":"$id","result":{}}}
+{"t":"in","frame":{"jsonrpc":"2.0","method":"item/agentMessage/delta","params":{"threadId":"thread-1","turnId":"turn-7","itemId":"item_msg","delta":"Starting with spaces. "}}}
+{"t":"expect_out","match":{"method":"turn/steer","params":{"threadId":"thread-1","expectedTurnId":"turn-7","input":[{"type":"text","text":"use tabs instead"}]}}}
+{"t":"in","frame":{"jsonrpc":"2.0","id":"$id","result":{"turnId":"turn-7"}}}
+{"t":"in","frame":{"jsonrpc":"2.0","method":"item/agentMessage/delta","params":{"threadId":"thread-1","turnId":"turn-7","itemId":"item_msg","delta":"Switched to tabs."}}}
+{"t":"in","frame":{"jsonrpc":"2.0","method":"item/completed","params":{"threadId":"thread-1","turnId":"turn-7","completedAtMs":3,"item":{"type":"agentMessage","id":"item_msg","text":"Starting with spaces. Switched to tabs.","phase":null,"memoryCitation":null}}}}
+{"t":"in","frame":{"jsonrpc":"2.0","method":"turn/completed","params":{"threadId":"thread-1","turn":{"id":"turn-7","items":[],"itemsView":"notLoaded","status":"completed","error":null}}}}
+{"t":"proc","name":"status-probe"}
+{"t":"expect_out","match":{"method":"initialize"}}
+{"t":"in","frame":{"jsonrpc":"2.0","id":"$id","result":{"userAgent":"replay","codexHome":"/tmp/.codex","platformFamily":"unix","platformOs":"macos"}}}
+{"t":"expect_out","match":{"method":"initialized"}}
+{"t":"expect_out","match":{"method":"account/read"}}
+{"t":"in","frame":{"jsonrpc":"2.0","id":"$id","result":{"account":{"type":"chatgpt","email":"dev@example.com","planType":"pro"},"requiresOpenaiAuth":false}}}
+{"t":"expect_out","match":{"method":"model/list"}}
+{"t":"in","frame":{"jsonrpc":"2.0","id":"$id","result":{"data":[{"id":"gpt-5.6-sol","model":"gpt-5.6-sol","displayName":"GPT-5.6-Sol","hidden":false,"isDefault":true}],"nextCursor":null}}}

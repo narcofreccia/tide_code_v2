@@ -1,0 +1,10 @@
+{"t":"start","provider":"claude","version":"0.3.296","scenario":"basic-turn","synthetic":true,"note":"hand-authored from driver-claude session tests; the SDK query() is the transport"}
+{"t":"expect_out","match":{"kind":"query","options":{"permissionMode":"default","includePartialMessages":true,"canUseTool":true,"systemPrompt":{"type":"preset","preset":"claude_code"},"pathToClaudeCodeExecutable":"$any"}}}
+{"t":"expect_out","match":{"kind":"prompt","message":{"type":"user","message":{"role":"user"}}}}
+{"t":"in","frame":{"type":"system","subtype":"init","session_id":"sess-1","model":"claude-sonnet-5"}}
+{"t":"in","frame":{"type":"stream_event","session_id":"sess-1","parent_tool_use_id":null,"uuid":"u1","event":{"type":"message_start","message":{"id":"msg_1"}}}}
+{"t":"in","frame":{"type":"stream_event","session_id":"sess-1","parent_tool_use_id":null,"uuid":"u2","event":{"type":"content_block_delta","index":0,"delta":{"type":"text_delta","text":"pong"}}}}
+{"t":"in","frame":{"type":"assistant","session_id":"sess-1","message":{"id":"msg_1","role":"assistant","content":[{"type":"text","text":"pong"}],"stop_reason":"end_turn"}}}
+{"t":"in","frame":{"type":"result","subtype":"success","session_id":"sess-1","is_error":false,"usage":{"input_tokens":5,"output_tokens":7},"total_cost_usd":0.01}}
+{"t":"expect_out","match":{"kind":"control","method":"getContextUsage"}}
+{"t":"in","frame":{"control_result":{"totalTokens":1200,"rawMaxTokens":200000}}}

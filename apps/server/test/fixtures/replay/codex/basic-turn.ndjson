@@ -1,0 +1,14 @@
+{"t":"start","provider":"codex","version":"0.147.0","scenario":"basic-turn","synthetic":true,"note":"hand-authored from driver-codex session tests"}
+{"t":"expect_out","match":{"method":"initialize"}}
+{"t":"in","frame":{"jsonrpc":"2.0","id":"$id","result":{"userAgent":"replay","codexHome":"/tmp/.codex","platformFamily":"unix","platformOs":"macos"}}}
+{"t":"expect_out","match":{"method":"initialized"}}
+{"t":"expect_out","match":{"method":"thread/start"}}
+{"t":"in","frame":{"jsonrpc":"2.0","id":"$id","result":{"thread":{"id":"thread-1","turns":[]},"model":"gpt-5.6-sol","modelProvider":"openai","cwd":"/repo"}}}
+{"t":"expect_out","match":{"method":"turn/start","params":{"threadId":"thread-1","input":[{"type":"text","text":"add a --verbose flag to the CLI"}]}}}
+{"t":"in","frame":{"jsonrpc":"2.0","id":"$id","result":{"turn":{"id":"turn-1","items":[],"itemsView":"notLoaded","status":"inProgress"}}}}
+{"t":"in","frame":{"jsonrpc":"2.0","method":"turn/started","params":{"threadId":"thread-1","turn":{"id":"turn-1","items":[],"itemsView":"notLoaded","status":"inProgress","error":null}}}}
+{"t":"expect_out","match":{"method":"account/rateLimits/read"}}
+{"t":"in","frame":{"jsonrpc":"2.0","id":"$id","result":{}}}
+{"t":"in","frame":{"jsonrpc":"2.0","method":"item/agentMessage/delta","params":{"threadId":"thread-1","turnId":"turn-1","itemId":"m","delta":"Added --verbose to cli.ts."}}}
+{"t":"in","frame":{"jsonrpc":"2.0","method":"item/completed","params":{"threadId":"thread-1","turnId":"turn-1","completedAtMs":3,"item":{"type":"agentMessage","id":"m","text":"Added --verbose to cli.ts.","phase":null,"memoryCitation":null}}}}
+{"t":"in","frame":{"jsonrpc":"2.0","method":"turn/completed","params":{"threadId":"thread-1","turn":{"id":"turn-1","items":[],"itemsView":"notLoaded","status":"completed","error":null}}}}

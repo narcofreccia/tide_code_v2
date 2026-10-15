@@ -40,13 +40,15 @@ function located(directory: string): string {
  */
 export class HttpOpencodeApi implements OpencodeApi {
   #endpoint: Endpoint;
+  #fetch: typeof fetch;
 
-  constructor(endpoint: Endpoint) {
+  constructor(endpoint: Endpoint, fetchImpl?: typeof fetch) {
     this.#endpoint = { ...endpoint, url: endpoint.url.replace(/\/$/, "") };
+    this.#fetch = fetchImpl ?? ((input, init) => fetch(input, init));
   }
 
   async #request<T>(method: string, path: string, body?: unknown): Promise<T> {
-    const response = await fetch(`${this.#endpoint.url}${path}`, {
+    const response = await this.#fetch(`${this.#endpoint.url}${path}`, {
       method,
       headers: { ...authHeader(this.#endpoint), ...(body !== undefined ? { "content-type": "application/json" } : {}) },
       ...(body !== undefined ? { body: JSON.stringify(body) } : {}),
@@ -145,7 +147,7 @@ export class HttpOpencodeApi implements OpencodeApi {
   }
 
   async subscribe(input: { signal: AbortSignal }): Promise<AsyncIterable<OpencodeEvent>> {
-    const response = await fetch(`${this.#endpoint.url}/api/event`, { headers: { ...authHeader(this.#endpoint), accept: "text/event-stream" }, signal: input.signal });
+    const response = await this.#fetch(`${this.#endpoint.url}/api/event`, { headers: { ...authHeader(this.#endpoint), accept: "text/event-stream" }, signal: input.signal });
     if (!response.ok || response.body === null) throw new Error(`opencode event stream failed: HTTP ${response.status}`);
     return parseSse(response.body);
   }

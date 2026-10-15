@@ -90,7 +90,7 @@ class FakeBackend implements AgentBackend {
     return this.#rec("interrupt", threadId, { ok: true });
   }
   taskList() {
-    return this.#rec("taskList", undefined, { tasks: [{ id: "task-1", projectId: "p1", title: "Nightly lint", prompt: "run lint", schedule: { kind: "interval", everyMs: 3_600_000 }, enabled: true, runs: 2, nextRunAt: 1_700_000_000_000, createdAt: 1, updatedAt: 1 }] });
+    return this.#rec("taskList", undefined, { tasks: [{ id: "task-1", projectId: "p1", title: "Nightly lint", prompt: "run lint", schedule: { kind: "interval" as const, everyMs: 3_600_000 }, enabled: true, runs: 2, nextRunAt: 1_700_000_000_000, createdAt: 1, updatedAt: 1 }] });
   }
   pendingList(threadId: string) {
     return this.#rec("pendingList", threadId, { questions: [{ requestId: "r1", activityId: "a", askedAt: 1, questions: [{ id: "q1", text: "Which?", options: [{ label: "A" }, { label: "B" }] }] }] });

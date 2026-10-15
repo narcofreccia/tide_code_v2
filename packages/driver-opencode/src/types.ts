@@ -34,6 +34,11 @@ export interface OpencodeConfig {
    * instance tests drive a scripted server without spawning one.
    */
   apiImpl?: OpencodeApi;
+  /**
+   * Test seam: replaces the global `fetch` the HTTP client uses (transport-replay tests inject
+   * a recorded transcript here, with `serverUrl` set so no server is discovered or spawned).
+   */
+  fetchImpl?: typeof fetch;
 }
 
 export type { ModelRef };

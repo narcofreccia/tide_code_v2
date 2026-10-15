@@ -69,7 +69,7 @@ export class OpencodeInstance implements ProviderInstance {
     if (this.#config.apiImpl) return this.#config.apiImpl;
     const endpoint = await this.#server.endpoint();
     if (this.#api === undefined || this.#apiUrl !== endpoint.url) {
-      this.#api = new HttpOpencodeApi(endpoint);
+      this.#api = new HttpOpencodeApi(endpoint, this.#config.fetchImpl);
       this.#apiUrl = endpoint.url;
     }
     return this.#api;

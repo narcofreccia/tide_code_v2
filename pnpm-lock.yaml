@@ -51,6 +51,9 @@ importers:
         specifier: ^8.21.0
         version: 8.21.3
     devDependencies:
+      '@tide/driver-testing':
+        specifier: workspace:*
+        version: link:../../packages/driver-testing
       '@types/node':
         specifier: ^22.0.0
         version: 22.20.1
@@ -188,6 +191,31 @@ importers:
       '@tide/pi-extensions':
         specifier: workspace:*
         version: link:../pi-extensions
+    devDependencies:
+      '@types/node':
+        specifier: ^22.0.0
+        version: 22.20.1
+
+  packages/driver-testing:
+    dependencies:
+      '@anthropic-ai/claude-agent-sdk':
+        specifier: ^0.3.296
+        version: 0.3.296(@anthropic-ai/sdk@0.129.0(zod@4.5.4))(@modelcontextprotocol/sdk@1.30.0(zod@4.5.4))(zod@4.5.4)
+      '@tide/contracts':
+        specifier: workspace:*
+        version: link:../contracts
+      '@tide/driver-claude':
+        specifier: workspace:*
+        version: link:../driver-claude
+      '@tide/driver-codex':
+        specifier: workspace:*
+        version: link:../driver-codex
+      '@tide/driver-opencode':
+        specifier: workspace:*
+        version: link:../driver-opencode
+      '@tide/driver-pi':
+        specifier: workspace:*
+        version: link:../driver-pi
     devDependencies:
       '@types/node':
         specifier: ^22.0.0

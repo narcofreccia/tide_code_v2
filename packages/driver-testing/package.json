@@ -1,0 +1,26 @@
+{
+  "name": "@tide/driver-testing",
+  "version": "0.0.0",
+  "private": true,
+  "type": "module",
+  "exports": {
+    ".": "./src/index.ts"
+  },
+  "scripts": {
+    "typecheck": "tsc --noEmit -p tsconfig.json",
+    "test": "vitest run --passWithNoTests",
+    "record": "node --experimental-strip-types --no-warnings=ExperimentalWarning scripts/record.ts",
+    "build": "echo skip"
+  },
+  "dependencies": {
+    "@anthropic-ai/claude-agent-sdk": "^0.3.296",
+    "@tide/contracts": "workspace:*",
+    "@tide/driver-claude": "workspace:*",
+    "@tide/driver-codex": "workspace:*",
+    "@tide/driver-opencode": "workspace:*",
+    "@tide/driver-pi": "workspace:*"
+  },
+  "devDependencies": {
+    "@types/node": "^22.0.0"
+  }
+}
