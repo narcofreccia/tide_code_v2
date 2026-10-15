@@ -21,6 +21,7 @@ export {
   selectDelegates,
   selectExpertsBoard,
   selectExpertsSessions,
+  selectScheduledTasks,
   isThreadMerged,
   selectAllThreads,
   selectCostRollup,

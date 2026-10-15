@@ -22,7 +22,7 @@ interface ServerSettingsState {
 }
 
 export function defaultUserSettings(): UserSettings {
-  return { providerDefaults: {}, worktreeByDefault: true, decisions: { enabled: false, hasKey: false } };
+  return { providerDefaults: {}, worktreeByDefault: true, decisions: { enabled: false, hasKey: false }, continueAfterRestart: false };
 }
 
 export const useServerSettings = create<ServerSettingsState>(() => ({
@@ -46,6 +46,7 @@ function applyPatch(settings: UserSettings, patch: UserSettingsPatch): UserSetti
       enabled: decisions?.enabled ?? settings.decisions.enabled,
       hasKey: settings.decisions.hasKey,
     },
+    continueAfterRestart: patch.continueAfterRestart ?? settings.continueAfterRestart,
   };
 }
 

@@ -284,6 +284,15 @@ export function registerAgentThreadHandlers(router: RpcRouter, deps: AgentThread
     return { questions };
   });
 
+  router.register("agent.task.list", async (_input, ctx) => {
+    const model = engine.getModel();
+    const caller = callerThread(model, ctx);
+    const tasks = Object.values(model.scheduledTasks)
+      .filter((task) => task.projectId === caller.projectId && task.archivedAt === undefined)
+      .sort((a, b) => (a.nextRunAt ?? Number.MAX_SAFE_INTEGER) - (b.nextRunAt ?? Number.MAX_SAFE_INTEGER));
+    return { tasks };
+  });
+
   router.register("agent.pending.respond", async (input, ctx) => {
     const model = engine.getModel();
     const caller = callerThread(model, ctx);

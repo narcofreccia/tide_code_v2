@@ -1,5 +1,5 @@
 import { Type, type Static } from "typebox";
-import { Activity, ApprovalDecision, CheckpointStats, ExpertSpec, ExpertsPhase, ImageInput, InteractionMode, Limited, LinkAccess, MergeStrategy, ProviderKind, PullRequest, RateLimit, RuntimeMode, Triage, TurnUsage } from "./domain.ts";
+import { Activity, ApprovalDecision, CheckpointStats, ExpertSpec, ExpertsPhase, ImageInput, InteractionMode, Limited, LinkAccess, MergeStrategy, ProviderKind, PullRequest, RateLimit, RuntimeMode, Schedule, Triage, TurnUsage } from "./domain.ts";
 
 // Commands = validated intents. ClientCommand may arrive over RPC; InternalCommand is
 // issued only by server reactors (driver ingestion) and is rejected at the RPC boundary.
@@ -189,6 +189,26 @@ export const ThreadLimitPolicy = Type.Object({ type: Type.Literal("thread.limit-
 /** Start/stop polling the thread's PR; a watched thread is woken on CI failure, new comments or conflicts. */
 export const PrWatch = Type.Object({ type: Type.Literal("pr.watch"), commandId: CommandId, threadId: Type.String(), enabled: Type.Boolean() });
 
+// ---- R4: scheduled tasks (client, and agents through agent.dispatch on their own project) ----
+const taskFields = {
+  threadId: Type.Optional(Type.String()),
+  title: Type.String({ minLength: 1, maxLength: 120 }),
+  prompt: Type.String({ minLength: 1 }),
+  schedule: Schedule,
+  provider: Type.Optional(ProviderKind),
+  model: Type.Optional(Type.String()),
+  mode: Type.Optional(RuntimeMode),
+  useWorktree: Type.Optional(Type.Boolean()),
+  enabled: Type.Optional(Type.Boolean()),
+};
+export const TaskCreate = Type.Object({ type: Type.Literal("task.create"), commandId: CommandId, projectId: Type.String(), ...taskFields, createdByThreadId: Type.Optional(Type.String()) });
+export const TaskUpdate = Type.Object({ type: Type.Literal("task.update"), commandId: CommandId, taskId: Type.String(), ...Type.Partial(Type.Object(taskFields)).properties });
+export const TaskDelete = Type.Object({ type: Type.Literal("task.delete"), commandId: CommandId, taskId: Type.String() });
+/** fire now, outside the schedule (does not move nextRunAt) */
+export const TaskRunNow = Type.Object({ type: Type.Literal("task.run-now"), commandId: CommandId, taskId: Type.String() });
+/** scheduler → engine: the tick fired this task; commandId is `scheduled:<taskId>:<epoch>` so a duplicate tick is a no-op */
+export const TaskFire = Type.Object({ type: Type.Literal("task.fire"), commandId: CommandId, taskId: Type.String(), nextRunAt: Type.Optional(Type.Number()), useWorktreeDefault: Type.Optional(Type.Boolean()) });
+
 // ---- experts (client) ----
 export const ExpertsCreate = Type.Object({
   type: Type.Literal("experts.create"), commandId: CommandId,
@@ -212,6 +232,7 @@ export const ClientCommand = Type.Union([
   PlanImplement, PlanDismiss,
   ThreadRevert, ThreadPublish, ThreadMerge, WorktreeDetach,
   TurnSteer, TurnEdit, TurnReorder, TurnPromote, ThreadFork, ThreadRollback, ThreadSnooze, ThreadResume, ThreadLimitPolicy, PrWatch,
+  TaskCreate, TaskUpdate, TaskDelete, TaskRunNow,
   ExpertsCreate, ExpertsStart, ExpertsPost, ExpertsSetPhase, ExpertsArchive,
 ]);
 export type ClientCommand = Static<typeof ClientCommand>;
@@ -333,13 +354,14 @@ export const ExpertsExpertStatus = Type.Object({
   status: Type.Union([Type.Literal("pending"), Type.Literal("working"), Type.Literal("idle"), Type.Literal("error")]),
 });
 
-export const AgentCommand = Type.Union([ExpertsFindingPost, ExpertsMessageSend, ExpertsSynthesisSet, ThreadDelegate]);
+/** agents may manage their own project's automations; the RPC layer stamps projectId/createdByThreadId and scopes update/delete */
+export const AgentCommand = Type.Union([ExpertsFindingPost, ExpertsMessageSend, ExpertsSynthesisSet, ThreadDelegate, TaskCreate, TaskUpdate, TaskDelete, TaskRunNow]);
 export type AgentCommand = Static<typeof AgentCommand>;
 
 export const InternalCommand = Type.Union([
   TurnStart, AssistantAppend, AssistantReasoningAppend, ActivityUpsert, PlanPropose, PlanProgressReport, UsageReport, TurnSettle,
   WorktreeAttach, CheckpointRecord, PrUpdate, WorktreeDetachedReport, MergeReport, ThreadTriage,
-  SteerFallback, RollbackReport, ThreadLimited, HandoffDelivered,
+  SteerFallback, RollbackReport, ThreadLimited, HandoffDelivered, TaskFire,
   ExpertsExpertStatus,
 ]);
 export type InternalCommand = Static<typeof InternalCommand>;

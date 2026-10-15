@@ -28,7 +28,7 @@ describe("Settings view", () => {
     expect(useUi.getState().view).toBe("thread");
   });
 
-  it("lists the eight sections and remembers the last one", () => {
+  it("lists the nine sections and remembers the last one", () => {
     setProvidersForTest(PROVIDER_FIXTURE);
     render(<SettingsView />);
     const nav = screen.getByLabelText("Settings sections");
@@ -37,6 +37,7 @@ describe("Settings view", () => {
       "Providers",
       "Git",
       "Decisions",
+      "Automations",
       "Appearance",
       "Keyboard",
       "Remote",

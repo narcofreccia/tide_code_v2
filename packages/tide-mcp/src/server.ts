@@ -4,6 +4,7 @@ import type { ProviderKind, RuntimeMode } from "@tide/contracts";
 import type { AgentBackend } from "./backend.ts";
 import { TOOL_DEFINITIONS } from "./tools.ts";
 import { callThreadTool, describeRpcError, formatWait, isThreadTool } from "./threadTools.ts";
+import { callTaskTool, isTaskTool } from "./taskTools.ts";
 
 /** The SDK's own result shape, so handlers stay assignable without a cast. */
 export type ToolResult = CallToolResult;
@@ -63,6 +64,13 @@ export async function callTool(
   name: string,
   rawArgs: Record<string, unknown>,
 ): Promise<ToolResult> {
+  if (isTaskTool(name)) {
+    try {
+      return await callTaskTool(backend, name, rawArgs);
+    } catch (err) {
+      return failure(describeRpcError(err));
+    }
+  }
   if (isThreadTool(name)) {
     try {
       return await callThreadTool(backend, name, rawArgs);

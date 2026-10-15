@@ -53,6 +53,12 @@ Reactors subscribe to events and issue further commands; they hold no business r
   Either way `handoff.delivered` records how. **Limits**: a `usage` report with
   `rateLimit.status: limited`, or an error matching the usage-limit wording, dispatches
   `thread.limited` after the settle.
+- `Scheduler` (`scheduling/`) — every 5 s dispatches `task.fire` for enabled `ScheduledTask`s whose
+  `nextRunAt` is due (commandId `scheduled:<task>:<nextRunAt>` so ticks and restarts never double-fire;
+  `nextFireAt` is computed from now, so missed fixed slots are skipped and an overdue interval fires once;
+  a rejected fire is not retried until `nextRunAt` changes). The decider turns a fire into a turn in the
+  task's thread (queued if running) or a new thread. With `continueAfterRestart`, recovery also sends
+  "Continue where you left off." to threads whose turn died with the process (max 3 in a row).
 - `VcsReactor` — worktree per thread, `before`/`after` checkpoints as `refs/tide/checkpoints/…`
   (the before-snapshot gates the turn; a queued turn is snapshotted when promoted), revert,
   publish (commit/push/`gh pr`, optional `gh pr merge --auto`), merge-back (`vcs/merge.ts`: in a

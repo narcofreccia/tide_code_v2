@@ -9,6 +9,7 @@ const ICON: Record<Source, string> = {
   pr: "⇡",
   restart: "↻",
   system: "ⓘ",
+  schedule: "⏱",
 };
 
 /** A server-authored wake-up (delegate done, child asked, PR changed, restart) — not something the user typed. */

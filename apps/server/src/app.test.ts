@@ -2,6 +2,8 @@ import { describe, expect, it } from "vitest";
 import type { Activity } from "@tide/contracts";
 import { createApp } from "./app.ts";
 import type { ServerConfig } from "./config.ts";
+import { continueAfterRestart, RESTART_ERROR } from "./orchestration/recovery.ts";
+import { SettingsStore } from "./settings.ts";
 import { Engine } from "./orchestration/engine.ts";
 import { openEventStore, type EventStore } from "./orchestration/store.ts";
 import { awaitApproval, createFakeDriver, emit } from "./provider/testing/fakeDriver.ts";
@@ -260,5 +262,52 @@ describe("app.close — graceful shutdown", () => {
     expect(model.turns[turn.turn.id]).toMatchObject({ status: "interrupted", error: "server shutting down" });
     expect(model.threads[thread.thread.id]?.status).toBe("interrupted");
     expect(control.interrupts).toContain(thread.thread.id);
+  });
+});
+
+describe("createApp — continue after restart", () => {
+  it("sends one continuation per interrupted thread when enabled, none when disabled", async () => {
+    for (const enabled of [true, false]) {
+      const { store, threadId } = await storeWithLiveTurn();
+      const { driver, control } = createFakeDriver("claude");
+      control.script(emit({ type: "settled", status: "completed" }));
+      const settings = new SettingsStore({});
+      settings.set({ continueAfterRestart: enabled });
+      const app = await createApp({ config, store, settings, listen: false, log: () => undefined, registerDrivers: (r) => r.register(driver) });
+      try {
+        await app.reactor.drain();
+        const model = app.engine.getModel();
+        const notes = (model.threadMessages[threadId] ?? []).map((id) => model.messages[id]?.notification?.source);
+        expect(notes.filter((n) => n === "restart")).toHaveLength(enabled ? 1 : 0);
+      } finally {
+        await app.close();
+      }
+    }
+  });
+
+  it("stops after three restart continuations in a row and skips archived threads", async () => {
+    const store = await openEventStore(":memory:");
+    const engine = new Engine({ store });
+    const project = (await engine.dispatch({ type: "project.create", title: "T", rootPath: "/repo" })).events[0]?.event;
+    if (project?.type !== "project.created") throw new Error("project");
+    const mk = async () => {
+      const t = (await engine.dispatch({ type: "thread.create", projectId: project.project.id, provider: "claude" })).events[0]?.event;
+      if (t?.type !== "thread.created") throw new Error("thread");
+      return t.thread.id;
+    };
+    const looping = await mk();
+    for (let i = 0; i < 3; i++) {
+      await engine.dispatch({ type: "turn.request", threadId: looping, text: "Continue where you left off.", notification: { source: "restart", summary: "resumed after a restart" } });
+      const turnId = engine.getModel().threads[looping]?.latestTurnId as string;
+      await engine.dispatch({ type: "turn.settle", turnId, status: "error", error: RESTART_ERROR });
+    }
+    const gone = await mk();
+    await engine.dispatch({ type: "thread.archive", threadId: gone });
+    const fresh = await mk();
+    const logs: string[] = [];
+    const count = await continueAfterRestart(engine, [looping, gone, fresh], { log: (m) => logs.push(m) });
+    expect(count).toBe(1);
+    expect(logs.some((l) => l.includes("restart loop"))).toBe(true);
+    expect(logs.some((l) => l.includes("archived"))).toBe(true);
   });
 });

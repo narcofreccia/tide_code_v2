@@ -7,13 +7,14 @@ import { TideMcpProvisioner } from "./mcp/provision.ts";
 import { AgentTokenStore } from "./rpc/agentTickets.ts";
 import { Engine } from "./orchestration/engine.ts";
 import { LimitsWorker } from "./orchestration/limits.ts";
-import { recoverRollbacks, recoverUnsettledTurns, SHUTDOWN_ERROR, unsettledTurns } from "./orchestration/recovery.ts";
+import { continueAfterRestart, recoverRollbacks, recoverUnsettledTurns, SHUTDOWN_ERROR, unsettledTurns } from "./orchestration/recovery.ts";
 import { RollbackService } from "./orchestration/rollback.ts";
 import { openEventStore, type EventStore } from "./orchestration/store.ts";
 import { registerBundledDrivers } from "./provider/load.ts";
 import { ProviderReactor } from "./provider/reactor.ts";
 import { DriverRegistry } from "./provider/registry.ts";
 import { SessionDirectory } from "./provider/sessions.ts";
+import { Scheduler } from "./scheduling/scheduler.ts";
 import { SettingsStore } from "./settings.ts";
 import { startServer, type ServerHandle } from "./rpc/server.ts";
 import { createWorkspaceServices, type WorkspaceServices } from "./rpc/workspace.ts";
@@ -61,6 +62,7 @@ export interface App {
   vcs: VcsReactor;
   rollback: RollbackService;
   limits: LimitsWorker;
+  scheduler: Scheduler;
   prWatch: PrWatcher;
   workspace: WorkspaceServices;
   server: ServerHandle | undefined;
@@ -141,8 +143,13 @@ export async function createApp(options: AppOptions): Promise<App> {
   // After every reactor subscribed: the dead turns' settles must reach the vcs reactor (after-
   // checkpoint), the experts reactor (expert status) and the provider reactor (which runs the
   // queued turn each settle promotes).
-  await recoverUnsettledTurns(engine, { log, resume: (threadId, turnId) => reactor.resume(threadId, turnId) });
+  const recovered = await recoverUnsettledTurns(engine, { log, resume: (threadId, turnId) => reactor.resume(threadId, turnId) });
   await recoverRollbacks(engine, { log });
+  if (settings.get().continueAfterRestart) await continueAfterRestart(engine, recovered.threadIds, { log });
+
+  // after recovery: a slot due during the downtime fires once, never as a burst
+  const scheduler = new Scheduler({ engine, settings, log });
+  scheduler.start();
 
   const server =
     options.listen === false
@@ -178,6 +185,7 @@ export async function createApp(options: AppOptions): Promise<App> {
     vcs,
     rollback,
     limits,
+    scheduler,
     prWatch,
     workspace,
     server,
@@ -189,6 +197,7 @@ export async function createApp(options: AppOptions): Promise<App> {
       vcs.stop();
       rollback.stop();
       limits.stop();
+      scheduler.stop();
       prWatch.stop();
       await server?.close();
 
@@ -210,7 +219,7 @@ export async function createApp(options: AppOptions): Promise<App> {
 
       // 3. give the reactors a bounded window to finish their git/driver work before the
       //    store they write into is closed under them
-      await withTimeout(Promise.all([reactor.drain(), vcs.drain(), triage.drain(), rollback.drain(), prWatch.drain()]), options.shutdownTimeoutMs ?? DEFAULT_SHUTDOWN_TIMEOUT_MS, log);
+      await withTimeout(Promise.all([reactor.drain(), vcs.drain(), triage.drain(), rollback.drain(), prWatch.drain(), scheduler.drain()]), options.shutdownTimeoutMs ?? DEFAULT_SHUTDOWN_TIMEOUT_MS, log);
 
       workspace.close();
       await sessions.closeAll();

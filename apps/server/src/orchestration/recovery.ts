@@ -17,6 +17,8 @@ export interface RecoveryReport {
   activities: number;
   /** queued turns that become live because the dead turn ahead of them settled */
   promoted: number;
+  /** threads whose dead turn was settled with RESTART_ERROR (candidates for a continuation) */
+  threadIds: string[];
 }
 
 /** Turns the harness may still have been working on when the process went away. */
@@ -56,7 +58,7 @@ function pendingPrompts(model: ReadModel, turn: Turn): Prompt[] {
 export async function recoverUnsettledTurns(engine: Engine, options: RecoveryOptions = {}): Promise<RecoveryReport> {
   const log = options.log ?? (() => undefined);
   const now = options.now ?? (() => Date.now());
-  const report: RecoveryReport = { turns: 0, activities: 0, promoted: 0 };
+  const report: RecoveryReport = { turns: 0, activities: 0, promoted: 0, threadIds: [] };
 
   const byThread = new Map<string, Turn[]>();
   for (const turn of unsettledTurns(engine.getModel())) {
@@ -96,12 +98,69 @@ export async function recoverUnsettledTurns(engine: Engine, options: RecoveryOpt
       }
       if (await dispatch(engine, { type: "turn.settle", turnId: turn.id, status: "error", error: RESTART_ERROR }, log)) {
         report.turns++;
+        if (!report.threadIds.includes(turn.threadId)) report.threadIds.push(turn.threadId);
       }
     }
     if (live.length > 0 && queued.length > 0) report.promoted++;
   }
   if (report.turns > 0) log(`[recovery] settled ${report.turns} turn(s) left running by a previous run; ${report.promoted} queued turn(s) resumed`);
   return report;
+}
+
+export const CONTINUE_PROMPT = "Continue where you left off.";
+/** after this many restart continuations in a row the thread is left alone (a crash loop) */
+export const MAX_RESTART_CONTINUATIONS = 3;
+
+/** why a thread must not be nudged after a restart, or undefined when it may be */
+function continuationBlocker(model: ReadModel, threadId: string, now: number): string | undefined {
+  const thread = model.threads[threadId];
+  if (!thread) return "unknown";
+  if (thread.archivedAt !== undefined) return "archived";
+  if (thread.limited !== undefined) return "limited";
+  if (thread.snoozedUntil !== undefined && thread.snoozedUntil > now) return "snoozed";
+  if (thread.status === "running") return "already running";
+  for (const entry of model.threadTimeline[threadId] ?? []) {
+    if (entry.kind !== "activity") continue;
+    const a = model.activities[entry.id];
+    if ((a?.kind === "approval" || a?.kind === "user-input") && a.status === "pending") return "pending prompt";
+  }
+  const userMessages = (model.threadMessages[threadId] ?? []).flatMap((id) => {
+    const m = model.messages[id];
+    return m?.role === "user" ? [m] : [];
+  });
+  const latest = userMessages.slice(-MAX_RESTART_CONTINUATIONS);
+  if (latest.length === MAX_RESTART_CONTINUATIONS && latest.every((m) => m.notification?.source === "restart")) return "restart loop";
+  return undefined;
+}
+
+/**
+ * Opt-in (`continueAfterRestart`): threads whose turn died with the previous process get one
+ * "Continue where you left off." turn. Returns how many were sent.
+ */
+export async function continueAfterRestart(
+  engine: Engine,
+  threadIds: readonly string[],
+  options: Pick<RecoveryOptions, "log" | "now"> = {},
+): Promise<number> {
+  const log = options.log ?? (() => undefined);
+  const now = options.now ?? (() => Date.now());
+  let count = 0;
+  for (const threadId of threadIds) {
+    const blocker = continuationBlocker(engine.getModel(), threadId, now());
+    if (blocker !== undefined) {
+      log(`[recovery] thread ${threadId} not continued: ${blocker}`);
+      continue;
+    }
+    const command = {
+      type: "turn.request" as const,
+      threadId,
+      text: CONTINUE_PROMPT,
+      notification: { source: "restart" as const, summary: "resumed after a restart" },
+    };
+    if (await dispatch(engine, command, log)) count++;
+  }
+  if (count > 0) log(`[recovery] continued ${count} interrupted thread(s)`);
+  return count;
 }
 
 export const ROLLBACK_RESTART_ERROR = "server restarted during rollback";

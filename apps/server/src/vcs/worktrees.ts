@@ -69,17 +69,23 @@ export class WorktreeManager {
     return next;
   }
 
-  async create(project: Project, thread: Thread): Promise<WorktreeInfo> {
+  /**
+   * `startRef` (R4 fork): the new branch starts at that ref — a checkpoint of the source turn —
+   * instead of the base branch's head, so the fork's files match what its history says. The
+   * base branch (what the fork merges back into) is still the checkout's current branch.
+   */
+  async create(project: Project, thread: Thread, startRef?: string): Promise<WorktreeInfo> {
     return this.#withLock(project.rootPath, async () => {
       const root = this.#git(project.rootPath);
       if (!(await root.isRepo())) throw new Error(`${project.rootPath} is not a git repository`);
       const baseBranch = (await root.currentBranch()) ?? (await root.revParse("HEAD")) ?? "HEAD";
+      if (startRef !== undefined && (await root.revParse(startRef)) === undefined) throw new Error(`fork point ${startRef} is gone`);
 
       const worktreePath = this.pathFor(project, thread);
       await mkdir(join(worktreePath, ".."), { recursive: true });
 
       const branch = await this.#freeBranch(root, thread);
-      await root.worktreeAdd(worktreePath, branch, baseBranch);
+      await root.worktreeAdd(worktreePath, branch, startRef ?? baseBranch);
       return { worktreePath, branch, baseBranch };
     });
   }

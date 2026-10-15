@@ -70,6 +70,12 @@ export function aggregateIdOf(event: DomainEvent): string | null {
       return event.threadId;
     case "handoff.recorded":
       return event.handoff.threadId;
+    case "task.created":
+      return event.task.id;
+    case "task.updated":
+    case "task.deleted":
+    case "task.fired":
+      return event.taskId;
     case "activity.upserted":
       return event.activity.threadId;
     case "plan.proposed":

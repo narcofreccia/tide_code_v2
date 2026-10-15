@@ -1,7 +1,7 @@
 import { Type, type Static, type TSchema } from "typebox";
 import { AgentCommand, ClientCommand } from "./commands.ts";
 import { EventRecord } from "./events.ts";
-import { ProviderKind, ReadModel, RuntimeMode } from "./domain.ts";
+import { ProviderKind, ReadModel, RuntimeMode, ScheduledTask } from "./domain.ts";
 
 // ---- wire envelope ----
 // client -> server
@@ -155,12 +155,15 @@ export const UserSettings = Type.Object({
   worktreeByDefault: Type.Boolean(),
   /** optional decisions model (TypeSafe Jev) used only for Inbox triage; off by default */
   decisions: Type.Object({ enabled: Type.Boolean(), hasKey: Type.Boolean() }),
+  /** R4: after a restart, interrupted threads get a "Continue where you left off" turn (max 3 in a row); off by default */
+  continueAfterRestart: Type.Boolean(),
 });
 export type UserSettings = Static<typeof UserSettings>;
 export const UserSettingsPatch = Type.Object({
   providerDefaults: Type.Optional(UserSettings.properties.providerDefaults),
   worktreeByDefault: Type.Optional(Type.Boolean()),
   decisions: Type.Optional(Type.Object({ enabled: Type.Optional(Type.Boolean()), apiKey: Type.Optional(Type.String()) })),
+  continueAfterRestart: Type.Optional(Type.Boolean()),
 });
 export type UserSettingsPatch = Static<typeof UserSettingsPatch>;
 
@@ -321,6 +324,8 @@ export const rpcMethods = {
     Type.Object({ threadId: Type.String(), requestId: Type.String(), answers: Type.Record(Type.String(), Type.Unknown()) }),
     Type.Object({ ok: Type.Boolean() }),
   ),
+  /** the caller's project's automations (archived ones excluded) */
+  "agent.task.list": unary(Type.Object({}), Type.Object({ tasks: Type.Array(ScheduledTask) })),
   /** full contents of a file at a ref (or the working tree when ref is "WORKTREE"), for side-by-side views */
   "vcs.fileAt": unary(
     Type.Object({ threadId: Type.String(), ref: Type.String(), path: Type.String() }),

@@ -317,7 +317,7 @@ export const Message = Type.Object({
   steer: Type.Optional(Type.Boolean()),
   /** server-authored wake-up (delegate finished, child asked a question, PR changed, restart) */
   notification: Type.Optional(Type.Object({
-    source: Type.Union([Type.Literal("delegate"), Type.Literal("child-question"), Type.Literal("pr"), Type.Literal("restart"), Type.Literal("system")]),
+    source: Type.Union([Type.Literal("delegate"), Type.Literal("child-question"), Type.Literal("pr"), Type.Literal("restart"), Type.Literal("system"), Type.Literal("schedule")]),
     summary: Type.String(),
   })),
 });
@@ -460,6 +460,44 @@ export const TimelineEntry = Type.Object({
 });
 export type TimelineEntry = Static<typeof TimelineEntry>;
 
+/** When a scheduled task fires: a fixed interval, or given clock times on given weekdays (server time zone). */
+export const Schedule = Type.Union([
+  Type.Object({ kind: Type.Literal("interval"), everyMs: Type.Number({ minimum: 60_000 }) }),
+  Type.Object({ kind: Type.Literal("fixed"), times: Type.Array(Type.String({ pattern: "^([01][0-9]|2[0-3]):[0-5][0-9]$" }), { minItems: 1, maxItems: 24 }), weekdays: Type.Array(Type.Number({ minimum: 0, maximum: 6 }), { minItems: 1, maxItems: 7 }) }),
+]);
+export type Schedule = Static<typeof Schedule>;
+
+/**
+ * R4: an automation that sends a prompt on a schedule — into an existing thread (queued, never
+ * interrupting) or as a new thread on the project. Missed fixed times are skipped, never fired late;
+ * an overdue interval catches up once. Fires are idempotent (`scheduled:<id>:<epoch>` command ids).
+ */
+export const ScheduledTask = Type.Object({
+  id: Type.String(),
+  projectId: Type.String(),
+  /** send into this thread; absent = a new thread per fire */
+  threadId: Type.Optional(Type.String()),
+  title: Type.String(),
+  prompt: Type.String(),
+  schedule: Schedule,
+  /** for new threads: harness settings and worktree choice (default: project defaults / worktree on) */
+  provider: Type.Optional(ProviderKind),
+  model: Type.Optional(Type.String()),
+  mode: Type.Optional(RuntimeMode),
+  useWorktree: Type.Optional(Type.Boolean()),
+  enabled: Type.Boolean(),
+  /** thread that created it through the agent tools, if any */
+  createdByThreadId: Type.Optional(Type.String()),
+  lastRunAt: Type.Optional(Type.Number()),
+  lastRunThreadId: Type.Optional(Type.String()),
+  nextRunAt: Type.Optional(Type.Number()),
+  runs: Type.Number(),
+  createdAt: Type.Number(),
+  updatedAt: Type.Number(),
+  archivedAt: Type.Optional(Type.Number()),
+});
+export type ScheduledTask = Static<typeof ScheduledTask>;
+
 /** Whole read model. Small enough to hold in memory on server and client. */
 export const ReadModel = Type.Object({
   /** seq of the last applied event; clients resume subscriptions from here */
@@ -474,6 +512,7 @@ export const ReadModel = Type.Object({
   expertsFindings: Type.Record(Type.String(), ExpertsFinding),
   expertsMessages: Type.Record(Type.String(), ExpertsMessage),
   handoffs: Type.Record(Type.String(), Handoff),
+  scheduledTasks: Type.Record(Type.String(), ScheduledTask),
   /** threadId -> ordered messageIds (kept for simple consumers) */
   threadMessages: Type.Record(Type.String(), Type.Array(Type.String())),
   /** threadId -> ordered stream of messages, activities and plans */
@@ -484,6 +523,6 @@ export type ReadModel = Static<typeof ReadModel>;
 export function emptyReadModel(): ReadModel {
   return {
     seq: 0, projects: {}, threads: {}, turns: {}, messages: {}, activities: {}, plans: {},
-    expertsSessions: {}, expertsFindings: {}, expertsMessages: {}, handoffs: {}, threadMessages: {}, threadTimeline: {},
+    expertsSessions: {}, expertsFindings: {}, expertsMessages: {}, handoffs: {}, scheduledTasks: {}, threadMessages: {}, threadTimeline: {},
   };
 }

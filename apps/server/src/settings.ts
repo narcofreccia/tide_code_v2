@@ -11,9 +11,10 @@ interface StoredSettings {
   providerDefaults: UserSettings["providerDefaults"];
   worktreeByDefault: boolean;
   decisions: { enabled: boolean; apiKey?: string };
+  continueAfterRestart?: boolean;
 }
 
-const DEFAULTS: StoredSettings = { providerDefaults: {}, worktreeByDefault: true, decisions: { enabled: false } };
+const DEFAULTS: StoredSettings = { providerDefaults: {}, worktreeByDefault: true, decisions: { enabled: false }, continueAfterRestart: false };
 
 export interface SettingsStoreOptions {
   /** absolute path of settings.json; undefined = in-memory only (tests, `:memory:` data dirs) */
@@ -37,8 +38,8 @@ export class SettingsStore {
   }
 
   get(): UserSettings {
-    const { decisions, ...rest } = this.#state;
-    return { ...rest, decisions: { enabled: decisions.enabled, hasKey: typeof decisions.apiKey === "string" && decisions.apiKey.length > 0 } };
+    const { decisions, continueAfterRestart, ...rest } = this.#state;
+    return { ...rest, decisions: { enabled: decisions.enabled, hasKey: typeof decisions.apiKey === "string" && decisions.apiKey.length > 0 }, continueAfterRestart: continueAfterRestart ?? false };
   }
 
   /** The stored key, for the server-side decisions client only. */
@@ -51,6 +52,7 @@ export class SettingsStore {
       providerDefaults: patch.providerDefaults ?? this.#state.providerDefaults,
       worktreeByDefault: patch.worktreeByDefault ?? this.#state.worktreeByDefault,
       decisions: { ...this.#state.decisions },
+      continueAfterRestart: patch.continueAfterRestart ?? this.#state.continueAfterRestart ?? false,
     };
     if (patch.decisions?.enabled !== undefined) next.decisions.enabled = patch.decisions.enabled;
     if (patch.decisions?.apiKey !== undefined) {
@@ -80,6 +82,7 @@ export class SettingsStore {
         enabled: r.decisions?.enabled === true,
         ...(typeof r.decisions?.apiKey === "string" ? { apiKey: r.decisions.apiKey } : {}),
       },
+      continueAfterRestart: r.continueAfterRestart === true,
     };
   }
 

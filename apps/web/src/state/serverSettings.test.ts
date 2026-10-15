@@ -20,6 +20,7 @@ const SERVER: UserSettings = {
   providerDefaults: { codex: { model: "gpt-5", mode: "auto" } },
   worktreeByDefault: false,
   decisions: { enabled: true, hasKey: true },
+  continueAfterRestart: false,
 };
 
 describe("server settings", () => {

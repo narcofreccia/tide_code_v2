@@ -57,6 +57,17 @@ describe("WorktreeManager", () => {
     expect((await repo.git.worktreeList()).map((w) => w.branch)).toContain("tide/fix-the-login-bug");
   });
 
+  it("starts a fork's branch at the given ref instead of the base branch head", async () => {
+    const { repo, project, manager } = await fixture();
+    const first = await repo.git.revParse("HEAD");
+    await repo.write("later.txt", "x");
+    await repo.commit("later");
+    const info = await manager.create(project, thread("01THREADFORKAAAA", "Fork"), first);
+    expect(info.baseBranch).toBe("main");
+    expect(await new Git(info.worktreePath, { env: GIT_TEST_ENV }).revParse("HEAD")).toBe(first);
+    await expect(manager.create(project, thread("01THREADFORKBBBB", "Fork gone"), "refs/tide/checkpoints/nope")).rejects.toThrow(/fork point/);
+  });
+
   it("falls back to the thread id when the title has no slug, and disambiguates a taken branch", async () => {
     const { project, manager } = await fixture();
     const untitled = await manager.create(project, thread("01THREADBBBBBBBB", "***"));

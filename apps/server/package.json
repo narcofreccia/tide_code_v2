@@ -26,6 +26,7 @@
   },
   "devDependencies": {
     "@types/node": "^22.0.0",
-    "@types/ws": "^8.18.0"
+    "@types/ws": "^8.18.0",
+    "@tide/driver-testing": "workspace:*"
   }
 }

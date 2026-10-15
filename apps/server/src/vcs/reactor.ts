@@ -106,7 +106,7 @@ export class VcsReactor {
     const event = record.event;
     switch (event.type) {
       case "thread.created":
-        if (event.useWorktree === true) this.#enqueue(event.thread.id, () => this.#createWorktree(event.thread.id));
+        if (event.useWorktree === true) this.#enqueue(event.thread.id, () => this.#createWorktree(event.thread.id, event.baseRef));
         return;
       case "turn.requested":
       case "turn.steer-fell-back":
@@ -235,11 +235,11 @@ export class VcsReactor {
    * reported as an error activity on the thread's first turn (see `#recordBefore`): the thread
    * silently falling back to the project's main checkout is exactly what the user must know.
    */
-  async #createWorktree(threadId: string): Promise<void> {
+  async #createWorktree(threadId: string, startRef?: string): Promise<void> {
     const ctx = this.#context(threadId);
     if (!ctx) return;
     try {
-      const info = await this.#worktrees.create(ctx.project, ctx.thread);
+      const info = await this.#worktrees.create(ctx.project, ctx.thread, startRef);
       await this.#dispatch({
         type: "worktree.attach",
         threadId,

@@ -484,6 +484,25 @@ export function applyEvent(model: ReadModel, event: DomainEvent): ReadModel {
       delete next.snoozedUntil;
       return { ...model, threads: { ...model.threads, [t.id]: next } };
     }
+    case "task.created":
+      return { ...model, scheduledTasks: { ...model.scheduledTasks, [event.task.id]: event.task } };
+    case "task.updated": {
+      const task = model.scheduledTasks[event.taskId];
+      if (!task) return model;
+      return { ...model, scheduledTasks: { ...model.scheduledTasks, [task.id]: { ...task, ...event.patch, updatedAt: event.updatedAt } } };
+    }
+    case "task.deleted": {
+      const task = model.scheduledTasks[event.taskId];
+      if (!task) return model;
+      return { ...model, scheduledTasks: { ...model.scheduledTasks, [task.id]: { ...task, archivedAt: event.at, updatedAt: event.at } } };
+    }
+    case "task.fired": {
+      const task = model.scheduledTasks[event.taskId];
+      if (!task) return model;
+      const next = { ...task, runs: task.runs + 1, lastRunAt: event.at, lastRunThreadId: event.threadId, updatedAt: event.at };
+      if (event.nextRunAt !== undefined) next.nextRunAt = event.nextRunAt;
+      return { ...model, scheduledTasks: { ...model.scheduledTasks, [task.id]: next } };
+    }
     case "pr.watch-changed": {
       const t = model.threads[event.threadId];
       if (!t) return model;

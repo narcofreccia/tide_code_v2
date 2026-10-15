@@ -1,6 +1,7 @@
 import { afterEach, describe, expect, it } from "vitest";
 import { cleanup, fireEvent, render, screen } from "@testing-library/react";
 import { MissionControl } from "./MissionControl.tsx";
+import { useUi } from "../../state/ui.ts";
 import { attachFakeStore, makeApproval, makeMessage, makeThread, modelWith, resetUi } from "../../testHarness.ts";
 
 afterEach(() => {
@@ -71,5 +72,24 @@ describe("Mission Control R4 sections", () => {
     expect(screen.getByText(/👁 PR #7 · ✘ · 2 comments/)).toBeDefined();
     expect(screen.getByText(/conflict/)).toBeDefined();
     expect(screen.getByText("CI failed on #7")).toBeDefined();
+  });
+});
+
+describe("Project automations line", () => {
+  it("summarises tasks and opens Settings › Automations", () => {
+    const now = Date.now();
+    const base = { projectId: "p1", prompt: "x", schedule: { kind: "interval" as const, everyMs: 60_000 }, enabled: true, runs: 0, createdAt: 1, updatedAt: 1 };
+    const model = modelWith({
+      projects: { p1: project },
+      scheduledTasks: {
+        a: { ...base, id: "a", title: "A", nextRunAt: now + 5 * 60_000 },
+        b: { ...base, id: "b", title: "B", nextRunAt: now + 60 * 60_000 },
+      },
+    });
+    attachFakeStore(model);
+    render(<MissionControl />);
+    fireEvent.click(screen.getByText(/2 automations · next in 5m/));
+    expect(useUi.getState().view).toBe("settings");
+    expect(useUi.getState().settingsSection).toBe("automations");
   });
 });

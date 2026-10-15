@@ -36,7 +36,7 @@ function requireSession(caller: Caller, sessionId: string): { session: ExpertsSe
 }
 
 /** Rewrites the agent's command with the identity the socket proves; payload claims are ignored. */
-function stampIdentity(command: AgentCommand, caller: Caller): AgentCommand {
+function stampIdentity(command: AgentCommand, caller: Caller, model: ReadModel): AgentCommand {
   switch (command.type) {
     case "experts.finding.post": {
       const { identity } = requireSession(caller, command.sessionId);
@@ -53,6 +53,17 @@ function stampIdentity(command: AgentCommand, caller: Caller): AgentCommand {
     }
     case "thread.delegate":
       return { ...command, fromThreadId: caller.thread.id };
+    case "task.create":
+      return { ...command, projectId: caller.thread.projectId, createdByThreadId: caller.thread.id };
+    case "task.update":
+    case "task.delete":
+    case "task.run-now": {
+      const task = model.scheduledTasks[command.taskId];
+      if (task && task.projectId !== caller.thread.projectId) {
+        throw new RpcException("forbidden", `task ${task.id} belongs to another project`);
+      }
+      return command;
+    }
   }
 }
 
@@ -68,8 +79,9 @@ function lastAssistantText(model: ReadModel, threadId: string): string | undefin
 
 export function registerAgentHandlers(router: RpcRouter, deps: AgentHandlerDeps): void {
   router.register("agent.dispatch", async (input, ctx) => {
-    const caller = callerOf(deps.engine.getModel(), ctx);
-    const command = stampIdentity(input.command, caller);
+    const model = deps.engine.getModel();
+    const caller = callerOf(model, ctx);
+    const command = stampIdentity(input.command, caller, model);
     try {
       return await deps.engine.dispatch(command);
     } catch (err) {

@@ -89,6 +89,9 @@ class FakeBackend implements AgentBackend {
   threadInterrupt(threadId: string) {
     return this.#rec("interrupt", threadId, { ok: true });
   }
+  taskList() {
+    return this.#rec("taskList", undefined, { tasks: [{ id: "task-1", projectId: "p1", title: "Nightly lint", prompt: "run lint", schedule: { kind: "interval", everyMs: 3_600_000 }, enabled: true, runs: 2, nextRunAt: 1_700_000_000_000, createdAt: 1, updatedAt: 1 }] });
+  }
   pendingList(threadId: string) {
     return this.#rec("pendingList", threadId, { questions: [{ requestId: "r1", activityId: "a", askedAt: 1, questions: [{ id: "q1", text: "Which?", options: [{ label: "A" }, { label: "B" }] }] }] });
   }
@@ -134,6 +137,11 @@ describe("tide-mcp server", () => {
       "tide_thread_interrupt",
       "tide_pending_list",
       "tide_pending_respond",
+      "tide_schedule_task",
+      "tide_list_scheduled_tasks",
+      "tide_update_scheduled_task",
+      "tide_delete_scheduled_task",
+      "tide_run_scheduled_task_now",
     ]);
     for (const tool of tools) {
       expect(tool.description?.length ?? 0).toBeGreaterThan(20);
@@ -318,5 +326,74 @@ describe("thread tools", () => {
   it("exports the hint and lists all thread tools", () => {
     expect(THREAD_TOOLS_HINT).toContain("cannot approve");
     expect(TOOL_DEFINITIONS.map((t) => t.name)).toContain("tide_pending_respond");
+  });
+});
+
+describe("automation tools", () => {
+  const call = async (b: FakeBackend, name: string, args: Record<string, unknown>) => {
+    const client = await connect(b);
+    const r = await client.callTool({ name, arguments: args });
+    return { text: firstText(r), isError: (r as { isError?: boolean }).isError === true };
+  };
+
+  it("converts minutes to ms and forwards clientRequestId as commandId", async () => {
+    const b = new FakeBackend();
+    const r = await call(b, "tide_schedule_task", {
+      title: "Sweep",
+      prompt: "tidy",
+      schedule: { kind: "interval", everyMinutes: 15 },
+      provider: "codex",
+      useWorktree: false,
+      clientRequestId: "req-9",
+    });
+    expect(r.isError).toBe(false);
+    expect(b.commands[0]).toMatchObject({
+      type: "task.create",
+      title: "Sweep",
+      prompt: "tidy",
+      schedule: { kind: "interval", everyMs: 900_000 },
+      provider: "codex",
+      useWorktree: false,
+      commandId: "req-9",
+    });
+  });
+
+  it("creates fixed schedules and rejects bad ones", async () => {
+    const b = new FakeBackend();
+    await call(b, "tide_schedule_task", { title: "t", prompt: "p", threadId: "t1", schedule: { kind: "fixed", times: ["09:00"], weekdays: [1, 2] } });
+    expect(b.commands[0]).toMatchObject({ schedule: { kind: "fixed", times: ["09:00"], weekdays: [1, 2] }, threadId: "t1" });
+    const bad = await call(b, "tide_schedule_task", { title: "t", prompt: "p", schedule: { kind: "fixed", times: ["9am"], weekdays: [1] } });
+    expect(bad.isError).toBe(true);
+    expect(bad.text).toContain("HH:MM");
+    const tooFast = await call(b, "tide_schedule_task", { title: "t", prompt: "p", schedule: { kind: "interval", everyMinutes: 0 } });
+    expect(tooFast.isError).toBe(true);
+    expect(b.commands).toHaveLength(1);
+  });
+
+  it("updates, deletes and runs now", async () => {
+    const b = new FakeBackend();
+    await call(b, "tide_update_scheduled_task", { taskId: "k1", enabled: false, schedule: { kind: "interval", everyMinutes: 60 } });
+    await call(b, "tide_delete_scheduled_task", { taskId: "k1" });
+    await call(b, "tide_run_scheduled_task_now", { taskId: "k1" });
+    expect(b.commands).toEqual([
+      { type: "task.update", taskId: "k1", enabled: false, schedule: { kind: "interval", everyMs: 3_600_000 } },
+      { type: "task.delete", taskId: "k1" },
+      { type: "task.run-now", taskId: "k1" },
+    ]);
+  });
+
+  it("the hint mentions automations", () => {
+    expect(THREAD_TOOLS_HINT).toContain("tide_schedule_task");
+  });
+});
+
+
+describe("tide_list_scheduled_tasks (R4)", () => {
+  it("lists the project's automations from agent.task.list", async () => {
+    const backend = new FakeBackend();
+    const client = await connect(backend);
+    const result = await client.callTool({ name: "tide_list_scheduled_tasks", arguments: {} });
+    expect(backend.threadCalls.map(([name]) => name)).toContain("taskList");
+    expect(firstText(result)).toContain("task-1 | Nightly lint | every 60 min | new thread | enabled | runs=2");
   });
 });

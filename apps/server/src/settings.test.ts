@@ -8,9 +8,9 @@ describe("SettingsStore", () => {
   it("defaults, persists a patch, never returns the api key", () => {
     const path = join(mkdtempSync(join(tmpdir(), "tide-settings-")), "settings.json");
     const store = new SettingsStore({ path });
-    expect(store.get()).toEqual({ providerDefaults: {}, worktreeByDefault: true, decisions: { enabled: false, hasKey: false } });
+    expect(store.get()).toEqual({ providerDefaults: {}, worktreeByDefault: true, decisions: { enabled: false, hasKey: false }, continueAfterRestart: false });
     const next = store.set({ providerDefaults: { claude: { model: "opus", mode: "auto" } }, decisions: { enabled: true, apiKey: "sk-secret" } });
-    expect(next).toEqual({ providerDefaults: { claude: { model: "opus", mode: "auto" } }, worktreeByDefault: true, decisions: { enabled: true, hasKey: true } });
+    expect(next).toEqual({ providerDefaults: { claude: { model: "opus", mode: "auto" } }, worktreeByDefault: true, decisions: { enabled: true, hasKey: true }, continueAfterRestart: false });
     expect(JSON.stringify(next)).not.toContain("sk-secret");
     expect(store.decisionsApiKey()).toBe("sk-secret");
     expect(statSync(path).mode & 0o777).toBe(0o600);
@@ -20,6 +20,15 @@ describe("SettingsStore", () => {
     expect(again.get().decisions).toEqual({ enabled: true, hasKey: true });
     expect(again.set({ decisions: { apiKey: "" } }).decisions.hasKey).toBe(false);
     expect(again.decisionsApiKey()).toBeUndefined();
+  });
+  it("round-trips continueAfterRestart", () => {
+    const path = join(mkdtempSync(join(tmpdir(), "tide-settings-")), "settings.json");
+    const store = new SettingsStore({ path });
+    expect(store.get().continueAfterRestart).toBe(false);
+    expect(store.set({ continueAfterRestart: true }).continueAfterRestart).toBe(true);
+    expect(new SettingsStore({ path }).get().continueAfterRestart).toBe(true);
+    // an unrelated patch keeps it
+    expect(store.set({ worktreeByDefault: false }).continueAfterRestart).toBe(true);
   });
   it("survives a corrupt file with defaults", () => {
     const dir = mkdtempSync(join(tmpdir(), "tide-settings-"));

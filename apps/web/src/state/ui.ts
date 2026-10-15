@@ -4,13 +4,14 @@ import { persist } from "zustand/middleware";
 export type FocusMode = "thread" | "split" | "workbench";
 /** `threads` is the per-project "All threads" list opened from Mission Control. */
 export type View = "mission" | "thread" | "settings" | "experts" | "threads";
-export type SettingsSection = "general" | "providers" | "git" | "decisions" | "appearance" | "keyboard" | "remote" | "about";
+export type SettingsSection = "general" | "providers" | "git" | "decisions" | "automations" | "appearance" | "keyboard" | "remote" | "about";
 
 export const SETTINGS_SECTIONS: SettingsSection[] = [
   "general",
   "providers",
   "git",
   "decisions",
+  "automations",
   "appearance",
   "keyboard",
   "remote",

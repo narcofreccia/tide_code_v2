@@ -1,4 +1,4 @@
-import type { AgentCommand, RpcInput, RpcOutput } from "@tide/contracts";
+import type { ScheduledTask, AgentCommand, RpcInput, RpcOutput } from "@tide/contracts";
 import { TideConnection } from "@tide/client";
 
 export type AgentContext = RpcOutput<"agent.context">;
@@ -26,6 +26,7 @@ export interface AgentBackend {
   threadWait(input: ThreadWaitInput): Promise<ThreadWaitResult>;
   threadInterrupt(threadId: string): Promise<{ ok: boolean }>;
   pendingList(threadId: string): Promise<PendingListResult>;
+  taskList(): Promise<{ tasks: ScheduledTask[] }>;
   pendingRespond(input: PendingRespondInput): Promise<{ ok: boolean }>;
   close(): void;
 }
@@ -98,6 +99,11 @@ export class TideAgentBackend implements AgentBackend {
   async threadInterrupt(threadId: string): Promise<{ ok: boolean }> {
     await this.#connect();
     return this.#connection.call("agent.thread.interrupt", { threadId });
+  }
+
+  async taskList(): Promise<{ tasks: ScheduledTask[] }> {
+    await this.#connect();
+    return this.#connection.call("agent.task.list", {});
   }
 
   async pendingList(threadId: string): Promise<PendingListResult> {

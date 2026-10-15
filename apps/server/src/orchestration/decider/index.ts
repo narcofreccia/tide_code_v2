@@ -6,6 +6,7 @@ import { decidePlan } from "./plans.ts";
 import { decideLineage } from "./lineage.ts";
 import { decideProject } from "./projects.ts";
 import { decideSteer } from "./steer.ts";
+import { decideTask } from "./tasks.ts";
 import { decideThread } from "./threads.ts";
 import { decideTurn } from "./turns.ts";
 import { decideVcs, decideWorktreeDetached } from "./vcs.ts";
@@ -90,6 +91,13 @@ export function decide(model: ReadModel, command: Command, ctx: DecideContext): 
     case "experts.archive":
     case "experts.expert.status":
       return decideExperts(model, command, ctx);
+
+    case "task.create":
+    case "task.update":
+    case "task.delete":
+    case "task.run-now":
+    case "task.fire":
+      return decideTask(model, command, ctx);
 
     case "worktree.detached":
       return decideWorktreeDetached(model, command, ctx);

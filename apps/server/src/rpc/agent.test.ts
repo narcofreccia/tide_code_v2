@@ -183,3 +183,28 @@ describe("thread.delegate", () => {
     expect(err.code).toBe("forbidden");
   });
 });
+
+describe("scheduled tasks", () => {
+  const schedule = { kind: "interval", everyMs: 3_600_000 };
+
+  it("stamps projectId and createdByThreadId from the socket", async () => {
+    const callerProject = app.engine.getModel().threads[threads.perf]?.projectId as string;
+    const result = await agent.call<{ events: { event: { type: string; task?: { id: string } } }[] }>("agent.dispatch", {
+      command: { type: "task.create", projectId: "ignored", createdByThreadId: "ignored", title: "Hourly", prompt: "check", schedule },
+    });
+    const id = result.events.find((r) => r.event.type === "task.created")?.event.task?.id as string;
+    expect(app.engine.getModel().scheduledTasks[id]).toMatchObject({ projectId: callerProject, createdByThreadId: threads.perf });
+  });
+
+  it("refuses to change or delete another project's task", async () => {
+    const other = (await app.engine.dispatch({ type: "project.create", title: "Other", rootPath: "/other" })).events[0]?.event;
+    if (other?.type !== "project.created") throw new Error("expected project.created");
+    const task = (await app.engine.dispatch({ type: "task.create", projectId: other.project.id, title: "Theirs", prompt: "x", schedule: { kind: "interval", everyMs: 60_000 } })).events[0]?.event;
+    if (task?.type !== "task.created") throw new Error("expected task.created");
+    for (const type of ["task.update", "task.delete", "task.run-now"]) {
+      const err = await agent.expectError("agent.dispatch", { command: { type, taskId: task.task.id } });
+      expect(err.code).toBe("forbidden");
+    }
+    expect(app.engine.getModel().scheduledTasks[task.task.id]?.archivedAt).toBeUndefined();
+  });
+});

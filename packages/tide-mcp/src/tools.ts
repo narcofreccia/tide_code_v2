@@ -92,5 +92,6 @@ export const BASE_TOOL_DEFINITIONS: ToolDefinition[] = [
 ];
 
 import { THREAD_TOOL_DEFINITIONS } from "./threadTools.ts";
+import { TASK_TOOL_DEFINITIONS } from "./taskTools.ts";
 
-export const TOOL_DEFINITIONS: ToolDefinition[] = [...BASE_TOOL_DEFINITIONS, ...THREAD_TOOL_DEFINITIONS];
+export const TOOL_DEFINITIONS: ToolDefinition[] = [...BASE_TOOL_DEFINITIONS, ...THREAD_TOOL_DEFINITIONS, ...TASK_TOOL_DEFINITIONS];

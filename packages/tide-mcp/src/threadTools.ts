@@ -23,6 +23,8 @@ export const THREAD_TOOLS_HINT = [
   "answer a thread's pending questions. You cannot approve another thread's tool calls, and you can only act on",
   "threads whose privileges are no broader than yours. Pass clientRequestId to make a send or delegate idempotent.",
   "tide_delegate with completion=wait runs a child and returns its result in one call.",
+  "tide_schedule_task (with tide_update_scheduled_task, tide_delete_scheduled_task, tide_run_scheduled_task_now) sets up an automation:",
+  "a prompt Tide sends on an interval or at fixed times, into a thread or as a new thread each run, within your project only.",
 ].join(" ");
 
 export const THREAD_TOOL_DEFINITIONS: ToolDef[] = [

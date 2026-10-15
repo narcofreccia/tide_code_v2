@@ -14,6 +14,7 @@ import { ThreadGlyph } from "../ui/StatusGlyph.tsx";
 import { CostSummary } from "./CostSummary.tsx";
 import { ThreadTags } from "./ThreadTags.tsx";
 import { ProjectExperts } from "./ProjectExperts.tsx";
+import { ProjectAutomations } from "./ProjectAutomations.tsx";
 import styles from "./MissionControl.module.css";
 
 type ProjectDialog = "rename" | "archive" | null;
@@ -97,6 +98,7 @@ export function ProjectCard({ project }: { project: Project }) {
           byProvider={totals.costByProvider}
         />
       </div>
+      <ProjectAutomations projectId={project.id} />
 
       {recent.length === 0 ? (
         <p className={styles.empty}>No threads yet.</p>

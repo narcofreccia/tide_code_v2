@@ -1,5 +1,5 @@
 import { Type, type Static } from "typebox";
-import { Activity, ApprovalDecision, CheckpointStats, ExpertsFinding, ExpertsMessage, ExpertsPhase, ExpertsSession, Handoff, ImageInput, Limited, MergeStrategy, Message, Project, ProjectLink, ProposedPlan, ProviderKind, PullRequest, RateLimit, Thread, Triage, Turn, TurnUsage } from "./domain.ts";
+import { Activity, ApprovalDecision, CheckpointStats, ExpertsFinding, ExpertsMessage, ExpertsPhase, ExpertsSession, Handoff, ImageInput, Limited, MergeStrategy, Message, Project, ProjectLink, ProposedPlan, ProviderKind, PullRequest, RateLimit, ScheduledTask, Thread, Triage, Turn, TurnUsage } from "./domain.ts";
 
 // Events = persisted facts. Payloads are self-contained so the projector
 // never needs to look anything up outside the event.
@@ -178,6 +178,11 @@ export const ThreadSnoozed = evt("thread.snoozed", { threadId: Type.String(), un
 /** limited / snoozed cleared (a continuation turn, when asked, rides along as its own turn.requested) */
 export const ThreadResumed = evt("thread.resumed", { threadId: Type.String(), at: Type.Number() });
 export const PrWatchChanged = evt("pr.watch-changed", { threadId: Type.String(), enabled: Type.Boolean(), at: Type.Number() });
+export const TaskCreated = evt("task.created", { task: ScheduledTask });
+export const TaskUpdated = evt("task.updated", { taskId: Type.String(), patch: Type.Partial(Type.Omit(ScheduledTask, ["id", "projectId", "createdAt", "runs", "lastRunAt", "lastRunThreadId", "archivedAt"])), updatedAt: Type.Number() });
+export const TaskDeleted = evt("task.deleted", { taskId: Type.String(), at: Type.Number() });
+/** the fire itself; the thread/turn it produced ride along as their own events in the same commit */
+export const TaskFired = evt("task.fired", { taskId: Type.String(), threadId: Type.String(), turnId: Type.String(), nextRunAt: Type.Optional(Type.Number()), at: Type.Number() });
 
 export const DomainEvent = Type.Union([
   ProjectCreated,
@@ -224,6 +229,7 @@ export const DomainEvent = Type.Union([
   HandoffRecorded, HandoffDeliveredEvt,
   RollbackRequested, RollbackCompleted, RollbackFailed,
   ThreadLimitedEvt, ThreadLimitPolicyChanged, ThreadSnoozed, ThreadResumed, PrWatchChanged,
+  TaskCreated, TaskUpdated, TaskDeleted, TaskFired,
 ]);
 export type DomainEvent = Static<typeof DomainEvent>;
 export type EventOf<T extends DomainEvent["type"]> = Extract<DomainEvent, { type: T }>;

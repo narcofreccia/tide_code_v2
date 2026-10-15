@@ -10,6 +10,7 @@ import type {
   ProjectLink,
   ProposedPlan,
   ReadModel,
+  ScheduledTask,
   Thread,
   Turn,
 } from "@tide/contracts";
@@ -417,3 +418,10 @@ export {
   type ProjectTotals,
   type ProviderCost,
 } from "./glassBoxSelectors.ts";
+
+/** Live (non-archived) scheduled tasks, optionally of one project; soonest next run first, unscheduled last. */
+export function selectScheduledTasks(model: ReadModel, projectId?: string): ScheduledTask[] {
+  return Object.values(model.scheduledTasks)
+    .filter((t) => t.archivedAt === undefined && (projectId === undefined || t.projectId === projectId))
+    .sort((a, b) => (a.nextRunAt ?? Number.MAX_SAFE_INTEGER) - (b.nextRunAt ?? Number.MAX_SAFE_INTEGER) || a.createdAt - b.createdAt);
+}
