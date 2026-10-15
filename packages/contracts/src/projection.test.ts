@@ -201,10 +201,11 @@ describe("projection — R4 steer, queue editing, handoff, rollback, limits", ()
       rec(7, { type: "turn.requested", turn: { id: "u2", threadId: "t1", status: "requested", requestedAt: 7 }, userMessage: { id: "m2", threadId: "t1", turnId: "u2", role: "user", text: "go", createdAt: 7 } }),
       rec(8, { type: "turn.started", turnId: "u2", threadId: "t1", provider: "codex", nativeSessionId: "x-1", startedAt: 8 }),
       rec(9, { type: "turn.settled", turnId: "u2", threadId: "t1", status: "completed", settledAt: 9 }),
-      rec(10, { type: "thread.updated", threadId: "t1", patch: { provider: "claude" }, nativeSessionId: "c-1", updatedAt: 10 }),
+      rec(10, { type: "thread.updated", threadId: "t1", patch: { provider: "claude" }, nativeSessionId: "c-1", clearModel: true, updatedAt: 10 }),
     ]);
     expect(m.threads["t1"]?.providerSessions).toEqual({ claude: { nativeSessionId: "c-1", lastTurnId: "u1" }, codex: { nativeSessionId: "x-1", lastTurnId: "u2" } });
     expect(m.threads["t1"]?.nativeSessionId).toBe("c-1");
+    expect(m.threads["t1"]?.model).toBeUndefined();
   });
 
   it("a recorded handoff is pending until the next turn carries it; delivery lands on the turn", () => {

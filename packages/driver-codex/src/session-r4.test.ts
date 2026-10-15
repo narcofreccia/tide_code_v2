@@ -130,4 +130,40 @@ describe("codex rollback", () => {
     server.failMethods.set("thread/revert", "cannot revert");
     await expect(session.rollback(1)).rejects.toThrow(/cannot revert/);
   });
+
+  const UNKNOWN = "Invalid request: unknown variant `thread/revert`, expected one of `thread/start`";
+
+  it("falls back to thread/rollback on codex 0.147 and trims turn ids", async () => {
+    const { session, server } = await harness();
+    await runTurn(session, server, "turn-a");
+    await runTurn(session, server, "turn-b");
+    await runTurn(session, server, "turn-c");
+    server.failMethods.set("thread/revert", UNKNOWN);
+    await session.rollback(2);
+    expect(server.calls("thread/rollback")).toEqual([{ threadId: THREAD, numTurns: 2 }]);
+    server.failMethods.delete("thread/revert");
+    // only turn-a is left, so reverting one more targets turn-a (unsupported flag already set: goes to rollback)
+    await session.rollback(1);
+    expect(server.calls("thread/rollback")[1]).toEqual({ threadId: THREAD, numTurns: 1 });
+  });
+
+  it("skips thread/revert after the first unknown-variant answer", async () => {
+    const { session, server } = await harness();
+    await runTurn(session, server, "turn-a");
+    await runTurn(session, server, "turn-b");
+    server.failMethods.set("thread/revert", UNKNOWN);
+    await session.rollback(1);
+    expect(server.calls("thread/revert")).toHaveLength(1);
+    await session.rollback(1);
+    expect(server.calls("thread/revert")).toHaveLength(1);
+    expect(server.calls("thread/rollback")).toHaveLength(2);
+  });
+
+  it("still throws other thread/revert errors", async () => {
+    const { session, server } = await harness();
+    await runTurn(session, server, "turn-a");
+    server.failMethods.set("thread/revert", "Invalid request: something else");
+    await expect(session.rollback(1)).rejects.toThrow(/something else/);
+    expect(server.calls("thread/rollback")).toHaveLength(0);
+  });
 });

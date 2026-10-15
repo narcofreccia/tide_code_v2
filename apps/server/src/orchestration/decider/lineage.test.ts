@@ -22,6 +22,15 @@ describe("decide: thread.update provider switch", () => {
     expect(model.threads[h.threadId]?.pendingHandoffId).toBe(handoff.id);
   });
 
+  it("drops the old harness's model unless a new one is named", () => {
+    const h = withHistory();
+    const withModel = run(h.model, { type: "thread.update", threadId: h.threadId, model: "opus-9" }).model;
+    expect(eventOf(run(withModel, { type: "thread.update", threadId: h.threadId, provider: "codex" }).events, "thread.updated")).toMatchObject({ clearModel: true });
+    const named = eventOf(run(withModel, { type: "thread.update", threadId: h.threadId, provider: "codex", model: "gpt-x" }).events, "thread.updated");
+    expect(named.clearModel).toBeUndefined();
+    expect(named.patch.model).toBe("gpt-x");
+  });
+
   it("delta handoff back to a harness that already ran it, keeping its session", () => {
     const h = withHistory();
     const toCodex = run(h.model, { type: "thread.update", threadId: h.threadId, provider: "codex" }).model;

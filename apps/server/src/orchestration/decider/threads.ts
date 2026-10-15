@@ -89,6 +89,8 @@ export function decideThread(model: ReadModel, command: ThreadCommand, ctx: Deci
         threadId: thread.id,
         patch,
         ...(known !== undefined ? { nativeSessionId: known.nativeSessionId } : { clearNativeSession: true }),
+        // a model id belongs to one harness: without a new one the target runs on its default
+        ...(command.model === undefined && thread.model !== undefined ? { clearModel: true } : {}),
         updatedAt: ctx.now,
       }];
       if (turns.length > 0) {

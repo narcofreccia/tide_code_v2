@@ -56,3 +56,10 @@ export interface CodexPolicy {
 }
 
 export type { AskForApproval, CollaborationMode, SandboxMode, SandboxPolicy };
+
+/** Codex 0.147 compatibility, hand-written, not generated: the pre-0.162 `thread/rollback` params. */
+export interface ThreadRollbackParams {
+  threadId: string;
+  /** turns to drop from the end; >= 1 */
+  numTurns: number;
+}

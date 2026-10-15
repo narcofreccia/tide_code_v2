@@ -32,6 +32,8 @@ export const ThreadUpdated = evt("thread.updated", {
   clearNativeSession: Type.Optional(Type.Boolean()),
   /** R4: switching back to a harness that already ran this thread: its own session id becomes current again */
   nativeSessionId: Type.Optional(Type.String()),
+  /** the provider changed and no model was named: the old harness's model id must not be sent to the new one */
+  clearModel: Type.Optional(Type.Boolean()),
   updatedAt: Type.Number(),
 });
 export const ThreadArchived = evt("thread.archived", { threadId: Type.String(), archivedAt: Type.Number(), keepWorktree: Type.Optional(Type.Boolean()) });

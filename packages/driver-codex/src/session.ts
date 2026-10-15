@@ -19,6 +19,7 @@ import { rateLimitFromSnapshot } from "./rate-limits.ts";
 import type { CodexConfig } from "./types.ts";
 import type { ThreadForkResponse } from "./generated/v2/ThreadForkResponse.ts";
 import type { ThreadResumeResponse } from "./generated/v2/ThreadResumeResponse.ts";
+import type { ThreadRollbackParams } from "./types.ts";
 import type { ThreadRevertParams } from "./generated/v2/ThreadRevertParams.ts";
 import type { ThreadTurnsListResponse } from "./generated/v2/ThreadTurnsListResponse.ts";
 import type { TurnSteerParams } from "./generated/v2/TurnSteerParams.ts";
@@ -56,6 +57,8 @@ export class CodexSession implements ProviderSession {
   #interruptRequested = false;
   /** codex turn ids of this session's `send()`s, oldest first */
   #turnIds: string[] = [];
+  /** codex < 0.162 answers `thread/revert` with "unknown variant"; use `thread/rollback` from then on */
+  #revertUnsupported = false;
   /** the running turn's id, once `turn/start` answered (undefined if it failed) */
   #turnStart: Deferred<string | undefined> | undefined;
 
@@ -280,12 +283,24 @@ export class CodexSession implements ProviderSession {
     if (this.#turnActive) throw new Error("busy: cannot roll back while a turn is running");
     const threadId = this.nativeSessionId;
     if (turns <= 0 || threadId === undefined) return;
-    const beforeTurnId = turns <= this.#turnIds.length ? this.#turnIds[this.#turnIds.length - turns] : await this.#nthLatestTurn(threadId, turns);
-    if (beforeTurnId === undefined) throw new Error(`invalid-params: cannot roll back ${turns} turn(s); the codex thread holds fewer`);
-    const params: ThreadRevertParams = { threadId, beforeTurnId };
-    await this.#server.request("thread/revert", params);
-    const cut = this.#turnIds.indexOf(beforeTurnId);
-    this.#turnIds = cut >= 0 ? this.#turnIds.slice(0, cut) : [];
+    if (!this.#revertUnsupported) {
+      const beforeTurnId = turns <= this.#turnIds.length ? this.#turnIds[this.#turnIds.length - turns] : await this.#nthLatestTurn(threadId, turns);
+      if (beforeTurnId === undefined) throw new Error(`invalid-params: cannot roll back ${turns} turn(s); the codex thread holds fewer`);
+      const params: ThreadRevertParams = { threadId, beforeTurnId };
+      try {
+        await this.#server.request("thread/revert", params);
+        const cut = this.#turnIds.indexOf(beforeTurnId);
+        this.#turnIds = cut >= 0 ? this.#turnIds.slice(0, cut) : [];
+        return;
+      } catch (error) {
+        if (!(error instanceof Error) || !/unknown variant.{0,4}thread\/revert/.test(error.message)) throw error;
+        this.#revertUnsupported = true;
+      }
+    }
+    // 0.147 compatibility: the older `thread/rollback { numTurns }`
+    const legacy: ThreadRollbackParams = { threadId, numTurns: turns };
+    await this.#server.request("thread/rollback", legacy);
+    this.#turnIds = this.#turnIds.slice(0, Math.max(0, this.#turnIds.length - turns));
   }
 
   /** History from before this process (resumed or forked thread): ask Codex, newest first. */

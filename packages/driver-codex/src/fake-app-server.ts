@@ -126,6 +126,8 @@ export class FakeAppServer implements ChildLike {
         return { turn: { id: this.turnIds.shift() ?? this.turnId, items: [], itemsView: "notLoaded", status: "inProgress" } };
       case "turn/steer":
         return { turnId: message.params?.["expectedTurnId"] };
+      case "thread/rollback":
+        return { thread: { id: message.params?.["threadId"], turns: [] } };
       case "thread/revert":
         return { thread: { id: message.params?.["threadId"], turns: [] }, turnsBackwardsCursor: null, itemsBackwardsCursor: null };
       case "thread/turns/list":

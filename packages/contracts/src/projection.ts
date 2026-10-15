@@ -159,6 +159,7 @@ export function applyEvent(model: ReadModel, event: DomainEvent): ReadModel {
       const next: Thread = { ...t, ...event.patch, updatedAt: event.updatedAt };
       if (event.clearNativeSession) delete next.nativeSessionId;
       if (event.nativeSessionId !== undefined) next.nativeSessionId = event.nativeSessionId;
+      if (event.clearModel) delete next.model;
       return { ...model, threads: { ...model.threads, [t.id]: next } };
     }
     case "thread.archived":
