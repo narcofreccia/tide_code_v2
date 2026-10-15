@@ -72,6 +72,7 @@ export class RollbackService {
   async #run(event: EventOf<"rollback.requested">): Promise<void> {
     const { threadId } = event;
     let kept: string | undefined;
+    let nativeSessionId: string | undefined;
     try {
       const model = this.#engine.getModel();
       const thread = model.threads[threadId];
@@ -95,6 +96,8 @@ export class RollbackService {
           if (session.rollback === undefined) throw new Error(`${thread.provider} driver reports rollback but does not implement it`);
           await session.rollback(harnessTurns);
           this.#sessions.touch(threadId);
+          // Pi writes a new session file and Claude may re-mint: the log must learn the id now, not at the next turn
+          if (session.nativeSessionId !== undefined && session.nativeSessionId !== thread.nativeSessionId) nativeSessionId = session.nativeSessionId;
         } else {
           kept = `harness ${thread.provider} cannot forget turns; the conversation was not rewound`;
         }
@@ -118,7 +121,7 @@ export class RollbackService {
       return;
     }
     // (c)
-    await this.#dispatch({ type: "rollback.report", threadId, outcome: "done" });
+    await this.#dispatch({ type: "rollback.report", threadId, outcome: "done", ...(nativeSessionId !== undefined ? { nativeSessionId } : {}) });
     if (kept !== undefined) {
       const turnId = this.#engine.getModel().threads[threadId]?.latestTurnId ?? event.turnId;
       const at = this.#now();

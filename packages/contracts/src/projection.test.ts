@@ -233,14 +233,32 @@ describe("projection — R4 steer, queue editing, handoff, rollback, limits", ()
     ]);
     expect(m.threads["t1"]?.rollback?.status).toBe("rolling");
     expect(m.threads["t1"]?.attention).toBe("plan");
-    const m2 = applyRecord(m, rec(10, { type: "rollback.completed", threadId: "t1", turnId: "u2", turnIds: ["u2"], at: 10 }));
+    const m2 = applyRecord(m, rec(10, { type: "rollback.completed", threadId: "t1", turnId: "u2", turnIds: ["u2"], provider: "claude", nativeSessionId: "c-2", at: 10 }));
     expect(m2.turns["u2"]?.rolledBack).toBe(true);
+    // the rolling harness keeps its (re-minted) session and now ends on u1
+    expect(m2.threads["t1"]?.nativeSessionId).toBe("c-2");
+    expect(m2.threads["t1"]?.providerSessions).toEqual({ claude: { nativeSessionId: "c-2", lastTurnId: "u1" } });
     expect(m2.turns["u1"]?.rolledBack).toBeUndefined();
     expect(m2.threads["t1"]).toMatchObject({ latestTurnId: "u1", rollback: { status: "done", turnId: "u2" } });
     // the plan belongs to a rolled-back turn: it no longer asks for the user
     expect(m2.threads["t1"]?.attention).toBeUndefined();
     const m3 = applyRecord(m, rec(10, { type: "rollback.failed", threadId: "t1", turnId: "u2", error: "boom", at: 10 }));
     expect(m3.threads["t1"]?.rollback).toMatchObject({ status: "error", error: "boom" });
+  });
+
+  it("rollback drops another harness's session when its last-seen turn is gone", () => {
+    const m = replay(base, [
+      rec(5, { type: "turn.settled", turnId: "u1", threadId: "t1", status: "completed", settledAt: 5 }),
+      rec(6, { type: "thread.updated", threadId: "t1", patch: { provider: "codex" }, clearNativeSession: true, updatedAt: 6 }),
+      rec(7, { type: "turn.requested", turn: { id: "u2", threadId: "t1", status: "requested", requestedAt: 7 }, userMessage: { id: "m2", threadId: "t1", turnId: "u2", role: "user", text: "go", createdAt: 7 } }),
+      rec(8, { type: "turn.started", turnId: "u2", threadId: "t1", provider: "codex", nativeSessionId: "x-1", startedAt: 8 }),
+      rec(9, { type: "turn.settled", turnId: "u2", threadId: "t1", status: "completed", settledAt: 9 }),
+      rec(10, { type: "thread.updated", threadId: "t1", patch: { provider: "claude" }, nativeSessionId: "c-1", updatedAt: 10 }),
+      rec(11, { type: "rollback.requested", threadId: "t1", turnId: "u2", restoreFiles: false, turnIds: ["u2"], at: 11 }),
+      rec(12, { type: "rollback.completed", threadId: "t1", turnId: "u2", turnIds: ["u2"], provider: "claude", at: 12 }),
+    ]);
+    // codex still remembers u2, so it is forgotten as a resumable session; claude never ran u2 and keeps u1
+    expect(m.threads["t1"]?.providerSessions).toEqual({ claude: { nativeSessionId: "c-1", lastTurnId: "u1" } });
   });
 
   it("limited / snoozed clear on resume; needing the user ends a snooze early", () => {

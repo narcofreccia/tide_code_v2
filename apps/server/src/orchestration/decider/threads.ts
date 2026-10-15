@@ -78,6 +78,7 @@ export function decideThread(model: ReadModel, command: ThreadCommand, ctx: Deci
         return ok({ type: "thread.updated", threadId: thread.id, patch, updatedAt: ctx.now });
       }
       if (thread.status === "running") return fail("busy", `thread ${thread.id} is running; switch provider once it settles`);
+      if (thread.rollback?.status === "rolling") return fail("busy", `thread ${thread.id} is rolling back`);
       // a harness that already ran this thread resumes its own session and only needs what
       // happened since; any other starts fresh and gets the whole (budgeted) history
       const known = thread.providerSessions?.[toProvider];

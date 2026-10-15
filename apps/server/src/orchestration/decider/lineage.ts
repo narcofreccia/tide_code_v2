@@ -13,10 +13,19 @@ const NEEDS_WORKTREE = "runs in the main checkout; restoring files requires a wo
 
 /** `turn` and every later surviving turn of its thread, oldest first: what a rollback to `turn` undoes. */
 export function rolledBackTurnIds(model: ReadModel, turn: Turn): string[] {
-  return Object.values(model.turns)
-    .filter((t) => t.threadId === turn.threadId && t.requestedAt >= turn.requestedAt && t.status !== "queued" && !t.rolledBack)
-    .sort((a, b) => a.requestedAt - b.requestedAt)
-    .map((t) => t.id);
+  // thread order is the order turns entered the log (their user messages), not requestedAt,
+  // which ties within a millisecond
+  const order: string[] = [];
+  for (const id of model.threadMessages[turn.threadId] ?? []) {
+    const m = model.messages[id];
+    if (m?.role === "user" && !m.steer && !order.includes(m.turnId)) order.push(m.turnId);
+  }
+  const from = order.indexOf(turn.id);
+  if (from < 0) return [];
+  return order.slice(from).filter((id) => {
+    const t = model.turns[id];
+    return t !== undefined && t.status !== "queued" && !t.rolledBack;
+  });
 }
 
 /** A thread's own settled, surviving turn, or the reason it is not one. */
@@ -36,6 +45,7 @@ export function decideLineage(model: ReadModel, command: LineageCommand, ctx: De
       const source = model.threads[command.threadId];
       if (!source) return fail("not-found", `unknown thread ${command.threadId}`);
       if (isArchived(source)) return fail("conflict", `thread ${source.id} is archived`);
+      if (source.rollback?.status === "rolling") return fail("busy", `thread ${source.id} is rolling back`);
       const found = settledTurn(model, source, command.turnId);
       if ("code" in found) return fail(found.code, found.message);
       const { turn } = found;
@@ -111,6 +121,8 @@ export function decideLineage(model: ReadModel, command: LineageCommand, ctx: De
         threadId: thread.id,
         turnId: rollback.turnId,
         turnIds: turn === undefined ? [] : rolledBackTurnIds(model, turn),
+        provider: thread.provider,
+        ...(command.nativeSessionId !== undefined ? { nativeSessionId: command.nativeSessionId } : {}),
         at: ctx.now,
       });
     }

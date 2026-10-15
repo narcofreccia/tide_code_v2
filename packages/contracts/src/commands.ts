@@ -298,6 +298,8 @@ export const RollbackReport = Type.Object({
   threadId: Type.String(),
   outcome: Type.Union([Type.Literal("done"), Type.Literal("error")]),
   error: Type.Optional(Type.String()),
+  /** the harness's session id after the rollback when it changed (Pi writes a new session file, Claude may re-mint) */
+  nativeSessionId: Type.Optional(Type.String()),
 });
 /** provider reactor: the harness stopped because the subscription window is exhausted */
 export const ThreadLimited = Type.Object({ type: Type.Literal("thread.limited"), threadId: Type.String(), resetsAt: Type.Optional(Type.Number()), note: Type.Optional(Type.String()) });

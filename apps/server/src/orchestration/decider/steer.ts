@@ -40,6 +40,7 @@ export function decideSteer(model: ReadModel, command: SteerCommand, ctx: Decide
       const thread = model.threads[command.threadId];
       if (!thread) return fail("not-found", `unknown thread ${command.threadId}`);
       if (isArchived(thread)) return fail("conflict", `thread ${thread.id} is archived`);
+      if (thread.rollback?.status === "rolling") return fail("busy", `thread ${thread.id} is rolling back`);
       const turn = liveTurn(model, thread);
       if (!turn) return fail("conflict", NOTHING_RUNNING);
       const message: Message = {

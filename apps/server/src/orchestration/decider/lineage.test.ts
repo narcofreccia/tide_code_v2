@@ -118,11 +118,36 @@ describe("decide: thread.rollback", () => {
     expect(tryRun(done, { type: "thread.rollback", threadId: h.threadId, turnId: h.t2, restoreFiles: false })).toMatchObject({ ok: false, error: { code: "conflict" } });
   });
 
+  it("a rolling thread refuses new turns, steers, forks and provider switches", () => {
+    const h = withHistory();
+    const { model } = rolling(h.model, h.threadId, h.t2);
+    for (const command of [
+      { type: "turn.request", threadId: h.threadId, text: "x" },
+      { type: "turn.steer", threadId: h.threadId, text: "x" },
+      { type: "thread.fork", threadId: h.threadId, turnId: h.t1 },
+      { type: "thread.update", threadId: h.threadId, provider: "codex" },
+    ] as const) {
+      expect(tryRun(model, command), command.type).toMatchObject({ ok: false, error: { code: "busy" } });
+    }
+  });
+
+  it("rolled-back turns follow log order, not requestedAt ties", () => {
+    const h = withHistory();
+    // two turns requested in the same millisecond: the later one in the log is the later turn
+    ctx.now -= 10;
+    const same = completeTurn(h.model, h.threadId, "same ms", "ok");
+    const { events } = rolling(same.model, h.threadId, h.t2);
+    expect(eventOf(events, "rollback.requested").turnIds).toEqual([h.t2, same.turnId]);
+    expect(eventOf(rolling(same.model, h.threadId, same.turnId).events, "rollback.requested").turnIds).toEqual([same.turnId]);
+  });
+
   it("completes and fails through rollback.report", () => {
     const h = withHistory();
     const started = rolling(h.model, h.threadId, h.t1).model;
     const done = run(started, { type: "rollback.report", threadId: h.threadId, outcome: "done" });
-    expect(eventOf(done.events, "rollback.completed")).toMatchObject({ turnId: h.t1, turnIds: [h.t1, h.t2] });
+    expect(eventOf(done.events, "rollback.completed")).toMatchObject({ turnId: h.t1, turnIds: [h.t1, h.t2], provider: "claude" });
+    const reminted = run(started, { type: "rollback.report", threadId: h.threadId, outcome: "done", nativeSessionId: "sess-2" });
+    expect(reminted.model.threads[h.threadId]?.nativeSessionId).toBe("sess-2");
     expect(done.model.turns[h.t2]?.rolledBack).toBe(true);
     const failed = run(started, { type: "rollback.report", threadId: h.threadId, outcome: "error" });
     expect(eventOf(failed.events, "rollback.failed")).toMatchObject({ turnId: h.t1, error: "rollback failed" });

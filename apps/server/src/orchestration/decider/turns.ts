@@ -20,6 +20,7 @@ export function decideTurn(model: ReadModel, command: TurnCommand, ctx: DecideCo
       const thread = model.threads[command.threadId];
       if (!thread) return fail("not-found", `unknown thread ${command.threadId}`);
       if (isArchived(thread)) return fail("conflict", `thread ${thread.id} is archived`);
+      if (thread.rollback?.status === "rolling") return fail("busy", `thread ${thread.id} is rolling back`);
       if (thread.worktreePath === undefined && thread.branch !== undefined) {
         // the worktree was detached: running now would silently edit the user's main checkout
         return fail("conflict", `thread ${thread.id} has no worktree any more; archive it or start a new thread`);

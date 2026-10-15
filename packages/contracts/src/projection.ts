@@ -443,6 +443,23 @@ export function applyEvent(model: ReadModel, event: DomainEvent): ReadModel {
       if (survivor) patched.latestTurnId = survivor.id;
       else delete patched.latestTurnId;
       delete patched.planProgress;
+      // the harness that did the rollback keeps its session (under its possibly new id); any other
+      // harness whose last-seen turn is gone still remembers it, so a switch back must start fresh
+      if (t.providerSessions) {
+        const sessions: NonNullable<Thread["providerSessions"]> = {};
+        for (const [provider, entry] of Object.entries(t.providerSessions)) {
+          const stale = entry.lastTurnId !== undefined && gone.has(entry.lastTurnId);
+          if (provider === event.provider) {
+            const last = Object.values(turns).filter((x) => x.threadId === t.id && !x.rolledBack && x.provider === provider && x.startedAt !== undefined).sort((a, b) => b.requestedAt - a.requestedAt)[0];
+            const next = { ...entry, ...(event.nativeSessionId !== undefined ? { nativeSessionId: event.nativeSessionId } : {}) };
+            if (last) next.lastTurnId = last.id;
+            else delete next.lastTurnId;
+            sessions[provider] = next;
+          } else if (!stale) sessions[provider] = entry;
+        }
+        patched.providerSessions = sessions;
+      }
+      if (event.nativeSessionId !== undefined) patched.nativeSessionId = event.nativeSessionId;
       return refreshAttention({ ...model, turns, threads: { ...model.threads, [t.id]: patched } }, t.id, event.at);
     }
     case "rollback.failed": {
