@@ -123,6 +123,19 @@ export interface ResultMessage {
   resume_reason?: string;
   /** error results written before exiting on a known startup failure (SDKResultError.startup_failure_reason) */
   startup_failure_reason?: string;
+  /** client uuids of every user message this turn consumed, incl. ones folded in mid-turn (SDKResult*.user_message_uuids) */
+  user_message_uuids?: string[];
+  /** user sends still queued when this result was written: > 0 means another turn follows (SDKResult*.queued_turn_count) */
+  queued_turn_count?: number;
+}
+
+/** `SessionMessage` (sdk.d.ts `getSessionMessages`): one entry of a transcript's parentUuid chain. */
+export interface TranscriptEntry {
+  type: "user" | "assistant" | "system";
+  uuid: string;
+  session_id?: string;
+  message?: unknown;
+  parent_tool_use_id: string | null;
 }
 
 /** SDKRateLimitInfo (sdk.d.ts). `unifiedWindows` is emitted by CLI 2.1.296 but not declared in the d.ts. */

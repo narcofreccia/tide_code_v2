@@ -11,13 +11,18 @@ import type {
 import { AppServer, mergedEnv } from "./app-server.ts";
 import { readUserSandboxConfig, type UserSandboxConfig } from "./config-toml.ts";
 import { ApprovalBroker } from "./approvals.ts";
-import { AsyncQueue } from "./async-queue.ts";
+import { AsyncQueue, deferred, type Deferred } from "./async-queue.ts";
 import type { RequestId } from "./jsonrpc.ts";
 import { collaborationModeFor, policyFor, writableRoots } from "./modes.ts";
 import { CodexNormalizer } from "./normalize.ts";
 import { rateLimitFromSnapshot } from "./rate-limits.ts";
 import type { CodexConfig } from "./types.ts";
+import type { ThreadForkResponse } from "./generated/v2/ThreadForkResponse.ts";
 import type { ThreadResumeResponse } from "./generated/v2/ThreadResumeResponse.ts";
+import type { ThreadRevertParams } from "./generated/v2/ThreadRevertParams.ts";
+import type { ThreadTurnsListResponse } from "./generated/v2/ThreadTurnsListResponse.ts";
+import type { TurnSteerParams } from "./generated/v2/TurnSteerParams.ts";
+import type { TurnSteerResponse } from "./generated/v2/TurnSteerResponse.ts";
 import type { ThreadStartResponse } from "./generated/v2/ThreadStartResponse.ts";
 import type { TurnStartResponse } from "./generated/v2/TurnStartResponse.ts";
 import type { UserInput } from "./generated/v2/UserInput.ts";
@@ -29,6 +34,10 @@ import type { UserInput } from "./generated/v2/UserInput.ts";
  * approval round-trips all live in that process; respawning per turn would restart every
  * MCP server and lose the parked server requests. The cost is that `send()` runs strictly
  * one turn at a time (see the `busy` guard).
+ *
+ * R4: steer = `turn/steer` against the running turn (`expectedTurnId`), fork = `thread/fork`
+ * at open, rollback = `thread/revert { beforeTurnId }`. Turn ids come from each `turn/start`
+ * response; history older than this process (resume, fork) is read with `thread/turns/list`.
  */
 export class CodexSession implements ProviderSession {
   nativeSessionId: string | undefined;
@@ -45,6 +54,10 @@ export class CodexSession implements ProviderSession {
   #turnActive = false;
   #closed = false;
   #interruptRequested = false;
+  /** codex turn ids of this session's `send()`s, oldest first */
+  #turnIds: string[] = [];
+  /** the running turn's id, once `turn/start` answered (undefined if it failed) */
+  #turnStart: Deferred<string | undefined> | undefined;
 
   private constructor(env: DriverEnv, options: OpenSessionOptions, server: AppServer, model: string, userConfig: UserSandboxConfig) {
     this.#env = env;
@@ -89,23 +102,43 @@ export class CodexSession implements ProviderSession {
     const userConfig = readUserSandboxConfig(config.codexHome, config.tomlReader);
     if (config.networkAccess !== undefined) userConfig.networkAccess = config.networkAccess;
     const policy = policyFor(options.mode, writableRoots(options), false, userConfig);
-    const started =
-      options.resume !== undefined
-        ? await server.request<ThreadResumeResponse>("thread/resume", {
-            threadId: options.resume,
-            cwd: options.cwd,
-            approvalPolicy: policy.approvalPolicy,
-            sandbox: policy.sandbox,
-            ...(options.model ?? config.defaultModel ? { model: options.model ?? config.defaultModel } : {}),
-            ...(options.systemPromptAppend ? { developerInstructions: options.systemPromptAppend } : {}),
-          })
-        : await server.request<ThreadStartResponse>("thread/start", {
-            cwd: options.cwd,
-            approvalPolicy: policy.approvalPolicy,
-            sandbox: policy.sandbox,
-            ...(options.model ?? config.defaultModel ? { model: options.model ?? config.defaultModel } : {}),
-            ...(options.systemPromptAppend ? { developerInstructions: options.systemPromptAppend } : {}),
-          });
+    if (options.resume !== undefined && options.forkFrom !== undefined) {
+      server.close();
+      throw new Error("invalid-params: resume and forkFrom are mutually exclusive");
+    }
+    let started: ThreadStartResponse | ThreadResumeResponse | ThreadForkResponse;
+    try {
+      started =
+        options.forkFrom !== undefined
+          ? await server.request<ThreadForkResponse>("thread/fork", {
+              threadId: options.forkFrom,
+              cwd: options.cwd,
+              approvalPolicy: policy.approvalPolicy,
+              sandbox: policy.sandbox,
+              excludeTurns: true,
+              ...(options.model ?? config.defaultModel ? { model: options.model ?? config.defaultModel } : {}),
+              ...(options.systemPromptAppend ? { developerInstructions: options.systemPromptAppend } : {}),
+            })
+          : options.resume !== undefined
+          ? await server.request<ThreadResumeResponse>("thread/resume", {
+              threadId: options.resume,
+              cwd: options.cwd,
+              approvalPolicy: policy.approvalPolicy,
+              sandbox: policy.sandbox,
+              ...(options.model ?? config.defaultModel ? { model: options.model ?? config.defaultModel } : {}),
+              ...(options.systemPromptAppend ? { developerInstructions: options.systemPromptAppend } : {}),
+            })
+          : await server.request<ThreadStartResponse>("thread/start", {
+              cwd: options.cwd,
+              approvalPolicy: policy.approvalPolicy,
+              sandbox: policy.sandbox,
+              ...(options.model ?? config.defaultModel ? { model: options.model ?? config.defaultModel } : {}),
+              ...(options.systemPromptAppend ? { developerInstructions: options.systemPromptAppend } : {}),
+            });
+    } catch (error) {
+      server.close(); // no session will own this child
+      throw error;
+    }
 
     session = new CodexSession(env, options, server, started.model ?? options.model ?? config.defaultModel ?? "", userConfig);
     session.nativeSessionId = started.thread.id;
@@ -151,25 +184,29 @@ export class CodexSession implements ProviderSession {
     this.#interruptRequested = false;
     const mailbox = new AsyncQueue<NormalizedEvent>();
     this.#mailbox = mailbox;
+    const turnStart = deferred<string | undefined>();
+    this.#turnStart = turnStart;
     const self = this;
 
     async function* stream(): AsyncGenerator<NormalizedEvent, void> {
-      const started = self.#startTurn(input, mailbox);
+      const started = self.#startTurn(input, mailbox, turnStart);
       try {
         for await (const event of mailbox.drain()) yield event;
         await started;
       } finally {
         self.#turnActive = false;
         self.#mailbox = undefined;
+        self.#turnStart = undefined;
+        turnStart.resolve(undefined); // a steer still waiting on a turn that never started
       }
     }
     return stream();
   }
 
-  async #startTurn(input: TurnInput, mailbox: AsyncQueue<NormalizedEvent>): Promise<void> {
+  async #startTurn(input: TurnInput, mailbox: AsyncQueue<NormalizedEvent>, turnStart: Deferred<string | undefined>): Promise<void> {
     const policy = policyFor(this.#options.mode, writableRoots(this.#options), false, this.#userConfig);
     try {
-      await this.#server.request<TurnStartResponse>("turn/start", {
+      const response = await this.#server.request<TurnStartResponse>("turn/start", {
         threadId: this.nativeSessionId,
         input: turnInput(input),
         cwd: this.#options.cwd,
@@ -182,8 +219,12 @@ export class CodexSession implements ProviderSession {
         // (from `thread/start`), which is what Codex would have used anyway.
         collaborationMode: collaborationModeFor(this.#options.interaction, this.#model),
       });
+      const turnId = response?.turn?.id;
+      if (turnId !== undefined) this.#turnIds.push(turnId);
+      turnStart.resolve(turnId);
       void this.#readRateLimits(mailbox);
     } catch (error) {
+      turnStart.resolve(undefined);
       mailbox.push({ type: "settled", status: this.#interruptRequested ? "interrupted" : "error", error: error instanceof Error ? error.message : String(error) });
       mailbox.close();
     }
@@ -213,6 +254,55 @@ export class CodexSession implements ProviderSession {
     this.#options = { ...this.#options, mode: settings.mode, interaction: settings.interaction, ...(settings.model !== undefined ? { model: settings.model } : {}) };
     if (settings.model !== undefined && settings.model !== "") this.#model = settings.model;
     return "applied";
+  }
+
+  /**
+   * `turn/steer` appends input to the running turn without interrupting it. The turn id is
+   * the request's precondition, so a steer racing the turn's end fails on Codex's side and
+   * the error reaches the caller.
+   */
+  async steer(input: TurnInput): Promise<void> {
+    const threadId = this.nativeSessionId;
+    const turnStart = this.#turnStart;
+    if (this.#closed || !this.#turnActive || turnStart === undefined || threadId === undefined) throw new Error("no turn is running on this codex session");
+    const expectedTurnId = this.#normalizer.turnId ?? (await turnStart.promise);
+    if (expectedTurnId === undefined || !this.#turnActive) throw new Error("no turn is running on this codex session");
+    const params: TurnSteerParams = { threadId, input: turnInput(input), expectedTurnId };
+    await this.#server.request<TurnSteerResponse>("turn/steer", params);
+  }
+
+  /**
+   * `thread/revert { beforeTurnId }` drops that turn and every later one from the thread's
+   * persisted history (files are not touched; Tide's checkpoints own the worktree).
+   */
+  async rollback(turns: number): Promise<void> {
+    if (this.#closed) throw new Error("codex session is closed");
+    if (this.#turnActive) throw new Error("busy: cannot roll back while a turn is running");
+    const threadId = this.nativeSessionId;
+    if (turns <= 0 || threadId === undefined) return;
+    const beforeTurnId = turns <= this.#turnIds.length ? this.#turnIds[this.#turnIds.length - turns] : await this.#nthLatestTurn(threadId, turns);
+    if (beforeTurnId === undefined) throw new Error(`invalid-params: cannot roll back ${turns} turn(s); the codex thread holds fewer`);
+    const params: ThreadRevertParams = { threadId, beforeTurnId };
+    await this.#server.request("thread/revert", params);
+    const cut = this.#turnIds.indexOf(beforeTurnId);
+    this.#turnIds = cut >= 0 ? this.#turnIds.slice(0, cut) : [];
+  }
+
+  /** History from before this process (resumed or forked thread): ask Codex, newest first. */
+  async #nthLatestTurn(threadId: string, n: number): Promise<string | undefined> {
+    const ids: string[] = [];
+    let cursor: string | null = null;
+    do {
+      const page: ThreadTurnsListResponse = await this.#server.request<ThreadTurnsListResponse>("thread/turns/list", {
+        threadId,
+        sortDirection: "desc",
+        limit: n,
+        ...(cursor !== null ? { cursor } : {}),
+      });
+      ids.push(...page.data.map((turn) => turn.id));
+      cursor = page.nextCursor;
+    } while (ids.length < n && cursor !== null);
+    return ids[n - 1];
   }
 
   async respondApproval(requestId: string, decision: ApprovalDecision): Promise<void> {

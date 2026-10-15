@@ -18,6 +18,10 @@ export const CODEX_CAPS = {
   resume: true,
   contextUsage: true,
   openInTerminal: true,
+  // R4 — verified against the 0.162 bindings: `turn/steer`, `thread/fork`, `thread/revert`.
+  steer: true,
+  fork: true,
+  rollback: true,
 } as const;
 
 export const LOGIN_HINT = "Run `codex login` in a terminal";

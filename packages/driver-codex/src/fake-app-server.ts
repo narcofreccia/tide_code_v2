@@ -27,6 +27,12 @@ export class FakeAppServer implements ChildLike {
   model = "gpt-5.6-sol";
   threadId = "thread-1";
   turnId = "turn-1";
+  /** ids handed out by successive `turn/start`s, oldest first; `turnId` once exhausted */
+  turnIds: string[] = [];
+  /** thread id minted by `thread/fork` */
+  forkThreadId = "thread-fork-1";
+  /** what `thread/turns/list` answers, most recent first (the API's default direction) */
+  listedTurns: string[] = [];
   /** methods that should answer with a JSON-RPC error instead of a result */
   failMethods = new Map<string, string>();
   /** result of `account/rateLimits/read` (the default `{}` carries no snapshot) */
@@ -114,8 +120,16 @@ export class FakeAppServer implements ChildLike {
       case "thread/start":
       case "thread/resume":
         return { thread: { id: this.threadId, turns: [] }, model: this.model, modelProvider: "openai", cwd: "/tmp/repo" };
+      case "thread/fork":
+        return { thread: { id: this.forkThreadId, turns: [] }, model: this.model, modelProvider: "openai", cwd: "/tmp/repo" };
       case "turn/start":
-        return { turn: { id: this.turnId, items: [], itemsView: "notLoaded", status: "inProgress" } };
+        return { turn: { id: this.turnIds.shift() ?? this.turnId, items: [], itemsView: "notLoaded", status: "inProgress" } };
+      case "turn/steer":
+        return { turnId: message.params?.["expectedTurnId"] };
+      case "thread/revert":
+        return { thread: { id: message.params?.["threadId"], turns: [] }, turnsBackwardsCursor: null, itemsBackwardsCursor: null };
+      case "thread/turns/list":
+        return { data: this.listedTurns.map((id) => ({ id, items: [], itemsView: "notLoaded", status: "completed" })), nextCursor: null, backwardsCursor: null };
       case "account/read":
         return { account: { type: "chatgpt", email: "dev@example.com", planType: "pro" }, requiresOpenaiAuth: false };
       case "account/rateLimits/read":

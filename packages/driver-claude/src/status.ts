@@ -16,6 +16,11 @@ export const CLAUDE_CAPS = {
   resume: true,
   contextUsage: true,
   openInTerminal: true,
+  // R4 — verified against sdk.d.ts 0.3.296: streaming-input fold (steer), Options.forkSession
+  // (fork), Options.resumeSessionAt + getSessionMessages (rollback). See session.ts.
+  steer: true,
+  fork: true,
+  rollback: true,
 } as const;
 
 export const LOGIN_HINT = "Run `claude auth login` in a terminal";

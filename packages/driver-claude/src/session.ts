@@ -12,8 +12,9 @@ import type {
 import { ApprovalBroker, type CanUseToolContext, type PermissionResultShape } from "./approvals.ts";
 import { AsyncQueue } from "./async-queue.ts";
 import { ClaudeNormalizer } from "./normalize.ts";
-import type { ClaudeMessage } from "./sdk-shapes.ts";
-import type { ClaudeConfig, QueryFn, QueryLike } from "./types.ts";
+import { rollbackPoint } from "./rollback.ts";
+import type { ClaudeMessage, ResultMessage, TranscriptEntry } from "./sdk-shapes.ts";
+import type { ClaudeConfig, QueryFn, QueryLike, SessionMessagesFn } from "./types.ts";
 
 /**
  * Streaming-input mode: one `query()` per session, fed by an async iterable we push user
@@ -24,7 +25,23 @@ import type { ClaudeConfig, QueryFn, QueryLike } from "./types.ts";
  * documented as streaming-input-only, and because respawning the CLI per turn re-launches
  * every MCP server and re-reads the transcript on each send. The cost is that `send()` is
  * strictly one turn at a time (see the `busy` guard below).
+ *
+ * R4 on top of that query:
+ * - steer: a user message pushed into the same input stream while a turn runs. The CLI
+ *   queues it and folds it into the running turn between tool rounds (no tool is
+ *   interrupted); the turn's `result` lists it in `user_message_uuids`. If the turn ended
+ *   before the fold, `queued_turn_count > 0` says another turn follows for it, and the Tide
+ *   turn keeps streaming until that next `result` — one `send()` settles exactly once.
+ * - fork: `resume: <source>` + `forkSession: true` on the next query mints a new session id.
+ * - rollback: a truncating resume (`resume` + `resumeSessionAt: <kept turn's last chain
+ *   entry>`) on a fresh query; the uuid comes from the transcript (`getSessionMessages`).
  */
+
+async function sdkSessionMessages(): Promise<SessionMessagesFn> {
+  const module: unknown = await import("@anthropic-ai/claude-agent-sdk");
+  const { getSessionMessages } = module as { getSessionMessages: SessionMessagesFn };
+  return getSessionMessages;
+}
 
 export const MODE_TO_PERMISSION: Record<string, string> = {
   "approval-required": "default",
@@ -69,6 +86,7 @@ export class ClaudeSession implements ProviderSession {
   #mailbox: AsyncQueue<NormalizedEvent> | undefined;
 
   #query: QueryLike | undefined;
+  #sessionMessages: SessionMessagesFn | undefined;
   #iterator: AsyncIterator<ClaudeMessage> | undefined;
   #permissionMode: string;
   #autoModeFallbackAvailable: boolean;
@@ -77,17 +95,39 @@ export class ClaudeSession implements ProviderSession {
   #closed = false;
   #interruptRequested = false;
 
+  /** fork source, consumed once the forked session reports its own id */
+  #forkFrom: string | undefined;
+  /** pending truncating resume (rollback), consumed with the next query's `system/init` */
+  #resumeAt: string | undefined;
+  /** uuids of this session's `send()` prompts, oldest first */
+  #prompts: string[] = [];
+  /** uuids of every message steered by this session */
+  #steers = new Set<string>();
+  /** messages of the running turn (prompt first, then steers), re-pushed if the query is rebuilt */
+  #turnMessages: UserMessageEnvelope[] = [];
+  /** steers of the running turn the CLI has not reported consuming yet */
+  #pendingSteers = new Set<string>();
+  /** true once the running turn's messages are in the input stream */
+  #turnFed = false;
+
   constructor(config: ClaudeConfig, env: DriverEnv, options: OpenSessionOptions, queryFn: QueryFn, binaryPath?: string) {
     this.#config = config;
     this.#env = env;
     this.#options = options;
     this.#queryFn = queryFn;
     if (binaryPath !== undefined) this.#binaryPath = binaryPath;
+    if (options.resume !== undefined && options.forkFrom !== undefined) throw new Error("invalid-params: resume and forkFrom are mutually exclusive");
     if (options.resume !== undefined) this.nativeSessionId = options.resume;
+    if (options.forkFrom !== undefined) this.#forkFrom = options.forkFrom;
     this.#permissionMode = options.interaction === "plan" ? "plan" : (MODE_TO_PERMISSION[options.mode] ?? "default");
     this.#autoModeFallbackAvailable = this.#permissionMode === "auto";
     this.#broker = new ApprovalBroker((event) => this.#emit(event), options.linkedDirs ?? []);
-    this.#normalizer = new ClaudeNormalizer({
+    this.#normalizer = this.#newNormalizer();
+  }
+
+  #newNormalizer(): ClaudeNormalizer {
+    const env = this.#env;
+    return new ClaudeNormalizer({
       partialMessages: true,
       // the frame itself is passed through to the timeline; this is just driver-debug noise
       onUnknown: (type, subtype) => {
@@ -124,7 +164,8 @@ export class ClaudeSession implements ProviderSession {
       canUseTool: (toolName: string, input: Record<string, unknown>, context: CanUseToolContext): Promise<PermissionResultShape> =>
         this.#broker.handle(toolName, input, context),
       ...(model ? { model } : {}),
-      ...(this.nativeSessionId ? { resume: this.nativeSessionId } : {}),
+      ...(this.#forkFrom ? { resume: this.#forkFrom, forkSession: true } : this.nativeSessionId ? { resume: this.nativeSessionId } : {}),
+      ...(this.#resumeAt ? { resumeSessionAt: this.#resumeAt } : {}),
       ...(Object.keys(mcpServers).length > 0 ? { mcpServers } : {}),
       // Every link (read-only ones too) is added: the SDK's workspace gate covers reads as
       // well as writes, and a read-only link that is not listed could not even be read.
@@ -178,25 +219,32 @@ export class ClaudeSession implements ProviderSession {
     const mailbox = new AsyncQueue<NormalizedEvent>();
     this.#mailbox = mailbox;
     const pending = buildUserMessage(input, this.nativeSessionId ?? "");
+    this.#prompts.push(pending.uuid);
+    this.#turnMessages = [pending];
+    this.#pendingSteers.clear();
+    this.#turnFed = false;
     const self = this;
 
     async function* stream(): AsyncGenerator<NormalizedEvent, void> {
-      const pump = self.#pump(mailbox, pending);
+      const pump = self.#pump(mailbox);
       try {
         for await (const event of mailbox.drain()) yield event;
         await pump;
       } finally {
         self.#turnActive = false;
         self.#mailbox = undefined;
+        self.#turnMessages = [];
+        self.#pendingSteers.clear();
       }
     }
     return stream();
   }
 
-  async #pump(mailbox: AsyncQueue<NormalizedEvent>, pending: UserMessageEnvelope): Promise<void> {
+  async #pump(mailbox: AsyncQueue<NormalizedEvent>): Promise<void> {
     try {
       let iterator = this.#ensureQuery();
-      this.#inbox.push(pending);
+      for (const message of this.#turnMessages) this.#inbox.push(message);
+      this.#turnFed = true;
       for (;;) {
         let step: IteratorResult<ClaudeMessage>;
         try {
@@ -204,7 +252,7 @@ export class ClaudeSession implements ProviderSession {
         } catch (error) {
           if (!this.#shouldFallbackFromAuto(error)) throw error;
           iterator = this.#rebuildForAcceptEdits();
-          this.#inbox.push(pending);
+          for (const message of this.#turnMessages) this.#inbox.push(message);
           continue;
         }
         this.#started = true;
@@ -214,11 +262,19 @@ export class ClaudeSession implements ProviderSession {
         }
         const events = this.#normalizer.next(step.value);
         for (const event of events) {
-          if (event.type === "session") this.nativeSessionId = event.nativeSessionId;
+          if (event.type === "session") {
+            this.nativeSessionId = event.nativeSessionId;
+            this.#forkFrom = undefined;
+            this.#resumeAt = undefined;
+          }
           if (event.type === "settled") {
+            const after = this.#afterResult(step.value as ResultMessage, event.status);
+            if (after === "continue") continue; // a steer missed the fold: its own turn follows
+
             const contextUsage = await this.#contextUsage();
             if (contextUsage) mailbox.push({ type: "usage", contextUsage });
             mailbox.push(event);
+            if (after === "reset") this.#resetQuery();
             return;
           }
           mailbox.push(event);
@@ -230,6 +286,36 @@ export class ClaudeSession implements ProviderSession {
     } finally {
       mailbox.close();
     }
+  }
+
+  /**
+   * Whether a `result` ends the Tide turn. A steer the CLI has not consumed yet with more sends
+   * still queued runs as its own CLI turn next: keep streaming into this Tide turn
+   * (`continue`). After an interrupt such a steer would run on its own once the turn is gone,
+   * so the query is torn down instead (`reset`) and the next send resumes the transcript.
+   */
+  #afterResult(result: ResultMessage, status: "completed" | "interrupted" | "error"): "end" | "continue" | "reset" {
+    for (const uuid of result.user_message_uuids ?? []) this.#pendingSteers.delete(uuid);
+    if (this.#pendingSteers.size === 0 || (result.queued_turn_count ?? 0) === 0) return "end";
+    if (status === "interrupted" || this.#interruptRequested) return "reset";
+    return "continue";
+  }
+
+  /** Ends the live CLI process; the next `send()` builds a new query from `#buildOptions`. */
+  #resetQuery(): void {
+    const iterator = this.#iterator;
+    this.#inbox.close();
+    try {
+      this.#abort.abort();
+    } catch {
+      // an already-aborted controller is fine
+    }
+    void iterator?.return?.(undefined).catch(() => undefined);
+    this.#abort = new AbortController();
+    this.#inbox = new AsyncQueue<UserMessageEnvelope>();
+    this.#iterator = undefined;
+    this.#query = undefined;
+    this.#normalizer = this.#newNormalizer();
   }
 
   /**
@@ -285,6 +371,47 @@ export class ClaudeSession implements ProviderSession {
       return "reopen";
     }
     return "applied";
+  }
+
+  async steer(input: TurnInput): Promise<void> {
+    if (this.#closed || !this.#turnActive) throw new Error("no turn is running on this claude session");
+    const message = buildUserMessage(input, this.nativeSessionId ?? "");
+    this.#steers.add(message.uuid);
+    this.#pendingSteers.add(message.uuid);
+    this.#turnMessages.push(message);
+    if (this.#turnFed) this.#inbox.push(message);
+  }
+
+  /**
+   * Forgets the last `turns` turns: finds the kept turn's last transcript entry and arms a
+   * truncating resume (`resumeSessionAt`) for the next query. Dropping every turn starts a
+   * new session instead. Works on a fork that has not run yet (the source's transcript).
+   */
+  async rollback(turns: number): Promise<void> {
+    if (this.#closed) throw new Error("claude session is closed");
+    if (this.#turnActive) throw new Error("busy: cannot roll back while a turn is running");
+    if (turns <= 0) return;
+    const source = this.#forkFrom ?? this.nativeSessionId;
+    if (source === undefined) throw new Error(`invalid-params: cannot roll back ${turns} turn(s); the claude session has no history`);
+    this.#sessionMessages ??= this.#config.sessionMessagesImpl ?? (await sdkSessionMessages());
+    let entries: TranscriptEntry[] = await this.#sessionMessages(source, { dir: this.#options.cwd, includeSystemMessages: true });
+    if (this.#resumeAt !== undefined) {
+      // an earlier rollback not applied yet: its dropped tail is still on disk
+      const at = entries.findIndex((entry) => entry.uuid === this.#resumeAt);
+      if (at >= 0) entries = entries.slice(0, at + 1);
+    }
+    const point = rollbackPoint(entries, { prompts: this.#prompts, steers: this.#steers }, turns);
+    const kept = new Set(entries.slice(0, point.kind === "at" ? entries.findIndex((entry) => entry.uuid === point.uuid) + 1 : 0).map((entry) => entry.uuid));
+    this.#prompts = this.#prompts.filter((uuid) => kept.has(uuid));
+    if (this.#query) this.#resetQuery();
+    if (point.kind === "at") {
+      this.#resumeAt = point.uuid;
+      return;
+    }
+    // nothing kept: the next turn opens a brand-new session
+    this.#resumeAt = undefined;
+    this.#forkFrom = undefined;
+    this.nativeSessionId = undefined;
   }
 
   async respondApproval(requestId: string, decision: ApprovalDecision): Promise<void> {

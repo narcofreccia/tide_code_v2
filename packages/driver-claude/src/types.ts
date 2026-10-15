@@ -1,4 +1,4 @@
-import type { ClaudeMessage } from "./sdk-shapes.ts";
+import type { ClaudeMessage, TranscriptEntry } from "./sdk-shapes.ts";
 
 export interface ClaudeConfig {
   /** absolute path to the `claude` binary; auto-detected when omitted */
@@ -12,6 +12,8 @@ export interface ClaudeConfig {
    * lets the session tests drive a scripted CLI without spawning one.
    */
   queryImpl?: QueryFn;
+  /** Test seam: replaces the SDK's `getSessionMessages()` (transcript reader used by rollback). */
+  sessionMessagesImpl?: SessionMessagesFn;
 }
 
 export interface ContextUsageReport {
@@ -37,3 +39,6 @@ export interface QueryLike extends AsyncIterable<ClaudeMessage> {
 }
 
 export type QueryFn = (params: { prompt: AsyncIterable<unknown> | string; options?: Record<string, unknown> }) => QueryLike;
+
+/** The SDK's `getSessionMessages(sessionId, { dir, includeSystemMessages })`. */
+export type SessionMessagesFn = (sessionId: string, options: { dir?: string; includeSystemMessages?: boolean }) => Promise<TranscriptEntry[]>;
