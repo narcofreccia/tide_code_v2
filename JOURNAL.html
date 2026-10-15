@@ -60,9 +60,9 @@
         <h1>Tide v2 — Project Journal</h1>
         <div class="sub">Focused agentic code editor &amp; orchestrator over Claude Code · Codex · OpenCode · Pi. Started 2026-08-30.</div>
         <div class="kpi">
-          <div class="box"><b>R4</b><span>orchestration parity · wave 0 landed, waves 1–7 in flight</span></div>
-          <div class="box"><b>86</b><span>commits (incl. this one)</span></div>
-          <div class="box"><b>1309</b><span>tests passing</span></div>
+          <div class="box"><b>R4</b><span>orchestration parity · landed, Claude live-proven; replay harness in flight</span></div>
+          <div class="box"><b>94</b><span>commits (incl. this one)</span></div>
+          <div class="box"><b>1457</b><span>tests passing</span></div>
         </div>
         <div class="howto">
           How to use: read at session start; flip <code>class="status done|wip|todo|blocked"</code> + label as work lands; add dated notes under the phase;
@@ -101,15 +101,20 @@
           <p class="note">2026-10-15 — Comparison against T3 Code Orchestrator V2 (nightly 2026-10-03, clone HEAD <code>00cdceb</code>). Verdict: <strong>no change of direction needed</strong>. Tide leads on local merge-back, Experts, plan mode, the editor, triage and simplicity; T3 leads on steer, fork, provider handoff, agents acting on threads, usage-limit recovery and scheduled tasks. The plan ports mechanisms, not surface.</p>
           <ul class="tasks">
             <li><span class="badge status done">done</span><span class="t"><b>W0 — contracts + decider + receipts</b> (commit <code>9fb1ee3</code>): <code>commandId</code> receipts; <code>turn.steer</code> / <code>turn.edit</code> / <code>turn.reorder</code> / <code>turn.promote</code>; <code>thread.fork</code>; <code>thread.rollback</code>; Handoff artifact (budgeted verbatim selection); per-provider native sessions; Limited / snooze / resume; PR watch; agent thread RPC schemas; <code>DriverCaps</code> steer / fork / rollback.</span></li>
-            <li><span class="badge status wip">wip</span><span class="t"><b>W1 — drivers steer / rollback / fork</b>: Claude + Codex, Pi + OpenCode.</span></li>
-            <li><span class="badge status wip">wip</span><span class="t"><b>W1 — server reactor</b>: steer routing + fallback, handoff delivery (native fork / inline), rollback service, limits worker, PR watch, agent thread RPC.</span></li>
-            <li><span class="badge status wip">wip</span><span class="t"><b>W3 — tide-mcp thread tools</b> + delegate wait / role.</span></li>
-            <li><span class="badge status wip">wip</span><span class="t"><b>W5 — web</b>: composer steer / queue, queue editing, fork, rollback dialog, handoff card, Limited badge, Mission Control Limited / Snoozed, PR watch pill, Settings General.</span></li>
-            <li><span class="badge status todo">todo</span><span class="t"><b>W4 — queue editing server + continuation setting.</b></span></li>
-            <li><span class="badge status todo">todo</span><span class="t"><b>W6 — scheduled tasks.</b></span></li>
-            <li><span class="badge status todo">todo</span><span class="t"><b>WT — replay harness.</b></span></li>
-            <li><span class="badge status todo">todo</span><span class="t"><b>W7 — docs refresh.</b></span></li>
+            <li><span class="badge status done">done</span><span class="t"><b>W1 — drivers steer / rollback / fork</b>: Claude + Codex (<code>9e251f9</code>), Pi + OpenCode (<code>6733168</code>).</span></li>
+            <li><span class="badge status done">done</span><span class="t"><b>W1 — server reactor</b>: steer routing + fallback, handoff delivery (native fork / inline), rollback service, limits worker, PR watch, agent thread RPC (<code>ab7239f</code>, <code>0c44fdc</code>).</span></li>
+            <li><span class="badge status done">done</span><span class="t"><b>W3 — tide-mcp thread tools</b> + delegate wait / role (<code>ac03d5f</code>).</span></li>
+            <li><span class="badge status done">done</span><span class="t"><b>W5 — web</b> (<code>acb3c07</code>): composer steer / queue, queue editing, fork, rollback dialog, handoff card, Limited badge, Mission Control Limited / Snoozed, PR watch pill, Settings General.</span></li>
+            <li><span class="badge status done">done</span><span class="t"><b>W4 — queue editing server + continuation setting.</b></span></li>
+            <li><span class="badge status done">done</span><span class="t"><b>W6 — scheduled tasks.</b></span></li>
+            <li><span class="badge status wip">wip</span><span class="t"><b>WT — replay harness.</b></span></li>
+            <li><span class="badge status done">done</span><span class="t"><b>W7 — docs refresh</b> (<code>95861fb</code>).</span></li>
+            <li><span class="badge status todo">todo</span><span class="t">Andrea: <code>opencode upgrade --major</code> (this machine has 1.1.36; Tide needs 2.x), then rerun the R4 smoke on OpenCode</span></li>
+            <li><span class="badge status todo">todo</span><span class="t">Andrea: <code>codex login</code>, then the Codex leg of the R4 smoke</span></li>
+            <li><span class="badge status todo">todo</span><span class="t">Andrea: Pi credentials, then the Pi leg of the R4 smoke</span></li>
+            <li><span class="badge status todo">todo</span><span class="t">Andrea: rebuild the desktop sidecar (<code>pnpm desktop:sidecar</code>) before the next desktop session</span></li>
           </ul>
+          <p class="note">2026-10-15 — Live validation (Claude, scratch <code>TIDE_HOME</code>, clean worktree at HEAD): steer landed mid-turn (<code>notes.md</code> gained STEERED while Bash sleeps ran; one settle); command receipts replayed the same seq; provider switch recorded a full handoff (2 turns, 1,279 bytes); switch back to Claude used a delta handoff and resumed the native session (the answer was correct); fork at turn 1 → worktree holds <code>alpha.md</code> but not <code>beta.md</code>, handoff delivered natively on a new Claude session that remembers alpha only; rollback with Restore files removed <code>beta.md</code> and the harness no longer lists it. The first smoke found that forks branched from main instead of the turn's checkpoint — fixed in <code>0dee395</code>. <strong>Not validated live:</strong> OpenCode (this machine has 1.1.36, Tide needs 2.x: <code>opencode upgrade --major</code>), Codex (not logged in), Pi (no credentials). Suite at HEAD: 1,457 tests (contracts 19, server 507, web 422, client 48, mcp 24, claude 64, codex 78, opencode 79, pi 104, pi-extensions 112).</p>
           <p class="note">2026-10-15 — Deferred: outside-agent OAuth MCP endpoint, bounded snapshots / history paging, webhook tasks.</p>
         </div>
       </details>
@@ -322,11 +327,21 @@
         <tr><td>R3</td><td>2026-10-12</td><td>docs(journal,providers): R3 phase</td><td class="sha">915f85c</td></tr>
         <tr><td>R3</td><td>2026-10-12</td><td>feat: project.init — new project from nothing; docs/TRIAL.md</td><td class="sha">38d2422</td></tr>
         <tr><td>R4</td><td>2026-10-15</td><td>feat(contracts,server): R4 wave 0 — steer, fork, rollback, handoff, limits, receipts</td><td class="sha">9fb1ee3</td></tr>
+        <tr><td>R4</td><td>2026-10-15</td><td>feat(driver-claude,driver-codex): steer, fork and rollback</td><td class="sha">9e251f9</td></tr>
+        <tr><td>R4</td><td>2026-10-15</td><td>feat(tide-mcp): thread tools — list/read/send/wait/interrupt, pending questions, delegate wait+role</td><td class="sha">ac03d5f</td></tr>
+        <tr><td>R4</td><td>2026-10-15</td><td>feat(driver-pi,driver-opencode): steer, fork and rollback; providers.md rows for all four harnesses</td><td class="sha">6733168</td></tr>
+        <tr><td>R4</td><td>2026-10-15</td><td>feat(web,client): steer/queue composer, queue editing, fork, rollback, handoff card, Limited, PR watch, Settings General</td><td class="sha">acb3c07</td></tr>
+        <tr><td>R4</td><td>2026-10-15</td><td>docs: quickstart, trial and ui.md for R4</td><td class="sha">95861fb</td></tr>
+        <tr><td>R4</td><td>2026-10-15</td><td>feat(server): steer routing, handoff delivery, rollback service, limits worker, PR watch, agent thread RPC</td><td class="sha">ab7239f</td></tr>
+        <tr><td>R4</td><td>2026-10-15</td><td>fix(contracts,server): rollback gaps — rolling guard, log-order turn ids, re-minted session id, stale provider sessions</td><td class="sha">0c44fdc</td></tr>
+        <tr><td>R4</td><td>2026-10-15</td><td>feat: scheduled tasks, restart continuation, fork worktree from the turn&#39;s checkpoint, agent.task.list</td><td class="sha">0dee395</td></tr>
       </table>
 
       <h2>Open questions &amp; follow-ups</h2>
       <ul>
-        <li><strong>R4 open (2026-10-15):</strong> Rollback on a harness without native rollback (Claude today): files restored, conversation not rewound — accept with an info activity, or refuse?</li>
+        <li><strong>R4 closed (2026-10-15):</strong> Rollback on a harness without native rollback — all four harnesses now roll back natively; a harness that cannot gets an info activity.</li>
+        <li><strong>R4 open (2026-10-15):</strong> OpenCode 2 live run pending <code>opencode upgrade --major</code>.</li>
+        <li><strong>R4 open (2026-10-15):</strong> PR watch wake and Limited resume-at-reset are test-only until a real PR / real limit is observed.</li>
         <li><strong>R3 open (2026-10-12):</strong> OpenCode 2 — `@opencode/sdk` is an in-process host, so the driver talks HTTP with <code>fetch</code> and keeps the SDK as a type-only devDependency; the v1 shared rows of <code>providers.md</code> were refreshed, the W1 linked-repos paragraph still cites 1.1.36 internals (rules are now <code>{action,resource,effect}</code>). Codex: <code>resetsAt</code> unit (assumed epoch seconds) and the 0.162 behaviour are unverified live (no login). Pi: a dialog with a <code>timeout</code> expires server-side without an event, so its card stays pending; project trust in RPC mode (see Andrea's items). Experts: a lead that never calls <code>tide_experts_synthesize</code> still has no timeout. Decider still imports <code>experts/prompts.ts</code> (pure builders — kept on purpose). Graceful shutdown now keeps queued and never-started turns; a turn mid-harness is still interrupted. Not built: unarchive (no command), PR auto-merge polling beyond <code>gh pr view</code>, Windows graceful stop in the desktop shell (<code>taskkill /T /F</code>).</li>
         <li><strong>R2 prefix <code>tidecode</code> is shared with v1:</strong> v1 artifacts (<code>TideCode.app.tar.gz</code>, two dmgs) are untouched; only <code>latest.json</code> was replaced (v1's build pointed at a placeholder endpoint, so no client read it). v1's manifest is parked at <code>tidecode/v1/latest.json</code>.</li>
         <li><strong>Removed v1 features — status:</strong> deliberately cut, not scheduled: Tutor/voice, router/classifier, custom planner, custom safety engine, region tags, web-search extension (all replaced by harness-native features). Reconsider only on evidence: tree-sitter index as an MCP tool (if harness grep is too slow on very large repos), project memory (cross-harness notes).</li>
