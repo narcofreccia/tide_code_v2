@@ -68,11 +68,11 @@ Applications, open. Same behaviour as B. Updates are checked at launch and every
 2. **Start a thread.** `⌘N` or the project card's "New thread". Choose the harness, model,
    and mode. Keep **worktree** on. For a first run use mode `auto-accept-edits`: edits are
    automatic, every shell command asks.
-3. **Talk.** Type in the composer, `⌘↵` sends. Typing while the agent runs queues the next
-   message. Approvals and questions show up as cards in the thread and in the **Inbox** on
+3. **Talk.** Type in the composer, `⌘↵` sends. A message typed while the agent runs is
+   steered into the running turn (or queued; see §4). Approvals and questions show up as cards in the thread and in the **Inbox** on
    Mission Control (`⌘0`).
 4. **Review.** The Workbench (`⌘2` split view) opens on **Changes**: per-turn diff, file list,
-   "Revert turn". Files open in Monaco; `` ⌘` `` opens a terminal in the worktree.
+   "Rollback…" and "Fork from here…". Files open in Monaco; `` ⌘` `` opens a terminal in the worktree.
 5. **Land it.** Changes header → **Commit / PR** (needs `gh` and a remote) or **Merge ▾**
    (squash by default) to merge the thread's branch into the branch you started from. A
    conflict lists the files; resolve in the terminal and retry.
@@ -80,7 +80,39 @@ Applications, open. Same behaviour as B. Updates are checked at launch and every
    produces a Proposed plan card. "Implement in new thread" runs it on any harness, on its
    own worktree. Nothing runs until you click.
 
-## 4. Where things are
+## 4. Working a thread
+
+- **Steer or queue.** While a turn runs, the **Steer | Queue** toggle under the composer sets
+  what a message does. Steer delivers it into the running turn; Queue runs it after the turn
+  ends. `⌘↵` sends in the other mode. A provider that cannot steer has the toggle disabled and
+  every follow-up queues.
+- **Queued turns.** The queue list above the composer shows queued messages in order. Each row
+  can be edited (✎), moved (↑ ↓) or dragged, promoted with **Send now as steer** (only while a
+  turn runs on a harness that can steer), or removed (×).
+- **Fork from here.** Starts a new thread from a settled turn, with its own title, harness and
+  model. Use the ⋯ menu on the user message, or **Fork from here…** in the Changes tab. Claude,
+  Codex, Pi and OpenCode each fork natively; the new worktree branches from that turn's
+  after-checkpoint. The thread header shows `forked from <title>`; click it to open the source.
+- **Rollback.** Replaces Revert. "Roll back to before this turn" undoes the chosen turn and
+  every turn after it. The harness forgets those turns on all four harnesses. "Restore files"
+  also resets the thread's worktree to the checkpoint taken before that turn. Rolled-back
+  messages are dimmed and tagged `rolled back`.
+- **Switching provider.** The next turn after a change of harness carries a **Handoff** card
+  (collapsed). It holds verbatim excerpts of earlier turns within a fixed budget; older turns
+  are listed as omitted. It is lossy: tool state does not carry over. Switching back to a
+  harness that already ran the thread resumes that harness's own session and sends only the
+  turns since then.
+- **Limited threads.** When a subscription window runs out, the thread shows a `⛔ Limited`
+  badge and stops. Its menu offers Resume now, Resume at reset, Wait for me, Snooze 1h and
+  Snooze until reset. Mission Control has a Limited section (hidden when empty) and a collapsed
+  Snoozed section.
+- **PR watch.** In the Changes tab, **Watch PR** (once a PR exists) turns on polling. The
+  thread is woken on a CI failure, a new comment or a conflict. Mission Control shows the watch
+  state on the thread's card (`👁 PR #n · ✔ · 3 comments`).
+- **Settings › General** sets the default follow-up mode (Steer or Queue) and the usage-limit
+  policy (Wait for me or Resume at reset).
+
+## 5. Where things are
 
 | | |
 |---|---|
@@ -90,13 +122,13 @@ Applications, open. Same behaviour as B. Updates are checked at launch and every
 | Settings | top bar → Settings: providers, git, appearance, keyboard, remote, decisions |
 | Escape hatch | thread header → "Open in terminal" runs `claude --resume <id>` (or the harness's equivalent) in the worktree |
 
-## 5. Keyboard
+## 6. Keyboard
 
 `⌘K` palette · `⌘N` new thread · `⌘0` Mission Control · `⌘1/2/3` thread / split / workbench ·
 `⌘B` rail · `` ⌘` `` terminal · `⌘P` open file · `⌘⇧F` search · `⌘↵` send · `Esc` stop ·
 `y`/`n` on a focused approval.
 
-## 6. Checks
+## 7. Checks
 
 ```sh
 pnpm typecheck && pnpm test     # 1,238 tests

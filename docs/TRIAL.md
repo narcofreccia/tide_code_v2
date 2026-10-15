@@ -26,7 +26,7 @@ swallow `node_modules/` or a `.env`, so that case stays a manual `git init`.
 |---|---|---|
 | New thread (default: worktree on) | `~/.tide/worktrees/<project>/<thread>/`, branch `tide/<thread title>` forked from the branch your checkout is on | no (`git worktree add` only writes under `.git/worktrees/`) |
 | Every turn | two snapshot refs `refs/tide/checkpoints/<thread>/<turn>/{before,after}` (tree objects, not commits on any branch) | no |
-| Revert a turn | `read-tree --reset` + `clean -fd` **inside the thread's worktree** | no; refused on a thread without a worktree |
+| Rollback with "Restore files" | `read-tree --reset` + `clean -fd` **inside the thread's worktree**, after the harness forgets the turns | no; refused on a thread without a worktree or on a shared worktree |
 | Commit / PR | `git add -A` + commit + push of `tide/<thread>` in the worktree, `gh pr create` | no |
 | Merge back (squash / merge / rebase) | done in a temporary worktree of the base branch under `~/.tide/worktrees/.merge-<thread>`; the base branch ref moves only when that succeeds | **fast-forward only, and only if your checkout is clean**. A dirty checkout keeps its files; the completion note gives the one `read-tree` command to sync later |
 | Conflict | nothing moves; the thread shows the conflicting files; resolve in the worktree (terminal tab) and retry | no |
@@ -34,6 +34,16 @@ swallow `node_modules/` or a `.env`, so that case stays a manual `git init`.
 
 Threads **without** a worktree (you unticked it, or the folder is not a repo) run in the
 checkout itself. Tide disables revert and PR there and says so in the thread.
+
+## Rollback and fork
+
+- **Rollback with Restore files** checks out the before-checkpoint of the chosen turn in the
+  thread's worktree only. The main checkout is never touched. It is refused when another thread
+  shares the worktree.
+- **Rollback without Restore files** changes only what the harness remembers. Files stay as
+  they are.
+- **Fork** creates a new worktree and branch `tide/<slug>` from the turn's after-checkpoint.
+- **Checkpoint refs of rolled-back turns are deleted** (`refs/tide/checkpoints/<thread>/<turn>/…`).
 
 ## Things the harness can still do
 

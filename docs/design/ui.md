@@ -12,7 +12,7 @@ Three regions + top bar + status bar. Two regions collapse.
 |---|---|---|
 | Top bar | 36px | `⌘K` palette button · project switcher · thread title (inline rename) · right: provider / model / mode / interaction pills · turn state (Stop) |
 | Rail | 240px → 48px icons | **Inbox** (approvals, questions, plans-ready across all threads, with count) · projects → threads (child threads nested) · `+ thread` per project · bottom: Settings, connection |
-| Thread | flexible, primary | header (branch/worktree, PR badge, actions: open in terminal, new child, archive, detach worktree) · pinned plan progress while running · stream of messages + activities · inline cards (approval, user-input, proposed plan) · composer |
+| Thread | flexible, primary | header (branch/worktree, PR badge, lineage chip `forked from <title>`, `⛔ Limited` menu, `Rolling back…` pill, actions: open in terminal, new child, archive, detach worktree) · pinned plan progress while running · stream of messages + activities · inline cards (approval, user-input, proposed plan) · composer |
 | Workbench | flexible, secondary | tabs: **Changes** (default) · open files (Monaco) · tree toggle · terminal drawer |
 | Status bar | 24px | `⎇ branch (worktree)` · context % + cost · diff stats · provider health · connection |
 
@@ -23,7 +23,10 @@ Rail toggle `⌘B`. Terminal drawer `` ⌘` ``. Palette `⌘K`.
 
 **Mission Control** (no thread selected, or `⌘0`): grid/list of all active threads across
 projects with status glyph, provider, last activity, needs-attention badge; the Inbox at the
-top. This is the landing view. "New thread" from here asks project → provider → worktree?.
+top. Below the Inbox: a **Limited** section (lists threads parked on a usage limit with
+Resume now / At reset / Wait; hidden when empty) and a collapsed **Snoozed** section (Unsnooze).
+A thread with a linked PR and a watch shows a PR watch pill on its card:
+`👁 PR #12 · ✔ · 3 comments`. This is the landing view. "New thread" from here asks project → provider → worktree?.
 
 "Open in terminal" opens a new PTY tab in the terminal drawer, on the thread's worktree (or
 the project root), and types the harness's own resume command into it (`claude --resume <id>` /
@@ -33,14 +36,25 @@ the project root), and types the harness's own resume command into it (`claude -
 assistant as prose). Activities are single lines `▸ Read src/foo.ts` / `▸ Bash pnpm test ✓ 2.1s`,
 expandable; consecutive activities collapse into a group ("read 4 files"). Subagent /
 collab children render as an indented group with a "open as thread" link. Cards:
-The composer sends while the thread is running: the turn is **queued** behind the live one
-(`⌘↵` reads "queue", `Esc` still stops). A queued user message carries a `queued` pill and an
-`×` that drops it. Images can be pasted or dropped into the composer (max 8, ~5 MB each) when
+While a turn runs, the composer's **Steer | Queue** toggle sets what a send does: Steer delivers
+the message into the running turn, Queue runs it after the turn (the primary button reads
+"Steer" or "Queue"; `Esc` still stops). A provider that cannot steer disables the toggle, and
+every follow-up queues. Queued messages form a **QueueList** above the composer: rows can be
+edited, moved, dragged, promoted (`Send now as steer`, only when the harness can steer) or removed
+(`×`). A queued user message carries a `queued` pill. Images can be pasted or dropped into the composer (max 8, ~5 MB each) when
 the harness accepts them; they show as thumbnails before sending and as `🖼 image/png · 120 KB`
 pills on the sent message. Assistant extended thinking renders as a collapsed "Thinking"
 disclosure above the answer. A settled turn gets a subtle footer under its last assistant
 message: duration, tokens in/out, cost, or the error that ended it. Model / mode / interaction
 can be changed mid-turn — they apply from the next turn, and the pill says so.
+
+Stream details: a user message delivered into a running turn carries a `steer` tag. Server-authored
+wake-ups (delegate finished, child asked a question, PR changed, restart) render as a notice row,
+not a message. A turn that started after a harness change or fork shows a collapsed **Handoff**
+card (`Handoff · <strategy> · covers N turns, M omitted`, a delivery pill, `from → to`) that
+expands to the handed-over text. A rolled-back turn's messages are dimmed and tagged `rolled back`.
+Each settled user message has a per-turn **⋯** menu: `Fork from here…` and
+`Rollback to before this turn…`. Rollback asks whether files are restored too.
 
 - Approval: tool, target (path/command), diff preview when it is an edit, `Allow` `Allow for session` `Deny`, keyboard `y/n`.
 - User input (AskUserQuestion / codex user-input): options as buttons or free text.
@@ -88,7 +102,9 @@ Keyboard, Remote (bind host, pairing token).
 ## States per thread (status glyph)
 
 `○ idle` · `● running` (pulsing) · `◐ needs you` (approval / question / plan ready) ·
-`✕ error` · `⏸ interrupted` · `✓ PR merged`. Rail sorts needs-you first within a project.
+`✕ error` · `⏸ interrupted` · `✓ PR merged` · `⛔ limited` (usage window exhausted; the header badge
+and the Limited section show it, the status column has no glyph) · `snoozed` (hidden until its time;
+only in the collapsed Snoozed section, no glyph). Rail sorts needs-you first within a project.
 
 ## Design language
 
@@ -126,6 +142,6 @@ traffic-light inset.
 ## Keyboard map
 
 `⌘K` palette · `⌘N` new thread · `⌘0` Mission Control · `⌘1/2/3` focus modes · `⌘B` rail ·
-`` ⌘` `` terminal · `⌘↵` send · `Esc` stop turn / close · `y`/`n` approve/deny focused card ·
+`` ⌘` `` terminal · `⌘↵` send · `⌘↵` while a turn runs: send in the other follow-up mode (Steer ↔ Queue) · `Esc` stop turn / close · `y`/`n` approve/deny focused card ·
 `⌘P` open file in worktree · `⌘S` save · `⌘⇧D` toggle unified/split diff · `[` `]` prev/next turn ·
 `⌘⇧L` toggle light/dark.
