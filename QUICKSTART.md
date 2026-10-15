@@ -13,9 +13,9 @@ What Tide does to your repository is in [`docs/TRIAL.md`](docs/TRIAL.md).
 | Harness | Install | Log in | Note |
 |---|---|---|---|
 | Claude Code | `npm i -g @anthropic-ai/claude-code` | `claude` then `/login` | works with Claude Max |
-| Codex | `npm i -g @openai/codex` | `codex login` | 0.162+ |
+| Codex | `npm i -g @openai/codex` | `codex login` | 0.147+ works (live-tested); 0.162+ for the native `thread/revert` |
 | OpenCode | `npm i -g @opencode/cli` | `opencode auth login` | **2.x only**; 1.x is refused |
-| Pi | optional, Tide bundles 1.1 | `pi` then `/login`, or run Ollama | |
+| Pi | `npm i -g @earendil-works/pi-coding-agent` (under Node 22; on Node 20 it crashes in undici) | `pi` then `/login <provider>`, or run Ollama | the credential lands in `~/.pi/agent/auth.json`; Tide reads that file |
 
 - `git` on PATH; `gh` if you want PRs from the Changes tab.
 - Desktop app only: Rust toolchain and the Tauri v2 prerequisites for macOS.
