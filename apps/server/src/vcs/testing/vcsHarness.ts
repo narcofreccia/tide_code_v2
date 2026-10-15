@@ -5,7 +5,7 @@ import type { Activity, ReadModel, Thread } from "@tide/contracts";
 import { createApp, type App } from "../../app.ts";
 import type { ServerConfig } from "../../config.ts";
 import { createFakeDriver, type FakeDriverControl } from "../../provider/testing/fakeDriver.ts";
-import type { GhLike, PrCreateInput, PrMergeInput, PrRef } from "../gh.ts";
+import type { GhLike, PrCreateInput, PrMergeInput, PrRef, PrStatus } from "../gh.ts";
 import { createTempRepo, type TempRepo } from "./tempRepo.ts";
 
 /** Scripted `gh`: records calls, answers from what the test set up. */
@@ -32,6 +32,19 @@ export class FakeGh implements GhLike {
   }
   async prMerge(cwd: string, number: number, input: PrMergeInput): Promise<void> {
     this.merged.push({ cwd, number, input });
+  }
+  /** what `prStatus` answers next (an Error is thrown); the last entry repeats. Empty = follow prView. */
+  statuses: (PrStatus | Error)[] = [];
+  statusCalls: number[] = [];
+  async prStatus(cwd: string, number: number): Promise<PrStatus> {
+    this.statusCalls.push(number);
+    const next = this.statuses.length > 1 ? this.statuses.shift() : this.statuses[0];
+    if (next instanceof Error) throw next;
+    if (next !== undefined) return next;
+    const viewed = this.viewed.length;
+    const pr = await this.prView(cwd, String(number));
+    this.viewed.length = viewed;
+    return { state: pr?.state ?? "open", comments: 0 };
   }
 }
 

@@ -5,11 +5,15 @@ import {
   type ImageInput,
   type InternalCommand,
   type NormalizedEvent,
+  type Project,
   type ProviderSession,
+  type Thread,
   type TurnInput,
 } from "@tide/contracts";
 import type { Engine } from "../orchestration/engine.ts";
+import { isUsageLimitError } from "../orchestration/limits.ts";
 import { activityKey, mergeActivity } from "./activities.ts";
+import { inlinePrompt, planHandoffDelivery, type DeliveryPlan } from "./handoffDelivery.ts";
 import type { SessionDirectory } from "./sessions.ts";
 
 interface ThreadState {
@@ -19,6 +23,12 @@ interface ThreadState {
   activityIds: Map<string, string>;
   /** `${turnId}:${messageKey}` -> message id, so deltas assemble into one message */
   messageIds: Map<string, string>;
+}
+
+/** What one running turn learned that matters after it settles. */
+interface TurnRun {
+  /** the harness said the subscription window is exhausted */
+  limited?: { resetsAt?: number; note?: string };
 }
 
 /** Drops every `${turnId}:…` entry of a settled turn: harness keys (request ids, tool ids) repeat across turns. */
@@ -80,6 +90,8 @@ export class ProviderReactor {
   #threads = new Map<string, ThreadState>();
   /** turnId -> watchdog cancel, armed while an interrupt is outstanding */
   #interruptTimers = new Map<string, CancelTimer>();
+  /** threadId -> the turn currently inside `session.send` (the only one a steer can land in) */
+  #live = new Map<string, string>();
   #inflight = new Set<Promise<unknown>>();
   #unsubscribe: (() => void) | undefined;
 
@@ -123,13 +135,16 @@ export class ProviderReactor {
   #onRecord(record: EventRecord): void {
     const event = record.event;
     switch (event.type) {
-      case "turn.requested": {
-        const input: TurnInput = { text: event.userMessage.text, ...(event.images ? { images: event.images } : {}) };
-        // queued turns ride the same per-thread chain: they start when the running one settles
-        this.#known.add(event.turn.id);
-        this.#enqueue(event.turn.threadId, () => this.#runTurn(event.turn.threadId, event.turn.id, input));
+      case "turn.requested":
+        this.#accept(event.turn.threadId, event.turn.id, event.userMessage.text, event.images);
         return;
-      }
+      // the harness could not take a steer: the message became a turn of its own, run like any other
+      case "turn.steer-fell-back":
+        this.#accept(event.threadId, event.turn.id, event.userMessage.text, event.images);
+        return;
+      case "turn.steered":
+        this.#track(this.#steer(event.threadId, event.turnId, event.message.id, { text: event.message.text, ...(event.images && event.images.length > 0 ? { images: event.images } : {}) }));
+        return;
       case "turn.dequeued":
         this.#known.delete(event.turnId);
         return;
@@ -164,6 +179,39 @@ export class ProviderReactor {
       }
       default:
         return;
+    }
+  }
+
+  /** Queued turns ride the same per-thread chain: they start when the running one settles. */
+  #accept(threadId: string, turnId: string, text: string, images: ImageInput[] | undefined): void {
+    const input: TurnInput = { text, ...(images ? { images } : {}) };
+    this.#known.add(turnId);
+    this.#enqueue(threadId, () => this.#runTurn(threadId, turnId, input));
+  }
+
+  /**
+   * Out-of-band like approvals: the message goes into the turn `send` is running right now. Any
+   * reason it cannot (no live turn on this reactor, no cap, the harness refused) is reported as
+   * `steer.fallback`, and the decider turns the message into a queued turn.
+   */
+  async #steer(threadId: string, turnId: string, messageId: string, input: TurnInput): Promise<void> {
+    const fallback = (reason: string): Promise<void> => this.#dispatch({ type: "steer.fallback", messageId, reason });
+    const session = this.#sessions.peek(threadId);
+    const thread = this.#engine.getModel().threads[threadId];
+    if (!session || !thread || this.#live.get(threadId) !== turnId) return fallback("no turn is running on the harness");
+    let steerable = false;
+    try {
+      steerable = (await this.#sessions.caps(thread.provider)).steer === true && session.steer !== undefined;
+    } catch (err) {
+      this.#log("[reactor] could not read driver caps", err);
+    }
+    if (!steerable) return fallback(`${thread.provider} cannot take a message into a running turn`);
+    try {
+      await session.steer!(input);
+      this.#sessions.touch(threadId);
+    } catch (err) {
+      this.#log("[reactor] steer refused", err);
+      await fallback(`the harness refused the message: ${err instanceof Error ? err.message : String(err)}`);
     }
   }
 
@@ -323,11 +371,13 @@ export class ProviderReactor {
     };
 
     let settled = false;
+    const run: TurnRun = {};
     try {
-      const session = await this.#sessions.getOrOpen(thread, project);
+      const { session, prompt } = await this.#openFor(thread, project, turnId, input);
       this.#sessions.touch(threadId);
       if (session.nativeSessionId !== undefined) await start(session.nativeSessionId);
-      for await (const event of session.send(input)) {
+      this.#live.set(threadId, turnId);
+      for await (const event of session.send(prompt)) {
         // every sign of life keeps the session off the idle reaper
         this.#sessions.touch(threadId);
         if (event.type === "session") {
@@ -335,7 +385,7 @@ export class ProviderReactor {
           continue;
         }
         await start();
-        if (await this.#ingest(threadId, turnId, event)) settled = true;
+        if (await this.#ingest(threadId, turnId, event, run)) settled = true;
       }
       if (!settled) {
         await start();
@@ -345,11 +395,66 @@ export class ProviderReactor {
     } catch (err) {
       const message = err instanceof Error ? err.message : String(err);
       this.#log("[reactor] driver error", err);
-      if (settled) return;
-      await start();
-      await this.#dispatch({ type: "activity.upsert", activity: this.#errorActivity(threadId, turnId, message) });
-      await this.#dispatch({ type: "turn.settle", turnId, status: "error", error: message });
+      if (!settled) {
+        await start();
+        await this.#dispatch({ type: "activity.upsert", activity: this.#errorActivity(threadId, turnId, message) });
+        await this.#dispatch({ type: "turn.settle", turnId, status: "error", error: message });
+        settled = true;
+        if (isUsageLimitError(message)) run.limited ??= { note: message };
+      }
+    } finally {
+      if (this.#live.get(threadId) === turnId) this.#live.delete(threadId);
     }
+    if (settled && run.limited !== undefined) {
+      await this.#dispatch({
+        type: "thread.limited",
+        threadId,
+        ...(run.limited.resetsAt !== undefined ? { resetsAt: run.limited.resetsAt } : {}),
+        ...(run.limited.note !== undefined ? { note: run.limited.note } : {}),
+      });
+    }
+  }
+
+  /**
+   * Gets the thread's session and the prompt to send. A turn carrying a handoff is delivered
+   * natively when the harness can fork its source session (then `rollback` trims the turns after
+   * the fork point), otherwise the history goes inline ahead of the user's text.
+   */
+  async #openFor(thread: Thread, project: Project, turnId: string, input: TurnInput): Promise<{ session: ProviderSession; prompt: TurnInput }> {
+    const model = this.#engine.getModel();
+    const hasHandoff = model.turns[turnId]?.handoffId !== undefined;
+    let plan: DeliveryPlan | undefined;
+    if (hasHandoff) {
+      let caps = {};
+      try {
+        caps = await this.#sessions.caps(thread.provider);
+      } catch (err) {
+        this.#log("[reactor] could not read driver caps", err);
+      }
+      plan = planHandoffDelivery(model, thread, turnId, caps);
+    }
+    if (plan === undefined) return { session: await this.#sessions.getOrOpen(thread, project), prompt: input };
+    let delivery = plan.delivery;
+    let session: ProviderSession | undefined;
+    // a live session (should not exist on a fork's first turn) would ignore the fork request
+    if (plan.delivery === "native" && this.#sessions.peek(thread.id) === undefined) {
+      const { forkFrom, rollback } = plan;
+      try {
+        session = await this.#sessions.getOrOpen(thread, project, { forkFrom });
+        if (rollback > 0) {
+          if (session.rollback === undefined) throw new Error(`${thread.provider} driver does not implement rollback`);
+          await session.rollback(rollback);
+        }
+      } catch (err) {
+        this.#log("[reactor] native fork failed; delivering the handoff inline", err);
+        await this.#sessions.close(thread.id);
+        session = undefined;
+        delivery = "inline";
+      }
+    } else delivery = "inline";
+    session ??= await this.#sessions.getOrOpen(thread, project);
+    await this.#dispatch({ type: "handoff.delivered", turnId, delivery });
+    return { session, prompt: delivery === "native" ? input : { ...input, text: inlinePrompt(plan.handoff, input.text) } };
   }
 
   #errorActivity(threadId: string, turnId: string, text: string): Activity {
@@ -358,7 +463,7 @@ export class ProviderReactor {
   }
 
   /** Translates one NormalizedEvent into internal commands; true when the turn settled. */
-  async #ingest(threadId: string, turnId: string, event: NormalizedEvent): Promise<boolean> {
+  async #ingest(threadId: string, turnId: string, event: NormalizedEvent, run: TurnRun): Promise<boolean> {
     const state = this.#state(threadId);
     switch (event.type) {
       case "assistant.delta": {
@@ -401,6 +506,12 @@ export class ProviderReactor {
         await this.#dispatch({ type: "plan.progress", threadId, steps: event.steps });
         return false;
       case "usage":
+        if (event.rateLimit?.status === "limited") {
+          run.limited = {
+            ...(event.rateLimit.resetsAt !== undefined ? { resetsAt: event.rateLimit.resetsAt } : {}),
+            ...(event.rateLimit.note !== undefined ? { note: event.rateLimit.note } : {}),
+          };
+        }
         await this.#dispatch({
           type: "usage.report",
           turnId,
@@ -410,6 +521,7 @@ export class ProviderReactor {
         });
         return false;
       case "settled":
+        if (event.status === "error" && isUsageLimitError(event.error)) run.limited ??= { note: event.error as string };
         await this.#dispatch({
           type: "turn.settle",
           turnId,

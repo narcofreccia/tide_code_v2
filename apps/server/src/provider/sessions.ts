@@ -1,4 +1,5 @@
-import type { McpServerSpec, Project, ProviderKind, ProviderSession, ReadModel, SessionSettings, Thread } from "@tide/contracts";
+import type { DriverCaps, McpServerSpec, Project, ProviderKind, ProviderSession, ReadModel, SessionSettings, Thread } from "@tide/contracts";
+import { THREAD_TOOLS_HINT } from "@tide/tide-mcp";
 import { composeSystemPromptAppend, linkedRepoPreamble, resolveLinkedDirs } from "./links.ts";
 import type { DriverRegistry } from "./registry.ts";
 
@@ -21,6 +22,12 @@ export function settingsOf(thread: Thread): SessionSettings {
 
 function sameSettings(a: SessionSettings, b: SessionSettings): boolean {
   return a.model === b.model && a.mode === b.mode && a.interaction === b.interaction;
+}
+
+/** How a session is opened when the directory has none for the thread. */
+export interface OpenHints {
+  /** R4: open a new native session continuing this one (thread fork); replaces `resume` */
+  forkFrom?: string;
 }
 
 export interface SessionDirectoryOptions {
@@ -60,6 +67,9 @@ export function nativeSessionOwner(model: ReadModel, threadId: string): Provider
 export function resumableSessionId(thread: Thread, model?: ReadModel): string | undefined {
   if (thread.nativeSessionId === undefined) return undefined;
   if (model === undefined) return thread.nativeSessionId;
+  // switching back to a harness that already ran this thread: its own session is current again
+  // (the turns it missed reach it as a delta handoff)
+  if (thread.providerSessions?.[thread.provider]?.nativeSessionId === thread.nativeSessionId) return thread.nativeSessionId;
   const owner = nativeSessionOwner(model, thread.id);
   return owner === undefined || owner === thread.provider ? thread.nativeSessionId : undefined;
 }
@@ -116,7 +126,13 @@ export class SessionDirectory {
     return this.#entries.get(threadId)?.session;
   }
 
-  async getOrOpen(thread: Thread, project: Project): Promise<ProviderSession> {
+  /** What the thread's harness can do (cached driver status). */
+  async caps(kind: ProviderKind): Promise<Partial<DriverCaps>> {
+    return (await this.#registry.status(kind)).caps;
+  }
+
+  /** `hints` only apply when a session has to be opened; a live one is returned as is. */
+  async getOrOpen(thread: Thread, project: Project, hints: OpenHints = {}): Promise<ProviderSession> {
     const cwd = threadCwd(thread, project);
     const existing = this.#entries.get(thread.id);
     if (existing) {
@@ -142,20 +158,23 @@ export class SessionDirectory {
     const inflight = this.#opening.get(thread.id);
     if (inflight) return inflight;
 
-    const open = this.#open(thread, cwd, project).finally(() => this.#opening.delete(thread.id));
+    const open = this.#open(thread, cwd, project, hints).finally(() => this.#opening.delete(thread.id));
     this.#opening.set(thread.id, open);
     return open;
   }
 
-  async #open(thread: Thread, cwd: string, project: Project): Promise<ProviderSession> {
+  async #open(thread: Thread, cwd: string, project: Project, hints: OpenHints): Promise<ProviderSession> {
     const instance = await this.#registry.get(thread.provider);
     const linkedDirs = resolveLinkedDirs(thread, project);
-    const systemPromptAppend = composeSystemPromptAppend(linkedRepoPreamble(project, linkedDirs));
-    const resume = resumableSessionId(thread, this.#model?.());
+    // every session that carries Tide's MCP server learns about the thread tools it exposes
+    const tideTools = this.#mcp !== undefined || this.#mcpServers.length > 0 ? THREAD_TOOLS_HINT : undefined;
+    const systemPromptAppend = composeSystemPromptAppend(linkedRepoPreamble(project, linkedDirs), tideTools);
+    const resume = hints.forkFrom !== undefined ? undefined : resumableSessionId(thread, this.#model?.());
     const session = await instance.openSession({
       threadId: thread.id,
       cwd,
       ...(resume !== undefined ? { resume } : {}),
+      ...(hints.forkFrom !== undefined ? { forkFrom: hints.forkFrom } : {}),
       ...(thread.model !== undefined ? { model: thread.model } : {}),
       mode: thread.mode,
       interaction: thread.interaction,

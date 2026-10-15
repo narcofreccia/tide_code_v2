@@ -1,7 +1,8 @@
 import { describe, expect, it } from "vitest";
 import { emptyReadModel, type Project, type ReadModel, type Thread, type Turn } from "@tide/contracts";
 import { DriverRegistry } from "./registry.ts";
-import { SessionDirectory } from "./sessions.ts";
+import { THREAD_TOOLS_HINT } from "@tide/tide-mcp";
+import { resumableSessionId, SessionDirectory } from "./sessions.ts";
 import { createFakeDriver, type FakeDriverControl } from "./testing/fakeDriver.ts";
 
 const project: Project = { id: "p1", title: "T", rootPath: "/repo", createdAt: 0, updatedAt: 0 };
@@ -149,5 +150,31 @@ describe("SessionDirectory", () => {
     await sessions.closeAll();
     expect(sessions.size).toBe(0);
     expect(claude.closed).toEqual(["t1", "t2"]);
+  });
+});
+
+describe("SessionDirectory: R4", () => {
+  it("tells every session that carries Tide's MCP server about the thread tools", async () => {
+    const registry = new DriverRegistry({ env: { dataDir: ":memory:", log: () => undefined } });
+    const claude = createFakeDriver("claude");
+    registry.register(claude.driver);
+    const sessions = new SessionDirectory({ registry, autoReap: false, mcp: { serversFor: () => [], revoke: () => undefined } });
+    await sessions.getOrOpen(thread(), project);
+    expect(claude.control.opened[0]?.systemPromptAppend).toContain(THREAD_TOOLS_HINT);
+  });
+
+  it("resumes the current harness's own session after a switch back, even though another harness ran last", async () => {
+    const t = thread({ nativeSessionId: "claude-1", providerSessions: { claude: { nativeSessionId: "claude-1" }, codex: { nativeSessionId: "codex-1" } } });
+    const model = modelWith(t, { provider: "codex" });
+    expect(resumableSessionId(t, model)).toBe("claude-1");
+    // a stale id the current harness never minted is still refused
+    expect(resumableSessionId({ ...t, nativeSessionId: "codex-1" }, model)).toBeUndefined();
+  });
+
+  it("opens a fork instead of resuming when asked", async () => {
+    const { sessions, claude } = setup();
+    await sessions.getOrOpen(thread({ nativeSessionId: "x" }), project, { forkFrom: "src-1" });
+    expect(claude.opened[0]).toMatchObject({ forkFrom: "src-1" });
+    expect(claude.opened[0]?.resume).toBeUndefined();
   });
 });

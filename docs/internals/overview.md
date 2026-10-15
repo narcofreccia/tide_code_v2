@@ -35,19 +35,48 @@ Reactors subscribe to events and issue further commands; they hold no business r
   promoted when the live turn settles; `turn.dequeue` drops it. Before each turn the
   `SessionDirectory` compares the thread's model/mode/interaction with what the session was
   opened with and either calls the driver's `reconfigure()` or reopens the session with `resume`.
-  `resume` is only passed when the thread's last started turn ran on the same provider. Every
+  `resume` is only passed when the thread's last started turn ran on the same provider, or when the
+  id is the current harness's own entry in `providerSessions` (switching back resumes it). Every
   `NormalizedEvent` touches the session; the idle reaper (30 min) never closes a session whose
   thread has a turn in flight. Activity identity (`req:`/`tool:` keys) is scoped to the turn.
   On startup, after every reactor has subscribed, a recovery pass settles each turn a previous
   process left `requested`/`running`; a turn queued behind it is promoted by that settle and run.
   `close()` interrupts and settles in-flight turns before the store closes.
+  **Steer**: `turn.steered` is forwarded out-of-band to `session.steer()` when the driver reports
+  `caps.steer` and that turn is inside `send` on this reactor; otherwise (or when the harness
+  refuses) the reactor answers `steer.fallback` and runs the resulting `turn.steer-fell-back`
+  turn exactly like a requested one. **Handoff delivery**: a turn carrying `handoffId` is delivered
+  natively only on a fork's first turn when the harness can fork and the source's own session on
+  that harness ran every surviving source turn (`openSession({ forkFrom })`, then
+  `rollback(n)` for the source turns after the fork point); everything else — provider switches,
+  full or delta — goes inline as `handoff.text + "---" + "User message:"` ahead of the prompt.
+  Either way `handoff.delivered` records how. **Limits**: a `usage` report with
+  `rateLimit.status: limited`, or an error matching the usage-limit wording, dispatches
+  `thread.limited` after the settle.
 - `VcsReactor` — worktree per thread, `before`/`after` checkpoints as `refs/tide/checkpoints/…`
   (the before-snapshot gates the turn; a queued turn is snapshotted when promoted), revert,
   publish (commit/push/`gh pr`, optional `gh pr merge --auto`), merge-back (`vcs/merge.ts`: in a
   scratch worktree `<TIDE_HOME>/worktrees/.merge-<thread>`, then the base ref moves; a clean
   checkout of the base is fast-forwarded, a dirty one is left alone; with an open PR,
   `gh pr merge`), teardown on detach/archive (terminals and watchers first; failures are posted
-  as error activities), checkpoint-ref GC on archive.
+  as error activities), checkpoint-ref GC on archive. `exclusive(threadId, task)` lets other
+  services run git work on a thread's queue.
+- `RollbackService` (`orchestration/rollback.ts`) — on `rollback.requested`: checks a file restore
+  is safe first (refused in the main checkout or a worktree another live thread shares, by
+  realpath), then (a) `session.rollback(n)` with n = rolled-back turns the current harness ran,
+  when `caps.rollback` and a live/resumable session exists (a harness without it keeps its memory
+  and an info activity says so), (b) with `restoreFiles` the worktree goes back to the first
+  rolled-back turn's before-checkpoint (`vcs/restore.ts`, shared with `thread.revert`), drops the
+  rolled-back turns' checkpoint refs, then (c) `rollback.report`. The session stays open: the
+  native id may change after a rollback (Pi, Claude) and the next `turn.start` records it.
+  Recovery reports a rollback left `rolling` by a dead process as failed.
+- `LimitsWorker` (`orchestration/limits.ts`) — every 60 s, a limited thread whose policy is
+  `reset` and whose `resetsAt` has passed gets `thread.resume { continue: true }`.
+- `PrWatcher` (`vcs/prWatch.ts`) — refreshes a thread's PR through `gh pr view --json
+  state,mergeable,statusCheckRollup,comments,reviews` when watching starts, after publish/merge and
+  every 2 min while `thread.prWatch` is set; reports `pr.update` (checks, mergeable, comment count)
+  and wakes the thread with a `turn.request` (notification `pr`) on a CI failure, new comments or a
+  new conflict. Watching stops on merge/close or after 8 consecutive gh failures.
 - `ExpertsReactor` — delivers each board message as a `turn.request` on its recipients (queued
   behind a running turn, so the backlog lives in the log), tracks expert status.
 - `TriageReactor` (`decisions/`) — optional and off by default (`settings.decisions.enabled` plus a
@@ -80,8 +109,12 @@ Every session gets a `tide` MCP server (stdio; `packages/tide-mcp`, or `tide-ser
 inside the compiled sidecar). It connects back over the same WS RPC with a per-thread agent
 token; the router grants agent sockets only `agent.*` methods and stamps identity from the
 socket. Tools: experts board (`post_finding`, `read_findings`, `send_message`,
-`check_messages`, `synthesize`) and cross-harness delegation (`tide_delegate`,
-`tide_delegate_status`).
+`check_messages`, `synthesize`), cross-harness delegation (`tide_delegate`,
+`tide_delegate_status`) and thread tools (`agent.thread.list/read/send/wait/interrupt`,
+`agent.pending.list/respond`, `rpc/agentThreads.ts`): an agent reaches its own project's threads
+and its delegates, never drives a thread whose mode is broader than its own, cannot answer
+approvals, and `send` in `auto` steers a running turn when the harness can, else queues/starts.
+Every session's system prompt append carries the tools hint (`THREAD_TOOLS_HINT`).
 
 ## Auth & remote
 

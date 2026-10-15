@@ -109,7 +109,16 @@ export class CheckpointService {
     return refs.length;
   }
 
-  /** before → after for one turn; falls back to the live working tree while the turn is running. */
+  /** Deletes the before/after refs of the given turns (rolled-back turns nothing can revert to). */
+  async deleteTurnRefs(repoDir: string, threadId: string, turnIds: string[]): Promise<void> {
+    const git = this.#git(repoDir);
+    if (!(await git.isRepo())) return;
+    for (const turnId of turnIds) {
+      for (const phase of ["before", "after"] as const) await git.deleteRef(checkpointRef(threadId, turnId, phase));
+    }
+  }
+
+    /** before → after for one turn; falls back to the live working tree while the turn is running. */
   async turnDiff(cwd: string, turn: Turn): Promise<DiffResult> {
     const before = turn.checkpoint?.before;
     if (before === undefined) return { base: "", head: WORKTREE, files: [] };

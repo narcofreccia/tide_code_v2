@@ -1,5 +1,6 @@
 import type {
   ApprovalDecision,
+  DriverCaps,
   DriverEnv,
   NormalizedEvent,
   OpenSessionOptions,
@@ -22,6 +23,8 @@ export type FakeStep =
   | { kind: "await-approval"; requestId: string }
   | { kind: "await-user-input"; requestId: string }
   | { kind: "await-interrupt" }
+  /** suspends until the server steers a message into this turn */
+  | { kind: "await-steer" }
   /** side effect run inside the turn, e.g. writing a file into the session's cwd */
   | { kind: "effect"; run: (options: OpenSessionOptions) => void | Promise<void> }
   | { kind: "throw"; message: string };
@@ -31,6 +34,7 @@ export const awaitApproval = (requestId: string): FakeStep => ({ kind: "await-ap
 export const awaitUserInput = (requestId: string): FakeStep => ({ kind: "await-user-input", requestId });
 export const effect = (run: (options: OpenSessionOptions) => void | Promise<void>): FakeStep => ({ kind: "effect", run });
 export const awaitInterrupt = (): FakeStep => ({ kind: "await-interrupt" });
+export const awaitSteer = (): FakeStep => ({ kind: "await-steer" });
 export const throwStep = (message: string): FakeStep => ({ kind: "throw", message });
 
 interface Deferred<T> {
@@ -65,7 +69,8 @@ export class FakeSession implements ProviderSession {
   constructor(options: OpenSessionOptions, control: FakeDriverControl) {
     this.options = options;
     this.control = control;
-    this.nativeSessionId = options.resume;
+    // a fork is a new native session that starts from another one's history
+    this.nativeSessionId = options.resume ?? (options.forkFrom !== undefined ? `${options.forkFrom}~fork${control.sessions.length + 1}` : undefined);
   }
 
   #waiter<T>(key: string): Deferred<T> {
@@ -96,6 +101,9 @@ export class FakeSession implements ProviderSession {
             break;
           case "await-interrupt":
             await self.#waiter<void>("interrupt").promise;
+            break;
+          case "await-steer":
+            await self.#waiter<TurnInput>("steer").promise;
             break;
           case "effect":
             await step.run(self.options);
@@ -132,6 +140,21 @@ export class FakeSession implements ProviderSession {
     this.control.received(`close:${this.options.threadId}`, undefined);
   }
 
+  /** R4: only reached when `control.statusResult.caps.steer`; `control.steerError` makes the harness refuse. */
+  async steer(input: TurnInput): Promise<void> {
+    if (this.control.steerError) throw this.control.steerError;
+    this.control.steers.push({ threadId: this.options.threadId, input });
+    this.control.received(`steer:${this.options.threadId}`, input);
+    this.#waiter<TurnInput>("steer").resolve(input);
+  }
+
+  /** R4: records how many turns the server asked the harness to forget. */
+  async rollback(turns: number): Promise<void> {
+    if (this.control.rollbackError) throw this.control.rollbackError;
+    this.control.rollbacks.push({ threadId: this.options.threadId, turns, nativeSessionId: this.nativeSessionId });
+    this.control.received(`rollback:${this.options.threadId}`, turns);
+  }
+
   /** Answers with `control.reconfigureResult`; undefined = "this driver cannot switch live". */
   async reconfigure(settings: SessionSettings): Promise<ReconfigureResult> {
     this.control.reconfigures.push({ threadId: this.options.threadId, settings });
@@ -149,6 +172,10 @@ export class FakeDriverControl {
   readonly interrupts: string[] = [];
   readonly closed: string[] = [];
   readonly reconfigures: { threadId: string; settings: SessionSettings }[] = [];
+  readonly steers: { threadId: string; input: TurnInput }[] = [];
+  readonly rollbacks: { threadId: string; turns: number; nativeSessionId: string | undefined }[] = [];
+  steerError: Error | undefined;
+  rollbackError: Error | undefined;
   reconfigureResult: ReconfigureResult | undefined;
   statusResult: ProviderStatus;
   statusError: Error | undefined;
@@ -162,6 +189,11 @@ export class FakeDriverControl {
     this.kind = kind;
     this.statusResult = DEFAULT_STATUS(kind);
     this.terminalCommandFor = (id, cwd) => `${kind} --resume ${id} # ${cwd}`;
+  }
+
+  /** Turns R4 capabilities on/off. Call before anything reads the (cached) status. */
+  setCaps(caps: Partial<DriverCaps>): void {
+    this.statusResult = { ...this.statusResult, caps: { ...this.statusResult.caps, ...caps } };
   }
 
   /** Queues the script for the next turn (any thread). */

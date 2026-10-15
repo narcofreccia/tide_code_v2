@@ -104,6 +104,20 @@ export async function recoverUnsettledTurns(engine: Engine, options: RecoveryOpt
   return report;
 }
 
+export const ROLLBACK_RESTART_ERROR = "server restarted during rollback";
+
+/** A rollback the previous process never finished is reported failed, so the thread can be rolled back again. */
+export async function recoverRollbacks(engine: Engine, options: Pick<RecoveryOptions, "log"> = {}): Promise<number> {
+  const log = options.log ?? (() => undefined);
+  let count = 0;
+  for (const thread of Object.values(engine.getModel().threads)) {
+    if (thread.rollback?.status !== "rolling") continue;
+    if (await dispatch(engine, { type: "rollback.report", threadId: thread.id, outcome: "error", error: ROLLBACK_RESTART_ERROR }, log)) count++;
+  }
+  if (count > 0) log(`[recovery] ${count} rollback(s) interrupted by a restart reported as failed`);
+  return count;
+}
+
 async function dispatch(
   engine: Engine,
   command: Parameters<Engine["dispatch"]>[0],

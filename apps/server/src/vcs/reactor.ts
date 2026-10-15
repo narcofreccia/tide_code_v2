@@ -8,7 +8,6 @@ import {
   type PullRequest,
   type ReadModel,
   type Thread,
-  type Turn,
 } from "@tide/contracts";
 import type { Engine } from "../orchestration/engine.ts";
 import type { SessionDirectory } from "../provider/sessions.ts";
@@ -17,6 +16,7 @@ import { CheckpointService } from "./checkpoints.ts";
 import { Git } from "./git.ts";
 import { Gh, type GhLike } from "./gh.ts";
 import { MergeBack } from "./merge.ts";
+import { restoreBeforeTurn } from "./restore.ts";
 import { WorktreeManager } from "./worktrees.ts";
 
 export interface VcsReactorOptions {
@@ -31,6 +31,8 @@ export interface VcsReactorOptions {
   merge?: MergeBack;
   /** called right before a worktree directory is removed (terminals and watchers holding it go first) */
   onDetach?: (threadId: string, worktreePath: string) => void;
+  /** a publish opened/updated the thread's PR or a merge landed: the PR watcher refreshes it */
+  onPrChange?: (threadId: string) => void;
   now?: () => number;
   newId?: () => string;
   log?: (msg: string, data?: unknown) => void;
@@ -50,6 +52,7 @@ export class VcsReactor {
   #git: (cwd: string) => Git;
   #merge: MergeBack;
   #onDetach: ((threadId: string, worktreePath: string) => void) | undefined;
+  #onPrChange: ((threadId: string) => void) | undefined;
   #now: () => number;
   #newId: () => string;
   #log: (msg: string, data?: unknown) => void;
@@ -68,6 +71,7 @@ export class VcsReactor {
     this.#git = options.git ?? ((cwd) => new Git(cwd));
     this.#now = options.now ?? (() => Date.now());
     this.#onDetach = options.onDetach;
+    this.#onPrChange = options.onPrChange;
     this.#newId = options.newId ?? (() => defaultNewId());
     this.#log = options.log ?? ((msg, data) => (data === undefined ? console.error(msg) : console.error(msg, data)));
     this.#merge =
@@ -105,6 +109,7 @@ export class VcsReactor {
         if (event.useWorktree === true) this.#enqueue(event.thread.id, () => this.#createWorktree(event.thread.id));
         return;
       case "turn.requested":
+      case "turn.steer-fell-back":
         // a queued turn is snapshotted when it is promoted, not while the turn ahead still edits
         if (event.turn.status !== "queued") this.#gateBefore(event.turn.threadId, event.turn.id);
         return;
@@ -152,6 +157,19 @@ export class VcsReactor {
     }
   }
 
+  /** Runs `task` on the thread's git queue (rollback's file restore must not race a checkpoint). */
+  exclusive<T>(threadId: string, task: () => Promise<T>): Promise<T> {
+    return new Promise<T>((resolve, reject) => {
+      this.#enqueue(threadId, async () => {
+        try {
+          resolve(await task());
+        } catch (err) {
+          reject(err);
+        }
+      });
+    });
+  }
+
   // ---- plumbing ----
 
   /**
@@ -191,12 +209,6 @@ export class VcsReactor {
     const project = thread ? model.projects[thread.projectId] : undefined;
     if (!thread || !project) return undefined;
     return { model, thread, project, cwd: threadCwd(thread, project) };
-  }
-
-  #turnsOf(model: ReadModel, threadId: string): Turn[] {
-    return Object.values(model.turns)
-      .filter((t) => t.threadId === threadId)
-      .sort((a, b) => a.requestedAt - b.requestedAt);
   }
 
   async #info(threadId: string, kind: "info" | "error", text: string): Promise<void> {
@@ -355,16 +367,9 @@ export class VcsReactor {
   async #revert(threadId: string, turnId: string): Promise<void> {
     const ctx = this.#context(threadId);
     if (!ctx) return;
-    const turns = this.#turnsOf(ctx.model, threadId);
-    const index = turns.findIndex((t) => t.id === turnId);
-    const before = ctx.model.turns[turnId]?.checkpoint?.before;
-    if (before === undefined) {
-      await this.#info(threadId, "error", "Revert failed: this turn has no checkpoint");
-      return;
-    }
     try {
-      await this.#checkpoints.revertTo(ctx.cwd, before);
-      await this.#info(threadId, "info", `Reverted to before turn ${index >= 0 ? index + 1 : "?"}`);
+      const position = await restoreBeforeTurn(this.#checkpoints, ctx.model, threadId, turnId, ctx.cwd);
+      await this.#info(threadId, "info", `Reverted to before turn ${position > 0 ? position : "?"}`);
     } catch (err) {
       await this.#info(threadId, "error", `Revert failed: ${message(err)}`);
     }
@@ -404,6 +409,7 @@ export class VcsReactor {
       ...(result.sha !== undefined ? { sha: result.sha } : {}),
       ...(deleteBranch ? { branchDeleted } : {}),
     });
+    this.#onPrChange?.(threadId);
     const where = result.pr !== undefined ? `via pull request #${result.pr.number}` : `(${strategy}${result.sha !== undefined ? ` ${result.sha.slice(0, 8)}` : ""})`;
     await this.#info(threadId, "info", `Merged ${thread.branch ?? "branch"} into ${thread.baseBranch ?? "base"} ${where}${result.note !== undefined ? `. ${result.note}` : ""}`);
   }
@@ -441,6 +447,7 @@ export class VcsReactor {
       await git.push(branch);
       const pr = await this.#openOrUpdatePr(threadId, ctx.cwd, ctx.thread, branch, commitMessage, body);
       if (pr !== undefined && mergeWhenGreen !== undefined) await this.#autoMerge(threadId, ctx.cwd, pr, mergeWhenGreen);
+      if (pr !== undefined) this.#onPrChange?.(threadId);
     } catch (err) {
       await this.#info(threadId, "error", `Publish failed: ${message(err)}`);
     }

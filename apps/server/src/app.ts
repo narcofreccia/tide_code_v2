@@ -6,7 +6,9 @@ import { ExpertsReactor } from "./experts/reactor.ts";
 import { TideMcpProvisioner } from "./mcp/provision.ts";
 import { AgentTokenStore } from "./rpc/agentTickets.ts";
 import { Engine } from "./orchestration/engine.ts";
-import { recoverUnsettledTurns, SHUTDOWN_ERROR, unsettledTurns } from "./orchestration/recovery.ts";
+import { LimitsWorker } from "./orchestration/limits.ts";
+import { recoverRollbacks, recoverUnsettledTurns, SHUTDOWN_ERROR, unsettledTurns } from "./orchestration/recovery.ts";
+import { RollbackService } from "./orchestration/rollback.ts";
 import { openEventStore, type EventStore } from "./orchestration/store.ts";
 import { registerBundledDrivers } from "./provider/load.ts";
 import { ProviderReactor } from "./provider/reactor.ts";
@@ -16,7 +18,8 @@ import { SettingsStore } from "./settings.ts";
 import { startServer, type ServerHandle } from "./rpc/server.ts";
 import { createWorkspaceServices, type WorkspaceServices } from "./rpc/workspace.ts";
 import { CheckpointService } from "./vcs/checkpoints.ts";
-import type { GhLike } from "./vcs/gh.ts";
+import { Gh, type GhLike } from "./vcs/gh.ts";
+import { PrWatcher } from "./vcs/prWatch.ts";
 import { VcsReactor } from "./vcs/reactor.ts";
 import { WorktreeManager } from "./vcs/worktrees.ts";
 
@@ -56,6 +59,9 @@ export interface App {
   worktrees: WorktreeManager;
   checkpoints: CheckpointService;
   vcs: VcsReactor;
+  rollback: RollbackService;
+  limits: LimitsWorker;
+  prWatch: PrWatcher;
   workspace: WorkspaceServices;
   server: ServerHandle | undefined;
   close(): Promise<void>;
@@ -91,13 +97,16 @@ export async function createApp(options: AppOptions): Promise<App> {
   const workspace = createWorkspaceServices({ engine, log });
   const worktrees = new WorktreeManager({ tideHome: config.tideHome, log });
   const checkpoints = new CheckpointService({ log });
+  const gh = options.gh ?? new Gh();
+  const prWatch = new PrWatcher({ engine, gh, log });
   const vcs = new VcsReactor({
     engine,
     worktrees,
     checkpoints,
     sessions,
-    ...(options.gh !== undefined ? { gh: options.gh } : {}),
+    gh,
     onDetach: (threadId, worktreePath) => workspace.teardown(threadId, worktreePath),
+    onPrChange: (threadId) => void prWatch.refresh(threadId),
     log,
   });
   vcs.start();
@@ -114,6 +123,12 @@ export async function createApp(options: AppOptions): Promise<App> {
   const experts = new ExpertsReactor({ engine, log });
   experts.start();
 
+  const rollback = new RollbackService({ engine, sessions, checkpoints, exclusive: (threadId, task) => vcs.exclusive(threadId, task), log });
+  rollback.start();
+  const limits = new LimitsWorker({ engine, log });
+  limits.start();
+  prWatch.start();
+
   // One settings store for the RPC server and the decisions client.
   const settings = options.settings ?? new SettingsStore({ ...(config.dataDir === ":memory:" ? {} : { path: SettingsStore.pathFor(config.tideHome) }), log });
   const triage = new TriageReactor({
@@ -127,6 +142,7 @@ export async function createApp(options: AppOptions): Promise<App> {
   // checkpoint), the experts reactor (expert status) and the provider reactor (which runs the
   // queued turn each settle promotes).
   await recoverUnsettledTurns(engine, { log, resume: (threadId, turnId) => reactor.resume(threadId, turnId) });
+  await recoverRollbacks(engine, { log });
 
   const server =
     options.listen === false
@@ -160,6 +176,9 @@ export async function createApp(options: AppOptions): Promise<App> {
     worktrees,
     checkpoints,
     vcs,
+    rollback,
+    limits,
+    prWatch,
     workspace,
     server,
     async close() {
@@ -168,6 +187,9 @@ export async function createApp(options: AppOptions): Promise<App> {
       experts.stop();
       triage.stop();
       vcs.stop();
+      rollback.stop();
+      limits.stop();
+      prWatch.stop();
       await server?.close();
 
       // 2. whatever is mid-flight is asked to stop and then settled, so a restart finds a
@@ -188,7 +210,7 @@ export async function createApp(options: AppOptions): Promise<App> {
 
       // 3. give the reactors a bounded window to finish their git/driver work before the
       //    store they write into is closed under them
-      await withTimeout(Promise.all([reactor.drain(), vcs.drain(), triage.drain()]), options.shutdownTimeoutMs ?? DEFAULT_SHUTDOWN_TIMEOUT_MS, log);
+      await withTimeout(Promise.all([reactor.drain(), vcs.drain(), triage.drain(), rollback.drain(), prWatch.drain()]), options.shutdownTimeoutMs ?? DEFAULT_SHUTDOWN_TIMEOUT_MS, log);
 
       workspace.close();
       await sessions.closeAll();
