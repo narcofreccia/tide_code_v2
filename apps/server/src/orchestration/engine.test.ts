@@ -90,4 +90,63 @@ describe("Engine", () => {
     store.setMeta("environmentId", "env-2");
     expect(store.getMeta("environmentId")).toBe("env-2");
   });
+
+  describe("command receipts", () => {
+    it("replays the identical result for a repeated commandId without new events", async () => {
+      const store = await memoryStore();
+      const engine = new Engine({ store });
+      const cmd = { type: "project.create", commandId: "c1", title: "A", rootPath: "/a" } as const;
+      const first = await engine.dispatch(cmd);
+      const second = await engine.dispatch(cmd);
+      expect(second).toEqual(first);
+      expect(store.lastSeq()).toBe(1);
+      expect(Object.keys(engine.getModel().projects)).toHaveLength(1);
+    });
+
+    it("treats different commandIds as different commands", async () => {
+      const store = await memoryStore();
+      const engine = new Engine({ store });
+      const a = await engine.dispatch({ type: "project.create", commandId: "c1", title: "A", rootPath: "/a" });
+      const b = await engine.dispatch({ type: "project.create", commandId: "c2", title: "B", rootPath: "/b" });
+      expect(a.seq).toBe(1);
+      expect(b.seq).toBe(2);
+      expect(store.lastSeq()).toBe(2);
+    });
+
+    it("does not record rejections, so a retry re-evaluates", async () => {
+      const store = await memoryStore();
+      const engine = new Engine({ store });
+      const first = await engine.dispatch({ type: "project.create", title: "A", rootPath: "/a" });
+      const ev = first.events[0]?.event;
+      if (ev?.type !== "project.created") throw new Error("expected project.created");
+      const retry = { type: "project.create", commandId: "r1", title: "B", rootPath: "/a" } as const;
+      await expect(engine.dispatch(retry)).rejects.toMatchObject({ code: "conflict" });
+      expect(store.getReceipt("r1")).toBeUndefined();
+      await engine.dispatch({ type: "project.archive", projectId: ev.project.id });
+      const ok = await engine.dispatch(retry);
+      expect(ok.events[0]?.event.type).toBe("project.created");
+      expect(store.getReceipt("r1")).toMatchObject({ firstSeq: ok.seq, lastSeq: ok.seq });
+    });
+
+    it("records a receipt for zero-event commands and replays them as empty", async () => {
+      const store = await memoryStore();
+      const engine = new Engine({ store });
+      const p = await engine.dispatch({ type: "project.create", title: "A", rootPath: "/a" });
+      const pe = p.events[0]?.event;
+      if (pe?.type !== "project.created") throw new Error("expected project.created");
+      const t = await engine.dispatch({ type: "thread.create", projectId: pe.project.id, provider: "claude" });
+      const te = t.events[0]?.event;
+      if (te?.type !== "thread.created") throw new Error("expected thread.created");
+      const threadId = te.thread.id;
+      await engine.dispatch({ type: "thread.archive", threadId });
+      const seq = store.lastSeq();
+      const cmd = { type: "thread.archive", commandId: "z1", threadId } as const;
+      const first = await engine.dispatch(cmd);
+      expect(first.events).toEqual([]);
+      expect(store.getReceipt("z1")).toMatchObject({ firstSeq: 0, lastSeq: 0 });
+      const again = await engine.dispatch(cmd);
+      expect(again).toEqual({ seq: engine.getModel().seq, events: [] });
+      expect(store.lastSeq()).toBe(seq);
+    });
+  });
 });

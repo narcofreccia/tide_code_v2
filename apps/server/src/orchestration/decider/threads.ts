@@ -1,5 +1,7 @@
-import type { CommandOf, LinkAccess, Project, ReadModel, Thread } from "@tide/contracts";
-import { fail, isArchived, ok, type DecideContext, type DecideResult } from "./types.ts";
+import type { CommandOf, DomainEvent, LinkAccess, Project, ReadModel, Thread } from "@tide/contracts";
+import { handoffTurns } from "../handoff/select.ts";
+import { recordHandoff } from "./handoff.ts";
+import { fail, isArchived, ok, turnRequested, type DecideContext, type DecideResult } from "./types.ts";
 
 type ThreadLink = { linkId: string; access: LinkAccess };
 
@@ -24,7 +26,14 @@ type ThreadCommand =
   | CommandOf<"thread.create">
   | CommandOf<"thread.update">
   | CommandOf<"thread.archive">
-  | CommandOf<"thread.triage">;
+  | CommandOf<"thread.triage">
+  | CommandOf<"thread.limited">
+  | CommandOf<"thread.limit-policy">
+  | CommandOf<"thread.snooze">
+  | CommandOf<"thread.resume">
+  | CommandOf<"pr.watch">;
+
+const CONTINUE_PROMPT = "Continue where you left off.";
 
 export function decideThread(model: ReadModel, command: ThreadCommand, ctx: DecideContext): DecideResult {
   switch (command.type) {
@@ -64,9 +73,27 @@ export function decideThread(model: ReadModel, command: ThreadCommand, ctx: Deci
         ...(command.mode !== undefined ? { mode: command.mode } : {}),
         ...(command.interaction !== undefined ? { interaction: command.interaction } : {}),
       };
-      const providerChanged = command.provider !== undefined && command.provider !== thread.provider;
-      if (providerChanged && thread.status === "running") return fail("busy", `thread ${thread.id} is running; switch provider once it settles`);
-      return ok({ type: "thread.updated", threadId: thread.id, patch, ...(providerChanged ? { clearNativeSession: true } : {}), updatedAt: ctx.now });
+      const toProvider = command.provider;
+      if (toProvider === undefined || toProvider === thread.provider) {
+        return ok({ type: "thread.updated", threadId: thread.id, patch, updatedAt: ctx.now });
+      }
+      if (thread.status === "running") return fail("busy", `thread ${thread.id} is running; switch provider once it settles`);
+      // a harness that already ran this thread resumes its own session and only needs what
+      // happened since; any other starts fresh and gets the whole (budgeted) history
+      const known = thread.providerSessions?.[toProvider];
+      const strategy = known !== undefined ? "delta" : "full";
+      const turns = handoffTurns(model, thread.id, { sinceTurnId: known?.lastTurnId });
+      const events: DomainEvent[] = [{
+        type: "thread.updated",
+        threadId: thread.id,
+        patch,
+        ...(known !== undefined ? { nativeSessionId: known.nativeSessionId } : { clearNativeSession: true }),
+        updatedAt: ctx.now,
+      }];
+      if (turns.length > 0) {
+        events.push(recordHandoff(model, { threadId: thread.id, source: thread, fromProvider: thread.provider, toProvider, strategy, turns }, ctx));
+      }
+      return ok(...events);
     }
 
     case "thread.triage": {
@@ -89,6 +116,61 @@ export function decideThread(model: ReadModel, command: ThreadCommand, ctx: Deci
         archivedAt: ctx.now,
         ...(command.keepWorktree !== undefined ? { keepWorktree: command.keepWorktree } : {}),
       });
+    }
+
+    case "thread.limited": {
+      const thread = model.threads[command.threadId];
+      if (!thread) return fail("not-found", `unknown thread ${command.threadId}`);
+      return ok({
+        type: "thread.limited",
+        threadId: thread.id,
+        limited: {
+          ...(command.resetsAt !== undefined ? { resetsAt: command.resetsAt } : {}),
+          ...(command.note !== undefined ? { note: command.note } : {}),
+          resume: thread.limited?.resume ?? "manual",
+          at: ctx.now,
+        },
+      });
+    }
+
+    case "thread.limit-policy": {
+      const thread = model.threads[command.threadId];
+      if (!thread) return fail("not-found", `unknown thread ${command.threadId}`);
+      return ok({ type: "thread.limit-policy-changed", threadId: thread.id, resume: command.resume, at: ctx.now });
+    }
+
+    case "thread.snooze": {
+      const thread = model.threads[command.threadId];
+      if (!thread) return fail("not-found", `unknown thread ${command.threadId}`);
+      if (command.until <= ctx.now) return fail("invalid-command", "snooze must end in the future");
+      return ok({ type: "thread.snoozed", threadId: thread.id, until: command.until, at: ctx.now });
+    }
+
+    case "thread.resume": {
+      const thread = model.threads[command.threadId];
+      if (!thread) return fail("not-found", `unknown thread ${command.threadId}`);
+      if (isArchived(thread)) return fail("conflict", `thread ${thread.id} is archived`);
+      if (thread.status === "running") return fail("busy", `thread ${thread.id} is running`);
+      const resumeTurn = command.continue === true;
+      if (!resumeTurn && thread.limited === undefined && thread.snoozedUntil === undefined) {
+        return fail("conflict", `thread ${thread.id} is neither limited nor snoozed`);
+      }
+      if (resumeTurn && thread.worktreePath === undefined && thread.branch !== undefined) {
+        return fail("conflict", `thread ${thread.id} has no worktree any more; archive it or start a new thread`);
+      }
+      const resumed: DomainEvent = { type: "thread.resumed", threadId: thread.id, at: ctx.now };
+      if (!resumeTurn) return ok(resumed);
+      const requested = turnRequested(thread.id, CONTINUE_PROMPT, ctx, { source: "restart", summary: "resumed by the user" });
+      // like turn.request: a pending handoff rides on the next turn
+      const turn = thread.pendingHandoffId !== undefined ? { ...requested.turn, handoffId: thread.pendingHandoffId } : requested.turn;
+      return ok(resumed, { ...requested, turn });
+    }
+
+    case "pr.watch": {
+      const thread = model.threads[command.threadId];
+      if (!thread) return fail("not-found", `unknown thread ${command.threadId}`);
+      if (command.enabled && thread.pr === undefined) return fail("conflict", `thread ${thread.id} has no pull request to watch`);
+      return ok({ type: "pr.watch-changed", threadId: thread.id, enabled: command.enabled, at: ctx.now });
     }
   }
 }

@@ -1,4 +1,4 @@
-import type { Activity, AttentionKind, ExpertsSession, ReadModel, Thread, TimelineEntry, TurnUsage } from "./domain.ts";
+import type { Activity, AttentionKind, ExpertsSession, Message, ReadModel, Thread, TimelineEntry, Turn, TurnUsage } from "./domain.ts";
 import type { DomainEvent, EventRecord } from "./events.ts";
 
 // Pure projector shared by server and clients. Returns a new model; never
@@ -21,14 +21,19 @@ function appendTimeline(model: ReadModel, threadId: string, entry: TimelineEntry
 
 /** Attention = first pending approval/question, else a proposed plan, else none. */
 function deriveAttention(model: ReadModel, threadId: string): AttentionKind | undefined {
+  // a rolled-back turn's prompts and plans no longer exist for the harness, so they cannot need the user
+  const live = (turnId: string): boolean => model.turns[turnId]?.rolledBack !== true;
   for (const e of model.threadTimeline[threadId] ?? []) {
     if (e.kind !== "activity") continue;
     const a = model.activities[e.id];
-    if (a?.kind === "approval" && a.status === "pending") return "approval";
-    if (a?.kind === "user-input" && a.status === "pending") return "question";
+    if (!a || !live(a.turnId)) continue;
+    if (a.kind === "approval" && a.status === "pending") return "approval";
+    if (a.kind === "user-input" && a.status === "pending") return "question";
   }
   for (const e of model.threadTimeline[threadId] ?? []) {
-    if (e.kind === "plan" && model.plans[e.id]?.status === "proposed") return "plan";
+    if (e.kind !== "plan") continue;
+    const p = model.plans[e.id];
+    if (p?.status === "proposed" && live(p.turnId)) return "plan";
   }
   return undefined;
 }
@@ -39,9 +44,48 @@ function refreshAttention(model: ReadModel, threadId: string, at: number): ReadM
   const attention = deriveAttention(model, threadId);
   if (attention === t.attention) return model;
   const next: Thread = { ...t, updatedAt: at };
-  if (attention) next.attention = attention;
-  else delete next.attention;
+  if (attention) {
+    next.attention = attention;
+    delete next.snoozedUntil; // needing the user ends a snooze early
+  } else delete next.attention;
   return { ...model, threads: { ...model.threads, [threadId]: next } };
+}
+
+/** Adds a user message to a thread's lists and timeline. */
+function addUserMessage(model: ReadModel, message: Message): ReadModel {
+  const list = model.threadMessages[message.threadId] ?? [];
+  const next: ReadModel = {
+    ...model,
+    messages: { ...model.messages, [message.id]: message },
+    threadMessages: { ...model.threadMessages, [message.threadId]: [...list, message.id] },
+  };
+  return appendTimeline(next, message.threadId, { kind: "message", id: message.id });
+}
+
+function dropMessage(model: ReadModel, threadId: string, messageId: string): ReadModel {
+  const messages = { ...model.messages };
+  delete messages[messageId];
+  return {
+    ...model,
+    messages,
+    threadMessages: { ...model.threadMessages, [threadId]: (model.threadMessages[threadId] ?? []).filter((id) => id !== messageId) },
+    threadTimeline: { ...model.threadTimeline, [threadId]: (model.threadTimeline[threadId] ?? []).filter((e) => !(e.kind === "message" && e.id === messageId)) },
+  };
+}
+
+/** `turn.requested` and the steer fallback share this: a queued turn waits, a live one takes the thread. */
+function requestTurn(model: ReadModel, turn: Turn, userMessage: Message): ReadModel {
+  let next: ReadModel = addUserMessage({ ...model, turns: { ...model.turns, [turn.id]: turn } }, userMessage);
+  const thread = next.threads[turn.threadId];
+  // the handoff this turn carries is no longer pending on the thread
+  if (thread && turn.handoffId !== undefined && thread.pendingHandoffId === turn.handoffId) {
+    const t: Thread = { ...thread };
+    delete t.pendingHandoffId;
+    next = { ...next, threads: { ...next.threads, [t.id]: t } };
+  }
+  // a queued turn waits its turn: the running one keeps latestTurnId until it settles
+  if (turn.status === "queued") return withThread(next, turn.threadId, { updatedAt: turn.requestedAt });
+  return withThread(next, turn.threadId, { latestTurnId: turn.id, status: "running", updatedAt: turn.requestedAt });
 }
 
 /** Latest *pending* activity with this requestId: ids repeat across harness processes, so a resolved one never matches. */
@@ -114,24 +158,13 @@ export function applyEvent(model: ReadModel, event: DomainEvent): ReadModel {
       if (!t) return model;
       const next: Thread = { ...t, ...event.patch, updatedAt: event.updatedAt };
       if (event.clearNativeSession) delete next.nativeSessionId;
+      if (event.nativeSessionId !== undefined) next.nativeSessionId = event.nativeSessionId;
       return { ...model, threads: { ...model.threads, [t.id]: next } };
     }
     case "thread.archived":
       return withThread(model, event.threadId, { archivedAt: event.archivedAt, updatedAt: event.archivedAt });
-    case "turn.requested": {
-      const { turn, userMessage } = event;
-      const list = model.threadMessages[turn.threadId] ?? [];
-      let next: ReadModel = {
-        ...model,
-        turns: { ...model.turns, [turn.id]: turn },
-        messages: { ...model.messages, [userMessage.id]: userMessage },
-        threadMessages: { ...model.threadMessages, [turn.threadId]: [...list, userMessage.id] },
-      };
-      next = appendTimeline(next, turn.threadId, { kind: "message", id: userMessage.id });
-      // a queued turn waits its turn: the running one keeps latestTurnId until it settles
-      if (turn.status === "queued") return withThread(next, turn.threadId, { updatedAt: turn.requestedAt });
-      return withThread(next, turn.threadId, { latestTurnId: turn.id, status: "running", updatedAt: turn.requestedAt });
-    }
+    case "turn.requested":
+      return requestTurn(model, event.turn, event.userMessage);
     case "turn.dequeued": {
       const turn = model.turns[event.turnId];
       if (!turn) return model;
@@ -159,7 +192,10 @@ export function applyEvent(model: ReadModel, event: DomainEvent): ReadModel {
         ...model,
         turns: { ...model.turns, [turn.id]: { ...turn, status: "running", startedAt: event.startedAt, provider: event.provider, ...(event.model !== undefined ? { model: event.model } : {}) } },
       };
-      return event.nativeSessionId !== undefined ? withThread(next, event.threadId, { nativeSessionId: event.nativeSessionId, updatedAt: event.startedAt }) : next;
+      if (event.nativeSessionId === undefined) return next;
+      const t = next.threads[event.threadId];
+      const sessions = { ...(t?.providerSessions ?? {}), [event.provider]: { ...(t?.providerSessions?.[event.provider] ?? {}), nativeSessionId: event.nativeSessionId } };
+      return withThread(next, event.threadId, { nativeSessionId: event.nativeSessionId, providerSessions: sessions, updatedAt: event.startedAt });
     }
     case "turn.interrupt-requested":
       return withThread(model, event.threadId, { interrupting: true, updatedAt: event.at });
@@ -191,8 +227,10 @@ export function applyEvent(model: ReadModel, event: DomainEvent): ReadModel {
       return { ...model, turns: { ...model.turns, [turn.id]: { ...turn, checkpoint } } };
     }
     case "pr.updated": {
+      const t = model.threads[event.threadId];
       const patch: Partial<Thread> = { pr: event.pr, updatedAt: event.pr.updatedAt };
-      if (event.pr.state === "merged" && model.threads[event.threadId]?.mergedAt === undefined) patch.mergedAt = event.pr.updatedAt;
+      if (event.pr.state === "merged" && t?.mergedAt === undefined) patch.mergedAt = event.pr.updatedAt;
+      if (t?.prWatch) patch.prWatch = { ...t.prWatch, lastCheckedAt: event.pr.updatedAt };
       return withThread(model, event.threadId, patch);
     }
     case "merge.requested":
@@ -342,6 +380,10 @@ export function applyEvent(model: ReadModel, event: DomainEvent): ReadModel {
         const patched: Thread = { ...t, status: event.status === "completed" ? "idle" : event.status, updatedAt: event.settledAt };
         delete patched.planProgress;
         delete patched.interrupting;
+        // the harness that ran this turn has now seen it: a later switch back needs only the delta after it
+        const provider = turn?.provider;
+        const known = provider === undefined ? undefined : t.providerSessions?.[provider];
+        if (provider !== undefined && known !== undefined) patched.providerSessions = { ...t.providerSessions, [provider]: { ...known, lastTurnId: event.turnId } };
         // the oldest queued turn becomes the live one; the thread never goes idle in between
         const queued = Object.values(next.turns)
           .filter((x) => x.threadId === t.id && x.status === "queued")
@@ -354,6 +396,84 @@ export function applyEvent(model: ReadModel, event: DomainEvent): ReadModel {
         next = { ...next, threads: { ...next.threads, [t.id]: patched } };
       }
       return refreshAttention(next, event.threadId, event.settledAt);
+    }
+    // ---- R4 ----
+    case "turn.steered":
+      return withThread(addUserMessage(model, event.message), event.threadId, { updatedAt: event.message.createdAt });
+    case "turn.steer-fell-back":
+      return requestTurn(dropMessage(model, event.threadId, event.messageId), event.turn, event.userMessage);
+    case "turn.edited": {
+      const m = model.messages[event.messageId];
+      if (!m) return model;
+      return withThread({ ...model, messages: { ...model.messages, [m.id]: { ...m, text: event.text } } }, event.threadId, { updatedAt: event.at });
+    }
+    case "turns.reordered": {
+      // promotion picks the smallest requestedAt among queued turns, so the order is encoded there
+      const base = Math.min(...event.turnIds.map((id) => model.turns[id]?.requestedAt ?? event.at));
+      const turns = { ...model.turns };
+      event.turnIds.forEach((id, i) => {
+        const turn = turns[id];
+        if (turn && turn.status === "queued") turns[id] = { ...turn, requestedAt: base + i };
+      });
+      return withThread({ ...model, turns }, event.threadId, { updatedAt: event.at });
+    }
+    case "handoff.recorded":
+      return withThread({ ...model, handoffs: { ...model.handoffs, [event.handoff.id]: event.handoff } }, event.handoff.threadId, { pendingHandoffId: event.handoff.id, updatedAt: event.handoff.createdAt });
+    case "handoff.delivered": {
+      const turn = model.turns[event.turnId];
+      if (!turn) return model;
+      return { ...model, turns: { ...model.turns, [turn.id]: { ...turn, handoffId: event.handoffId, handoffDelivery: event.delivery } } };
+    }
+    case "rollback.requested":
+      return withThread(model, event.threadId, { rollback: { status: "rolling", turnId: event.turnId, restoreFiles: event.restoreFiles, at: event.at }, updatedAt: event.at });
+    case "rollback.completed": {
+      const t = model.threads[event.threadId];
+      if (!t) return model;
+      const gone = new Set(event.turnIds);
+      const turns = { ...model.turns };
+      for (const id of gone) {
+        const turn = turns[id];
+        if (turn) turns[id] = { ...turn, rolledBack: true };
+      }
+      // the newest surviving turn is the one the harness's history now ends on
+      const survivor = Object.values(turns)
+        .filter((x) => x.threadId === t.id && !x.rolledBack && x.status !== "queued")
+        .sort((a, b) => b.requestedAt - a.requestedAt)[0];
+      const patched: Thread = { ...t, rollback: { ...(t.rollback ?? { restoreFiles: false }), status: "done", turnId: event.turnId, at: event.at }, updatedAt: event.at };
+      if (survivor) patched.latestTurnId = survivor.id;
+      else delete patched.latestTurnId;
+      delete patched.planProgress;
+      return refreshAttention({ ...model, turns, threads: { ...model.threads, [t.id]: patched } }, t.id, event.at);
+    }
+    case "rollback.failed": {
+      const t = model.threads[event.threadId];
+      if (!t) return model;
+      return withThread(model, t.id, { rollback: { ...(t.rollback ?? { restoreFiles: false }), status: "error", turnId: event.turnId, error: event.error, at: event.at }, updatedAt: event.at });
+    }
+    case "thread.limited":
+      return withThread(model, event.threadId, { limited: event.limited, updatedAt: event.limited.at });
+    case "thread.limit-policy-changed": {
+      const t = model.threads[event.threadId];
+      if (!t?.limited) return model;
+      return withThread(model, t.id, { limited: { ...t.limited, resume: event.resume }, updatedAt: event.at });
+    }
+    case "thread.snoozed":
+      return withThread(model, event.threadId, { snoozedUntil: event.until, updatedAt: event.at });
+    case "thread.resumed": {
+      const t = model.threads[event.threadId];
+      if (!t) return model;
+      const next: Thread = { ...t, updatedAt: event.at };
+      delete next.limited;
+      delete next.snoozedUntil;
+      return { ...model, threads: { ...model.threads, [t.id]: next } };
+    }
+    case "pr.watch-changed": {
+      const t = model.threads[event.threadId];
+      if (!t) return model;
+      const next: Thread = { ...t, updatedAt: event.at };
+      if (event.enabled) next.prWatch = { since: event.at };
+      else delete next.prWatch;
+      return { ...model, threads: { ...model.threads, [t.id]: next } };
     }
     default: {
       const _exhaustive: never = event;

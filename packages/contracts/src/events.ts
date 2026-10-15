@@ -1,5 +1,5 @@
 import { Type, type Static } from "typebox";
-import { Activity, ApprovalDecision, CheckpointStats, ExpertsFinding, ExpertsMessage, ExpertsPhase, ExpertsSession, ImageInput, MergeStrategy, Message, Project, ProjectLink, ProposedPlan, ProviderKind, PullRequest, RateLimit, Thread, Triage, Turn, TurnUsage } from "./domain.ts";
+import { Activity, ApprovalDecision, CheckpointStats, ExpertsFinding, ExpertsMessage, ExpertsPhase, ExpertsSession, Handoff, ImageInput, Limited, MergeStrategy, Message, Project, ProjectLink, ProposedPlan, ProviderKind, PullRequest, RateLimit, Thread, Triage, Turn, TurnUsage } from "./domain.ts";
 
 // Events = persisted facts. Payloads are self-contained so the projector
 // never needs to look anything up outside the event.
@@ -19,12 +19,19 @@ export const ProjectLinkUpdated = evt("project.link.updated", { projectId: Type.
 export const ProjectLinkRemoved = evt("project.link.removed", { projectId: Type.String(), linkId: Type.String(), updatedAt: Type.Number() });
 
 /** `useWorktree` is an intent for the vcs reactor, not state; the reactor answers with worktree.attached. */
-export const ThreadCreated = evt("thread.created", { thread: Thread, useWorktree: Type.Optional(Type.Boolean()) });
+export const ThreadCreated = evt("thread.created", {
+  thread: Thread,
+  useWorktree: Type.Optional(Type.Boolean()),
+  /** R4: branch the worktree from this ref instead of the base branch (a fork continues its source's work) */
+  baseRef: Type.Optional(Type.String()),
+});
 export const ThreadUpdated = evt("thread.updated", {
   threadId: Type.String(),
   patch: Type.Partial(Type.Pick(Thread, ["title", "provider", "model", "mode", "interaction"])),
   /** the provider changed: the old harness's session id must not be resumed on the new one */
   clearNativeSession: Type.Optional(Type.Boolean()),
+  /** R4: switching back to a harness that already ran this thread: its own session id becomes current again */
+  nativeSessionId: Type.Optional(Type.String()),
   updatedAt: Type.Number(),
 });
 export const ThreadArchived = evt("thread.archived", { threadId: Type.String(), archivedAt: Type.Number(), keepWorktree: Type.Optional(Type.Boolean()) });
@@ -150,6 +157,28 @@ export const TurnSettled = evt("turn.settled", {
   settledAt: Type.Number(),
 });
 
+// ---- R4 ----
+/** A user message delivered into the running turn (or queued behind it when the harness cannot steer). */
+export const TurnSteered = evt("turn.steered", { turnId: Type.String(), threadId: Type.String(), message: Message, images: Type.Optional(Type.Array(ImageInput)) });
+/** The harness could not take the steer: the message leaves the running turn and becomes a queued turn. */
+export const TurnSteerFellBack = evt("turn.steer-fell-back", { threadId: Type.String(), messageId: Type.String(), reason: Type.String(), turn: Turn, userMessage: Message, images: Type.Optional(Type.Array(ImageInput)), at: Type.Number() });
+export const TurnEdited = evt("turn.edited", { turnId: Type.String(), threadId: Type.String(), messageId: Type.String(), text: Type.String(), at: Type.Number() });
+/** `requestedAt` of each queued turn is rewritten so the projector's oldest-first promotion follows the new order. */
+export const TurnsReordered = evt("turns.reordered", { threadId: Type.String(), turnIds: Type.Array(Type.String()), at: Type.Number() });
+/** Context carried to a harness that has not seen the thread (recorded before the turn that consumes it). */
+export const HandoffRecorded = evt("handoff.recorded", { handoff: Handoff });
+export const HandoffDeliveredEvt = evt("handoff.delivered", { turnId: Type.String(), threadId: Type.String(), handoffId: Type.String(), delivery: Type.Union([Type.Literal("inline"), Type.Literal("native")]), at: Type.Number() });
+/** `turns` = how many of the harness's own turns to forget (the rolled-back ones that it ran). */
+export const RollbackRequested = evt("rollback.requested", { threadId: Type.String(), turnId: Type.String(), restoreFiles: Type.Boolean(), turnIds: Type.Array(Type.String()), at: Type.Number() });
+export const RollbackCompleted = evt("rollback.completed", { threadId: Type.String(), turnId: Type.String(), turnIds: Type.Array(Type.String()), at: Type.Number() });
+export const RollbackFailed = evt("rollback.failed", { threadId: Type.String(), turnId: Type.String(), error: Type.String(), at: Type.Number() });
+export const ThreadLimitedEvt = evt("thread.limited", { threadId: Type.String(), limited: Limited });
+export const ThreadLimitPolicyChanged = evt("thread.limit-policy-changed", { threadId: Type.String(), resume: Limited.properties.resume, at: Type.Number() });
+export const ThreadSnoozed = evt("thread.snoozed", { threadId: Type.String(), until: Type.Number(), at: Type.Number() });
+/** limited / snoozed cleared (a continuation turn, when asked, rides along as its own turn.requested) */
+export const ThreadResumed = evt("thread.resumed", { threadId: Type.String(), at: Type.Number() });
+export const PrWatchChanged = evt("pr.watch-changed", { threadId: Type.String(), enabled: Type.Boolean(), at: Type.Number() });
+
 export const DomainEvent = Type.Union([
   ProjectCreated,
   ProjectUpdated,
@@ -191,6 +220,10 @@ export const DomainEvent = Type.Union([
   ExpertsSynthesisSetEvt,
   ExpertsArchived,
   TurnSettled,
+  TurnSteered, TurnSteerFellBack, TurnEdited, TurnsReordered,
+  HandoffRecorded, HandoffDeliveredEvt,
+  RollbackRequested, RollbackCompleted, RollbackFailed,
+  ThreadLimitedEvt, ThreadLimitPolicyChanged, ThreadSnoozed, ThreadResumed, PrWatchChanged,
 ]);
 export type DomainEvent = Static<typeof DomainEvent>;
 export type EventOf<T extends DomainEvent["type"]> = Extract<DomainEvent, { type: T }>;

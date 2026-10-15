@@ -1,5 +1,5 @@
 import type { CommandOf, Message, ReadModel, Turn, TurnStatus } from "@tide/contracts";
-import { fail, isArchived, ok, type DecideContext, type DecideResult } from "./types.ts";
+import { attachmentsOf, fail, isArchived, ok, type DecideContext, type DecideResult } from "./types.ts";
 
 type TurnCommand =
   | CommandOf<"turn.request">
@@ -35,6 +35,8 @@ export function decideTurn(model: ReadModel, command: TurnCommand, ctx: DecideCo
         threadId: thread.id,
         status: queued ? "queued" : "requested",
         ...(command.requestId !== undefined ? { requestId: command.requestId } : {}),
+        // a provider switch / fork left context for the harness: this turn carries it
+        ...(thread.pendingHandoffId !== undefined ? { handoffId: thread.pendingHandoffId } : {}),
         requestedAt: ctx.now,
       };
       const images = command.images ?? [];
@@ -44,7 +46,8 @@ export function decideTurn(model: ReadModel, command: TurnCommand, ctx: DecideCo
         turnId: turn.id,
         role: "user",
         text: command.text,
-        ...(images.length > 0 ? { attachments: images.map((img) => ({ mediaType: img.mediaType, bytes: Math.floor((img.data.length * 3) / 4) })) } : {}),
+        ...attachmentsOf(images),
+        ...(command.notification !== undefined ? { notification: command.notification } : {}),
         createdAt: ctx.now,
       };
       return ok({ type: "turn.requested", turn, userMessage, ...(images.length > 0 ? { images } : {}) });

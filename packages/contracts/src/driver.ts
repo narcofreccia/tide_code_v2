@@ -21,6 +21,13 @@ export interface DriverCaps {
   contextUsage: boolean;
   /** the harness exposes a command to reopen the session in a terminal */
   openInTerminal: boolean;
+  // ---- R4 (optional: undefined = unsupported, the server falls back to queue / handoff / conversation-only) ----
+  /** `ProviderSession.steer` lands a message inside the running turn */
+  steer?: boolean;
+  /** `openSession({ forkFrom })` opens a new native session that continues another one's history */
+  fork?: boolean;
+  /** `ProviderSession.rollback` drops the last N turns from the harness's own conversation */
+  rollback?: boolean;
 }
 
 export interface ProviderStatus {
@@ -56,6 +63,12 @@ export interface OpenSessionOptions {
   cwd: string;
   /** harness-native session id to resume, if any */
   resume?: string;
+  /**
+   * R4: open a *new* native session that starts from this session's history (thread fork).
+   * Mutually exclusive with `resume`. The server then calls `rollback(n)` when the fork point is
+   * not the source's latest turn. Only honoured when `caps.fork`.
+   */
+  forkFrom?: string;
   model?: string;
   mode: RuntimeMode;
   interaction: InteractionMode;
@@ -118,6 +131,17 @@ export interface ProviderSession {
    * that omits it (or answers `reopen`) gets closed and reopened with `resume` by the server.
    */
   reconfigure?(settings: SessionSettings): Promise<ReconfigureResult>;
+  /**
+   * R4: deliver a user message into the turn that `send` is currently running, without
+   * interrupting tools (Claude SDK streaming input, Codex `turn/steer`, Pi `steer`, OpenCode
+   * `prompt` while busy). Rejects when no turn is running. Only called when `caps.steer`.
+   */
+  steer?(input: TurnInput): Promise<void>;
+  /**
+   * R4: forget the last `turns` turns of the harness's own conversation (Codex `thread/revert`,
+   * Pi session tree, OpenCode `session.revert`). Called between turns only. Only when `caps.rollback`.
+   */
+  rollback?(turns: number): Promise<void>;
 }
 
 export interface ProviderInstance {

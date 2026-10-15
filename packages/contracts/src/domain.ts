@@ -187,8 +187,56 @@ export const PullRequest = Type.Object({
   number: Type.Number(),
   state: Type.Union([Type.Literal("open"), Type.Literal("merged"), Type.Literal("closed")]),
   updatedAt: Type.Number(),
+  /** CI rollup as the host reports it (R4: PR watch) */
+  checks: Type.Optional(Type.Union([Type.Literal("pending"), Type.Literal("success"), Type.Literal("failure")])),
+  mergeable: Type.Optional(Type.Boolean()),
+  /** review + issue comments seen so far; a rise wakes a watched thread */
+  comments: Type.Optional(Type.Number()),
 });
 export type PullRequest = Static<typeof PullRequest>;
+
+/** The harness refused to continue because the subscription window is exhausted (R4). */
+export const Limited = Type.Object({
+  resetsAt: Type.Optional(Type.Number()),
+  /** `reset`: resume the thread automatically when the window reopens; `manual`: wait for the user */
+  resume: Type.Union([Type.Literal("manual"), Type.Literal("reset")]),
+  note: Type.Optional(Type.String()),
+  at: Type.Number(),
+});
+export type Limited = Static<typeof Limited>;
+
+export const HandoffStrategy = Type.Union([Type.Literal("delta"), Type.Literal("full")]);
+export type HandoffStrategy = Static<typeof HandoffStrategy>;
+/**
+ * Portable context carried to a harness that has not seen (all of) the thread: a budgeted,
+ * verbatim selection of the thread's history, never a model-written summary. Recorded as an
+ * event before the turn that consumes it, so the text the agent saw is auditable.
+ */
+export const Handoff = Type.Object({
+  id: Type.String(),
+  threadId: Type.String(),
+  /** where the history came from: the thread itself (provider switch) or the fork source */
+  sourceThreadId: Type.String(),
+  fromProvider: Type.Optional(ProviderKind),
+  toProvider: ProviderKind,
+  strategy: HandoffStrategy,
+  /** turn ids whose history the text covers, oldest first; `omitted` are the ones that did not fit */
+  coveredTurnIds: Type.Array(Type.String()),
+  omittedTurnIds: Type.Array(Type.String()),
+  text: Type.String(),
+  createdAt: Type.Number(),
+});
+export type Handoff = Static<typeof Handoff>;
+
+/** Outcome of the last `thread.rollback`. */
+export const RollbackState = Type.Object({
+  status: Type.Union([Type.Literal("rolling"), Type.Literal("done"), Type.Literal("error")]),
+  turnId: Type.String(),
+  restoreFiles: Type.Boolean(),
+  error: Type.Optional(Type.String()),
+  at: Type.Number(),
+});
+export type RollbackState = Static<typeof RollbackState>;
 
 export const Thread = Type.Object({
   id: Type.String(),
@@ -204,6 +252,8 @@ export const Thread = Type.Object({
   expertsSessionId: Type.Optional(Type.String()),
   /** thread that created this one via tide_delegate */
   delegatedBy: Type.Optional(Type.String()),
+  /** R4: free-text role the delegating agent gave this child (review, research, …) */
+  delegateRole: Type.Optional(Type.String()),
   worktreePath: Type.Optional(Type.String()),
   /** linked repos this thread can reach, resolved at creation from the project's links (per-thread overrides) */
   links: Type.Optional(Type.Array(Type.Object({ linkId: Type.String(), access: LinkAccess }))),
@@ -228,6 +278,19 @@ export const Thread = Type.Object({
   /** set once the thread's branch landed on its base (locally or via the PR) */
   mergedAt: Type.Optional(Type.Number()),
   triage: Type.Optional(Triage),
+  // ---- R4: orchestration parity ----
+  /** this thread was forked from another thread at a settled turn */
+  forkedFrom: Type.Optional(Type.Object({ threadId: Type.String(), turnId: Type.String() })),
+  /** native session id per harness that ran this thread, so switching back resumes it with a delta handoff */
+  providerSessions: Type.Optional(Type.Record(Type.String(), Type.Object({ nativeSessionId: Type.String(), lastTurnId: Type.Optional(Type.String()) }))),
+  /** a handoff waiting for the next turn to carry it to the harness */
+  pendingHandoffId: Type.Optional(Type.String()),
+  rollback: Type.Optional(RollbackState),
+  limited: Type.Optional(Limited),
+  /** hidden from the Inbox / Now strip until then; cleared by activity that needs the user */
+  snoozedUntil: Type.Optional(Type.Number()),
+  /** the server polls the linked PR and wakes the thread on CI failure, comments or conflicts */
+  prWatch: Type.Optional(Type.Object({ since: Type.Number(), lastCheckedAt: Type.Optional(Type.Number()) })),
   createdAt: Type.Number(),
   updatedAt: Type.Number(),
   archivedAt: Type.Optional(Type.Number()),
@@ -250,6 +313,13 @@ export const Message = Type.Object({
   createdAt: Type.Number(),
   /** true while the assistant is still streaming into this message */
   streaming: Type.Optional(Type.Boolean()),
+  /** user message delivered into the running turn (steer), not as a turn of its own */
+  steer: Type.Optional(Type.Boolean()),
+  /** server-authored wake-up (delegate finished, child asked a question, PR changed, restart) */
+  notification: Type.Optional(Type.Object({
+    source: Type.Union([Type.Literal("delegate"), Type.Literal("child-question"), Type.Literal("pr"), Type.Literal("restart"), Type.Literal("system")]),
+    summary: Type.String(),
+  })),
 });
 export type Message = Static<typeof Message>;
 
@@ -291,6 +361,12 @@ export const Turn = Type.Object({
   settledAt: Type.Optional(Type.Number()),
   error: Type.Optional(Type.String()),
   usage: Type.Optional(TurnUsage),
+  /** the handoff this turn carried to the harness (provider switch / fork) */
+  handoffId: Type.Optional(Type.String()),
+  /** how the harness received it: inline text ahead of the prompt, or natively (resume / fork) with nothing injected */
+  handoffDelivery: Type.Optional(Type.Union([Type.Literal("inline"), Type.Literal("native")])),
+  /** undone by a later `thread.rollback`; stays in the log, hidden from the harness's history */
+  rolledBack: Type.Optional(Type.Boolean()),
 });
 export type Turn = Static<typeof Turn>;
 
@@ -397,6 +473,7 @@ export const ReadModel = Type.Object({
   expertsSessions: Type.Record(Type.String(), ExpertsSession),
   expertsFindings: Type.Record(Type.String(), ExpertsFinding),
   expertsMessages: Type.Record(Type.String(), ExpertsMessage),
+  handoffs: Type.Record(Type.String(), Handoff),
   /** threadId -> ordered messageIds (kept for simple consumers) */
   threadMessages: Type.Record(Type.String(), Type.Array(Type.String())),
   /** threadId -> ordered stream of messages, activities and plans */
@@ -407,6 +484,6 @@ export type ReadModel = Static<typeof ReadModel>;
 export function emptyReadModel(): ReadModel {
   return {
     seq: 0, projects: {}, threads: {}, turns: {}, messages: {}, activities: {}, plans: {},
-    expertsSessions: {}, expertsFindings: {}, expertsMessages: {}, threadMessages: {}, threadTimeline: {},
+    expertsSessions: {}, expertsFindings: {}, expertsMessages: {}, handoffs: {}, threadMessages: {}, threadTimeline: {},
   };
 }

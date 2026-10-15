@@ -102,12 +102,19 @@ export class Engine {
       const first = Errors(CommandSchema, command)[0];
       throw new CommandError("invalid-command", first?.message ?? "invalid command");
     }
+    const commandId = "commandId" in command && typeof command.commandId === "string" ? command.commandId : undefined;
+    if (commandId !== undefined) {
+      const receipt = this.#store.getReceipt(commandId);
+      if (receipt !== undefined) {
+        return { seq: receipt.lastSeq || this.#model.seq, events: this.#store.readRange(receipt.firstSeq, receipt.lastSeq) };
+      }
+    }
     const ts = this.#now();
     const decision = decide(this.#model, command, { now: ts, newId: this.#newId });
     if (!decision.ok) throw new CommandError(decision.error.code, decision.error.message);
-    if (decision.events.length === 0) return { seq: this.#model.seq, events: [] };
+    if (decision.events.length === 0 && commandId === undefined) return { seq: this.#model.seq, events: [] };
 
-    const records = this.#store.append(decision.events, ts);
+    const records = this.#store.append(decision.events, ts, commandId === undefined ? undefined : { commandId });
     for (const record of records) {
       this.#model = applyRecord(this.#model, record);
       for (const listener of this.#listeners) {

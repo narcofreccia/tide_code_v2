@@ -11,6 +11,7 @@ CREATE TABLE IF NOT EXISTS events (
 );
 CREATE INDEX IF NOT EXISTS events_aggregate_idx ON events(aggregate_id);
 CREATE TABLE IF NOT EXISTS meta (key TEXT PRIMARY KEY, value TEXT);
+CREATE TABLE IF NOT EXISTS receipts (command_id TEXT PRIMARY KEY, first_seq INTEGER NOT NULL, last_seq INTEGER NOT NULL, ts INTEGER NOT NULL);
 `;
 
 /** The aggregate an event belongs to, used for cheap per-entity queries later. */
@@ -53,7 +54,22 @@ export function aggregateIdOf(event: DomainEvent): string | null {
     case "merge.failed":
     case "thread.triaged":
     case "pr.updated":
+    case "turn.steered":
+    case "turn.steer-fell-back":
+    case "turn.edited":
+    case "turns.reordered":
+    case "handoff.delivered":
+    case "rollback.requested":
+    case "rollback.completed":
+    case "rollback.failed":
+    case "thread.limited":
+    case "thread.limit-policy-changed":
+    case "thread.snoozed":
+    case "thread.resumed":
+    case "pr.watch-changed":
       return event.threadId;
+    case "handoff.recorded":
+      return event.handoff.threadId;
     case "activity.upserted":
       return event.activity.threadId;
     case "plan.proposed":
@@ -96,6 +112,9 @@ export class EventStore {
   #last: SqlStatement;
   #getMeta: SqlStatement;
   #setMeta: SqlStatement;
+  #getReceipt: SqlStatement;
+  #putReceipt: SqlStatement;
+  #readRange: SqlStatement;
 
   constructor(db: Database) {
     this.#db = db;
@@ -108,19 +127,39 @@ export class EventStore {
     this.#last = db.prepare("SELECT COALESCE(MAX(seq), 0) AS seq FROM events");
     this.#getMeta = db.prepare("SELECT value FROM meta WHERE key = ?");
     this.#setMeta = db.prepare("INSERT INTO meta (key, value) VALUES (?, ?) ON CONFLICT(key) DO UPDATE SET value = excluded.value");
+    this.#getReceipt = db.prepare("SELECT first_seq, last_seq, ts FROM receipts WHERE command_id = ?");
+    this.#putReceipt = db.prepare("INSERT OR IGNORE INTO receipts (command_id, first_seq, last_seq, ts) VALUES (?, ?, ?, ?)");
+    this.#readRange = db.prepare("SELECT seq, ts, payload FROM events WHERE seq >= ? AND seq <= ? ORDER BY seq ASC");
   }
 
-  /** Appends all events atomically and returns them with their assigned seq. */
-  append(events: DomainEvent[], ts: number): EventRecord[] {
-    if (events.length === 0) return [];
+  /**
+   * Appends all events atomically and returns them with their assigned seq. With `receipt`, the
+   * command receipt is written in the same transaction (0/0 when there are no events).
+   */
+  append(events: DomainEvent[], ts: number, receipt?: { commandId: string }): EventRecord[] {
+    if (events.length === 0 && receipt === undefined) return [];
     return this.#db.transaction(() => {
       const out: EventRecord[] = [];
       for (const event of events) {
         const row = this.#insert.get(ts, event.type, aggregateIdOf(event), JSON.stringify(event));
         out.push({ seq: Number(row?.["seq"]), ts, event });
       }
+      if (receipt !== undefined) {
+        this.#putReceipt.run(receipt.commandId, out[0]?.seq ?? 0, out[out.length - 1]?.seq ?? 0, ts);
+      }
       return out;
     });
+  }
+
+  getReceipt(commandId: string): { firstSeq: number; lastSeq: number; ts: number } | undefined {
+    const row = this.#getReceipt.get(commandId);
+    if (row === undefined) return undefined;
+    return { firstSeq: Number(row["first_seq"]), lastSeq: Number(row["last_seq"]), ts: Number(row["ts"]) };
+  }
+
+  readRange(firstSeq: number, lastSeq: number): EventRecord[] {
+    if (firstSeq === 0) return [];
+    return this.#readRange.all(firstSeq, lastSeq).map(toRecord);
   }
 
   readFrom(seq: number): EventRecord[] {

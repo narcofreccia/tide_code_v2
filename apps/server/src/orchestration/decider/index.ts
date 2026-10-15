@@ -3,7 +3,9 @@ import { decideActivity } from "./activities.ts";
 import { decideAgent } from "./agent.ts";
 import { decideExperts } from "./experts.ts";
 import { decidePlan } from "./plans.ts";
+import { decideLineage } from "./lineage.ts";
 import { decideProject } from "./projects.ts";
+import { decideSteer } from "./steer.ts";
 import { decideThread } from "./threads.ts";
 import { decideTurn } from "./turns.ts";
 import { decideVcs, decideWorktreeDetached } from "./vcs.ts";
@@ -30,6 +32,11 @@ export function decide(model: ReadModel, command: Command, ctx: DecideContext): 
     case "thread.update":
     case "thread.archive":
     case "thread.triage":
+    case "thread.limited":
+    case "thread.limit-policy":
+    case "thread.snooze":
+    case "thread.resume":
+    case "pr.watch":
       return decideThread(model, command, ctx);
 
     case "turn.request":
@@ -41,6 +48,19 @@ export function decide(model: ReadModel, command: Command, ctx: DecideContext): 
     case "usage.report":
     case "turn.settle":
       return decideTurn(model, command, ctx);
+
+    case "turn.steer":
+    case "steer.fallback":
+    case "turn.edit":
+    case "turn.reorder":
+    case "turn.promote":
+    case "handoff.delivered":
+      return decideSteer(model, command, ctx);
+
+    case "thread.fork":
+    case "thread.rollback":
+    case "rollback.report":
+      return decideLineage(model, command, ctx);
 
     case "activity.upsert":
     case "approval.respond":

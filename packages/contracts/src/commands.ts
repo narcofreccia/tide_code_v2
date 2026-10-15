@@ -1,21 +1,29 @@
 import { Type, type Static } from "typebox";
-import { Activity, ApprovalDecision, CheckpointStats, ExpertSpec, ExpertsPhase, ImageInput, InteractionMode, LinkAccess, MergeStrategy, ProviderKind, PullRequest, RateLimit, RuntimeMode, Triage, TurnUsage } from "./domain.ts";
+import { Activity, ApprovalDecision, CheckpointStats, ExpertSpec, ExpertsPhase, ImageInput, InteractionMode, Limited, LinkAccess, MergeStrategy, ProviderKind, PullRequest, RateLimit, RuntimeMode, Triage, TurnUsage } from "./domain.ts";
 
 // Commands = validated intents. ClientCommand may arrive over RPC; InternalCommand is
 // issued only by server reactors (driver ingestion) and is rejected at the RPC boundary.
 
+/**
+ * Idempotency key any client or agent command may carry (R4): the engine keeps a receipt per
+ * key and a retry returns the original result instead of re-running the decision. Clients mint
+ * something unique (`newId()`), never a constant. (`turn.request.requestId` predates it and
+ * additionally dedupes at the decider.)
+ */
+export const CommandId = Type.Optional(Type.String({ minLength: 1, maxLength: 128 }));
+
 export const ProjectCreate = Type.Object({
-  type: Type.Literal("project.create"),
+  type: Type.Literal("project.create"), commandId: CommandId,
   title: Type.String({ minLength: 1 }),
   rootPath: Type.String({ minLength: 1 }),
 });
 export const ProjectUpdate = Type.Object({
-  type: Type.Literal("project.update"),
+  type: Type.Literal("project.update"), commandId: CommandId,
   projectId: Type.String(),
   title: Type.Optional(Type.String({ minLength: 1 })),
 });
 export const ProjectLinkAdd = Type.Object({
-  type: Type.Literal("project.link.add"),
+  type: Type.Literal("project.link.add"), commandId: CommandId,
   projectId: Type.String(),
   path: Type.String({ minLength: 1 }),
   label: Type.String({ minLength: 1 }),
@@ -23,7 +31,7 @@ export const ProjectLinkAdd = Type.Object({
   access: Type.Optional(LinkAccess),
 });
 export const ProjectLinkUpdate = Type.Object({
-  type: Type.Literal("project.link.update"),
+  type: Type.Literal("project.link.update"), commandId: CommandId,
   projectId: Type.String(),
   linkId: Type.String(),
   label: Type.Optional(Type.String({ minLength: 1 })),
@@ -31,14 +39,14 @@ export const ProjectLinkUpdate = Type.Object({
   access: Type.Optional(LinkAccess),
 });
 export const ProjectLinkRemove = Type.Object({
-  type: Type.Literal("project.link.remove"),
+  type: Type.Literal("project.link.remove"), commandId: CommandId,
   projectId: Type.String(),
   linkId: Type.String(),
 });
-export const ProjectArchive = Type.Object({ type: Type.Literal("project.archive"), projectId: Type.String() });
+export const ProjectArchive = Type.Object({ type: Type.Literal("project.archive"), commandId: CommandId, projectId: Type.String() });
 
 export const ThreadCreate = Type.Object({
-  type: Type.Literal("thread.create"),
+  type: Type.Literal("thread.create"), commandId: CommandId,
   projectId: Type.String(),
   parentThreadId: Type.Optional(Type.String()),
   title: Type.Optional(Type.String()),
@@ -52,7 +60,7 @@ export const ThreadCreate = Type.Object({
   links: Type.Optional(Type.Array(Type.Object({ linkId: Type.String(), access: LinkAccess }))),
 });
 export const ThreadUpdate = Type.Object({
-  type: Type.Literal("thread.update"),
+  type: Type.Literal("thread.update"), commandId: CommandId,
   threadId: Type.String(),
   title: Type.Optional(Type.String()),
   provider: Type.Optional(ProviderKind),
@@ -61,14 +69,14 @@ export const ThreadUpdate = Type.Object({
   interaction: Type.Optional(InteractionMode),
 });
 export const ThreadArchive = Type.Object({
-  type: Type.Literal("thread.archive"),
+  type: Type.Literal("thread.archive"), commandId: CommandId,
   threadId: Type.String(),
   /** default false: the worktree directory is removed (the branch is kept) */
   keepWorktree: Type.Optional(Type.Boolean()),
 });
 /** remove a thread's worktree directory now (branch kept unless deleteBranch) */
 export const WorktreeDetach = Type.Object({
-  type: Type.Literal("worktree.detach"),
+  type: Type.Literal("worktree.detach"), commandId: CommandId,
   threadId: Type.String(),
   deleteBranch: Type.Optional(Type.Boolean()),
 });
@@ -79,21 +87,24 @@ export const TurnRequest = Type.Object({
   threadId: Type.String(),
   text: Type.String({ minLength: 1 }),
   images: Type.Optional(Type.Array(ImageInput, { maxItems: 8 })),
+  commandId: CommandId,
   /** idempotency key: a retry with the same id on the same thread is rejected with `conflict` */
   requestId: Type.Optional(Type.String({ minLength: 1 })),
+  /** server-authored wake-ups (delegate done, child question, PR change, restart) are marked so the UI can render them as notices */
+  notification: Type.Optional(Type.Object({ source: Type.Union([Type.Literal("delegate"), Type.Literal("child-question"), Type.Literal("pr"), Type.Literal("restart"), Type.Literal("system")]), summary: Type.String() })),
 });
-export const TurnInterrupt = Type.Object({ type: Type.Literal("turn.interrupt"), threadId: Type.String() });
+export const TurnInterrupt = Type.Object({ type: Type.Literal("turn.interrupt"), commandId: CommandId, threadId: Type.String() });
 /** Drops a turn that is still queued (never sent to the harness). */
-export const TurnDequeue = Type.Object({ type: Type.Literal("turn.dequeue"), turnId: Type.String() });
+export const TurnDequeue = Type.Object({ type: Type.Literal("turn.dequeue"), commandId: CommandId, turnId: Type.String() });
 
 export const ApprovalRespond = Type.Object({
-  type: Type.Literal("approval.respond"),
+  type: Type.Literal("approval.respond"), commandId: CommandId,
   threadId: Type.String(),
   requestId: Type.String(),
   decision: ApprovalDecision,
 });
 export const UserInputRespond = Type.Object({
-  type: Type.Literal("user-input.respond"),
+  type: Type.Literal("user-input.respond"), commandId: CommandId,
   threadId: Type.String(),
   requestId: Type.String(),
   answers: Type.Record(Type.String(), Type.Unknown()),
@@ -101,20 +112,20 @@ export const UserInputRespond = Type.Object({
 
 /** Creates a sibling thread (any provider) seeded with the plan. The only way a plan runs. */
 export const PlanImplement = Type.Object({
-  type: Type.Literal("plan.implement"),
+  type: Type.Literal("plan.implement"), commandId: CommandId,
   planId: Type.String(),
   provider: ProviderKind,
   model: Type.Optional(Type.String()),
   mode: Type.Optional(RuntimeMode),
   useWorktree: Type.Optional(Type.Boolean()),
 });
-export const PlanDismiss = Type.Object({ type: Type.Literal("plan.dismiss"), planId: Type.String() });
+export const PlanDismiss = Type.Object({ type: Type.Literal("plan.dismiss"), commandId: CommandId, planId: Type.String() });
 
 /** Restore the worktree to the state before `turnId` (git checkout of the before-ref). */
-export const ThreadRevert = Type.Object({ type: Type.Literal("thread.revert"), threadId: Type.String(), turnId: Type.String() });
+export const ThreadRevert = Type.Object({ type: Type.Literal("thread.revert"), commandId: CommandId, threadId: Type.String(), turnId: Type.String() });
 /** Commit everything in the worktree, push, open (or update) a PR via gh. */
 export const ThreadPublish = Type.Object({
-  type: Type.Literal("thread.publish"),
+  type: Type.Literal("thread.publish"), commandId: CommandId,
   threadId: Type.String(),
   title: Type.Optional(Type.String()),
   body: Type.Optional(Type.String()),
@@ -125,27 +136,73 @@ export const ThreadPublish = Type.Object({
 });
 /** Merge the thread's branch back into its base branch (locally, or via `gh pr merge` when a PR exists). */
 export const ThreadMerge = Type.Object({
-  type: Type.Literal("thread.merge"),
+  type: Type.Literal("thread.merge"), commandId: CommandId,
   threadId: Type.String(),
   strategy: Type.Optional(MergeStrategy),
   /** remove the tide/<slug> branch (and the worktree) once merged */
   deleteBranch: Type.Optional(Type.Boolean()),
 });
 
+// ---- R4: steer / queue editing / fork / rollback / limits / PR watch ----
+/** Deliver a message into the running turn. Falls back to a queued turn when the harness cannot steer. */
+export const TurnSteer = Type.Object({
+  type: Type.Literal("turn.steer"),
+  commandId: CommandId,
+  threadId: Type.String(),
+  text: Type.String({ minLength: 1 }),
+  images: Type.Optional(Type.Array(ImageInput, { maxItems: 8 })),
+});
+/** Rewrite a turn that is still queued. */
+export const TurnEdit = Type.Object({ type: Type.Literal("turn.edit"), commandId: CommandId, turnId: Type.String(), text: Type.String({ minLength: 1 }) });
+/** New order of a thread's queued turns (every queued id exactly once). */
+export const TurnReorder = Type.Object({ type: Type.Literal("turn.reorder"), commandId: CommandId, threadId: Type.String(), turnIds: Type.Array(Type.String(), { minItems: 1 }) });
+/** Send a queued turn into the running one as a steer instead of waiting. */
+export const TurnPromote = Type.Object({ type: Type.Literal("turn.promote"), commandId: CommandId, turnId: Type.String() });
+/** New thread that continues this one from a settled turn (native fork when the harness can, portable handoff otherwise). */
+export const ThreadFork = Type.Object({
+  type: Type.Literal("thread.fork"),
+  commandId: CommandId,
+  threadId: Type.String(),
+  turnId: Type.String(),
+  title: Type.Optional(Type.String({ minLength: 1 })),
+  provider: Type.Optional(ProviderKind),
+  model: Type.Optional(Type.String()),
+  useWorktree: Type.Optional(Type.Boolean()),
+});
+/**
+ * Undo `turnId` and everything after it: the harness forgets those turns (when it can) and,
+ * with `restoreFiles`, the worktree goes back to the turn's before-checkpoint. Replaces `thread.revert`.
+ */
+export const ThreadRollback = Type.Object({
+  type: Type.Literal("thread.rollback"),
+  commandId: CommandId,
+  threadId: Type.String(),
+  turnId: Type.String(),
+  restoreFiles: Type.Boolean(),
+});
+/** Hide a thread from the Inbox / Now strip until `until` (or until it needs the user). */
+export const ThreadSnooze = Type.Object({ type: Type.Literal("thread.snooze"), commandId: CommandId, threadId: Type.String(), until: Type.Number() });
+/** Clear limited / snoozed state; with `continue` also asks the harness to pick up where it left off. */
+export const ThreadResume = Type.Object({ type: Type.Literal("thread.resume"), commandId: CommandId, threadId: Type.String(), continue: Type.Optional(Type.Boolean()) });
+/** Choose what happens when the harness reports its limit: wait for the user, or resume at reset. */
+export const ThreadLimitPolicy = Type.Object({ type: Type.Literal("thread.limit-policy"), commandId: CommandId, threadId: Type.String(), resume: Limited.properties.resume });
+/** Start/stop polling the thread's PR; a watched thread is woken on CI failure, new comments or conflicts. */
+export const PrWatch = Type.Object({ type: Type.Literal("pr.watch"), commandId: CommandId, threadId: Type.String(), enabled: Type.Boolean() });
+
 // ---- experts (client) ----
 export const ExpertsCreate = Type.Object({
-  type: Type.Literal("experts.create"),
+  type: Type.Literal("experts.create"), commandId: CommandId,
   projectId: Type.String(),
   topic: Type.String({ minLength: 1 }),
   experts: Type.Array(ExpertSpec, { minItems: 1 }),
   lead: Type.Object({ provider: ProviderKind, model: Type.Optional(Type.String()) }),
 });
 /** spawns the expert + lead threads and kicks off the exploring phase */
-export const ExpertsStart = Type.Object({ type: Type.Literal("experts.start"), sessionId: Type.String() });
+export const ExpertsStart = Type.Object({ type: Type.Literal("experts.start"), commandId: CommandId, sessionId: Type.String() });
 /** user contribution to the board (delivered to every expert as a message) */
-export const ExpertsPost = Type.Object({ type: Type.Literal("experts.post"), sessionId: Type.String(), text: Type.String({ minLength: 1 }), to: Type.Optional(Type.String()) });
-export const ExpertsSetPhase = Type.Object({ type: Type.Literal("experts.set-phase"), sessionId: Type.String(), phase: ExpertsPhase });
-export const ExpertsArchive = Type.Object({ type: Type.Literal("experts.archive"), sessionId: Type.String() });
+export const ExpertsPost = Type.Object({ type: Type.Literal("experts.post"), commandId: CommandId, sessionId: Type.String(), text: Type.String({ minLength: 1 }), to: Type.Optional(Type.String()) });
+export const ExpertsSetPhase = Type.Object({ type: Type.Literal("experts.set-phase"), commandId: CommandId, sessionId: Type.String(), phase: ExpertsPhase });
+export const ExpertsArchive = Type.Object({ type: Type.Literal("experts.archive"), commandId: CommandId, sessionId: Type.String() });
 
 export const ClientCommand = Type.Union([
   ProjectCreate, ProjectUpdate, ProjectArchive, ProjectLinkAdd, ProjectLinkUpdate, ProjectLinkRemove,
@@ -154,6 +211,7 @@ export const ClientCommand = Type.Union([
   ApprovalRespond, UserInputRespond,
   PlanImplement, PlanDismiss,
   ThreadRevert, ThreadPublish, ThreadMerge, WorktreeDetach,
+  TurnSteer, TurnEdit, TurnReorder, TurnPromote, ThreadFork, ThreadRollback, ThreadSnooze, ThreadResume, ThreadLimitPolicy, PrWatch,
   ExpertsCreate, ExpertsStart, ExpertsPost, ExpertsSetPhase, ExpertsArchive,
 ]);
 export type ClientCommand = Static<typeof ClientCommand>;
@@ -232,15 +290,31 @@ export const MergeReport = Type.Object({
 });
 /** triage reactor reports the decisions model's answers for a thread */
 export const ThreadTriage = Type.Object({ type: Type.Literal("thread.triage"), threadId: Type.String(), triage: Triage });
+/** provider reactor: the harness cannot steer (no cap, no live turn, or it refused) — the message becomes a queued turn instead */
+export const SteerFallback = Type.Object({ type: Type.Literal("steer.fallback"), messageId: Type.String(), reason: Type.String() });
+/** rollback service reports how a thread.rollback ended */
+export const RollbackReport = Type.Object({
+  type: Type.Literal("rollback.report"),
+  threadId: Type.String(),
+  outcome: Type.Union([Type.Literal("done"), Type.Literal("error")]),
+  error: Type.Optional(Type.String()),
+});
+/** provider reactor: the harness stopped because the subscription window is exhausted */
+export const ThreadLimited = Type.Object({ type: Type.Literal("thread.limited"), threadId: Type.String(), resetsAt: Type.Optional(Type.Number()), note: Type.Optional(Type.String()) });
+/** provider reactor: how the turn's handoff reached the harness */
+export const HandoffDelivered = Type.Object({ type: Type.Literal("handoff.delivered"), turnId: Type.String(), delivery: Type.Union([Type.Literal("inline"), Type.Literal("native")]) });
 
 // ---- agent-originated (via the Tide MCP server; authenticated per thread) ----
-export const ExpertsFindingPost = Type.Object({ type: Type.Literal("experts.finding.post"), sessionId: Type.String(), author: Type.String(), text: Type.String({ minLength: 1 }) });
-export const ExpertsMessageSend = Type.Object({ type: Type.Literal("experts.message.send"), sessionId: Type.String(), from: Type.String(), to: Type.String(), text: Type.String({ minLength: 1 }) });
-export const ExpertsSynthesisSet = Type.Object({ type: Type.Literal("experts.synthesis.set"), sessionId: Type.String(), markdown: Type.String({ minLength: 1 }) });
+export const ExpertsFindingPost = Type.Object({ type: Type.Literal("experts.finding.post"), commandId: CommandId, sessionId: Type.String(), author: Type.String(), text: Type.String({ minLength: 1 }) });
+export const ExpertsMessageSend = Type.Object({ type: Type.Literal("experts.message.send"), commandId: CommandId, sessionId: Type.String(), from: Type.String(), to: Type.String(), text: Type.String({ minLength: 1 }) });
+export const ExpertsSynthesisSet = Type.Object({ type: Type.Literal("experts.synthesis.set"), commandId: CommandId, sessionId: Type.String(), markdown: Type.String({ minLength: 1 }) });
 /** an agent asks Tide to run a task on another harness as a child thread */
 export const ThreadDelegate = Type.Object({
   type: Type.Literal("thread.delegate"),
+  commandId: CommandId,
   fromThreadId: Type.String(),
+  /** R4: shapes the child's preamble (review / research / implementation …); free text, shown in the rail */
+  role: Type.Optional(Type.String({ minLength: 1, maxLength: 40 })),
   provider: ProviderKind,
   model: Type.Optional(Type.String()),
   mode: Type.Optional(RuntimeMode),
@@ -263,6 +337,7 @@ export type AgentCommand = Static<typeof AgentCommand>;
 export const InternalCommand = Type.Union([
   TurnStart, AssistantAppend, AssistantReasoningAppend, ActivityUpsert, PlanPropose, PlanProgressReport, UsageReport, TurnSettle,
   WorktreeAttach, CheckpointRecord, PrUpdate, WorktreeDetachedReport, MergeReport, ThreadTriage,
+  SteerFallback, RollbackReport, ThreadLimited, HandoffDelivered,
   ExpertsExpertStatus,
 ]);
 export type InternalCommand = Static<typeof InternalCommand>;

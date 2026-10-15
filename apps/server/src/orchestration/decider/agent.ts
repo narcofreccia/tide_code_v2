@@ -127,6 +127,7 @@ export function decideAgent(model: ReadModel, command: AgentCommand, ctx: Decide
         mode: clampMode(command.mode, from.mode),
         interaction: "default",
         role: "delegate",
+        ...(command.role !== undefined ? { delegateRole: command.role } : {}),
         delegatedBy: from.id,
         status: "idle",
         createdAt: ctx.now,

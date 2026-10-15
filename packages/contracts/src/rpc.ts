@@ -57,6 +57,7 @@ export const ProviderStatusDto = Type.Object({
   caps: Type.Object({
     planMode: Type.Boolean(), subagents: Type.Boolean(), mcp: Type.Boolean(), images: Type.Boolean(),
     resume: Type.Boolean(), contextUsage: Type.Boolean(), openInTerminal: Type.Boolean(),
+    steer: Type.Optional(Type.Boolean()), fork: Type.Optional(Type.Boolean()), rollback: Type.Optional(Type.Boolean()),
   }),
 });
 export type ProviderStatusDto = Static<typeof ProviderStatusDto>;
@@ -163,6 +164,34 @@ export const UserSettingsPatch = Type.Object({
 });
 export type UserSettingsPatch = Static<typeof UserSettingsPatch>;
 
+/** What an agent sees of a thread (no secrets, no raw payloads). */
+export const AgentThreadSummary = Type.Object({
+  id: Type.String(),
+  projectId: Type.String(),
+  title: Type.String(),
+  provider: ProviderKind,
+  model: Type.Optional(Type.String()),
+  status: Type.String(),
+  attention: Type.Optional(Type.String()),
+  role: Type.Optional(Type.String()),
+  delegatedBy: Type.Optional(Type.String()),
+  branch: Type.Optional(Type.String()),
+  worktree: Type.Boolean(),
+  limited: Type.Boolean(),
+  updatedAt: Type.Number(),
+});
+export type AgentThreadSummary = Static<typeof AgentThreadSummary>;
+/** One bounded timeline item for `agent.thread.read`; `position` is the timeline index to continue from. */
+export const AgentTimelineItem = Type.Object({
+  position: Type.Number(),
+  turnId: Type.String(),
+  kind: Type.Union([Type.Literal("user"), Type.Literal("assistant"), Type.Literal("plan"), Type.Literal("tool"), Type.Literal("approval"), Type.Literal("question"), Type.Literal("child"), Type.Literal("info"), Type.Literal("error")]),
+  text: Type.String(),
+  truncated: Type.Boolean(),
+  at: Type.Number(),
+});
+export type AgentTimelineItem = Static<typeof AgentTimelineItem>;
+
 export const rpcMethods = {
   "server.info": unary(Type.Object({}), ServerInfo),
   /** server-side user settings (stored in TIDE_HOME/settings.json); the API key never leaves the server */
@@ -260,6 +289,37 @@ export const rpcMethods = {
   "agent.threadStatus": unary(
     Type.Object({ threadId: Type.String() }),
     Type.Object({ status: Type.String(), attention: Type.Optional(Type.String()), lastAssistantText: Type.Optional(Type.String()), settled: Type.Boolean(), error: Type.Optional(Type.String()) }),
+  ),
+  // ---- R4: agents acting on other threads (same privilege ceiling as delegation: never broader than the caller) ----
+  /** threads of the caller's project (or `projectId`), newest first; delegates included on request */
+  "agent.thread.list": unary(
+    Type.Object({ projectId: Type.Optional(Type.String()), includeDelegates: Type.Optional(Type.Boolean()), title: Type.Optional(Type.String()), limit: Type.Optional(Type.Number({ minimum: 1, maximum: 100 })) }),
+    Type.Object({ threads: Type.Array(AgentThreadSummary) }),
+  ),
+  /** durable timeline of any thread, bounded; `afterPosition` continues an earlier read */
+  "agent.thread.read": unary(
+    Type.Object({ threadId: Type.String(), view: Type.Optional(Type.Union([Type.Literal("messages"), Type.Literal("activity")])), afterPosition: Type.Optional(Type.Number()), limit: Type.Optional(Type.Number({ minimum: 1, maximum: 200 })), maxCharsPerItem: Type.Optional(Type.Number({ minimum: 200, maximum: 20000 })) }),
+    Type.Object({ thread: AgentThreadSummary, items: Type.Array(AgentTimelineItem), nextPosition: Type.Number(), truncated: Type.Boolean() }),
+  ),
+  /** `auto` steers a running turn when the harness can, else queues; `queue` always waits; `steer` fails when nothing runs */
+  "agent.thread.send": unary(
+    Type.Object({ threadId: Type.String(), text: Type.String({ minLength: 1 }), mode: Type.Optional(Type.Union([Type.Literal("auto"), Type.Literal("queue"), Type.Literal("steer")])), commandId: Type.Optional(Type.String({ minLength: 1 })) }),
+    Type.Object({ turnId: Type.Optional(Type.String()), messageId: Type.Optional(Type.String()), delivered: Type.Union([Type.Literal("started"), Type.Literal("queued"), Type.Literal("steered")]) }),
+  ),
+  /** resolves when the thread's live turn settles (or at once when idle); a timeout never cancels anything */
+  "agent.thread.wait": unary(
+    Type.Object({ threadId: Type.String(), turnId: Type.Optional(Type.String()), timeoutMs: Type.Optional(Type.Number({ minimum: 1000, maximum: 600000 })) }),
+    Type.Object({ status: Type.String(), settled: Type.Boolean(), timedOut: Type.Boolean(), attention: Type.Optional(Type.String()), lastAssistantText: Type.Optional(Type.String()), error: Type.Optional(Type.String()) }),
+  ),
+  "agent.thread.interrupt": unary(Type.Object({ threadId: Type.String() }), Type.Object({ ok: Type.Boolean() })),
+  /** pending questions (never approvals: agents cannot approve tool calls) on a thread */
+  "agent.pending.list": unary(
+    Type.Object({ threadId: Type.String() }),
+    Type.Object({ questions: Type.Array(Type.Object({ requestId: Type.String(), activityId: Type.String(), questions: Type.Array(Type.Object({ id: Type.String(), text: Type.String(), options: Type.Optional(Type.Array(Type.Object({ label: Type.String(), description: Type.Optional(Type.String()) }))), multi: Type.Optional(Type.Boolean()) })), askedAt: Type.Number() })) }),
+  ),
+  "agent.pending.respond": unary(
+    Type.Object({ threadId: Type.String(), requestId: Type.String(), answers: Type.Record(Type.String(), Type.Unknown()) }),
+    Type.Object({ ok: Type.Boolean() }),
   ),
   /** full contents of a file at a ref (or the working tree when ref is "WORKTREE"), for side-by-side views */
   "vcs.fileAt": unary(
