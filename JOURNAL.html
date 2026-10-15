@@ -60,9 +60,9 @@
         <h1>Tide v2 — Project Journal</h1>
         <div class="sub">Focused agentic code editor &amp; orchestrator over Claude Code · Codex · OpenCode · Pi. Started 2026-08-30.</div>
         <div class="kpi">
-          <div class="box"><b>R4</b><span>orchestration parity · landed, Claude live-proven; replay harness in flight</span></div>
-          <div class="box"><b>94</b><span>commits (incl. this one)</span></div>
-          <div class="box"><b>1457</b><span>tests passing</span></div>
+          <div class="box"><b>R4</b><span>orchestration parity · landed, Claude live-proven, replay harness in</span></div>
+          <div class="box"><b>96</b><span>commits (incl. this one)</span></div>
+          <div class="box"><b>1498</b><span>tests passing</span></div>
         </div>
         <div class="howto">
           How to use: read at session start; flip <code>class="status done|wip|todo|blocked"</code> + label as work lands; add dated notes under the phase;
@@ -107,14 +107,14 @@
             <li><span class="badge status done">done</span><span class="t"><b>W5 — web</b> (<code>acb3c07</code>): composer steer / queue, queue editing, fork, rollback dialog, handoff card, Limited badge, Mission Control Limited / Snoozed, PR watch pill, Settings General.</span></li>
             <li><span class="badge status done">done</span><span class="t"><b>W4 — queue editing server + continuation setting.</b></span></li>
             <li><span class="badge status done">done</span><span class="t"><b>W6 — scheduled tasks.</b></span></li>
-            <li><span class="badge status wip">wip</span><span class="t"><b>WT — replay harness.</b></span></li>
+            <li><span class="badge status done">done</span><span class="t"><b>WT — replay harness.</b></span></li>
             <li><span class="badge status done">done</span><span class="t"><b>W7 — docs refresh</b> (<code>95861fb</code>).</span></li>
             <li><span class="badge status todo">todo</span><span class="t">Andrea: <code>opencode upgrade --major</code> (this machine has 1.1.36; Tide needs 2.x), then rerun the R4 smoke on OpenCode</span></li>
             <li><span class="badge status todo">todo</span><span class="t">Andrea: <code>codex login</code>, then the Codex leg of the R4 smoke</span></li>
             <li><span class="badge status todo">todo</span><span class="t">Andrea: Pi credentials, then the Pi leg of the R4 smoke</span></li>
             <li><span class="badge status todo">todo</span><span class="t">Andrea: rebuild the desktop sidecar (<code>pnpm desktop:sidecar</code>) before the next desktop session</span></li>
           </ul>
-          <p class="note">2026-10-15 — Live validation (Claude, scratch <code>TIDE_HOME</code>, clean worktree at HEAD): steer landed mid-turn (<code>notes.md</code> gained STEERED while Bash sleeps ran; one settle); command receipts replayed the same seq; provider switch recorded a full handoff (2 turns, 1,279 bytes); switch back to Claude used a delta handoff and resumed the native session (the answer was correct); fork at turn 1 → worktree holds <code>alpha.md</code> but not <code>beta.md</code>, handoff delivered natively on a new Claude session that remembers alpha only; rollback with Restore files removed <code>beta.md</code> and the harness no longer lists it. The first smoke found that forks branched from main instead of the turn's checkpoint — fixed in <code>0dee395</code>. <strong>Not validated live:</strong> OpenCode (this machine has 1.1.36, Tide needs 2.x: <code>opencode upgrade --major</code>), Codex (not logged in), Pi (no credentials). Suite at HEAD: 1,457 tests (contracts 19, server 507, web 422, client 48, mcp 24, claude 64, codex 78, opencode 79, pi 104, pi-extensions 112).</p>
+          <p class="note">2026-10-15 — Live validation (Claude, scratch <code>TIDE_HOME</code>, clean worktree at HEAD): steer landed mid-turn (<code>notes.md</code> gained STEERED while Bash sleeps ran; one settle); command receipts replayed the same seq; provider switch recorded a full handoff (2 turns, 1,279 bytes); switch back to Claude used a delta handoff and resumed the native session (the answer was correct); fork at turn 1 → worktree holds <code>alpha.md</code> but not <code>beta.md</code>, handoff delivered natively on a new Claude session that remembers alpha only; rollback with Restore files removed <code>beta.md</code> and the harness no longer lists it. The first smoke found that forks branched from main instead of the turn's checkpoint — fixed in <code>0dee395</code>. <strong>Not validated live:</strong> OpenCode (this machine has 1.1.36, Tide needs 2.x: <code>opencode upgrade --major</code>), Codex (not logged in), Pi (no credentials). Suite at HEAD: 1,498 tests (contracts 19, server 512, web 422, client 48, mcp 24, driver-testing 36, claude 64, codex 78, opencode 79, pi 104, pi-extensions 112).</p>
           <p class="note">2026-10-15 — Deferred: outside-agent OAuth MCP endpoint, bounded snapshots / history paging, webhook tasks.</p>
         </div>
       </details>
@@ -335,6 +335,7 @@
         <tr><td>R4</td><td>2026-10-15</td><td>feat(server): steer routing, handoff delivery, rollback service, limits worker, PR watch, agent thread RPC</td><td class="sha">ab7239f</td></tr>
         <tr><td>R4</td><td>2026-10-15</td><td>fix(contracts,server): rollback gaps — rolling guard, log-order turn ids, re-minted session id, stale provider sessions</td><td class="sha">0c44fdc</td></tr>
         <tr><td>R4</td><td>2026-10-15</td><td>feat: scheduled tasks, restart continuation, fork worktree from the turn&#39;s checkpoint, agent.task.list</td><td class="sha">0dee395</td></tr>
+        <tr><td>R4</td><td>2026-10-15</td><td>test: transport replay harness — real driver + reactor + engine, only the wire is faked</td><td class="sha">e9ba231</td></tr>
       </table>
 
       <h2>Open questions &amp; follow-ups</h2>
