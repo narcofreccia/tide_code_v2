@@ -2,3 +2,4 @@ export { TideAgentBackend, type AgentBackend, type AgentContext, type AgentDispa
 export { BoardState, callTool, createTideMcpServer, type TideMcpServerOptions, type ToolResult } from "./server.ts";
 export { TOOL_DEFINITIONS, type ToolDefinition } from "./tools.ts";
 export { runMcpServer } from "./run.ts";
+export { THREAD_TOOLS_HINT, THREAD_TOOL_DEFINITIONS } from "./threadTools.ts";

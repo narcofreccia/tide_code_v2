@@ -2,9 +2,10 @@ import { describe, expect, it } from "vitest";
 import { Client } from "@modelcontextprotocol/sdk/client/index.js";
 import { InMemoryTransport } from "@modelcontextprotocol/sdk/inMemory.js";
 import type { AgentCommand } from "@tide/contracts";
-import type { AgentBackend, AgentContext, AgentDispatchResult, AgentThreadStatus } from "./backend.ts";
+import type { AgentBackend, AgentContext, AgentDispatchResult, AgentThreadStatus, PendingRespondInput, ThreadListInput, ThreadReadInput, ThreadSendInput, ThreadWaitInput, ThreadWaitResult } from "./backend.ts";
 import { createTideMcpServer } from "./server.ts";
 import { TOOL_DEFINITIONS } from "./tools.ts";
+import { THREAD_TOOLS_HINT } from "./threadTools.ts";
 
 /** In-process stand-in for the Tide server's `agent.*` methods. */
 class FakeBackend implements AgentBackend {
@@ -61,6 +62,40 @@ class FakeBackend implements AgentBackend {
     return this.status;
   }
 
+  threadCalls: [string, unknown][] = [];
+  failWith: (Error & { code?: string }) | undefined;
+  waitResult: ThreadWaitResult = { status: "idle", settled: true, timedOut: false, lastAssistantText: "child done" };
+  #rec<T>(name: string, input: unknown, out: T): Promise<T> {
+    this.threadCalls.push([name, input]);
+    return this.failWith ? Promise.reject(this.failWith) : Promise.resolve(out);
+  }
+  threadList(i: ThreadListInput) {
+    return this.#rec("list", i, { threads: [{ id: "t1", projectId: "p", title: "Fix\nbug", provider: "claude" as const, status: "running", attention: "question", role: "review", worktree: true, limited: false, updatedAt: 1 }] });
+  }
+  threadRead(i: ThreadReadInput) {
+    return this.#rec("read", i, {
+      thread: { id: "t1", projectId: "p", title: "Fix bug", provider: "codex" as const, status: "idle", worktree: false, limited: false, updatedAt: 1 },
+      items: [{ position: 4, turnId: "u1", kind: "assistant" as const, text: "hello", truncated: true, at: 1 }],
+      nextPosition: 5,
+      truncated: true,
+    });
+  }
+  threadSend(i: ThreadSendInput) {
+    return this.#rec("send", i, { turnId: "u2", delivered: "queued" as const });
+  }
+  threadWait(i: ThreadWaitInput) {
+    return this.#rec("wait", i, this.waitResult);
+  }
+  threadInterrupt(threadId: string) {
+    return this.#rec("interrupt", threadId, { ok: true });
+  }
+  pendingList(threadId: string) {
+    return this.#rec("pendingList", threadId, { questions: [{ requestId: "r1", activityId: "a", askedAt: 1, questions: [{ id: "q1", text: "Which?", options: [{ label: "A" }, { label: "B" }] }] }] });
+  }
+  pendingRespond(i: PendingRespondInput) {
+    return this.#rec("pendingRespond", i, { ok: true });
+  }
+
   close(): void {
     /* nothing to release */
   }
@@ -92,6 +127,13 @@ describe("tide-mcp server", () => {
       "tide_experts_synthesize",
       "tide_delegate",
       "tide_delegate_status",
+      "tide_thread_list",
+      "tide_thread_read",
+      "tide_thread_send",
+      "tide_thread_wait",
+      "tide_thread_interrupt",
+      "tide_pending_list",
+      "tide_pending_respond",
     ]);
     for (const tool of tools) {
       expect(tool.description?.length ?? 0).toBeGreaterThan(20);
@@ -184,5 +226,97 @@ describe("tide-mcp server", () => {
     expect(result.isError).toBe(true);
     expect(firstText(result)).toContain("not part of an expert panel");
     await client.close();
+  });
+});
+
+describe("thread tools", () => {
+  const call = async (b: FakeBackend, name: string, args: Record<string, unknown>) => {
+    const client = await connect(b);
+    const r = await client.callTool({ name, arguments: args });
+    return { text: firstText(r), isError: (r as { isError?: boolean }).isError === true };
+  };
+
+  it("lists threads as a table", async () => {
+    const b = new FakeBackend();
+    const r = await call(b, "tide_thread_list", { includeDelegates: true, limit: 5 });
+    expect(r.text).toContain("id | title | provider | status | attention | role");
+    expect(r.text).toContain("t1 | Fix bug | claude | running | question | review");
+    expect(b.threadCalls[0]).toEqual(["list", { includeDelegates: true, limit: 5 }]);
+  });
+
+  it("reads a timeline with truncation and nextPosition", async () => {
+    const b = new FakeBackend();
+    const r = await call(b, "tide_thread_read", { threadId: "t1", view: "activity", afterPosition: 3 });
+    expect(r.text).toContain("[assistant; turn=u1; pos=4] (item truncated) hello");
+    expect(r.text).toContain("afterPosition=5");
+    expect(b.threadCalls[0]).toEqual(["read", { threadId: "t1", view: "activity", afterPosition: 3 }]);
+  });
+
+  it("sends with clientRequestId forwarded as commandId", async () => {
+    const b = new FakeBackend();
+    const r = await call(b, "tide_thread_send", { threadId: "t1", text: "go", mode: "queue", clientRequestId: "req-1" });
+    expect(r.text).toContain("queued");
+    expect(b.threadCalls[0]).toEqual(["send", { threadId: "t1", text: "go", mode: "queue", commandId: "req-1" }]);
+  });
+
+  it("waits and reports the result", async () => {
+    const b = new FakeBackend();
+    const r = await call(b, "tide_thread_wait", { threadId: "t1", timeoutMs: 5000 });
+    expect(r.text).toContain("settled: true");
+    expect(r.text).toContain("child done");
+    expect(b.threadCalls[0]).toEqual(["wait", { threadId: "t1", timeoutMs: 5000 }]);
+  });
+
+  it("interrupts, lists and answers pending questions", async () => {
+    const b = new FakeBackend();
+    expect((await call(b, "tide_thread_interrupt", { threadId: "t1" })).text).toBe("Interrupted.");
+    const list = await call(b, "tide_pending_list", { threadId: "t1" });
+    expect(list.text).toContain("requestId=r1");
+    expect(list.text).toContain("q1: Which? [A / B]");
+    expect((await call(b, "tide_pending_respond", { threadId: "t1", requestId: "r1", answers: { q1: "A" } })).text).toBe("Answered.");
+    expect(b.threadCalls.at(-1)).toEqual(["pendingRespond", { threadId: "t1", requestId: "r1", answers: { q1: "A" } }]);
+    expect((await call(b, "tide_pending_respond", { threadId: "t1", requestId: "r1", answers: "A" })).isError).toBe(true);
+  });
+
+  it("maps forbidden and not-found errors", async () => {
+    const b = new FakeBackend();
+    b.failWith = Object.assign(new Error("ceiling"), { code: "forbidden" });
+    const f = await call(b, "tide_thread_send", { threadId: "t1", text: "x" });
+    expect(f.isError).toBe(true);
+    expect(f.text).toContain("narrower privileges");
+    b.failWith = Object.assign(new Error("gone"), { code: "not-found" });
+    const n = await call(b, "tide_thread_read", { threadId: "nope" });
+    expect(n.isError).toBe(true);
+    expect(n.text).toContain("Not found");
+  });
+
+  it("delegate completion=wait returns the child's result", async () => {
+    const b = new FakeBackend();
+    const r = await call(b, "tide_delegate", { provider: "codex", prompt: "do", role: "review", clientRequestId: "d-1", completion: "wait" });
+    expect(r.text).toContain("thread-child");
+    expect(r.text).toContain("child done");
+    expect(b.commands[0]).toMatchObject({ type: "thread.delegate", role: "review", commandId: "d-1" });
+    expect(b.threadCalls[0]).toEqual(["wait", { threadId: "thread-child", timeoutMs: 600000 }]);
+  });
+
+  it("delegate wait timeout reports waitTimedOut and keeps the child running", async () => {
+    const b = new FakeBackend();
+    b.waitResult = { status: "running", settled: false, timedOut: true };
+    const r = await call(b, "tide_delegate", { provider: "claude", prompt: "do", completion: "wait", timeoutMs: 1000 });
+    expect(r.isError).toBe(false);
+    expect(r.text).toContain('"waitTimedOut":true');
+    expect(r.text).toContain("keeps running");
+    expect(b.threadCalls[0]).toEqual(["wait", { threadId: "thread-child", timeoutMs: 1000 }]);
+  });
+
+  it("delegate async does not wait", async () => {
+    const b = new FakeBackend();
+    await call(b, "tide_delegate", { provider: "claude", prompt: "do" });
+    expect(b.threadCalls).toEqual([]);
+  });
+
+  it("exports the hint and lists all thread tools", () => {
+    expect(THREAD_TOOLS_HINT).toContain("cannot approve");
+    expect(TOOL_DEFINITIONS.map((t) => t.name)).toContain("tide_pending_respond");
   });
 });

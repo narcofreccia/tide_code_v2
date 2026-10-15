@@ -1,15 +1,32 @@
-import type { AgentCommand, RpcOutput } from "@tide/contracts";
+import type { AgentCommand, RpcInput, RpcOutput } from "@tide/contracts";
 import { TideConnection } from "@tide/client";
 
 export type AgentContext = RpcOutput<"agent.context">;
 export type AgentThreadStatus = RpcOutput<"agent.threadStatus">;
 export type AgentDispatchResult = RpcOutput<"agent.dispatch">;
+export type ThreadListInput = RpcInput<"agent.thread.list">;
+export type ThreadListResult = RpcOutput<"agent.thread.list">;
+export type ThreadReadInput = RpcInput<"agent.thread.read">;
+export type ThreadReadResult = RpcOutput<"agent.thread.read">;
+export type ThreadSendInput = RpcInput<"agent.thread.send">;
+export type ThreadSendResult = RpcOutput<"agent.thread.send">;
+export type ThreadWaitInput = RpcInput<"agent.thread.wait">;
+export type ThreadWaitResult = RpcOutput<"agent.thread.wait">;
+export type PendingListResult = RpcOutput<"agent.pending.list">;
+export type PendingRespondInput = RpcInput<"agent.pending.respond">;
 
 /** The slice of the Tide RPC surface the MCP tools need; faked in tests. */
 export interface AgentBackend {
   dispatch(command: AgentCommand): Promise<AgentDispatchResult>;
   context(sinceMessageId?: string): Promise<AgentContext>;
   threadStatus(threadId: string): Promise<AgentThreadStatus>;
+  threadList(input: ThreadListInput): Promise<ThreadListResult>;
+  threadRead(input: ThreadReadInput): Promise<ThreadReadResult>;
+  threadSend(input: ThreadSendInput): Promise<ThreadSendResult>;
+  threadWait(input: ThreadWaitInput): Promise<ThreadWaitResult>;
+  threadInterrupt(threadId: string): Promise<{ ok: boolean }>;
+  pendingList(threadId: string): Promise<PendingListResult>;
+  pendingRespond(input: PendingRespondInput): Promise<{ ok: boolean }>;
   close(): void;
 }
 
@@ -56,6 +73,41 @@ export class TideAgentBackend implements AgentBackend {
   async threadStatus(threadId: string): Promise<AgentThreadStatus> {
     await this.#connect();
     return this.#connection.call("agent.threadStatus", { threadId });
+  }
+
+  async threadList(input: ThreadListInput): Promise<ThreadListResult> {
+    await this.#connect();
+    return this.#connection.call("agent.thread.list", input);
+  }
+
+  async threadRead(input: ThreadReadInput): Promise<ThreadReadResult> {
+    await this.#connect();
+    return this.#connection.call("agent.thread.read", input);
+  }
+
+  async threadSend(input: ThreadSendInput): Promise<ThreadSendResult> {
+    await this.#connect();
+    return this.#connection.call("agent.thread.send", input);
+  }
+
+  async threadWait(input: ThreadWaitInput): Promise<ThreadWaitResult> {
+    await this.#connect();
+    return this.#connection.call("agent.thread.wait", input);
+  }
+
+  async threadInterrupt(threadId: string): Promise<{ ok: boolean }> {
+    await this.#connect();
+    return this.#connection.call("agent.thread.interrupt", { threadId });
+  }
+
+  async pendingList(threadId: string): Promise<PendingListResult> {
+    await this.#connect();
+    return this.#connection.call("agent.pending.list", { threadId });
+  }
+
+  async pendingRespond(input: PendingRespondInput): Promise<{ ok: boolean }> {
+    await this.#connect();
+    return this.#connection.call("agent.pending.respond", input);
   }
 
   close(): void {

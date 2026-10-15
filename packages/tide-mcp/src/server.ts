@@ -3,6 +3,7 @@ import { CallToolRequestSchema, ListToolsRequestSchema, type CallToolResult } fr
 import type { ProviderKind, RuntimeMode } from "@tide/contracts";
 import type { AgentBackend } from "./backend.ts";
 import { TOOL_DEFINITIONS } from "./tools.ts";
+import { callThreadTool, describeRpcError, formatWait, isThreadTool } from "./threadTools.ts";
 
 /** The SDK's own result shape, so handlers stay assignable without a cast. */
 export type ToolResult = CallToolResult;
@@ -62,6 +63,13 @@ export async function callTool(
   name: string,
   rawArgs: Record<string, unknown>,
 ): Promise<ToolResult> {
+  if (isThreadTool(name)) {
+    try {
+      return await callThreadTool(backend, name, rawArgs);
+    } catch (err) {
+      return failure(describeRpcError(err));
+    }
+  }
   switch (name) {
     case "tide_experts_post_finding": {
       const sessionId = await board.sessionId();
@@ -102,7 +110,13 @@ export async function callTool(
       const model = optionalString(rawArgs, "model");
       const title = optionalString(rawArgs, "title");
       const repo = optionalString(rawArgs, "repo");
-      const result = await backend.dispatch({
+      const role = optionalString(rawArgs, "role");
+      const clientRequestId = optionalString(rawArgs, "clientRequestId");
+      const waitFor = rawArgs["completion"] === "wait";
+      const timeoutMs = typeof rawArgs["timeoutMs"] === "number" ? rawArgs["timeoutMs"] : 600000;
+      let result;
+      try {
+        result = await backend.dispatch({
         type: "thread.delegate",
         // rewritten server-side to the calling thread
         fromThreadId: "self",
@@ -112,11 +126,25 @@ export async function callTool(
         ...(mode !== undefined ? { mode } : {}),
         ...(title !== undefined ? { title } : {}),
         ...(repo !== undefined ? { repo } : {}),
+        ...(role !== undefined ? { role } : {}),
+        ...(clientRequestId !== undefined ? { commandId: clientRequestId } : {}),
         ...(rawArgs["useWorktree"] === true ? { useWorktree: true } : {}),
-      });
+        });
+      } catch (err) {
+        return failure(describeRpcError(err));
+      }
       const created = result.events.find((r) => r.event.type === "thread.created");
       const threadId = created?.event.type === "thread.created" ? created.event.thread.id : undefined;
       if (threadId === undefined) return failure("delegation did not produce a thread");
+      if (waitFor) {
+        try {
+          const w = await backend.threadWait({ threadId, timeoutMs });
+          const header = JSON.stringify({ threadId, ...(w.timedOut ? { waitTimedOut: true } : {}) });
+          return text(`${header}\n${formatWait(w)}`);
+        } catch (err) {
+          return failure(`${JSON.stringify({ threadId })}\nDelegated, but waiting failed: ${describeRpcError(err)}`);
+        }
+      }
       return text(
         `${JSON.stringify({ threadId })}\nThe task is running. Poll tide_delegate_status with this threadId until it reports settled, then read lastAssistantText.`,
       );
