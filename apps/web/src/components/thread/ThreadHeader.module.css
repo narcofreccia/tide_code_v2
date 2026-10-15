@@ -27,3 +27,35 @@
   flex-direction: column;
   min-width: 180px;
 }
+
+.lineage {
+  border: none;
+  background: none;
+  padding: 0;
+  max-width: 220px;
+  overflow: hidden;
+  text-overflow: ellipsis;
+  white-space: nowrap;
+  color: var(--accent);
+  font-size: 11px;
+  cursor: pointer;
+}
+.lineage:disabled { color: var(--muted); cursor: default; }
+.rollbackError {
+  max-width: 280px;
+  overflow: hidden;
+  text-overflow: ellipsis;
+  white-space: nowrap;
+  color: var(--danger);
+  font-size: 11px;
+}
+.spinner {
+  display: inline-block;
+  width: 8px;
+  height: 8px;
+  border: 1.5px solid var(--accent);
+  border-right-color: transparent;
+  border-radius: 50%;
+  animation: spin 0.8s linear infinite;
+}
+@keyframes spin { to { transform: rotate(360deg); } }

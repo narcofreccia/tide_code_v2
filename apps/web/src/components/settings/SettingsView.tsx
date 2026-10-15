@@ -2,6 +2,7 @@ import { useEffect } from "react";
 import { SETTINGS_SECTIONS, useUi, type SettingsSection } from "../../state/ui.ts";
 import { Button } from "../ui/Button.tsx";
 import { Kbd } from "../ui/Kbd.tsx";
+import { GeneralSection } from "./GeneralSection.tsx";
 import { ProvidersSection } from "./ProvidersSection.tsx";
 import { GitSection } from "./GitSection.tsx";
 import { DecisionsSection } from "./DecisionsSection.tsx";
@@ -12,6 +13,7 @@ import { AboutSection } from "./AboutSection.tsx";
 import styles from "./SettingsView.module.css";
 
 const LABELS: Record<SettingsSection, string> = {
+  general: "General",
   providers: "Providers",
   git: "Git",
   decisions: "Decisions",
@@ -23,6 +25,8 @@ const LABELS: Record<SettingsSection, string> = {
 
 function Body({ section }: { section: SettingsSection }) {
   switch (section) {
+    case "general":
+      return <GeneralSection />;
     case "providers":
       return <ProvidersSection />;
     case "git":

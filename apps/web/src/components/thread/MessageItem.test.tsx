@@ -1,6 +1,7 @@
 import { afterEach, describe, expect, it } from "vitest";
 import { cleanup, fireEvent, render, screen } from "@testing-library/react";
 import { MessageItem } from "./MessageItem.tsx";
+import { useUi } from "../../state/ui.ts";
 import { attachFakeStore, makeMessage, makeTurn, modelWith, resetUi } from "../../testHarness.ts";
 
 afterEach(() => {
@@ -9,15 +10,31 @@ afterEach(() => {
 });
 
 describe("MessageItem", () => {
-  it("marks a queued user message and drops it on ×", () => {
-    const fake = attachFakeStore(modelWith({}));
+  it("marks a queued user message passively, with no remove control", () => {
+    attachFakeStore(modelWith({}));
     const turn = makeTurn("u2", { status: "queued" });
     render(<MessageItem message={makeMessage("m1", { turnId: "u2", text: "later" })} turn={turn} />);
 
     expect(screen.getByText("queued")).toBeDefined();
-    fireEvent.click(screen.getByLabelText("Remove queued turn"));
+    expect(screen.queryByLabelText("Remove queued turn")).toBeNull();
+    expect(screen.queryByTitle("Turn actions")).toBeNull();
+  });
 
-    expect(fake.dispatch).toHaveBeenCalledWith({ type: "turn.dequeue", turnId: "u2" });
+  it("offers fork and rollback on a settled turn", () => {
+    attachFakeStore(modelWith({}));
+    render(<MessageItem message={makeMessage("m1", { turnId: "u1" })} turn={makeTurn("u1")} />);
+    fireEvent.click(screen.getByTitle("Turn actions"));
+    fireEvent.click(screen.getByText("Rollback to before this turn…"));
+    expect(useUi.getState().threadDialog).toEqual({ kind: "rollback", threadId: "t1", turnId: "u1" });
+    fireEvent.click(screen.getByTitle("Turn actions"));
+    fireEvent.click(screen.getByText("Fork from here…"));
+    expect(useUi.getState().threadDialog).toEqual({ kind: "fork", threadId: "t1", turnId: "u1" });
+  });
+
+  it("hides the turn menu while the turn runs", () => {
+    attachFakeStore(modelWith({}));
+    render(<MessageItem message={makeMessage("m1")} turn={makeTurn("u1", { status: "running" })} />);
+    expect(screen.queryByTitle("Turn actions")).toBeNull();
   });
 
   it("leaves a running turn's message alone", () => {

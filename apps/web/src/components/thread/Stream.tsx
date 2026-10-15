@@ -1,4 +1,4 @@
-import { useEffect, useRef, useState } from "react";
+import { Fragment, useEffect, useRef, useState } from "react";
 import { groupActivities, selectTimeline, type TimelineItem } from "@tide/client";
 import type { Activity, ActivityOf, ProviderKind, ReadModel, TurnStatus } from "@tide/contracts";
 import { useModel } from "../../state/model.ts";
@@ -6,6 +6,8 @@ import { ActivityGroup } from "./ActivityGroup.tsx";
 import { ActivityRow } from "./ActivityRow.tsx";
 import { ApprovalCard } from "./ApprovalCard.tsx";
 import { ChildGroup } from "./ChildGroup.tsx";
+import { HandoffCard } from "./HandoffCard.tsx";
+import { NoticeRow } from "./NoticeRow.tsx";
 import { MessageItem } from "./MessageItem.tsx";
 import { PlanCard } from "./PlanCard.tsx";
 import { UserInputCard } from "./UserInputCard.tsx";
@@ -115,14 +117,21 @@ export function Stream({ threadId, provider }: { threadId: string; provider: Pro
         {nodes.map((node) => {
           if (node.kind === "group") return <ActivityGroup key={node.id} activities={node.activities} />;
           if (node.kind === "message") {
+            if (node.message.notification !== undefined) return <NoticeRow key={node.message.id} message={node.message} />;
             const turn = model.turns[node.message.turnId];
+            const handoff =
+              node.message.role === "user" && node.message.steer !== true && turn?.handoffId !== undefined
+                ? model.handoffs[turn.handoffId]
+                : undefined;
             return (
-              <MessageItem
-                key={node.message.id}
-                message={node.message}
-                {...(turn === undefined ? {} : { turn })}
-                {...(metaIds.has(node.message.id) ? { showMeta: true } : {})}
-              />
+              <Fragment key={node.message.id}>
+                {handoff ? <HandoffCard handoff={handoff} delivery={turn?.handoffDelivery} /> : null}
+                <MessageItem
+                  message={node.message}
+                  {...(turn === undefined ? {} : { turn })}
+                  {...(metaIds.has(node.message.id) ? { showMeta: true } : {})}
+                />
+              </Fragment>
             );
           }
           if (node.kind === "plan") return <PlanCard key={node.plan.id} plan={node.plan} provider={provider} />;

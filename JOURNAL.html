@@ -60,9 +60,9 @@
         <h1>Tide v2 — Project Journal</h1>
         <div class="sub">Focused agentic code editor &amp; orchestrator over Claude Code · Codex · OpenCode · Pi. Started 2026-08-30.</div>
         <div class="kpi">
-          <div class="box"><b>R3</b><span>currency &amp; merge-back · landed, live-proven</span></div>
-          <div class="box"><b>85</b><span>commits (incl. this one)</span></div>
-          <div class="box"><b>1238</b><span>tests passing</span></div>
+          <div class="box"><b>R4</b><span>orchestration parity · wave 0 landed, waves 1–7 in flight</span></div>
+          <div class="box"><b>86</b><span>commits (incl. this one)</span></div>
+          <div class="box"><b>1309</b><span>tests passing</span></div>
         </div>
         <div class="howto">
           How to use: read at session start; flip <code>class="status done|wip|todo|blocked"</code> + label as work lands; add dated notes under the phase;
@@ -95,6 +95,25 @@
       </table>
 
       <h2>Phase board</h2>
+      <details class="phase" open>
+        <summary><span class="title"><h3>R4 — Orchestration parity (T3 Code Orchestrator V2 comparison)</h3><small>2026-10-15 comparison vs T3 Code Orchestrator V2 · wave 0 contracts + decider + receipts · wave 1 drivers + server reactor · wave 3 tide-mcp · wave 4 queue editing · wave 5 web · wave 6 scheduled tasks · WT replay · wave 7 docs</small></span><span class="badge status wip">wip</span></summary>
+        <div class="body">
+          <p class="note">2026-10-15 — Comparison against T3 Code Orchestrator V2 (nightly 2026-10-03, clone HEAD <code>00cdceb</code>). Verdict: <strong>no change of direction needed</strong>. Tide leads on local merge-back, Experts, plan mode, the editor, triage and simplicity; T3 leads on steer, fork, provider handoff, agents acting on threads, usage-limit recovery and scheduled tasks. The plan ports mechanisms, not surface.</p>
+          <ul class="tasks">
+            <li><span class="badge status done">done</span><span class="t"><b>W0 — contracts + decider + receipts</b> (commit <code>9fb1ee3</code>): <code>commandId</code> receipts; <code>turn.steer</code> / <code>turn.edit</code> / <code>turn.reorder</code> / <code>turn.promote</code>; <code>thread.fork</code>; <code>thread.rollback</code>; Handoff artifact (budgeted verbatim selection); per-provider native sessions; Limited / snooze / resume; PR watch; agent thread RPC schemas; <code>DriverCaps</code> steer / fork / rollback.</span></li>
+            <li><span class="badge status wip">wip</span><span class="t"><b>W1 — drivers steer / rollback / fork</b>: Claude + Codex, Pi + OpenCode.</span></li>
+            <li><span class="badge status wip">wip</span><span class="t"><b>W1 — server reactor</b>: steer routing + fallback, handoff delivery (native fork / inline), rollback service, limits worker, PR watch, agent thread RPC.</span></li>
+            <li><span class="badge status wip">wip</span><span class="t"><b>W3 — tide-mcp thread tools</b> + delegate wait / role.</span></li>
+            <li><span class="badge status wip">wip</span><span class="t"><b>W5 — web</b>: composer steer / queue, queue editing, fork, rollback dialog, handoff card, Limited badge, Mission Control Limited / Snoozed, PR watch pill, Settings General.</span></li>
+            <li><span class="badge status todo">todo</span><span class="t"><b>W4 — queue editing server + continuation setting.</b></span></li>
+            <li><span class="badge status todo">todo</span><span class="t"><b>W6 — scheduled tasks.</b></span></li>
+            <li><span class="badge status todo">todo</span><span class="t"><b>WT — replay harness.</b></span></li>
+            <li><span class="badge status todo">todo</span><span class="t"><b>W7 — docs refresh.</b></span></li>
+          </ul>
+          <p class="note">2026-10-15 — Deferred: outside-agent OAuth MCP endpoint, bounded snapshots / history paging, webhook tasks.</p>
+        </div>
+      </details>
+
       <details class="phase" open>
         <summary><span class="title"><h3>R3 — Audit 2, harness currency, merge-back</h3><small>2026-10-12 audit · wave 0 contracts · wave 1 server correctness · wave 2 drivers (pi 1.1, Codex 0.162, Claude SDK 0.3.296, OpenCode 2) · wave 3 merge-back · wave 4 glass-box/web/desktop · wave 5 Jev triage</small></span><span class="badge status done">done</span></summary>
         <div class="body">
@@ -302,10 +321,12 @@
         <tr><td>R3</td><td>2026-10-12</td><td>feat(driver-opencode): rewrite for OpenCode 2; docs: providers.md refreshed</td><td class="sha">c914cf9</td></tr>
         <tr><td>R3</td><td>2026-10-12</td><td>docs(journal,providers): R3 phase</td><td class="sha">915f85c</td></tr>
         <tr><td>R3</td><td>2026-10-12</td><td>feat: project.init — new project from nothing; docs/TRIAL.md</td><td class="sha">38d2422</td></tr>
+        <tr><td>R4</td><td>2026-10-15</td><td>feat(contracts,server): R4 wave 0 — steer, fork, rollback, handoff, limits, receipts</td><td class="sha">9fb1ee3</td></tr>
       </table>
 
       <h2>Open questions &amp; follow-ups</h2>
       <ul>
+        <li><strong>R4 open (2026-10-15):</strong> Rollback on a harness without native rollback (Claude today): files restored, conversation not rewound — accept with an info activity, or refuse?</li>
         <li><strong>R3 open (2026-10-12):</strong> OpenCode 2 — `@opencode/sdk` is an in-process host, so the driver talks HTTP with <code>fetch</code> and keeps the SDK as a type-only devDependency; the v1 shared rows of <code>providers.md</code> were refreshed, the W1 linked-repos paragraph still cites 1.1.36 internals (rules are now <code>{action,resource,effect}</code>). Codex: <code>resetsAt</code> unit (assumed epoch seconds) and the 0.162 behaviour are unverified live (no login). Pi: a dialog with a <code>timeout</code> expires server-side without an event, so its card stays pending; project trust in RPC mode (see Andrea's items). Experts: a lead that never calls <code>tide_experts_synthesize</code> still has no timeout. Decider still imports <code>experts/prompts.ts</code> (pure builders — kept on purpose). Graceful shutdown now keeps queued and never-started turns; a turn mid-harness is still interrupted. Not built: unarchive (no command), PR auto-merge polling beyond <code>gh pr view</code>, Windows graceful stop in the desktop shell (<code>taskkill /T /F</code>).</li>
         <li><strong>R2 prefix <code>tidecode</code> is shared with v1:</strong> v1 artifacts (<code>TideCode.app.tar.gz</code>, two dmgs) are untouched; only <code>latest.json</code> was replaced (v1's build pointed at a placeholder endpoint, so no client read it). v1's manifest is parked at <code>tidecode/v1/latest.json</code>.</li>
         <li><strong>Removed v1 features — status:</strong> deliberately cut, not scheduled: Tutor/voice, router/classifier, custom planner, custom safety engine, region tags, web-search extension (all replaced by harness-native features). Reconsider only on evidence: tree-sitter index as an MCP tool (if harness grep is too slow on very large repos), project memory (cross-harness notes).</li>

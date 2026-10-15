@@ -1,11 +1,11 @@
 import { useEffect, useRef, useState } from "react";
-import { selectQueuedTurns } from "@tide/client";
 import type { Thread } from "@tide/contracts";
 import { newId } from "@tide/contracts";
 import { interruptTurn, sendTurn, turnRequestLanded } from "../../lib/threadActions.ts";
+import { steerTurn } from "../../lib/turnActions.ts";
+import { useFollowUp, type FollowUpMode } from "../../lib/followUp.ts";
 import { errorText } from "../../lib/dispatchOrToast.ts";
 import { showToast } from "../../state/toast.ts";
-import { useModel } from "../../state/model.ts";
 import { providerStatus, useProviders } from "../../state/providers.ts";
 import { useUi } from "../../state/ui.ts";
 import { useWorkbench } from "../../state/workbench.ts";
@@ -18,6 +18,9 @@ import { imageFilesOf } from "../../lib/images.ts";
 import { MentionPicker, useMentionMatches } from "./MentionPicker.tsx";
 import { ThreadLinkChips } from "./ThreadLinkChips.tsx";
 import { ThreadPills } from "./ThreadPills.tsx";
+import { FollowUpToggle } from "./FollowUpToggle.tsx";
+import { ProviderSwitchHint } from "./ProviderSwitchHint.tsx";
+import { QueueList } from "./QueueList.tsx";
 import styles from "./Composer.module.css";
 
 const NO_IMAGES = "This harness does not accept images";
@@ -61,7 +64,6 @@ export function Composer({ thread }: { thread: Thread }) {
   const [busy, setBusy] = useState(false);
   const [mention, setMention] = useState<{ start: number; query: string; caret: number } | undefined>(undefined);
   const [cursor, setCursor] = useState(0);
-  const [justQueued, setJustQueued] = useState(false);
   const input = useRef<HTMLTextAreaElement>(null);
   const root = useRef<HTMLDivElement>(null);
   // idempotency key of the draft in flight: a retry of the same text reuses it
@@ -70,7 +72,7 @@ export function Composer({ thread }: { thread: Thread }) {
   const providers = useProviders();
   const status = providerStatus(providers, thread.provider);
   const acceptsImages = status === undefined || status.caps.images;
-  const queuedCount = useModel((s) => selectQueuedTurns(s.model, thread.id).length);
+  const followUp = useFollowUp(status?.caps.steer === true);
   const running = thread.status === "running";
   const interrupting = thread.interrupting === true;
   const matches = useMentionMatches(thread.id, mention?.query);
@@ -103,7 +105,6 @@ export function Composer({ thread }: { thread: Thread }) {
 
   const sync = (value: string, caret: number): void => {
     setText(value);
-    setJustQueued(false);
     const found = findMentionQuery(value, caret);
     setMention(found ? { ...found, caret } : undefined);
     setCursor(0);
@@ -126,10 +127,10 @@ export function Composer({ thread }: { thread: Thread }) {
    * Sending while the thread runs is allowed: the server queues the turn behind
    * the live one, so a follow-up never has to wait for the agent to stop.
    */
-  const send = (): void => {
+  const send = (how?: FollowUpMode): void => {
     const value = text.trim();
     if ((!value && attachments.images.length === 0) || busy) return;
-    const wasRunning = running;
+    const steer = running && (how ?? followUp.mode) === "steer" && followUp.canSteer;
     const images = attachments.images.map((image) => ({ mediaType: image.mediaType, data: image.data }));
     const prompt = expandMentions(value);
     if (pending.current?.text !== prompt) pending.current = { text: prompt, requestId: newId() };
@@ -138,14 +139,14 @@ export function Composer({ thread }: { thread: Thread }) {
       pending.current = undefined;
       setText("");
       attachments.clear();
-      setJustQueued(wasRunning);
     };
     setBusy(true);
-    sendTurn(thread.id, prompt, images, requestId)
+    const delivery = steer ? steerTurn(thread.id, prompt, images, requestId) : sendTurn(thread.id, prompt, images, requestId);
+    delivery
       .then(sent)
       .catch((error: unknown) => {
         // the first attempt landed before the socket dropped: the retry was refused, not lost
-        if (turnRequestLanded(thread.id, requestId)) sent();
+        if (!steer && turnRequestLanded(thread.id, requestId)) sent();
         else showToast(`Sending failed: ${errorText(error)}`);
       })
       .finally(() => setBusy(false));
@@ -168,14 +169,13 @@ export function Composer({ thread }: { thread: Thread }) {
   const onDefaultKey = (e: React.KeyboardEvent<HTMLTextAreaElement>): void => {
     if (e.key === "Enter" && (e.metaKey || e.ctrlKey)) {
       e.preventDefault();
-      send();
+      send(running ? followUp.alternate : undefined);
     }
   };
 
   const rows = Math.min(MAX_ROWS, Math.max(MIN_ROWS, text.split("\n").length));
   const nothingToSend = text.trim() === "" && attachments.images.length === 0;
-  // the model catches up a beat after the dispatch resolves; `justQueued` covers the gap
-  const queued = queuedCount > 0 ? `+${queuedCount} queued` : justQueued ? "queued" : undefined;
+  const primaryLabel = !running ? "Send" : followUp.mode === "steer" ? "Steer" : "Queue";
 
   return (
     <div
@@ -195,6 +195,7 @@ export function Composer({ thread }: { thread: Thread }) {
     >
       {mention ? <MentionPicker matches={matches} cursor={cursor} onPick={pick} /> : null}
       <AttachmentStrip images={attachments.images} onRemove={attachments.remove} />
+      <QueueList threadId={thread.id} running={running} canSteer={followUp.canSteer} />
       <textarea
         ref={input}
         className={styles.input}
@@ -231,12 +232,12 @@ export function Composer({ thread }: { thread: Thread }) {
         <ThreadPills thread={thread} />
         <ThreadLinkChips threadId={thread.id} />
         <span className={styles.hint}>
-          {queued === undefined ? null : <span className={styles.queued}>{queued}</span>}
+          {running ? <FollowUpToggle followUp={followUp} provider={thread.provider} /> : null}
           {interrupting ? (
             <span className={styles.interrupting}>interrupting…</span>
           ) : (
             <>
-              <Kbd>⌘↵</Kbd> {running ? "queue" : "send"}
+              <Kbd>⌘↵</Kbd> {running ? followUp.alternate : "send"}
               {running ? (
                 <>
                   {" · "}
@@ -251,10 +252,11 @@ export function Composer({ thread }: { thread: Thread }) {
             Stop
           </Button>
         ) : null}
-        <Button variant="primary" onClick={send} disabled={busy || nothingToSend}>
-          {running ? "Queue" : "Send"}
+        <Button variant="primary" onClick={() => send()} disabled={busy || nothingToSend}>
+          {primaryLabel}
         </Button>
       </div>
+      <ProviderSwitchHint thread={thread} />
     </div>
   );
 }

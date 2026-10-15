@@ -16,3 +16,14 @@
   font-size: 11px;
   overflow-wrap: anywhere;
 }
+.field {
+  height: 26px;
+  flex: 1;
+  padding: 0 var(--sp-2);
+  background: var(--surface);
+  border: 1px solid var(--border);
+  border-radius: var(--radius-sm);
+  color: var(--text);
+  font: inherit;
+}
+.actions { display: flex; justify-content: flex-end; gap: var(--sp-2); }

@@ -83,6 +83,52 @@ export function selectActiveTurn(model: ReadModel, threadId: string): Turn | und
 
 // ---- attention / inbox ----
 
+/** True while the thread's snooze is still in the future. */
+export function isSnoozed(thread: Thread, now: number = Date.now()): boolean {
+  return thread.snoozedUntil !== undefined && thread.snoozedUntil > now;
+}
+
+/** Snoozed, non-archived threads, waking soonest first. */
+export function selectSnoozed(model: ReadModel, now: number = Date.now()): Thread[] {
+  return Object.values(model.threads)
+    .filter((t) => t.archivedAt === undefined && isSnoozed(t, now))
+    .sort((a, b) => (a.snoozedUntil ?? 0) - (b.snoozedUntil ?? 0) || a.id.localeCompare(b.id));
+}
+
+/** Threads that hit a usage limit, earliest reset first (unknown reset last). */
+export function selectLimited(model: ReadModel): Thread[] {
+  return Object.values(model.threads)
+    .filter((t) => t.archivedAt === undefined && t.limited !== undefined)
+    .sort(
+      (a, b) =>
+        (a.limited?.resetsAt ?? Infinity) - (b.limited?.resetsAt ?? Infinity) || a.id.localeCompare(b.id),
+    );
+}
+
+/** Threads whose PR is being polled, with the fields the pill shows. */
+export interface PrWatched {
+  thread: Thread;
+  pr: NonNullable<Thread["pr"]>;
+}
+export function selectPrWatch(model: ReadModel): PrWatched[] {
+  const out: PrWatched[] = [];
+  for (const thread of Object.values(model.threads)) {
+    if (thread.archivedAt !== undefined || thread.prWatch === undefined || thread.pr === undefined) continue;
+    out.push({ thread, pr: thread.pr });
+  }
+  return out.sort((a, b) => a.thread.id.localeCompare(b.thread.id));
+}
+
+/** The thread this one was forked from, and the threads forked from it. */
+export function selectLineage(model: ReadModel, threadId: string): { source?: Thread; forks: Thread[] } {
+  const sourceId = model.threads[threadId]?.forkedFrom?.threadId;
+  const source = sourceId === undefined ? undefined : model.threads[sourceId];
+  const forks = Object.values(model.threads)
+    .filter((t) => t.forkedFrom?.threadId === threadId)
+    .sort((a, b) => a.createdAt - b.createdAt || a.id.localeCompare(b.id));
+  return { ...(source ? { source } : {}), forks };
+}
+
 /** Needs-you threads before the rest, then most recently updated first. */
 export function compareByAttention(a: Thread, b: Thread): number {
   const rank = (t: Thread): number => (t.attention ? 0 : 1);
@@ -90,9 +136,13 @@ export function compareByAttention(a: Thread, b: Thread): number {
 }
 
 /** Non-archived threads whose projector-derived `attention` is set. */
-export function selectThreadsNeedingAttention(model: ReadModel, projectId?: string): Thread[] {
+export function selectThreadsNeedingAttention(
+  model: ReadModel,
+  projectId?: string,
+  now: number = Date.now(),
+): Thread[] {
   return Object.values(model.threads)
-    .filter((t) => t.archivedAt === undefined && t.attention !== undefined)
+    .filter((t) => t.archivedAt === undefined && t.attention !== undefined && !isSnoozed(t, now))
     .filter((t) => projectId === undefined || t.projectId === projectId)
     .sort(compareByAttention);
 }
@@ -251,10 +301,14 @@ export interface RunningThread {
  * Threads with a turn in flight, longest-running first — the "Now" strip. Expert
  * and delegate threads are included: they are real work happening right now.
  */
-export function selectRunningThreads(model: ReadModel, projectId?: string): RunningThread[] {
+export function selectRunningThreads(
+  model: ReadModel,
+  projectId?: string,
+  now: number = Date.now(),
+): RunningThread[] {
   const out: RunningThread[] = [];
   for (const thread of Object.values(model.threads)) {
-    if (thread.archivedAt !== undefined) continue;
+    if (thread.archivedAt !== undefined || isSnoozed(thread, now)) continue;
     if (projectId !== undefined && thread.projectId !== projectId) continue;
     if (thread.status !== "running") continue;
     const turn = selectActiveTurn(model, thread.id);

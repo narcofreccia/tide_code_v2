@@ -12,6 +12,7 @@ import { Pill } from "../ui/Pill.tsx";
 import { Popover } from "../ui/Popover.tsx";
 import { ThreadGlyph } from "../ui/StatusGlyph.tsx";
 import { CostSummary } from "./CostSummary.tsx";
+import { ThreadTags } from "./ThreadTags.tsx";
 import { ProjectExperts } from "./ProjectExperts.tsx";
 import styles from "./MissionControl.module.css";
 
@@ -106,6 +107,7 @@ export function ProjectCard({ project }: { project: Project }) {
               <button type="button" className={styles.recentRow} onClick={() => selectThread(thread.id)}>
                 <ThreadGlyph thread={thread} />
                 <span className={styles.title}>{thread.title}</span>
+                <ThreadTags thread={thread} />
                 {thread.interrupting === true ? (
                   <span className={styles.interrupting}>interrupting…</span>
                 ) : null}

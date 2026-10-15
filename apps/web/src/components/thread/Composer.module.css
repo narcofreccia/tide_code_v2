@@ -30,3 +30,5 @@
   letter-spacing: 0.04em;
   text-transform: uppercase;
 }
+
+.switchHint { margin: 0; padding-top: var(--sp-1); color: var(--muted); font-size: 11px; }

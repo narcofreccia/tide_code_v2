@@ -28,11 +28,12 @@ describe("Settings view", () => {
     expect(useUi.getState().view).toBe("thread");
   });
 
-  it("lists the seven sections and remembers the last one", () => {
+  it("lists the eight sections and remembers the last one", () => {
     setProvidersForTest(PROVIDER_FIXTURE);
     render(<SettingsView />);
     const nav = screen.getByLabelText("Settings sections");
     expect([...nav.querySelectorAll("li")].map((li) => li.textContent)).toEqual([
+      "General",
       "Providers",
       "Git",
       "Decisions",

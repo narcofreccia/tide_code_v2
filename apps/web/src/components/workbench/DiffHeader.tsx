@@ -5,9 +5,10 @@ import { Kbd } from "../ui/Kbd.tsx";
 import { Popover } from "../ui/Popover.tsx";
 import { Radio } from "../ui/Choice.tsx";
 import { PrBadge } from "../ui/VcsBadges.tsx";
+import { PrWatch } from "./PrWatch.tsx";
 import { MERGE_STRATEGIES } from "../../lib/merge.ts";
 import { MergeAction } from "./MergeAction.tsx";
-import { publishThread, revertTurn } from "../../lib/threadActions.ts";
+import { publishThread } from "../../lib/threadActions.ts";
 import { ALL_CHANGES, ensureStatus, type TurnSelection } from "../../state/vcs.ts";
 import { useUi } from "../../state/ui.ts";
 import { openFileTab } from "../../state/workbench.ts";
@@ -15,38 +16,39 @@ import { firstChangedLine } from "../../lib/diff.ts";
 import { TurnSelector } from "./TurnSelector.tsx";
 import styles from "./DiffHeader.module.css";
 
-function RevertAction({ thread, turn, running }: { thread: Thread; turn: Turn | undefined; running: boolean }) {
-  const disabled = running || turn?.checkpoint?.before === undefined;
-  const title = running
-    ? "Wait for the turn to finish"
-    : turn?.checkpoint?.before === undefined
-      ? "This turn has no checkpoint to revert to"
-      : "Restore the worktree to the state before this turn";
+const SETTLED: Turn["status"][] = ["completed", "error", "interrupted"];
+
+/** Rollback / Fork for the selected turn; both open a dialog hosted by the shell. */
+function TurnActions({ thread, turn, running }: { thread: Thread; turn: Turn | undefined; running: boolean }) {
+  const open = (kind: "rollback" | "fork"): void => {
+    if (turn) useUi.getState().setThreadDialog({ kind, threadId: thread.id, turnId: turn.id });
+  };
+  const noTurn = turn === undefined;
   return (
-    <Popover label="Revert this turn" title={title} variant="quiet" disabled={disabled} align="end">
-      {(close) => (
-        <div className={styles.confirm}>
-          <p className={styles.confirmText}>
-            Discard everything this turn changed in <strong>{thread.branch ?? "the worktree"}</strong>? This
-            cannot be undone.
-          </p>
-          <div className={styles.confirmRow}>
-            <Button variant="quiet" onClick={close}>
-              Cancel
-            </Button>
-            <Button
-              variant="primary"
-              onClick={() => {
-                close();
-                if (turn) void revertTurn(thread.id, turn.id);
-              }}
-            >
-              Revert
-            </Button>
-          </div>
-        </div>
-      )}
-    </Popover>
+    <>
+      <Button
+        variant="quiet"
+        disabled={noTurn || running}
+        title={
+          noTurn
+            ? "Select a turn first"
+            : running
+              ? "Wait for the turn to finish"
+              : "Undo this turn and everything after it"
+        }
+        onClick={() => open("rollback")}
+      >
+        Rollback…
+      </Button>
+      <Button
+        variant="quiet"
+        disabled={noTurn || !SETTLED.includes(turn.status)}
+        title={noTurn ? "Select a turn first" : "Start a new thread from this point"}
+        onClick={() => open("fork")}
+      >
+        Fork from here…
+      </Button>
+    </>
   );
 }
 
@@ -225,12 +227,17 @@ export function DiffHeader({
         >
           Open in editor
         </Button>
+        <TurnActions thread={thread} turn={selectedTurn} running={running} />
         {thread.worktreePath === undefined ? (
-          <span className={styles.hint}>Runs in the main checkout — revert and PR need a worktree</span>
+          <span className={styles.hint}>Runs in the main checkout — PR needs a worktree</span>
         ) : (
           <>
-            <RevertAction thread={thread} turn={selectedTurn} running={running} />
-            {thread.pr ? <PrBadge pr={thread.pr} /> : null}
+            {thread.pr ? (
+              <>
+                <PrBadge pr={thread.pr} />
+                <PrWatch thread={thread} pr={thread.pr} />
+              </>
+            ) : null}
             <PublishAction
               thread={thread}
               running={running}

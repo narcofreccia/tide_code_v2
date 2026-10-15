@@ -13,6 +13,7 @@ import { Pill } from "../ui/Pill.tsx";
 import { StatusGlyph } from "../ui/StatusGlyph.tsx";
 import { useTicker } from "./useTicker.ts";
 import styles from "./MissionControl.module.css";
+import limited from "./Limited.module.css";
 
 /** At or above this the decisions model's "stuck" probability earns a chip. */
 export const STUCK_THRESHOLD = 0.6;
@@ -97,6 +98,9 @@ export function InboxColumn({ projectId }: { projectId?: string }) {
                   jump →
                 </Button>
               </div>
+              {item.notification === undefined ? null : (
+                <p className={limited.subtitle}>{item.notification}</p>
+              )}
               <ul className={styles.cards}>
                 <ItemCard item={item} active={i === index} />
               </ul>

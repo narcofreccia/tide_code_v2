@@ -4,9 +4,10 @@ import { persist } from "zustand/middleware";
 export type FocusMode = "thread" | "split" | "workbench";
 /** `threads` is the per-project "All threads" list opened from Mission Control. */
 export type View = "mission" | "thread" | "settings" | "experts" | "threads";
-export type SettingsSection = "providers" | "git" | "decisions" | "appearance" | "keyboard" | "remote" | "about";
+export type SettingsSection = "general" | "providers" | "git" | "decisions" | "appearance" | "keyboard" | "remote" | "about";
 
 export const SETTINGS_SECTIONS: SettingsSection[] = [
+  "general",
   "providers",
   "git",
   "decisions",
@@ -18,8 +19,10 @@ export const SETTINGS_SECTIONS: SettingsSection[] = [
 
 /** A thread-scoped modal the palette or the thread header can raise. */
 export interface ThreadDialog {
-  kind: "archive" | "detach";
+  kind: "archive" | "detach" | "rollback" | "fork";
   threadId: string;
+  /** rollback / fork: the turn the action starts from */
+  turnId?: string;
 }
 
 interface UiState {

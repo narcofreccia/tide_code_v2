@@ -5,7 +5,9 @@ import type { Message, Turn } from "@tide/contracts";
 import { formatDuration } from "../../lib/activity.ts";
 import { formatBytes } from "../../lib/images.ts";
 import { formatTokens } from "../../lib/glassBox.ts";
-import { dequeueTurn } from "../../lib/threadActions.ts";
+import { useUi } from "../../state/ui.ts";
+import { Button } from "../ui/Button.tsx";
+import { Popover } from "../ui/Popover.tsx";
 import { Pill } from "../ui/Pill.tsx";
 import styles from "./MessageItem.module.css";
 
@@ -62,6 +64,30 @@ function TurnMeta({ turn }: { turn: Turn }) {
   );
 }
 
+const SETTLED: Turn["status"][] = ["completed", "error", "interrupted"];
+
+/** ⋯ on a settled turn's user message: fork or roll back from this point. */
+function TurnMenu({ turn }: { turn: Turn }) {
+  const open = (kind: "fork" | "rollback"): void =>
+    useUi.getState().setThreadDialog({ kind, threadId: turn.threadId, turnId: turn.id });
+  return (
+    <span className={styles.turnMenu}>
+      <Popover label="⋯" title="Turn actions" variant="quiet" align="end">
+        {(close) => (
+          <div className={styles.menuItems}>
+            <Button variant="quiet" onClick={() => (close(), open("fork"))}>
+              Fork from here…
+            </Button>
+            <Button variant="quiet" onClick={() => (close(), open("rollback"))}>
+              Rollback to before this turn…
+            </Button>
+          </div>
+        )}
+      </Popover>
+    </span>
+  );
+}
+
 export interface MessageItemProps {
   message: Message;
   /** the turn this message belongs to, when the model knows it */
@@ -75,21 +101,28 @@ export function MessageItem({ message, turn, showMeta }: MessageItemProps) {
   const isUser = message.role === "user";
   const queued = isUser && turn?.status === "queued" ? turn : undefined;
   const streaming = message.streaming === true;
+  const rolledBack = turn?.rolledBack === true;
+  const menuTurn =
+    isUser && turn && SETTLED.includes(turn.status) && message.steer !== true && !rolledBack ? turn : undefined;
   return (
-    <li className={isUser ? styles.user : styles.assistant}>
+    <li
+      className={`${isUser ? styles.user : styles.assistant} ${rolledBack ? styles.rolledBack : ""}`}
+      {...(rolledBack ? { "data-rolled-back": "true" } : {})}
+    >
       <div className={styles.body} data-role={message.role}>
         {queued ? (
           <span className={styles.queued}>
             <Pill tone="accent">queued</Pill>
-            <button
-              type="button"
-              className={styles.drop}
-              aria-label="Remove queued turn"
-              title="Remove this queued turn"
-              onClick={() => dequeueTurn(queued.id)}
-            >
-              ×
-            </button>
+          </span>
+        ) : null}
+        {message.steer === true ? (
+          <span className={styles.tag}>
+            <Pill tone="accent">steer</Pill>
+          </span>
+        ) : null}
+        {rolledBack && isUser ? (
+          <span className={styles.tag}>
+            <Pill>rolled back</Pill>
           </span>
         ) : null}
         {message.reasoning ? (
@@ -113,6 +146,7 @@ export function MessageItem({ message, turn, showMeta }: MessageItemProps) {
         )}
         {streaming ? <span className={styles.caret} aria-label="streaming" /> : null}
       </div>
+      {menuTurn ? <TurnMenu turn={menuTurn} /> : null}
       {showMeta === true && turn ? <TurnMeta turn={turn} /> : null}
     </li>
   );

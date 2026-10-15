@@ -14,6 +14,12 @@ import {
 } from "@tide/contracts";
 import {
   groupActivities,
+  isSnoozed,
+  selectLimited,
+  selectLineage,
+  selectPrWatch,
+  selectRunningThreads,
+  selectSnoozed,
   selectActiveTurn,
   selectInbox,
   selectThreadsNeedingAttention,
@@ -329,5 +335,62 @@ describe("linked repositories", () => {
     const model = withProject([link("a")], [thread("t1", { links: [{ linkId: "gone", access: "read" }] })]);
     expect(selectThreadLinks(model, "t1")).toEqual([]);
     expect(selectThreadLinks(model, "t404")).toEqual([]);
+  });
+});
+
+describe("R4 selectors", () => {
+  const models = (threads: Thread[]): ReadModel => ({
+    ...emptyReadModel(),
+    threads: Object.fromEntries(threads.map((t) => [t.id, t])),
+  });
+
+  it("selectLimited sorts by resetsAt, unknown last", () => {
+    const lim = (resetsAt?: number) => ({ resume: "manual" as const, at: 1, ...(resetsAt ? { resetsAt } : {}) });
+    const m = models([
+      thread("a", { limited: lim() }),
+      thread("b", { limited: lim(50) }),
+      thread("c", { limited: lim(10) }),
+      thread("d"),
+    ]);
+    expect(selectLimited(m).map((t) => t.id)).toEqual(["c", "b", "a"]);
+  });
+
+  it("snooze: isSnoozed, selectSnoozed, hidden from the inbox until it lapses", () => {
+    const t = thread("s", { attention: "approval", snoozedUntil: 100 });
+    expect(isSnoozed(t, 50)).toBe(true);
+    expect(isSnoozed(t, 100)).toBe(false);
+    const m = models([t]);
+    expect(selectSnoozed(m, 50).map((x) => x.id)).toEqual(["s"]);
+    expect(selectSnoozed(m, 150)).toEqual([]);
+    expect(selectInbox(m, undefined, 50)).toEqual([]);
+    expect(selectInbox(m, undefined, 150).map((i) => i.thread.id)).toEqual(["s"]);
+  });
+
+  it("snoozed running threads leave the Now strip", () => {
+    const m = models([thread("r", { status: "running", snoozedUntil: 100, latestTurnId: "u1" })]);
+    m.turns["u1"] = { id: "u1", threadId: "r", status: "running", requestedAt: 1 } as Turn;
+    expect(selectRunningThreads(m, undefined, 50)).toEqual([]);
+    expect(selectRunningThreads(m, undefined, 150)).toHaveLength(1);
+  });
+
+  it("inbox rows carry the latest turn's notification summary", () => {
+    const m = models([thread("n", { attention: "question", latestTurnId: "u1" })]);
+    m.messages["m1"] = { ...message("m1", "n"), notification: { source: "pr", summary: "CI failed" } };
+    m.threadMessages["n"] = ["m1"];
+    expect(selectInbox(m)[0]?.notification).toBe("CI failed");
+  });
+
+  it("selectPrWatch and selectLineage", () => {
+    const pr = { number: 3, url: "u", state: "open" as const };
+    const m = models([
+      thread("w", { prWatch: { since: 1 }, pr } as Partial<Thread>),
+      thread("x", { pr } as Partial<Thread>),
+      thread("src"),
+      thread("f1", { forkedFrom: { threadId: "src", turnId: "u1" }, createdAt: 2 }),
+    ]);
+    expect(selectPrWatch(m).map((e) => e.thread.id)).toEqual(["w"]);
+    const l = selectLineage(m, "src");
+    expect(l.forks.map((t) => t.id)).toEqual(["f1"]);
+    expect(selectLineage(m, "f1").source?.id).toBe("src");
   });
 });

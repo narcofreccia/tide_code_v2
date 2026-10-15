@@ -91,7 +91,7 @@ export const SHORTCUTS: Shortcut[] = [
     },
   },
   { id: "rail", keys: "⌘B", label: "Toggle rail", group: "View", key: "b", shift: false, when: "always", run: () => ui().toggleRail() },
-  { id: "send", keys: "⌘↵", label: "Send message", group: "Thread", when: "thread" },
+  { id: "send", keys: "⌘↵", label: "Send (while running: the other follow-up mode)", group: "Thread", when: "thread" },
   { id: "stop", keys: "Esc", label: "Stop turn / close", group: "Thread", when: "thread" },
   { id: "approve", keys: "y", label: "Approve focused card", group: "Thread", when: "thread" },
   { id: "deny", keys: "n", label: "Deny focused card", group: "Thread", when: "thread" },

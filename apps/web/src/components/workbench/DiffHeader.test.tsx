@@ -17,7 +17,7 @@ vi.mock("./monaco/MonacoDiff.tsx", () => ({
   MonacoDiff: () => <div data-testid="monaco" />,
 }));
 
-const NO_WORKTREE_HINT = "Runs in the main checkout — revert and PR need a worktree";
+const NO_WORKTREE_HINT = "Runs in the main checkout — PR needs a worktree";
 
 const checkpoint = { before: "s0", after: "s1", stats: { files: 1, additions: 3, deletions: 1 } };
 
@@ -46,25 +46,26 @@ afterEach(() => {
 });
 
 describe("DiffHeader git actions", () => {
-  it("offers revert and commit on a worktree thread", async () => {
+  it("offers rollback, fork and commit on a worktree thread", async () => {
     setup(withWorktree);
     mockRpc({ "vcs.turnDiff": () => diff(), "vcs.fileAt": () => ({ content: "x", binary: false, missing: false }) });
     render(<ChangesTab />);
 
     await waitFor(() => expect(screen.getByRole("option", { name: /a\.ts/ })).toBeDefined());
-    expect(screen.getByText("Revert this turn")).toBeDefined();
+    expect(screen.getByText("Rollback…")).toBeDefined();
+    expect(screen.getByText("Fork from here…")).toBeDefined();
     expect(screen.getByText("Commit…")).toBeDefined();
     expect(screen.queryByText(NO_WORKTREE_HINT)).toBeNull();
   });
 
-  it("hides revert and commit on a thread running in the main checkout", async () => {
+  it("hides commit (but not rollback) on a thread running in the main checkout", async () => {
     setup();
     mockRpc({ "vcs.turnDiff": () => diff(), "vcs.fileAt": () => ({ content: "x", binary: false, missing: false }) });
     render(<ChangesTab />);
 
     await waitFor(() => expect(screen.getByRole("option", { name: /a\.ts/ })).toBeDefined());
     expect(screen.getByText(NO_WORKTREE_HINT)).toBeDefined();
-    expect(screen.queryByText("Revert this turn")).toBeNull();
+    expect(screen.getByText("Rollback…")).toBeDefined();
     expect(screen.queryByText("Commit…")).toBeNull();
     expect(screen.queryByText("Commit & update PR")).toBeNull();
   });

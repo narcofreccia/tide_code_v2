@@ -108,3 +108,10 @@
 }
 .meta[data-tone="error"] { color: var(--danger); }
 .metaError { max-width: 60ch; overflow: hidden; text-overflow: ellipsis; white-space: nowrap; }
+
+.tag { display: inline-flex; margin-right: var(--sp-2); }
+.rolledBack { opacity: 0.45; }
+
+.turnMenu { opacity: 0.5; }
+.turnMenu:hover, .turnMenu:focus-within { opacity: 1; }
+.menuItems { display: flex; flex-direction: column; min-width: 200px; }

@@ -2,6 +2,7 @@ import { selectProjects } from "@tide/client";
 import { useModel } from "../../state/model.ts";
 import { useUi } from "../../state/ui.ts";
 import { InboxColumn } from "./InboxColumn.tsx";
+import { LimitedSection, SnoozedSection } from "./LimitedSection.tsx";
 import { MissionEmpty } from "./MissionEmpty.tsx";
 import { NowStrip } from "./NowStrip.tsx";
 import { ProjectCard } from "./ProjectCard.tsx";
@@ -40,6 +41,7 @@ export function MissionControl() {
       ) : (
         <>
           <NowStrip {...(scoped === undefined ? {} : { projectId: scoped })} />
+          <LimitedSection />
           <div className={styles.columns}>
             <div className={styles.column}>
               <InboxColumn {...(scoped === undefined ? {} : { projectId: scoped })} />
@@ -51,6 +53,7 @@ export function MissionControl() {
                   <ProjectCard key={project.id} project={project} />
                 ))}
               </section>
+              <SnoozedSection />
               <ProvidersStrip />
             </div>
           </div>

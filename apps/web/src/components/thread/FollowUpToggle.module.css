@@ -1,0 +1,18 @@
+.toggle {
+  display: inline-flex;
+  height: 20px;
+  border: 1px solid var(--border);
+  border-radius: var(--radius-sm);
+  overflow: hidden;
+}
+.option {
+  border: none;
+  background: none;
+  padding: 0 var(--sp-2);
+  color: var(--muted);
+  font-size: 11px;
+  cursor: pointer;
+}
+.option + .option { border-left: 1px solid var(--border); }
+.option[aria-pressed="true"] { background: var(--surface-2); color: var(--text); }
+.option:disabled { cursor: not-allowed; opacity: 0.6; }

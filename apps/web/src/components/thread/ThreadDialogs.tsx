@@ -5,6 +5,7 @@ import { useModel } from "../../state/model.ts";
 import { useUi } from "../../state/ui.ts";
 import { Checkbox, Radio } from "../ui/Choice.tsx";
 import { ConfirmDialog } from "../ui/Dialog.tsx";
+import { ForkDialog, RollbackDialog } from "./TurnDialogs.tsx";
 import styles from "./ThreadDialogs.module.css";
 
 /** Archiving a worktree thread asks what happens to the directory; the branch always stays. */
@@ -81,12 +82,17 @@ export function DetachWorktreeDialog({ thread, onClose }: { thread: Thread; onCl
 export function ThreadDialogHost() {
   const dialog = useUi((s) => s.threadDialog);
   const setThreadDialog = useUi((s) => s.setThreadDialog);
-  const thread = useModel((s) => (dialog ? s.model.threads[dialog.threadId] : undefined));
+  const model = useModel((s) => s.model);
+  const thread = dialog ? model.threads[dialog.threadId] : undefined;
   if (!dialog || !thread) return null;
   const close = (): void => setThreadDialog(null);
-  return dialog.kind === "archive" ? (
-    <ArchiveThreadDialog thread={thread} onClose={close} />
+  if (dialog.kind === "archive") return <ArchiveThreadDialog thread={thread} onClose={close} />;
+  if (dialog.kind === "detach") return <DetachWorktreeDialog thread={thread} onClose={close} />;
+  const turn = dialog.turnId === undefined ? undefined : model.turns[dialog.turnId];
+  if (!turn) return null;
+  return dialog.kind === "rollback" ? (
+    <RollbackDialog thread={thread} turn={turn} onClose={close} />
   ) : (
-    <DetachWorktreeDialog thread={thread} onClose={close} />
+    <ForkDialog thread={thread} turn={turn} onClose={close} />
   );
 }

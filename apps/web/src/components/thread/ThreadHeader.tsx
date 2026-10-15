@@ -4,6 +4,7 @@ import { useLatestTurnStatus } from "../../state/hooks.ts";
 import { createThread, fetchTerminalCommand, requestArchive } from "../../lib/threadActions.ts";
 import { runInThreadTerminal } from "../../lib/openInTerminal.ts";
 import { useUi } from "../../state/ui.ts";
+import { LimitedBadge, LineageChip, RollbackPill } from "./ThreadChips.tsx";
 import { DelegatedBy, DelegatesPopover } from "./Delegates.tsx";
 import { Button } from "../ui/Button.tsx";
 import { Pill } from "../ui/Pill.tsx";
@@ -52,6 +53,9 @@ export function ThreadHeader({ thread }: { thread: Thread }) {
       <MergeGlyph thread={thread} />
       {thread.delegatedBy ? <DelegatedBy parentThreadId={thread.delegatedBy} /> : null}
       <DelegatesPopover threadId={thread.id} />
+      <LineageChip thread={thread} />
+      <LimitedBadge thread={thread} />
+      <RollbackPill thread={thread} />
       <Pill>{thread.interrupting === true ? "interrupting…" : (turnStatus ?? thread.status)}</Pill>
       {percent === undefined || !context ? null : (
         <span className={styles.stat} title={contextTitle(context)}>

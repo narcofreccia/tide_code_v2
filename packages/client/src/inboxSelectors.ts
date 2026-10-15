@@ -13,6 +13,18 @@ export interface InboxItem {
   plan?: ProposedPlan;
   /** when the harness started waiting (the request's creation time) */
   since: number;
+  /** summary of a server-authored wake-up in the thread's latest turn */
+  notification?: string;
+}
+
+function latestNotification(model: ReadModel, thread: Thread): string | undefined {
+  const ids = model.threadMessages[thread.id] ?? [];
+  for (let i = ids.length - 1; i >= 0; i--) {
+    const m = model.messages[ids[i] ?? ""];
+    if (!m || m.turnId !== thread.latestTurnId) continue;
+    if (m.notification) return m.notification.summary;
+  }
+  return undefined;
 }
 
 /** Every pending approval / question and proposed plan of a thread, in timeline order. */
@@ -46,13 +58,20 @@ function urgencyOf(item: InboxItem): number {
  * thread, then by how long it has been waiting (oldest first). A thread flagged
  * by the projector whose card is not in the timeline still gets one bare row.
  */
-export function selectInbox(model: ReadModel, projectId?: string): InboxItem[] {
+export function selectInbox(model: ReadModel, projectId?: string, now: number = Date.now()): InboxItem[] {
   const out: InboxItem[] = [];
-  for (const thread of selectThreadsNeedingAttention(model, projectId)) {
-    const items = waitingOn(model, thread);
+  for (const thread of selectThreadsNeedingAttention(model, projectId, now)) {
+    const note = latestNotification(model, thread);
+    const items = waitingOn(model, thread).map((i) => (note === undefined ? i : { ...i, notification: note }));
     if (items.length > 0) out.push(...items);
     else if (thread.attention !== undefined) {
-      out.push({ key: `thread:${thread.id}`, thread, attention: thread.attention, since: thread.updatedAt });
+      out.push({
+        key: `thread:${thread.id}`,
+        thread,
+        attention: thread.attention,
+        since: thread.updatedAt,
+        ...(note === undefined ? {} : { notification: note }),
+      });
     }
   }
   return out.sort(

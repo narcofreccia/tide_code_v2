@@ -1,6 +1,7 @@
 import { afterEach, describe, expect, it, vi } from "vitest";
-import { act, cleanup, fireEvent, render, screen, waitFor } from "@testing-library/react";
+import { act, cleanup, fireEvent, render, screen, waitFor, within } from "@testing-library/react";
 import type { DiffResult } from "@tide/contracts";
+import { ThreadDialogHost } from "../thread/ThreadDialogs.tsx";
 import { useUi } from "../../state/ui.ts";
 import {
   attachFakeStore,
@@ -132,16 +133,25 @@ describe("ChangesTab", () => {
     expect(screen.queryByTestId("monaco")).toBeNull();
   });
 
-  it("confirms before dispatching thread.revert", async () => {
+  it("confirms before dispatching thread.rollback, restoring files when a checkpoint exists", async () => {
     const fake = setup();
     mockRpc({ "vcs.turnDiff": () => diff(), "vcs.fileAt": () => ({ content: "x", binary: false, missing: false }) });
-    render(<ChangesTab />);
+    render(
+      <>
+        <ChangesTab />
+        <ThreadDialogHost />
+      </>,
+    );
     await waitFor(() => expect(screen.getByRole("option", { name: /a\.ts/ })).toBeDefined());
 
-    fireEvent.click(screen.getByText("Revert this turn"));
+    fireEvent.click(screen.getByText("Rollback…"));
     expect(fake.dispatch).not.toHaveBeenCalled();
-    fireEvent.click(screen.getByText("Revert"));
-    expect(fake.dispatch).toHaveBeenCalledWith({ type: "thread.revert", threadId: "t1", turnId: "u2" });
+    const dialog = screen.getByRole("dialog");
+    expect((within(dialog).getByLabelText("Restore files") as HTMLInputElement).checked).toBe(true);
+    fireEvent.click(within(dialog).getByText("Roll back"));
+    expect(fake.dispatch).toHaveBeenCalledWith(
+      expect.objectContaining({ type: "thread.rollback", threadId: "t1", turnId: "u2", restoreFiles: true }),
+    );
   });
 
   it("publishes with commitOnly true or false from the popover", async () => {
@@ -197,13 +207,13 @@ describe("ChangesTab", () => {
     await waitFor(() => expect(rpc).toHaveBeenCalledWith("vcs.turnDiff", { threadId: "t1", turnId: "u2" }));
   });
 
-  it("disables revert and commit while a turn is running", async () => {
+  it("disables rollback and commit while a turn is running", async () => {
     setup({ running: true });
     mockRpc({ "vcs.turnDiff": () => diff(), "vcs.fileAt": () => ({ content: "x", binary: false, missing: false }) });
     render(<ChangesTab />);
     await waitFor(() => expect(screen.getByRole("option", { name: /a\.ts/ })).toBeDefined());
 
-    expect((screen.getByText("Revert this turn") as HTMLButtonElement).disabled).toBe(true);
+    expect((screen.getByText("Rollback…") as HTMLButtonElement).disabled).toBe(true);
     expect((screen.getByText("Commit…") as HTMLButtonElement).disabled).toBe(true);
   });
 

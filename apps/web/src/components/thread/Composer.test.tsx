@@ -91,13 +91,12 @@ describe("Composer", () => {
 
     fireEvent.change(input, { target: { value: "and then this" } });
     await act(async () => {
-      fireEvent.click(screen.getByText("Queue"));
+      fireEvent.click(screen.getAllByText("Queue").at(-1)!);
     });
 
     expect(fake.dispatch).toHaveBeenCalledWith(
       expect.objectContaining({ type: "turn.request", threadId: "t1", text: "and then this" }),
     );
-    expect(screen.getByText("queued")).toBeDefined();
     expect(screen.getByText("Stop")).toBeDefined();
   });
 

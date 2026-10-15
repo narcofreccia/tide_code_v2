@@ -1,0 +1,15 @@
+.notice {
+  display: flex;
+  align-items: center;
+  gap: var(--sp-2);
+  min-height: var(--activity-h);
+  color: var(--muted);
+  font-size: 12px;
+}
+.icon {
+  width: 16px;
+  text-align: center;
+  color: var(--accent);
+}
+.notice[data-source="restart"] .icon { color: var(--warn); }
+.summary { min-width: 0; overflow-wrap: anywhere; }

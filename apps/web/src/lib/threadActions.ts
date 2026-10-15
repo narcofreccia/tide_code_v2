@@ -65,7 +65,7 @@ export function detachWorktree(threadId: string, deleteBranch: boolean): void {
 }
 
 /** Selects the thread a dispatch created, if it created one. */
-function selectCreatedThread(result: DispatchResult): void {
+export function selectCreatedThread(result: DispatchResult): void {
   const created = result.events.find((r) => r.event.type === "thread.created");
   if (created && created.event.type === "thread.created") {
     useUi.getState().selectThread(created.event.thread.id);
