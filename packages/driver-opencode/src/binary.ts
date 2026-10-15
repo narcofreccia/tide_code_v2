@@ -54,11 +54,11 @@ export function majorOf(version: string | undefined): number | undefined {
 
 /**
  * The upgrade hint for a 1.x binary. OpenCode 2 ships as `@opencode/cli` on npm (bins
- * `opencode`/`opencode2`); `upgrade --major` is the path the task brief names but it is not
+ * `opencode`/`opencode2`); the 1.x upgrader cannot reach 2.x (different package), so the hint names the npm install but it is not
  * in 1.1.36's `upgrade --help`, so the npm route is given as well.
  */
 export function upgradeHint(found: string): string {
-  return `OpenCode 2.x required, found ${found} — run \`opencode upgrade --major\` (or \`npm i -g @opencode/cli\`), or point Tide at a 2.x binary`;
+  return `OpenCode 2.x required, found ${found} — install it with \`npm i -g @opencode/cli\` (1.x cannot upgrade itself to 2.x; remove ~/.opencode/bin/opencode if it still shadows the new one), or point Tide at a 2.x binary`;
 }
 
 /** Throws the upgrade hint unless `version` is 2.x or newer (unknown versions are let through). */

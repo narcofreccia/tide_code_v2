@@ -116,7 +116,7 @@ describe("OpencodeServer", () => {
   it("refuses a 1.x binary with the upgrade hint", async () => {
     const h = harness();
     const server = new OpencodeServer({ binaryPath: fakeBinary("1.1.36") }, h.env, h.seams);
-    await expect(server.endpoint()).rejects.toThrow("OpenCode 2.x required, found 1.1.36 — run `opencode upgrade --major`");
+    await expect(server.endpoint()).rejects.toThrow("OpenCode 2.x required, found 1.1.36 — install it with `npm i -g @opencode/cli`");
     expect(h.spawned).toHaveLength(0);
   });
 
