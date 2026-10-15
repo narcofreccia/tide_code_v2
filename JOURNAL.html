@@ -61,8 +61,8 @@
         <div class="sub">Focused agentic code editor &amp; orchestrator over Claude Code · Codex · OpenCode · Pi. Started 2026-08-30.</div>
         <div class="kpi">
           <div class="box"><b>R4</b><span>orchestration parity · landed, Claude live-proven, replay harness in</span></div>
-          <div class="box"><b>96</b><span>commits (incl. this one)</span></div>
-          <div class="box"><b>1498</b><span>tests passing</span></div>
+          <div class="box"><b>98</b><span>commits (incl. this one)</span></div>
+          <div class="box"><b>1502</b><span>tests passing</span></div>
         </div>
         <div class="howto">
           How to use: read at session start; flip <code>class="status done|wip|todo|blocked"</code> + label as work lands; add dated notes under the phase;
@@ -114,7 +114,7 @@
             <li><span class="badge status todo">todo</span><span class="t">Andrea: Pi credentials, then the Pi leg of the R4 smoke</span></li>
             <li><span class="badge status todo">todo</span><span class="t">Andrea: rebuild the desktop sidecar (<code>pnpm desktop:sidecar</code>) before the next desktop session</span></li>
           </ul>
-          <p class="note">2026-10-15 — Live validation (Claude, scratch <code>TIDE_HOME</code>, clean worktree at HEAD): steer landed mid-turn (<code>notes.md</code> gained STEERED while Bash sleeps ran; one settle); command receipts replayed the same seq; provider switch recorded a full handoff (2 turns, 1,279 bytes); switch back to Claude used a delta handoff and resumed the native session (the answer was correct); fork at turn 1 → worktree holds <code>alpha.md</code> but not <code>beta.md</code>, handoff delivered natively on a new Claude session that remembers alpha only; rollback with Restore files removed <code>beta.md</code> and the harness no longer lists it. The first smoke found that forks branched from main instead of the turn's checkpoint — fixed in <code>0dee395</code>. <strong>Not validated live:</strong> OpenCode (this machine has 1.1.36, Tide needs 2.x: <code>npm i -g @opencode/cli</code>), Codex (not logged in), Pi (no credentials). Suite at HEAD: 1,498 tests (contracts 19, server 512, web 422, client 48, mcp 24, driver-testing 36, claude 64, codex 78, opencode 79, pi 104, pi-extensions 112).</p>
+          <p class="note">2026-10-15 — Live validation (Claude, scratch <code>TIDE_HOME</code>, clean worktree at HEAD): steer landed mid-turn (<code>notes.md</code> gained STEERED while Bash sleeps ran; one settle); command receipts replayed the same seq; provider switch recorded a full handoff (2 turns, 1,279 bytes); switch back to Claude used a delta handoff and resumed the native session (the answer was correct); fork at turn 1 → worktree holds <code>alpha.md</code> but not <code>beta.md</code>, handoff delivered natively on a new Claude session that remembers alpha only; rollback with Restore files removed <code>beta.md</code> and the harness no longer lists it. The first smoke found that forks branched from main instead of the turn's checkpoint — fixed in <code>0dee395</code>. Later the same day, after <code>npm i -g @opencode/cli</code> and <code>codex login</code>: the same round on <strong>Codex 0.147</strong> and <strong>OpenCode 2.0.29</strong> passed end to end (steer mid-turn, rollback with Restore files, native fork, handoff into Claude). Two bugs found and fixed on the way: Codex 0.147 has no <code>thread/revert</code> (fallback to <code>thread/rollback</code>), and a provider switch kept the old harness's model id (<code>clearModel</code>). <strong>Not validated live:</strong> Pi (its global install runs on node 20 and crashes in undici; reinstall under node 22). Suite at HEAD: 1,502 tests (contracts 19, server 513, web 422, client 48, mcp 24, driver-testing 36, claude 64, codex 81, opencode 79, pi 104, pi-extensions 112).</p>
           <p class="note">2026-10-15 — Deferred: outside-agent OAuth MCP endpoint, bounded snapshots / history paging, webhook tasks.</p>
         </div>
       </details>
@@ -336,12 +336,14 @@
         <tr><td>R4</td><td>2026-10-15</td><td>fix(contracts,server): rollback gaps — rolling guard, log-order turn ids, re-minted session id, stale provider sessions</td><td class="sha">0c44fdc</td></tr>
         <tr><td>R4</td><td>2026-10-15</td><td>feat: scheduled tasks, restart continuation, fork worktree from the turn&#39;s checkpoint, agent.task.list</td><td class="sha">0dee395</td></tr>
         <tr><td>R4</td><td>2026-10-15</td><td>test: transport replay harness — real driver + reactor + engine, only the wire is faked</td><td class="sha">e9ba231</td></tr>
+        <tr><td>R4</td><td>2026-10-15</td><td>fix(driver-opencode): point the 1.x hint at npm i -g @opencode/cli</td><td class="sha">0a15397</td></tr>
+        <tr><td>R4</td><td>2026-10-15</td><td>fix(driver-codex,contracts,server): thread/rollback fallback on Codex 0.147; provider switch drops the old model</td><td class="sha">71a1f26</td></tr>
       </table>
 
       <h2>Open questions &amp; follow-ups</h2>
       <ul>
         <li><strong>R4 closed (2026-10-15):</strong> Rollback on a harness without native rollback — all four harnesses now roll back natively; a harness that cannot gets an info activity.</li>
-        <li><strong>R4 open (2026-10-15):</strong> OpenCode 2 live run pending <code>npm i -g @opencode/cli</code>.</li>
+        <li><strong>R4 open (2026-10-15):</strong> OpenCode 2 and Codex live rounds passed 2026-10-15; Pi pending a node-22 reinstall.</li>
         <li><strong>R4 open (2026-10-15):</strong> PR watch wake and Limited resume-at-reset are test-only until a real PR / real limit is observed.</li>
         <li><strong>R3 open (2026-10-12):</strong> OpenCode 2 — `@opencode/sdk` is an in-process host, so the driver talks HTTP with <code>fetch</code> and keeps the SDK as a type-only devDependency; the v1 shared rows of <code>providers.md</code> were refreshed, the W1 linked-repos paragraph still cites 1.1.36 internals (rules are now <code>{action,resource,effect}</code>). Codex: <code>resetsAt</code> unit (assumed epoch seconds) and the 0.162 behaviour are unverified live (no login). Pi: a dialog with a <code>timeout</code> expires server-side without an event, so its card stays pending; project trust in RPC mode (see Andrea's items). Experts: a lead that never calls <code>tide_experts_synthesize</code> still has no timeout. Decider still imports <code>experts/prompts.ts</code> (pure builders — kept on purpose). Graceful shutdown now keeps queued and never-started turns; a turn mid-harness is still interrupted. Not built: unarchive (no command), PR auto-merge polling beyond <code>gh pr view</code>, Windows graceful stop in the desktop shell (<code>taskkill /T /F</code>).</li>
         <li><strong>R2 prefix <code>tidecode</code> is shared with v1:</strong> v1 artifacts (<code>TideCode.app.tar.gz</code>, two dmgs) are untouched; only <code>latest.json</code> was replaced (v1's build pointed at a placeholder endpoint, so no client read it). v1's manifest is parked at <code>tidecode/v1/latest.json</code>.</li>
