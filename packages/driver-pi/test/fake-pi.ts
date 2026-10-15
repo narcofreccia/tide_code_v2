@@ -1,5 +1,6 @@
 import { EventEmitter } from "node:events";
 import { PassThrough } from "node:stream";
+import type { PiEntry } from "../src/turns.ts";
 import type { ChildLike } from "../src/types.ts";
 
 /**
@@ -86,13 +87,58 @@ export function fakePi(script: Script = () => undefined): FakePi {
  * grow by `step` on every stats call, the way a real session's cumulative counters do, so the
  * driver's per-turn delta is observable.
  */
-export function baseScript(overrides: { sessionFile?: string; step?: number; contextWindow?: number; commands?: { name: string; source: string }[] } = {}): Script {
-  const sessionFile = overrides.sessionFile ?? "/tmp/pi-sessions/thread.jsonl";
+export interface BaseOverrides {
+  sessionFile?: string;
+  step?: number;
+  contextWindow?: number;
+  commands?: { name: string; source: string }[];
+  /**
+   * The session's entries in append order, shared with the test so its scripted turns can
+   * append to it. `get_fork_messages` / `get_entries` read it and `fork` cuts it (single branch).
+   */
+  entries?: PiEntry[];
+  /** answer `fork` with `cancelled: true`, as a `session_before_fork` handler would */
+  cancelFork?: boolean;
+}
+
+export function baseScript(overrides: BaseOverrides = {}): Script {
+  let sessionFile = overrides.sessionFile ?? "/tmp/pi-sessions/thread.jsonl";
   const step = overrides.step ?? 100;
+  const entries = overrides.entries ?? [];
   let calls = 0;
+  let forks = 0;
   return (command, pi) => {
     const id = command["id"];
     switch (command["type"]) {
+      case "get_fork_messages":
+        pi.emitLine({ type: "response", id, command: "get_fork_messages", success: true, data: { messages: entries.filter((entry) => entry.message?.role === "user").map((entry) => ({ entryId: entry.id, text: "x" })) } });
+        return;
+      case "get_entries": {
+        const since = command["since"];
+        const index = since === undefined ? -1 : entries.findIndex((entry) => entry.id === since);
+        if (since !== undefined && index === -1) {
+          pi.emitLine({ type: "response", id, command: "get_entries", success: false, error: `Entry not found: ${String(since)}` });
+          return;
+        }
+        pi.emitLine({ type: "response", id, command: "get_entries", success: true, data: { entries: entries.slice(index + 1), leafId: entries.at(-1)?.id ?? null } });
+        return;
+      }
+      case "fork": {
+        if (overrides.cancelFork) {
+          pi.emitLine({ type: "response", id, command: "fork", success: true, data: { cancelled: true } });
+          return;
+        }
+        const index = entries.findIndex((entry) => entry.id === command["entryId"]);
+        if (index === -1) {
+          pi.emitLine({ type: "response", id, command: "fork", success: false, error: "Invalid entry ID for forking" });
+          return;
+        }
+        entries.splice(index);
+        forks += 1;
+        sessionFile = `/tmp/pi-sessions/fork-${forks}.jsonl`;
+        pi.emitLine({ type: "response", id, command: "fork", success: true, data: { text: "x", cancelled: false } });
+        return;
+      }
       case "get_state":
         pi.emitLine({ type: "response", id, command: "get_state", success: true, data: { sessionFile, sessionId: "abc123", model: { id: "gpt-5.5", provider: "openai" } } });
         return;

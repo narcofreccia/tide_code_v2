@@ -12,6 +12,7 @@ import { AsyncQueue } from "./async-queue.ts";
 import type { EventHub } from "./hub.ts";
 import { OpencodeNormalizer, ZERO_TOKENS } from "./normalize.ts";
 import { grantCovers, replyFor, sessionRuleset, userRules, type SessionGrant } from "./permissions.ts";
+import { rollbackTarget } from "./turns.ts";
 import type { OpencodeApi, PromptFile } from "./types.ts";
 import type { EventOf, FormValue, ModelRef, OpencodeEvent, PermissionRule, WireConfigEntry, WireForm, WireTokens } from "./wire.ts";
 
@@ -50,7 +51,8 @@ export function agentFor(choice: AgentChoice, interaction: SessionSettings["inte
 /**
  * One OpenCode 2 session. Turns are serial: `send()` admits a prompt and the hub's event
  * stream is the only completion signal (`session.execution.*`), so a second concurrent turn
- * is refused rather than interleaving two `settled`s.
+ * is refused rather than interleaving two `settled`s. `steer()` is the same prompt route with
+ * `delivery: "steer"`, which the server promotes into the running execution.
  */
 export class OpencodeSession implements ProviderSession {
   nativeSessionId: string;
@@ -69,6 +71,8 @@ export class OpencodeSession implements ProviderSession {
   #unsubscribe: () => void;
   #turnActive = false;
   #closed = false;
+  /** per send of this process: the admitted user message id, undefined when it was refused */
+  #turns: (string | undefined)[] = [];
 
   constructor(env: DriverEnv, options: OpenSessionOptions, deps: SessionDeps, sessionId: string) {
     this.#env = env;
@@ -130,8 +134,12 @@ export class OpencodeSession implements ProviderSession {
       // Subscribe before prompting: the stream is the only place a turn's events appear.
       await this.#deps.hub.ensure();
       const files = promptFiles(input);
-      await this.#deps.api.prompt({ sessionId: this.nativeSessionId, text: input.text, ...(files.length > 0 ? { files } : {}) });
+      const admitted = await this.#deps.api.prompt({ sessionId: this.nativeSessionId, text: input.text, ...(files.length > 0 ? { files } : {}) });
+      // without an id this process can't tell its turns apart; rollback then reads the session
+      if (admitted?.id === undefined) this.#turns = [];
+      else this.#turns.push(admitted.id);
     } catch (error) {
+      this.#turns.push(undefined);
       this.#push(this.#normalizer?.abort(error instanceof Error ? error.message : String(error)) ?? []);
       mailbox.close();
     }
@@ -233,6 +241,45 @@ export class OpencodeSession implements ProviderSession {
       this.#env.log(`[opencode] in-place reconfigure failed, reopening: ${error instanceof Error ? error.message : String(error)}`);
       return "reopen";
     }
+  }
+
+  /**
+   * `POST /api/session/:id/prompt {delivery: "steer"}`: the server queues it in the session inbox
+   * and promotes it at the running execution's next step boundary (core 2.0.27 SessionInbox
+   * `promote`, run-coordinator `wake` → same execution), so tools are not interrupted and the
+   * running `send()` settles once, on that execution's end.
+   */
+  async steer(input: TurnInput): Promise<void> {
+    if (this.#closed) throw new Error("opencode session is closed");
+    if (!this.#turnActive) throw new Error("no turn is running on this opencode session");
+    const files = promptFiles(input);
+    await this.#deps.api.prompt({ sessionId: this.nativeSessionId, text: input.text, delivery: "steer", ...(files.length > 0 ? { files } : {}) });
+  }
+
+  /**
+   * `revert/stage {messageID, files: false}` + `revert/commit` on the user message that started
+   * the oldest dropped turn: the server deletes every message from it on. `files: false` because
+   * Tide restores the worktree from its own checkpoints.
+   */
+  async rollback(turns: number): Promise<void> {
+    if (this.#closed) throw new Error("opencode session is closed");
+    if (this.#turnActive) throw new Error("busy: cannot roll back while a turn is running");
+    if (!Number.isInteger(turns) || turns < 0) throw new Error(`invalid rollback count ${turns}`);
+    if (turns === 0) return;
+    const api = this.#deps.api;
+    const target = await rollbackTarget(api, this.nativeSessionId, this.#turns, turns);
+    if (target !== undefined) {
+      await api.revertStage({ sessionId: this.nativeSessionId, messageId: target, files: false });
+      await api.revertCommit({ sessionId: this.nativeSessionId });
+      // usage deltas are taken against the session totals; re-read them after the cut
+      try {
+        const info = await api.getSession({ sessionId: this.nativeSessionId });
+        this.#baseline = { cost: info.cost, tokens: info.tokens };
+      } catch (error) {
+        this.#env.log(`[opencode] could not re-read usage after rollback: ${error instanceof Error ? error.message : String(error)}`);
+      }
+    }
+    this.#turns = this.#turns.slice(0, Math.max(0, this.#turns.length - turns));
   }
 
   async interrupt(): Promise<void> {

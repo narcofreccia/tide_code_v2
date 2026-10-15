@@ -7,6 +7,7 @@ import type {
   PermissionRule,
   WireAgent,
   WireConfigEntry,
+  WireMessage,
   WireModel,
   WireSession,
 } from "./wire.ts";
@@ -85,11 +86,43 @@ export class HttpOpencodeApi implements OpencodeApi {
     await this.#request("PUT", `/api/experimental/session/${encodeURIComponent(input.sessionId)}/instructions/entries/${encodeURIComponent(input.key)}`, { value: input.value });
   }
 
-  async prompt(input: { sessionId: string; text: string; files?: PromptFile[] }): Promise<void> {
-    await this.#request("POST", `/api/session/${encodeURIComponent(input.sessionId)}/prompt`, {
+  async prompt(input: { sessionId: string; text: string; files?: PromptFile[]; delivery?: "steer" | "queue" }): Promise<{ id?: string } | undefined> {
+    const body = await this.#request<{ data?: { id?: string } } | undefined>("POST", `/api/session/${encodeURIComponent(input.sessionId)}/prompt`, {
       text: input.text,
       ...(input.files && input.files.length > 0 ? { files: input.files } : {}),
+      ...(input.delivery !== undefined ? { delivery: input.delivery } : {}),
     });
+    return body?.data;
+  }
+
+  /** The cursor already encodes the order (the server rejects both), so `order` only goes on page one. */
+  messages(input: { sessionId: string; limit: number; cursor?: string }): Promise<{ data: WireMessage[]; cursor?: { next?: string | null } }> {
+    const query = input.cursor !== undefined ? `cursor=${encodeURIComponent(input.cursor)}` : "order=desc";
+    return this.#request("GET", `/api/session/${encodeURIComponent(input.sessionId)}/message?limit=${input.limit}&${query}`);
+  }
+
+  fork(input: { sessionId: string; before?: string }): Promise<WireSession> {
+    return this.#data("POST", `/api/session/${encodeURIComponent(input.sessionId)}/fork`, input.before !== undefined ? { before: input.before } : {});
+  }
+
+  async revertStage(input: { sessionId: string; messageId: string; files: boolean }): Promise<void> {
+    await this.#request("POST", `/api/session/${encodeURIComponent(input.sessionId)}/revert/stage`, { messageID: input.messageId, files: input.files });
+  }
+
+  async revertCommit(input: { sessionId: string }): Promise<void> {
+    await this.#request("POST", `/api/session/${encodeURIComponent(input.sessionId)}/revert/commit`);
+  }
+
+  async moveSession(input: { sessionId: string; directory: string }): Promise<void> {
+    await this.#request("POST", `/api/session/${encodeURIComponent(input.sessionId)}/move`, { directory: input.directory });
+  }
+
+  async waitIdle(input: { sessionId: string }): Promise<void> {
+    await this.#request("POST", `/api/experimental/session/${encodeURIComponent(input.sessionId)}/wait`);
+  }
+
+  async removeSession(input: { sessionId: string }): Promise<void> {
+    await this.#request("DELETE", `/api/session/${encodeURIComponent(input.sessionId)}`);
   }
 
   async interrupt(input: { sessionId: string }): Promise<void> {

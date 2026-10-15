@@ -9,6 +9,7 @@ import type {
   WireAgent,
   WireConfigEntry,
   WireFormField,
+  WireMessage,
   WireModel,
   WireSession,
   WireTokens,
@@ -22,7 +23,24 @@ export class FakeOpencodeApi implements OpencodeApi {
   #streamError: Error | undefined;
   #seq = 0;
   readonly created: Parameters<OpencodeApi["createSession"]>[0][] = [];
-  readonly prompts: { sessionId: string; text: string; files?: PromptFile[] }[] = [];
+  readonly prompts: { sessionId: string; text: string; files?: PromptFile[]; delivery?: "steer" | "queue" }[] = [];
+  /** the session's messages, oldest first; prompts append `user`, `succeeded()` appends `idle` */
+  messageLog: WireMessage[] = [];
+  /** answer prompts without the admitted message (an older server) */
+  promptWithoutId = false;
+  readonly forks: { sessionId: string; before?: string }[] = [];
+  forkDirectory = "/repo";
+  forkError: Error | undefined;
+  readonly moves: { sessionId: string; directory: string }[] = [];
+  /** the directory a move actually lands in (default: where it was asked to go) */
+  moveLandsIn: string | undefined;
+  readonly waits: string[] = [];
+  readonly removed: string[] = [];
+  readonly reverts: { sessionId: string; messageId: string; files: boolean }[] = [];
+  commits = 0;
+  revertError: Error | undefined;
+  #locations = new Map<string, string>();
+  #messageSeq = 0;
   readonly permissionReplies: { requestId: string; decision: PermissionReply }[] = [];
   readonly formReplies: { formId: string; answer: Record<string, FormValue> }[] = [];
   readonly rulesets: { sessionId: string; permissions: PermissionRule[] }[] = [];
@@ -61,7 +79,7 @@ export class FakeOpencodeApi implements OpencodeApi {
   }
 
   async getSession(input: { sessionId: string }): Promise<WireSession> {
-    return { id: input.sessionId, projectID: "p", cost: 0, tokens: ZERO, location: { directory: "/repo" }, ...this.existing };
+    return { id: input.sessionId, projectID: "p", cost: 0, tokens: ZERO, location: { directory: this.#locations.get(input.sessionId) ?? "/repo" }, ...this.existing };
   }
 
   async setPermissions(input: { sessionId: string; permissions: PermissionRule[] }): Promise<void> {
@@ -83,9 +101,55 @@ export class FakeOpencodeApi implements OpencodeApi {
     this.instructions.push({ key: input.key, value: input.value });
   }
 
-  async prompt(input: { sessionId: string; text: string; files?: PromptFile[] }): Promise<void> {
+  async prompt(input: { sessionId: string; text: string; files?: PromptFile[]; delivery?: "steer" | "queue" }): Promise<{ id?: string } | undefined> {
     if (this.promptError) throw this.promptError;
     this.prompts.push(input);
+    const id = `msg_u${++this.#messageSeq}`;
+    this.messageLog.push({ id, type: "user" });
+    return this.promptWithoutId ? {} : { id };
+  }
+
+  /** Newest first; the cursor is the index to continue from. */
+  async messages(input: { sessionId: string; limit: number; cursor?: string }): Promise<{ data: WireMessage[]; cursor?: { next?: string | null } }> {
+    const newest = [...this.messageLog].reverse();
+    const start = input.cursor === undefined ? 0 : Number(input.cursor);
+    const data = newest.slice(start, start + input.limit);
+    return { data, cursor: { next: String(start + data.length) } };
+  }
+
+  async fork(input: { sessionId: string; before?: string }): Promise<WireSession> {
+    if (this.forkError) throw this.forkError;
+    this.forks.push(input);
+    const id = `ses_fork${this.forks.length}`;
+    this.#locations.set(id, this.forkDirectory);
+    return { id, projectID: "p", cost: 0, tokens: ZERO, location: { directory: this.forkDirectory } };
+  }
+
+  async moveSession(input: { sessionId: string; directory: string }): Promise<void> {
+    this.moves.push(input);
+    this.#locations.set(input.sessionId, this.moveLandsIn ?? input.directory);
+  }
+
+  async waitIdle(input: { sessionId: string }): Promise<void> {
+    this.waits.push(input.sessionId);
+  }
+
+  async removeSession(input: { sessionId: string }): Promise<void> {
+    this.removed.push(input.sessionId);
+  }
+
+  async revertStage(input: { sessionId: string; messageId: string; files: boolean }): Promise<void> {
+    if (this.revertError) throw this.revertError;
+    if (!this.messageLog.some((message) => message.id === input.messageId)) throw new Error("opencode POST /revert/stage failed: HTTP 404 message not found");
+    this.reverts.push(input);
+  }
+
+  /** Deletes from the staged boundary on, like the 2.0.27 projector (`seq >= boundary`). */
+  async revertCommit(): Promise<void> {
+    this.commits++;
+    const staged = this.reverts.at(-1);
+    const index = staged === undefined ? -1 : this.messageLog.findIndex((message) => message.id === staged.messageId);
+    if (index !== -1) this.messageLog = this.messageLog.slice(0, index);
   }
 
   async interrupt(): Promise<void> {
@@ -195,6 +259,7 @@ export class FakeOpencodeApi implements OpencodeApi {
   }
 
   succeeded(): void {
+    this.messageLog.push({ id: `msg_i${++this.#messageSeq}`, type: "idle" });
     this.emit("session.execution.succeeded", {});
   }
 }

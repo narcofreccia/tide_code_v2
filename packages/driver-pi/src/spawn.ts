@@ -18,7 +18,10 @@ export function buildSpawn(
   const args = ["--mode", "rpc"];
   if (bridgePath) args.push("-e", bridgePath);
   for (const extension of config.extraExtensions ?? []) args.push("-e", extension);
-  if (options.resume) args.push("--session", options.resume);
+  // `--fork <path|id>` copies the source session (same entry ids, new file, this cwd) and opens
+  // the copy; pi refuses it together with `--session`, so a fork wins over a stray resume.
+  if (options.forkFrom) args.push("--fork", options.forkFrom);
+  else if (options.resume) args.push("--session", options.resume);
   const model = options.model ?? config.defaultModel;
   if (model) args.push("--model", model);
   const mcpServers = options.mcpServers.map((server) => ({

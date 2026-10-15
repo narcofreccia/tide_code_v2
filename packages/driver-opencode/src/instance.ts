@@ -140,7 +140,7 @@ export class OpencodeInstance implements ProviderInstance {
     const agent = agentFor(agents, options.interaction);
     if (options.interaction === "plan" && agents.plan === undefined) this.#env.log("[opencode] no `plan` agent on this server; plan turns run on the default agent");
 
-    let sessionId = options.resume;
+    let sessionId = options.forkFrom !== undefined ? await this.#fork(api, options.forkFrom, options.cwd) : options.resume;
     let baseline: { cost: number; tokens: WireTokens } | undefined;
     const permissions = sessionRuleset(options.mode, options.interaction, options.cwd, options.linkedDirs ?? [], userRules(config, agent));
     if (sessionId === undefined) {
@@ -198,6 +198,28 @@ export class OpencodeInstance implements ProviderInstance {
     );
     this.#sessions.add(session);
     return session;
+  }
+
+  /**
+   * `POST /api/session/:id/fork` copies the whole history into a new session (new message ids)
+   * that stays in the source's directory (core 2.0.27 `projectFork` copies `directory`). A Tide
+   * fork runs in its own worktree, so the copy is moved there (`POST …/move`, applied by the
+   * session's agent loop without a model call) and the move is awaited and verified: a fork left
+   * in the source worktree would edit the wrong checkout, so failing is the only safe answer.
+   */
+  async #fork(api: OpencodeApi, source: string, cwd: string): Promise<string> {
+    const forked = await api.fork({ sessionId: source });
+    if (forked.location.directory === cwd) return forked.id;
+    try {
+      await api.moveSession({ sessionId: forked.id, directory: cwd });
+      await api.waitIdle({ sessionId: forked.id });
+      const moved = await api.getSession({ sessionId: forked.id });
+      if (moved.location.directory !== cwd) throw new Error(`the fork is still in ${moved.location.directory}`);
+      return forked.id;
+    } catch (error) {
+      await api.removeSession({ sessionId: forked.id }).catch(() => undefined);
+      throw new Error(`opencode could not move the forked session to ${cwd}: ${error instanceof Error ? error.message : String(error)}`);
+    }
   }
 
   /**

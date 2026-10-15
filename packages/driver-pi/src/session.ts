@@ -5,6 +5,7 @@ import { AsyncQueue } from "./async-queue.ts";
 import { PiNormalizer } from "./normalize.ts";
 import { PiRpc } from "./rpc.ts";
 import { splitModelId } from "./spawn.ts";
+import { PiTurnLedger } from "./turns.ts";
 import type { ChildLike, PiCommandInfo, PiDeps, PiEvent, PiPromptDisposition, PiResponse, PiSessionStats, PiState, PiUiRequest } from "./types.ts";
 
 /**
@@ -13,8 +14,7 @@ import type { ChildLike, PiCommandInfo, PiDeps, PiEvent, PiPromptDisposition, Pi
  * pi keeps its own session file, so a process per thread is the natural unit: `send()` is one
  * `prompt` command, events stream until `agent_settled`, and `abort` interrupts. Like the
  * Claude driver, `send()` runs one turn at a time — pi rejects a second `prompt` while
- * streaming unless it is explicitly queued as `steer`/`followUp`, which is a different feature
- * (the server queues turns itself).
+ * streaming; `steer()` is pi's own `steer` command, which lands inside the running turn.
  *
  * The `prompt` response's `data.disposition` (pi 0.99+, docs/rpc-commands.md § prompt) decides
  * how the turn ends: `started`/`queued` → wait for `agent_settled`; `handled` (an extension
@@ -74,6 +74,7 @@ export class PiSession implements ProviderSession {
   #interaction: OpenSessionOptions["interaction"];
   /** tide-bridge's `/tide-config` is loaded, so mode / plan mode can change in place */
   #liveConfig = false;
+  #ledger: PiTurnLedger;
 
   constructor(child: ChildLike, env: DriverEnv, options: OpenSessionOptions) {
     this.#child = child;
@@ -94,6 +95,7 @@ export class PiSession implements ProviderSession {
       // forever and the thread would sit "running" with nothing on the other end.
       onExit: (error) => this.#died(error),
     });
+    this.#ledger = new PiTurnLedger(this.#rpc);
     this.#broker = new PiApprovalBroker(
       (event) => this.#emit(event),
       (id, body) => this.#rpc.notify({ type: "extension_ui_response", id, ...body }),
@@ -109,6 +111,7 @@ export class PiSession implements ProviderSession {
     this.#stats = await this.#rpc.data<PiSessionStats>({ type: "get_session_stats" });
     const commands = await this.#rpc.data<{ commands?: PiCommandInfo[] }>({ type: "get_commands" });
     this.#liveConfig = (commands?.commands ?? []).some((command) => command.name === CONFIG_COMMAND && command.source === "extension");
+    await this.#ledger.prime();
   }
 
   #emit(event: NormalizedEvent): void {
@@ -147,6 +150,7 @@ export class PiSession implements ProviderSession {
    */
   async #finish(settled: NormalizedEvent): Promise<void> {
     const mailbox = this.#mailbox;
+    const recorded = this.#ledger.record();
     try {
       const stats = await this.#rpc.data<PiSessionStats>({ type: "get_session_stats" });
       if (stats) {
@@ -160,6 +164,7 @@ export class PiSession implements ProviderSession {
     } catch (error) {
       this.#env.log(`[pi] get_session_stats failed: ${error instanceof Error ? error.message : String(error)}`);
     }
+    await recorded;
     mailbox?.push(settled);
     mailbox?.close();
   }
@@ -183,6 +188,7 @@ export class PiSession implements ProviderSession {
       .request(command)
       .then((response) => {
         if (!response.success) {
+          this.#ledger.skip();
           mailbox.push({ type: "settled", status: "error", error: response.error ?? "pi rejected the prompt" });
           mailbox.close();
           return;
@@ -191,6 +197,7 @@ export class PiSession implements ProviderSession {
         // run starts, so no `agent_settled` will come. `started`/`queued`, and a pre-0.99 pi
         // that sends no disposition, end on `agent_settled`.
         if (promptDisposition(response) === "handled") {
+          this.#ledger.skip();
           mailbox.push({ type: "settled", status: "completed" });
           mailbox.close();
         }
@@ -254,6 +261,65 @@ export class PiSession implements ProviderSession {
     } catch (error) {
       this.#env.log(`[pi] reconfigure failed: ${error instanceof Error ? error.message : String(error)}`);
       return "reopen";
+    }
+  }
+
+  /**
+   * pi's `steer` command (docs/rpc-commands.md § steer): queued into the running agent and
+   * delivered after the current tool calls finish, before the next model call. The running
+   * `send()` keeps streaming; pi answers `disposition: "queued" | "handled"`.
+   */
+  async steer(input: TurnInput): Promise<void> {
+    if (this.#closed) throw new Error("pi session is closed");
+    if (!this.#turnActive) throw new Error("no turn is running on this pi session");
+    const command: Record<string, unknown> = { type: "steer", message: input.text };
+    pushImages(command, input);
+    const response = await this.#rpc.request(command);
+    if (!response.success) throw new Error(response.error ?? "pi rejected the steer");
+  }
+
+  /**
+   * Drops the last `turns` Tide turns. RPC mode has no in-place tree navigation (and the TUI's
+   * `/tree` only moves an in-memory leaf), so this is pi's `fork {entryId}` on the user message
+   * that started the oldest dropped turn: pi writes a new session file holding the branch up to
+   * just before it and switches to it. `nativeSessionId` follows the new file.
+   */
+  async rollback(turns: number): Promise<void> {
+    if (this.#closed) throw new Error("pi session is closed");
+    if (this.#turnActive) throw new Error("busy: cannot roll back while a turn is running");
+    if (!Number.isInteger(turns) || turns < 0) throw new Error(`invalid rollback count ${turns}`);
+    if (turns === 0) return;
+    const starts = await this.#ledger.starts(turns);
+    if (turns > starts.length) throw new Error(`cannot roll back ${turns} turns: the pi session has ${starts.length}`);
+    const target = starts.slice(starts.length - turns).find((id) => id !== undefined);
+    if (target === undefined) {
+      this.#ledger.dropped(turns); // only sends that never reached the model
+      return;
+    }
+    const response = await this.#rpc.request({ type: "fork", entryId: target });
+    if (!response.success) throw new Error(`pi refused to roll back: ${response.error ?? "unknown error"}`);
+    if ((response.data as { cancelled?: boolean } | undefined)?.cancelled) throw new Error("an extension cancelled the rollback (session_before_fork)");
+    this.#ledger.dropped(turns);
+    await this.#rebind();
+  }
+
+  /** After pi swapped session files: re-read identity and restore what the new runtime reset. */
+  async #rebind(): Promise<void> {
+    const wanted = this.#model;
+    const state = await this.#rpc.data<PiState>({ type: "get_state" });
+    if (state?.sessionFile) this.nativeSessionId = state.sessionFile;
+    this.#model = modelId(state) ?? wanted;
+    this.#stats = await this.#rpc.data<PiSessionStats>({ type: "get_session_stats" });
+    await this.#ledger.reposition();
+    const target = wanted !== undefined && wanted !== this.#model ? splitModelId(wanted) : undefined;
+    if (target) {
+      const response = await this.#rpc.request({ type: "set_model", ...target });
+      if (response.success) this.#model = wanted;
+    }
+    // the replacement runtime reloads extensions, and tide-bridge rereads its spawn-time env
+    if (this.#liveConfig && (this.#mode !== this.#options.mode || this.#interaction !== this.#options.interaction)) {
+      const response = await this.#rpc.request({ type: "prompt", message: formatConfigCommand({ mode: this.#mode, plan: this.#interaction === "plan" }) });
+      if (!response.success || promptDisposition(response) !== "handled") this.#env.log("[pi] could not restore mode after rollback");
     }
   }
 

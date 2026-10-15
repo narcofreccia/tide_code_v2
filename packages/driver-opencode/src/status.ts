@@ -14,6 +14,9 @@ export const INSTALL_HINT = "Install OpenCode 2: npm i -g @opencode/cli (https:/
  *   runtime for one location, without writing the user's config (verified: no file appears).
  * - `images`: prompt `files[].uri` accepts `data:` URIs.
  * - `contextUsage`: `session.step.ended` carries per-step tokens, the catalog `limit.context`.
+ * - `steer`: `POST …/prompt {delivery: "steer"}` is promoted into the running execution.
+ * - `fork`: `POST …/fork` (+ `…/move` into the thread's worktree).
+ * - `rollback`: `POST …/revert/stage {files: false}` + `…/revert/commit`.
  */
 export const OPENCODE_CAPS = {
   planMode: true,
@@ -23,6 +26,9 @@ export const OPENCODE_CAPS = {
   resume: true,
   contextUsage: true,
   openInTerminal: true,
+  steer: true,
+  fork: true,
+  rollback: true,
 } as const;
 
 export function toModelInfo(models: WireModel[], defaultId: string | undefined): ModelInfo[] {

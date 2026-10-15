@@ -26,6 +26,12 @@ export const PI_CAPS = {
   // `get_session_stats` returns `contextUsage {tokens, contextWindow, percent}`
   contextUsage: true,
   openInTerminal: true,
+  // RPC `steer` queues into the running agent (docs/rpc-commands.md § steer)
+  steer: true,
+  // `pi --fork <path|id>` (docs/cli.md § Sessions; main.js createSessionManager)
+  fork: true,
+  // RPC `fork {entryId}` on the first dropped turn's prompt (docs/rpc-commands.md § fork); see turns.ts
+  rollback: true,
 } as const;
 
 /**

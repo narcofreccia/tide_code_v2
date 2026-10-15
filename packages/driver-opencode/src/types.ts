@@ -6,6 +6,7 @@ import type {
   PermissionRule,
   WireAgent,
   WireConfigEntry,
+  WireMessage,
   WireModel,
   WireSession,
 } from "./wire.ts";
@@ -59,8 +60,27 @@ export interface OpencodeApi {
   switchModel(input: { sessionId: string; model: ModelRef }): Promise<void>;
   /** durable per-session instruction entry (`PUT …/instructions/entries/:key`) */
   putInstruction(input: { sessionId: string; key: string; value: unknown }): Promise<void>;
-  /** admits a prompt; the run itself is observed on the event stream */
-  prompt(input: { sessionId: string; text: string; files?: PromptFile[] }): Promise<void>;
+  /**
+   * `POST /api/session/:id/prompt` admits one input into the session inbox and answers its
+   * `SessionInbox.User` (whose `id` becomes the user message id). `delivery` defaults to `steer`
+   * server-side: promoted at the next step boundary of a running execution, or starts one.
+   * The run itself is observed on the event stream.
+   */
+  prompt(input: { sessionId: string; text: string; files?: PromptFile[]; delivery?: "steer" | "queue" }): Promise<{ id?: string } | undefined>;
+  /** `GET /api/session/:id/message` — one page, newest first unless a cursor says otherwise */
+  messages(input: { sessionId: string; limit: number; cursor?: string }): Promise<{ data: WireMessage[]; cursor?: { next?: string | null } }>;
+  /** `POST /api/session/:id/fork` — a new session with the history before `before` (all of it when omitted) */
+  fork(input: { sessionId: string; before?: string }): Promise<WireSession>;
+  /** `POST /api/session/:id/revert/stage` — `files: false` leaves the worktree alone */
+  revertStage(input: { sessionId: string; messageId: string; files: boolean }): Promise<void>;
+  /** `POST /api/session/:id/revert/commit` — deletes every message from the staged boundary on */
+  revertCommit(input: { sessionId: string }): Promise<void>;
+  /** `POST /api/session/:id/move` — relocates the session to another directory of the project */
+  moveSession(input: { sessionId: string; directory: string }): Promise<void>;
+  /** `POST /api/experimental/session/:id/wait` — resolves once the session's agent loop is idle */
+  waitIdle(input: { sessionId: string }): Promise<void>;
+  /** `DELETE /api/session/:id` */
+  removeSession(input: { sessionId: string }): Promise<void>;
   interrupt(input: { sessionId: string }): Promise<void>;
   replyPermission(input: { sessionId: string; requestId: string; decision: PermissionReply; message?: string }): Promise<void>;
   replyForm(input: { sessionId: string; formId: string; answer: Record<string, FormValue> }): Promise<void>;

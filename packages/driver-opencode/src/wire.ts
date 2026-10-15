@@ -111,4 +111,14 @@ export interface WireForm {
   fields: WireFormField[];
 }
 
+/**
+ * One `Session.Message.Info` from `GET /api/session/:id/message` (only what rollback reads).
+ * `idle` is appended when an execution ends (core 2.0.27 message-updater: one per
+ * `session.execution.{succeeded,failed,interrupted}`), so it marks turn boundaries.
+ */
+export interface WireMessage {
+  id: string;
+  type: "user" | "assistant" | "idle" | (string & {});
+}
+
 export type FormValue = string | number | boolean | string[];
