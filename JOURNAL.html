@@ -60,9 +60,9 @@
         <h1>Tide v2 — Project Journal</h1>
         <div class="sub">Focused agentic code editor &amp; orchestrator over Claude Code · Codex · OpenCode · Pi. Started 2026-08-30.</div>
         <div class="kpi">
-          <div class="box"><b>R5</b><span>usable cockpit · W1–W4 landed, browser-validated</span></div>
-          <div class="box"><b>111</b><span>commits (incl. this one)</span></div>
-          <div class="box"><b>1,697</b><span>tests passing</span></div>
+          <div class="box"><b>R6</b><span>decision layer · W0–W2 + brand landed, W3/W4 in flight</span></div>
+          <div class="box"><b>117</b><span>commits (incl. this one)</span></div>
+          <div class="box"><b>1,805</b><span>tests passing</span></div>
         </div>
         <div class="howto">
           How to use: read at session start; flip <code>class="status done|wip|todo|blocked"</code> + label as work lands; add dated notes under the phase;
@@ -96,6 +96,21 @@
 
       <h2>Phase board</h2>
       <details class="phase" open>
+        <summary><span class="title"><h3>R6 — Decision layer, composition dialogs, brand (2026-10-16)</h3><small>Jev first filter · selectable fallback judge · budgeted ≤ 8K per call · five decision sites · Experts/New thread/Team dialogs rebuilt · Tide Code mark</small></span><span class="badge status wip">wip</span></summary>
+        <div class="body">
+           <p class="note">2026-10-16 — Andrea's goal: "leverage each harness and create something more powerful and/or cheaper to run per task". Rules: Jev (TypeSafe System One, $0.042/M, ~28K context) is the first filter, never the only judge; a gray zone of confidence falls back to a user-selected harness model; never overload Jev; "don't overuse Jev — only when effective and practical". Re-audit found Jev's confidence parsed and discarded, spend only logged, handoffs packed by recency with no relevance, no one-shot model call anywhere. Plan: <code>~/.claude/plans/hey-please-audit-this-dapper-platypus.md</code>.</p>
+           <ul class="tasks">
+             <li><span class="badge status done">done</span><span class="t"><b>W0 — composition dialogs</b> (<code>2610766</code>): Experts / New thread (Thread + Team) / Team editor on one card family (<code>ui/DialogFrame</code>, <code>ui/StageList</code>, sheet dialogs); sentence headings, preset chips, inline persona editors, outcome line, primary button with verb + count; 13 screenshots reviewed. <code>docs/design/composition.md</code>.</span></li>
+             <li><span class="badge status done">done</span><span class="t"><b>W5 — brand</b> (<code>88231b7</code>): Reel wave-puzzle mark + "CODE" icon (scripts/brand, Montserrat 800 OFL, headless-Chromium render, tauri icon set), web logo mark + "code", favicon, title "Tide Code".</span></li>
+             <li><span class="badge status done">done</span><span class="t"><b>W1+W2 — judge core + complete()</b> (<code>8cf72ad</code>): contracts <code>Verdict</code>/<code>judge.recorded</code>/<code>handoff.refined</code>/<code>DecisionsSettings</code>/<code>decisions.stats</code>/<code>ProviderInstance.complete</code>; <code>Judge.ask</code> (none → Jev → fallback for gray-zone items only), per-site caps that never resend an item, SQLite ledger, settings validation; triage via the judge (a failed call no longer aborts the project). One-shot <code>complete()</code> in Claude (SDK query, tools off, schema label; live-checked on haiku), Codex (ephemeral read-only thread, reused app-server), OpenCode (deny-all session, removed after), Pi (<code>-p --no-tools</code>). <code>docs/internals/decisions.md</code>.</span></li>
+             <li><span class="badge status wip">wip</span><span class="t"><b>W3a — handoff relevance + stuck banner</b>: judge-ranked <code>selectHandoffRanked</code> behind a 1.5 s race in the provider reactor; <code>handoffCap</code> finally wired; HandoffCard coverage line; "Looks stuck — Stop / Nudge" banner.</span></li>
+             <li><span class="badge status wip">wip</span><span class="t"><b>W3b — delegates / approvals / experts sites</b>: outcome label in delegate wake-ups and wait results; routine/consequential pill + Inbox order + per-thread opt-in auto-allow (Jev only, ≥ high); experts "converged" chip + opt-in auto-advance.</span></li>
+             <li><span class="badge status wip">wip</span><span class="t"><b>W4 — Settings › Decisions · TypeSafe Jev</b>: facts row, fallback judge picker, gray-zone tuning, per-site toggles, spend by source, recent verdicts.</span></li>
+             <li><span class="badge status todo">todo</span><span class="t">Live validation on a scratch server (no key → byte-identical behaviour; key + fallback → fallback only in the gray zone), walkthrough screenshots, sidecar rebuild.</span></li>
+           </ul>
+        </div>
+      </details>
+      <details class="phase">
         <summary><span class="title"><h3>R5 — Usable cockpit (audit of 2026-10-15/16)</h3><small>2026-10-16 audit · W1 basics + correctness · W2 explanation layer · W3 visual system · W4 team runs · browser walkthrough #2</small></span><span class="badge status wip">wip</span></summary>
         <div class="body">
           <p class="note">2026-10-16 — Andrea got lost in the desktop app: no way to remove a thread, unlabelled pills, a flat look, and no answer to "how do I run a mixed-harness orchestrator". Three Opus audits (wiring, UX review, a headless-browser walkthrough with 66 screenshots) produced the plan in the user's plans dir; four waves were approved and W1–W3 are landed.</p>
@@ -367,6 +382,9 @@
         <tr><td>R5</td><td>2026-10-16</td><td>fix(web): header fits at 1200px (Stop lives in the composer), turn diff race, Threads label under Pinned, New thread remembers the last agent</td><td class="sha">ad79435</td></tr>
         <tr><td>R5</td><td>2026-10-16</td><td>feat: thread.delete — hard delete for threads (worktree, tide/* branch, checkpoint refs), Codex account hint</td><td class="sha">fed0142</td></tr>
         <tr><td>R5</td><td>2026-10-16</td><td>feat: thread.delete cascade — delete a thread with its forks and delegates; Team tab links to the stage editor</td><td class="sha">90e4acd</td></tr>
+        <tr><td>R6</td><td>2026-10-16</td><td>feat(web): R6 W0 — composition dialogs rebuilt as one card family (Experts, New thread, Team editor)</td><td class="sha">2610766</td></tr>
+        <tr><td>R6</td><td>2026-10-16</td><td>feat(brand): Tide Code mark + "CODE" app icon from the Reel wave-puzzle mark</td><td class="sha">88231b7</td></tr>
+        <tr><td>R6</td><td>2026-10-16</td><td>feat: R6 W1+W2 — decision layer core (Jev first, selectable fallback, budget, ledger) and one-shot complete() in all four drivers</td><td class="sha">8cf72ad</td></tr>
         <tr><td>R5</td><td>2026-10-16</td><td>fix(server): archiving keeps checkpoint refs (unarchive needs them); missing ref → not-found</td><td class="sha">d30687f</td></tr>
         <tr><td>R5</td><td>2026-10-16</td><td>fix(web): walkthrough #2 round — popover keeps selects, composer toolbar, stream grouped by turn, stale breadcrumb, labels</td><td class="sha">6b2666e</td></tr>
         <tr><td>R5</td><td>2026-10-16</td><td>fix(vcs): live diffs compare against a snapshot tree of the working tree, not git&#39;s index</td><td class="sha">ff2b45c</td></tr>
