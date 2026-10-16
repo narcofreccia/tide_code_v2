@@ -108,6 +108,7 @@
             <li><span class="badge status done">done</span><span class="t"><b>Browser walkthrough #2</b> on <code>5e6d0a2</code>: 59 screenshots, confirmed the W1–W3 fixes and found 14 new issues.</span></li>
             <li><span class="badge status done">done</span><span class="t"><b>Fix-up round from walkthrough #2 (14 items) + walkthrough #3</b> (<code>6b2666e</code> web, <code>d30687f</code> + <code>ff2b45c</code> server): all 14 confirmed fixed in #3, zero console errors.</span></li>
             <li><span class="badge status done">done</span><span class="t"><b>Walkthrough #3 leftovers</b>: header overflow at 1200px, Changes refetch after the after-checkpoint, Threads label under Pinned, remember last agent.</span></li>
+             <li><span class="badge status done">done</span><span class="t"><b>Thread delete</b> (<code>fed0142</code>): <code>thread.delete</code> / <code>thread.deleted</code> (self-contained event; projector drops the thread and everything keyed to it; vcs reactor removes worktree, <code>tide/*</code> branch, checkpoint + archived-work refs). Refused while running, with children/delegates, with a shared worktree, or in a live Experts session. Web: Delete… in rail/header menus, archived bar, All threads, palette; empty threads delete without a dialog; “Clear” on the Archived group; new-thread card links to Team runs. Unknown command types now say “server older than client”. Codex card names the signed-in account and explains the free-plan catalogue. Live-checked on a scratch server. Suite 1,724 tests.</span></li>
             <li><span class="badge status todo">todo</span><span class="t">Andrea: <code>Pi: finish /login openai</code> in Pi (credential file still empty)</span></li>
             <li><span class="badge status todo">todo</span><span class="t">Andrea: try a Team run: New thread → Team → Plan → Build → Review</span></li>
           </ul>
@@ -362,6 +363,8 @@
         <tr><td>R5</td><td>2026-10-16</td><td>feat(contracts,server,tide-mcp): R5 — unarchive, pin, auto-title, delegate wake-ups, settings defaults, team runs, inherited worktrees, agent diff</td><td class="sha">5cf6df2</td></tr>
         <tr><td>R5</td><td>2026-10-16</td><td>feat(web,client): R5 — context menus, unarchive, user-language pills, status language, empty states, visual system</td><td class="sha">5e6d0a2</td></tr>
         <tr><td>R5</td><td>2026-10-16</td><td>feat(web,client): R5 — Team runs: Team tab in New thread, pipeline strip, Settings › Teams, delegate role tags</td><td class="sha">8d08283</td></tr>
+        <tr><td>R5</td><td>2026-10-16</td><td>fix(web): header fits at 1200px (Stop lives in the composer), turn diff race, Threads label under Pinned, New thread remembers the last agent</td><td class="sha">ad79435</td></tr>
+        <tr><td>R5</td><td>2026-10-16</td><td>feat: thread.delete — hard delete for threads (worktree, tide/* branch, checkpoint refs), Codex account hint</td><td class="sha">fed0142</td></tr>
         <tr><td>R5</td><td>2026-10-16</td><td>fix(server): archiving keeps checkpoint refs (unarchive needs them); missing ref → not-found</td><td class="sha">d30687f</td></tr>
         <tr><td>R5</td><td>2026-10-16</td><td>fix(web): walkthrough #2 round — popover keeps selects, composer toolbar, stream grouped by turn, stale breadcrumb, labels</td><td class="sha">6b2666e</td></tr>
         <tr><td>R5</td><td>2026-10-16</td><td>fix(vcs): live diffs compare against a snapshot tree of the working tree, not git&#39;s index</td><td class="sha">ff2b45c</td></tr>
@@ -392,7 +395,7 @@
         <li>Codex is installed (0.147) but <strong>not logged in</strong> on this machine (<code>codex login status</code> → Not logged in), so the Codex driver's model turn settled with a 401 (a genuine recorded fixture). Andrea: run <code>codex login</code>, then <code>TIDE_LIVE=1 pnpm --filter @tide/driver-codex test</code> and <code>pnpm --filter @tide/driver-codex record</code> to re-record success fixtures.</li>
         <li>Pi has no credentials on this machine (auth.json empty, no Ollama) — the Pi driver's model turn is untested live. Andrea: run <code>pi</code> once and <code>/login</code>, or install Ollama, then re-run the four-provider check.</li>
         <li>Design canvas of key screens (Mission Control, thread split, plan card, approval) once the P1 thread panel exists — for visual tweaking.</li>
-        <li><strong>R5 open (2026-10-16):</strong> Delete vs archive: archive is the only removal (branch kept); a true delete with worktree + branch cleanup is not offered — keep it that way?</li>
+        <li><strong>R5 closed (2026-10-16):</strong> Delete vs archive — both exist now: Archive keeps branch + checkpoints (restorable), Delete… removes them for good (<code>fed0142</code>).</li>
         <li><strong>R5 open (2026-10-16):</strong> Team runs: the lead cannot use native plan mode (it would block <code>tide_delegate</code>); the planner stage runs in Build with a plan-first brief.</li>
       </ul>
 
