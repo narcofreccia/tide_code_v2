@@ -122,7 +122,7 @@ Applications, open. Same behaviour as B. Updates are checked at launch and every
 | Thread worktrees | `~/.tide/worktrees/<project>/<thread>/`, branch `tide/<title>` |
 | Checkpoints | `refs/tide/checkpoints/…` in your repo (refs only, no commits on your branches) |
 | Settings | top bar → Settings: providers, git, appearance, keyboard, remote, decisions |
-| Deleting | "Delete…" (rail right-click, header ⋯, Archived group) removes a thread, its branch and checkpoints for good; archive keeps them |
+| Deleting | "Delete…" (rail right-click, header ⋯, Archived group) removes a thread, its branch and checkpoints for good; archive keeps them; child threads (forks, delegates) are deleted with it after a confirmation |
 | Escape hatch | thread header → "Open in terminal" runs `claude --resume <id>` (or the harness's equivalent) in the worktree |
 
 ## 6. Keyboard

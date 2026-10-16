@@ -126,6 +126,42 @@ describe("VcsReactor — thread.delete", () => {
   });
 });
 
+describe("VcsReactor — thread.delete cascade", () => {
+  it("removes a checkout shared by a lead and its delegate once, with its branch, and logs no failure", async () => {
+    const logs: string[] = [];
+    const h = await harness(cleanups, { log: (msg) => logs.push(msg) });
+    const lead = await newThread(h, { useWorktree: true, title: "Lead Work" });
+    h.control.script(
+      effect(async (options) => {
+        await writeFile(join(options.cwd, "w.txt"), "w\n", "utf8");
+      }),
+      emit({ type: "settled", status: "completed" }),
+    );
+    await requestTurn(h, lead.id, "go");
+    h.control.script(emit({ type: "settled", status: "completed" }));
+    const delegated = await h.app.engine.dispatch({ type: "thread.delegate", fromThreadId: lead.id, provider: "claude", prompt: "review", inheritWorktreeFrom: lead.id });
+    await h.settle();
+    const created = delegated.events.find((r) => r.event.type === "thread.created")?.event;
+    if (created?.type !== "thread.created") throw new Error("expected thread.created");
+    const delegate = h.model().threads[created.thread.id]!;
+    expect(delegate.worktreePath).toBe(lead.worktreePath);
+    expect(delegate.status).not.toBe("running");
+
+    logs.length = 0;
+    const result = await h.app.engine.dispatch({ type: "thread.delete", threadId: lead.id, cascade: true });
+    expect(result.events.map((r) => (r.event.type === "thread.deleted" ? r.event.threadId : r.event.type))).toEqual([delegate.id, lead.id]);
+    await h.settle();
+
+    expect(h.model().threads[lead.id]).toBeUndefined();
+    expect(h.model().threads[delegate.id]).toBeUndefined();
+    expect(existsSync(lead.worktreePath!)).toBe(false);
+    expect((await h.repo.git.worktreeList()).map((w) => w.path)).not.toContain(lead.worktreePath);
+    expect(await h.repo.git.revParse(`refs/heads/${lead.branch}`)).toBeUndefined();
+    expect(await h.repo.git.listRefs(`refs/tide/checkpoints/${lead.id}/`)).toEqual([]);
+    expect(logs.filter((m) => /fail|could not|kept|refusing/.test(m))).toEqual([]);
+  });
+});
+
 describe("VcsReactor — detach failures surface on the thread", () => {
   it("keeps a worktree whose uncommitted work cannot be preserved, and says so", async () => {
     const h = await harness(cleanups);

@@ -19,6 +19,7 @@ export {
   selectActiveTurn,
   selectCheckpointTurns,
   selectDelegates,
+  descendantThreads,
   selectExpertsBoard,
   selectExpertsSessions,
   selectScheduledTasks,

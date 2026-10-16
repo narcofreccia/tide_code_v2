@@ -287,6 +287,23 @@ describe("rail row marks", () => {
     expect(screen.getByText("Deleted “Blank”")).toBeDefined();
   });
 
+  it("asks first for an empty thread that has a child, and Clear skips it", async () => {
+    const fake = mount(
+      [
+        makeThread("t1", { title: "Blank" }),
+        makeThread("k1", { title: "Kid", parentThreadId: "t1", archivedAt: 5 }),
+      ],
+      [],
+      false,
+    );
+    const menu = openMenu("Blank");
+    await act(async () => {
+      choose(menu, "Delete…");
+    });
+    expect(fake.dispatch).not.toHaveBeenCalled();
+    expect(useUi.getState().threadDialog).toEqual({ kind: "delete", threadId: "t1" });
+  });
+
   it("asks first for a thread with a conversation", () => {
     const fake = mount([makeThread("t1", { title: "Router" })]);
     choose(openMenu("Router"), "Delete…");

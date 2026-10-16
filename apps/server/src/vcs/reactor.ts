@@ -59,6 +59,8 @@ export class VcsReactor {
   #newId: () => string;
   #log: (msg: string, data?: unknown) => void;
   #queues = new Map<string, Promise<void>>();
+  /** tail of the `thread.deleted` chain (see `#oneDeletionAtATime`) */
+  #deletions: Promise<void> = Promise.resolve();
   /** threadId -> why its worktree could not be created; surfaced on that thread's first turn */
   #worktreeFailures = new Map<string, string>();
   #inflight = new Set<Promise<unknown>>();
@@ -133,7 +135,9 @@ export class VcsReactor {
         if (event.keepWorktree !== true) this.#enqueue(event.threadId, async () => void (await this.#detach(event.threadId, false)));
         return;
       case "thread.deleted":
-        this.#enqueue(event.threadId, () => this.#destroy(event));
+        // a cascade emits one event per thread and those may share a checkout and a branch:
+        // deletions run one at a time, so the second finds the directory and branch already gone
+        this.#enqueue(event.threadId, () => this.#oneDeletionAtATime(() => this.#destroy(event)));
         return;
       case "worktree.detach-requested": {
         const { threadId, deleteBranch } = event;
@@ -337,7 +341,8 @@ export class VcsReactor {
    * `thread.deleted`: the thread is already gone from the model, so everything comes from the
    * event. Session, worktree, `tide/*` branch, checkpoint refs and the archived-work ref go, each
    * best-effort and logged (there is no thread left to post an error on). Nothing still in the
-   * model is touched: a checkout or branch another thread uses stays.
+   * model is touched: a checkout or branch another thread uses stays. A cascade sharing one
+   * checkout removes it on the first event; later ones find it gone and skip quietly.
    */
   async #destroy(event: EventOf<"thread.deleted">): Promise<void> {
     const { threadId, worktreePath, branch } = event;
@@ -366,6 +371,8 @@ export class VcsReactor {
     }
     if (branch !== undefined && others.some((t) => t.branch === branch)) {
       this.#log(`[vcs] delete ${threadId}: branch ${branch} kept, another thread uses it`);
+    } else if (branch !== undefined && (await this.#git(project.rootPath).revParse(`refs/heads/${branch}`)) === undefined) {
+      // already gone: an earlier thread of the same cascade shared it
     } else {
       await step("branch deletion", () => this.#deleteBranch(project.rootPath, branch));
     }
@@ -375,6 +382,12 @@ export class VcsReactor {
     });
     await step("archived ref cleanup", () => this.#git(project.rootPath).deleteRef(`refs/tide/archived/${threadId}`));
     this.#worktreeFailures.delete(threadId);
+  }
+
+  #oneDeletionAtATime(task: () => Promise<void>): Promise<void> {
+    const next = this.#deletions.then(task);
+    this.#deletions = next.catch(() => undefined);
+    return next;
   }
 
   async #deleteBranch(rootPath: string, branch: string | undefined): Promise<void> {

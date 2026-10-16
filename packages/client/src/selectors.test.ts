@@ -13,6 +13,7 @@ import {
   type Turn,
 } from "@tide/contracts";
 import {
+  descendantThreads,
   groupActivities,
   isSnoozed,
   selectLimited,
@@ -434,5 +435,22 @@ describe("selectRailGroups", () => {
       thread("other", { projectId: "p2" }),
     ]);
     expect(ids(selectRailGroups(m, "p1", 0).threads)).toEqual(["asks", "new", "old"]);
+  });
+});
+
+describe("descendantThreads", () => {
+  it("collects forks and delegates transitively, archived included, cycle-safe", () => {
+    const model = emptyReadModel();
+    for (const t of [
+      thread("root"),
+      thread("fork", { parentThreadId: "root" }),
+      thread("deleg", { delegatedBy: "fork", archivedAt: 5 }),
+      thread("other"),
+      thread("loop", { parentThreadId: "deleg" }),
+    ]) model.threads[t.id] = t;
+    model.threads["root"] = { ...model.threads["root"]!, parentThreadId: "loop" };
+    const ids = descendantThreads(model, "root").map((t) => t.id).sort();
+    expect(ids).toEqual(["deleg", "fork", "loop"]);
+    expect(descendantThreads(model, "other")).toEqual([]);
   });
 });

@@ -77,7 +77,12 @@ export const ProjectUnarchive = Type.Object({ type: Type.Literal("project.unarch
  * server removes its worktree, its `tide/*` branch and its checkpoint refs. Refused while the
  * thread runs, while a live thread still descends from it or shares its worktree.
  */
-export const ThreadDelete = Type.Object({ type: Type.Literal("thread.delete"), commandId: CommandId, threadId: Type.String() });
+export const ThreadDelete = Type.Object({
+  type: Type.Literal("thread.delete"), commandId: CommandId,
+  threadId: Type.String(),
+  /** also delete every descendant (children, delegates, forks), deepest first; without it a thread with descendants is refused */
+  cascade: Type.Optional(Type.Boolean()),
+});
 export const ThreadArchive = Type.Object({
   type: Type.Literal("thread.archive"), commandId: CommandId,
   threadId: Type.String(),

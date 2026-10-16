@@ -3,6 +3,7 @@ import type { Project, ReadModel, Thread } from "@tide/contracts";
 import {
   copyText,
   createChild,
+  deleteNeedsConfirm,
   isEmptyThread,
   requestArchive,
   requestDelete,
@@ -96,7 +97,7 @@ export function threadMenu(
       onSelect: () => ui.setThreadDialog({ kind: "detach", threadId: thread.id }),
     },
     ...(empty ? [] : [{ label: "Archive…", danger: true, onSelect: () => requestArchive(thread) }]),
-    { label: empty ? "Delete" : "Delete…", danger: true, onSelect: () => requestDelete(thread) },
+    { label: deleteNeedsConfirm(thread.id) ? "Delete…" : "Delete", danger: true, onSelect: () => requestDelete(thread) },
   ];
 }
 

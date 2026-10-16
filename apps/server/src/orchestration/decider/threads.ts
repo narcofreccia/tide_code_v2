@@ -1,6 +1,7 @@
 import type { CommandOf, DomainEvent, LinkAccess, Project, ReadModel, Thread } from "@tide/contracts";
 import { handoffTurns } from "../handoff/select.ts";
 import { DEFAULT_THREAD_TITLE } from "./autoTitle.ts";
+import { descendantsOf } from "./descendants.ts";
 import { recordHandoff } from "./handoff.ts";
 import { fail, isArchived, ok, turnRequested, type DecideContext, type DecideResult } from "./types.ts";
 
@@ -139,29 +140,28 @@ export function decideThread(model: ReadModel, command: ThreadCommand, ctx: Deci
       const thread = model.threads[command.threadId];
       if (!thread) return fail("not-found", `unknown thread ${command.threadId}`);
       if (thread.status === "running") return fail("busy", `thread ${thread.id} is running`);
-      const others = Object.values(model.threads).filter((t) => t.id !== thread.id);
-      // lineage would dangle: children are deleted first (archived or not)
-      if (others.some((t) => t.parentThreadId === thread.id || t.delegatedBy === thread.id)) {
-        return fail("conflict", `thread ${thread.id} still has child threads; delete them first`);
+      // lineage would dangle: descendants (archived or not) go first, or along with it
+      const descendants = descendantsOf(model, thread.id);
+      if (descendants.length > 0 && command.cascade !== true) {
+        return fail("conflict", childrenMessage(thread, descendants));
       }
-      // same rule as vcs/restore.ts `sharingThread`: removing the worktree would pull it from under a live thread
-      if (thread.worktreePath !== undefined && others.some((t) => t.archivedAt === undefined && t.worktreePath === thread.worktreePath)) {
-        return fail("conflict", `another live thread shares the worktree of thread ${thread.id}; archive it first`);
+      const doomed = [...descendants, thread];
+      for (const t of descendants) {
+        if (t.status === "running") return fail("busy", `descendant thread "${t.title}" (${t.id}) is running`);
       }
-      if (thread.expertsSessionId !== undefined) {
-        const session = model.expertsSessions[thread.expertsSessionId];
-        if (session && session.phase !== "archived") {
-          return fail("conflict", "thread belongs to a live Experts session; archive the session first");
-        }
+      const ids = new Set(doomed.map((t) => t.id));
+      for (const t of doomed) {
+        const refused = deleteRefusal(model, t, ids);
+        if (refused !== undefined) return fail("conflict", refused);
       }
-      return ok({
+      return ok(...doomed.map((t): DomainEvent => ({
         type: "thread.deleted",
-        threadId: thread.id,
-        projectId: thread.projectId,
-        ...(thread.worktreePath !== undefined ? { worktreePath: thread.worktreePath } : {}),
-        ...(thread.branch !== undefined ? { branch: thread.branch } : {}),
+        threadId: t.id,
+        projectId: t.projectId,
+        ...(t.worktreePath !== undefined ? { worktreePath: t.worktreePath } : {}),
+        ...(t.branch !== undefined ? { branch: t.branch } : {}),
         at: ctx.now,
-      });
+      })));
     }
 
     case "thread.limited": {
@@ -220,4 +220,33 @@ export function decideThread(model: ReadModel, command: ThreadCommand, ctx: Deci
       return ok({ type: "pr.watch-changed", threadId: thread.id, enabled: command.enabled, at: ctx.now });
     }
   }
+}
+
+/** `thread "Fix" still has 2 child threads (“a”, “b”); delete them too (cascade) or first` — titles of direct children first, at most 3. */
+function childrenMessage(thread: Thread, descendants: Thread[]): string {
+  const direct = (t: Thread): boolean => t.parentThreadId === thread.id || t.delegatedBy === thread.id;
+  const ordered = [...descendants.filter(direct), ...descendants.filter((t) => !direct(t))];
+  const shown = ordered.slice(0, 3).map((t) => `“${t.title}”`);
+  if (ordered.length > shown.length) shown.push(`+${ordered.length - shown.length} more`);
+  const noun = ordered.length === 1 ? "child thread" : "child threads";
+  return `thread "${thread.title}" still has ${ordered.length} ${noun} (${shown.join(", ")}); delete them too (cascade) or first`;
+}
+
+/** Why `thread` cannot be deleted along with the threads in `deleting`, if anything stops it. */
+function deleteRefusal(model: ReadModel, thread: Thread, deleting: Set<string>): string | undefined {
+  // same rule as vcs/restore.ts `sharingThread`: removing the worktree would pull it from under a
+  // live thread; a thread deleted in the same cascade (a delegate on the lead's checkout) does not count
+  if (thread.worktreePath !== undefined && Object.values(model.threads).some((t) =>
+    !deleting.has(t.id) && t.archivedAt === undefined && t.worktreePath === thread.worktreePath)) {
+    return `another live thread shares the worktree of thread ${thread.id}; archive it first`;
+  }
+  if (thread.expertsSessionId !== undefined) {
+    const session = model.expertsSessions[thread.expertsSessionId];
+    if (session && session.phase !== "archived") {
+      return deleting.size > 1
+        ? `thread "${thread.title}" belongs to a live Experts session; archive the session first`
+        : "thread belongs to a live Experts session; archive the session first";
+    }
+  }
+  return undefined;
 }

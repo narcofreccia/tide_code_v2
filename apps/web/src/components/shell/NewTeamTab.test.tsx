@@ -40,6 +40,15 @@ describe("new thread form › Team tab", () => {
     expect(screen.getByText("runs in implementer's checkout")).toBeDefined();
   });
 
+  it("Edit stages… closes the dialog and opens Settings on Teams", () => {
+    open("team");
+    fireEvent.click(screen.getByRole("button", { name: "Edit stages…" }));
+    const ui = useUi.getState();
+    expect(ui.newThreadProjectId).toBeNull();
+    expect(ui.settingsSection).toBe("teams");
+    expect(ui.view).toBe("settings");
+  });
+
   it("requires a task, then dispatches team.run with the chosen team", async () => {
     const fake = open("team");
     const start = screen.getByText("Start team run") as HTMLButtonElement;

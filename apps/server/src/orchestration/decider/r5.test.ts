@@ -2,6 +2,7 @@ import { describe, expect, it } from "vitest";
 import { emptyReadModel, type Command, type DomainEvent, type ReadModel } from "@tide/contracts";
 import { delegatePrompt } from "../../experts/prompts.ts";
 import { titleFromPrompt } from "./autoTitle.ts";
+import { descendantsOf } from "./descendants.ts";
 import { decide } from "./index.ts";
 import { apply, completeTurn, ctx, eventOf, run, startTurn, tryRun, withThread } from "./r4.fixtures.ts";
 import type { DecideDefaults } from "./types.ts";
@@ -90,7 +91,7 @@ describe("decide: thread.delete", () => {
     const childId = eventOf(d.events, "thread.created").thread.id;
     let model = run(d.model, { type: "turn.settle", turnId: eventOf(d.events, "turn.requested").turn.id, status: "completed" }).model;
     model = run(model, { type: "thread.archive", threadId: childId }).model;
-    expect(tryRun(model, { type: "thread.delete", threadId: f.threadId })).toMatchObject({ ok: false, error: { code: "conflict", message: `thread ${f.threadId} still has child threads; delete them first` } });
+    expect(tryRun(model, { type: "thread.delete", threadId: f.threadId })).toMatchObject({ ok: false, error: { code: "conflict", message: `thread "Login fix" still has 1 child thread (“Delegated by Login fix”); delete them too (cascade) or first` } });
     model = run(model, { type: "thread.delete", threadId: childId }).model;
     expect(run(model, { type: "thread.delete", threadId: f.threadId }).model.threads[f.threadId]).toBeUndefined();
 
@@ -125,6 +126,81 @@ describe("decide: thread.delete", () => {
     expect(tryRun(model, { type: "thread.delete", threadId: expertId })).toMatchObject({ ok: false, error: { code: "conflict", message: "thread belongs to a live Experts session; archive the session first" } });
     model = run(model, { type: "experts.archive", sessionId }).model;
     expect(tryRun(model, { type: "thread.delete", threadId: expertId })).toMatchObject({ ok: true });
+  });
+});
+
+describe("decide: thread.delete cascade", () => {
+  function family() {
+    const f = withThread();
+    const projectId = f.model.threads[f.threadId]?.projectId ?? "";
+    const c = run(f.model, { type: "thread.create", projectId, provider: "claude", title: "a", parentThreadId: f.threadId });
+    const childId = eventOf(c.events, "thread.created").thread.id;
+    const c2 = run(c.model, { type: "thread.create", projectId, provider: "claude", title: "b", parentThreadId: f.threadId });
+    const siblingId = eventOf(c2.events, "thread.created").thread.id;
+    const g = run(c2.model, { type: "thread.create", projectId, provider: "claude", title: "grand", parentThreadId: childId });
+    const grandId = eventOf(g.events, "thread.created").thread.id;
+    const archived = run(g.model, { type: "thread.archive", threadId: grandId }).model;
+    return { model: archived, rootId: f.threadId, childId, siblingId, grandId };
+  }
+
+  it("refuses without cascade and names up to 3 children, direct ones first", () => {
+    const { model, rootId } = family();
+    expect(tryRun(model, { type: "thread.delete", threadId: rootId })).toMatchObject({
+      ok: false,
+      error: { code: "conflict", message: `thread "Login fix" still has 3 child threads (“a”, “b”, “grand”); delete them too (cascade) or first` },
+    });
+    const projectId = model.threads[rootId]?.projectId ?? "";
+    const more = run(model, { type: "thread.create", projectId, provider: "claude", title: "d", parentThreadId: rootId }).model;
+    expect(tryRun(more, { type: "thread.delete", threadId: rootId })).toMatchObject({
+      error: { message: `thread "Login fix" still has 4 child threads (“a”, “b”, “d”, +1 more); delete them too (cascade) or first` },
+    });
+  });
+
+  it("deletes the whole subtree deepest first, the root last", () => {
+    const { model, rootId, childId, siblingId, grandId } = family();
+    const deleted = run(model, { type: "thread.delete", threadId: rootId, cascade: true });
+    expect(deleted.events.map((e) => (e.type === "thread.deleted" ? e.threadId : e.type))).toEqual([grandId, childId, siblingId, rootId]);
+    for (const id of [rootId, childId, siblingId, grandId]) expect(deleted.model.threads[id]).toBeUndefined();
+  });
+
+  it("refuses with busy when a grandchild is running", () => {
+    const { model, rootId, grandId } = family();
+    const live = run(model, { type: "thread.unarchive", threadId: grandId }).model;
+    const { model: running } = startTurn(live, grandId, "go");
+    expect(tryRun(running, { type: "thread.delete", threadId: rootId, cascade: true })).toMatchObject({
+      ok: false,
+      error: { code: "busy", message: `descendant thread "grand" (${grandId}) is running` },
+    });
+  });
+
+  it("deletes a delegate that inherited the lead's worktree along with the lead", () => {
+    const f = withThread("claude", true);
+    const d = run(f.model, { type: "thread.delegate", fromThreadId: f.threadId, provider: "codex", prompt: "review", inheritWorktreeFrom: f.threadId });
+    const delegateId = eventOf(d.events, "thread.created").thread.id;
+    const model = run(d.model, { type: "turn.settle", turnId: eventOf(d.events, "turn.requested").turn.id, status: "completed" }).model;
+    expect(tryRun(model, { type: "thread.delete", threadId: f.threadId })).toMatchObject({ ok: false, error: { code: "conflict" } });
+    const deleted = run(model, { type: "thread.delete", threadId: f.threadId, cascade: true });
+    const projectId = model.threads[f.threadId]?.projectId;
+    expect(deleted.events).toEqual([
+      { type: "thread.deleted", threadId: delegateId, projectId, worktreePath: "/wt/thread", branch: "tide/login", at: ctx.now },
+      { type: "thread.deleted", threadId: f.threadId, projectId, worktreePath: "/wt/thread", branch: "tide/login", at: ctx.now },
+    ]);
+  });
+
+  it("descendantsOf survives a lineage cycle", () => {
+    const f = withThread();
+    const t = f.model.threads[f.threadId]!;
+    const other = { ...t, id: "loop", parentThreadId: f.threadId };
+    const model: ReadModel = { ...f.model, threads: { [t.id]: { ...t, parentThreadId: "loop" }, loop: other } };
+    expect(descendantsOf(model, f.threadId).map((x) => x.id)).toEqual(["loop"]);
+  });
+
+  it("with no descendants behaves like a plain delete", () => {
+    const f = withThread("claude", true);
+    const plain = tryRun(f.model, { type: "thread.delete", threadId: f.threadId });
+    const cascade = tryRun(f.model, { type: "thread.delete", threadId: f.threadId, cascade: true });
+    if (!plain.ok || !cascade.ok) throw new Error("expected both to pass");
+    expect(cascade.events).toEqual(plain.events.map((e) => ({ ...e, at: ctx.now })));
   });
 });
 

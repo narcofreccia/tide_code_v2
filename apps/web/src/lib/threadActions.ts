@@ -6,9 +6,12 @@ import type {
   MergeStrategy,
   ProviderKind,
   RuntimeMode,
+  Thread,
 } from "@tide/contracts";
+import { descendantThreads } from "@tide/client";
 import { newId } from "@tide/contracts";
 import { call, dispatch, useModel, type DispatchResult } from "../state/model.ts";
+import { plural } from "./format.ts";
 import { dispatchOrToast, errorText } from "./dispatchOrToast.ts";
 import { showToast } from "../state/toast.ts";
 import { useUi } from "../state/ui.ts";
@@ -65,30 +68,44 @@ export function isEmptyThread(threadId: string): boolean {
   return (useModel.getState().model.threadMessages[threadId]?.length ?? 0) === 0;
 }
 
+/** Descendants (forks, delegates; archived too) of a thread, from the live model. */
+function descendantsOf(threadId: string): Thread[] {
+  return descendantThreads(useModel.getState().model, threadId);
+}
+
 /**
- * Hard-deletes a thread, its branch and checkpoints. The server refuses while it
- * runs or while another thread descends from it / shares its worktree.
+ * Hard-deletes a thread, its branch and checkpoints. With `cascade` the whole subtree
+ * goes too; the server refuses while the thread (or a descendant) runs or another
+ * thread shares its worktree.
  */
-export function deleteThread(threadId: string): void {
+export function deleteThread(threadId: string, opts: { cascade?: boolean } = {}): void {
   const title = titleOf(threadId);
+  const children = opts.cascade ? descendantsOf(threadId).length : 0;
   if (useUi.getState().selectedThreadId === threadId) useUi.getState().selectThread(null);
-  dispatch({ type: "thread.delete", threadId })
-    .then(() => showToast(`Deleted “${title}”`))
+  dispatch({ type: "thread.delete", threadId, ...(opts.cascade ? { cascade: true } : {}) })
+    .then(() =>
+      showToast(children > 0 ? `Deleted “${title}” and ${plural(children, "child thread")}` : `Deleted “${title}”`),
+    )
     .catch((error: unknown) => showToast(`Deleting the thread failed: ${errorText(error)}`));
 }
 
-/** Opens the delete confirmation; a thread with no turns goes straight away. */
+/** True when deleting needs a confirmation: a conversation or child threads. */
+export function deleteNeedsConfirm(threadId: string): boolean {
+  return !isEmptyThread(threadId) || descendantsOf(threadId).length > 0;
+}
+
+/** Opens the delete confirmation; an empty thread without children goes straight away. */
 export function requestDelete(thread: { id: string }): void {
-  if (isEmptyThread(thread.id)) {
+  if (!deleteNeedsConfirm(thread.id)) {
     deleteThread(thread.id);
     return;
   }
   useUi.getState().setThreadDialog({ kind: "delete", threadId: thread.id });
 }
 
-/** Deletes every archived thread of a project that has no turns; returns how many. */
+/** Deletes every archived thread of a project that has no turns and no children. */
 export function clearEmptyArchived(threads: { id: string }[]): void {
-  const empty = threads.filter((t) => isEmptyThread(t.id));
+  const empty = threads.filter((t) => isEmptyThread(t.id) && descendantsOf(t.id).length === 0);
   if (empty.length === 0) {
     showToast("No empty archived threads");
     return;

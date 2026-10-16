@@ -1,5 +1,6 @@
 import { useEffect, useState } from "react";
 import type { Thread } from "@tide/contracts";
+import { descendantThreads } from "@tide/client";
 import { archiveThread, deleteThread, detachWorktree } from "../../lib/threadActions.ts";
 import { call, useModel } from "../../state/model.ts";
 import { useUi } from "../../state/ui.ts";
@@ -75,20 +76,40 @@ export function ArchiveThreadDialog({ thread, onClose }: { thread: Thread; onClo
 
 /** Hard delete: the thread, its conversation, branch and checkpoints go for good. */
 export function DeleteThreadDialog({ thread, onClose }: { thread: Thread; onClose: () => void }) {
+  const model = useModel((s) => s.model);
+  const children = descendantThreads(model, thread.id);
+  const running = children.some((t) => t.status === "running");
   return (
     <ConfirmDialog
       title={`Delete “${thread.title}”?`}
       confirmLabel="Delete"
       danger
+      confirmDisabled={running}
       onCancel={onClose}
       onConfirm={() => {
-        deleteThread(thread.id);
+        deleteThread(thread.id, children.length > 0 ? { cascade: true } : {});
         onClose();
       }}
       body={
         <span className={styles.options}>
           <span>This removes the thread and its conversation for good.</span>
           {thread.branch ? <span>Branch {thread.branch} and its checkpoints are deleted too.</span> : null}
+          {children.length > 0 ? (
+            <>
+              <span>Also deletes {plural(children.length, "child thread")}:</span>
+              {children.slice(0, 5).map((t) => (
+                <span key={t.id} className={styles.path}>
+                  {t.title}
+                </span>
+              ))}
+              {children.length > 5 ? <span className={styles.path}>and {children.length - 5} more</span> : null}
+              {running ? (
+                <span className={styles.warning} role="alert">
+                  A child thread is still running; stop it first.
+                </span>
+              ) : null}
+            </>
+          ) : null}
           {thread.worktreePath ? (
             <>
               <span className={styles.path}>{thread.worktreePath}</span>

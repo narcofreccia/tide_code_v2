@@ -77,7 +77,7 @@ export interface Harness {
 }
 
 /** An in-memory app over a real temp repo; teardown is pushed onto `cleanups`. */
-export async function harness(cleanups: (() => Promise<void>)[]): Promise<Harness> {
+export async function harness(cleanups: (() => Promise<void>)[], options: { log?: (msg: string, data?: unknown) => void } = {}): Promise<Harness> {
   const repo = await createTempRepo("tide-reactor-");
   const tideHome = await mkdtemp(join(tmpdir(), "tide-home-"));
   const { driver, control } = createFakeDriver("claude");
@@ -85,7 +85,7 @@ export async function harness(cleanups: (() => Promise<void>)[]): Promise<Harnes
   const app = await createApp({
     config: baseConfig(tideHome),
     listen: false,
-    log: () => undefined,
+    log: options.log ?? (() => undefined),
     gh,
     registerDrivers: (registry) => registry.register(driver),
   });

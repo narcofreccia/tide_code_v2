@@ -3,6 +3,7 @@ import { PROVIDER_LABELS } from "../../lib/vocab.ts";
 import { startTeamRun, teamOptionLabel, worktreeNote } from "../../lib/teamActions.ts";
 import { runOrToast } from "../../lib/dispatchOrToast.ts";
 import { worktreeByDefault, useServerSettings } from "../../state/serverSettings.ts";
+import { useUi } from "../../state/ui.ts";
 import { Button } from "../ui/Button.tsx";
 import { Checkbox } from "../ui/Choice.tsx";
 import { Select, type SelectOption } from "../ui/Select.tsx";
@@ -28,6 +29,12 @@ export function NewTeamFields({ projectId, onDone }: { projectId: string | undef
     runOrToast("Starting the team run", () =>
       startTeamRun(projectId, team, task.trim(), { ...(trimmed === "" ? {} : { title: trimmed }), useWorktree }),
     );
+  };
+  const editStages = (): void => {
+    onDone();
+    const ui = useUi.getState();
+    ui.setSettingsSection("teams");
+    ui.showSettings();
   };
   if (team === undefined) {
     return <p className={styles.parent}>No teams yet. Add one in Settings › Teams.</p>;
@@ -70,6 +77,12 @@ export function NewTeamFields({ projectId, onDone }: { projectId: string | undef
           </li>
         ))}
       </ol>
+      <p className={styles.parent}>
+        Stages are set in Settings › Teams.{" "}
+        <Button variant="link" onClick={editStages}>
+          Edit stages…
+        </Button>
+      </p>
       <Button variant="primary" disabled={!ready} onClick={start}>
         Start team run
       </Button>

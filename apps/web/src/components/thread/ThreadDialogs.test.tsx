@@ -185,4 +185,33 @@ describe("delete dialog", () => {
     fireEvent.click(within(dialog).getByRole("button", { name: "Delete" }));
     expect(fake.dispatch).toHaveBeenCalledWith({ type: "thread.delete", threadId: "t1" });
   });
+
+  function mountWithChildren(childStatus: "idle" | "running", count = 1) {
+    const kids = Array.from({ length: count }, (_, i) =>
+      makeThread(`c${i}`, { title: `Child ${i}`, parentThreadId: "t1", archivedAt: 5, status: childStatus }),
+    );
+    const fake = attachFakeStore(
+      modelWith({ threads: { t1: worktreeThread, ...Object.fromEntries(kids.map((k) => [k.id, k])) } }),
+    );
+    render(<ThreadDialogHost />);
+    act(() => useUi.getState().setThreadDialog({ kind: "delete", threadId: "t1" }));
+    return { fake, dialog: screen.getByRole("dialog") };
+  }
+
+  it("lists child threads and cascades on confirm", () => {
+    const { fake, dialog } = mountWithChildren("idle", 7);
+    expect(within(dialog).getByText("Also deletes 7 child threads:")).toBeDefined();
+    expect(within(dialog).getByText("and 2 more")).toBeDefined();
+    fireEvent.click(within(dialog).getByRole("button", { name: "Delete" }));
+    expect(fake.dispatch).toHaveBeenCalledWith({ type: "thread.delete", threadId: "t1", cascade: true });
+  });
+
+  it("disables Delete while a child runs", () => {
+    const { fake, dialog } = mountWithChildren("running");
+    expect(within(dialog).getByText("A child thread is still running; stop it first.")).toBeDefined();
+    const button = within(dialog).getByRole("button", { name: "Delete" }) as HTMLButtonElement;
+    expect(button.disabled).toBe(true);
+    fireEvent.click(button);
+    expect(fake.dispatch).not.toHaveBeenCalled();
+  });
 });

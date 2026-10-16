@@ -319,6 +319,24 @@ export function selectDelegates(model: ReadModel, threadId: string): Thread[] {
     .sort((a, b) => a.createdAt - b.createdAt || a.id.localeCompare(b.id));
 }
 
+/** Every thread that descends from `threadId` (forks via parentThreadId, delegates via delegatedBy), archived included, any order. */
+export function descendantThreads(model: ReadModel, threadId: string): Thread[] {
+  const seen = new Set<string>([threadId]);
+  const out: Thread[] = [];
+  const queue = [threadId];
+  const all = Object.values(model.threads);
+  while (queue.length > 0) {
+    const id = queue.pop() as string;
+    for (const t of all) {
+      if (seen.has(t.id) || (t.parentThreadId !== id && t.delegatedBy !== id)) continue;
+      seen.add(t.id);
+      out.push(t);
+      queue.push(t.id);
+    }
+  }
+  return out;
+}
+
 // ---- glass-box totals: see glassBoxSelectors.ts (re-exported below) ----
 
 // ---- Mission Control ----

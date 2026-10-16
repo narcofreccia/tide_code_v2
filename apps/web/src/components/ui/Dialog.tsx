@@ -103,6 +103,7 @@ export function ConfirmDialog({
   body,
   confirmLabel = "Delete",
   danger,
+  confirmDisabled,
   onConfirm,
   onCancel,
 }: {
@@ -110,6 +111,7 @@ export function ConfirmDialog({
   body: React.ReactNode;
   confirmLabel?: string;
   danger?: boolean;
+  confirmDisabled?: boolean;
   onConfirm: () => void;
   onCancel: () => void;
 }) {
@@ -120,7 +122,7 @@ export function ConfirmDialog({
         <Button variant="quiet" onClick={onCancel}>
           Cancel
         </Button>
-        <Button variant={danger ? "danger" : "primary"} onClick={onConfirm}>
+        <Button variant={danger ? "danger" : "primary"} disabled={confirmDisabled} onClick={onConfirm}>
           {confirmLabel}
         </Button>
       </div>

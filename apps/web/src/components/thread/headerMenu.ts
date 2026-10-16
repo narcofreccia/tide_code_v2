@@ -1,5 +1,5 @@
 import type { ReadModel, Thread } from "@tide/contracts";
-import { createChild, isEmptyThread, requestArchive, requestDelete } from "../../lib/threadActions.ts";
+import { createChild, deleteNeedsConfirm, isEmptyThread, requestArchive, requestDelete } from "../../lib/threadActions.ts";
 import { snoozeThread, tomorrowMorning } from "../../lib/turnActions.ts";
 import { runInThreadTerminal } from "../../lib/openInTerminal.ts";
 import { useUi } from "../../state/ui.ts";
@@ -66,7 +66,7 @@ export function headerMenu(
     },
     { label: "Archive thread…", danger: true, onSelect: () => requestArchive(thread) },
     {
-      label: isEmptyThread(thread.id) ? "Delete thread" : "Delete thread…",
+      label: deleteNeedsConfirm(thread.id) ? "Delete thread…" : "Delete thread",
       danger: true,
       onSelect: () => requestDelete(thread),
     },
