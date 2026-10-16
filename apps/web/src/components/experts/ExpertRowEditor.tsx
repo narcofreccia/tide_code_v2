@@ -1,8 +1,8 @@
-import { useState } from "react";
 import type { ProviderKind } from "@tide/contracts";
-import { Button } from "../ui/Button.tsx";
+import { presetByKey } from "../../lib/expertPresets.ts";
 import { HarnessFields } from "../thread/ProviderPicker.tsx";
-import styles from "./CreateExpertsDialog.module.css";
+import { StageCard, stageMarker, StageSubtitleInput, StageTitleInput } from "../ui/StageList/StageCard.tsx";
+import { StageNote } from "../ui/StageList/StageNote.tsx";
 
 /** One editable seat before the session exists. `key` is stable per row. */
 export interface ExpertDraft {
@@ -12,7 +12,18 @@ export interface ExpertDraft {
   provider: ProviderKind;
   /** empty means "let the harness choose" */
   model: string;
+  /** empty means "the preset's persona" (or the server default for a blank seat) */
   persona: string;
+  /** the preset this seat came from, whose persona is the default */
+  presetKey?: string;
+}
+
+const BLANK_PERSONA =
+  "You are the … on this panel. Say what you look for, what you ignore, and what a good answer from you contains.";
+
+/** The persona that is sent when the field is left empty. */
+export function defaultPersona(expert: ExpertDraft): string {
+  return expert.presetKey === undefined ? "" : (presetByKey(expert.presetKey)?.persona ?? "");
 }
 
 export function ExpertRowEditor({
@@ -30,24 +41,33 @@ export function ExpertRowEditor({
   onMove: (to: number) => void;
   onRemove: () => void;
 }) {
-  const [open, setOpen] = useState(false);
+  const n = index + 1;
+  const fallback = defaultPersona(expert);
   return (
-    <li className={styles.row}>
-      <div className={styles.rowTop}>
-        <input
-          className={styles.input}
-          aria-label={`Expert ${index + 1} name`}
+    <StageCard
+      marker={stageMarker(index)}
+      label={`Expert ${n}`}
+      subject={expert.name.trim() || `expert ${n}`}
+      title={
+        <StageTitleInput
+          ariaLabel={`Expert ${n} name`}
+          placeholder="Name this expert"
           value={expert.name}
-          onChange={(e) => onChange({ name: e.target.value })}
+          onChange={(name) => onChange({ name })}
         />
-        <input
-          className={styles.input}
-          aria-label={`Expert ${index + 1} role`}
+      }
+      subtitle={
+        <StageSubtitleInput
+          ariaLabel={`Expert ${n} role`}
+          placeholder="What it focuses on"
           value={expert.role}
-          onChange={(e) => onChange({ role: e.target.value })}
+          onChange={(role) => onChange({ role })}
         />
+      }
+      harness={
         <HarnessFields
-          name={`Expert ${index + 1}`}
+          layout="inline"
+          name={`Expert ${n}`}
           provider={expert.provider}
           model={expert.model}
           onChange={(patch) =>
@@ -57,41 +77,21 @@ export function ExpertRowEditor({
             })
           }
         />
-        <div className={styles.rowActions}>
-          <Button
-            variant="quiet"
-            disabled={index === 0}
-            aria-label={`Move ${expert.name} up`}
-            title="Move up"
-            onClick={() => onMove(index - 1)}
-          >
-            ↑
-          </Button>
-          <Button
-            variant="quiet"
-            disabled={index === count - 1}
-            aria-label={`Move ${expert.name} down`}
-            title="Move down"
-            onClick={() => onMove(index + 1)}
-          >
-            ↓
-          </Button>
-          <Button variant="quiet" aria-label={`Remove ${expert.name}`} title="Remove" onClick={onRemove}>
-            ×
-          </Button>
-        </div>
-      </div>
-      <button type="button" className={styles.disclosure} aria-expanded={open} onClick={() => setOpen(!open)}>
-        {open ? "▾" : "▸"} persona
-      </button>
-      {open ? (
-        <textarea
-          className={styles.persona}
-          aria-label={`Expert ${index + 1} persona`}
-          value={expert.persona}
-          onChange={(e) => onChange({ persona: e.target.value })}
-        />
-      ) : null}
-    </li>
+      }
+      onMove={(delta) => onMove(index + delta)}
+      canMoveUp={index > 0}
+      canMoveDown={index < count - 1}
+      onRemove={onRemove}
+    >
+      <StageNote
+        label="Persona"
+        ariaLabel={`Expert ${n} persona`}
+        hint="A good persona names the angle, what to look for in this codebase, and what to leave to the others. Leave it empty to use the default."
+        placeholder={fallback || BLANK_PERSONA}
+        emptySummary={fallback === "" ? "Harness default" : "Default for this role"}
+        value={expert.persona}
+        onChange={(persona) => onChange({ persona })}
+      />
+    </StageCard>
   );
 }

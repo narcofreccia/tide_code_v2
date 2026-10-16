@@ -6,17 +6,20 @@ import {
   INTERACTION_HINTS,
   INTERACTION_LABELS,
   INTERACTION_MODES,
+  PROVIDER_LABELS,
   RUNTIME_MODE_HINTS,
   RUNTIME_MODE_LABELS,
   RUNTIME_MODES,
+  defaultModelHint,
 } from "../../lib/vocab.ts";
 import { ThreadLinkPicker, useLinkChoices } from "./ThreadLinkPicker.tsx";
-import { ProviderPicker, useThreadDraft } from "../thread/ProviderPicker.tsx";
+import { HarnessFields, useThreadDraft } from "../thread/ProviderPicker.tsx";
 import { useModel } from "../../state/model.ts";
 import { useUi, type NewThreadTab } from "../../state/ui.ts";
 import { NewTeamFields } from "./NewTeamFields.tsx";
-import { Button } from "../ui/Button.tsx";
+import { Checkbox } from "../ui/Choice.tsx";
 import { Dialog } from "../ui/Dialog.tsx";
+import { DialogFrame, FrameField, PrimaryField } from "../ui/DialogFrame.tsx";
 import { Popover } from "../ui/Popover.tsx";
 import { Select, type SelectOption } from "../ui/Select.tsx";
 import styles from "./NewThreadPopover.module.css";
@@ -59,18 +62,24 @@ function lastCreated(threads: Record<string, Thread>, projectId: string | undefi
   return best;
 }
 
+function useProjectTitle(projectId: string | undefined): string {
+  return useModel((s) => (projectId === undefined ? undefined : s.model.projects[projectId]?.title)) ?? "this project";
+}
+
 /**
- * title · provider · model · permissions · Build|Plan · worktree · links, then
+ * title · agent · model · permissions · Build|Plan · worktree · links, then
  * create. Shared by the rail popover, Mission Control and the ⌘N dialog, so all
  * three ask exactly the same questions. `parentThreadId` makes it a child thread.
  */
 function ThreadFields({
   projectId,
   parentThreadId,
+  toolbar,
   onDone,
 }: {
   projectId: string | undefined;
   parentThreadId?: string;
+  toolbar?: React.ReactNode;
   onDone: () => void;
 }) {
   const parent = useModel((s) => (parentThreadId === undefined ? undefined : s.model.threads[parentThreadId]));
@@ -86,6 +95,9 @@ function ThreadFields({
   const [title, setTitle] = useState("");
   const [interaction, setInteraction] = useState<InteractionMode>("default");
   const linkChoices = useLinkChoices(projectId);
+  const project = useProjectTitle(projectId);
+  const mode = draft.mode ?? FALLBACK_MODE;
+  const harness = PROVIDER_LABELS[draft.provider];
   const create = (): void => {
     onDone();
     if (!projectId) return;
@@ -102,56 +114,82 @@ function ThreadFields({
       }),
     );
   };
+  const outcome =
+    interaction === "plan"
+      ? `Opens a thread on ${harness} in Plan mode: your first message gets a plan back, and nothing changes until you approve it.`
+      : `Opens an idle thread on ${harness}; nothing runs until you send the first message.`;
   return (
-    <>
-      {parent ? <p className={styles.parent}>Child of “{parent.title}”</p> : null}
-      <label className={styles.field}>
-        <span className={styles.label}>title</span>
-        <input
-          className={`${styles.input} ${styles.titleInput}`}
-          aria-label="Thread title"
-          placeholder="Auto from your first message"
-          value={title}
-          onChange={(e) => setTitle(e.target.value)}
-          onKeyDown={(e) => {
-            if (e.key === "Enter") {
-              e.preventDefault();
-              create();
-            }
-          }}
-        />
-      </label>
-      <ProviderPicker draft={draft} onChange={patch} />
-      <div className={styles.field}>
-        <span className={styles.label}>permissions</span>
-        <Select
-          label="Thread permissions"
-          value={draft.mode ?? FALLBACK_MODE}
-          options={MODE_OPTIONS}
-          onSelect={(mode) => patch({ mode })}
-          variant="field"
-          size="md"
-        />
-      </div>
-      <div className={styles.field}>
-        <span className={styles.label}>mode</span>
-        <InteractionSwitch value={interaction} onChange={setInteraction} />
-      </div>
-      <ThreadLinkPicker
-        links={linkChoices.links}
-        choices={linkChoices.choices}
-        onChange={linkChoices.setChoices}
+    <DialogFrame
+      heading={parent ? `Start a child thread in ${project}` : `Start a thread on ${project}`}
+      {...(parent ? { context: `Child of “${parent.title}”` } : {})}
+      {...(toolbar === undefined ? {} : { toolbar })}
+      outcome={outcome}
+      primaryLabel={parent ? "Create child thread" : "Create thread"}
+      onPrimary={create}
+      blockedReason={projectId === undefined ? "Add a project first" : undefined}
+      onCancel={onDone}
+    >
+      <PrimaryField
+        label="Title"
+        ariaLabel="Thread title"
+        placeholder="Fix the flaky login test"
+        caption="Optional. Named from your first message otherwise."
+        value={title}
+        onChange={setTitle}
+        onEnter={create}
       />
-      <Button variant="primary" onClick={create}>
-        {parent ? "Create child thread" : "Create thread"}
-      </Button>
-    </>
+      <div className={styles.rows}>
+        <FrameField
+          label="Agent"
+          caption={draft.model === "" ? `Model: ${defaultModelHint(draft.provider).toLowerCase()}` : undefined}
+        >
+          <HarnessFields
+            layout="inline"
+            name="Thread"
+            provider={draft.provider}
+            model={draft.model}
+            onChange={patch}
+          />
+        </FrameField>
+        <FrameField label="Permissions" caption={RUNTIME_MODE_HINTS[mode]}>
+          <Select
+            label="Thread permissions"
+            value={mode}
+            options={MODE_OPTIONS}
+            onSelect={(next) => patch({ mode: next })}
+            variant="field"
+            size="md"
+            className={styles.narrow}
+          />
+        </FrameField>
+        <FrameField label="Mode" caption={INTERACTION_HINTS[interaction]}>
+          <InteractionSwitch value={interaction} onChange={setInteraction} />
+        </FrameField>
+        <FrameField
+          label="Checkout"
+          caption={
+            draft.useWorktree
+              ? "Its own worktree on a tide/* branch; merge back when it is done."
+              : "Works directly in the project folder, alongside you."
+          }
+        >
+          <Checkbox
+            className={styles.check}
+            checked={draft.useWorktree}
+            onChange={(e) => patch({ useWorktree: e.target.checked })}
+          >
+            Use a worktree
+          </Checkbox>
+        </FrameField>
+      </div>
+      <ThreadLinkPicker links={linkChoices.links} choices={linkChoices.choices} onChange={linkChoices.setChoices} />
+    </DialogFrame>
   );
 }
 
 function TabSwitch({ value, onChange }: { value: NewThreadTab; onChange: (tab: NewThreadTab) => void }) {
   return (
-    <div className={`${styles.segmented} ${styles.tabs}`} role="radiogroup" aria-label="Kind">
+    <div className={styles.segmented} role="radiogroup" aria-label="Kind">
       {(["thread", "team"] as const).map((tab) => (
         <button
           key={tab}
@@ -184,19 +222,16 @@ export function NewThreadFields({
   onDone: () => void;
 }) {
   const [tab, setTab] = useState<NewThreadTab>(parentThreadId === undefined ? initialTab : "thread");
-  return (
-    <>
-      {parentThreadId === undefined ? <TabSwitch value={tab} onChange={setTab} /> : null}
-      {tab === "team" ? (
-        <NewTeamFields projectId={projectId} onDone={onDone} />
-      ) : (
-        <ThreadFields
-          projectId={projectId}
-          {...(parentThreadId === undefined ? {} : { parentThreadId })}
-          onDone={onDone}
-        />
-      )}
-    </>
+  const toolbar = parentThreadId === undefined ? <TabSwitch value={tab} onChange={setTab} /> : undefined;
+  return tab === "team" ? (
+    <NewTeamFields projectId={projectId} onDone={onDone} toolbar={toolbar} />
+  ) : (
+    <ThreadFields
+      projectId={projectId}
+      {...(parentThreadId === undefined ? {} : { parentThreadId })}
+      {...(toolbar === undefined ? {} : { toolbar })}
+      onDone={onDone}
+    />
   );
 }
 
@@ -213,7 +248,7 @@ export function NewThreadPopover({
   align?: "start" | "end";
 }) {
   return (
-    <Popover label={label} variant={variant} align={align} disabled={projectId === undefined}>
+    <Popover label={label} variant={variant} align={align} disabled={projectId === undefined} flush>
       {(close) => <NewThreadFields projectId={projectId} onDone={close} />}
     </Popover>
   );
@@ -227,7 +262,11 @@ export function NewThreadDialogHost() {
   const setNewThreadProject = useUi((s) => s.setNewThreadProject);
   if (projectId === null) return null;
   return (
-    <Dialog title={parentThreadId ? "New child thread" : "New thread"} onCancel={() => setNewThreadProject(null)}>
+    <Dialog
+      title={parentThreadId ? "New child thread" : "New thread"}
+      onCancel={() => setNewThreadProject(null)}
+      variant="sheet"
+    >
       <NewThreadFields
         key={`${projectId}:${parentThreadId ?? ""}`}
         projectId={projectId}

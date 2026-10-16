@@ -1,8 +1,8 @@
 import { afterEach, describe, expect, it } from "vitest";
-import { act, cleanup, fireEvent, render, screen, waitFor } from "@testing-library/react";
+import { act, cleanup, fireEvent, render, screen, waitFor, within } from "@testing-library/react";
 import type { Team } from "@tide/contracts";
 import { NewThreadDialogHost } from "./NewThreadPopover.tsx";
-import { attachFakeStore, chooseOption, makeThread, modelWith, optionLabels, resetUi } from "../../testHarness.ts";
+import { attachFakeStore, makeThread, modelWith, resetUi } from "../../testHarness.ts";
 import { useUi } from "../../state/ui.ts";
 import { useServerSettings } from "../../state/serverSettings.ts";
 
@@ -36,8 +36,12 @@ describe("new thread form › Team tab", () => {
   it("switches to Team and previews the stages", () => {
     open();
     fireEvent.click(screen.getByRole("radio", { name: "Team" }));
-    expect(optionLabels("Team")[0]).toBe("Ship — planner (Claude Code) → implementer (Codex) → reviewer (OpenCode)");
+    const ship = screen.getByRole("button", { name: "Ship" });
+    expect(ship.getAttribute("aria-pressed")).toBe("true");
+    expect(ship.getAttribute("title")).toBe("Ship — planner (Claude Code) → implementer (Codex) → reviewer (OpenCode)");
+    expect(screen.getByRole("heading", { name: "Run 3 stages in sequence, each on its own harness" })).toBeDefined();
     expect(screen.getByText("runs in implementer's checkout")).toBeDefined();
+    expect(within(screen.getByRole("list", { name: "Stages" })).getAllByRole("listitem")).toHaveLength(4);
   });
 
   it("Edit stages… closes the dialog and opens Settings on Teams", () => {
@@ -53,7 +57,8 @@ describe("new thread form › Team tab", () => {
     const fake = open("team");
     const start = screen.getByText("Start team run") as HTMLButtonElement;
     expect(start.disabled).toBe(true);
-    chooseOption("Team", /^Solo/);
+    expect(screen.getByRole("status").textContent).toBe("Describe the task to start");
+    fireEvent.click(screen.getByRole("button", { name: "Solo" }));
     fireEvent.change(screen.getByLabelText("Task"), { target: { value: " fix login " } });
     fireEvent.change(screen.getByLabelText("Run title"), { target: { value: "Login" } });
     fireEvent.click(screen.getByLabelText("Use a worktree for the lead"));

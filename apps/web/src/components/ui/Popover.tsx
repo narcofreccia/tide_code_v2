@@ -15,6 +15,7 @@ export function Popover({
   variant = "ghost",
   disabled,
   align = "start",
+  flush = false,
   children,
 }: {
   label: React.ReactNode;
@@ -22,6 +23,8 @@ export function Popover({
   variant?: "primary" | "ghost" | "quiet";
   disabled?: boolean;
   align?: "start" | "end";
+  /** no padding, wider: the content (a DialogFrame) draws its own layout */
+  flush?: boolean;
   children: (close: () => void) => React.ReactNode;
 }) {
   const [open, setOpen] = useState(false);
@@ -66,7 +69,7 @@ export function Popover({
       </Button>
       {open
         ? createPortal(
-            <div ref={panel} className={styles.panel} style={style} role="dialog" data-tide-layer="">
+            <div ref={panel} className={`${styles.panel} ${flush ? styles.flush : ""}`} style={style} role="dialog" data-tide-layer="">
               {children(() => setOpen(false))}
             </div>,
             document.body,

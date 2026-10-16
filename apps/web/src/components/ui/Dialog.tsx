@@ -5,7 +5,9 @@ import styles from "./Dialog.module.css";
 /**
  * Modal shell: centred panel over a scrim, Escape cancels, focus starts inside.
  * `variant="palette"` is the flush, top-anchored look of ⌘K / ⌘P: no padding and
- * no visible title (it stays the accessible name).
+ * no visible title (it stays the accessible name). `variant="sheet"` is the wide,
+ * flush panel the composition dialogs fill with a `DialogFrame`, which draws its
+ * own sentence heading; `title` stays the accessible name there too.
  */
 export function Dialog({
   title,
@@ -16,9 +18,10 @@ export function Dialog({
   title: string;
   onCancel: () => void;
   children: React.ReactNode;
-  variant?: "form" | "palette";
+  variant?: "form" | "palette" | "sheet";
 }) {
   const palette = variant === "palette";
+  const sheet = variant === "sheet";
   useEffect(() => {
     const onKey = (e: KeyboardEvent): void => {
       if (e.key !== "Escape") return;
@@ -30,15 +33,18 @@ export function Dialog({
   }, [onCancel]);
 
   return (
-    <div className={`${styles.scrim} ${palette ? styles.paletteScrim : ""}`} onMouseDown={onCancel}>
+    <div
+      className={`${styles.scrim} ${palette ? styles.paletteScrim : ""} ${sheet ? styles.sheetScrim : ""}`}
+      onMouseDown={onCancel}
+    >
       <div
-        className={palette ? styles.palette : styles.panel}
+        className={palette ? styles.palette : sheet ? styles.sheet : styles.panel}
         role="dialog"
         aria-modal="true"
         aria-label={title}
         onMouseDown={(e) => e.stopPropagation()}
       >
-        {palette ? null : <h2 className={styles.title}>{title}</h2>}
+        {palette || sheet ? null : <h2 className={styles.title}>{title}</h2>}
         {children}
       </div>
     </div>

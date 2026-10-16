@@ -1,59 +1,38 @@
-.field { display: flex; align-items: center; justify-content: space-between; gap: var(--sp-3); }
-.label {
-  font-size: 11px;
-  letter-spacing: var(--ls-section);
-  text-transform: uppercase; font-weight: var(--fw-section);
-  color: var(--muted);
-}
-.input {
-  flex: 1;
-  min-width: 0;
-  height: var(--row-h);
-  padding: 0 var(--sp-2);
-  border: 1px solid var(--border);
-  border-radius: var(--radius-sm);
-  background: var(--surface);
-  color: var(--text);
-  font: inherit;
-}
-.input::placeholder { color: var(--muted); }
-/* wide enough for "Auto from your first message"; the popover grows to fit */
-.titleInput { min-width: 220px; }
-.parent { margin: 0; color: var(--muted); font-size: 11px; }
+/* New thread (Thread | Team): layout comes from ui/DialogFrame; these are the local controls. */
+.rows { display: flex; flex-direction: column; gap: var(--sp-3); }
+.narrow { max-width: 240px; }
+.check { min-height: 28px; }
 .segmented {
   display: inline-flex;
-  height: 22px;
-  border: 1px solid var(--border);
+  align-self: flex-start;
+  height: 28px;
+  border: 1px solid var(--border-strong);
   border-radius: var(--radius-sm);
   overflow: hidden;
 }
 .segment {
+  min-width: 64px;
   padding: 0 var(--sp-3);
   border: none;
   background: var(--surface-2);
-  color: var(--muted);
+  color: var(--text-2);
   font: inherit;
-  font-size: 11px;
+  font-size: 12px;
   cursor: pointer;
 }
-.segment + .segment { border-left: 1px solid var(--border); }
+.segment + .segment { border-left: 1px solid var(--border-strong); }
 .segment:hover:not(.active) { color: var(--text); }
-.active { background: var(--accent-soft); color: var(--accent); }
-.stack { display: flex; flex-direction: column; gap: var(--sp-1); }
-.textarea {
-  min-height: 72px;
-  padding: var(--sp-2);
-  border: 1px solid var(--border);
+.active { background: var(--accent-soft); color: var(--accent); font-weight: 500; }
+.empty { margin: 0; color: var(--muted); font-size: 12px; }
+.runRow { display: flex; flex-direction: column; gap: var(--sp-3); }
+.input {
+  height: 28px;
+  padding: 0 var(--sp-2);
+  border: 1px solid var(--border-strong);
   border-radius: var(--radius-sm);
-  background: var(--surface);
+  background: var(--bg);
   color: var(--text);
   font: inherit;
-  resize: vertical;
 }
-.textarea::placeholder { color: var(--muted); }
-.stages { list-style: none; margin: 0; padding: 0; border: 1px solid var(--border); border-radius: var(--radius-sm); }
-.stageRow { display: flex; align-items: center; gap: var(--sp-2); min-height: 24px; padding: 0 var(--sp-2); border-bottom: 1px solid var(--border); font-size: 12px; }
-.stageRow:last-child { border-bottom: 0; }
-.stageRole { flex: 1; min-width: 0; overflow: hidden; text-overflow: ellipsis; white-space: nowrap; }
-.stageMeta { color: var(--muted); font-size: 11px; }
-.tabs { align-self: flex-start; }
+.input::placeholder { color: var(--muted); }
+.input:focus { outline: none; border-color: var(--accent); }

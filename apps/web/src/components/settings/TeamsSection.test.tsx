@@ -57,11 +57,11 @@ describe("Settings › Teams", () => {
     fireEvent.change(screen.getByLabelText("Team name"), { target: { value: "Duo 2" } });
     fireEvent.change(screen.getByLabelText("Stage 2 role"), { target: { value: "Code Checker" } });
     chooseOption("Stage 2 worktree", "Own worktree");
-    fireEvent.click(screen.getByText("Add stage"));
+    fireEvent.click(screen.getByRole("button", { name: "Add a stage" }));
     fireEvent.change(screen.getByLabelText("Stage 3 role"), { target: { value: "tester" } });
     chooseOption("Stage 3 worktree", "Inherit a checkout");
     chooseOption("Stage 3 inherits from", /1\. builder/);
-    fireEvent.click(within(screen.getByRole("dialog")).getByText("Save"));
+    fireEvent.click(within(screen.getByRole("dialog")).getByText("Save team"));
     await waitFor(() => expect(rpc).toHaveBeenCalledWith("settings.set", expect.anything()));
     const [, params] = rpc.mock.calls.find(([m]) => m === "settings.set") as [string, { patch: { teams: Team[] } }];
     const saved = params.patch.teams[0];
@@ -72,12 +72,32 @@ describe("Settings › Teams", () => {
     expect(saved?.stages[2]).toMatchObject({ worktree: "inherit", inheritFrom: "builder" });
   });
 
-  it("refuses a team without a role", () => {
-    setup([]);
+  it("keeps Save disabled with the reason until the team is valid", () => {
+    const rpc = setup([]);
     fireEvent.click(screen.getByText("New team"));
+    const save = within(screen.getByRole("dialog")).getByText("Save team") as HTMLButtonElement;
+    expect(screen.getByRole("status").textContent).toBe("Give the team a name.");
     fireEvent.change(screen.getByLabelText("Team name"), { target: { value: "X" } });
-    fireEvent.click(within(screen.getByRole("dialog")).getByText("Save"));
-    expect(screen.getByRole("alert").textContent).toContain("role");
+    expect(screen.getByRole("status").textContent).toContain("role");
+    fireEvent.click(save);
+    expect(save.disabled).toBe(true);
+    expect(rpc).not.toHaveBeenCalledWith("settings.set", expect.anything());
+    fireEvent.change(screen.getByLabelText("Stage 1 role"), { target: { value: "dev" } });
+    expect(screen.queryByRole("status")).toBeNull();
+    expect(save.disabled).toBe(false);
+  });
+
+  it("reorders and removes stages from the card toolbar", async () => {
+    const rpc = setup();
+    fireEvent.click(screen.getByText("Edit"));
+    fireEvent.click(screen.getByRole("button", { name: "Add a stage" }));
+    fireEvent.change(screen.getByLabelText("Stage 3 role"), { target: { value: "tester" } });
+    fireEvent.click(screen.getByLabelText("Move stage 3 up"));
+    fireEvent.click(screen.getByLabelText("Remove stage 1"));
+    fireEvent.keyDown(screen.getByLabelText("Team name"), { key: "Enter", metaKey: true });
+    await waitFor(() => expect(rpc).toHaveBeenCalledWith("settings.set", expect.anything()));
+    const [, params] = rpc.mock.calls.find(([m]) => m === "settings.set") as [string, { patch: { teams: Team[] } }];
+    expect(params.patch.teams[0]?.stages.map((s) => s.role)).toEqual(["tester", "checker"]);
   });
 
   it("duplicates and deletes", async () => {

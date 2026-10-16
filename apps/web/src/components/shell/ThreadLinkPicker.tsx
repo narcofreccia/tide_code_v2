@@ -76,7 +76,7 @@ export function ThreadLinkPicker({
 
   return (
     <div className={styles.picker} aria-label="Linked repositories">
-      <span className={styles.label}>linked repos</span>
+      <span className={styles.label}>Linked repositories</span>
       <ul className={styles.list}>
         {links.map((link) => {
           const choice = choices.find((c) => c.linkId === link.id);

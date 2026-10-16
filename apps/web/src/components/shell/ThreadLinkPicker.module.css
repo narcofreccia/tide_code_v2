@@ -1,11 +1,6 @@
 /* Linked-repo chips in the new-thread popover. */
 .picker { display: flex; flex-direction: column; gap: var(--sp-1); }
-.label {
-  font-size: 11px;
-  letter-spacing: var(--ls-section);
-  text-transform: uppercase; font-weight: var(--fw-section);
-  color: var(--muted);
-}
+.label { font-size: 12px; color: var(--text-2); }
 .list { list-style: none; margin: 0; padding: 0; display: flex; flex-wrap: wrap; gap: var(--sp-1); }
 .chip {
   display: flex;

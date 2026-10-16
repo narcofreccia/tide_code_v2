@@ -2,13 +2,15 @@ import { useState } from "react";
 import type { ExpertSpec, ProviderKind } from "@tide/contracts";
 import { createExpertsSession } from "../../lib/expertsActions.ts";
 import { DEFAULT_PRESET_KEYS, EXPERT_PRESETS, presetByKey } from "../../lib/expertPresets.ts";
+import { useModel } from "../../state/model.ts";
 import { useProviders } from "../../state/providers.ts";
-import { Button } from "../ui/Button.tsx";
 import { Dialog } from "../ui/Dialog.tsx";
-import { Select } from "../ui/Select.tsx";
+import { DialogFrame, FrameSection, PrimaryField } from "../ui/DialogFrame.tsx";
+import { PresetChips } from "../ui/StageList/PresetChips.tsx";
+import { StageCard, StageSubtitle, StageTitle } from "../ui/StageList/StageCard.tsx";
+import { StageList } from "../ui/StageList/StageList.tsx";
 import { draftForProvider, HarnessFields } from "../thread/ProviderPicker.tsx";
-import { ExpertRowEditor, type ExpertDraft } from "./ExpertRowEditor.tsx";
-import styles from "./CreateExpertsDialog.module.css";
+import { defaultPersona, ExpertRowEditor, type ExpertDraft } from "./ExpertRowEditor.tsx";
 
 /** Keys must be unique within a session; a repeated preset gets a numeric suffix. */
 function uniqueKey(base: string, taken: ExpertDraft[]): string {
@@ -27,8 +29,13 @@ function fromPreset(presetKey: string, taken: ExpertDraft[], provider: ProviderK
     role: preset?.role ?? "",
     provider: preset?.provider ?? provider,
     model: "",
-    persona: preset?.persona ?? "",
+    persona: "",
+    ...(preset === undefined ? {} : { presetKey: preset.key }),
   };
+}
+
+function blankExpert(taken: ExpertDraft[], provider: ProviderKind): ExpertDraft {
+  return { key: uniqueKey("expert", taken), name: "", role: "", provider, model: "", persona: "" };
 }
 
 function initialExperts(provider: ProviderKind): ExpertDraft[] {
@@ -37,24 +44,32 @@ function initialExperts(provider: ProviderKind): ExpertDraft[] {
   return out;
 }
 
-function toSpec(expert: ExpertDraft): ExpertSpec {
+function toSpec(expert: ExpertDraft, index: number): ExpertSpec {
+  const persona = expert.persona.trim() || defaultPersona(expert);
   return {
     key: expert.key,
-    name: expert.name.trim() || expert.key,
+    name: expert.name.trim() || `Expert ${index + 1}`,
     role: expert.role.trim(),
     provider: expert.provider,
     ...(expert.model === "" ? {} : { model: expert.model }),
-    ...(expert.persona.trim() === "" ? {} : { persona: expert.persona.trim() }),
+    ...(persona === "" ? {} : { persona }),
   };
 }
 
-/** topic · lead harness · the panel roster. "Start" creates then starts the session. */
+function blockedReason(topic: string, count: number, busy: boolean): string | undefined {
+  if (busy) return "Starting…";
+  if (topic.trim() === "") return "Add a topic to start";
+  if (count === 0) return "Add at least one expert";
+  return undefined;
+}
+
+/** topic · preset chips · lead card · expert cards. "Start" creates then starts the session. */
 export function CreateExpertsDialog({ projectId, onClose }: { projectId: string; onClose: () => void }) {
   const providers = useProviders();
+  const projectTitle = useModel((s) => s.model.projects[projectId]?.title);
   const [topic, setTopic] = useState("");
   const [lead, setLead] = useState(() => draftForProvider("claude", providers));
   const [experts, setExperts] = useState<ExpertDraft[]>(() => initialExperts("claude"));
-  const [preset, setPreset] = useState(EXPERT_PRESETS[0]?.key ?? "architect");
   const [busy, setBusy] = useState(false);
 
   const patchExpert = (index: number, patch: Partial<ExpertDraft>): void =>
@@ -69,10 +84,17 @@ export function CreateExpertsDialog({ projectId, onClose }: { projectId: string;
       return next;
     });
 
-  const canStart = topic.trim() !== "" && experts.length > 0 && !busy;
+  const togglePreset = (key: string): void =>
+    setExperts((prev) => {
+      const at = prev.findIndex((e) => e.presetKey === key);
+      if (at >= 0) return prev.filter((_, i) => i !== at);
+      return [...prev, fromPreset(key, prev, lead.provider)];
+    });
+
+  const blocked = blockedReason(topic, experts.length, busy);
 
   const start = (): void => {
-    if (!canStart) return;
+    if (blocked !== undefined) return;
     setBusy(true);
     void createExpertsSession({
       projectId,
@@ -84,71 +106,80 @@ export function CreateExpertsDialog({ projectId, onClose }: { projectId: string;
       .catch(() => setBusy(false));
   };
 
+  const count = experts.length;
   return (
-    <Dialog title="New experts session" onCancel={onClose}>
-      <div className={styles.body} data-testid="experts-dialog-body">
-        <label className={styles.field}>
-          <span className={styles.label}>topic</span>
-          <textarea
-            className={styles.topic}
-            aria-label="Topic"
-            placeholder="What should the panel work on?"
-            value={topic}
-            onChange={(e) => setTopic(e.target.value)}
-          />
-        </label>
+    <Dialog title="New experts session" onCancel={onClose} variant="sheet">
+      <DialogFrame
+        heading="Ask a panel of experts to agree on one plan"
+        {...(projectTitle === undefined ? {} : { context: `In ${projectTitle}` })}
+        outcome="Each expert explores in its own thread; the lead gathers their findings and proposes a plan you can hand to a Team run."
+        primaryLabel={count === 1 ? "Start with 1 expert" : `Start with ${count} experts`}
+        onPrimary={start}
+        blockedReason={blocked}
+        onCancel={onClose}
+        bodyTestId="experts-dialog-body"
+      >
+        <PrimaryField
+          label="Topic"
+          ariaLabel="Topic"
+          multiline
+          placeholder="Should we move auth to the edge?"
+          value={topic}
+          onChange={setTopic}
+        />
 
-        <div className={styles.leadRow}>
-          <span className={styles.label}>lead</span>
-          <HarnessFields
-            name="Lead"
-            provider={lead.provider}
-            model={lead.model}
-            onChange={(patch) => setLead((prev) => ({ ...prev, ...patch }))}
-          />
-        </div>
-
-        <div className={styles.expertsHead}>
-          <span className={styles.label}>experts</span>
-          <Select
-            label="Preset"
-            value={preset}
-            options={EXPERT_PRESETS.map((p) => ({
-              value: p.key,
+        <FrameSection title="Panel" aside={`${count} ${count === 1 ? "expert" : "experts"} · mix harnesses freely`}>
+          <PresetChips
+            label="Presets"
+            chips={EXPERT_PRESETS.map((p) => ({
+              key: p.key,
               label: p.name,
+              pressed: experts.some((e) => e.presetKey === p.key),
+              title: p.role,
             }))}
-            onSelect={setPreset}
-            variant="field"
-            size="md"
+            onToggle={togglePreset}
           />
-          <Button onClick={() => setExperts((prev) => [...prev, fromPreset(preset, prev, lead.provider)])}>
-            + add expert
-          </Button>
-        </div>
-
-        <ul className={styles.list}>
-          {experts.map((expert, index) => (
-            <ExpertRowEditor
-              key={expert.key}
-              expert={expert}
-              index={index}
-              count={experts.length}
-              onChange={(patch) => patchExpert(index, patch)}
-              onMove={(to) => move(index, to)}
-              onRemove={() => setExperts((prev) => prev.filter((_, i) => i !== index))}
+          <StageList label="Lead" flow="parallel">
+            <StageCard
+              marker="◆"
+              tone="lead"
+              label="Lead"
+              title={<StageTitle>Lead</StageTitle>}
+              subtitle={<StageSubtitle>Gathers findings, writes the plan</StageSubtitle>}
+              harness={
+                <HarnessFields
+                  layout="inline"
+                  name="Lead"
+                  provider={lead.provider}
+                  model={lead.model}
+                  onChange={(patch) => setLead((prev) => ({ ...prev, ...patch }))}
+                />
+              }
             />
-          ))}
-        </ul>
-      </div>
-
-      <div className={styles.actions}>
-        <Button variant="quiet" onClick={onClose}>
-          Cancel
-        </Button>
-        <Button variant="primary" disabled={!canStart} onClick={start}>
-          Start
-        </Button>
-      </div>
+          </StageList>
+          <StageList
+            label="Experts"
+            flow="parallel"
+            add={{
+              label: "Add an expert",
+              hint: "a blank seat you describe yourself",
+              onClick: () => setExperts((prev) => [...prev, blankExpert(prev, lead.provider)]),
+            }}
+          >
+            {experts.map((expert, index) => (
+              <ExpertRowEditor
+                key={expert.key}
+                expert={expert}
+                index={index}
+                count={count}
+                onChange={(patch) => patchExpert(index, patch)}
+                onMove={(to) => move(index, to)}
+                onRemove={() => setExperts((prev) => prev.filter((_, i) => i !== index))}
+              />
+            ))}
+          </StageList>
+        </FrameSection>
+      </DialogFrame>
     </Dialog>
   );
 }

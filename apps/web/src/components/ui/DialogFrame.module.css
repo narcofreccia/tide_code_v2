@@ -1,0 +1,105 @@
+/*
+ * Composition layout (docs/design/composition.md): header and footer stay put,
+ * the body scrolls. The frame fills a flush sheet Dialog or Popover panel.
+ */
+.frame {
+  display: flex;
+  flex-direction: column;
+  flex: 1 1 auto;
+  min-height: 0;
+  font-size: 13px;
+}
+
+.header {
+  flex: none;
+  display: flex;
+  flex-direction: column;
+  gap: var(--sp-1);
+  padding: var(--sp-4) var(--sp-4) var(--sp-3);
+  border-bottom: 1px solid var(--border);
+}
+.heading {
+  margin: 0;
+  font-size: 15px;
+  font-weight: 600;
+  line-height: 20px;
+  color: var(--text);
+  letter-spacing: -0.005em;
+}
+.context {
+  margin: 0;
+  color: var(--muted);
+  font-size: 12px;
+  overflow: hidden;
+  text-overflow: ellipsis;
+  white-space: nowrap;
+}
+.toolbar { display: flex; align-items: center; gap: var(--sp-2); margin-top: var(--sp-2); }
+
+.body {
+  flex: 1 1 auto;
+  min-height: 0;
+  overflow-y: auto;
+  display: flex;
+  flex-direction: column;
+  gap: var(--sp-4);
+  padding: var(--sp-4);
+}
+
+.footer {
+  flex: none;
+  display: flex;
+  flex-direction: column;
+  gap: var(--sp-2);
+  padding: var(--sp-3) var(--sp-4);
+  border-top: 1px solid var(--border);
+  background: var(--surface);
+}
+.outcome { margin: 0; color: var(--text-2); font-size: 12px; line-height: 17px; }
+.actions { display: flex; align-items: center; justify-content: flex-end; gap: var(--sp-2); }
+.blocked { margin-right: auto; color: var(--muted); font-size: 12px; }
+.chord { margin-right: auto; display: inline-flex; }
+.primary { height: 28px; padding: 0 var(--sp-3); font-weight: 500; }
+
+/* labelled rows: a fixed label column keeps every control on one edge */
+.field {
+  display: grid;
+  grid-template-columns: 96px minmax(0, 1fr);
+  align-items: start;
+  column-gap: var(--sp-3);
+}
+.label {
+  color: var(--text-2);
+  font-size: 12px;
+  line-height: 28px;
+}
+.control { display: flex; flex-direction: column; gap: var(--sp-1); min-width: 0; }
+.caption { color: var(--muted); font-size: 12px; line-height: 16px; }
+
+.section { display: flex; flex-direction: column; gap: var(--sp-2); }
+.sectionHead { display: flex; align-items: baseline; gap: var(--sp-2); }
+.sectionTitle { margin: 0; color: var(--text-2); font-size: 12px; font-weight: 500; }
+.sectionAside { margin-left: auto; color: var(--muted); font-size: 12px; }
+
+.primaryField { display: flex; flex-direction: column; gap: var(--sp-1); }
+.primaryField .label { line-height: 16px; }
+.primaryInput {
+  width: 100%;
+  min-height: 40px;
+  padding: var(--sp-2) var(--sp-3);
+  border: 1px solid var(--border-strong);
+  border-radius: var(--radius);
+  background: var(--bg);
+  color: var(--text);
+  font: inherit;
+  font-size: 15px;
+  line-height: 22px;
+}
+.primaryInput::placeholder { color: var(--muted); }
+.primaryInput:focus { outline: 3px solid var(--accent-soft); outline-offset: 0; border-color: var(--accent); }
+.primaryArea { min-height: 64px; resize: vertical; }
+
+@media (max-width: 520px) {
+  .field { grid-template-columns: minmax(0, 1fr); }
+  .label { line-height: 20px; }
+}

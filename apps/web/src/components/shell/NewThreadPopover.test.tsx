@@ -34,9 +34,23 @@ describe("new thread form", () => {
   it("leaves the title to the first message unless one is typed", async () => {
     const fake = open();
     const title = screen.getByLabelText("Thread title") as HTMLInputElement;
-    expect(title.placeholder).toBe("Auto from your first message");
+    expect(document.activeElement).toBe(title);
+    expect(screen.getByText("Optional. Named from your first message otherwise.")).toBeDefined();
     fireEvent.click(screen.getByText("Create thread"));
     expect((await created(fake))["title"]).toBe("New thread");
+  });
+
+  it("states the outcome: project in the heading, permission hint as caption", () => {
+    open();
+    expect(screen.getByRole("heading", { name: "Start a thread on Tide" })).toBeDefined();
+    chooseOption("Thread permissions", "Full access");
+    expect(screen.getByText("Never asks — use with care")).toBeDefined();
+  });
+
+  it("⌘↵ creates from any field", async () => {
+    const fake = open();
+    fireEvent.keyDown(screen.getByRole("radio", { name: "Plan" }), { key: "Enter", metaKey: true });
+    expect((await created(fake))["type"]).toBe("thread.create");
   });
 
   it("sends a typed title", async () => {

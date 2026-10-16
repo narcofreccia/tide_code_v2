@@ -1,0 +1,230 @@
+/* Composition member list (docs/design/composition.md). */
+.list {
+  list-style: none;
+  margin: 0;
+  padding: 0;
+  display: flex;
+  flex-direction: column;
+  gap: var(--sp-2);
+}
+
+.card {
+  position: relative;
+  display: grid;
+  grid-template-columns: 28px minmax(0, 1fr);
+  column-gap: var(--sp-2);
+  padding: var(--sp-2) var(--sp-3) var(--sp-2) var(--sp-2);
+  border: 1px solid var(--border);
+  border-radius: var(--radius);
+  background: var(--surface);
+}
+.card:hover,
+.card:focus-within { border-color: var(--border-strong); }
+.lead { background: var(--surface-2); }
+
+.gutter { display: flex; flex-direction: column; align-items: center; padding-top: 4px; }
+.marker {
+  display: inline-grid;
+  place-items: center;
+  width: 24px;
+  height: 20px;
+  border: 1px solid var(--border-strong);
+  border-radius: var(--radius-sm);
+  background: var(--surface-2);
+  color: var(--text-2);
+  font-family: var(--font-mono);
+  font-size: 11px;
+  font-variant-numeric: tabular-nums;
+}
+.lead .marker { color: var(--accent); border-color: var(--accent); background: var(--accent-soft); }
+
+/* sequence: a hairline runs from each marker down to the next card */
+.sequence .card .gutter::after {
+  content: "";
+  flex: 1 1 auto;
+  width: 1px;
+  margin-top: 4px;
+  margin-bottom: calc(-1 * (var(--sp-2) * 2 + 1px));
+  background: var(--border-strong);
+}
+.sequence .card:not(:has(~ .card)) .gutter::after { display: none; }
+
+.main { min-width: 0; display: flex; flex-direction: column; gap: var(--sp-1); }
+.head { display: flex; align-items: center; gap: var(--sp-3); min-height: 28px; }
+.titles { flex: 1 1 auto; min-width: 0; display: flex; flex-direction: column; }
+.harness { flex: none; display: flex; align-items: center; }
+
+.titleInput,
+.subtitleInput {
+  width: 100%;
+  margin-left: -5px;
+  padding: 0 4px;
+  border: 1px solid transparent;
+  border-radius: var(--radius-sm);
+  background: transparent;
+  color: var(--text);
+  font: inherit;
+}
+.titleInput { height: 24px; font-weight: 600; }
+.subtitleInput { height: 20px; font-size: 12px; color: var(--text-2); }
+.titleInput::placeholder,
+.subtitleInput::placeholder { color: var(--muted); font-weight: 400; }
+.titleInput:hover,
+.subtitleInput:hover { border-color: var(--border); }
+.titleInput:focus,
+.subtitleInput:focus { outline: none; border-color: var(--accent); background: var(--bg); }
+.titleText { font-weight: 600; line-height: 22px; overflow: hidden; text-overflow: ellipsis; white-space: nowrap; }
+.subtitleText { color: var(--muted); font-size: 12px; line-height: 16px; overflow: hidden; text-overflow: ellipsis; white-space: nowrap; }
+
+/* reorder / remove: a small toolbar on the card's top edge, shown on hover or focus */
+.tools {
+  position: absolute;
+  top: -11px;
+  right: var(--sp-2);
+  display: flex;
+  border: 1px solid var(--border-strong);
+  border-radius: var(--radius-sm);
+  background: var(--surface-raised);
+  opacity: 0;
+  pointer-events: none;
+}
+.card:hover .tools,
+.card:focus-within .tools { opacity: 1; pointer-events: auto; }
+.tool {
+  width: 22px;
+  height: 20px;
+  border: none;
+  background: transparent;
+  color: var(--muted);
+  font: inherit;
+  font-size: 12px;
+}
+.tool + .tool { border-left: 1px solid var(--border); }
+.tool:hover:not(:disabled) { color: var(--text); background: var(--surface-2); }
+.tool:disabled { opacity: 0.35; cursor: default; }
+.remove:hover:not(:disabled) { color: var(--danger); background: var(--danger-soft); }
+
+/* harness monogram and read-only tag */
+.mark {
+  display: inline-grid;
+  place-items: center;
+  flex: none;
+  width: 20px;
+  height: 20px;
+  border: 1px solid var(--border-strong);
+  border-radius: var(--radius-sm);
+  background: var(--surface-2);
+  color: var(--text-2);
+  font-family: var(--font-mono);
+  font-size: 11px;
+  font-weight: 600;
+}
+.tag { display: inline-flex; align-items: center; gap: var(--sp-2); font-size: 12px; color: var(--text-2); }
+.tagText { white-space: nowrap; }
+.tagModel { color: var(--muted); font-family: var(--font-mono); font-size: 11px; }
+
+/* settings strip inside an editable card */
+.settings { display: flex; flex-wrap: wrap; gap: var(--sp-2) var(--sp-3); padding-top: var(--sp-1); }
+.setting { display: flex; flex-direction: column; gap: 2px; min-width: 132px; flex: 1 1 132px; }
+.settingLabel { color: var(--text-2); font-size: 12px; }
+
+/* ghost add card */
+.ghostItem { display: flex; }
+.ghost {
+  flex: 1;
+  display: grid;
+  grid-template-columns: 28px auto minmax(0, 1fr);
+  align-items: center;
+  column-gap: var(--sp-2);
+  min-height: 36px;
+  padding: 0 var(--sp-3) 0 var(--sp-2);
+  border: 1px dashed var(--border-strong);
+  border-radius: var(--radius);
+  background: transparent;
+  color: var(--text-2);
+  font: inherit;
+  text-align: left;
+  cursor: pointer;
+}
+.ghost:hover:not(:disabled) { border-color: var(--accent); color: var(--accent); }
+.ghost:disabled { opacity: 0.5; cursor: default; }
+.ghostGlyph { justify-self: center; font-family: var(--font-mono); }
+.ghostHint { color: var(--muted); font-size: 12px; overflow: hidden; text-overflow: ellipsis; white-space: nowrap; }
+
+/* persona / instructions editor */
+.note { display: flex; flex-direction: column; gap: var(--sp-1); }
+.noteToggle {
+  display: flex;
+  align-items: center;
+  gap: var(--sp-2);
+  min-width: 0;
+  height: 22px;
+  margin-left: -5px;
+  padding: 0 4px;
+  border: 1px solid transparent;
+  border-radius: var(--radius-sm);
+  background: transparent;
+  color: var(--text-2);
+  font: inherit;
+  font-size: 12px;
+  text-align: left;
+}
+.noteToggle:hover { border-color: var(--border); }
+.noteChevron { flex: none; width: 10px; color: var(--muted); font-size: 11px; }
+.noteLabel { flex: none; }
+.noteSummary { min-width: 0; color: var(--muted); overflow: hidden; text-overflow: ellipsis; white-space: nowrap; }
+.noteEditor { display: flex; flex-direction: column; gap: var(--sp-1); animation: note-in 120ms ease-out; transform-origin: top; }
+.noteText {
+  min-height: 84px;
+  padding: var(--sp-2);
+  border: 1px solid var(--border-strong);
+  border-radius: var(--radius-sm);
+  background: var(--bg);
+  color: var(--text);
+  font: inherit;
+  line-height: 18px;
+  resize: vertical;
+}
+.noteText::placeholder { color: var(--muted); font-style: italic; }
+.noteText:focus { outline: none; border-color: var(--accent); }
+.noteFoot { display: flex; align-items: flex-start; gap: var(--sp-3); }
+.noteHint { flex: 1; color: var(--muted); font-size: 12px; line-height: 16px; }
+.noteAction {
+  flex: none;
+  height: 20px;
+  padding: 0;
+  border: none;
+  background: transparent;
+  color: var(--accent);
+  font: inherit;
+  font-size: 12px;
+}
+.noteAction:hover { text-decoration: underline; }
+@keyframes note-in {
+  from { opacity: 0; transform: scaleY(0.96); }
+  to { opacity: 1; transform: none; }
+}
+@media (prefers-reduced-motion: reduce) {
+  .noteEditor { animation: none; }
+}
+
+/* preset chips */
+.chips { display: flex; flex-wrap: wrap; gap: var(--sp-1) var(--sp-2); }
+.chip {
+  display: inline-flex;
+  align-items: center;
+  gap: 6px;
+  height: 24px;
+  padding: 0 var(--sp-2);
+  border: 1px solid var(--border);
+  border-radius: 12px;
+  background: transparent;
+  color: var(--text-2);
+  font: inherit;
+  font-size: 12px;
+}
+.chip:hover { border-color: var(--border-strong); color: var(--text); }
+.chip[aria-pressed="true"] { border-color: var(--accent); background: var(--accent-soft); color: var(--text); }
+.chipTick { width: 10px; color: var(--muted); font-size: 11px; text-align: center; }
+.chip[aria-pressed="true"] .chipTick { color: var(--accent); }
+.settingText { line-height: 28px; color: var(--muted); font-size: 12px; }

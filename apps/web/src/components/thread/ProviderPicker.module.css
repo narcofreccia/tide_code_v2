@@ -6,3 +6,11 @@
   color: var(--muted);
 }
 .check { display: flex; align-items: center; gap: var(--sp-2); color: var(--text); }
+
+/* inline: the composition-card harness control, Agent and Model joined into one */
+.inline { display: inline-flex; align-items: center; gap: var(--sp-2); min-width: 0; }
+.joined { display: inline-flex; min-width: 0; }
+.joined .agent { width: 120px; border-top-right-radius: 0; border-bottom-right-radius: 0; }
+.joined .model { width: 176px; margin-left: -1px; border-top-left-radius: 0; border-bottom-left-radius: 0; }
+.joined .agent:hover, .joined .agent[aria-expanded="true"],
+.joined .model:hover, .joined .model[aria-expanded="true"] { position: relative; z-index: 1; }

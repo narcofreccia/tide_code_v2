@@ -12,6 +12,7 @@ import {
 import { providerDefault, worktreeByDefault } from "../../state/serverSettings.ts";
 import { PROVIDERS, PROVIDER_LABELS } from "../../lib/vocab.ts";
 import { Checkbox } from "../ui/Choice.tsx";
+import { HarnessMark } from "../ui/StageList/StageCard.tsx";
 import { Select, type SelectOption } from "../ui/Select.tsx";
 import styles from "./ProviderPicker.module.css";
 
@@ -63,12 +64,15 @@ export function HarnessFields({
   provider,
   model,
   onChange,
+  layout = "fields",
 }: {
   /** prefixes the accessible labels, e.g. "Thread" → "Thread provider" */
   name: string;
   provider: ProviderKind;
   model: string;
   onChange: (patch: Partial<ThreadDraft>) => void;
+  /** `inline`: monogram + one joined Agent · Model control (composition cards) */
+  layout?: "fields" | "inline";
 }) {
   const { providers, loading } = useProviderRoster();
   // nothing is known before `providers.list` answers, so nothing is offered
@@ -84,6 +88,35 @@ export function HarnessFields({
   });
   const models = providerStatus(providers, provider)?.models ?? [];
   const modelOptions: SelectOption<string>[] = modelChoices(models, provider);
+
+  if (layout === "inline") {
+    return (
+      <div className={styles.inline} role="group" aria-label={`${name} agent and model`}>
+        <HarnessMark provider={provider} />
+        <div className={styles.joined}>
+          <Select
+            label={`${name} provider`}
+            value={provider}
+            options={providerOptions}
+            onSelect={(kind) => onChange(draftForProvider(kind, providers))}
+            variant="field"
+            size="md"
+            className={styles.agent}
+          />
+          <Select
+            label={`${name} model`}
+            value={modelChoiceValue(models, model)}
+            options={modelOptions}
+            onSelect={(next) => onChange({ model: next })}
+            variant="field"
+            size="md"
+            className={styles.model}
+            align="end"
+          />
+        </div>
+      </div>
+    );
+  }
 
   return (
     <>

@@ -1,6 +1,6 @@
 .menu {
   position: fixed;
-  z-index: 60;
+  z-index: 80; /* above Dialog (70), below the palette (90) */
   min-width: 168px;
   display: flex;
   flex-direction: column;
