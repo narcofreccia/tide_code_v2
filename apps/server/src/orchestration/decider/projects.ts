@@ -6,6 +6,7 @@ type ProjectCommand =
   | CommandOf<"project.create">
   | CommandOf<"project.update">
   | CommandOf<"project.archive">
+  | CommandOf<"project.unarchive">
   | CommandOf<"project.link.add">
   | CommandOf<"project.link.update">
   | CommandOf<"project.link.remove">;
@@ -48,6 +49,16 @@ export function decideProject(model: ReadModel, command: ProjectCommand, ctx: De
       if (!project) return fail("not-found", `unknown project ${command.projectId}`);
       if (isArchived(project)) return ok(); // idempotent
       return ok({ type: "project.archived", projectId: project.id, archivedAt: ctx.now });
+    }
+
+    case "project.unarchive": {
+      const project = model.projects[command.projectId];
+      if (!project) return fail("not-found", `unknown project ${command.projectId}`);
+      if (!isArchived(project)) return ok(); // idempotent
+      // a newer project took the same root meanwhile: two live projects on one path is what create forbids
+      const clash = Object.values(model.projects).find((p) => p.id !== project.id && !isArchived(p) && p.rootPath === project.rootPath);
+      if (clash) return fail("conflict", `project ${clash.id} already uses rootPath ${project.rootPath}`);
+      return ok({ type: "project.unarchived", projectId: project.id, at: ctx.now });
     }
 
     case "project.link.add": {

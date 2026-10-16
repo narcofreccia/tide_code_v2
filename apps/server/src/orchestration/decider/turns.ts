@@ -1,4 +1,5 @@
 import type { CommandOf, Message, ReadModel, Turn, TurnStatus } from "@tide/contracts";
+import { autoTitleEvent } from "./autoTitle.ts";
 import { attachmentsOf, fail, isArchived, ok, type DecideContext, type DecideResult } from "./types.ts";
 
 type TurnCommand =
@@ -51,7 +52,11 @@ export function decideTurn(model: ReadModel, command: TurnCommand, ctx: DecideCo
         ...(command.notification !== undefined ? { notification: command.notification } : {}),
         createdAt: ctx.now,
       };
-      return ok({ type: "turn.requested", turn, userMessage, ...(images.length > 0 ? { images } : {}) });
+      const requested = { type: "turn.requested" as const, turn, userMessage, ...(images.length > 0 ? { images } : {}) };
+      // the first prompt a user types names an untitled thread; a queued follow-up or a
+      // server-sent notification turn never does
+      const titled = queued || command.notification !== undefined ? undefined : autoTitleEvent(thread, command.text, ctx.now);
+      return titled !== undefined ? ok(titled, requested) : ok(requested);
     }
 
     case "turn.dequeue": {

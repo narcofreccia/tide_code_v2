@@ -29,7 +29,10 @@ export function aggregateIdOf(event: DomainEvent): string | null {
       return event.thread.id;
     case "thread.updated":
     case "thread.archived":
+    case "thread.unarchived":
       return event.threadId;
+    case "project.unarchived":
+      return event.projectId;
     case "turn.requested":
       return event.turn.threadId;
     case "turn.started":
@@ -46,7 +49,6 @@ export function aggregateIdOf(event: DomainEvent): string | null {
     case "checkpoint.recorded":
     case "worktree.detach-requested":
     case "worktree.detached":
-    case "revert.requested":
     case "publish.requested":
     case "merge.requested":
     case "merge.completed":

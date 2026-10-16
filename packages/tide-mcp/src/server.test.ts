@@ -2,7 +2,7 @@ import { describe, expect, it } from "vitest";
 import { Client } from "@modelcontextprotocol/sdk/client/index.js";
 import { InMemoryTransport } from "@modelcontextprotocol/sdk/inMemory.js";
 import type { AgentCommand } from "@tide/contracts";
-import type { AgentBackend, AgentContext, AgentDispatchResult, AgentThreadStatus, PendingRespondInput, ThreadListInput, ThreadReadInput, ThreadSendInput, ThreadWaitInput, ThreadWaitResult } from "./backend.ts";
+import type { AgentBackend, AgentContext, AgentDispatchResult, AgentThreadStatus, PendingRespondInput, ThreadDiffInput, ThreadDiffResult, ThreadListInput, ThreadReadInput, ThreadSendInput, ThreadWaitInput, ThreadWaitResult } from "./backend.ts";
 import { createTideMcpServer } from "./server.ts";
 import { TOOL_DEFINITIONS } from "./tools.ts";
 import { THREAD_TOOLS_HINT } from "./threadTools.ts";
@@ -69,6 +69,18 @@ class FakeBackend implements AgentBackend {
     this.threadCalls.push([name, input]);
     return this.failWith ? Promise.reject(this.failWith) : Promise.resolve(out);
   }
+  diffResult: ThreadDiffResult = {
+    base: "0123456789abcdef",
+    head: "WORKTREE",
+    files: [
+      { path: "src/a.ts", status: "modified", additions: 2, deletions: 1, patch: "@@ -1 +1,2 @@\n-old\n+new\n+more\n", truncated: false },
+      { path: "big.ts", status: "added", additions: 900, deletions: 0, patch: "@@ +1,900 @@\n+x", truncated: true },
+      { path: "logo.png", status: "added", additions: 0, deletions: 0, truncated: false },
+    ],
+  };
+  threadDiff(i: ThreadDiffInput) {
+    return this.#rec("diff", i, this.diffResult);
+  }
   threadList(i: ThreadListInput) {
     return this.#rec("list", i, { threads: [{ id: "t1", projectId: "p", title: "Fix\nbug", provider: "claude" as const, status: "running", attention: "question", role: "review", worktree: true, limited: false, updatedAt: 1 }] });
   }
@@ -134,6 +146,7 @@ describe("tide-mcp server", () => {
       "tide_thread_read",
       "tide_thread_send",
       "tide_thread_wait",
+      "tide_thread_diff",
       "tide_thread_interrupt",
       "tide_pending_list",
       "tide_pending_respond",
@@ -395,5 +408,43 @@ describe("tide_list_scheduled_tasks (R4)", () => {
     const result = await client.callTool({ name: "tide_list_scheduled_tasks", arguments: {} });
     expect(backend.threadCalls.map(([name]) => name)).toContain("taskList");
     expect(firstText(result)).toContain("task-1 | Nightly lint | every 60 min | new thread | enabled | runs=2");
+  });
+});
+
+describe("R5: thread diff and inherited worktrees", () => {
+  const call = async (b: FakeBackend, name: string, args: Record<string, unknown>) => {
+    const client = await connect(b);
+    const r = await client.callTool({ name, arguments: args });
+    return { text: firstText(r), isError: (r as { isError?: boolean }).isError === true };
+  };
+
+  it("tide_thread_diff renders per-file headers, patches and truncation", async () => {
+    const b = new FakeBackend();
+    const r = await call(b, "tide_thread_diff", { threadId: "t1", maxCharsPerFile: 2000 });
+    expect(b.threadCalls[0]).toEqual(["diff", { threadId: "t1", maxCharsPerFile: 2000 }]);
+    expect(r.text).toContain("3 files changed (+902 −1)");
+    expect(r.text).toContain("src/a.ts (+2 −1)\n@@ -1 +1,2 @@");
+    expect(r.text).toContain("big.ts (+900 −0) [added]");
+    expect(r.text).toContain("[patch truncated");
+    expect(r.text).toContain("logo.png (+0 −0) [added]\n(binary or no textual patch)");
+    b.diffResult = { base: "", head: "WORKTREE", files: [] };
+    expect((await call(b, "tide_thread_diff", { threadId: "t1" })).text).toBe("No changes.");
+    expect(b.threadCalls[1]).toEqual(["diff", { threadId: "t1" }]);
+  });
+
+  it("tide_delegate passes inheritWorktreeFrom and clamps a long wait to the server maximum", async () => {
+    const b = new FakeBackend();
+    await call(b, "tide_delegate", { provider: "opencode", prompt: "review", role: "reviewer", inheritWorktreeFrom: "t-impl", completion: "wait", timeoutMs: 1_800_000 });
+    expect(b.commands[0]).toMatchObject({ type: "thread.delegate", provider: "opencode", role: "reviewer", inheritWorktreeFrom: "t-impl" });
+    expect(b.commands[0]).not.toHaveProperty("useWorktree");
+    expect(b.threadCalls[0]).toEqual(["wait", { threadId: "thread-child", timeoutMs: 600000 }]);
+    const def = TOOL_DEFINITIONS.find((t) => t.name === "tide_delegate");
+    expect(def?.inputSchema.properties).toHaveProperty("inheritWorktreeFrom");
+  });
+
+  it("the hint mentions tide_thread_diff and inheritWorktreeFrom", () => {
+    expect(THREAD_TOOLS_HINT).toContain("tide_thread_diff");
+    expect(THREAD_TOOLS_HINT).toContain("inheritWorktreeFrom");
+    expect(TOOL_DEFINITIONS.map((t) => t.name)).toContain("tide_thread_diff");
   });
 });

@@ -1,10 +1,12 @@
 import { mkdirSync, readFileSync, renameSync, writeFileSync } from "node:fs";
 import { dirname, join } from "node:path";
-import type { UserSettings, UserSettingsPatch } from "@tide/contracts";
+import { Team, type UserSettings, type UserSettingsPatch } from "@tide/contracts";
+import { Check } from "typebox/value";
+import { presetTeams } from "./teams/presets.ts";
 
 /**
- * User settings every client must agree on: provider defaults, worktree default, the optional
- * decisions model. Kept in `<TIDE_HOME>/settings.json` (0600 — it may hold the TypeSafe key).
+ * User settings every client must agree on: provider defaults, worktree default, follow-up and
+ * usage-limit defaults, the optional decisions model. Kept in `<TIDE_HOME>/settings.json` (0600 — it may hold the TypeSafe key).
  * The key is never returned over RPC; `decisions.hasKey` says whether one is stored.
  */
 interface StoredSettings {
@@ -12,9 +14,32 @@ interface StoredSettings {
   worktreeByDefault: boolean;
   decisions: { enabled: boolean; apiKey?: string };
   continueAfterRestart?: boolean;
+  followUpMode?: UserSettings["followUpMode"];
+  limitPolicy?: UserSettings["limitPolicy"];
+  /** the user's saved teams; empty = show the presets */
+  teams?: Team[];
 }
 
-const DEFAULTS: StoredSettings = { providerDefaults: {}, worktreeByDefault: true, decisions: { enabled: false }, continueAfterRestart: false };
+/** `settings.set` refused the patch (duplicate team ids); the RPC layer maps it to `invalid-params`. */
+export class SettingsError extends Error {}
+
+function assertUniqueTeamIds(teams: Team[]): void {
+  const seen = new Set<string>();
+  for (const team of teams) {
+    if (seen.has(team.id)) throw new SettingsError(`duplicate team id ${team.id}`);
+    seen.add(team.id);
+  }
+}
+
+const DEFAULTS: StoredSettings = {
+  providerDefaults: {},
+  worktreeByDefault: true,
+  decisions: { enabled: false },
+  continueAfterRestart: false,
+  followUpMode: "steer",
+  limitPolicy: "manual",
+  teams: [],
+};
 
 export interface SettingsStoreOptions {
   /** absolute path of settings.json; undefined = in-memory only (tests, `:memory:` data dirs) */
@@ -38,8 +63,16 @@ export class SettingsStore {
   }
 
   get(): UserSettings {
-    const { decisions, continueAfterRestart, ...rest } = this.#state;
-    return { ...rest, decisions: { enabled: decisions.enabled, hasKey: typeof decisions.apiKey === "string" && decisions.apiKey.length > 0 }, continueAfterRestart: continueAfterRestart ?? false };
+    const { decisions, continueAfterRestart, followUpMode, limitPolicy, teams, ...rest } = this.#state;
+    return {
+      ...rest,
+      decisions: { enabled: decisions.enabled, hasKey: typeof decisions.apiKey === "string" && decisions.apiKey.length > 0 },
+      continueAfterRestart: continueAfterRestart ?? false,
+      followUpMode: followUpMode ?? "steer",
+      limitPolicy: limitPolicy ?? "manual",
+      // the presets stand in until the user saves a team of their own
+      teams: teams !== undefined && teams.length > 0 ? structuredClone(teams) : presetTeams(),
+    };
   }
 
   /** The stored key, for the server-side decisions client only. */
@@ -48,11 +81,15 @@ export class SettingsStore {
   }
 
   set(patch: UserSettingsPatch): UserSettings {
+    if (patch.teams !== undefined) assertUniqueTeamIds(patch.teams);
     const next: StoredSettings = {
       providerDefaults: patch.providerDefaults ?? this.#state.providerDefaults,
       worktreeByDefault: patch.worktreeByDefault ?? this.#state.worktreeByDefault,
       decisions: { ...this.#state.decisions },
       continueAfterRestart: patch.continueAfterRestart ?? this.#state.continueAfterRestart ?? false,
+      followUpMode: patch.followUpMode ?? this.#state.followUpMode ?? "steer",
+      limitPolicy: patch.limitPolicy ?? this.#state.limitPolicy ?? "manual",
+      teams: patch.teams !== undefined ? structuredClone(patch.teams) : (this.#state.teams ?? []),
     };
     if (patch.decisions?.enabled !== undefined) next.decisions.enabled = patch.decisions.enabled;
     if (patch.decisions?.apiKey !== undefined) {
@@ -83,6 +120,9 @@ export class SettingsStore {
         ...(typeof r.decisions?.apiKey === "string" ? { apiKey: r.decisions.apiKey } : {}),
       },
       continueAfterRestart: r.continueAfterRestart === true,
+      followUpMode: r.followUpMode === "queue" ? "queue" : "steer",
+      limitPolicy: r.limitPolicy === "reset" ? "reset" : "manual",
+      teams: Array.isArray(r.teams) ? r.teams.filter((t): t is Team => Check(Team, t)) : [],
     };
   }
 

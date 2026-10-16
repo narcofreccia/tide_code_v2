@@ -57,7 +57,7 @@ export const BASE_TOOL_DEFINITIONS: ToolDefinition[] = [
   {
     name: "tide_delegate",
     description:
-      "Hand a self-contained task to another coding harness as a new Tide thread, and get back its threadId. Use it for work that is worth running in parallel or that another harness is better at. Only claude, codex and opencode can be delegated to — pi has no Tide bridge and would never report back. Pass `role` to label what the thread is for (review, research, implementation). Pass `repo` with the label of one of this project's writable linked repositories to run the delegate inside that repository instead. By default it returns immediately (completion \"async\"): poll tide_delegate_status or call tide_thread_wait. With completion \"wait\" it blocks until the child settles and returns its last message; on timeout the child keeps running.",
+      "Hand a self-contained task to another coding harness as a new Tide thread, and get back its threadId. Use it for work that is worth running in parallel or that another harness is better at. Any of claude, codex, opencode and pi can be delegated to. Pass `role` to label what the thread is for (review, research, implementation). Pass `inheritWorktreeFrom` with another thread's id to run in that thread's checkout (to review or test its branch). Pass `repo` with the label of one of this project's writable linked repositories to run the delegate inside that repository instead. By default it returns immediately (completion \"async\"): poll tide_delegate_status or call tide_thread_wait. With completion \"wait\" it blocks until the child settles and returns its last message; on timeout the child keeps running. With \"async\", Tide sends you a message when the delegate finishes or asks a question, so you need not poll.",
     inputSchema: {
       type: "object",
       properties: {
@@ -76,6 +76,7 @@ export const BASE_TOOL_DEFINITIONS: ToolDefinition[] = [
         timeoutMs: { type: "number", description: "With completion=wait: how long to wait, 1000-600000, default 600000. A timeout never cancels the child." },
         clientRequestId: str("Idempotency key: repeating the call with the same id does not create a second thread."),
         repo: str("Label of a writable linked repository to run the delegate in; it becomes that thread's main repo. Read-only links are refused. Omit to use this project's repo."),
+        inheritWorktreeFrom: str("threadId of a thread in this project: run in that thread's checkout, e.g. to review its branch. Cannot be combined with useWorktree or repo. The child cannot merge or publish; the source thread does."),
       },
       required: ["provider", "prompt"],
     },

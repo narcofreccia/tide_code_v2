@@ -164,6 +164,20 @@ export function applyEvent(model: ReadModel, event: DomainEvent): ReadModel {
     }
     case "thread.archived":
       return withThread(model, event.threadId, { archivedAt: event.archivedAt, updatedAt: event.archivedAt });
+    case "thread.unarchived": {
+      const t = model.threads[event.threadId];
+      if (!t) return model;
+      const next: Thread = { ...t, updatedAt: event.at };
+      delete next.archivedAt;
+      return { ...model, threads: { ...model.threads, [t.id]: next } };
+    }
+    case "project.unarchived": {
+      const p = model.projects[event.projectId];
+      if (!p) return model;
+      const next = { ...p, updatedAt: event.at };
+      delete next.archivedAt;
+      return { ...model, projects: { ...model.projects, [p.id]: next } };
+    }
     case "turn.requested":
       return requestTurn(model, event.turn, event.userMessage);
     case "turn.dequeued": {
@@ -200,7 +214,6 @@ export function applyEvent(model: ReadModel, event: DomainEvent): ReadModel {
     }
     case "turn.interrupt-requested":
       return withThread(model, event.threadId, { interrupting: true, updatedAt: event.at });
-    case "revert.requested":
     case "publish.requested":
     case "worktree.detach-requested":
       return model; // reactor-facing intents; outcomes arrive as their own events

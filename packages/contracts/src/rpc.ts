@@ -1,7 +1,7 @@
 import { Type, type Static, type TSchema } from "typebox";
 import { AgentCommand, ClientCommand } from "./commands.ts";
 import { EventRecord } from "./events.ts";
-import { ProviderKind, ReadModel, RuntimeMode, ScheduledTask } from "./domain.ts";
+import { ProviderKind, ReadModel, RuntimeMode, ScheduledTask, Team } from "./domain.ts";
 
 // ---- wire envelope ----
 // client -> server
@@ -157,6 +157,12 @@ export const UserSettings = Type.Object({
   decisions: Type.Object({ enabled: Type.Boolean(), hasKey: Type.Boolean() }),
   /** R4: after a restart, interrupted threads get a "Continue where you left off" turn (max 3 in a row); off by default */
   continueAfterRestart: Type.Boolean(),
+  /** R5: what a running thread does with a follow-up by default (⌘↵ always sends this; ⌥↵ the other) */
+  followUpMode: Type.Union([Type.Literal("steer"), Type.Literal("queue")]),
+  /** R5: when a harness reports its usage limit: wait for the user, or resume at reset */
+  limitPolicy: Type.Union([Type.Literal("manual"), Type.Literal("reset")]),
+  /** R5: saved teams (lead + stages across harnesses) */
+  teams: Type.Array(Team),
 });
 export type UserSettings = Static<typeof UserSettings>;
 export const UserSettingsPatch = Type.Object({
@@ -164,6 +170,10 @@ export const UserSettingsPatch = Type.Object({
   worktreeByDefault: Type.Optional(Type.Boolean()),
   decisions: Type.Optional(Type.Object({ enabled: Type.Optional(Type.Boolean()), apiKey: Type.Optional(Type.String()) })),
   continueAfterRestart: Type.Optional(Type.Boolean()),
+  followUpMode: Type.Optional(Type.Union([Type.Literal("steer"), Type.Literal("queue")])),
+  limitPolicy: Type.Optional(Type.Union([Type.Literal("manual"), Type.Literal("reset")])),
+  /** replaces the whole list */
+  teams: Type.Optional(Type.Array(Team)),
 });
 export type UserSettingsPatch = Static<typeof UserSettingsPatch>;
 
@@ -323,6 +333,11 @@ export const rpcMethods = {
   "agent.pending.respond": unary(
     Type.Object({ threadId: Type.String(), requestId: Type.String(), answers: Type.Record(Type.String(), Type.Unknown()) }),
     Type.Object({ ok: Type.Boolean() }),
+  ),
+  /** R5: what a thread changed (first checkpoint → working tree), bounded, for reviewer delegates */
+  "agent.thread.diff": unary(
+    Type.Object({ threadId: Type.String(), maxCharsPerFile: Type.Optional(Type.Number({ minimum: 500, maximum: 50000 })) }),
+    Type.Object({ base: Type.String(), head: Type.String(), files: Type.Array(Type.Object({ path: Type.String(), status: Type.String(), additions: Type.Number(), deletions: Type.Number(), patch: Type.Optional(Type.String()), truncated: Type.Boolean() })) }),
   ),
   /** the caller's project's automations (archived ones excluded) */
   "agent.task.list": unary(Type.Object({}), Type.Object({ tasks: Type.Array(ScheduledTask) })),

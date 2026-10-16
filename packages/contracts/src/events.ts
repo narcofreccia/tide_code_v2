@@ -27,7 +27,9 @@ export const ThreadCreated = evt("thread.created", {
 });
 export const ThreadUpdated = evt("thread.updated", {
   threadId: Type.String(),
-  patch: Type.Partial(Type.Pick(Thread, ["title", "provider", "model", "mode", "interaction"])),
+  patch: Type.Partial(Type.Pick(Thread, ["title", "provider", "model", "mode", "interaction", "pinned"])),
+  /** R5: the title was derived from the first prompt, not typed by the user */
+  autoTitled: Type.Optional(Type.Boolean()),
   /** the provider changed: the old harness's session id must not be resumed on the new one */
   clearNativeSession: Type.Optional(Type.Boolean()),
   /** R4: switching back to a harness that already ran this thread: its own session id becomes current again */
@@ -37,6 +39,8 @@ export const ThreadUpdated = evt("thread.updated", {
   updatedAt: Type.Number(),
 });
 export const ThreadArchived = evt("thread.archived", { threadId: Type.String(), archivedAt: Type.Number(), keepWorktree: Type.Optional(Type.Boolean()) });
+export const ThreadUnarchived = evt("thread.unarchived", { threadId: Type.String(), at: Type.Number() });
+export const ProjectUnarchived = evt("project.unarchived", { projectId: Type.String(), at: Type.Number() });
 
 /** `turn.status` is `queued` when another turn of the thread is still running. Image bytes live
  *  only here (the projector keeps metadata on the message); the provider reactor reads them. */
@@ -96,7 +100,6 @@ export const CheckpointRecorded = evt("checkpoint.recorded", {
 });
 export const WorktreeDetachRequested = evt("worktree.detach-requested", { threadId: Type.String(), deleteBranch: Type.Optional(Type.Boolean()), at: Type.Number() });
 export const WorktreeDetached = evt("worktree.detached", { threadId: Type.String(), at: Type.Number() });
-export const RevertRequested = evt("revert.requested", { threadId: Type.String(), turnId: Type.String(), at: Type.Number() });
 export const PublishRequested = evt("publish.requested", {
   threadId: Type.String(),
   title: Type.Optional(Type.String()),
@@ -210,7 +213,7 @@ export const DomainEvent = Type.Union([
   WorktreeDetachRequested,
   WorktreeDetached,
   CheckpointRecorded,
-  RevertRequested,
+  ThreadUnarchived, ProjectUnarchived,
   PublishRequested,
   MergeRequested,
   MergeCompleted,

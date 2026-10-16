@@ -55,7 +55,7 @@ describe("VcsReactor — worktrees", () => {
     expect(errors).toHaveLength(1);
     expect(errors[0]).toMatchObject({ turnId: first });
     expect(errors[0]?.kind === "error" ? errors[0].text : "").toMatch(
-      /^Worktree could not be created \(.+\); this thread runs in the project's main checkout — revert and publish are disabled\.$/,
+      /^Worktree could not be created \(.+\); this thread runs in the project's main checkout — file restore and publish are disabled\.$/,
     );
 
     // and it is said once, not on every turn
@@ -146,48 +146,6 @@ describe("VcsReactor — checkpoints", () => {
     h.control.script(emit({ type: "settled", status: "completed" }));
     const turnId = await requestTurn(h, thread.thread.id, "go");
     expect(h.model().turns[turnId]?.checkpoint).toBeUndefined();
-  });
-});
-
-describe("VcsReactor — revert", () => {
-  it("restores the worktree and posts an info activity", async () => {
-    const h = await harness(cleanups);
-    const thread = await newThread(h, { useWorktree: true });
-
-    h.control.script(
-      effect(async (options) => {
-        await writeFile(join(options.cwd, "agent.txt"), "delete me\n", "utf8");
-      }),
-      emit({ type: "settled", status: "completed" }),
-    );
-    const turnId = await requestTurn(h, thread.id, "write");
-
-    const cwd = h.model().threads[thread.id]?.worktreePath ?? "";
-    const git = new Git(cwd, { env: GIT_TEST_ENV });
-    expect((await git.show(WORKTREE, "agent.txt")).missing).toBe(false);
-
-    await h.app.engine.dispatch({ type: "thread.revert", threadId: thread.id, turnId });
-    await h.settle();
-
-    expect((await git.show(WORKTREE, "agent.txt")).missing).toBe(true);
-    const info = activitiesOf(h.model(), thread.id).find((a) => a.kind === "info");
-    expect(info).toMatchObject({ kind: "info", text: "Reverted to before turn 1" });
-  });
-
-  it("posts an error activity when the checkpoint is gone", async () => {
-    const h = await harness(cleanups);
-    const thread = await newThread(h, { useWorktree: true });
-    h.control.script(emit({ type: "settled", status: "completed" }));
-    const turnId = await requestTurn(h, thread.id, "go");
-
-    const cwd = h.model().threads[thread.id]?.worktreePath ?? "";
-    const ref = h.model().turns[turnId]?.checkpoint?.before ?? "";
-    await new Git(cwd, { env: GIT_TEST_ENV }).deleteRef(ref);
-
-    await h.app.engine.dispatch({ type: "thread.revert", threadId: thread.id, turnId });
-    await h.settle();
-    const error = activitiesOf(h.model(), thread.id).find((a) => a.kind === "error");
-    expect(error?.kind === "error" ? error.text : "").toMatch(/Revert failed/);
   });
 });
 

@@ -1,5 +1,6 @@
 import type { AgentCommand, ExpertsSession, ReadModel, RpcOutput, Thread } from "@tide/contracts";
 import { CommandError, type Engine } from "../orchestration/engine.ts";
+import { lastAssistantText } from "../orchestration/delegation.ts";
 import { RpcException, type RpcCallContext, type RpcRouter } from "./router.ts";
 
 export interface AgentHandlerDeps {
@@ -65,16 +66,6 @@ function stampIdentity(command: AgentCommand, caller: Caller, model: ReadModel):
       return command;
     }
   }
-}
-
-function lastAssistantText(model: ReadModel, threadId: string): string | undefined {
-  const ids = model.threadMessages[threadId] ?? [];
-  for (let i = ids.length - 1; i >= 0; i--) {
-    const id = ids[i];
-    const message = id === undefined ? undefined : model.messages[id];
-    if (message?.role === "assistant" && message.text.length > 0) return message.text;
-  }
-  return undefined;
 }
 
 export function registerAgentHandlers(router: RpcRouter, deps: AgentHandlerDeps): void {

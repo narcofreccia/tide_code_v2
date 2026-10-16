@@ -7,12 +7,13 @@ import { decideLineage } from "./lineage.ts";
 import { decideProject } from "./projects.ts";
 import { decideSteer } from "./steer.ts";
 import { decideTask } from "./tasks.ts";
+import { decideTeam } from "./team.ts";
 import { decideThread } from "./threads.ts";
 import { decideTurn } from "./turns.ts";
 import { decideVcs, decideWorktreeDetached } from "./vcs.ts";
 import { fail, type DecideContext, type DecideResult } from "./types.ts";
 
-export type { DecideContext, DecideError, DecideResult } from "./types.ts";
+export type { DecideContext, DecideDefaults, DecideError, DecideResult } from "./types.ts";
 export { planTitle } from "./plans.ts";
 
 /**
@@ -24,6 +25,7 @@ export function decide(model: ReadModel, command: Command, ctx: DecideContext): 
     case "project.create":
     case "project.update":
     case "project.archive":
+    case "project.unarchive":
     case "project.link.add":
     case "project.link.update":
     case "project.link.remove":
@@ -32,6 +34,7 @@ export function decide(model: ReadModel, command: Command, ctx: DecideContext): 
     case "thread.create":
     case "thread.update":
     case "thread.archive":
+    case "thread.unarchive":
     case "thread.triage":
     case "thread.limited":
     case "thread.limit-policy":
@@ -74,7 +77,6 @@ export function decide(model: ReadModel, command: Command, ctx: DecideContext): 
     case "plan.dismiss":
       return decidePlan(model, command, ctx);
 
-    case "thread.revert":
     case "thread.publish":
     case "thread.merge":
     case "merge.report":
@@ -98,6 +100,9 @@ export function decide(model: ReadModel, command: Command, ctx: DecideContext): 
     case "task.run-now":
     case "task.fire":
       return decideTask(model, command, ctx);
+
+    case "team.run":
+      return decideTeam(model, command, ctx);
 
     case "worktree.detached":
       return decideWorktreeDetached(model, command, ctx);

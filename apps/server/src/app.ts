@@ -5,7 +5,9 @@ import { TriageReactor } from "./decisions/reactor.ts";
 import { ExpertsReactor } from "./experts/reactor.ts";
 import { TideMcpProvisioner } from "./mcp/provision.ts";
 import { AgentTokenStore } from "./rpc/agentTickets.ts";
+import type { DecideDefaults } from "./orchestration/decider/index.ts";
 import { Engine } from "./orchestration/engine.ts";
+import { DelegateWaits, DelegationReactor, type CancelTimer } from "./orchestration/delegation.ts";
 import { LimitsWorker } from "./orchestration/limits.ts";
 import { continueAfterRestart, recoverRollbacks, recoverUnsettledTurns, SHUTDOWN_ERROR, unsettledTurns } from "./orchestration/recovery.ts";
 import { RollbackService } from "./orchestration/rollback.ts";
@@ -39,6 +41,8 @@ export interface AppOptions {
   settings?: SettingsStore;
   /** how long close() waits for in-flight reactor work before giving up */
   shutdownTimeoutMs?: number;
+  /** tests drive the delegate wake-up batch window with a manual timer */
+  delegationSchedule?: (fn: () => void, ms: number) => CancelTimer;
   /** tests that restart an app on the same in-memory store */
   keepStoreOpen?: boolean;
   log?: (msg: string, data?: unknown) => void;
@@ -62,6 +66,8 @@ export interface App {
   vcs: VcsReactor;
   rollback: RollbackService;
   limits: LimitsWorker;
+  delegation: DelegationReactor;
+  delegateWaits: DelegateWaits;
   scheduler: Scheduler;
   prWatch: PrWatcher;
   workspace: WorkspaceServices;
@@ -83,7 +89,9 @@ export async function createApp(options: AppOptions): Promise<App> {
   if (persisted === undefined) store.setMeta("environmentId", config.environmentId);
   const environmentId = persisted ?? config.environmentId;
 
-  const engine = new Engine({ store });
+  // One settings store for the engine (decider defaults), the RPC server and the decisions client.
+  const settings = options.settings ?? new SettingsStore({ ...(config.dataDir === ":memory:" ? {} : { path: SettingsStore.pathFor(config.tideHome) }), log });
+  const engine = new Engine({ store, defaults: () => deciderDefaults(settings) });
   const registry = new DriverRegistry({ env: { dataDir: config.dataDir, log } });
   if (options.registerDrivers) await options.registerDrivers(registry);
   else await registerBundledDrivers(registry, config.providers, log);
@@ -131,8 +139,6 @@ export async function createApp(options: AppOptions): Promise<App> {
   limits.start();
   prWatch.start();
 
-  // One settings store for the RPC server and the decisions client.
-  const settings = options.settings ?? new SettingsStore({ ...(config.dataDir === ":memory:" ? {} : { path: SettingsStore.pathFor(config.tideHome) }), log });
   const triage = new TriageReactor({
     engine,
     client: createDecisionClient({ settings, log, ...(options.decisionsTransport !== undefined ? { transport: options.decisionsTransport } : {}) }),
@@ -146,6 +152,11 @@ export async function createApp(options: AppOptions): Promise<App> {
   const recovered = await recoverUnsettledTurns(engine, { log, resume: (threadId, turnId) => reactor.resume(threadId, turnId) });
   await recoverRollbacks(engine, { log });
   if (settings.get().continueAfterRestart) await continueAfterRestart(engine, recovered.threadIds, { log });
+
+  // after recovery: turns settled as "interrupted" by a restart must not wake their parents
+  const delegateWaits = new DelegateWaits();
+  const delegation = new DelegationReactor({ engine, waits: delegateWaits, log, ...(options.delegationSchedule !== undefined ? { schedule: options.delegationSchedule } : {}) });
+  delegation.start();
 
   // after recovery: a slot due during the downtime fires once, never as a burst
   const scheduler = new Scheduler({ engine, settings, log });
@@ -162,6 +173,7 @@ export async function createApp(options: AppOptions): Promise<App> {
           workspace,
           agentTokens,
           settings,
+          delegateWaits,
           ...(options.gh !== undefined ? { gh: options.gh } : {}),
           config: { ...config, environmentId },
         });
@@ -185,6 +197,8 @@ export async function createApp(options: AppOptions): Promise<App> {
     vcs,
     rollback,
     limits,
+    delegation,
+    delegateWaits,
     scheduler,
     prWatch,
     workspace,
@@ -197,6 +211,7 @@ export async function createApp(options: AppOptions): Promise<App> {
       vcs.stop();
       rollback.stop();
       limits.stop();
+      delegation.stop();
       scheduler.stop();
       prWatch.stop();
       await server?.close();
@@ -219,7 +234,7 @@ export async function createApp(options: AppOptions): Promise<App> {
 
       // 3. give the reactors a bounded window to finish their git/driver work before the
       //    store they write into is closed under them
-      await withTimeout(Promise.all([reactor.drain(), vcs.drain(), triage.drain(), rollback.drain(), prWatch.drain(), scheduler.drain()]), options.shutdownTimeoutMs ?? DEFAULT_SHUTDOWN_TIMEOUT_MS, log);
+      await withTimeout(Promise.all([reactor.drain(), vcs.drain(), triage.drain(), rollback.drain(), prWatch.drain(), scheduler.drain(), delegation.drain()]), options.shutdownTimeoutMs ?? DEFAULT_SHUTDOWN_TIMEOUT_MS, log);
 
       workspace.close();
       await sessions.closeAll();
@@ -230,6 +245,12 @@ export async function createApp(options: AppOptions): Promise<App> {
 }
 
 const DEFAULT_SHUTDOWN_TIMEOUT_MS = 5_000;
+
+/** The slice of the user settings the decider applies to threads the server builds itself. */
+function deciderDefaults(settings: SettingsStore): DecideDefaults {
+  const s = settings.get();
+  return { limitPolicy: s.limitPolicy, worktreeByDefault: s.worktreeByDefault, providerDefaults: s.providerDefaults };
+}
 
 /** Image bytes ride only on `turn.requested`; a turn promoted after a restart reads them back from the log. */
 function imagesOf(store: EventStore, turnId: string): ImageInput[] | undefined {

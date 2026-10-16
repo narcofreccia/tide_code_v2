@@ -61,7 +61,7 @@ async function setup(): Promise<Setup> {
 
   const thread = (await engine.dispatch({ type: "thread.create", projectId, provider: "claude" })).events[0]?.event;
   if (thread?.type !== "thread.created") throw new Error("expected thread.created");
-  const turn = (await engine.dispatch({ type: "turn.request", threadId: thread.thread.id, text: "go" })).events[0]?.event;
+  const turn = (await engine.dispatch({ type: "turn.request", threadId: thread.thread.id, text: "go" })).events.at(-1)?.event;
   if (turn?.type !== "turn.requested") throw new Error("expected turn.requested");
 
   const frames: RpcFrame[] = [];

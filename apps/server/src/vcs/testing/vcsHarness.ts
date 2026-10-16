@@ -124,7 +124,7 @@ export async function newThread(h: Harness, options: { useWorktree?: boolean; ti
 }
 
 export async function requestTurn(h: Harness, threadId: string, text: string): Promise<string> {
-  const requested = (await h.app.engine.dispatch({ type: "turn.request", threadId, text })).events[0]?.event;
+  const requested = (await h.app.engine.dispatch({ type: "turn.request", threadId, text })).events.at(-1)?.event;
   if (requested?.type !== "turn.requested") throw new Error("expected turn.requested");
   await h.settle();
   return requested.turn.id;

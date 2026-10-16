@@ -8,7 +8,7 @@ Present tense; kept in sync with the code.
 clients ── typed WS RPC ──▶ tide-server ── drivers ──▶ claude · codex · opencode · pi (the user's own CLIs)
  web (browser / Tauri WebView)      │
  tide-mcp (agents' tools)           ├─ event store (SQLite)  decider → events → projector → read model
-                                    ├─ vcs: worktrees, checkpoints, diff, revert, publish, merge-back
+                                    ├─ vcs: worktrees, checkpoints, diff, restore, publish, merge-back
                                     ├─ workspace: files, watcher, search, pty
                                     └─ experts: board, message delivery as turns, synthesis
 ```
@@ -60,7 +60,7 @@ Reactors subscribe to events and issue further commands; they hold no business r
   task's thread (queued if running) or a new thread. With `continueAfterRestart`, recovery also sends
   "Continue where you left off." to threads whose turn died with the process (max 3 in a row).
 - `VcsReactor` — worktree per thread, `before`/`after` checkpoints as `refs/tide/checkpoints/…`
-  (the before-snapshot gates the turn; a queued turn is snapshotted when promoted), revert,
+  (the before-snapshot gates the turn; a queued turn is snapshotted when promoted),
   publish (commit/push/`gh pr`, optional `gh pr merge --auto`), merge-back (`vcs/merge.ts`: in a
   scratch worktree `<TIDE_HOME>/worktrees/.merge-<thread>`, then the base ref moves; a clean
   checkout of the base is fast-forwarded, a dirty one is left alone; with an open PR,
@@ -72,7 +72,7 @@ Reactors subscribe to events and issue further commands; they hold no business r
   realpath), then (a) `session.rollback(n)` with n = rolled-back turns the current harness ran,
   when `caps.rollback` and a live/resumable session exists (a harness without it keeps its memory
   and an info activity says so), (b) with `restoreFiles` the worktree goes back to the first
-  rolled-back turn's before-checkpoint (`vcs/restore.ts`, shared with `thread.revert`), drops the
+  rolled-back turn's before-checkpoint (`vcs/restore.ts`; `thread.rollback` is the only rewind), drops the
   rolled-back turns' checkpoint refs, then (c) `rollback.report`. The session stays open: the
   native id may change after a rollback (Pi, Claude) and the next `turn.start` records it.
   Recovery reports a rollback left `rolling` by a dead process as failed.
@@ -83,6 +83,16 @@ Reactors subscribe to events and issue further commands; they hold no business r
   every 2 min while `thread.prWatch` is set; reports `pr.update` (checks, mergeable, comment count)
   and wakes the thread with a `turn.request` (notification `pr`) on a CI failure, new comments or a
   new conflict. Watching stops on merge/close or after 8 consecutive gh failures.
+- `DelegationReactor` (`orchestration/delegation.ts`) — wakes the thread that ran `tide_delegate`.
+  When a delegate's last turn settles (completed / interrupted / error) or it goes `limited`, the
+  parent gets a `turn.request` (notification `delegate`) quoting the outcome and up to 1500 chars
+  of the last reply; settles within 2 s become one message. A pending `user-input` on a delegate is
+  relayed at once (notification `child-question`, with the threadId/requestId for
+  `tide_pending_respond`) and dequeued again if it is answered before the relay ran. Queued behind
+  a running parent, started on an idle one; never for an archived parent, and never for a child
+  the parent is blocked on in `agent.thread.wait` (`DelegateWaits`, marked by that handler — the
+  wait returns the result itself). Questions are relayed even then. Started after recovery, so
+  restart-interrupted delegates do not wake their parents.
 - `ExpertsReactor` — delivers each board message as a `turn.request` on its recipients (queued
   behind a running turn, so the backlog lives in the log), tracks expert status.
 - `TriageReactor` (`decisions/`) — optional and off by default (`settings.decisions.enabled` plus a
@@ -90,6 +100,38 @@ Reactors subscribe to events and issue further commands; they hold no business r
   sweep of silent running threads, it batches one System One request per project (debounced 2 s)
   and dispatches `thread.triage` with calibrated needs-user / stuck / urgency. It only annotates
   threads so the Inbox can sort: it never blocks, routes or acts, and without a key it does nothing.
+
+**Settings in the decider.** The engine reads `limitPolicy`, `worktreeByDefault` and
+`providerDefaults` from `SettingsStore` into every `DecideContext` (`DecideDefaults`). A freshly
+limited thread takes `limitPolicy` as its `resume` unless the thread already has its own policy;
+`thread.delegate` defaults `useWorktree` to `worktreeByDefault` (true) and, like `plan.implement`
+and the experts/lead threads, fills a missing model (and, except for experts, which stay `auto`,
+the mode) from `providerDefaults[provider]` — a delegate's mode is still clamped to its parent's.
+`followUpMode` is stored and served for the clients; the server does not act on it.
+**Auto-title**: a `turn.request` on a thread still titled "New thread" (not queued, not a
+notification) emits `thread.updated { patch: { title }, autoTitled: true }` before the turn,
+from the prompt's first line (markdown markers stripped, ≤ 60 chars on a word boundary + "…").
+**Teams** (`team.run`, `decider/team.ts`): creates the lead thread from stage 1 (provider/model/mode
+from the stage, else `providerDefaults`; `useWorktree` from the command, else `worktreeByDefault`)
+with `thread.team = { name, stages }`, and seeds it with `teamBrief` (`experts/prompts.ts`): the
+exact `tide_delegate` call for every later stage (role = stage role, `useWorktree` for `own`,
+`inheritWorktreeFrom` for `inherit`, `completion: "wait"`, `timeoutMs` 600000). The server never
+runs stages itself; each stage is an ordinary delegate of the lead. An `inherit` stage must name an
+earlier stage (default the previous one); stage 1 cannot inherit (`invalid-command`). Saved teams
+live in `settings.teams`; while the list is empty `settings.get` returns the presets
+(`teams/presets.ts`), and `settings.set { teams: [] }` restores them. Team ids must be unique.
+**Inherited worktrees**: `thread.delegate { inheritWorktreeFrom }` (exclusive with `useWorktree` /
+`repo`) needs a live thread of the same project with a worktree and branch; the same command emits
+`worktree.attached` copied from the source, so the child runs in that checkout from its first turn
+with no git work. Checkpoints stay per thread (`refs/tide/checkpoints/<thread>/<turn>/…`); file
+restores are refused on a shared checkout (`sharedCheckoutReason`); `thread.merge` / `thread.publish`
+from the child are refused with `conflict` while the earliest live thread on that path (the owner)
+exists (`inheritedFrom`). On archive/detach the vcs reactor leaves the checkout on disk (and the
+workspace keeps its watcher) while another live thread still uses it, and only records
+`worktree.detached` for the leaving thread.
+**Unarchive**: `thread.unarchive` / `project.unarchive` clear `archivedAt` (idempotent); a thread
+needs its project live, a project needs its root path free of another live project. The thread's
+worktree is not recreated.
 
 ## Domain
 
@@ -116,10 +158,12 @@ inside the compiled sidecar). It connects back over the same WS RPC with a per-t
 token; the router grants agent sockets only `agent.*` methods and stamps identity from the
 socket. Tools: experts board (`post_finding`, `read_findings`, `send_message`,
 `check_messages`, `synthesize`), cross-harness delegation (`tide_delegate`,
-`tide_delegate_status`) and thread tools (`agent.thread.list/read/send/wait/interrupt`,
+`tide_delegate_status`, `inheritWorktreeFrom` to run in another thread's checkout) and thread tools (`agent.thread.list/read/send/wait/interrupt/diff`,
 `agent.pending.list/respond`, `rpc/agentThreads.ts`): an agent reaches its own project's threads
 and its delegates, never drives a thread whose mode is broader than its own, cannot answer
-approvals, and `send` in `auto` steers a running turn when the harness can, else queues/starts.
+approvals, `diff` (`rpc/agentDiff.ts`, tool `tide_thread_diff`) returns the same first-checkpoint →
+working-tree diff as `vcs.threadDiff` with each patch cut at `maxCharsPerFile` (default 8000) and
+binary files without a patch, and `send` in `auto` steers a running turn when the harness can, else queues/starts.
 Every session's system prompt append carries the tools hint (`THREAD_TOOLS_HINT`).
 
 ## Auth & remote

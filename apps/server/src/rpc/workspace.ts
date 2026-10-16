@@ -1,5 +1,6 @@
 import type { Engine } from "../orchestration/engine.ts";
 import { threadCwd } from "../provider/sessions.ts";
+import { sharingThread } from "../vcs/restore.ts";
 import { browseDirectories, type BrowseResult } from "../workspace/browse.ts";
 import { FileService } from "../workspace/files.ts";
 import { PtyManager } from "../workspace/pty/index.ts";
@@ -65,7 +66,12 @@ export function createWorkspaceServices(options: WorkspaceOptions): WorkspaceSer
   // the vcs reactor calls teardown right before it removes a worktree; these cover the rest
   const unsubscribe = options.engine.subscribe((record) => {
     const event = record.event;
-    if (event.type === "thread.archived") teardown(event.threadId, options.engine.getModel().threads[event.threadId]?.worktreePath);
+    if (event.type === "thread.archived") {
+      const model = options.engine.getModel();
+      const thread = model.threads[event.threadId];
+      // a checkout another live thread still runs in keeps its watcher
+      teardown(event.threadId, thread !== undefined && sharingThread(model, thread) === undefined ? thread.worktreePath : undefined);
+    }
     else if (event.type === "worktree.detached") ptys.killThread(event.threadId);
   });
   return {

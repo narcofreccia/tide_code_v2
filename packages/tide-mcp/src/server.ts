@@ -9,6 +9,7 @@ import { callTaskTool, isTaskTool } from "./taskTools.ts";
 /** The SDK's own result shape, so handlers stay assignable without a cast. */
 export type ToolResult = CallToolResult;
 
+const MAX_WAIT_MS = 600_000;
 const text = (value: string): ToolResult => ({ content: [{ type: "text", text: value }] });
 const failure = (value: string): ToolResult => ({ content: [{ type: "text", text: value }], isError: true });
 
@@ -119,9 +120,11 @@ export async function callTool(
       const title = optionalString(rawArgs, "title");
       const repo = optionalString(rawArgs, "repo");
       const role = optionalString(rawArgs, "role");
+      const inheritWorktreeFrom = optionalString(rawArgs, "inheritWorktreeFrom");
       const clientRequestId = optionalString(rawArgs, "clientRequestId");
       const waitFor = rawArgs["completion"] === "wait";
-      const timeoutMs = typeof rawArgs["timeoutMs"] === "number" ? rawArgs["timeoutMs"] : 600000;
+      // agent.thread.wait accepts 1000-600000; a longer ask waits the maximum (call tide_thread_wait again)
+      const timeoutMs = typeof rawArgs["timeoutMs"] === "number" ? Math.min(Math.max(rawArgs["timeoutMs"], 1000), MAX_WAIT_MS) : MAX_WAIT_MS;
       let result;
       try {
         result = await backend.dispatch({
@@ -135,6 +138,7 @@ export async function callTool(
         ...(title !== undefined ? { title } : {}),
         ...(repo !== undefined ? { repo } : {}),
         ...(role !== undefined ? { role } : {}),
+        ...(inheritWorktreeFrom !== undefined ? { inheritWorktreeFrom } : {}),
         ...(clientRequestId !== undefined ? { commandId: clientRequestId } : {}),
         ...(rawArgs["useWorktree"] === true ? { useWorktree: true } : {}),
         });

@@ -9,7 +9,7 @@ import {
   type EventRecord,
   type ReadModel,
 } from "@tide/contracts";
-import { decide } from "./decider/index.ts";
+import { decide, type DecideDefaults } from "./decider/index.ts";
 import type { EventStore } from "./store.ts";
 
 /** Rejection carrying a stable machine code (invalid-command / not-found / conflict / busy). */
@@ -26,6 +26,8 @@ export interface EngineOptions {
   store: EventStore;
   now?: () => number;
   newId?: () => string;
+  /** user settings the decider reads (limit policy, worktree/provider defaults); read per command */
+  defaults?: () => DecideDefaults;
 }
 
 export interface DispatchResult {
@@ -43,6 +45,7 @@ export class Engine {
   #store: EventStore;
   #now: () => number;
   #newId: () => string;
+  #defaults: () => DecideDefaults;
   #model: ReadModel;
   #listeners = new Set<EventListener>();
   /** tail of the serial processing chain; also the drain() handle */
@@ -52,6 +55,7 @@ export class Engine {
     this.#store = options.store;
     this.#now = options.now ?? (() => Date.now());
     this.#newId = options.newId ?? (() => defaultNewId());
+    this.#defaults = options.defaults ?? (() => ({}));
     this.#model = replay(emptyReadModel(), options.store.readAll());
   }
 
@@ -110,7 +114,7 @@ export class Engine {
       }
     }
     const ts = this.#now();
-    const decision = decide(this.#model, command, { now: ts, newId: this.#newId });
+    const decision = decide(this.#model, command, { ...this.#defaults(), now: ts, newId: this.#newId });
     if (!decision.ok) throw new CommandError(decision.error.code, decision.error.message);
     if (decision.events.length === 0 && commandId === undefined) return { seq: this.#model.seq, events: [] };
 

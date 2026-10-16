@@ -1,5 +1,5 @@
 import type { CommandOf, Message, ProposedPlan, ReadModel, Thread, Turn } from "@tide/contracts";
-import { fail, isArchived, ok, type DecideContext, type DecideResult } from "./types.ts";
+import { fail, isArchived, ok, providerDefault, type DecideContext, type DecideResult } from "./types.ts";
 
 type PlanCommand =
   | CommandOf<"plan.propose">
@@ -53,14 +53,16 @@ export function decidePlan(model: ReadModel, command: PlanCommand, ctx: DecideCo
       if (isArchived(project)) return fail("conflict", `project ${project.id} is archived`);
 
       // A plan never runs in place: it seeds a sibling thread the user can steer.
+      const defaults = providerDefault(ctx, command.provider);
+      const implModel = command.model ?? defaults.model;
       const thread: Thread = {
         id: ctx.newId(),
         projectId: source.projectId,
         parentThreadId: plan.threadId,
         title: planTitle(plan.markdown),
         provider: command.provider,
-        ...(command.model !== undefined ? { model: command.model } : {}),
-        mode: command.mode ?? "approval-required",
+        ...(implModel !== undefined ? { model: implModel } : {}),
+        mode: command.mode ?? defaults.mode ?? "approval-required",
         interaction: "default",
         status: "idle",
         createdAt: ctx.now,

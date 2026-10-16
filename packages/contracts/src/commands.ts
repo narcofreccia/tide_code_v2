@@ -1,5 +1,5 @@
 import { Type, type Static } from "typebox";
-import { Activity, ApprovalDecision, CheckpointStats, ExpertSpec, ExpertsPhase, ImageInput, InteractionMode, Limited, LinkAccess, MergeStrategy, ProviderKind, PullRequest, RateLimit, RuntimeMode, Schedule, Triage, TurnUsage } from "./domain.ts";
+import { Activity, ApprovalDecision, CheckpointStats, ExpertSpec, ExpertsPhase, ImageInput, InteractionMode, Limited, LinkAccess, MergeStrategy, ProviderKind, PullRequest, RateLimit, RuntimeMode, Schedule, Team, Triage, TurnUsage } from "./domain.ts";
 
 // Commands = validated intents. ClientCommand may arrive over RPC; InternalCommand is
 // issued only by server reactors (driver ingestion) and is rejected at the RPC boundary.
@@ -67,7 +67,11 @@ export const ThreadUpdate = Type.Object({
   model: Type.Optional(Type.String()),
   mode: Type.Optional(RuntimeMode),
   interaction: Type.Optional(InteractionMode),
+  pinned: Type.Optional(Type.Boolean()),
 });
+/** R5: bring an archived thread back (its worktree is not recreated; the branch is still there) */
+export const ThreadUnarchive = Type.Object({ type: Type.Literal("thread.unarchive"), commandId: CommandId, threadId: Type.String() });
+export const ProjectUnarchive = Type.Object({ type: Type.Literal("project.unarchive"), commandId: CommandId, projectId: Type.String() });
 export const ThreadArchive = Type.Object({
   type: Type.Literal("thread.archive"), commandId: CommandId,
   threadId: Type.String(),
@@ -121,8 +125,6 @@ export const PlanImplement = Type.Object({
 });
 export const PlanDismiss = Type.Object({ type: Type.Literal("plan.dismiss"), commandId: CommandId, planId: Type.String() });
 
-/** Restore the worktree to the state before `turnId` (git checkout of the before-ref). */
-export const ThreadRevert = Type.Object({ type: Type.Literal("thread.revert"), commandId: CommandId, threadId: Type.String(), turnId: Type.String() });
 /** Commit everything in the worktree, push, open (or update) a PR via gh. */
 export const ThreadPublish = Type.Object({
   type: Type.Literal("thread.publish"), commandId: CommandId,
@@ -171,7 +173,7 @@ export const ThreadFork = Type.Object({
 });
 /**
  * Undo `turnId` and everything after it: the harness forgets those turns (when it can) and,
- * with `restoreFiles`, the worktree goes back to the turn's before-checkpoint. Replaces `thread.revert`.
+ * with `restoreFiles`, the worktree goes back to the turn's before-checkpoint.
  */
 export const ThreadRollback = Type.Object({
   type: Type.Literal("thread.rollback"),
@@ -209,6 +211,20 @@ export const TaskRunNow = Type.Object({ type: Type.Literal("task.run-now"), comm
 /** scheduler → engine: the tick fired this task; commandId is `scheduled:<taskId>:<epoch>` so a duplicate tick is a no-op */
 export const TaskFire = Type.Object({ type: Type.Literal("task.fire"), commandId: CommandId, taskId: Type.String(), nextRunAt: Type.Optional(Type.Number()), useWorktreeDefault: Type.Optional(Type.Boolean()) });
 
+/**
+ * R5: start a team run — creates the lead thread (stage 1) on the project and sends it a brief
+ * that tells it how to delegate the remaining stages. The server never runs stages itself.
+ */
+export const TeamRun = Type.Object({
+  type: Type.Literal("team.run"),
+  commandId: CommandId,
+  projectId: Type.String(),
+  team: Team,
+  task: Type.String({ minLength: 1 }),
+  title: Type.Optional(Type.String({ minLength: 1 })),
+  useWorktree: Type.Optional(Type.Boolean()),
+});
+
 // ---- experts (client) ----
 export const ExpertsCreate = Type.Object({
   type: Type.Literal("experts.create"), commandId: CommandId,
@@ -225,14 +241,14 @@ export const ExpertsSetPhase = Type.Object({ type: Type.Literal("experts.set-pha
 export const ExpertsArchive = Type.Object({ type: Type.Literal("experts.archive"), commandId: CommandId, sessionId: Type.String() });
 
 export const ClientCommand = Type.Union([
-  ProjectCreate, ProjectUpdate, ProjectArchive, ProjectLinkAdd, ProjectLinkUpdate, ProjectLinkRemove,
-  ThreadCreate, ThreadUpdate, ThreadArchive,
+  ProjectCreate, ProjectUpdate, ProjectArchive, ProjectUnarchive, ProjectLinkAdd, ProjectLinkUpdate, ProjectLinkRemove,
+  ThreadCreate, ThreadUpdate, ThreadArchive, ThreadUnarchive,
   TurnRequest, TurnInterrupt, TurnDequeue,
   ApprovalRespond, UserInputRespond,
   PlanImplement, PlanDismiss,
-  ThreadRevert, ThreadPublish, ThreadMerge, WorktreeDetach,
+  ThreadPublish, ThreadMerge, WorktreeDetach,
   TurnSteer, TurnEdit, TurnReorder, TurnPromote, ThreadFork, ThreadRollback, ThreadSnooze, ThreadResume, ThreadLimitPolicy, PrWatch,
-  TaskCreate, TaskUpdate, TaskDelete, TaskRunNow,
+  TaskCreate, TaskUpdate, TaskDelete, TaskRunNow, TeamRun,
   ExpertsCreate, ExpertsStart, ExpertsPost, ExpertsSetPhase, ExpertsArchive,
 ]);
 export type ClientCommand = Static<typeof ClientCommand>;
@@ -346,6 +362,8 @@ export const ThreadDelegate = Type.Object({
   useWorktree: Type.Optional(Type.Boolean()),
   /** W1: label of one of the calling project's links; the delegate runs with that repo as its main repo */
   repo: Type.Optional(Type.String({ minLength: 1 })),
+  /** R5: run in another thread's worktree (a reviewer reading the implementer's branch); mutually exclusive with useWorktree/repo */
+  inheritWorktreeFrom: Type.Optional(Type.String()),
 });
 export const ExpertsExpertStatus = Type.Object({
   type: Type.Literal("experts.expert.status"),

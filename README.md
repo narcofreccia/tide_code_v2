@@ -23,6 +23,7 @@ harnesses; "Open in terminal" escape hatches everywhere. See `docs/internals/ove
 and `docs/design/ui.md`.
 
 New here? Start with [`QUICKSTART.md`](QUICKSTART.md); what Tide does to a repo is in [`docs/TRIAL.md`](docs/TRIAL.md).
+Running several harnesses on one task (plan → build → review, delegation, teams): [`docs/WORKFLOWS.md`](docs/WORKFLOWS.md).
 
 ## Dev
 

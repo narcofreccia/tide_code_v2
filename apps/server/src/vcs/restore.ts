@@ -3,8 +3,8 @@ import type { Project, ReadModel, Thread } from "@tide/contracts";
 import type { CheckpointService } from "./checkpoints.ts";
 
 /**
- * Puts the working tree back to the state before `turnId` (its before-checkpoint). Shared by
- * `thread.revert` and `thread.rollback { restoreFiles }`. Returns the turn's 1-based position in
+ * Puts the working tree back to the state before `turnId` (its before-checkpoint). Used by
+ * `thread.rollback { restoreFiles }`. Returns the turn's 1-based position in
  * the thread; throws when the turn has no checkpoint or the ref is gone.
  */
 export async function restoreBeforeTurn(checkpoints: CheckpointService, model: ReadModel, threadId: string, turnId: string, cwd: string): Promise<number> {
@@ -44,3 +44,10 @@ export async function sharedCheckoutReason(
   }
   return undefined;
 }
+
+/** Another live thread running in the same checkout as `thread`, if any (R5: `inheritWorktreeFrom`). Exact path match: both got it from the same event. */
+export function sharingThread(model: ReadModel, thread: Thread): Thread | undefined {
+  if (thread.worktreePath === undefined) return undefined;
+  return Object.values(model.threads).find((other) => other.id !== thread.id && other.archivedAt === undefined && other.worktreePath === thread.worktreePath);
+}
+

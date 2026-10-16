@@ -1,7 +1,7 @@
 import type { CommandOf, DomainEvent, ExpertsFinding, ExpertsMessage, Project, ProposedPlan, ReadModel, RuntimeMode, Thread } from "@tide/contracts";
 import { delegatePrompt } from "../../experts/prompts.ts";
 import { recipientKeys } from "./experts.ts";
-import { fail, isArchived, ok, turnRequested, type DecideContext, type DecideResult } from "./types.ts";
+import { fail, isArchived, ok, providerDefault, turnRequested, type DecideContext, type DecideResult } from "./types.ts";
 
 type AgentCommand =
   | CommandOf<"experts.finding.post">
@@ -98,6 +98,21 @@ export function decideAgent(model: ReadModel, command: AgentCommand, ctx: Decide
       if (!home) return fail("not-found", `unknown project ${from.projectId}`);
       if (isArchived(home)) return fail("conflict", `project ${home.id} is archived`);
 
+      // R5: run in another thread's checkout (a reviewer reading the implementer's branch)
+      let inherit: Thread | undefined;
+      if (command.inheritWorktreeFrom !== undefined) {
+        if (command.useWorktree !== undefined || command.repo !== undefined) {
+          return fail("invalid-command", "inheritWorktreeFrom cannot be combined with useWorktree or repo");
+        }
+        inherit = model.threads[command.inheritWorktreeFrom];
+        if (!inherit) return fail("not-found", `unknown thread ${command.inheritWorktreeFrom}`);
+        if (inherit.projectId !== home.id) return fail("invalid-command", `thread ${inherit.id} is in another project`);
+        if (isArchived(inherit)) return fail("invalid-command", `thread ${inherit.id} is archived`);
+        if (inherit.worktreePath === undefined || inherit.branch === undefined) {
+          return fail("invalid-command", `thread ${inherit.id} has no worktree to inherit`);
+        }
+      }
+
       // `repo` names one of the caller's links: the delegate runs with that repo as its
       // *main* repo (its own project), not as a link. It carries no links of its own.
       let project = home;
@@ -117,14 +132,17 @@ export function decideAgent(model: ReadModel, command: AgentCommand, ctx: Decide
           extra.push({ type: "project.created", project });
         }
       }
+      // the user's per-harness defaults fill what the caller left out; the mode is still clamped
+      const defaults = providerDefault(ctx, command.provider);
+      const delegateModel = command.model ?? defaults.model;
       const thread: Thread = {
         id: ctx.newId(),
         projectId: project.id,
         parentThreadId: from.id,
         title: command.title ?? `Delegated by ${from.title}`,
         provider: command.provider,
-        ...(command.model !== undefined ? { model: command.model } : {}),
-        mode: clampMode(command.mode, from.mode),
+        ...(delegateModel !== undefined ? { model: delegateModel } : {}),
+        mode: clampMode(command.mode ?? defaults.mode, from.mode),
         interaction: "default",
         role: "delegate",
         ...(command.role !== undefined ? { delegateRole: command.role } : {}),
@@ -133,10 +151,25 @@ export function decideAgent(model: ReadModel, command: AgentCommand, ctx: Decide
         createdAt: ctx.now,
         updatedAt: ctx.now,
       };
+      if (inherit?.worktreePath !== undefined && inherit.branch !== undefined) {
+        // no git work: the child runs in the source's checkout from its first turn
+        return ok(
+          { type: "thread.created", thread },
+          {
+            type: "worktree.attached",
+            threadId: thread.id,
+            worktreePath: inherit.worktreePath,
+            branch: inherit.branch,
+            ...(inherit.baseBranch !== undefined ? { baseBranch: inherit.baseBranch } : {}),
+            at: ctx.now,
+          },
+          turnRequested(thread.id, delegatePrompt(command.prompt, from.title, command.role), ctx),
+        );
+      }
       return ok(
         ...extra,
-        { type: "thread.created", thread, ...(command.useWorktree !== undefined ? { useWorktree: command.useWorktree } : {}) },
-        turnRequested(thread.id, delegatePrompt(command.prompt, from.title), ctx),
+        { type: "thread.created", thread, useWorktree: command.useWorktree ?? ctx.worktreeByDefault ?? true },
+        turnRequested(thread.id, delegatePrompt(command.prompt, from.title, command.role), ctx),
       );
     }
   }

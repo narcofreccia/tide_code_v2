@@ -68,8 +68,8 @@ describe("VcsReactor — queued turns", () => {
       emit({ type: "settled", status: "completed" }),
     );
     h.control.script(emit({ type: "settled", status: "completed" }));
-    const first = (await h.app.engine.dispatch({ type: "turn.request", threadId: thread.id, text: "one" })).events[0]?.event;
-    const second = (await h.app.engine.dispatch({ type: "turn.request", threadId: thread.id, text: "two" })).events[0]?.event;
+    const first = (await h.app.engine.dispatch({ type: "turn.request", threadId: thread.id, text: "one" })).events.at(-1)?.event;
+    const second = (await h.app.engine.dispatch({ type: "turn.request", threadId: thread.id, text: "two" })).events.at(-1)?.event;
     if (first?.type !== "turn.requested" || second?.type !== "turn.requested") throw new Error("expected turn.requested");
     expect(second.turn.status).toBe("queued");
     await h.app.vcs.drain();

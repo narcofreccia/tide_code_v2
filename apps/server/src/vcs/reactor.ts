@@ -16,7 +16,7 @@ import { CheckpointService } from "./checkpoints.ts";
 import { Git } from "./git.ts";
 import { Gh, type GhLike } from "./gh.ts";
 import { MergeBack } from "./merge.ts";
-import { restoreBeforeTurn } from "./restore.ts";
+import { sharingThread } from "./restore.ts";
 import { WorktreeManager } from "./worktrees.ts";
 
 export interface VcsReactorOptions {
@@ -144,9 +144,6 @@ export class VcsReactor {
       case "worktree.attached":
         this.#track(this.#sessions?.close(event.threadId) ?? Promise.resolve());
         return;
-      case "revert.requested":
-        this.#enqueue(event.threadId, () => this.#revert(event.threadId, event.turnId));
-        return;
       case "publish.requested": {
         const { threadId, title, body, commitOnly, mergeWhenGreen } = event;
         this.#enqueue(threadId, () => this.#publish(threadId, title, body, commitOnly === true, mergeWhenGreen));
@@ -262,7 +259,7 @@ export class VcsReactor {
       threadId,
       turnId,
       "error",
-      `Worktree could not be created (${reason}); this thread runs in the project's main checkout — revert and publish are disabled.`,
+      `Worktree could not be created (${reason}); this thread runs in the project's main checkout — file restore and publish are disabled.`,
     );
   }
 
@@ -280,6 +277,14 @@ export class VcsReactor {
     const worktreePath = ctx.thread.worktreePath;
     try {
       await this.#sessions?.close(threadId);
+      // R5: a checkout another live thread still runs in (inheritWorktreeFrom) stays on disk,
+      // with its branch; this thread only lets go of it
+      const sharer = sharingThread(ctx.model, ctx.thread);
+      if (sharer !== undefined) {
+        this.#log(`[vcs] worktree of ${threadId} kept: thread ${sharer.id} still uses it`);
+        await this.#dispatch({ type: "worktree.detached", threadId });
+        return true;
+      }
       try {
         await this.#preserve(threadId, worktreePath);
       } catch (err) {
@@ -361,17 +366,6 @@ export class VcsReactor {
       });
     } catch (err) {
       this.#log("[vcs] after-checkpoint failed", err);
-    }
-  }
-
-  async #revert(threadId: string, turnId: string): Promise<void> {
-    const ctx = this.#context(threadId);
-    if (!ctx) return;
-    try {
-      const position = await restoreBeforeTurn(this.#checkpoints, ctx.model, threadId, turnId, ctx.cwd);
-      await this.#info(threadId, "info", `Reverted to before turn ${position > 0 ? position : "?"}`);
-    } catch (err) {
-      await this.#info(threadId, "error", `Revert failed: ${message(err)}`);
     }
   }
 

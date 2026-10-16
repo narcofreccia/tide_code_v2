@@ -111,6 +111,8 @@ Applications, open. Same behaviour as B. Updates are checked at launch and every
   state on the thread's card (`👁 PR #n · ✔ · 3 comments`).
 - **Settings › General** sets the default follow-up mode (Steer or Queue) and the usage-limit
   policy (Wait for me or Resume at reset).
+- **Several harnesses on one task** (plan → build → review, `tide_delegate`, team runs): see
+  [`docs/WORKFLOWS.md`](docs/WORKFLOWS.md).
 
 ## 5. Where things are
 

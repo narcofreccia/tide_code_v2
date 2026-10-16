@@ -52,7 +52,7 @@ function withAttachedWorktree(): Fixture {
 function withCheckpointedTurn(worktree = true): Fixture & { turnId: string } {
   const base = worktree ? withAttachedWorktree() : withThread();
   const requested = run(base.model, { type: "turn.request", threadId: base.threadId, text: "go" });
-  const event = requested.events[0];
+  const event = requested.events.at(-1);
   if (event?.type !== "turn.requested") throw new Error("expected turn.requested");
   const turnId = event.turn.id;
   let model = run(requested.model, { type: "checkpoint.record", turnId, phase: "before", ref: "refs/tide/before" }).model;
@@ -95,7 +95,7 @@ describe("decide: checkpoint.record", () => {
   it("records before then after with stats", () => {
     const base = withThread();
     const requested = run(base.model, { type: "turn.request", threadId: base.threadId, text: "go" });
-    const event = requested.events[0];
+    const event = requested.events.at(-1);
     if (event?.type !== "turn.requested") throw new Error("expected turn.requested");
     const turnId = event.turn.id;
 
@@ -112,60 +112,6 @@ describe("decide: checkpoint.record", () => {
     expect(decide(emptyReadModel(), { type: "checkpoint.record", turnId: "nope", phase: "before", ref: "r" }, ctx)).toMatchObject({
       ok: false,
       error: { code: "not-found" },
-    });
-  });
-});
-
-describe("decide: thread.revert", () => {
-  it("requests a revert for a checkpointed turn on an idle thread", () => {
-    const f = withCheckpointedTurn();
-    const { events } = run(f.model, { type: "thread.revert", threadId: f.threadId, turnId: f.turnId });
-    expect(events[0]).toMatchObject({ type: "revert.requested", threadId: f.threadId, turnId: f.turnId, at: 1000 });
-  });
-
-  it("rejects an unknown thread or turn", () => {
-    const f = withCheckpointedTurn();
-    expect(decide(f.model, { type: "thread.revert", threadId: "nope", turnId: f.turnId }, ctx)).toMatchObject({ ok: false, error: { code: "not-found" } });
-    expect(decide(f.model, { type: "thread.revert", threadId: f.threadId, turnId: "nope" }, ctx)).toMatchObject({ ok: false, error: { code: "not-found" } });
-  });
-
-  it("rejects a turn without a before-checkpoint", () => {
-    const base = withThread();
-    const requested = run(base.model, { type: "turn.request", threadId: base.threadId, text: "go" });
-    const event = requested.events[0];
-    if (event?.type !== "turn.requested") throw new Error("expected turn.requested");
-    const settled = run(requested.model, { type: "turn.settle", turnId: event.turn.id, status: "completed" }).model;
-    expect(decide(settled, { type: "thread.revert", threadId: base.threadId, turnId: event.turn.id }, ctx)).toMatchObject({
-      ok: false,
-      error: { code: "conflict" },
-    });
-  });
-
-  it("rejects a turn belonging to another thread", () => {
-    const a = withCheckpointedTurn();
-    const b = run(a.model, { type: "thread.create", projectId: a.projectId, provider: "claude" });
-    const other = b.events[0];
-    if (other?.type !== "thread.created") throw new Error("expected thread.created");
-    expect(decide(b.model, { type: "thread.revert", threadId: other.thread.id, turnId: a.turnId }, ctx)).toMatchObject({
-      ok: false,
-      error: { code: "conflict" },
-    });
-  });
-
-  it("is busy while the thread is running", () => {
-    const f = withCheckpointedTurn();
-    const running = run(f.model, { type: "turn.request", threadId: f.threadId, text: "again" });
-    expect(decide(running.model, { type: "thread.revert", threadId: f.threadId, turnId: f.turnId }, ctx)).toMatchObject({
-      ok: false,
-      error: { code: "busy" },
-    });
-  });
-
-  it("refuses a thread that has no worktree: the checkout would be the user's own", () => {
-    const f = withCheckpointedTurn(false);
-    expect(decide(f.model, { type: "thread.revert", threadId: f.threadId, turnId: f.turnId }, ctx)).toMatchObject({
-      ok: false,
-      error: { code: "conflict", message: expect.stringContaining("main checkout") },
     });
   });
 });
@@ -322,7 +268,7 @@ describe("decide: R3 — request ids, late prompts, provider switch, merge-back"
   it("a repeated requestId answers the newest pending approval and pins it by activityId", () => {
     const base = withThread();
     const requested = run(base.model, { type: "turn.request", threadId: base.threadId, text: "go" });
-    const ev = requested.events[0];
+    const ev = requested.events.at(-1);
     if (ev?.type !== "turn.requested") throw new Error("expected turn.requested");
     const turnId = ev.turn.id;
     let model = run(requested.model, { type: "turn.start", turnId, provider: "codex" }).model;
@@ -338,7 +284,7 @@ describe("decide: R3 — request ids, late prompts, provider switch, merge-back"
   it("switching provider clears the native session id and is refused while running", () => {
     const base = withThread();
     const requested = run(base.model, { type: "turn.request", threadId: base.threadId, text: "go" });
-    const ev = requested.events[0];
+    const ev = requested.events.at(-1);
     if (ev?.type !== "turn.requested") throw new Error("expected turn.requested");
     let model = run(requested.model, { type: "turn.start", turnId: ev.turn.id, provider: "claude", nativeSessionId: "claude-sess" }).model;
     expect(decide(model, { type: "thread.update", threadId: base.threadId, provider: "codex" }, ctx)).toMatchObject({ ok: false, error: { code: "busy" } });
@@ -354,7 +300,7 @@ describe("decide: R3 — request ids, late prompts, provider switch, merge-back"
     expect(decide(plain.model, { type: "thread.merge", threadId: plain.threadId }, ctx)).toMatchObject({ ok: false, error: { code: "conflict" } });
     const wt = withAttachedWorktree();
     const requested = run(wt.model, { type: "thread.merge", threadId: wt.threadId, deleteBranch: true });
-    expect(requested.events[0]).toMatchObject({ type: "merge.requested", strategy: "squash", deleteBranch: true });
+    expect(requested.events.at(-1)).toMatchObject({ type: "merge.requested", strategy: "squash", deleteBranch: true });
     expect(decide(requested.model, { type: "thread.merge", threadId: wt.threadId }, ctx)).toMatchObject({ ok: false, error: { code: "busy" } });
     const conflicted = run(requested.model, { type: "merge.report", threadId: wt.threadId, outcome: "conflicted", files: ["a.ts"] });
     expect(conflicted.events[0]).toMatchObject({ type: "merge.conflicted", files: ["a.ts"], strategy: "squash" });

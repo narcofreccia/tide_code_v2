@@ -7,6 +7,7 @@ import { Engine } from "../orchestration/engine.ts";
 import { EventStore } from "../orchestration/store.ts";
 import { DriverRegistry } from "../provider/registry.ts";
 import { createFakeDriver, type FakeDriverControl } from "../provider/testing/fakeDriver.ts";
+import { PRESET_TEAMS } from "../teams/presets.ts";
 import type { Interfaces } from "./remote.ts";
 import { startServer, type ServerHandle } from "./server.ts";
 
@@ -313,7 +314,7 @@ describe("rpc: providers and the terminal escape hatch", () => {
 
     expect(await client.call("thread.terminalCommand", { threadId })).toEqual({ cwd: "/term" });
 
-    const requested = (await engine.dispatch({ type: "turn.request", threadId, text: "hi" })).events[0]?.event;
+    const requested = (await engine.dispatch({ type: "turn.request", threadId, text: "hi" })).events.at(-1)?.event;
     if (requested?.type !== "turn.requested") throw new Error("expected turn.requested");
     await engine.dispatch({ type: "turn.start", turnId: requested.turn.id, provider: "claude", nativeSessionId: "sess-42" });
 
@@ -374,9 +375,13 @@ describe("settings rpc", () => {
   it("get/set round-trip", async () => {
     const client = await TestClient.open(`ws://${base}/ws?token=${TOKEN}`);
     try {
-      expect(await client.call("settings.get", {})).toEqual({ providerDefaults: {}, worktreeByDefault: true, decisions: { enabled: false, hasKey: false }, continueAfterRestart: false });
+      expect(await client.call("settings.get", {})).toEqual({ providerDefaults: {}, worktreeByDefault: true, decisions: { enabled: false, hasKey: false }, continueAfterRestart: false, followUpMode: "steer", limitPolicy: "manual", teams: PRESET_TEAMS });
       const next = await client.call("settings.set", { patch: { worktreeByDefault: false, providerDefaults: { pi: { model: "x" } }, decisions: { apiKey: "k" } } });
-      expect(next).toEqual({ worktreeByDefault: false, providerDefaults: { pi: { model: "x" } }, decisions: { enabled: false, hasKey: true }, continueAfterRestart: false });
+      expect(next).toEqual({ worktreeByDefault: false, providerDefaults: { pi: { model: "x" } }, decisions: { enabled: false, hasKey: true }, continueAfterRestart: false, followUpMode: "steer", limitPolicy: "manual", teams: PRESET_TEAMS });
+      const team = { id: "a", name: "Solo", stages: [{ key: "lead", role: "implementer", provider: "claude", worktree: "own" }] };
+      expect(((await client.call("settings.set", { patch: { teams: [team] } })) as { teams: unknown[] }).teams).toEqual([team]);
+      await expect(client.call("settings.set", { patch: { teams: [team, team] } })).rejects.toMatchObject({ code: "invalid-params" });
+      expect(((await client.call("settings.set", { patch: { teams: [] } })) as { teams: unknown[] }).teams).toEqual(PRESET_TEAMS);
     } finally {
       client.close();
     }

@@ -1,7 +1,7 @@
 // Tools for acting on *other* Tide threads. Same privilege ceiling as delegation (enforced
 // server-side): an agent can never reach a thread with broader privileges than its own.
 import type { CallToolResult } from "@modelcontextprotocol/sdk/types.js";
-import type { AgentBackend, ThreadWaitResult } from "./backend.ts";
+import type { AgentBackend, ThreadDiffResult, ThreadWaitResult } from "./backend.ts";
 
 export interface ToolDef {
   name: string;
@@ -22,7 +22,12 @@ export const THREAD_TOOLS_HINT = [
   "(a timeout never cancels it); tide_thread_interrupt stops a running turn; tide_pending_list/tide_pending_respond",
   "answer a thread's pending questions. You cannot approve another thread's tool calls, and you can only act on",
   "threads whose privileges are no broader than yours. Pass clientRequestId to make a send or delegate idempotent.",
-  "tide_delegate with completion=wait runs a child and returns its result in one call.",
+  "tide_delegate with completion=wait runs a child and returns its result in one call;",
+  "pass inheritWorktreeFrom with another thread's id to run the child in that thread's checkout (a reviewer or tester on the implementer's branch).",
+  "tide_thread_diff shows what a thread changed (per-file +/- counts and patches) — read it before reviewing another thread's work.",
+  "A delegate you did not wait on reports back by itself: when it finishes (or hits its usage limit) you get a",
+  "message \"Delegate ... finished\" with its last reply, several at once batched into one; when it asks a question you",
+  "get \"Delegate ... asks\" with the threadId and requestId to answer via tide_pending_respond (or ask the user).",
   "tide_schedule_task (with tide_update_scheduled_task, tide_delete_scheduled_task, tide_run_scheduled_task_now) sets up an automation:",
   "a prompt Tide sends on an interval or at fixed times, into a thread or as a new thread each run, within your project only.",
 ].join(" ");
@@ -83,6 +88,19 @@ export const THREAD_TOOL_DEFINITIONS: ToolDef[] = [
         threadId: str("Thread to wait on."),
         turnId: str("Wait for this specific turn."),
         timeoutMs: num("1000-600000, default 600000."),
+      },
+      required: ["threadId"],
+    },
+  },
+  {
+    name: "tide_thread_diff",
+    description:
+      "Show what a thread changed since its first turn (its checkpoint before that turn → its working tree): one `path (+added −deleted)` header per file, then the patch, each cut at maxCharsPerFile. Use it to review another thread's work, e.g. the implementer's branch you were asked to review.",
+    inputSchema: {
+      type: "object",
+      properties: {
+        threadId: str("Thread whose changes to show."),
+        maxCharsPerFile: num("Cut each file's patch at this many characters, 500-50000, default 8000."),
       },
       required: ["threadId"],
     },
@@ -159,6 +177,19 @@ export function formatWait(r: ThreadWaitResult): string {
   return lines.join("\n");
 }
 
+export function formatDiff(r: ThreadDiffResult): string {
+  if (r.files.length === 0) return "No changes.";
+  const added = r.files.reduce((n, f) => n + f.additions, 0);
+  const deleted = r.files.reduce((n, f) => n + f.deletions, 0);
+  const out = [`${r.files.length} file${r.files.length === 1 ? "" : "s"} changed (+${added} −${deleted}), ${r.base.slice(0, 12)} → ${r.head}`];
+  for (const f of r.files) {
+    out.push("", `${f.path} (+${f.additions} −${f.deletions})${f.status !== "modified" ? ` [${f.status}]` : ""}`);
+    if (f.patch === undefined) out.push("(binary or no textual patch)");
+    else out.push(f.patch.trimEnd(), ...(f.truncated ? ["... [patch truncated; raise maxCharsPerFile or read the file]"] : []));
+  }
+  return out.join("\n");
+}
+
 /** Handles tide_thread_* and tide_pending_*; throws raw errors (the caller maps them). */
 export async function callThreadTool(backend: AgentBackend, name: string, args: Record<string, unknown>): Promise<TextResult> {
   switch (name) {
@@ -215,10 +246,15 @@ export async function callThreadTool(backend: AgentBackend, name: string, args: 
           await backend.threadWait({
             threadId: reqStr(args, "threadId"),
             ...(turnId !== undefined ? { turnId } : {}),
-            ...(timeoutMs !== undefined ? { timeoutMs } : {}),
+            // the server accepts 1000-600000; a longer ask waits the maximum
+            ...(timeoutMs !== undefined ? { timeoutMs: Math.min(Math.max(timeoutMs, 1000), 600_000) } : {}),
           }),
         ),
       );
+    }
+    case "tide_thread_diff": {
+      const maxCharsPerFile = optNum(args, "maxCharsPerFile");
+      return ok(formatDiff(await backend.threadDiff({ threadId: reqStr(args, "threadId"), ...(maxCharsPerFile !== undefined ? { maxCharsPerFile } : {}) })));
     }
     case "tide_thread_interrupt": {
       const r = await backend.threadInterrupt(reqStr(args, "threadId"));

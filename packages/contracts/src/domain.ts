@@ -182,6 +182,34 @@ export const Triage = Type.Object({
 });
 export type Triage = Static<typeof Triage>;
 
+/**
+ * R5: a Team is an ordered set of roles on chosen harnesses. Stage 1 is the lead thread; it
+ * delegates the later stages through `tide_delegate` (completion: wait), each on its harness,
+ * in its own worktree or in an earlier stage's (`inherit`), so a reviewer reads the implementer's
+ * branch. Teams live in settings; a run copies the team onto the lead thread.
+ */
+export const TeamStage = Type.Object({
+  key: Type.String({ minLength: 1, maxLength: 32 }),
+  /** free text shown in the rail and used in the delegate preamble (planner, implementer, reviewer, tester…) */
+  role: Type.String({ minLength: 1, maxLength: 40 }),
+  provider: ProviderKind,
+  model: Type.Optional(Type.String()),
+  mode: Type.Optional(RuntimeMode),
+  interaction: Type.Optional(InteractionMode),
+  /** `own`: a fresh worktree; `inherit`: the worktree of the stage named in `inheritFrom` (default: the previous stage) */
+  worktree: Type.Union([Type.Literal("own"), Type.Literal("inherit")]),
+  inheritFrom: Type.Optional(Type.String()),
+  /** extra instructions for this stage, appended to the generated brief */
+  instructions: Type.Optional(Type.String()),
+});
+export type TeamStage = Static<typeof TeamStage>;
+export const Team = Type.Object({
+  id: Type.String(),
+  name: Type.String({ minLength: 1, maxLength: 80 }),
+  stages: Type.Array(TeamStage, { minItems: 1, maxItems: 6 }),
+});
+export type Team = Static<typeof Team>;
+
 export const PullRequest = Type.Object({
   url: Type.String(),
   number: Type.Number(),
@@ -289,6 +317,10 @@ export const Thread = Type.Object({
   limited: Type.Optional(Limited),
   /** hidden from the Inbox / Now strip until then; cleared by activity that needs the user */
   snoozedUntil: Type.Optional(Type.Number()),
+  /** R5: kept at the top of its project in the rail */
+  pinned: Type.Optional(Type.Boolean()),
+  /** R5: this thread leads a team run; later stages are its delegates (matched by `delegateRole` = stage role) */
+  team: Type.Optional(Type.Object({ name: Type.String(), stages: Type.Array(TeamStage) })),
   /** the server polls the linked PR and wakes the thread on CI failure, comments or conflicts */
   prWatch: Type.Optional(Type.Object({ since: Type.Number(), lastCheckedAt: Type.Optional(Type.Number()) })),
   createdAt: Type.Number(),

@@ -1,10 +1,25 @@
-import type { DomainEvent, EventOf, ImageInput, Message, Turn } from "@tide/contracts";
+import type { DomainEvent, EventOf, ImageInput, Message, ProviderKind, RuntimeMode, Turn, UserSettings } from "@tide/contracts";
 
-export interface DecideContext {
+/** The user settings the decider reads (supplied by the engine from `SettingsStore`). */
+export interface DecideDefaults {
+  /** default `resume` of a freshly limited thread */
+  limitPolicy?: UserSettings["limitPolicy"];
+  /** whether a delegate gets its own worktree when the caller does not say */
+  worktreeByDefault?: boolean;
+  /** model/mode per harness for threads the server builds without an explicit one */
+  providerDefaults?: UserSettings["providerDefaults"];
+}
+
+export interface DecideContext extends DecideDefaults {
   now: number;
   newId: () => string;
   /** `TIDE_HANDOFF_TOKEN_CAP`: upper bound for a recorded handoff's history (see handoff/select.ts) */
   handoffCap?: number | string | undefined;
+}
+
+/** The settings default for `provider`, only where the command named nothing itself. */
+export function providerDefault(ctx: DecideContext, provider: ProviderKind): { model?: string; mode?: RuntimeMode } {
+  return ctx.providerDefaults?.[provider] ?? {};
 }
 
 export interface DecideError {

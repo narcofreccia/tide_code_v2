@@ -7,7 +7,7 @@ import type { EventStore } from "../orchestration/store.ts";
 import type { DriverRegistry } from "../provider/registry.ts";
 import { resumableSessionId, threadCwd } from "../provider/sessions.ts";
 import type { RemoteInfo } from "./remote.ts";
-import type { SettingsStore } from "../settings.ts";
+import { SettingsError, type SettingsStore } from "../settings.ts";
 import { RpcException, type RpcRouter } from "./router.ts";
 
 export interface HandlerDeps {
@@ -107,7 +107,12 @@ export function registerHandlers(router: RpcRouter, deps: HandlerDeps): void {
   router.register("settings.set", async (input, ctx) => {
     if (ctx.agentThreadId !== undefined) throw new RpcException("forbidden", "settings are not available to agent sockets");
     if (!deps.settings) throw new RpcException("internal", "settings store not configured");
-    return deps.settings.set(input.patch);
+    try {
+      return deps.settings.set(input.patch);
+    } catch (err) {
+      if (err instanceof SettingsError) throw new RpcException("invalid-params", err.message);
+      throw err;
+    }
   });
 
   router.register("orchestration.dispatch", async (input) => {

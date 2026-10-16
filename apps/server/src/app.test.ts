@@ -66,7 +66,7 @@ async function storeWithLiveTurn(): Promise<{ store: EventStore; threadId: strin
   if (project?.type !== "project.created") throw new Error("expected project.created");
   const thread = (await engine.dispatch({ type: "thread.create", projectId: project.project.id, provider: "claude" })).events[0]?.event;
   if (thread?.type !== "thread.created") throw new Error("expected thread.created");
-  const turn = (await engine.dispatch({ type: "turn.request", threadId: thread.thread.id, text: "go" })).events[0]?.event;
+  const turn = (await engine.dispatch({ type: "turn.request", threadId: thread.thread.id, text: "go" })).events.at(-1)?.event;
   if (turn?.type !== "turn.requested") throw new Error("expected turn.requested");
   await engine.dispatch({ type: "turn.start", turnId: turn.turn.id, provider: "claude" });
   const activity: Activity = {
@@ -114,7 +114,7 @@ async function storeWithQueuedTurn(): Promise<{ store: EventStore; threadId: str
   if (project?.type !== "project.created") throw new Error("expected project.created");
   const thread = (await engine.dispatch({ type: "thread.create", projectId: project.project.id, provider: "claude" })).events[0]?.event;
   if (thread?.type !== "thread.created") throw new Error("expected thread.created");
-  const live = (await engine.dispatch({ type: "turn.request", threadId: thread.thread.id, text: "first" })).events[0]?.event;
+  const live = (await engine.dispatch({ type: "turn.request", threadId: thread.thread.id, text: "first" })).events.at(-1)?.event;
   if (live?.type !== "turn.requested") throw new Error("expected turn.requested");
   await engine.dispatch({ type: "turn.start", turnId: live.turn.id, provider: "claude" });
   const queued = (
@@ -203,7 +203,7 @@ describe("app.close — graceful shutdown", () => {
     });
     await first.engine.dispatch({ type: "turn.request", threadId, text: "first" });
     await started;
-    const queued = (await first.engine.dispatch({ type: "turn.request", threadId, text: "second" })).events[0]?.event;
+    const queued = (await first.engine.dispatch({ type: "turn.request", threadId, text: "second" })).events.at(-1)?.event;
     if (queued?.type !== "turn.requested") throw new Error("expected turn.requested");
     expect(queued.turn.status).toBe("queued");
     await first.close();
@@ -252,7 +252,7 @@ describe("app.close — graceful shutdown", () => {
         resolve();
       });
     });
-    const turn = (await app.engine.dispatch({ type: "turn.request", threadId: thread.thread.id, text: "go" })).events[0]?.event;
+    const turn = (await app.engine.dispatch({ type: "turn.request", threadId: thread.thread.id, text: "go" })).events.at(-1)?.event;
     if (turn?.type !== "turn.requested") throw new Error("expected turn.requested");
     await started;
 

@@ -1,4 +1,5 @@
-import type { ExpertsFinding, ExpertsMessage, ExpertsSession, ExpertState } from "@tide/contracts";
+import type { ExpertsFinding, ExpertsMessage, ExpertsSession, ExpertState, Team } from "@tide/contracts";
+import { stageSources } from "../teams/stages.ts";
 
 // Pure prompt builders for the Experts panel. Kept free of ids and clocks so the
 // decider stays a pure function and the wording is unit-testable.
@@ -82,9 +83,11 @@ export function synthesisPrompt(
 }
 
 /** Prompt for a thread another agent delegated via tide_delegate. */
-export function delegatePrompt(prompt: string, fromTitle: string): string {
+export function delegatePrompt(prompt: string, fromTitle: string, role?: string): string {
+  const framing = role !== undefined && role.trim() !== "" ? [`You act as the ${role.trim()} for thread "${fromTitle}"; stay within that role.`] : [];
   return [
     `You were delegated this task by another Tide thread ("${fromTitle}"). Complete it and finish with a short summary of what you did and what you found.`,
+    ...framing,
     prompt,
   ].join("\n\n");
 }
@@ -92,4 +95,74 @@ export function delegatePrompt(prompt: string, fromTitle: string): string {
 /** Board message delivered to an idle expert/lead thread as a new turn. */
 export function messageDeliveryPrompt(from: string, text: string): string {
   return `Message from ${from}: ${text}`;
+}
+
+/** The longest single `tide_delegate`/`tide_thread_wait` wait the server accepts (agent.thread.wait). */
+export const TEAM_WAIT_MS = 600_000;
+
+/**
+ * The lead's first message on a team run: the task, then for every later stage the exact
+ * `tide_delegate` call to make. The server never runs stages itself — the lead does, through
+ * its own harness and the Tide MCP tools. `leadThreadId` lets a stage inherit the lead's checkout.
+ */
+export function teamBrief(team: Pick<Team, "name" | "stages">, task: string, leadThreadId?: string): string {
+  const resolved = stageSources(team);
+  const sources = "sources" in resolved ? resolved.sources : [];
+  const [lead, ...rest] = team.stages;
+  if (lead === undefined) return task;
+  const keyOf = (index: number): string => team.stages[index]?.key ?? "?";
+  const lines: string[] = [
+    `You lead the team "${team.name}". The task:`,
+    task,
+    `The team has ${team.stages.length} stage${team.stages.length === 1 ? "" : "s"}. You are stage 1 ("${lead.key}"), the ${lead.role}, on ${lead.provider}. Do your own part of the task first.`,
+    ...(lead.instructions !== undefined && lead.instructions.trim() !== "" ? [`Instructions for you: ${lead.instructions.trim()}`] : []),
+  ];
+  if (rest.length === 0) {
+    lines.push("There are no further stages: do the whole task yourself and finish with a short report.");
+    return lines.join("\n\n");
+  }
+  lines.push(
+    [
+      "Then run every later stage, in order, by calling `tide_delegate` with exactly the arguments listed for it. Write each `prompt` yourself: the stage's thread has none of your context, so include the task, your plan, and what the earlier stages reported.",
+      `\`tide_delegate\` returns a JSON line with the new thread's \`threadId\`; note it, later stages refer to it. If the result says \`waitTimedOut\`, the stage is still working: keep calling \`tide_thread_wait\` with that threadId (timeoutMs ${TEAM_WAIT_MS}) until it reports settled. Never start a stage before the previous one has settled.`,
+    ].join(" "),
+  );
+  for (const [offset, stage] of rest.entries()) {
+    const index = offset + 1;
+    const source = sources[index];
+    const args: Record<string, unknown> = {
+      provider: stage.provider,
+      role: stage.role,
+      ...(stage.model !== undefined ? { model: stage.model } : {}),
+      ...(stage.mode !== undefined ? { mode: stage.mode } : {}),
+      title: `${team.name}: ${stage.role}`,
+      ...(source === undefined
+        ? { useWorktree: true }
+        : { inheritWorktreeFrom: source === 0 && leadThreadId !== undefined ? leadThreadId : `<threadId of stage "${keyOf(source)}">` }),
+      completion: "wait",
+      timeoutMs: TEAM_WAIT_MS,
+      prompt: "<the self-contained task for this stage>",
+    };
+    const where = source === undefined ? "in its own worktree" : `in the checkout of stage "${keyOf(source)}"${source === 0 ? " (yours)" : ""}`;
+    const stageLines = [
+      `Stage ${index + 1} ("${stage.key}"): the ${stage.role}, on ${stage.provider}, ${where}.`,
+      `tide_delegate ${JSON.stringify(args)}`,
+    ];
+    if (source !== undefined) {
+      stageLines.push(
+        `Tell it the threadId of stage "${keyOf(source)}" and that \`tide_thread_diff\` with that threadId shows what that stage changed; it works on the same branch, so its findings are about that work.`,
+      );
+    }
+    if (stage.interaction === "plan") stageLines.push("This stage plans only: its prompt must ask for a plan and no file edits.");
+    if (stage.instructions !== undefined && stage.instructions.trim() !== "") stageLines.push(`Instructions for this stage (put them in its prompt): ${stage.instructions.trim()}`);
+    lines.push(stageLines.join("\n"));
+  }
+  lines.push(
+    [
+      "Never skip a stage, and never skip a review or test stage even when the change looks trivial.",
+      "If a review or test stage finds problems, send them to the stage that made the change with `tide_thread_send`, wait for it with `tide_thread_wait`, then run the review or test stage again (at most twice).",
+      "When every stage has settled, finish with a report that lists each stage (key, role, harness, threadId) and its outcome, and says which thread holds the branch to merge.",
+    ].join(" "),
+  );
+  return lines.join("\n\n");
 }

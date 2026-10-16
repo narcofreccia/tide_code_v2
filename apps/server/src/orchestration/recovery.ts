@@ -46,7 +46,7 @@ function pendingPrompts(model: ReadModel, turn: Turn): Prompt[] {
 /**
  * A provider session never survives the process that opened it, so any turn still `requested`
  * or `running` in the replayed log is dead: without this pass the thread stays `running`
- * forever and every later `turn.request` / `thread.revert` is rejected as `busy`.
+ * forever and every later `turn.request` / `thread.rollback` is rejected as `busy`.
  *
  * Queued turns were never handed to a harness, so they are *not* dead: settling the turn ahead
  * of them lets the projector promote the oldest one, and the provider reactor runs it. That is

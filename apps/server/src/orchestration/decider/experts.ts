@@ -10,7 +10,7 @@ import type {
   Thread,
 } from "@tide/contracts";
 import { discussionPrompt, explorationPrompt, synthesisPrompt } from "../../experts/prompts.ts";
-import { fail, isArchived, ok, turnRequested, type DecideContext, type DecideResult } from "./types.ts";
+import { fail, isArchived, ok, providerDefault, turnRequested, type DecideContext, type DecideResult } from "./types.ts";
 
 type ExpertsCommand =
   | CommandOf<"experts.create">
@@ -32,6 +32,9 @@ export function sessionFindings(model: ReadModel, session: ExpertsSession): Expe
 export function sessionMessages(model: ReadModel, session: ExpertsSession): ExpertsMessage[] {
   return session.messageIds.flatMap((id) => (model.expertsMessages[id] ? [model.expertsMessages[id]] : []));
 }
+
+/** Experts keep their unattended `auto` mode; only the model falls back to the user's default. */
+const withModel = (model: string | undefined): { model?: string } => (model !== undefined ? { model } : {});
 
 /** A turn can only be queued on a thread that exists and is not mid-turn. */
 function readyThread(model: ReadModel, threadId: string | undefined): Thread | undefined {
@@ -88,7 +91,7 @@ export function decideExperts(model: ReadModel, command: ExpertsCommand, ctx: De
           projectId: project.id,
           title: `${expert.name} (${expert.role})`,
           provider: expert.provider,
-          ...(expert.model !== undefined ? { model: expert.model } : {}),
+          ...withModel(expert.model ?? providerDefault(ctx, expert.provider).model),
           mode: "auto",
           interaction: "default",
           role: "expert",
@@ -106,7 +109,7 @@ export function decideExperts(model: ReadModel, command: ExpertsCommand, ctx: De
         projectId: project.id,
         title: `Lead — ${session.topic}`,
         provider: session.lead.provider,
-        ...(session.lead.model !== undefined ? { model: session.lead.model } : {}),
+        ...withModel(session.lead.model ?? providerDefault(ctx, session.lead.provider).model),
         mode: "auto",
         interaction: "default",
         role: "lead",

@@ -1,5 +1,6 @@
 import type { CommandOf, DomainEvent, LinkAccess, Project, ReadModel, Thread } from "@tide/contracts";
 import { handoffTurns } from "../handoff/select.ts";
+import { DEFAULT_THREAD_TITLE } from "./autoTitle.ts";
 import { recordHandoff } from "./handoff.ts";
 import { fail, isArchived, ok, turnRequested, type DecideContext, type DecideResult } from "./types.ts";
 
@@ -26,6 +27,7 @@ type ThreadCommand =
   | CommandOf<"thread.create">
   | CommandOf<"thread.update">
   | CommandOf<"thread.archive">
+  | CommandOf<"thread.unarchive">
   | CommandOf<"thread.triage">
   | CommandOf<"thread.limited">
   | CommandOf<"thread.limit-policy">
@@ -50,7 +52,7 @@ export function decideThread(model: ReadModel, command: ThreadCommand, ctx: Deci
         id: ctx.newId(),
         projectId: project.id,
         ...(command.parentThreadId !== undefined ? { parentThreadId: command.parentThreadId } : {}),
-        title: command.title ?? "New thread",
+        title: command.title ?? DEFAULT_THREAD_TITLE,
         provider: command.provider,
         ...(command.model !== undefined ? { model: command.model } : {}),
         mode: command.mode ?? "approval-required",
@@ -66,12 +68,13 @@ export function decideThread(model: ReadModel, command: ThreadCommand, ctx: Deci
     case "thread.update": {
       const thread = model.threads[command.threadId];
       if (!thread) return fail("not-found", `unknown thread ${command.threadId}`);
-      const patch: Partial<Pick<Thread, "title" | "provider" | "model" | "mode" | "interaction">> = {
+      const patch: Partial<Pick<Thread, "title" | "provider" | "model" | "mode" | "interaction" | "pinned">> = {
         ...(command.title !== undefined ? { title: command.title } : {}),
         ...(command.provider !== undefined ? { provider: command.provider } : {}),
         ...(command.model !== undefined ? { model: command.model } : {}),
         ...(command.mode !== undefined ? { mode: command.mode } : {}),
         ...(command.interaction !== undefined ? { interaction: command.interaction } : {}),
+        ...(command.pinned !== undefined ? { pinned: command.pinned } : {}),
       };
       const toProvider = command.provider;
       if (toProvider === undefined || toProvider === thread.provider) {
@@ -121,6 +124,16 @@ export function decideThread(model: ReadModel, command: ThreadCommand, ctx: Deci
       });
     }
 
+    case "thread.unarchive": {
+      const thread = model.threads[command.threadId];
+      if (!thread) return fail("not-found", `unknown thread ${command.threadId}`);
+      if (!isArchived(thread)) return ok(); // idempotent
+      const project = model.projects[thread.projectId];
+      if (!project) return fail("not-found", `unknown project ${thread.projectId}`);
+      if (isArchived(project)) return fail("conflict", `project ${project.id} is archived; unarchive it first`);
+      return ok({ type: "thread.unarchived", threadId: thread.id, at: ctx.now });
+    }
+
     case "thread.limited": {
       const thread = model.threads[command.threadId];
       if (!thread) return fail("not-found", `unknown thread ${command.threadId}`);
@@ -130,7 +143,8 @@ export function decideThread(model: ReadModel, command: ThreadCommand, ctx: Deci
         limited: {
           ...(command.resetsAt !== undefined ? { resetsAt: command.resetsAt } : {}),
           ...(command.note !== undefined ? { note: command.note } : {}),
-          resume: thread.limited?.resume ?? "manual",
+          // a policy the user already chose for this thread wins over the global setting
+          resume: thread.limited?.resume ?? ctx.limitPolicy ?? "manual",
           at: ctx.now,
         },
       });

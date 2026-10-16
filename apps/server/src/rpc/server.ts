@@ -12,7 +12,9 @@ import { CheckpointService } from "../vcs/checkpoints.ts";
 import type { GhLike } from "../vcs/gh.ts";
 import { AgentTokenStore } from "./agentTickets.ts";
 import { registerAgentHandlers } from "./agent.ts";
+import { registerAgentDiffHandler } from "./agentDiff.ts";
 import { registerAgentThreadHandlers } from "./agentThreads.ts";
+import type { DelegateWaits } from "../orchestration/delegation.ts";
 import { registerHandlers } from "./handlers.ts";
 import { SettingsStore } from "../settings.ts";
 import { buildRemoteInfo, pairPage, type Interfaces } from "./remote.ts";
@@ -55,6 +57,8 @@ export interface ServerDeps {
   networkInterfaces?: () => Interfaces;
   /** user settings; the app shares one store with the decisions client */
   settings?: SettingsStore;
+  /** shared with the delegation reactor: a parent blocked in agent.thread.wait gets no wake-up */
+  delegateWaits?: DelegateWaits;
 }
 
 export interface ServerHandle {
@@ -98,10 +102,12 @@ export async function startServer(deps: ServerDeps): Promise<ServerHandle> {
     settings: deps.settings ?? new SettingsStore(config.dataDir === ":memory:" ? {} : { path: SettingsStore.pathFor(config.tideHome) }),
   });
   registerAgentHandlers(router, { engine });
-  registerAgentThreadHandlers(router, { engine, registry });
+  registerAgentThreadHandlers(router, { engine, registry, ...(deps.delegateWaits !== undefined ? { waits: deps.delegateWaits } : {}) });
+  const checkpoints = deps.checkpoints ?? new CheckpointService();
+  registerAgentDiffHandler(router, { engine, checkpoints });
   registerVcsHandlers(router, {
     engine,
-    checkpoints: deps.checkpoints ?? new CheckpointService(),
+    checkpoints,
     ...(deps.gh !== undefined ? { gh: deps.gh } : {}),
   });
   const workspace = deps.workspace ?? createWorkspaceServices({ engine });

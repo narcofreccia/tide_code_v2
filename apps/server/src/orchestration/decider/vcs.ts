@@ -1,8 +1,7 @@
-import type { CommandOf, ReadModel } from "@tide/contracts";
+import type { CommandOf, ReadModel, Thread } from "@tide/contracts";
 import { fail, isArchived, ok, type DecideContext, type DecideResult } from "./types.ts";
 
 type VcsCommand =
-  | CommandOf<"thread.revert">
   | CommandOf<"thread.publish">
   | CommandOf<"thread.merge">
   | CommandOf<"merge.report">
@@ -12,37 +11,43 @@ type VcsCommand =
   | CommandOf<"pr.update">;
 
 /**
- * Git-facing decisions. The decider only records *intent* (revert/publish) and the
+ * Git-facing decisions. The decider only records *intent* (publish/merge) and the
  * *facts* the vcs reactor reports back (worktree attached, checkpoint recorded, PR
  * updated); it never touches git itself.
  */
 /**
- * Both git-destructive commands operate on the thread's checkout: revert runs
- * `read-tree --reset -u` + `clean -fd`, publish commits and pushes everything in it. Without a
- * worktree that checkout *is* the user's main working copy, so the safe answer is to refuse.
+ * Publish commits and pushes everything in the thread's checkout. Without a worktree that
+ * checkout *is* the user's main working copy, so the safe answer is to refuse.
  */
-const NEEDS_WORKTREE = "runs in the main checkout; revert/publish require a worktree";
+const NEEDS_WORKTREE = "runs in the main checkout; publish requires a worktree";
+
+/**
+ * R5: the live thread that owns the checkout `thread` runs in, when `thread` only inherited it
+ * (`thread.delegate { inheritWorktreeFrom }`). The owner is the earliest live thread on that
+ * path; once it is archived the checkout belongs to whoever still uses it.
+ */
+export function inheritedFrom(model: ReadModel, thread: Thread): Thread | undefined {
+  if (thread.worktreePath === undefined) return undefined;
+  let owner: Thread | undefined;
+  for (const other of Object.values(model.threads)) {
+    if (other.worktreePath !== thread.worktreePath || (isArchived(other) && other.id !== thread.id)) continue;
+    if (owner === undefined || other.createdAt < owner.createdAt) owner = other;
+  }
+  return owner !== undefined && owner.id !== thread.id ? owner : undefined;
+}
+
+const inheritedRefusal = (thread: Thread, source: Thread): string =>
+  `thread ${thread.id} runs in an inherited worktree: merge from "${source.title}" (${source.id})`;
 
 export function decideVcs(model: ReadModel, command: VcsCommand, ctx: DecideContext): DecideResult {
   switch (command.type) {
-    case "thread.revert": {
-      const thread = model.threads[command.threadId];
-      if (!thread) return fail("not-found", `unknown thread ${command.threadId}`);
-      if (isArchived(thread)) return fail("conflict", `thread ${thread.id} is archived`);
-      if (thread.worktreePath === undefined) return fail("conflict", `thread ${thread.id} ${NEEDS_WORKTREE}`);
-      const turn = model.turns[command.turnId];
-      if (!turn) return fail("not-found", `unknown turn ${command.turnId}`);
-      if (turn.threadId !== thread.id) return fail("conflict", `turn ${turn.id} does not belong to thread ${thread.id}`);
-      if (turn.checkpoint?.before === undefined) return fail("conflict", `turn ${turn.id} has no before-checkpoint`);
-      if (thread.status === "running") return fail("busy", `thread ${thread.id} is running`);
-      return ok({ type: "revert.requested", threadId: thread.id, turnId: turn.id, at: ctx.now });
-    }
-
     case "thread.publish": {
       const thread = model.threads[command.threadId];
       if (!thread) return fail("not-found", `unknown thread ${command.threadId}`);
       if (isArchived(thread)) return fail("conflict", `thread ${thread.id} is archived`);
       if (thread.worktreePath === undefined) return fail("conflict", `thread ${thread.id} ${NEEDS_WORKTREE}`);
+      const publishSource = inheritedFrom(model, thread);
+      if (publishSource) return fail("conflict", inheritedRefusal(thread, publishSource));
       if (thread.status === "running") return fail("busy", `thread ${thread.id} is running`);
       return ok({
         type: "publish.requested",
@@ -60,6 +65,8 @@ export function decideVcs(model: ReadModel, command: VcsCommand, ctx: DecideCont
       if (!thread) return fail("not-found", `unknown thread ${command.threadId}`);
       if (isArchived(thread)) return fail("conflict", `thread ${thread.id} is archived`);
       if (thread.worktreePath === undefined || thread.branch === undefined) return fail("conflict", `thread ${thread.id} has no branch to merge back`);
+      const mergeSource = inheritedFrom(model, thread);
+      if (mergeSource) return fail("conflict", inheritedRefusal(thread, mergeSource));
       if (thread.status === "running") return fail("busy", `thread ${thread.id} is running`);
       if (thread.merge?.status === "merging") return fail("busy", `thread ${thread.id} is already merging`);
       if (thread.mergedAt !== undefined) return fail("conflict", `thread ${thread.id} is already merged`);

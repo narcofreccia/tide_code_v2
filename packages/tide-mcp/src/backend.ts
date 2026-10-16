@@ -14,6 +14,8 @@ export type ThreadWaitInput = RpcInput<"agent.thread.wait">;
 export type ThreadWaitResult = RpcOutput<"agent.thread.wait">;
 export type PendingListResult = RpcOutput<"agent.pending.list">;
 export type PendingRespondInput = RpcInput<"agent.pending.respond">;
+export type ThreadDiffInput = RpcInput<"agent.thread.diff">;
+export type ThreadDiffResult = RpcOutput<"agent.thread.diff">;
 
 /** The slice of the Tide RPC surface the MCP tools need; faked in tests. */
 export interface AgentBackend {
@@ -25,6 +27,7 @@ export interface AgentBackend {
   threadSend(input: ThreadSendInput): Promise<ThreadSendResult>;
   threadWait(input: ThreadWaitInput): Promise<ThreadWaitResult>;
   threadInterrupt(threadId: string): Promise<{ ok: boolean }>;
+  threadDiff(input: ThreadDiffInput): Promise<ThreadDiffResult>;
   pendingList(threadId: string): Promise<PendingListResult>;
   taskList(): Promise<{ tasks: ScheduledTask[] }>;
   pendingRespond(input: PendingRespondInput): Promise<{ ok: boolean }>;
@@ -99,6 +102,11 @@ export class TideAgentBackend implements AgentBackend {
   async threadInterrupt(threadId: string): Promise<{ ok: boolean }> {
     await this.#connect();
     return this.#connection.call("agent.thread.interrupt", { threadId });
+  }
+
+  async threadDiff(input: ThreadDiffInput): Promise<ThreadDiffResult> {
+    await this.#connect();
+    return this.#connection.call("agent.thread.diff", input);
   }
 
   async taskList(): Promise<{ tasks: ScheduledTask[] }> {

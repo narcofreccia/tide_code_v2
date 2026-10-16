@@ -1,6 +1,7 @@
 import type { Activity, AgentThreadSummary, AgentTimelineItem, Command, ReadModel, RpcOutput, Thread, TimelineEntry } from "@tide/contracts";
 import { clampMode } from "../orchestration/decider/agent.ts";
 import { CommandError, type Engine } from "../orchestration/engine.ts";
+import { lastAssistantText, type DelegateWaits } from "../orchestration/delegation.ts";
 import type { DriverRegistry } from "../provider/registry.ts";
 import { RpcException, type RpcCallContext, type RpcRouter } from "./router.ts";
 
@@ -12,6 +13,8 @@ export interface AgentThreadDeps {
   registry?: Pick<DriverRegistry, "status">;
   /** timeout timer for `agent.thread.wait` (tests pass a manual clock) */
   schedule?: (fn: () => void, ms: number) => CancelTimer;
+  /** marks a caller blocked on a thread, so the delegation reactor does not also wake it */
+  waits?: DelegateWaits;
 }
 
 const DEFAULT_LIST_LIMIT = 20;
@@ -25,7 +28,7 @@ const realTimer = (fn: () => void, ms: number): CancelTimer => {
   return () => clearTimeout(timer);
 };
 
-function callerThread(model: ReadModel, ctx: RpcCallContext): Thread {
+export function callerThread(model: ReadModel, ctx: RpcCallContext): Thread {
   const threadId = ctx.agentThreadId;
   if (threadId === undefined) throw new RpcException("forbidden", "agent methods require an agent token");
   const thread = model.threads[threadId];
@@ -38,7 +41,7 @@ export function canReach(caller: Thread, target: Thread): boolean {
   return target.projectId === caller.projectId || target.delegatedBy === caller.id;
 }
 
-function reachable(model: ReadModel, caller: Thread, threadId: string): Thread {
+export function reachable(model: ReadModel, caller: Thread, threadId: string): Thread {
   const target = model.threads[threadId];
   if (!target) throw new RpcException("not-found", `unknown thread ${threadId}`);
   if (!canReach(caller, target)) throw new RpcException("forbidden", `thread ${target.id} is outside the project of ${caller.id}`);
@@ -68,15 +71,6 @@ export function summarize(thread: Thread): AgentThreadSummary {
     limited: thread.limited !== undefined,
     updatedAt: thread.updatedAt,
   };
-}
-
-function lastAssistantText(model: ReadModel, threadId: string): string | undefined {
-  const ids = model.threadMessages[threadId] ?? [];
-  for (let i = ids.length - 1; i >= 0; i--) {
-    const message = model.messages[ids[i] as string];
-    if (message?.role === "assistant" && message.text.length > 0) return message.text;
-  }
-  return undefined;
 }
 
 function activityItem(a: Activity): { kind: AgentTimelineItem["kind"]; text: string } {
@@ -260,8 +254,14 @@ export function registerAgentThreadHandlers(router: RpcRouter, deps: AgentThread
 
   router.register("agent.thread.wait", async (input, ctx) => {
     const model = engine.getModel();
-    const target = reachable(model, callerThread(model, ctx), input.threadId);
-    return waitForThread(engine, target.id, input.turnId, input.timeoutMs ?? DEFAULT_WAIT_MS, deps.schedule);
+    const caller = callerThread(model, ctx);
+    const target = reachable(model, caller, input.threadId);
+    const end = deps.waits?.begin(caller.id, target.id);
+    try {
+      return await waitForThread(engine, target.id, input.turnId, input.timeoutMs ?? DEFAULT_WAIT_MS, deps.schedule);
+    } finally {
+      end?.();
+    }
   });
 
   router.register("agent.thread.interrupt", async (input, ctx) => {
