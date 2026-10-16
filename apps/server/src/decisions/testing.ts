@@ -1,5 +1,6 @@
 import type { Engine } from "../orchestration/engine.ts";
 import type { CancelTimer } from "../provider/reactor.ts";
+import { noneVerdict, unitsOf, type Judge, type JudgeBackend, type JudgeCall, type JudgeQuestion, type JudgeUnit, type JudgeVerdict } from "./judge.ts";
 
 /** Timers the test fires by hand. */
 export class ManualClock {
@@ -43,4 +44,44 @@ export async function seedThreads(engine: Engine, n: number): Promise<{ projectI
     turnIds.push(turnId);
   }
   return { projectId, threadIds, turnIds };
+}
+
+/** A judge that answers from a script keyed by verdict id; unscripted units get `none`. Records every question. */
+export function fakeJudge(script: Record<string, Partial<JudgeVerdict>>, options: { enabled?: boolean } = {}): Pick<Judge, "ask" | "enabled"> & { questions: JudgeQuestion[] } {
+  const questions: JudgeQuestion[] = [];
+  return {
+    questions,
+    enabled: () => options.enabled ?? true,
+    ask: async (question) => {
+      questions.push(question);
+      return unitsOf(question).map((u) => {
+        const scripted = script[u.id];
+        return scripted === undefined ? noneVerdict(u.id) : { id: u.id, confidence: 1, source: "jev" as const, tokens: 0, elapsedMs: 0, ...scripted };
+      });
+    },
+  };
+}
+
+/** A backend answering each unit through `answer`; records every batch of calls it got. */
+export function fakeBackend(
+  name: "jev" | "fallback",
+  answer: (unit: JudgeUnit, call: JudgeCall) => Partial<JudgeVerdict> | Error,
+  options: { available?: () => boolean } = {},
+): JudgeBackend & { calls: JudgeCall[][] } {
+  const calls: JudgeCall[][] = [];
+  return {
+    name,
+    calls,
+    available: options.available ?? (() => true),
+    ask: async (batch) => {
+      calls.push(batch);
+      return batch.flatMap((call) =>
+        call.units.map((u) => {
+          const a = answer(u, call);
+          if (a instanceof Error) return { id: u.id, confidence: 0, source: name === "jev" ? ("none" as const) : ("fallback" as const), tokens: 0, elapsedMs: 0, error: a.message };
+          return { id: u.id, confidence: 1, source: name, tokens: 0, elapsedMs: 0, ...a };
+        }),
+      );
+    },
+  };
 }

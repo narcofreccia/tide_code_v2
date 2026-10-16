@@ -1,8 +1,7 @@
 import { describe, expect, it } from "vitest";
 import { emptyReadModel, type Activity, type ReadModel, type Thread } from "@tide/contracts";
-import { DEFAULT_LIMITS } from "./client.ts";
-import { buildTriageRequests, lastActivityAt, mapAnswers, threadState, triageCandidates } from "./triage.ts";
-import type { Answer } from "./wire.ts";
+import { buildTriageQuestion, lastActivityAt, mapAnswers, threadState, triageCandidates } from "./triage.ts";
+import type { JudgeVerdict } from "./judge.ts";
 
 const NOW = 10_000_000;
 const MIN = 60_000;
@@ -59,31 +58,23 @@ describe("triage candidates and state", () => {
     expect(lastActivityAt(m, m.threads["run"] as Thread)).toBe(NOW - 3 * MIN);
   });
 
-  it("builds one batched request with three questions per thread", () => {
-    const requests = buildTriageRequests(model(), "p1", NOW, DEFAULT_LIMITS);
-    expect(requests).toHaveLength(1);
-    const r = requests[0];
-    expect(r?.threadIds).toEqual(["run", "att", "recent"]);
-    expect(Object.keys(r?.questions ?? {})).toEqual(["t0__needsUser", "t0__stuck", "t0__urgency", "t1__needsUser", "t1__stuck", "t1__urgency", "t2__needsUser", "t2__stuck", "t2__urgency"]);
-    expect(r?.questions["t0__urgency"]).toMatchObject({ type: "score" });
-    expect((r?.questions["t0__urgency"] as { criteria: string[] }).criteria).toHaveLength(5);
-    expect(r?.questions["t1__needsUser"]).toMatchObject({ type: "noul" });
-    expect(Object.keys(r?.state as object)).toEqual(["t0", "t1", "t2"]);
+  it("builds one per-item question with three sub-questions per thread", () => {
+    const t = buildTriageQuestion(model(), "p1", NOW);
+    expect(t?.question).toMatchObject({ kind: "per-item", id: "triage:p1", site: "stuck" });
+    expect(t?.question.items.map((i) => i.key)).toEqual(["t0", "t1", "t2"]);
+    expect([...(t?.threads.values() ?? [])]).toEqual(["run", "att", "recent"]);
+    expect(t?.question.questions?.["urgency"]).toMatchObject({ kind: "score", threshold: 0 });
+    expect((t?.question.questions?.["urgency"] as { levels: string[] }).levels).toHaveLength(5);
+    expect(t?.question.questions?.["needsUser"]).toMatchObject({ kind: "yes-no", threshold: 0 });
+    expect(t?.question.questions?.["stuck"]?.threshold).toBeUndefined();
+    expect(buildTriageQuestion(model(), "none", NOW)).toBeUndefined();
   });
 
-  it("splits into several requests when the limits are tight, and none for an empty project", () => {
-    const tight = { ...DEFAULT_LIMITS, maxRequestTokens: 1500, maxStateQuestionTokens: 1500, safety: 1 };
-    expect(buildTriageRequests(model(), "p1", NOW, tight).length).toBeGreaterThan(1);
-    expect(buildTriageRequests(model(), "none", NOW, DEFAULT_LIMITS)).toEqual([]);
-  });
-
-  it("maps answers: score -> expected level / 4, clamped; incomplete threads skipped", () => {
-    const req = { threadIds: ["x", "y"], state: {}, questions: {} };
-    const noulA = (p: number): Answer => ({ type: "noul", value: p, confidence: p, probabilities: {} });
-    const scoreA = (v: number): Answer => ({ type: "score", value: v, confidence: 1, probabilities: {} });
-    const out = mapAnswers(req, { t0__needsUser: noulA(0.9), t0__stuck: noulA(0.1), t0__urgency: scoreA(3), t1__needsUser: noulA(0.5) }, 42);
+  it("maps verdicts to triage; threads with a missing or none verdict are skipped", () => {
+    const t = { question: { kind: "per-item" as const, id: "q", site: "stuck" as const, items: [] }, threads: new Map([["t0", "x"], ["t1", "y"]]) };
+    const v = (id: string, score: number, source: JudgeVerdict["source"] = "jev"): JudgeVerdict => ({ id, score, confidence: 1, source, tokens: 0, elapsedMs: 0 });
+    const out = mapAnswers(t, [v("q:t0:needsUser", 0.9), v("q:t0:stuck", 0.1), v("q:t0:urgency", 0.75), v("q:t1:needsUser", 0.5), v("q:t1:stuck", 0, "none"), v("q:t1:urgency", 0.5)], 42);
     expect(out.get("x")).toEqual({ needsUser: 0.9, stuck: 0.1, urgency: 0.75, at: 42 });
     expect(out.has("y")).toBe(false);
-    expect(mapAnswers(req, { t0__needsUser: noulA(1), t0__stuck: noulA(0), t0__urgency: scoreA(9) }, 1).get("x")?.urgency).toBe(1);
   });
 });

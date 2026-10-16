@@ -70,13 +70,14 @@ export function decideThread(model: ReadModel, command: ThreadCommand, ctx: Deci
     case "thread.update": {
       const thread = model.threads[command.threadId];
       if (!thread) return fail("not-found", `unknown thread ${command.threadId}`);
-      const patch: Partial<Pick<Thread, "title" | "provider" | "model" | "mode" | "interaction" | "pinned">> = {
+      const patch: Partial<Pick<Thread, "title" | "provider" | "model" | "mode" | "interaction" | "pinned" | "autoAllowRoutine">> = {
         ...(command.title !== undefined ? { title: command.title } : {}),
         ...(command.provider !== undefined ? { provider: command.provider } : {}),
         ...(command.model !== undefined ? { model: command.model } : {}),
         ...(command.mode !== undefined ? { mode: command.mode } : {}),
         ...(command.interaction !== undefined ? { interaction: command.interaction } : {}),
         ...(command.pinned !== undefined ? { pinned: command.pinned } : {}),
+        ...(command.autoAllowRoutine !== undefined ? { autoAllowRoutine: command.autoAllowRoutine } : {}),
       };
       const toProvider = command.provider;
       if (toProvider === undefined || toProvider === thread.provider) {

@@ -21,6 +21,8 @@ export const CLAUDE_CAPS = {
   steer: true,
   fork: true,
   rollback: true,
+  // R6 — tools-off one-shot via query() (complete.ts)
+  oneShot: true,
 } as const;
 
 export const LOGIN_HINT = "Run `claude auth login` in a terminal";

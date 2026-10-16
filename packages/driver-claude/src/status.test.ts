@@ -24,3 +24,10 @@ describe("claude status", () => {
     if (!status.installed) expect(status.hint).toMatch(/Install Claude Code/);
   });
 });
+
+describe("claude caps", () => {
+  it("reports oneShot in status", async () => {
+    const status = await buildStatus({ binaryPath: "/nonexistent/claude" }, env, noQuery);
+    expect(status.caps.oneShot).toBe(true);
+  });
+});

@@ -39,6 +39,27 @@ describe("projection", () => {
     const again = applyRecord(m, rec(7, { type: "thread.deleted", threadId: "t1", projectId: "p1", at: 7 }));
     expect(again.threads).toEqual(m.threads);
   });
+  it("judge.recorded lands on a thread, an approval or an experts session; handoff.refined replaces the selection", () => {
+    const base = replay(emptyReadModel(), [
+      rec(1, { type: "project.created", project: { id: "p1", title: "T", rootPath: "/x", createdAt: 1, updatedAt: 1 } }),
+      rec(2, { type: "thread.created", thread: { id: "t1", projectId: "p1", title: "A", provider: "claude", mode: "approval-required", interaction: "default", status: "idle", createdAt: 2, updatedAt: 2 } }),
+      rec(3, { type: "activity.upserted", activity: { id: "a1", threadId: "t1", kind: "approval", requestId: "r1", toolName: "Bash", input: { command: "ls" }, status: "pending", createdAt: 3 } as never }),
+      rec(4, { type: "handoff.recorded", handoff: { id: "h1", threadId: "t1", sourceThreadId: "t1", toProvider: "codex", strategy: "full", coveredTurnIds: ["u1", "u2"], omittedTurnIds: ["u3"], text: "old", createdAt: 4 } }),
+    ]);
+    const verdict = { site: "delegates" as const, label: "blocked", confidence: 0.91, source: "jev" as const, at: 5 };
+    const m = replay(base, [
+      rec(5, { type: "judge.recorded", target: { kind: "thread", id: "t1" }, verdict }),
+      rec(6, { type: "judge.recorded", target: { kind: "approval", id: "a1" }, verdict: { ...verdict, site: "approvals", label: "routine" } }),
+      rec(7, { type: "judge.recorded", target: { kind: "experts", id: "missing" }, verdict }),
+      rec(8, { type: "handoff.refined", handoffId: "h1", threadId: "t1", text: "new", coveredTurnIds: ["u1", "u3"], omittedTurnIds: ["u2"], judge: { kept: 2, dropped: 1, source: "jev", confidence: 0.8, at: 8 }, at: 8 }),
+    ]);
+    expect(m.threads["t1"]?.judge?.label).toBe("blocked");
+    const a = m.activities["a1"];
+    expect(a?.kind === "approval" ? a.judge?.label : undefined).toBe("routine");
+    expect(m.handoffs["h1"]).toMatchObject({ text: "new", coveredTurnIds: ["u1", "u3"], omittedTurnIds: ["u2"], judge: { kept: 2, dropped: 1 } });
+    expect(m.threads["t1"]?.updatedAt).toBe(8);
+    expect(applyRecord(m, rec(9, { type: "handoff.refined", handoffId: "nope", threadId: "t1", text: "x", coveredTurnIds: [], omittedTurnIds: [], judge: { kept: 0, dropped: 0, source: "none", confidence: 0, at: 9 }, at: 9 })).handoffs).toEqual(m.handoffs);
+  });
   it("ignores already-applied seqs", () => {
     const base = replay(emptyReadModel(), [rec(1, { type: "project.created", project: { id: "p1", title: "T", rootPath: "/x", createdAt: 1, updatedAt: 1 } })]);
     const again = applyRecord(base, rec(1, { type: "project.archived", projectId: "p1", archivedAt: 9 }));

@@ -131,6 +131,31 @@ export const ExpertsMessage = Type.Object({
 });
 export type ExpertsMessage = Static<typeof ExpertsMessage>;
 
+/**
+ * R6: a judgement by the decision layer. `jev` is TypeSafe's calibrated classifier (first filter),
+ * `fallback` the user-selected harness model asked only when Jev is unsure, `none` when no judge
+ * ran (feature off / no key): callers then behave exactly as without the layer. Verdicts annotate
+ * or suggest; the only automatic actions are the ones the user opts into.
+ */
+export const JudgeSite = Type.Union([Type.Literal("handoff"), Type.Literal("experts"), Type.Literal("delegates"), Type.Literal("approvals"), Type.Literal("stuck")]);
+export type JudgeSite = Static<typeof JudgeSite>;
+export const JudgeSource = Type.Union([Type.Literal("jev"), Type.Literal("fallback"), Type.Literal("none")]);
+export type JudgeSource = Static<typeof JudgeSource>;
+export const Verdict = Type.Object({
+  site: JudgeSite,
+  label: Type.Optional(Type.String()),
+  /** 0..1 (yes-no probability or normalised score level) */
+  score: Type.Optional(Type.Number()),
+  /** 0..1; Jev's calibrated confidence, 1/0 for a fallback label match, 0 for `none` */
+  confidence: Type.Number(),
+  source: JudgeSource,
+  at: Type.Number(),
+});
+export type Verdict = Static<typeof Verdict>;
+/** how a handoff selection was refined by the judge */
+export const HandoffJudge = Type.Object({ kept: Type.Number(), dropped: Type.Number(), source: JudgeSource, confidence: Type.Number(), at: Type.Number() });
+export type HandoffJudge = Static<typeof HandoffJudge>;
+
 export const ExpertsSession = Type.Object({
   id: Type.String(),
   projectId: Type.String(),
@@ -141,6 +166,8 @@ export const ExpertsSession = Type.Object({
   findingIds: Type.Array(Type.String()),
   messageIds: Type.Array(Type.String()),
   synthesis: Type.Optional(Type.Object({ markdown: Type.String(), planId: Type.Optional(Type.String()), at: Type.Number() })),
+  /** R6: "the experts have converged" verdict (label "true"/"false") */
+  judge: Type.Optional(Verdict),
   createdAt: Type.Number(),
   updatedAt: Type.Number(),
 });
@@ -181,6 +208,7 @@ export const Triage = Type.Object({
   at: Type.Number(),
 });
 export type Triage = Static<typeof Triage>;
+
 
 /**
  * R5: a Team is an ordered set of roles on chosen harnesses. Stage 1 is the lead thread; it
@@ -253,6 +281,8 @@ export const Handoff = Type.Object({
   omittedTurnIds: Type.Array(Type.String()),
   text: Type.String(),
   createdAt: Type.Number(),
+  /** R6: set once `handoff.refined` replaced the recency selection with the judge's ranking */
+  judge: Type.Optional(HandoffJudge),
 });
 export type Handoff = Static<typeof Handoff>;
 
@@ -306,6 +336,10 @@ export const Thread = Type.Object({
   /** set once the thread's branch landed on its base (locally or via the PR) */
   mergedAt: Type.Optional(Type.Number()),
   triage: Type.Optional(Triage),
+  /** R6: latest verdict about this thread (delegate outcome, stuck) */
+  judge: Type.Optional(Verdict),
+  /** R6: per-thread opt-in: approvals the judge calls routine (Jev, confidence ≥ high) are accepted automatically */
+  autoAllowRoutine: Type.Optional(Type.Boolean()),
   // ---- R4: orchestration parity ----
   /** this thread was forked from another thread at a settled turn */
   forkedFrom: Type.Optional(Type.Object({ threadId: Type.String(), turnId: Type.String() })),
@@ -435,6 +469,8 @@ export const ApprovalActivity = Type.Object({
   diff: Type.Optional(Type.String()),
   status: Type.Union([Type.Literal("pending"), Type.Literal("resolved")]),
   decision: Type.Optional(ApprovalDecision),
+  /** R6: routine | consequential, from the judge */
+  judge: Type.Optional(Verdict),
 });
 export const UserInputQuestion = Type.Object({
   id: Type.String(),

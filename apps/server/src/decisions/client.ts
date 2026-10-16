@@ -16,6 +16,8 @@ export const DECISION_LIMIT = "decision_limit";
 export const CHARS_PER_TOKEN = 3.0;
 export const DEFAULT_TIMEOUT_MS = 20_000;
 export const RETRY_DELAY_MS = 500;
+/** Jev's context window (state + questions), informational in settings. */
+export const JEV_CONTEXT_TOKENS = 28_000;
 /** $ per 1M input tokens (jev-1.13.0). */
 export const USD_PER_MILLION_INPUT_TOKENS = 0.042;
 
@@ -61,6 +63,16 @@ export interface RequestRecord {
   estimated: boolean;
   model: string;
   costUsd: number;
+  /** the judge site that asked (cost attribution); absent for plain `ask` */
+  site?: string;
+}
+
+/** One pre-packed call of `askMany`: answers, or the error that call hit (other calls still ran). */
+export interface CallOutcome {
+  answers?: Record<string, Answer>;
+  record?: RequestRecord;
+  error?: Error;
+  elapsedMs: number;
 }
 
 export const costUsd = (inputTokens: number): number => (inputTokens * USD_PER_MILLION_INPUT_TOKENS) / 1_000_000;
@@ -190,11 +202,39 @@ export class DecisionClient {
     if (Object.keys(questions).length === 0) return {};
     for (const [name, q] of Object.entries(questions)) validateQuestion(name, q, this.limits);
     const merged: Record<string, Answer> = {};
-    for (const chunk of splitQuestions(state, questions, this.limits)) Object.assign(merged, await this.#send(state, chunk, timeoutMs ?? this.#timeoutMs));
+    for (const chunk of splitQuestions(state, questions, this.limits)) Object.assign(merged, (await this.#send(state, chunk, timeoutMs ?? this.#timeoutMs)).answers);
     return merged;
   }
 
-  async #send(state: State, questions: Questions, timeoutMs: number): Promise<Record<string, Answer>> {
+  /**
+   * Sends pre-packed calls one by one, never re-splitting them: every call is validated first and
+   * a call that exceeds the limits throws `DecisionLimitError` before anything is sent. A failure
+   * in one call is reported in its outcome and does not stop the others.
+   */
+  async askMany(calls: readonly { state: State; questions: Questions }[], site?: string, timeoutMs?: number): Promise<CallOutcome[]> {
+    if (!this.#enabled()) throw new DecisionsUnavailable();
+    for (const call of calls) {
+      for (const [name, q] of Object.entries(call.questions)) validateQuestion(name, q, this.limits);
+      if (!requestFits(call.state, call.questions, this.limits)) throw new DecisionLimitError(`a ${site ?? "judge"} call exceeds the model limits`);
+    }
+    const out: CallOutcome[] = [];
+    for (const call of calls) {
+      const started = Date.now();
+      if (Object.keys(call.questions).length === 0) {
+        out.push({ answers: {}, elapsedMs: 0 });
+        continue;
+      }
+      try {
+        const { answers, record } = await this.#send(call.state, call.questions, timeoutMs ?? this.#timeoutMs, site);
+        out.push({ answers, record, elapsedMs: Date.now() - started });
+      } catch (err) {
+        out.push({ error: err instanceof Error ? err : new Error(String(err)), elapsedMs: Date.now() - started });
+      }
+    }
+    return out;
+  }
+
+  async #send(state: State, questions: Questions, timeoutMs: number, site?: string): Promise<{ answers: Record<string, Answer>; record: RequestRecord }> {
     const payload = requestBody(state, questions, this.model);
     const estimated = estimateTokens(payload);
     const data = await this.#call(payload, timeoutMs);
@@ -205,15 +245,17 @@ export class DecisionClient {
       throw new DecisionError((err as Error).message);
     }
     const inputTokens = parsed.usage.inputTokens ?? estimated;
-    this.#onRequest?.({
+    const record: RequestRecord = {
       questions: Object.keys(questions).length,
       inputTokens,
       outputTokens: parsed.usage.outputTokens ?? 0,
       estimated: parsed.usage.inputTokens === undefined,
       model: parsed.usage.model ?? this.model,
       costUsd: costUsd(inputTokens),
-    });
-    return parsed.answers;
+      ...(site !== undefined ? { site } : {}),
+    };
+    this.#onRequest?.(record);
+    return { answers: parsed.answers, record };
   }
 
   /** The transport call with one retry on a transient error. */
@@ -263,6 +305,6 @@ export function createDecisionClient(options: CreateDecisionClientOptions): Deci
     transport,
     enabled: () => settings.get().decisions.enabled && key() !== undefined,
     ...(options.sleep !== undefined ? { sleep: options.sleep } : {}),
-    onRequest: (r) => log(`[decisions] ${r.model}: ${r.questions} questions, ${r.inputTokens}${r.estimated ? " (est.)" : ""} in / ${r.outputTokens} out tokens, $${r.costUsd.toFixed(6)}`),
+    onRequest: (r) => log(`[decisions]${r.site !== undefined ? ` ${r.site}` : ""} ${r.model}: ${r.questions} questions, ${r.inputTokens}${r.estimated ? " (est.)" : ""} in / ${r.outputTokens} out tokens, $${r.costUsd.toFixed(6)}`),
   });
 }

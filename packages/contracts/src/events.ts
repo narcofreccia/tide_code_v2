@@ -1,5 +1,5 @@
 import { Type, type Static } from "typebox";
-import { Activity, ApprovalDecision, CheckpointStats, ExpertsFinding, ExpertsMessage, ExpertsPhase, ExpertsSession, Handoff, ImageInput, Limited, MergeStrategy, Message, Project, ProjectLink, ProposedPlan, ProviderKind, PullRequest, RateLimit, ScheduledTask, Thread, Triage, Turn, TurnUsage } from "./domain.ts";
+import { Activity, ApprovalDecision, CheckpointStats, ExpertsFinding, ExpertsMessage, ExpertsPhase, ExpertsSession, Handoff, ImageInput, Limited, MergeStrategy, Message, Project, ProjectLink, ProposedPlan, ProviderKind, PullRequest, RateLimit, ScheduledTask, Thread, Triage, Turn, TurnUsage, HandoffJudge, Verdict } from "./domain.ts";
 
 // Events = persisted facts. Payloads are self-contained so the projector
 // never needs to look anything up outside the event.
@@ -27,7 +27,7 @@ export const ThreadCreated = evt("thread.created", {
 });
 export const ThreadUpdated = evt("thread.updated", {
   threadId: Type.String(),
-  patch: Type.Partial(Type.Pick(Thread, ["title", "provider", "model", "mode", "interaction", "pinned"])),
+  patch: Type.Partial(Type.Pick(Thread, ["title", "provider", "model", "mode", "interaction", "pinned", "autoAllowRoutine"])),
   /** R5: the title was derived from the first prompt, not typed by the user */
   autoTitled: Type.Optional(Type.Boolean()),
   /** the provider changed: the old harness's session id must not be resumed on the new one */
@@ -180,6 +180,21 @@ export const TurnEdited = evt("turn.edited", { turnId: Type.String(), threadId: 
 export const TurnsReordered = evt("turns.reordered", { threadId: Type.String(), turnIds: Type.Array(Type.String()), at: Type.Number() });
 /** Context carried to a harness that has not seen the thread (recorded before the turn that consumes it). */
 export const HandoffRecorded = evt("handoff.recorded", { handoff: Handoff });
+/** R6: the judge re-ranked the handoff; replaces text/coverage of a not-yet-delivered handoff */
+export const HandoffRefined = evt("handoff.refined", {
+  handoffId: Type.String(),
+  threadId: Type.String(),
+  text: Type.String(),
+  coveredTurnIds: Type.Array(Type.String()),
+  omittedTurnIds: Type.Array(Type.String()),
+  judge: HandoffJudge,
+  at: Type.Number(),
+});
+/** R6: a verdict landed on a thread, an approval activity or an experts session */
+export const JudgeRecorded = evt("judge.recorded", {
+  target: Type.Object({ kind: Type.Union([Type.Literal("thread"), Type.Literal("approval"), Type.Literal("experts")]), id: Type.String() }),
+  verdict: Verdict,
+});
 export const HandoffDeliveredEvt = evt("handoff.delivered", { turnId: Type.String(), threadId: Type.String(), handoffId: Type.String(), delivery: Type.Union([Type.Literal("inline"), Type.Literal("native")]), at: Type.Number() });
 /** `turns` = how many of the harness's own turns to forget (the rolled-back ones that it ran). */
 export const RollbackRequested = evt("rollback.requested", { threadId: Type.String(), turnId: Type.String(), restoreFiles: Type.Boolean(), turnIds: Type.Array(Type.String()), at: Type.Number() });
@@ -239,7 +254,7 @@ export const DomainEvent = Type.Union([
   ExpertsArchived,
   TurnSettled,
   TurnSteered, TurnSteerFellBack, TurnEdited, TurnsReordered,
-  HandoffRecorded, HandoffDeliveredEvt,
+  HandoffRecorded, HandoffDeliveredEvt, HandoffRefined, JudgeRecorded,
   RollbackRequested, RollbackCompleted, RollbackFailed,
   ThreadLimitedEvt, ThreadLimitPolicyChanged, ThreadSnoozed, ThreadResumed, PrWatchChanged,
   TaskCreated, TaskUpdated, TaskDeleted, TaskFired,

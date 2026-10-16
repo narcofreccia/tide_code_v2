@@ -1,4 +1,5 @@
-import type { DriverEnv, OpenSessionOptions, ProviderInstance, ProviderSession, ProviderStatus } from "@tide/contracts";
+import type { CompletionRequest, CompletionResult, DriverEnv, OpenSessionOptions, ProviderInstance, ProviderSession, ProviderStatus } from "@tide/contracts";
+import { complete } from "./complete.ts";
 import { ClaudeSession } from "./session.ts";
 import { shellQuote } from "./shell.ts";
 import { buildStatus, detectBinary } from "./status.ts";
@@ -42,6 +43,11 @@ export class ClaudeInstance implements ProviderInstance {
     const session = new ClaudeSession(this.#config, this.#env, options, this.#queryFn, this.#binaryPath);
     this.#sessions.add(session);
     return session;
+  }
+
+  async complete(request: CompletionRequest): Promise<CompletionResult> {
+    this.#binaryPath ??= await detectBinary(this.#config);
+    return complete(request, this.#config, this.#env, this.#queryFn, this.#binaryPath);
   }
 
   terminalCommand(nativeSessionId: string, cwd: string): string {

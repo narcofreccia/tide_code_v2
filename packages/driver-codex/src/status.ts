@@ -23,6 +23,7 @@ export const CODEX_CAPS = {
   steer: true,
   fork: true,
   rollback: true,
+  oneShot: true,
 } as const;
 
 export const LOGIN_HINT = "Run `codex login` in a terminal";

@@ -1,7 +1,7 @@
 import { Type, type Static, type TSchema } from "typebox";
 import { AgentCommand, ClientCommand } from "./commands.ts";
 import { EventRecord } from "./events.ts";
-import { ProviderKind, ReadModel, RuntimeMode, ScheduledTask, Team } from "./domain.ts";
+import { JudgeSite, JudgeSource, ProviderKind, ReadModel, RuntimeMode, ScheduledTask, Team } from "./domain.ts";
 
 // ---- wire envelope ----
 // client -> server
@@ -58,6 +58,8 @@ export const ProviderStatusDto = Type.Object({
     planMode: Type.Boolean(), subagents: Type.Boolean(), mcp: Type.Boolean(), images: Type.Boolean(),
     resume: Type.Boolean(), contextUsage: Type.Boolean(), openInTerminal: Type.Boolean(),
     steer: Type.Optional(Type.Boolean()), fork: Type.Optional(Type.Boolean()), rollback: Type.Optional(Type.Boolean()),
+    /** R6: the harness can answer a tool-less one-shot (judge fallback) */
+    oneShot: Type.Optional(Type.Boolean()),
   }),
 });
 export type ProviderStatusDto = Static<typeof ProviderStatusDto>;
@@ -149,12 +151,36 @@ export const ServerInfo = Type.Object({
   remote: Type.Optional(Type.Object({ host: Type.String(), port: Type.Number(), lanUrls: Type.Array(Type.String()), pairingUrl: Type.Optional(Type.String()) })),
 });
 
+export const DecisionSites = Type.Object({ handoff: Type.Boolean(), experts: Type.Boolean(), delegates: Type.Boolean(), approvals: Type.Boolean(), stuck: Type.Boolean() });
+export type DecisionSites = Static<typeof DecisionSites>;
+export const DecisionsSettings = Type.Object({
+  enabled: Type.Boolean(),
+  hasKey: Type.Boolean(),
+  model: Type.String(),
+  endpoint: Type.String(),
+  usdPerMillionInput: Type.Number(),
+  contextTokens: Type.Number(),
+  /** harness model asked when Jev is unsure; absent = Jev only */
+  fallback: Type.Optional(Type.Object({ provider: ProviderKind, model: Type.Optional(Type.String()) })),
+  /** `high`: below it the fallback is asked; `low`: below it nothing is shown or acted on */
+  grayZone: Type.Object({ low: Type.Number(), high: Type.Number() }),
+  sites: DecisionSites,
+  /** opt-in: when the experts judge says converged (≥ high, Jev), advance one phase automatically */
+  expertsAutoAdvance: Type.Boolean(),
+});
+export type DecisionsSettings = Static<typeof DecisionsSettings>;
+
 /** User settings that must be visible to every client and to server-created threads (delegates, experts, plan.implement). */
 export const UserSettings = Type.Object({
   providerDefaults: Type.Record(Type.String(), Type.Object({ model: Type.Optional(Type.String()), mode: Type.Optional(RuntimeMode) })),
   worktreeByDefault: Type.Boolean(),
-  /** optional decisions model (TypeSafe Jev) used only for Inbox triage; off by default */
-  decisions: Type.Object({ enabled: Type.Boolean(), hasKey: Type.Boolean() }),
+  /**
+   * R6: the decision layer. TypeSafe Jev (System One) is the calibrated first filter; when its
+   * confidence is below `grayZone.high` the user-selected `fallback` harness model is asked
+   * (one-shot, tools off). Off by default. `model/endpoint/usdPerMillionInput/contextTokens`
+   * are informational, from the server's client constants.
+   */
+  decisions: DecisionsSettings,
   /** R4: after a restart, interrupted threads get a "Continue where you left off" turn (max 3 in a row); off by default */
   continueAfterRestart: Type.Boolean(),
   /** R5: what a running thread does with a follow-up by default (⌘↵ always sends this; ⌥↵ the other) */
@@ -168,7 +194,15 @@ export type UserSettings = Static<typeof UserSettings>;
 export const UserSettingsPatch = Type.Object({
   providerDefaults: Type.Optional(UserSettings.properties.providerDefaults),
   worktreeByDefault: Type.Optional(Type.Boolean()),
-  decisions: Type.Optional(Type.Object({ enabled: Type.Optional(Type.Boolean()), apiKey: Type.Optional(Type.String()) })),
+  decisions: Type.Optional(Type.Object({
+    enabled: Type.Optional(Type.Boolean()),
+    apiKey: Type.Optional(Type.String()),
+    /** null clears the fallback */
+    fallback: Type.Optional(Type.Union([Type.Object({ provider: ProviderKind, model: Type.Optional(Type.String()) }), Type.Null()])),
+    grayZone: Type.Optional(Type.Object({ low: Type.Number(), high: Type.Number() })),
+    sites: Type.Optional(Type.Partial(DecisionSites)),
+    expertsAutoAdvance: Type.Optional(Type.Boolean()),
+  })),
   continueAfterRestart: Type.Optional(Type.Boolean()),
   followUpMode: Type.Optional(Type.Union([Type.Literal("steer"), Type.Literal("queue")])),
   limitPolicy: Type.Optional(Type.Union([Type.Literal("manual"), Type.Literal("reset")])),
@@ -176,6 +210,27 @@ export const UserSettingsPatch = Type.Object({
   teams: Type.Optional(Type.Array(Team)),
 });
 export type UserSettingsPatch = Static<typeof UserSettingsPatch>;
+
+const SpendBucket = Type.Object({ calls: Type.Number(), tokens: Type.Number(), usd: Type.Number() });
+export const DecisionsStats = Type.Object({
+  today: Type.Object({ jev: SpendBucket, fallback: SpendBucket }),
+  bySite: Type.Record(Type.String(), SpendBucket),
+  recent: Type.Array(Type.Object({
+    at: Type.Number(),
+    site: JudgeSite,
+    source: JudgeSource,
+    questionId: Type.String(),
+    label: Type.Optional(Type.String()),
+    score: Type.Optional(Type.Number()),
+    confidence: Type.Number(),
+    tokens: Type.Number(),
+    usd: Type.Optional(Type.Number()),
+    elapsedMs: Type.Number(),
+    model: Type.Optional(Type.String()),
+    error: Type.Optional(Type.String()),
+  })),
+});
+export type DecisionsStats = Static<typeof DecisionsStats>;
 
 /** What an agent sees of a thread (no secrets, no raw payloads). */
 export const AgentThreadSummary = Type.Object({
@@ -210,6 +265,8 @@ export const rpcMethods = {
   /** server-side user settings (stored in TIDE_HOME/settings.json); the API key never leaves the server */
   "settings.get": unary(Type.Object({}), UserSettings),
   "settings.set": unary(Type.Object({ patch: UserSettingsPatch }), UserSettings),
+  /** R6: judge spend and recent verdicts (observability; not domain state) */
+  "decisions.stats": unary(Type.Object({}), DecisionsStats),
   /** validated command -> persisted events */
   /** client commands only; internal commands are rejected with `forbidden` */
   "orchestration.dispatch": unary(Type.Object({ command: ClientCommand }), DispatchResult),

@@ -3,7 +3,7 @@ import { cleanup, fireEvent, render, screen, waitFor } from "@testing-library/re
 import type { UserSettings } from "@tide/contracts";
 import { DecisionsSection } from "./DecisionsSection.tsx";
 import { mockRpc, resetUi } from "../../testHarness.ts";
-import { defaultUserSettings } from "../../state/serverSettings.ts";
+import { defaultUserSettings, defaultDecisionsSettings } from "../../state/serverSettings.ts";
 
 afterEach(() => {
   cleanup();
@@ -13,7 +13,7 @@ afterEach(() => {
 describe("Settings › Decisions", () => {
   it("toggles the decisions model on the server", async () => {
     const rpc = mockRpc({
-      "settings.set": (): UserSettings => ({ ...defaultUserSettings(), decisions: { enabled: true, hasKey: false } }),
+      "settings.set": (): UserSettings => ({ ...defaultUserSettings(), decisions: { ...defaultDecisionsSettings(), enabled: true, hasKey: false } }),
     });
     render(<DecisionsSection />);
     const toggle = screen.getByLabelText("Triage the Inbox with the decisions model") as HTMLInputElement;
@@ -25,7 +25,7 @@ describe("Settings › Decisions", () => {
 
   it("posts the API key, clears the field and only ever shows `key set`", async () => {
     const rpc = mockRpc({
-      "settings.set": (): UserSettings => ({ ...defaultUserSettings(), decisions: { enabled: false, hasKey: true } }),
+      "settings.set": (): UserSettings => ({ ...defaultUserSettings(), decisions: { ...defaultDecisionsSettings(), enabled: false, hasKey: true } }),
     });
     render(<DecisionsSection />);
     expect(screen.getByText("no key")).toBeDefined();

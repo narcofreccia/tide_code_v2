@@ -1,5 +1,5 @@
 import { Type, type Static } from "typebox";
-import { Activity, ApprovalDecision, CheckpointStats, ExpertSpec, ExpertsPhase, ImageInput, InteractionMode, Limited, LinkAccess, MergeStrategy, ProviderKind, PullRequest, RateLimit, RuntimeMode, Schedule, Team, Triage, TurnUsage } from "./domain.ts";
+import { Activity, ApprovalDecision, CheckpointStats, ExpertSpec, ExpertsPhase, ImageInput, InteractionMode, Limited, LinkAccess, MergeStrategy, ProviderKind, PullRequest, RateLimit, RuntimeMode, Schedule, Team, Triage, TurnUsage, HandoffJudge, Verdict } from "./domain.ts";
 
 // Commands = validated intents. ClientCommand may arrive over RPC; InternalCommand is
 // issued only by server reactors (driver ingestion) and is rejected at the RPC boundary.
@@ -68,6 +68,8 @@ export const ThreadUpdate = Type.Object({
   mode: Type.Optional(RuntimeMode),
   interaction: Type.Optional(InteractionMode),
   pinned: Type.Optional(Type.Boolean()),
+  /** R6: per-thread opt-in for auto-accepting routine approvals (judge-rated) */
+  autoAllowRoutine: Type.Optional(Type.Boolean()),
 });
 /** R5: bring an archived thread back (its worktree is not recreated; the branch is still there) */
 export const ThreadUnarchive = Type.Object({ type: Type.Literal("thread.unarchive"), commandId: CommandId, threadId: Type.String() });
@@ -338,6 +340,21 @@ export const MergeReport = Type.Object({
 });
 /** triage reactor reports the decisions model's answers for a thread */
 export const ThreadTriage = Type.Object({ type: Type.Literal("thread.triage"), threadId: Type.String(), triage: Triage });
+/** R6: a decision-site reactor records a verdict on its target */
+export const JudgeRecord = Type.Object({
+  type: Type.Literal("judge.record"),
+  target: Type.Object({ kind: Type.Union([Type.Literal("thread"), Type.Literal("approval"), Type.Literal("experts")]), id: Type.String() }),
+  verdict: Verdict,
+});
+/** R6: the handoff judge replaces a pending handoff's selection; refused once the handoff was delivered */
+export const HandoffRefine = Type.Object({
+  type: Type.Literal("handoff.refine"),
+  handoffId: Type.String(),
+  text: Type.String(),
+  coveredTurnIds: Type.Array(Type.String()),
+  omittedTurnIds: Type.Array(Type.String()),
+  judge: HandoffJudge,
+});
 /** provider reactor: the harness cannot steer (no cap, no live turn, or it refused) — the message becomes a queued turn instead */
 export const SteerFallback = Type.Object({ type: Type.Literal("steer.fallback"), messageId: Type.String(), reason: Type.String() });
 /** rollback service reports how a thread.rollback ended */
@@ -391,7 +408,7 @@ export const InternalCommand = Type.Union([
   TurnStart, AssistantAppend, AssistantReasoningAppend, ActivityUpsert, PlanPropose, PlanProgressReport, UsageReport, TurnSettle,
   WorktreeAttach, CheckpointRecord, PrUpdate, WorktreeDetachedReport, MergeReport, ThreadTriage,
   SteerFallback, RollbackReport, ThreadLimited, HandoffDelivered, TaskFire,
-  ExpertsExpertStatus,
+  ExpertsExpertStatus, JudgeRecord, HandoffRefine,
 ]);
 export type InternalCommand = Static<typeof InternalCommand>;
 

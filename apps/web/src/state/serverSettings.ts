@@ -21,11 +21,26 @@ interface ServerSettingsState {
   loaded: boolean;
 }
 
+/** R6: the decision layer's defaults; the server fills the informational fields from its client constants. */
+export function defaultDecisionsSettings(): UserSettings["decisions"] {
+  return {
+    enabled: false,
+    hasKey: false,
+    model: "jev-latest",
+    endpoint: "https://api.typesafe.ai",
+    usdPerMillionInput: 0.042,
+    contextTokens: 28_000,
+    grayZone: { low: 0.6, high: 0.85 },
+    sites: { handoff: true, experts: true, delegates: true, approvals: true, stuck: true },
+    expertsAutoAdvance: false,
+  };
+}
+
 export function defaultUserSettings(): UserSettings {
   return {
     providerDefaults: {},
     worktreeByDefault: true,
-    decisions: { enabled: false, hasKey: false },
+    decisions: defaultDecisionsSettings(),
     continueAfterRestart: false,
     followUpMode: "steer",
     limitPolicy: "manual",
@@ -44,16 +59,27 @@ export async function loadServerSettings(): Promise<void> {
   useServerSettings.setState({ settings, loaded: true });
 }
 
+function clearFallback(d: UserSettings["decisions"], clear: boolean): UserSettings["decisions"] {
+  if (!clear) return d;
+  const { fallback: _fallback, ...rest } = d;
+  return rest;
+}
+
 /** The local view of a patch: what the server will answer, minus the key itself. */
 function applyPatch(settings: UserSettings, patch: UserSettingsPatch): UserSettings {
   const decisions = patch.decisions;
   return {
     providerDefaults: patch.providerDefaults ?? settings.providerDefaults,
     worktreeByDefault: patch.worktreeByDefault ?? settings.worktreeByDefault,
-    decisions: {
+    decisions: clearFallback({
+      ...settings.decisions,
       enabled: decisions?.enabled ?? settings.decisions.enabled,
       hasKey: settings.decisions.hasKey,
-    },
+      ...(decisions?.fallback === undefined ? {} : decisions.fallback === null ? {} : { fallback: decisions.fallback }),
+      grayZone: decisions?.grayZone ?? settings.decisions.grayZone,
+      sites: { ...settings.decisions.sites, ...(decisions?.sites ?? {}) },
+      expertsAutoAdvance: decisions?.expertsAutoAdvance ?? settings.decisions.expertsAutoAdvance,
+    }, decisions?.fallback === null),
     continueAfterRestart: patch.continueAfterRestart ?? settings.continueAfterRestart,
     followUpMode: patch.followUpMode ?? settings.followUpMode,
     limitPolicy: patch.limitPolicy ?? settings.limitPolicy,

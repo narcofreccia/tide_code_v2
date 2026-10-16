@@ -17,6 +17,7 @@ export const INSTALL_HINT = "Install OpenCode 2: npm i -g @opencode/cli (https:/
  * - `steer`: `POST …/prompt {delivery: "steer"}` is promoted into the running execution.
  * - `fork`: `POST …/fork` (+ `…/move` into the thread's worktree).
  * - `rollback`: `POST …/revert/stage {files: false}` + `…/revert/commit`.
+ * - `oneShot`: a throwaway deny-all session (`complete.ts`), removed afterwards.
  */
 export const OPENCODE_CAPS = {
   planMode: true,
@@ -29,6 +30,7 @@ export const OPENCODE_CAPS = {
   steer: true,
   fork: true,
   rollback: true,
+  oneShot: true,
 } as const;
 
 export function toModelInfo(models: WireModel[], defaultId: string | undefined): ModelInfo[] {

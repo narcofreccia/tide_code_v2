@@ -32,6 +32,8 @@ export const PI_CAPS = {
   fork: true,
   // RPC `fork {entryId}` on the first dropped turn's prompt (docs/rpc-commands.md § fork); see turns.ts
   rollback: true,
+  // `pi -p --no-tools …` one-shot completion (complete.ts)
+  oneShot: true,
 } as const;
 
 /**

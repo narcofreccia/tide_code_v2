@@ -1,6 +1,5 @@
 import type { Activity, ReadModel, Thread, Triage } from "@tide/contracts";
-import { packBatches, type Limits } from "./client.ts";
-import { noul, score, type Answer, type Questions, type State } from "./wire.ts";
+import type { Ask, JudgeVerdict, PerItemQuestion } from "./judge.ts";
 
 export const SETTLED_WINDOW_MS = 30 * 60_000;
 export const MAX_USER_CHARS = 800;
@@ -92,49 +91,51 @@ export function threadState(model: ReadModel, thread: Thread, now: number): Reco
   };
 }
 
-export interface TriageRequest {
-  threadIds: string[];
-  state: State;
-  questions: Questions;
+/** The triage question for one project: three sub-questions per candidate thread, one judge call per pack. */
+export interface TriageQuestion {
+  question: PerItemQuestion;
+  /** item key -> thread id */
+  threads: Map<string, string>;
 }
 
-function buildRequest(model: ReadModel, threads: readonly Thread[], now: number): { state: State; questions: Questions; ids: string[] } {
-  const state: Record<string, unknown> = {};
-  const questions: Questions = {};
-  const ids: string[] = [];
-  threads.forEach((thread, i) => {
-    const key = `t${i}`;
-    ids.push(thread.id);
-    state[key] = threadState(model, thread, now);
-    questions[`${key}__needsUser`] = noul(`About ${key}: ${NEEDS_USER}`);
-    questions[`${key}__stuck`] = noul(`About ${key}: ${STUCK}`);
-    questions[`${key}__urgency`] = score(`About ${key}: ${URGENCY}`, URGENCY_LEVELS);
-  });
-  return { state, questions, ids };
-}
+/**
+ * Only `stuck` may go to the fallback (gray zone); needs-user and urgency are Jev-only
+ * (threshold 0), they are sort keys and a harness call is not worth it.
+ */
+export const TRIAGE_QUESTIONS: Record<"needsUser" | "stuck" | "urgency", Ask> = {
+  needsUser: { kind: "yes-no", instructions: NEEDS_USER, threshold: 0 },
+  stuck: { kind: "yes-no", instructions: STUCK },
+  urgency: { kind: "score", instructions: URGENCY, levels: URGENCY_LEVELS, threshold: 0 },
+};
 
-/** One project's candidates as requests that each fit the model limits (usually exactly one). */
-export function buildTriageRequests(model: ReadModel, projectId: string, now: number, limits: Limits): TriageRequest[] {
+export function buildTriageQuestion(model: ReadModel, projectId: string, now: number): TriageQuestion | undefined {
   const candidates = triageCandidates(model, projectId, now);
-  const batches = packBatches(candidates, (items) => buildRequest(model, items, now), limits);
-  return batches.map((batch) => {
-    const { state, questions, ids } = buildRequest(model, batch, now);
-    return { threadIds: ids, state, questions };
+  if (candidates.length === 0) return undefined;
+  const threads = new Map<string, string>();
+  const items = candidates.map((thread, i) => {
+    const key = `t${i}`;
+    threads.set(key, thread.id);
+    return { key, state: threadState(model, thread, now) };
   });
+  return { question: { kind: "per-item", id: `triage:${projectId}`, site: "stuck", items, questions: TRIAGE_QUESTIONS }, threads };
 }
 
-const num = (a: Answer | undefined): number | undefined => (a !== undefined && typeof a.value === "number" ? a.value : undefined);
 const unit = (n: number): number => Math.max(0, Math.min(1, n));
 
-/** Answers -> triage per thread id; threads with a missing answer are skipped. */
-export function mapAnswers(request: TriageRequest, answers: Record<string, Answer>, at: number): Map<string, Triage> {
+/** Verdicts -> triage per thread id; a thread missing any answer (source none) is skipped. */
+export function mapAnswers(triage: TriageQuestion, verdicts: readonly JudgeVerdict[], at: number): Map<string, Triage> {
+  const byId = new Map(verdicts.map((v) => [v.id, v]));
   const out = new Map<string, Triage>();
-  request.threadIds.forEach((threadId, i) => {
-    const needsUser = num(answers[`t${i}__needsUser`]);
-    const stuck = num(answers[`t${i}__stuck`]);
-    const level = num(answers[`t${i}__urgency`]);
-    if (needsUser === undefined || stuck === undefined || level === undefined) return;
-    out.set(threadId, { needsUser: unit(needsUser), stuck: unit(stuck), urgency: unit(level / (URGENCY_LEVELS.length - 1)), at });
-  });
+  const score = (key: string, name: string): number | undefined => {
+    const v = byId.get(`${triage.question.id}:${key}:${name}`);
+    return v !== undefined && v.source !== "none" && v.score !== undefined ? v.score : undefined;
+  };
+  for (const [key, threadId] of triage.threads) {
+    const needsUser = score(key, "needsUser");
+    const stuck = score(key, "stuck");
+    const urgency = score(key, "urgency");
+    if (needsUser === undefined || stuck === undefined || urgency === undefined) continue;
+    out.set(threadId, { needsUser: unit(needsUser), stuck: unit(stuck), urgency: unit(urgency), at });
+  }
   return out;
 }

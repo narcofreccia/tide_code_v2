@@ -1,4 +1,4 @@
-import type { Activity, AttentionKind, ExpertsSession, Message, ReadModel, Thread, TimelineEntry, Turn, TurnUsage } from "./domain.ts";
+import type { Activity, AttentionKind, ExpertsSession, Handoff, Message, ReadModel, Thread, TimelineEntry, Turn, TurnUsage } from "./domain.ts";
 import type { DomainEvent, EventRecord } from "./events.ts";
 
 // Pure projector shared by server and clients. Returns a new model; never
@@ -459,6 +459,24 @@ export function applyEvent(model: ReadModel, event: DomainEvent): ReadModel {
     }
     case "handoff.recorded":
       return withThread({ ...model, handoffs: { ...model.handoffs, [event.handoff.id]: event.handoff } }, event.handoff.threadId, { pendingHandoffId: event.handoff.id, updatedAt: event.handoff.createdAt });
+    case "handoff.refined": {
+      const h = model.handoffs[event.handoffId];
+      if (!h) return model;
+      const next: Handoff = { ...h, text: event.text, coveredTurnIds: event.coveredTurnIds, omittedTurnIds: event.omittedTurnIds, judge: event.judge };
+      return withThread({ ...model, handoffs: { ...model.handoffs, [h.id]: next } }, h.threadId, { updatedAt: event.at });
+    }
+    case "judge.recorded": {
+      const { target, verdict } = event;
+      if (target.kind === "thread") return withThread(model, target.id, { judge: verdict, updatedAt: verdict.at });
+      if (target.kind === "experts") {
+        const s = model.expertsSessions[target.id];
+        if (!s) return model;
+        return { ...model, expertsSessions: { ...model.expertsSessions, [s.id]: { ...s, judge: verdict, updatedAt: verdict.at } } };
+      }
+      const a = model.activities[target.id];
+      if (!a || a.kind !== "approval") return model;
+      return { ...model, activities: { ...model.activities, [a.id]: { ...a, judge: verdict } } };
+    }
     case "handoff.delivered": {
       const turn = model.turns[event.turnId];
       if (!turn) return model;

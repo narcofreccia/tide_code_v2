@@ -2,6 +2,7 @@ import type { Command, ReadModel } from "@tide/contracts";
 import { decideActivity } from "./activities.ts";
 import { decideAgent } from "./agent.ts";
 import { decideExperts } from "./experts.ts";
+import { decideJudge } from "./judge.ts";
 import { decidePlan } from "./plans.ts";
 import { decideLineage } from "./lineage.ts";
 import { decideProject } from "./projects.ts";
@@ -113,6 +114,10 @@ export function decide(model: ReadModel, command: Command, ctx: DecideContext): 
     case "experts.synthesis.set":
     case "thread.delegate":
       return decideAgent(model, command, ctx);
+
+    case "judge.record":
+    case "handoff.refine":
+      return decideJudge(model, command, ctx);
 
     default: {
       const _exhaustive: never = command;

@@ -371,17 +371,29 @@ describe("server.info remote", () => {
   });
 });
 
+describe("decisions.stats rpc", () => {
+  it("returns an empty ledger summary", async () => {
+    const client = await TestClient.open(`ws://${base}/ws?token=${TOKEN}`);
+    try {
+      expect(await client.call("decisions.stats", {})).toEqual({ today: { jev: { calls: 0, tokens: 0, usd: 0 }, fallback: { calls: 0, tokens: 0, usd: 0 } }, bySite: {}, recent: [] });
+    } finally {
+      client.close();
+    }
+  });
+});
+
 describe("settings rpc", () => {
   it("get/set round-trip", async () => {
     const client = await TestClient.open(`ws://${base}/ws?token=${TOKEN}`);
     try {
-      expect(await client.call("settings.get", {})).toEqual({ providerDefaults: {}, worktreeByDefault: true, decisions: { enabled: false, hasKey: false }, continueAfterRestart: false, followUpMode: "steer", limitPolicy: "manual", teams: PRESET_TEAMS });
+      expect(await client.call("settings.get", {})).toEqual({ providerDefaults: {}, worktreeByDefault: true, decisions: expect.objectContaining({ enabled: false, hasKey: false }), continueAfterRestart: false, followUpMode: "steer", limitPolicy: "manual", teams: PRESET_TEAMS });
       const next = await client.call("settings.set", { patch: { worktreeByDefault: false, providerDefaults: { pi: { model: "x" } }, decisions: { apiKey: "k" } } });
-      expect(next).toEqual({ worktreeByDefault: false, providerDefaults: { pi: { model: "x" } }, decisions: { enabled: false, hasKey: true }, continueAfterRestart: false, followUpMode: "steer", limitPolicy: "manual", teams: PRESET_TEAMS });
+      expect(next).toEqual({ worktreeByDefault: false, providerDefaults: { pi: { model: "x" } }, decisions: expect.objectContaining({ enabled: false, hasKey: true }), continueAfterRestart: false, followUpMode: "steer", limitPolicy: "manual", teams: PRESET_TEAMS });
       const team = { id: "a", name: "Solo", stages: [{ key: "lead", role: "implementer", provider: "claude", worktree: "own" }] };
       expect(((await client.call("settings.set", { patch: { teams: [team] } })) as { teams: unknown[] }).teams).toEqual([team]);
       await expect(client.call("settings.set", { patch: { teams: [team, team] } })).rejects.toMatchObject({ code: "invalid-params" });
       expect(((await client.call("settings.set", { patch: { teams: [] } })) as { teams: unknown[] }).teams).toEqual(PRESET_TEAMS);
+      await expect(client.call("settings.set", { patch: { decisions: { grayZone: { low: 0.9, high: 0.5 } } } })).rejects.toMatchObject({ code: "invalid-params" });
     } finally {
       client.close();
     }

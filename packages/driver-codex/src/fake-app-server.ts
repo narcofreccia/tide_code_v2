@@ -40,6 +40,11 @@ export class FakeAppServer implements ChildLike {
   /** result of `account/rateLimits/read` (the default `{}` carries no snapshot) */
   rateLimits: unknown = {};
 
+  /** when set, `turn/start` is followed by an agent message with this text and `turn/completed` */
+  autoReply: string | undefined;
+  /** turn/completed status used by `autoReply` */
+  autoStatus = "completed";
+
   #listeners: ((chunk: unknown) => void)[] = [];
   #exit: ((arg: unknown) => void)[] = [];
   /** methods the fake simply never answers (used for the handshake-timeout test) */
@@ -113,6 +118,11 @@ export class FakeAppServer implements ChildLike {
       return;
     }
     this.emit({ jsonrpc: "2.0", id: message.id, result: this.#result(message) });
+    if (message.method === "turn/start" && this.autoReply !== undefined) {
+      const threadId = message.params?.["threadId"];
+      this.notify("item/completed", { threadId, turnId: this.turnId, item: { type: "agentMessage", id: "msg-1", text: this.autoReply } });
+      this.notify("turn/completed", { threadId, turn: { id: this.turnId, items: [], status: this.autoStatus } });
+    }
   }
 
   #result(message: Written): unknown {

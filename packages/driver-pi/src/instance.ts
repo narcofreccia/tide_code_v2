@@ -1,4 +1,5 @@
-import type { DriverEnv, OpenSessionOptions, ProviderInstance, ProviderSession, ProviderStatus } from "@tide/contracts";
+import type { CompletionRequest, CompletionResult, DriverEnv, OpenSessionOptions, ProviderInstance, ProviderSession, ProviderStatus } from "@tide/contracts";
+import { runComplete } from "./complete.ts";
 import { resolveBridgePath } from "./bridge-path.ts";
 import { PiSession } from "./session.ts";
 import { buildSpawn } from "./spawn.ts";
@@ -52,6 +53,13 @@ export class PiInstance implements ProviderInstance {
     await session.prime();
     this.#sessions.add(session);
     return session;
+  }
+
+  /** One-shot, tools-off `pi -p` call (judge fallback); never a user thread. */
+  async complete(request: CompletionRequest): Promise<CompletionResult> {
+    this.#binaryPath ??= (await detectBinary(this.#config, this.#deps.probe, this.#env.log))?.path;
+    if (!this.#binaryPath) throw new Error(INSTALL_HINT);
+    return runComplete(this.#binaryPath, request, this.#config, this.#deps.spawn);
   }
 
   /** `pi --session <path|id>` reopens an existing session file (see `pi --help`). */

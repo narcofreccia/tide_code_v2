@@ -8,6 +8,7 @@ import type { DriverRegistry } from "../provider/registry.ts";
 import { resumableSessionId, threadCwd } from "../provider/sessions.ts";
 import type { RemoteInfo } from "./remote.ts";
 import { SettingsError, type SettingsStore } from "../settings.ts";
+import { JudgeLedger } from "../decisions/ledger.ts";
 import { RpcException, type RpcRouter } from "./router.ts";
 
 export interface HandlerDeps {
@@ -24,6 +25,8 @@ export interface HandlerDeps {
   /** W1: resolves + validates a linked-repo path; injectable so tests need no real directories */
   resolveDir?: (path: string) => Promise<string>;
   settings?: SettingsStore;
+  /** R6: judge spend ledger; built over `store` when absent */
+  judgeLedger?: JudgeLedger;
   /** tests inject a Git bound to a sandboxed env (no global identity, no hooks) */
   git?: (cwd: string) => Git;
 }
@@ -113,6 +116,13 @@ export function registerHandlers(router: RpcRouter, deps: HandlerDeps): void {
       if (err instanceof SettingsError) throw new RpcException("invalid-params", err.message);
       throw err;
     }
+  });
+
+  let ledger = deps.judgeLedger;
+  router.register("decisions.stats", async (_input, ctx) => {
+    if (ctx.agentThreadId !== undefined) throw new RpcException("forbidden", "decision stats are not available to agent sockets");
+    ledger ??= new JudgeLedger(deps.store);
+    return ledger.stats(Date.now());
   });
 
   router.register("orchestration.dispatch", async (input) => {

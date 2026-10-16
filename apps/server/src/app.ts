@@ -1,7 +1,10 @@
 import type { ImageInput } from "@tide/contracts";
 import type { ServerConfig } from "./config.ts";
-import { createDecisionClient, type Transport } from "./decisions/client.ts";
+import type { Transport } from "./decisions/client.ts";
+import type { Judge } from "./decisions/judge.ts";
+import type { JudgeLedger } from "./decisions/ledger.ts";
 import { TriageReactor } from "./decisions/reactor.ts";
+import { createJudgeService } from "./decisions/service.ts";
 import { ExpertsReactor } from "./experts/reactor.ts";
 import { TideMcpProvisioner } from "./mcp/provision.ts";
 import { AgentTokenStore } from "./rpc/agentTickets.ts";
@@ -58,6 +61,9 @@ export interface App {
   reactor: ProviderReactor;
   experts: ExpertsReactor;
   triage: TriageReactor;
+  /** R6: the decision layer every site asks (Jev first, the user's harness in the gray zone) */
+  judge: Judge;
+  judgeLedger: JudgeLedger;
   settings: SettingsStore;
   agentTokens: AgentTokenStore;
   mcp: TideMcpProvisioner;
@@ -139,11 +145,15 @@ export async function createApp(options: AppOptions): Promise<App> {
   limits.start();
   prWatch.start();
 
-  const triage = new TriageReactor({
-    engine,
-    client: createDecisionClient({ settings, log, ...(options.decisionsTransport !== undefined ? { transport: options.decisionsTransport } : {}) }),
+  const { judge, ledger: judgeLedger } = createJudgeService({
+    settings,
+    registry,
+    store,
+    dataDir: config.dataDir,
     log,
+    ...(options.decisionsTransport !== undefined ? { transport: options.decisionsTransport } : {}),
   });
+  const triage = new TriageReactor({ engine, judge, log });
   triage.start();
 
   // After every reactor subscribed: the dead turns' settles must reach the vcs reactor (after-
@@ -173,6 +183,7 @@ export async function createApp(options: AppOptions): Promise<App> {
           workspace,
           agentTokens,
           settings,
+          judgeLedger,
           delegateWaits,
           ...(options.gh !== undefined ? { gh: options.gh } : {}),
           config: { ...config, environmentId },
@@ -189,6 +200,8 @@ export async function createApp(options: AppOptions): Promise<App> {
     reactor,
     experts,
     triage,
+    judge,
+    judgeLedger,
     settings,
     agentTokens,
     mcp,

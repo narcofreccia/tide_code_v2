@@ -28,6 +28,36 @@ export interface DriverCaps {
   fork?: boolean;
   /** `ProviderSession.rollback` drops the last N turns from the harness's own conversation */
   rollback?: boolean;
+  /** R6: `ProviderInstance.complete` answers a tool-less one-shot prompt (the judge fallback) */
+  oneShot?: boolean;
+}
+
+/**
+ * R6: a one-shot, tools-off completion on the user's own harness subscription. Not a user thread:
+ * no project settings, no MCP, no skills (documented exception to the "never cripple" rule — the
+ * harness is used as a model endpoint the user already pays for).
+ */
+export interface CompletionRequest {
+  system: string;
+  prompt: string;
+  model?: string;
+  /** when given, drivers that support an output schema constrain the answer to one of these */
+  labels?: string[];
+  maxOutputTokens?: number;
+  timeoutMs: number;
+  /** structural so contracts need no DOM/node lib; a real AbortSignal fits */
+  signal?: { readonly aborted: boolean; addEventListener(type: "abort", listener: () => void): void };
+  /** scratch directory the driver may use; never a user worktree */
+  cwd: string;
+}
+export interface CompletionResult {
+  text: string;
+  /** set when the harness constrained the answer to `labels` */
+  label?: string;
+  model?: string;
+  /** only when the harness reports it; never estimated */
+  usage?: TurnUsage;
+  elapsedMs: number;
 }
 
 export interface ProviderStatus {
@@ -150,6 +180,8 @@ export interface ProviderInstance {
   openSession(options: OpenSessionOptions): Promise<ProviderSession>;
   /** shell command that reopens a session in a terminal (escape hatch), if supported */
   terminalCommand(nativeSessionId: string, cwd: string): string | undefined;
+  /** R6: one-shot classifier call; only when `caps.oneShot` */
+  complete?(request: CompletionRequest): Promise<CompletionResult>;
   dispose(): Promise<void>;
 }
 

@@ -17,6 +17,7 @@ import { registerAgentThreadHandlers } from "./agentThreads.ts";
 import type { DelegateWaits } from "../orchestration/delegation.ts";
 import { registerHandlers } from "./handlers.ts";
 import { SettingsStore } from "../settings.ts";
+import type { JudgeLedger } from "../decisions/ledger.ts";
 import { buildRemoteInfo, pairPage, type Interfaces } from "./remote.ts";
 import { registerVcsHandlers } from "./vcs.ts";
 import { createWorkspaceServices, registerWorkspaceHandlers, type WorkspaceServices } from "./workspace.ts";
@@ -57,6 +58,8 @@ export interface ServerDeps {
   networkInterfaces?: () => Interfaces;
   /** user settings; the app shares one store with the decisions client */
   settings?: SettingsStore;
+  /** R6: the judge's spend ledger (`decisions.stats`); defaults to one over `store` */
+  judgeLedger?: JudgeLedger;
   /** shared with the delegation reactor: a parent blocked in agent.thread.wait gets no wake-up */
   delegateWaits?: DelegateWaits;
 }
@@ -100,6 +103,7 @@ export async function startServer(deps: ServerDeps): Promise<ServerHandle> {
     tools: detectTools(),
     remote,
     settings: deps.settings ?? new SettingsStore(config.dataDir === ":memory:" ? {} : { path: SettingsStore.pathFor(config.tideHome) }),
+    ...(deps.judgeLedger !== undefined ? { judgeLedger: deps.judgeLedger } : {}),
   });
   registerAgentHandlers(router, { engine });
   registerAgentThreadHandlers(router, { engine, registry, ...(deps.delegateWaits !== undefined ? { waits: deps.delegateWaits } : {}) });

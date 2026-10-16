@@ -119,6 +119,17 @@ export interface WireForm {
 export interface WireMessage {
   id: string;
   type: "user" | "assistant" | "idle" | (string & {});
+  /** assistant: `Session.Message.Assistant.content` — text, reasoning and tool parts */
+  content?: { type: "text" | "reasoning" | "tool" | (string & {}); text?: string }[];
+  /** assistant: the model that answered */
+  model?: ModelRef;
+  /** assistant: this message's own usage (`TokenUsage.Info`) and USD cost */
+  tokens?: WireTokens;
+  cost?: number;
+  /** idle: how the execution ended */
+  outcome?: "succeeded" | "failed" | "interrupted" | (string & {});
+  /** assistant/idle: `SessionError.Error` */
+  error?: { message?: string; type?: string } & Record<string, unknown>;
 }
 
 export type FormValue = string | number | boolean | string[];

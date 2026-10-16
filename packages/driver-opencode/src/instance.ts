@@ -1,4 +1,5 @@
-import type { DriverEnv, OpenSessionOptions, ProviderInstance, ProviderSession, ProviderStatus } from "@tide/contracts";
+import type { CompletionRequest, CompletionResult, DriverEnv, OpenSessionOptions, ProviderInstance, ProviderSession, ProviderStatus } from "@tide/contracts";
+import { complete } from "./complete.ts";
 import { HttpOpencodeApi } from "./client.ts";
 import { EventHub } from "./hub.ts";
 import { OpencodeServer, type ServerSeams } from "./server.ts";
@@ -220,6 +221,20 @@ export class OpencodeInstance implements ProviderInstance {
       await api.removeSession({ sessionId: forked.id }).catch(() => undefined);
       throw new Error(`opencode could not move the forked session to ${cwd}: ${error instanceof Error ? error.message : String(error)}`);
     }
+  }
+
+  /** R6 one-shot classifier call on a throwaway deny-all session (see `complete.ts`). */
+  complete(request: CompletionRequest): Promise<CompletionResult> {
+    return complete(
+      {
+        api: () => this.api(),
+        parseModel: parseModelId,
+        ...(this.#config.defaultModel !== undefined ? { defaultModel: this.#config.defaultModel } : {}),
+        instructionKey: INSTRUCTION_KEY,
+        log: (msg) => this.#env.log(msg),
+      },
+      request,
+    );
   }
 
   /**

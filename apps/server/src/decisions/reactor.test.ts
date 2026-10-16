@@ -4,9 +4,11 @@ import { openDatabase } from "../db/sqlite.ts";
 import { Engine } from "../orchestration/engine.ts";
 import { EventStore } from "../orchestration/store.ts";
 import { SettingsStore } from "../settings.ts";
-import { createDecisionClient, TransientDecisionError, type Transport } from "./client.ts";
+import { TransientDecisionError, type Transport } from "./client.ts";
 import { ERROR_LOG_INTERVAL_MS, TICK_MS, TriageReactor } from "./reactor.ts";
-import { ManualClock, seedThreads } from "./testing.ts";
+import { createJudgeService } from "./service.ts";
+import { fakeJudge, ManualClock, seedThreads } from "./testing.ts";
+import type { DriverRegistry } from "../provider/registry.ts";
 
 interface Rig {
   engine: Engine;
@@ -33,7 +35,8 @@ function answering(payloads: Rig["payloads"]): Transport {
     const answers: Record<string, Answer | object> = {};
     for (const [name, q] of Object.entries(p.questions)) {
       const type = (q as { type: string }).type;
-      answers[name] = name.endsWith("__urgency") && type === "score" ? { type: "score", score: 3, confidence: 0.8, probabilities: {} } : { type: "noul", noul: name.endsWith("__needsUser") ? 0.9 : 0.2 };
+      const instructions = (q as { instructions: string }).instructions;
+      answers[name] = type === "score" ? { type: "score", score: 3, confidence: 0.8, probabilities: {} } : { type: "noul", noul: instructions.includes("waiting on the user") ? 0.9 : 0.2 };
     }
     return { model: "jev-1.13.0", usage: { input_tokens: 500, output_tokens: 9 }, answers };
   };
@@ -49,8 +52,9 @@ async function rig(enabled = true): Promise<Rig> {
   const payloads: Rig["payloads"] = [];
   const logs: string[] = [];
   let current: Transport = answering(payloads);
-  const client = createDecisionClient({ settings, env: {}, transport: (p, t) => current(p, t), sleep: async () => undefined });
-  const reactor = new TriageReactor({ engine, client, schedule: clock.schedule, now: () => clock.now, log: (m) => logs.push(m) });
+  const registry = { has: () => false } as unknown as DriverRegistry;
+  const { judge } = createJudgeService({ settings, registry, store, env: {}, dataDir: ":memory:", sleep: async () => undefined, transport: (p, t) => current(p, t) });
+  const reactor = new TriageReactor({ engine, judge, schedule: clock.schedule, now: () => clock.now, log: (m) => logs.push(m) });
   reactor.start();
   reactors.push(reactor);
   return { engine, reactor, clock, settings, payloads, logs, setTransport: (t) => (current = t) };
@@ -155,6 +159,40 @@ describe("TriageReactor", () => {
     r.clock.advance(TICK_MS);
     await r.reactor.drain();
     expect(r.payloads).toHaveLength(0);
+  });
+});
+
+describe("TriageReactor with a fake judge", () => {
+  it("asks one per-item question on site stuck and maps verdicts; a thread with a failed answer is skipped", async () => {
+    const store = new EventStore(await openDatabase(":memory:"));
+    stores.push(store);
+    const engine = new Engine({ store });
+    const clock = new ManualClock();
+    const seeded = await seedThreads(engine, 2);
+    const id = `triage:${seeded.projectId}`;
+    const judge = fakeJudge({
+      [`${id}:t0:needsUser`]: { score: 0.7 },
+      [`${id}:t0:stuck`]: { score: 1, label: "true", source: "fallback" },
+      [`${id}:t0:urgency`]: { score: 0.5 },
+      [`${id}:t1:needsUser`]: { score: 0.1 },
+      // t1 stuck: unscripted -> none (its call failed); t1 is not triaged
+      [`${id}:t1:urgency`]: { score: 0.25 },
+    });
+    const reactor = new TriageReactor({ engine, judge, schedule: clock.schedule, now: () => clock.now, log: () => undefined });
+    reactor.start();
+    reactors.push(reactor);
+    await engine.dispatch({ type: "turn.settle", turnId: seeded.turnIds[0] as string, status: "completed" });
+    clock.advance(2000);
+    await reactor.drain();
+    expect(judge.questions).toHaveLength(1);
+    const q = judge.questions[0];
+    expect(q).toMatchObject({ kind: "per-item", site: "stuck", id });
+    expect(q?.kind === "per-item" ? Object.keys(q.questions ?? {}) : []).toEqual(["needsUser", "stuck", "urgency"]);
+    expect(q?.kind === "per-item" ? q.questions?.["needsUser"]?.threshold : undefined).toBe(0);
+    expect(q?.kind === "per-item" ? q.questions?.["stuck"]?.threshold : 0).toBeUndefined();
+    const model = engine.getModel();
+    const triaged = seeded.threadIds.map((t) => model.threads[t]?.triage).filter((t) => t !== undefined);
+    expect(triaged).toEqual([{ needsUser: 0.7, stuck: 1, urgency: 0.5, at: 2000 }]);
   });
 });
 

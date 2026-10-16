@@ -70,7 +70,10 @@ export function aggregateIdOf(event: DomainEvent): string | null {
     case "thread.snoozed":
     case "thread.resumed":
     case "pr.watch-changed":
+    case "handoff.refined":
       return event.threadId;
+    case "judge.recorded":
+      return event.target.id;
     case "handoff.recorded":
       return event.handoff.threadId;
     case "task.created":
@@ -190,6 +193,16 @@ export class EventStore {
 
   setMeta(key: string, value: string): void {
     this.#setMeta.run(key, value);
+  }
+
+  /**
+   * Non-event side tables (observability such as the judge ledger) share this connection: runs
+   * `ddl` (idempotent CREATE ... IF NOT EXISTS) and returns statement access. Side tables never
+   * feed the projector.
+   */
+  sideTable(ddl: string): Pick<Database, "prepare" | "exec"> {
+    this.#db.exec(ddl);
+    return { prepare: (sql) => this.#db.prepare(sql), exec: (sql) => this.#db.exec(sql) };
   }
 
   close(): void {

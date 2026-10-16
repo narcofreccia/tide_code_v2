@@ -10,6 +10,7 @@ import {
   setProviderDefault,
   useServerSettings,
   worktreeByDefault,
+  defaultDecisionsSettings,
 } from "./serverSettings.ts";
 import { useToasts } from "./toast.ts";
 
@@ -21,7 +22,7 @@ afterEach(() => {
 const SERVER: UserSettings = {
   providerDefaults: { codex: { model: "gpt-5", mode: "auto" } },
   worktreeByDefault: false,
-  decisions: { enabled: true, hasKey: true },
+  decisions: { ...defaultDecisionsSettings(), enabled: true, hasKey: true },
   continueAfterRestart: false,
   followUpMode: "queue",
   limitPolicy: "reset",

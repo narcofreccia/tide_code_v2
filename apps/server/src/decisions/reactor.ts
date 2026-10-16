@@ -1,8 +1,8 @@
 import type { EventRecord } from "@tide/contracts";
 import type { Engine } from "../orchestration/engine.ts";
 import type { CancelTimer } from "../provider/reactor.ts";
-import { DECISIONS_UNAVAILABLE, type DecisionClient } from "./client.ts";
-import { buildTriageRequests, lastActivityAt, mapAnswers } from "./triage.ts";
+import { OVER_BUDGET, type Judge } from "./judge.ts";
+import { buildTriageQuestion, lastActivityAt, mapAnswers } from "./triage.ts";
 
 export const DEBOUNCE_MS = 2_000;
 export const TICK_MS = 10 * 60_000;
@@ -17,7 +17,7 @@ const realTimer = (fn: () => void, ms: number): CancelTimer => {
 
 export interface TriageReactorOptions {
   engine: Engine;
-  client: Pick<DecisionClient, "ask" | "enabled" | "limits">;
+  judge: Pick<Judge, "ask" | "enabled">;
   schedule?: (fn: () => void, ms: number) => CancelTimer;
   now?: () => number;
   log?: (msg: string, data?: unknown) => void;
@@ -25,12 +25,13 @@ export interface TriageReactorOptions {
 
 /**
  * Annotates threads with calibrated triage (needs-user / stuck / urgency) from the optional
- * decisions model so the Inbox can sort. It only dispatches `thread.triage`; it never routes,
- * blocks or acts, and it never throws into the engine. One batched request per project per burst.
+ * judge (site `stuck`) so the Inbox can sort. It only dispatches `thread.triage`; it never routes,
+ * blocks or acts, and it never throws into the engine. One judge question per project per burst;
+ * the judge packs it into as few calls as fit, and a failed call costs only its own threads.
  */
 export class TriageReactor {
   #engine: Engine;
-  #client: TriageReactorOptions["client"];
+  #judge: TriageReactorOptions["judge"];
   #schedule: (fn: () => void, ms: number) => CancelTimer;
   #now: () => number;
   #log: (msg: string, data?: unknown) => void;
@@ -43,7 +44,7 @@ export class TriageReactor {
 
   constructor(options: TriageReactorOptions) {
     this.#engine = options.engine;
-    this.#client = options.client;
+    this.#judge = options.judge;
     this.#schedule = options.schedule ?? realTimer;
     this.#now = options.now ?? Date.now;
     this.#log = options.log ?? ((msg, data) => (data === undefined ? console.error(msg) : console.error(msg, data)));
@@ -107,7 +108,7 @@ export class TriageReactor {
 
   /** Trailing debounce per project: a burst of triggers becomes one request. */
   #trigger(projectId: string): void {
-    if (!this.#client.enabled) return;
+    if (!this.#judge.enabled("stuck")) return;
     this.#debounce.get(projectId)?.();
     this.#debounce.set(
       projectId,
@@ -127,22 +128,17 @@ export class TriageReactor {
   }
 
   async #run(projectId: string): Promise<void> {
-    if (!this.#client.enabled) return;
-    const requests = buildTriageRequests(this.#engine.getModel(), projectId, this.#now(), this.#client.limits);
-    for (const request of requests) {
-      let answers;
+    if (!this.#judge.enabled("stuck")) return;
+    const triage = buildTriageQuestion(this.#engine.getModel(), projectId, this.#now());
+    if (triage === undefined) return;
+    const verdicts = await this.#judge.ask(triage.question);
+    const failed = verdicts.find((v) => v.error !== undefined && v.error !== OVER_BUDGET && v.source === "none");
+    if (failed !== undefined) this.#logOnce("[triage] decisions request failed", failed.error);
+    for (const [threadId, result] of mapAnswers(triage, verdicts, this.#now())) {
       try {
-        answers = await this.#client.ask(request.state, request.questions);
+        await this.#engine.dispatch({ type: "thread.triage", threadId, triage: result });
       } catch (err) {
-        if ((err as { code?: unknown })?.code !== DECISIONS_UNAVAILABLE) this.#logOnce("[triage] decisions request failed", err);
-        return;
-      }
-      for (const [threadId, triage] of mapAnswers(request, answers, this.#now())) {
-        try {
-          await this.#engine.dispatch({ type: "thread.triage", threadId, triage });
-        } catch (err) {
-          this.#logOnce("[triage] thread.triage rejected", err);
-        }
+        this.#logOnce("[triage] thread.triage rejected", err);
       }
     }
   }
