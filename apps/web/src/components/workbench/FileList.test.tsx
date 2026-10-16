@@ -130,4 +130,22 @@ describe("FileList linked repositories", () => {
     fireEvent.click(screen.getByText("Revert linked changes"));
     expect(onRevertLinked).toHaveBeenCalledWith(linked[0]);
   });
+
+  it("renders one row per path when a running turn reports a path twice", () => {
+    const errors = vi.spyOn(console, "error").mockImplementation(() => undefined);
+    const dup: DiffFile[] = [
+      { path: "src/a.ts", status: "added", additions: 1, deletions: 0 },
+      { path: "src/b.ts", status: "modified", additions: 2, deletions: 1 },
+      { path: "src/a.ts", status: "modified", additions: 5, deletions: 0 },
+    ];
+    render(<FileList files={dup} selected="src/a.ts" onSelect={() => {}} collapsed={false} onToggle={() => {}} />);
+
+    expect(screen.getAllByRole("option")).toHaveLength(2);
+    expect(screen.getByText("2 files")).toBeDefined();
+    // the last report wins
+    expect(screen.getByTitle("src/a.ts").textContent).toContain("+5");
+    const keyWarnings = errors.mock.calls.filter((args) => String(args[0]).includes("same key"));
+    expect(keyWarnings).toHaveLength(0);
+    errors.mockRestore();
+  });
 });

@@ -1,5 +1,5 @@
 import { afterEach, describe, expect, it, vi } from "vitest";
-import { cleanup, fireEvent, render, screen, within } from "@testing-library/react";
+import { cleanup, fireEvent, render, screen, waitFor, within } from "@testing-library/react";
 import { RemoteSection } from "./RemoteSection.tsx";
 
 const connectTo = vi.fn();
@@ -82,5 +82,26 @@ describe("Settings › Remote", () => {
     // a pasted page url becomes its socket url
     expect(connectTo).toHaveBeenCalledWith("ws://10.0.0.9:3777/ws", "tok");
     expect((within(form).getByLabelText("Server token") as HTMLInputElement).value).toBe("");
+  });
+
+  it("names the bound port from server.info in the Tailscale and SSH hints", async () => {
+    mockRpc({ "server.info": () => ({ ...INFO, remote: { ...INFO.remote, port: 4123, lanUrls: [] } }) });
+    attachFakeStore(modelWith({}));
+    render(<RemoteSection />);
+
+    expect(await screen.findByText("tailscale serve 4123")).toBeDefined();
+    expect(screen.getByText("ssh -L 4123:127.0.0.1:4123 host")).toBeDefined();
+    expect(screen.getByText("http://127.0.0.1:4123")).toBeDefined();
+    expect(screen.getByText(/safest way in/).textContent).not.toContain("3777");
+  });
+
+  it("falls back to port 3777 when server.info has no remote block", async () => {
+    const rpc = mockRpc({ "server.info": () => ({ environmentId: "env-1", version: "0.0.0", startedAt: 1 }) });
+    attachFakeStore(modelWith({}));
+    render(<RemoteSection />);
+
+    await waitFor(() => expect(rpc).toHaveBeenCalledWith("server.info", {}));
+    expect(screen.getByText("tailscale serve 3777")).toBeDefined();
+    expect(screen.getByText("ssh -L 3777:127.0.0.1:3777 host")).toBeDefined();
   });
 });

@@ -97,4 +97,19 @@ describe("DiffHeader git actions", () => {
     await waitFor(() => expect(rpc).toHaveBeenCalledWith("vcs.status", { threadId: "t1" }));
     expect(rpc.mock.calls.filter(([method]) => method === "vcs.turnDiff").length).toBe(diffCalls + 1);
   });
+
+  it("keeps the header wrappable and the long no-worktree hint truncatable", async () => {
+    setup();
+    mockRpc({ "vcs.turnDiff": () => diff(), "vcs.fileAt": () => ({ content: "x", binary: false, missing: false }) });
+    render(<ChangesTab />);
+
+    await waitFor(() => expect(screen.getByRole("option", { name: /a\.ts/ })).toBeDefined());
+    const hint = screen.getByText(NO_WORKTREE_HINT);
+    // the full text survives as a tooltip once the CSS ellipsis kicks in
+    expect(hint.getAttribute("title")).toBe(NO_WORKTREE_HINT);
+    expect(hint.className).toMatch(/hint/);
+    const actions = screen.getByText("Refresh").parentElement;
+    expect(actions?.className).toMatch(/actions/);
+    expect(actions?.parentElement?.className).toMatch(/header/);
+  });
 });

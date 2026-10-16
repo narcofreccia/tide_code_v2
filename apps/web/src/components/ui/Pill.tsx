@@ -1,6 +1,9 @@
 import styles from "./Pill.module.css";
 
-/** Small uppercase label used for providers, modes and counts. */
-export function Pill({ children, tone }: { children: React.ReactNode; tone?: "muted" | "accent" }) {
-  return <span className={`${styles.pill} ${tone === "accent" ? styles.accent : ""}`}>{children}</span>;
+/** `muted` is neutral metadata; the rest map 1:1 onto the `--st-*` status colours. */
+export type PillTone = "muted" | "accent" | "running" | "needs" | "ok" | "error" | "limited" | "interrupted" | "idle";
+
+/** Read-only tinted label for state and metadata (providers, counts, phases). Not a control. */
+export function Pill({ children, tone = "muted" }: { children: React.ReactNode; tone?: PillTone }) {
+  return <span className={`${styles.pill} ${styles[tone] ?? ""}`}>{children}</span>;
 }

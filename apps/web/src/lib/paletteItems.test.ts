@@ -4,7 +4,10 @@ import { buildPaletteItems, rankPaletteItems } from "./paletteItems.ts";
 import { attachFakeStore, makePlan, makeThread, modelWith, resetUi, makeExpertsSession } from "../testHarness.ts";
 import { useUi } from "../state/ui.ts";
 
-afterEach(() => resetUi());
+afterEach(() => {
+  resetUi();
+  delete (window as unknown as Record<string, unknown>)["__TAURI__"];
+});
 
 function fixture(): ReadModel {
   const model = modelWith({
@@ -21,6 +24,7 @@ function fixture(): ReadModel {
 
 describe("palette items", () => {
   it("offers New thread… once, with the ⌘N hint, when a project is in scope", () => {
+    (window as unknown as Record<string, unknown>)["__TAURI__"] = {};
     const model = fixture();
     const withProject = buildPaletteItems({ model, selectedThreadId: "t1" });
     const item = withProject.find((i) => i.id === "project:new-thread");

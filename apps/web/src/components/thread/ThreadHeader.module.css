@@ -1,20 +1,41 @@
 .header {
+  flex: none;
+  background: var(--surface);
+  border-bottom: 1px solid var(--border);
+}
+.main {
   display: flex;
   align-items: center;
   gap: var(--sp-2);
-  height: 28px;
+  height: 32px;
+  min-width: 0;
   padding: 0 var(--sp-2) 0 var(--sp-3);
-  border-bottom: 1px solid var(--border);
+}
+/* sub-row: lineage, limits, rollback, delegates; only rendered when there is something to show */
+.sub {
+  display: flex;
+  align-items: center;
+  gap: var(--sp-3);
+  height: 24px;
+  padding: 0 var(--sp-3);
+  border-top: 1px solid var(--border);
+  overflow: hidden;
 }
 .branch {
-  color: var(--muted);
+  flex: none;
+  max-width: 220px;
+  padding: 0 6px;
+  border-radius: var(--radius-sm);
+  background: var(--surface-2);
+  color: var(--text-2);
   font-family: var(--font-mono);
   font-size: 11px;
+  line-height: 18px;
   overflow: hidden;
   text-overflow: ellipsis;
   white-space: nowrap;
 }
-.actions { display: flex; gap: var(--sp-1); margin-left: auto; }
+.actions { display: flex; flex: none; gap: var(--sp-1); margin-left: auto; }
 .stat { color: var(--muted); font-variant-numeric: tabular-nums; font-size: 11px; }
 
 .delegates { list-style: none; margin: 0; padding: 0; min-width: 200px; }
@@ -59,3 +80,25 @@
   animation: spin 0.8s linear infinite;
 }
 @keyframes spin { to { transform: rotate(360deg); } }
+/* read-only state: borderless tint from the --st-* tokens, sentence case */
+.state {
+  display: inline-flex;
+  flex: none;
+  align-items: center;
+  gap: var(--sp-1);
+  height: 20px;
+  padding: 0 8px;
+  border-radius: 999px;
+  background: var(--st-idle-soft);
+  color: var(--st-idle);
+  font-size: 12px;
+  font-weight: 600;
+  white-space: nowrap;
+}
+.state[data-state="running"] { background: var(--st-running-soft); color: var(--st-running); }
+.state[data-state="needs"] { background: var(--st-needs-soft); color: var(--st-needs); }
+.state[data-state="error"] { background: var(--st-error-soft); color: var(--st-error); }
+.state[data-state="merged"] { background: var(--st-ok-soft); color: var(--st-ok); }
+.state[data-state="limited"] { background: var(--st-limited-soft); color: var(--st-limited); }
+.state[data-state="interrupted"],
+.state[data-state="interrupting"] { background: var(--st-interrupted-soft); color: var(--st-interrupted); }

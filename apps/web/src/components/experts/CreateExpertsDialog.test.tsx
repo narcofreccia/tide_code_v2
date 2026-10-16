@@ -76,4 +76,13 @@ describe("CreateExpertsDialog", () => {
     expect(optionLabels("Preset")).toEqual(EXPERT_PRESETS.map((p) => p.name));
     expect(EXPERT_PRESETS).toHaveLength(6);
   });
+
+  it("scrolls the form body inside the dialog and keeps the actions outside it", () => {
+    attachFakeStore(modelWith({}));
+    render(<CreateExpertsDialog projectId="p1" onClose={() => undefined} />);
+    const body = screen.getByTestId("experts-dialog-body");
+    expect(body.className).toMatch(/body/);
+    expect(body.contains(screen.getByLabelText("Topic"))).toBe(true);
+    expect(body.contains(screen.getByText("Start"))).toBe(false);
+  });
 });

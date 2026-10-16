@@ -40,4 +40,13 @@
 .palette { padding: 0 6px; }
 .switcher { max-width: 180px; }
 .idle { color: var(--muted); }
-.pills { display: flex; align-items: center; gap: var(--sp-2); margin-left: auto; }
+
+.crumb {
+  display: flex;
+  align-items: center;
+  gap: var(--sp-2);
+  min-width: 0;
+  color: var(--muted);
+}
+.crumbProject { flex: none; max-width: 200px; overflow: hidden; text-overflow: ellipsis; white-space: nowrap; }
+.crumbThread { min-width: 0; overflow: hidden; text-overflow: ellipsis; white-space: nowrap; color: var(--text-2); }

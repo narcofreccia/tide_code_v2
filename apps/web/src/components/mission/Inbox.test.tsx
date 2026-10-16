@@ -50,7 +50,7 @@ describe("Inbox", () => {
     ]);
     expect(within(items[1] as HTMLElement).getByLabelText("Approval: Edit")).toBeDefined();
     expect(within(items[2] as HTMLElement).getByLabelText("Approval: Bash")).toBeDefined();
-    expect(within(inbox).getByText("Inbox · 3")).toBeDefined();
+    expect(within(inbox).getByText("Needs you · 3")).toBeDefined();
   });
 
   it("shows how long each item has been waiting", () => {

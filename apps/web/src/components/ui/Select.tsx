@@ -110,6 +110,25 @@ export function Select<T extends string>({
     return () => document.removeEventListener("mousedown", onDown);
   }, [open]);
 
+  // Escape closes only the listbox, wherever focus is. Capture on window runs
+  // before the document-level Escape handlers of the Dialog / Popover hosting
+  // this Select, and stopping it there keeps them from cancelling too.
+  useEffect(() => {
+    if (!open) return undefined;
+    const onEscape = (e: KeyboardEvent): void => {
+      if (e.key !== "Escape") return;
+      e.preventDefault();
+      e.stopImmediatePropagation();
+      const focused = document.activeElement;
+      const focusInside = focused !== null && (panel.current?.contains(focused) ?? false);
+      setOpen(false);
+      setQuery("");
+      if (focusInside) trigger.current?.focus();
+    };
+    window.addEventListener("keydown", onEscape, true);
+    return () => window.removeEventListener("keydown", onEscape, true);
+  }, [open]);
+
   useEffect(() => {
     if (!open) return;
     const index = visible.findIndex((o) => o.value === value);
@@ -127,8 +146,10 @@ export function Select<T extends string>({
 
   const onKeyDown = (e: React.KeyboardEvent): void => {
     if (e.key === "Escape") {
+      // normally consumed by the window capture listener above; kept as a backstop
       e.preventDefault();
       e.stopPropagation();
+      e.nativeEvent.stopImmediatePropagation();
       close();
       return;
     }

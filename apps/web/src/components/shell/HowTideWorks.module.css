@@ -1,0 +1,11 @@
+.card {
+  border: 1px solid var(--border);
+  border-radius: var(--radius-sm);
+  background: var(--surface);
+  padding: var(--sp-3);
+  font-size: 13px;
+}
+.head { display: flex; align-items: center; justify-content: space-between; }
+.title { margin: 0; font-size: 13px; font-weight: 600; }
+.points { margin: var(--sp-2) 0 0; padding-left: var(--sp-4); display: grid; gap: var(--sp-1); }
+.body { color: var(--muted); }

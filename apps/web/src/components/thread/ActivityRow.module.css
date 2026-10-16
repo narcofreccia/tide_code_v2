@@ -39,9 +39,9 @@
   gap: var(--sp-2);
 }
 .label {
-  font-size: 10px;
-  letter-spacing: 0.08em;
-  text-transform: uppercase;
+  font-size: 11px;
+  letter-spacing: var(--ls-section);
+  text-transform: uppercase; font-weight: var(--fw-section);
   color: var(--muted);
 }
 .pre {

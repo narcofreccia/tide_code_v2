@@ -1,4 +1,4 @@
-import { SHORTCUTS, SHORTCUT_GROUPS } from "../../lib/shortcuts.ts";
+import { SHORTCUTS, SHORTCUT_GROUPS, shortcutKeys } from "../../lib/shortcuts.ts";
 import { Kbd } from "../ui/Kbd.tsx";
 import section from "./Section.module.css";
 
@@ -22,7 +22,7 @@ export function KeyboardSection() {
             SHORTCUTS.filter((s) => s.group === group).map((shortcut) => (
               <tr key={shortcut.id} data-shortcut={shortcut.id}>
                 <td>
-                  <Kbd>{shortcut.keys}</Kbd>
+                  <Kbd>{shortcutKeys(shortcut)}</Kbd>
                 </td>
                 <td>{shortcut.label}</td>
                 <td className={section.group}>{shortcut.group}</td>

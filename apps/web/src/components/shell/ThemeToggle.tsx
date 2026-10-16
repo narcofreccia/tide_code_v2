@@ -20,13 +20,15 @@ export function ThemeToggle() {
     };
   }, []);
 
-  const hint = `Toggle light/dark (⌘⇧L) — now ${current}`;
+  const now = current === "dark" ? "Dark" : "Light";
+  const next = current === "dark" ? "Light" : "Dark";
+  const hint = `Theme: ${now} — click for ${next} (⌘⇧L)`;
   return (
     <button
       type="button"
       className={styles.toggle}
       title={hint}
-      aria-label={hint}
+      aria-label="Toggle light/dark"
       aria-pressed={current === "light"}
       onClick={() => setCurrent(toggleTheme())}
     >

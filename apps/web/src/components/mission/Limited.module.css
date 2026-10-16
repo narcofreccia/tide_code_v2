@@ -13,9 +13,9 @@
 .roleTag {
   flex: none;
   padding: 0 var(--sp-1);
-  border: 1px solid var(--border);
-  border-radius: var(--radius);
-  color: var(--muted);
+  border-radius: 999px;
+  background: var(--surface-2);
+  color: var(--text-2);
   font-size: 11px;
 }
 .prPill { flex: none; color: var(--muted); font-size: 11px; }

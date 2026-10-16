@@ -3,8 +3,10 @@ import type { ExpertsSession, Thread } from "@tide/contracts";
 import { PHASE_LABELS } from "../../lib/expertsActions.ts";
 import { useModel } from "../../state/model.ts";
 import { useUi } from "../../state/ui.ts";
+import { Button } from "../ui/Button.tsx";
 import { Pill } from "../ui/Pill.tsx";
 import styles from "./ProjectTree.module.css";
+import own from "./ExpertsGroup.module.css";
 
 /** The session's own threads: the lead first, then the panel in roster order. */
 export function sessionThreadIds(session: ExpertsSession): string[] {
@@ -38,7 +40,20 @@ export function ExpertsGroup({
   const selectedExpertsSessionId = useUi((s) => s.selectedExpertsSessionId);
   const view = useUi((s) => s.view);
   const selectExpertsSession = useUi((s) => s.selectExpertsSession);
-  if (sessions.length === 0) return null;
+  const setNewExpertsProject = useUi((s) => s.setNewExpertsProject);
+  if (sessions.length === 0) {
+    return (
+      <div className={styles.experts}>
+        <span className={styles.groupHeading}>Experts</span>
+        <p className={own.emptyHint}>
+          Several agents explore a question, discuss, and propose one plan.{" "}
+          <Button variant="link" onClick={() => setNewExpertsProject(projectId)}>
+            Start an Experts session
+          </Button>
+        </p>
+      </div>
+    );
+  }
   const byId = new Map(threads.map((t) => [t.id, t]));
 
   return (

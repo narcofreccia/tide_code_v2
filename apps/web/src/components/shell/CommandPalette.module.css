@@ -3,9 +3,9 @@
   width: 52px;
   flex: none;
   color: var(--muted);
-  font-size: 10px;
+  font-size: 11px;
   letter-spacing: 0.06em;
-  text-transform: uppercase;
+  text-transform: uppercase; font-weight: var(--fw-section);
 }
 .label { white-space: nowrap; overflow: hidden; text-overflow: ellipsis; }
 .detail {

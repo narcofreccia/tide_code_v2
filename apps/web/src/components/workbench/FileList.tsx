@@ -21,8 +21,18 @@ interface Row {
   title: string;
 }
 
+/**
+ * One entry per path, keeping the last one seen. A diff re-read while a turn is
+ * still writing can report the same path twice (e.g. added, then modified).
+ */
+export function uniqueByPath<T extends { path: string }>(files: readonly T[]): T[] {
+  const byPath = new Map<string, T>();
+  for (const file of files) byPath.set(file.path, file);
+  return [...byPath.values()];
+}
+
 function mainRows(files: DiffFile[]): Row[] {
-  return files.map((file) => ({
+  return uniqueByPath(files).map((file) => ({
     key: file.path,
     path: file.path,
     status: file.status,
@@ -33,7 +43,7 @@ function mainRows(files: DiffFile[]): Row[] {
 }
 
 function linkedRows(group: LinkedDiffGroup): Row[] {
-  return group.files.map((file) => ({
+  return uniqueByPath(group.files).map((file) => ({
     key: linkedKey(group, file.path),
     path: file.path,
     status: diffStatus(file.status),

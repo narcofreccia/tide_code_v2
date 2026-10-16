@@ -35,6 +35,8 @@ import { resetTerminals } from "./state/terminals.ts";
 import { resetSearch } from "./state/search.ts";
 import { resetSettings } from "./state/settings.ts";
 import { resetReconnect } from "./state/reconnect.ts";
+import { useToasts } from "./state/toast.ts";
+import { resetFollowUp } from "./lib/followUp.ts";
 
 export interface FakeStore {
   store: ModelStore;
@@ -93,6 +95,8 @@ export function resetUi(): void {
   resetTerminals();
   resetSearch();
   resetSettings();
+  resetFollowUp();
+  useToasts.setState({ toasts: [] });
   setRpcCaller(undefined);
   setRpcStreamer(undefined);
   window.localStorage.clear();
@@ -108,6 +112,8 @@ export function resetUi(): void {
     newExpertsProjectId: null,
     newProjectOpen: false,
     newThreadProjectId: null,
+    newThreadParentId: null,
+    projectDialog: null,
     linksProjectId: null,
     paletteOpen: false,
     threadDialog: null,

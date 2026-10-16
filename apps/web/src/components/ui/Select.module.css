@@ -3,22 +3,24 @@
   align-items: center;
   gap: var(--sp-1);
   min-width: 0;
-  border: 1px solid var(--border);
+  border: 1px solid var(--border-strong);
   background: var(--surface-2);
-  color: var(--muted);
+  color: var(--text-2);
   text-align: left;
 }
 .trigger:hover:not(:disabled) { color: var(--text); border-color: var(--accent); }
 .trigger:disabled { opacity: 0.55; cursor: default; }
 .trigger[aria-expanded="true"] { color: var(--text); border-color: var(--accent); }
 
-/* the composer/top-bar look: a 20px pill that sits inline with other pills */
+/* the settings look: a 22px control with a 4px radius, shaped unlike a Pill or a Button */
 .pill {
-  height: 20px;
-  padding: 0 6px;
-  border-radius: 999px;
+  height: 22px;
+  padding: 0 var(--sp-2);
+  border-radius: var(--radius-sm);
   font-size: 11px;
 }
+/* the value reads as content, the caption beside it as label */
+.pill .value { color: var(--text); }
 /* dialogs and settings: a full-width 28px field */
 .field {
   height: 28px;
@@ -37,7 +39,7 @@
   text-overflow: ellipsis;
   white-space: nowrap;
 }
-.chevron { flex: none; font-size: 9px; opacity: 0.7; }
+.chevron { flex: none; font-size: 11px; opacity: 0.7; }
 
 .panel {
   z-index: 60;
@@ -47,9 +49,9 @@
   max-width: 420px;
   padding: var(--sp-1);
   overflow: hidden;
-  border: 1px solid var(--border);
+  border: 1px solid var(--border-strong);
   border-radius: var(--radius);
-  background: var(--surface);
+  background: var(--surface-raised);
   box-shadow: var(--shadow-pop);
   animation: pop 120ms ease-out;
 }
@@ -100,13 +102,13 @@
 .optionLabel { overflow: hidden; text-overflow: ellipsis; white-space: nowrap; }
 .description { color: var(--muted); font-size: 11px; }
 .icon { flex: none; color: var(--muted); }
-.check { flex: none; width: 10px; color: var(--accent); font-size: 10px; }
+.check { flex: none; width: 10px; color: var(--accent); font-size: 11px; }
 
 .group {
   padding: var(--sp-1) var(--sp-2) 2px;
   color: var(--muted);
-  text-transform: uppercase;
-  letter-spacing: 0.04em;
-  font-size: 10px;
+  text-transform: uppercase; font-weight: var(--fw-section);
+  letter-spacing: var(--ls-section);
+  font-size: 11px;
 }
 .empty { padding: var(--sp-2); color: var(--muted); }

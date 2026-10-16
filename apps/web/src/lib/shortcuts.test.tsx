@@ -1,6 +1,6 @@
 import { afterEach, describe, expect, it } from "vitest";
 import { cleanup, render, screen } from "@testing-library/react";
-import { SHORTCUTS, handleShortcut } from "./shortcuts.ts";
+import { SHORTCUTS, handleShortcut, shortcutKeys } from "./shortcuts.ts";
 import { KeyboardSection } from "../components/settings/KeyboardSection.tsx";
 import { attachFakeStore, makeThread, modelWith, resetUi } from "../testHarness.ts";
 import { useUi } from "../state/ui.ts";
@@ -8,7 +8,13 @@ import { useUi } from "../state/ui.ts";
 afterEach(() => {
   cleanup();
   resetUi();
+  delete (window as unknown as Record<string, unknown>)["__TAURI__"];
 });
+
+/** Pretend to run inside the Tauri shell, where ⌘N / ⌘W are bindable. */
+function asDesktop(): void {
+  (window as unknown as Record<string, unknown>)["__TAURI__"] = {};
+}
 
 function press(key: string, init: KeyboardEventInit = {}): boolean {
   return handleShortcut(new KeyboardEvent("keydown", { key, metaKey: true, ...init }));
@@ -23,7 +29,7 @@ describe("shortcuts registry", () => {
     );
     for (const shortcut of SHORTCUTS) {
       const row = rows.find((r) => r.getAttribute("data-shortcut") === shortcut.id);
-      expect(row?.textContent).toContain(shortcut.keys);
+      expect(row?.textContent).toContain(shortcutKeys(shortcut));
       expect(row?.textContent).toContain(shortcut.label);
     }
   });
@@ -45,6 +51,7 @@ describe("shortcuts registry", () => {
   });
 
   it("⌘N opens the new-thread form for the project in scope", () => {
+    asDesktop();
     // no project at all: the key is left to the browser/shell
     expect(press("n")).toBe(false);
 
@@ -91,5 +98,24 @@ describe("shortcuts registry", () => {
     useUi.getState().selectThread("t1");
     expect(press("x", { shiftKey: true })).toBe(true);
     expect(useUi.getState().newExpertsProjectId).toBe("p1");
+  });
+
+  it("binds ⌥N / ⌥W instead of ⌘N / ⌘W outside the desktop shell", () => {
+    const model = modelWith({
+      projects: { p1: { id: "p1", title: "Tide", rootPath: "/src/tide", createdAt: 1, updatedAt: 1 } },
+      threads: { t1: makeThread("t1") },
+    });
+    attachFakeStore(model);
+    const keys = (id: string): string => shortcutKeys(SHORTCUTS.find((s) => s.id === id)!);
+    expect(keys("new-thread")).toBe("⌥N");
+    expect(keys("close-tab")).toBe("⌥W");
+    // the browser owns ⌘N
+    expect(press("n")).toBe(false);
+    // ⌥N is a dead key on macOS, so it binds by physical key
+    expect(handleShortcut(new KeyboardEvent("keydown", { key: "ñ", code: "KeyN", altKey: true }))).toBe(true);
+    expect(useUi.getState().newThreadProjectId).toBe("p1");
+    asDesktop();
+    expect(keys("new-thread")).toBe("⌘N");
+    expect(handleShortcut(new KeyboardEvent("keydown", { key: "ñ", code: "KeyN", altKey: true }))).toBe(false);
   });
 });

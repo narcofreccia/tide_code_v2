@@ -6,6 +6,7 @@ import { relativeTime } from "../../lib/relativeTime.ts";
 import { PROVIDER_LABELS } from "../../lib/vocab.ts";
 import { useModel } from "../../state/model.ts";
 import { useUi } from "../../state/ui.ts";
+import { unarchiveThread } from "../../lib/threadActions.ts";
 import { Button } from "../ui/Button.tsx";
 import { Checkbox } from "../ui/Choice.tsx";
 import { ThreadGlyph } from "../ui/StatusGlyph.tsx";
@@ -37,10 +38,9 @@ function Cells({ thread, archived }: { thread: Thread; archived: boolean }) {
 }
 
 /**
- * Every thread of one project — the "all threads →" of a project card. Live
- * threads open on click. With "Archived" on, archived threads are listed
- * read-only: the contracts have no unarchive command (only `thread.archive`),
- * so there is nothing to offer beyond showing what was there.
+ * Every thread of one project — the "all threads →" of a project card. Rows open
+ * the thread on click; with "Archived" on, archived threads open read-only and
+ * each offers Restore (`thread.unarchive`).
  */
 export function AllThreads({ projectId }: { projectId: string }) {
   const model = useModel((s) => s.model);
@@ -64,7 +64,7 @@ export function AllThreads({ projectId }: { projectId: string }) {
           Archived
         </Checkbox>
       </div>
-      <div className={`${styles.row} ${styles.header}`} aria-hidden="true">
+      <div className={`${styles.row} ${styles.header} ${archived ? styles.withRestore : ""}`} aria-hidden="true">
         <span />
         <span>Thread</span>
         <span>Provider</span>
@@ -80,8 +80,18 @@ export function AllThreads({ projectId }: { projectId: string }) {
           {threads.map((thread) => (
             <li key={thread.id}>
               {archived ? (
-                <div className={styles.row} aria-label={`${thread.title} (archived)`}>
-                  <Cells thread={thread} archived />
+                <div className={styles.archivedItem}>
+                  <button
+                    type="button"
+                    className={styles.row}
+                    aria-label={`${thread.title} (archived)`}
+                    onClick={() => selectThread(thread.id)}
+                  >
+                    <Cells thread={thread} archived />
+                  </button>
+                  <Button variant="quiet" className={styles.restore} onClick={() => unarchiveThread(thread.id)}>
+                    Restore
+                  </Button>
                 </div>
               ) : (
                 <button type="button" className={styles.row} onClick={() => selectThread(thread.id)}>

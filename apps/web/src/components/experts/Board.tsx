@@ -30,7 +30,7 @@ export function Board({ sessionId }: { sessionId: string }) {
         <span className={styles.topic} title={session.topic}>
           {session.topic}
         </span>
-        <Pill {...(session.phase === "ready" ? { tone: "accent" as const } : {})}>{PHASE_LABELS[session.phase]}</Pill>
+        <Pill tone={session.phase === "ready" ? "needs" : "muted"}>{PHASE_LABELS[session.phase]}</Pill>
         <div className={styles.headerActions}>
           <Button variant="quiet" onClick={() => archiveExpertsSession(session.id)}>
             Archive

@@ -8,7 +8,7 @@ import {
   useProviders,
 } from "../../state/providers.ts";
 import { providerDefault, worktreeByDefault } from "../../state/serverSettings.ts";
-import { PROVIDERS } from "../../lib/vocab.ts";
+import { DEFAULT_MODEL_LABEL, PROVIDERS, PROVIDER_LABELS, defaultModelHint } from "../../lib/vocab.ts";
 import { Checkbox } from "../ui/Choice.tsx";
 import { Select, type SelectOption } from "../ui/Select.tsx";
 import styles from "./ProviderPicker.module.css";
@@ -68,22 +68,23 @@ export function HarnessFields({
   const providerOptions: SelectOption<ProviderKind>[] = PROVIDERS.map((kind) => {
     const status = providerStatus(providers, kind);
     const reason = loading ? "Checking harnesses…" : status ? unavailableReason(status) : "not installed";
+    const name = PROVIDER_LABELS[kind];
     return {
       value: kind,
-      label: reason ? `${kind} · ${loading ? "checking…" : reason}` : kind,
+      label: reason ? `${name} · ${loading ? "checking…" : reason}` : name,
       ...(reason === undefined ? {} : { disabled: true, title: reason }),
     };
   });
   const models = providerStatus(providers, provider)?.models ?? [];
   const modelOptions: SelectOption<string>[] = [
-    { value: "", label: "harness default" },
+    { value: "", label: DEFAULT_MODEL_LABEL, description: defaultModelHint(provider) },
     ...models.map((m) => ({ value: m.id, label: m.label })),
   ];
 
   return (
     <>
       <div className={styles.field}>
-        <span className={styles.label}>provider</span>
+        <span className={styles.label}>Agent</span>
         <Select
           label={`${name} provider`}
           value={provider}
@@ -94,7 +95,7 @@ export function HarnessFields({
         />
       </div>
       <div className={styles.field}>
-        <span className={styles.label}>model</span>
+        <span className={styles.label}>Model</span>
         <Select
           label={`${name} model`}
           value={model}

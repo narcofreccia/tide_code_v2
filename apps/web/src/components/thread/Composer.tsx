@@ -20,6 +20,7 @@ import { ThreadLinkChips } from "./ThreadLinkChips.tsx";
 import { ThreadPills } from "./ThreadPills.tsx";
 import { FollowUpToggle } from "./FollowUpToggle.tsx";
 import { ProviderSwitchHint } from "./ProviderSwitchHint.tsx";
+import { COMPOSE_EVENT } from "./EmptyThread.tsx";
 import { QueueList } from "./QueueList.tsx";
 import styles from "./Composer.module.css";
 
@@ -34,6 +35,7 @@ function anOverlayIsOpen(): boolean {
   if (
     ui.paletteOpen ||
     ui.threadDialog !== null ||
+    ui.projectDialog !== null ||
     ui.newProjectOpen ||
     ui.newThreadProjectId !== null ||
     ui.linksProjectId !== null ||
@@ -72,12 +74,25 @@ export function Composer({ thread }: { thread: Thread }) {
   const providers = useProviders();
   const status = providerStatus(providers, thread.provider);
   const acceptsImages = status === undefined || status.caps.images;
-  const followUp = useFollowUp(status?.caps.steer === true);
+  const followUp = useFollowUp(thread.id, status?.caps.steer === true);
   const running = thread.status === "running";
   const interrupting = thread.interrupting === true;
   const matches = useMentionMatches(thread.id, mention?.query);
 
   useEffect(() => registerComposerFocus(() => input.current?.focus()), []);
+
+  // "Try an example" and friends fill the composer; they never send
+  useEffect(() => {
+    const onCompose = (e: Event): void => {
+      const detail = (e as CustomEvent<unknown>).detail;
+      if (typeof detail !== "string") return;
+      setText(detail);
+      setMention(undefined);
+      input.current?.focus();
+    };
+    window.addEventListener(COMPOSE_EVENT, onCompose);
+    return () => window.removeEventListener(COMPOSE_EVENT, onCompose);
+  }, []);
 
   // Esc is also "close" for dialogs, popovers, the palette and Settings; stopping
   // the turn is only what it means while the thread column itself owns the focus.
@@ -167,7 +182,12 @@ export function Composer({ thread }: { thread: Thread }) {
   };
 
   const onDefaultKey = (e: React.KeyboardEvent<HTMLTextAreaElement>): void => {
-    if (e.key === "Enter" && (e.metaKey || e.ctrlKey)) {
+    if (e.key !== "Enter") return;
+    // ⌘↵ always sends in the selected mode; ⌥↵ sends the other one
+    if (e.metaKey || e.ctrlKey) {
+      e.preventDefault();
+      send(followUp.mode);
+    } else if (e.altKey) {
       e.preventDefault();
       send(running ? followUp.alternate : undefined);
     }
@@ -237,7 +257,13 @@ export function Composer({ thread }: { thread: Thread }) {
             <span className={styles.interrupting}>interrupting…</span>
           ) : (
             <>
-              <Kbd>⌘↵</Kbd> {running ? followUp.alternate : "send"}
+              <Kbd>⌘↵</Kbd> {running ? followUp.mode : "send"}
+              {running && followUp.canSteer ? (
+                <>
+                  {" · "}
+                  <Kbd>⌥↵</Kbd> {followUp.alternate}
+                </>
+              ) : null}
               {running ? (
                 <>
                   {" · "}
@@ -248,7 +274,7 @@ export function Composer({ thread }: { thread: Thread }) {
           )}
         </span>
         {running ? (
-          <Button variant="quiet" disabled={interrupting} onClick={() => interruptTurn(thread.id)}>
+          <Button variant="quietDanger" disabled={interrupting} onClick={() => interruptTurn(thread.id)}>
             Stop
           </Button>
         ) : null}

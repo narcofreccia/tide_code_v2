@@ -1,9 +1,10 @@
 import { selectExpertsSessions, selectProjects, selectThreadsByProject } from "@tide/client";
 import type { ProposedPlan, ReadModel, Thread } from "@tide/contracts";
 import { fuzzyRank } from "./fuzzy.ts";
-import { SHORTCUTS, scopeApplies } from "./shortcuts.ts";
+import { SHORTCUTS, scopeApplies, shortcutKeys } from "./shortcuts.ts";
 import { openThreadTerminal } from "./openInTerminal.ts";
 import { useUi } from "../state/ui.ts";
+import { showHowTideWorks } from "../components/shell/HowTideWorks.tsx";
 import {
   createThread,
   detachWorktree,
@@ -138,7 +139,7 @@ function shortcutItems(): PaletteItem[] {
     label: s.label,
     group: "Actions" as const,
     detail: s.group,
-    kbd: s.keys,
+    kbd: shortcutKeys(s),
     run: () => {
       s.run?.();
     },
@@ -152,7 +153,7 @@ function projectItems(model: ReadModel, projectId: string): PaletteItem[] {
       id: "project:new-thread",
       label: "New thread…",
       group: "Actions",
-      kbd: "⌘N",
+      kbd: shortcutKeys(SHORTCUTS.find((s) => s.id === "new-thread") ?? { id: "", keys: "⌘N", label: "", group: "Navigation" }),
       ...(model.projects[projectId] ? { detail: model.projects[projectId].title } : {}),
       run: () => useUi.getState().setNewThreadProject(projectId),
     },
@@ -180,6 +181,16 @@ export function buildPaletteItems({ model, selectedThreadId, selectedProjectId }
     ...(thread ? threadItems(model, thread) : []),
     ...(projectId !== undefined && model.projects[projectId] ? projectItems(model, projectId) : []),
     ...shortcutItems(),
+    {
+      id: "action:how-tide-works",
+      label: "How Tide works",
+      group: "Actions" as const,
+      detail: "Threads, steering, checkpoints, merging",
+      run: () => {
+        useUi.getState().showMission();
+        showHowTideWorks();
+      },
+    },
     ...navigationItems(model),
   ];
 }

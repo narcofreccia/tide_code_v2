@@ -2,17 +2,13 @@
   display: inline-flex;
   align-items: center;
   height: 18px;
-  padding: 0 6px;
-  border: 1px solid var(--border);
+  padding: 0 7px;
   border-radius: 999px;
+  background: var(--st-idle-soft);
   font-size: 11px;
   white-space: nowrap;
   font-variant-numeric: tabular-nums;
 }
-.warning { color: var(--muted); }
-/* limited is an attention state: same hue as needs-you, filled */
-.limited {
-  color: var(--warn);
-  border-color: var(--warn);
-  background: color-mix(in srgb, var(--warn) 14%, transparent);
-}
+.warning { color: var(--st-needs); background: var(--st-needs-soft); }
+/* limited is an attention state in the limited hue, same as the status glyph */
+.limited { color: var(--st-limited); background: var(--st-limited-soft); }

@@ -5,6 +5,8 @@ import {
   loadServerSettings,
   patchServerSettings,
   providerDefault,
+  setFollowUpDefault,
+  setLimitPolicyDefault,
   setProviderDefault,
   useServerSettings,
   worktreeByDefault,
@@ -21,6 +23,9 @@ const SERVER: UserSettings = {
   worktreeByDefault: false,
   decisions: { enabled: true, hasKey: true },
   continueAfterRestart: false,
+  followUpMode: "queue",
+  limitPolicy: "reset",
+  teams: [],
 };
 
 describe("server settings", () => {
@@ -32,6 +37,20 @@ describe("server settings", () => {
     expect(worktreeByDefault()).toBe(false);
     expect(providerDefault("codex")).toEqual({ model: "gpt-5", mode: "auto" });
     expect(providerDefault("pi")).toEqual({});
+  });
+
+  it("adopts the follow-up and limit-policy defaults and patches them", async () => {
+    expect(useServerSettings.getState().settings.followUpMode).toBe("steer");
+    expect(useServerSettings.getState().settings.limitPolicy).toBe("manual");
+    mockRpc({ "settings.get": () => SERVER });
+    await loadServerSettings();
+    expect(useServerSettings.getState().settings.followUpMode).toBe("queue");
+    const rpc = mockRpc({ "settings.set": (p: { patch: Partial<UserSettings> }) => ({ ...SERVER, ...p.patch }) });
+    await setFollowUpDefault("steer");
+    await setLimitPolicyDefault("manual");
+    expect(rpc).toHaveBeenCalledWith("settings.set", { patch: { followUpMode: "steer" } });
+    expect(rpc).toHaveBeenCalledWith("settings.set", { patch: { limitPolicy: "manual" } });
+    expect(useServerSettings.getState().settings.limitPolicy).toBe("manual");
   });
 
   it("applies a patch optimistically and keeps the server's answer", async () => {

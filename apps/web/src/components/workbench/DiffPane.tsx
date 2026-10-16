@@ -2,7 +2,8 @@ import { Suspense, lazy, useEffect, useState } from "react";
 import type { DiffFile, DiffResult } from "@tide/contracts";
 import { call } from "../../state/model.ts";
 import { useUi } from "../../state/ui.ts";
-import { parseUnifiedDiff } from "../../lib/diff.ts";
+import { parseUnifiedDiff, type DiffLine } from "../../lib/diff.ts";
+import { diffView } from "./diffSides.ts";
 import styles from "./DiffPane.module.css";
 
 /** Monaco is ~MBs; it must never land in the shell chunk. */
@@ -10,9 +11,13 @@ const MonacoDiff = lazy(async () => ({ default: (await import("./monaco/MonacoDi
 
 /** Coloured unified patch — the fallback when Monaco has nothing to diff. */
 export function PatchView({ patch }: { patch: string }) {
+  return <LinesView lines={parseUnifiedDiff(patch)} />;
+}
+
+function LinesView({ lines }: { lines: DiffLine[] }) {
   return (
     <pre className={styles.patch} data-testid="patch-view">
-      {parseUnifiedDiff(patch).map((line, i) => (
+      {lines.map((line, i) => (
         <span key={i} className={styles[line.kind]}>
           {line.text || " "}
           {"\n"}
@@ -80,13 +85,16 @@ function FileDiff({ threadId, diff, file }: { threadId: string; diff: DiffResult
   if (load.state === "loading") return <p className={styles.note}>Loading diff…</p>;
   if (load.state === "error") return <Fallback file={file} reason={`Could not load file contents: ${load.message}`} />;
 
+  const view = diffView(file, load.sides.original, load.sides.modified);
+  if (view.kind === "oneSided") return <LinesView lines={view.lines} />;
+
   return (
     <div className={styles.editor}>
       <Suspense fallback={<p className={styles.note}>Loading editor…</p>}>
         <MonacoDiff
           path={file.path}
-          original={load.sides.original}
-          modified={load.sides.modified}
+          original={view.original}
+          modified={view.modified}
           sideBySide={sideBySide}
         />
       </Suspense>

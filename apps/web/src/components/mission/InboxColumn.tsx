@@ -63,51 +63,53 @@ export function InboxColumn({ projectId }: { projectId?: string }) {
 
   return (
     <section className={styles.section} aria-label="Inbox" tabIndex={-1} onKeyDown={onKeyDown}>
-      <h2 className={styles.label}>Inbox{count > 0 ? ` · ${count}` : ""}</h2>
       {count === 0 ? (
-        <p className={styles.empty}>Nothing needs you right now.</p>
+        <p className={styles.clear}>
+          <span aria-hidden="true">✓</span> Nothing needs you
+        </p>
       ) : (
-        items.map((item, i) => {
-          const triage = item.thread.triage;
-          const stuck = triage !== undefined && triage.stuck >= STUCK_THRESHOLD ? triage.stuck : undefined;
-          return (
-            <article
-              key={item.key}
-              className={styles.item}
-              data-focused={i === index ? "true" : "false"}
-              aria-label={`Inbox: ${item.thread.title}`}
-              onMouseDown={() => setFocused(i)}
-            >
-              <div className={styles.itemHead}>
-                <StatusGlyph status={item.thread.status} attention={item.attention} />
-                <span className={styles.itemTitle}>{item.thread.title}</span>
-                <span className={styles.meta}>{model.projects[item.thread.projectId]?.title ?? "—"}</span>
-                <Pill>{PROVIDER_LABELS[item.thread.provider]}</Pill>
-                {stuck === undefined ? null : (
-                  <span
-                    className={styles.stuck}
-                    title="The decisions model thinks this thread may be stuck. It never acts on it."
-                  >
-                    possibly stuck · {Math.round(stuck * 100)}%
-                  </span>
-                )}
-                <span className={styles.waiting} title={new Date(item.since).toLocaleString()}>
-                  waiting {relativeTime(item.since, now)}
-                </span>
-                <Button variant="link" className={styles.jump} onClick={() => selectThread(item.thread.id)}>
-                  jump →
-                </Button>
-              </div>
-              {item.notification === undefined ? null : (
-                <p className={limited.subtitle}>{item.notification}</p>
-              )}
-              <ul className={styles.cards}>
-                <ItemCard item={item} active={i === index} />
-              </ul>
-            </article>
-          );
-        })
+        <h2 className={`${styles.label} ${styles.labelNeeds}`}>Needs you · {count}</h2>
       )}
+      {count === 0
+        ? null
+        : items.map((item, i) => {
+            const triage = item.thread.triage;
+            const stuck = triage !== undefined && triage.stuck >= STUCK_THRESHOLD ? triage.stuck : undefined;
+            return (
+              <article
+                key={item.key}
+                className={styles.item}
+                data-focused={i === index ? "true" : "false"}
+                aria-label={`Inbox: ${item.thread.title}`}
+                onMouseDown={() => setFocused(i)}
+              >
+                <div className={styles.itemHead}>
+                  <StatusGlyph status={item.thread.status} attention={item.attention} />
+                  <span className={styles.itemTitle}>{item.thread.title}</span>
+                  <span className={styles.meta}>{model.projects[item.thread.projectId]?.title ?? "—"}</span>
+                  <Pill>{PROVIDER_LABELS[item.thread.provider]}</Pill>
+                  {stuck === undefined ? null : (
+                    <span
+                      className={styles.stuck}
+                      title="The decisions model thinks this thread may be stuck. It never acts on it."
+                    >
+                      possibly stuck · {Math.round(stuck * 100)}%
+                    </span>
+                  )}
+                  <span className={styles.waiting} title={new Date(item.since).toLocaleString()}>
+                    waiting {relativeTime(item.since, now)}
+                  </span>
+                  <Button variant="link" className={styles.jump} onClick={() => selectThread(item.thread.id)}>
+                    jump →
+                  </Button>
+                </div>
+                {item.notification === undefined ? null : <p className={limited.subtitle}>{item.notification}</p>}
+                <ul className={styles.cards}>
+                  <ItemCard item={item} active={i === index} />
+                </ul>
+              </article>
+            );
+          })}
     </section>
   );
 }

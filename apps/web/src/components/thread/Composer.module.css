@@ -7,8 +7,8 @@
 .input {
   width: 100%;
   resize: none;
-  background: var(--bg);
-  border: 1px solid var(--border);
+  background: var(--surface-raised);
+  border: 1px solid var(--border-strong);
   border-radius: var(--radius);
   padding: var(--sp-2);
 }
@@ -26,9 +26,9 @@
 
 .queued {
   color: var(--accent);
-  font-size: 10px;
-  letter-spacing: 0.04em;
-  text-transform: uppercase;
+  font-size: 11px;
+  letter-spacing: var(--ls-section);
+  text-transform: uppercase; font-weight: var(--fw-section);
 }
 
 .switchHint { margin: 0; padding-top: var(--sp-1); color: var(--muted); font-size: 11px; }

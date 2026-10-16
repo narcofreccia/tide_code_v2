@@ -1,19 +1,21 @@
 .glyph {
   display: inline-block;
-  width: 10px;
+  width: 12px;
   text-align: center;
-  font-size: 10px;
+  font-size: 12px;
   line-height: 1;
   flex: none;
-  color: var(--muted);
+  color: var(--st-idle);
 }
-.idle { color: var(--muted); }
-.running { color: var(--accent); animation: pulse 1.4s ease-in-out infinite; }
-.interrupted { color: var(--warn); }
-.error { color: var(--danger); }
+.idle { color: var(--st-idle); }
+.running { color: var(--st-running); animation: pulse 1.4s ease-in-out infinite; }
+.interrupted { color: var(--st-interrupted); }
+.error { color: var(--st-error); }
+.needsYou { color: var(--st-needs); }
+.interrupting { color: var(--st-interrupted); animation: pulse 0.9s ease-in-out infinite; }
+.limited { color: var(--st-limited); }
+.snoozed { color: var(--st-idle); }
+.merged { color: var(--st-ok); }
 @keyframes pulse {
   50% { opacity: 0.35; }
 }
-.needsYou { color: var(--warn); }
-.interrupting { color: var(--warn); animation: pulse 0.9s ease-in-out infinite; }
-.merged { color: var(--ok); }

@@ -1,18 +1,44 @@
 :root {
   color-scheme: dark;
 
-  --bg: #0e1013;
-  --surface: #16191f;
-  --surface-2: #1d222a;
+  /* elevation ladder: bg < surface < surface-2 < surface-raised */
+  --bg: #0b0d10;
+  --surface: #13161b;
+  --surface-2: #1b2028;
+  --surface-raised: #232934;
   --border: #272d37;
+  --border-strong: #38404d;
   --text: #e6e9ef;
+  --text-2: #b3bac7;
   --muted: #8b93a3;
   --accent: #5b9dff;
   --accent-soft: rgba(91, 157, 255, 0.16);
+  --on-accent: #fff;
   --danger: #ef6a6a;
+  --danger-soft: rgba(239, 106, 106, 0.16);
   --ok: #4ec9a0;
   --warn: #e2b341;
   --shadow-pop: 0 8px 24px rgb(0 0 0 / 0.35);
+
+  /* thread status: one colour + one soft tint per state */
+  --st-running: #5b9dff;
+  --st-running-soft: rgba(91, 157, 255, 0.16);
+  --st-needs: #f2a93b;
+  --st-needs-soft: rgba(242, 169, 59, 0.16);
+  --st-error: #ef6a6a;
+  --st-error-soft: rgba(239, 106, 106, 0.16);
+  --st-ok: #4ec9a0;
+  --st-ok-soft: rgba(78, 201, 160, 0.15);
+  --st-limited: #a78bfa;
+  --st-limited-soft: rgba(167, 139, 250, 0.16);
+  --st-idle: #8b93a3;
+  --st-idle-soft: rgba(139, 147, 163, 0.14);
+  --st-interrupted: #e0794f;
+  --st-interrupted-soft: rgba(224, 121, 79, 0.16);
+
+  --fs-section: 11px;
+  --fw-section: 600;
+  --ls-section: 0.06em;
 
   --radius-sm: 4px;
   --radius: 6px;
@@ -40,57 +66,120 @@
 
 /*
  * Light palette. The OS preference applies unless the user picked dark explicitly;
- * `[data-theme]` (Settings › Appearance) always wins over `prefers-color-scheme`.
+ * `[data-theme]` (Settings > Appearance) always wins over `prefers-color-scheme`.
+ * Light separates surfaces with borders (raised = white + --border-strong), not tone.
  */
 @media (prefers-color-scheme: light) {
   :root:not([data-theme="dark"]) {
     color-scheme: light;
 
-    --bg: #f6f7f9;
+    --bg: #eef1f5;
     --surface: #ffffff;
-    --surface-2: #e9edf3;
-    --border: #ccd3de;
+    --surface-2: #f3f5f8;
+    --surface-raised: #ffffff;
+    --border: #d5dbe5;
+    --border-strong: #b7c0ce;
     --text: #131722;
+    --text-2: #3d4555;
     --muted: #6a7285;
     --accent: #2f6fe0;
     --accent-soft: rgba(47, 111, 224, 0.12);
+    --on-accent: #fff;
     --danger: #c93b3b;
+    --danger-soft: rgba(201, 59, 59, 0.11);
     --ok: #1d8a68;
     --warn: #a97a11;
     --shadow-pop: 0 8px 24px rgb(15 23 42 / 0.12);
+
+    --st-running: #2f6fe0;
+    --st-running-soft: rgba(47, 111, 224, 0.12);
+    --st-needs: #a8650a;
+    --st-needs-soft: rgba(217, 130, 10, 0.15);
+    --st-error: #c93b3b;
+    --st-error-soft: rgba(201, 59, 59, 0.11);
+    --st-ok: #1d8a68;
+    --st-ok-soft: rgba(29, 138, 104, 0.12);
+    --st-limited: #6d4fd6;
+    --st-limited-soft: rgba(109, 79, 214, 0.12);
+    --st-idle: #5d6578;
+    --st-idle-soft: rgba(93, 101, 120, 0.12);
+    --st-interrupted: #b84f1f;
+    --st-interrupted-soft: rgba(184, 79, 31, 0.12);
   }
 }
 
 :root[data-theme="light"] {
   color-scheme: light;
 
-  --bg: #f6f7f9;
+  --bg: #eef1f5;
   --surface: #ffffff;
-  --surface-2: #e9edf3;
-  --border: #ccd3de;
+  --surface-2: #f3f5f8;
+  --surface-raised: #ffffff;
+  --border: #d5dbe5;
+  --border-strong: #b7c0ce;
   --text: #131722;
+  --text-2: #3d4555;
   --muted: #6a7285;
   --accent: #2f6fe0;
   --accent-soft: rgba(47, 111, 224, 0.12);
+  --on-accent: #fff;
   --danger: #c93b3b;
+  --danger-soft: rgba(201, 59, 59, 0.11);
   --ok: #1d8a68;
   --warn: #a97a11;
   --shadow-pop: 0 8px 24px rgb(15 23 42 / 0.12);
+
+  --st-running: #2f6fe0;
+  --st-running-soft: rgba(47, 111, 224, 0.12);
+  --st-needs: #a8650a;
+  --st-needs-soft: rgba(217, 130, 10, 0.15);
+  --st-error: #c93b3b;
+  --st-error-soft: rgba(201, 59, 59, 0.11);
+  --st-ok: #1d8a68;
+  --st-ok-soft: rgba(29, 138, 104, 0.12);
+  --st-limited: #6d4fd6;
+  --st-limited-soft: rgba(109, 79, 214, 0.12);
+  --st-idle: #5d6578;
+  --st-idle-soft: rgba(93, 101, 120, 0.12);
+  --st-interrupted: #b84f1f;
+  --st-interrupted-soft: rgba(184, 79, 31, 0.12);
 }
 
 :root[data-theme="dark"] {
   color-scheme: dark;
 
-  --bg: #0e1013;
-  --surface: #16191f;
-  --surface-2: #1d222a;
+  /* elevation ladder: bg < surface < surface-2 < surface-raised */
+  --bg: #0b0d10;
+  --surface: #13161b;
+  --surface-2: #1b2028;
+  --surface-raised: #232934;
   --border: #272d37;
+  --border-strong: #38404d;
   --text: #e6e9ef;
+  --text-2: #b3bac7;
   --muted: #8b93a3;
   --accent: #5b9dff;
   --accent-soft: rgba(91, 157, 255, 0.16);
+  --on-accent: #fff;
   --danger: #ef6a6a;
+  --danger-soft: rgba(239, 106, 106, 0.16);
   --ok: #4ec9a0;
   --warn: #e2b341;
   --shadow-pop: 0 8px 24px rgb(0 0 0 / 0.35);
+
+  /* thread status: one colour + one soft tint per state */
+  --st-running: #5b9dff;
+  --st-running-soft: rgba(91, 157, 255, 0.16);
+  --st-needs: #f2a93b;
+  --st-needs-soft: rgba(242, 169, 59, 0.16);
+  --st-error: #ef6a6a;
+  --st-error-soft: rgba(239, 106, 106, 0.16);
+  --st-ok: #4ec9a0;
+  --st-ok-soft: rgba(78, 201, 160, 0.15);
+  --st-limited: #a78bfa;
+  --st-limited-soft: rgba(167, 139, 250, 0.16);
+  --st-idle: #8b93a3;
+  --st-idle-soft: rgba(139, 147, 163, 0.14);
+  --st-interrupted: #e0794f;
+  --st-interrupted-soft: rgba(224, 121, 79, 0.16);
 }

@@ -5,10 +5,15 @@ import styles from "./Menu.module.css";
 
 export interface MenuItem {
   label: string;
-  onSelect: () => void;
+  /** omitted on an item that only opens `submenu` */
+  onSelect?: () => void;
   disabled?: boolean;
+  /** muted text shown inline after the label, e.g. why the item is disabled */
+  hint?: string;
   danger?: boolean;
   separatorBefore?: boolean;
+  /** a nested list ("Snooze ▸"); choosing the item swaps the menu to it */
+  submenu?: MenuItem[];
 }
 
 export interface MenuPosition {
@@ -33,6 +38,7 @@ export function ContextMenu({
 }) {
   const root = useRef<HTMLDivElement>(null);
   const [focused, setFocused] = useState(0);
+  const [nested, setNested] = useState<{ label: string; items: MenuItem[] } | undefined>(undefined);
   // clamped to the viewport: a right-click near the bottom edge still shows the menu
   const style = useAnchoredPanel(true, root, root, { point: position, gap: 0 });
 
@@ -54,7 +60,10 @@ export function ContextMenu({
     };
   }, [onClose]);
 
-  const enabled = items.filter((i) => !i.disabled);
+  const shown: MenuItem[] = nested
+    ? [{ label: `◂ ${nested.label}`, onSelect: () => setNested(undefined) }, ...nested.items]
+    : items;
+  const enabled = shown.filter((i) => !i.disabled);
 
   return createPortal(
     <div
@@ -70,22 +79,35 @@ export function ContextMenu({
         e.preventDefault();
       }}
     >
-      {items.map((item, index) => (
+      {shown.map((item, index) => (
         <button
           key={item.label}
           type="button"
           role="menuitem"
           disabled={item.disabled === true}
           autoFocus={index === focused}
+          {...(item.submenu ? { "aria-haspopup": "menu" as const } : {})}
           className={[styles.item, item.danger ? styles.danger : "", item.separatorBefore ? styles.separated : ""]
             .filter(Boolean)
             .join(" ")}
           onClick={() => {
+            if (item.submenu) {
+              setNested({ label: item.label, items: item.submenu });
+              setFocused(1);
+              return;
+            }
+            if (nested && index === 0) {
+              item.onSelect?.();
+              setFocused(0);
+              return;
+            }
             onClose();
-            item.onSelect();
+            item.onSelect?.();
           }}
         >
-          {item.label}
+          <span className={styles.label}>{item.label}</span>
+          {item.hint ? <span className={styles.hint}>{item.hint}</span> : null}
+          {item.submenu ? <span className={styles.chevron}>▸</span> : null}
         </button>
       ))}
     </div>,

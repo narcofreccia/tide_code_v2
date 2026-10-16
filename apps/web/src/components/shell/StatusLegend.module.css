@@ -1,0 +1,6 @@
+.table { border-collapse: collapse; font-size: 12px; }
+.table td, .table th { padding: 3px var(--sp-2); text-align: left; font-weight: 400; }
+.glyph { width: 20px; }
+.word { font-weight: 600; white-space: nowrap; }
+.meaning { color: var(--muted); }
+.srOnly { position: absolute; width: 1px; height: 1px; overflow: hidden; clip: rect(0 0 0 0); }

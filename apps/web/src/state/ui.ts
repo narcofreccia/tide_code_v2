@@ -1,5 +1,6 @@
 import { create } from "zustand";
 import { persist } from "zustand/middleware";
+import { useModel } from "./model.ts";
 
 export type FocusMode = "thread" | "split" | "workbench";
 /** `threads` is the per-project "All threads" list opened from Mission Control. */
@@ -26,6 +27,17 @@ export interface ThreadDialog {
   turnId?: string;
 }
 
+/** A project-scoped modal raised from the rail's context menu. */
+export interface ProjectDialog {
+  kind: "rename" | "archive";
+  projectId: string;
+}
+
+export interface NewThreadRequest {
+  projectId?: string;
+  parentThreadId?: string;
+}
+
 interface UiState {
   view: View;
   selectedProjectId: string | null;
@@ -41,6 +53,10 @@ interface UiState {
   newProjectOpen: boolean;
   /** project the ⌘K / ⌘N new-thread dialog is open for, null when closed */
   newThreadProjectId: string | null;
+  /** `+ child` / "New child thread": the parent the new-thread form is prefilled with */
+  newThreadParentId: string | null;
+  /** project rename / archive dialog raised from the rail */
+  projectDialog: ProjectDialog | null;
   /** project whose "Linked repositories" editor is open, null when closed */
   linksProjectId: string | null;
   /** ⌘K command palette */
@@ -72,6 +88,9 @@ interface UiState {
   setSettingsSection: (section: SettingsSection) => void;
   setNewProjectOpen: (open: boolean) => void;
   setNewThreadProject: (projectId: string | null) => void;
+  /** opens the new-thread dialog; with only a parent, its project is used */
+  openNewThread: (request: NewThreadRequest) => void;
+  setProjectDialog: (dialog: ProjectDialog | null) => void;
   setLinksProject: (projectId: string | null) => void;
   setPaletteOpen: (open: boolean) => void;
   setThreadDialog: (dialog: ThreadDialog | null) => void;
@@ -97,6 +116,8 @@ export const useUi = create<UiState>()(
       newExpertsProjectId: null,
       newProjectOpen: false,
       newThreadProjectId: null,
+      newThreadParentId: null,
+      projectDialog: null,
       linksProjectId: null,
       paletteOpen: false,
       threadDialog: null,
@@ -134,7 +155,14 @@ export const useUi = create<UiState>()(
       closeSettings: () => set((s) => (s.view === "settings" ? { view: s.settingsReturnTo } : s)),
       setSettingsSection: (settingsSection) => set({ settingsSection }),
       setNewProjectOpen: (newProjectOpen) => set({ newProjectOpen }),
-      setNewThreadProject: (newThreadProjectId) => set({ newThreadProjectId }),
+      setNewThreadProject: (newThreadProjectId) => set({ newThreadProjectId, newThreadParentId: null }),
+      openNewThread: ({ projectId, parentThreadId }) => {
+        const parent = parentThreadId === undefined ? undefined : useModel.getState().model.threads[parentThreadId];
+        const project = projectId ?? parent?.projectId;
+        if (project === undefined) return;
+        set({ newThreadProjectId: project, newThreadParentId: parent ? parent.id : null });
+      },
+      setProjectDialog: (projectDialog) => set({ projectDialog }),
       setLinksProject: (linksProjectId) => set({ linksProjectId }),
       setPaletteOpen: (paletteOpen) => set({ paletteOpen }),
       setThreadDialog: (threadDialog) => set({ threadDialog }),

@@ -1,22 +1,43 @@
 .header {
   display: flex;
   align-items: center;
-  gap: var(--sp-2);
-  height: 28px;
-  padding: 0 var(--sp-2);
+  flex-wrap: wrap;
+  gap: var(--sp-1) var(--sp-2);
+  min-height: 28px;
+  min-width: 0;
+  max-width: 100%;
+  padding: 2px var(--sp-2);
   border-bottom: 1px solid var(--border);
 }
-.actions { display: flex; align-items: center; gap: var(--sp-1); margin-left: auto; }
-.stats { font-size: 11px; font-variant-numeric: tabular-nums; }
+/* Wraps onto a second row instead of pushing the page wider than the viewport. */
+.actions {
+  display: flex;
+  align-items: center;
+  flex-wrap: wrap;
+  justify-content: flex-end;
+  gap: var(--sp-1);
+  margin-left: auto;
+  min-width: 0;
+  max-width: 100%;
+}
+.actions > * { min-width: 0; max-width: 100%; }
+.stats { font-size: 11px; font-variant-numeric: tabular-nums; white-space: nowrap; }
 .add { color: var(--ok); }
 .del { color: var(--danger); }
-.hint { color: var(--muted); font-size: 11px; }
+.hint {
+  color: var(--muted);
+  font-size: 11px;
+  min-width: 0;
+  overflow: hidden;
+  text-overflow: ellipsis;
+  white-space: nowrap;
+}
 .confirm { display: flex; flex-direction: column; gap: var(--sp-2); width: 280px; }
 .confirmText { margin: 0; font-size: 12px; color: var(--text); }
 .confirmRow { display: flex; justify-content: flex-end; gap: var(--sp-2); }
 .publish { display: flex; flex-direction: column; gap: var(--sp-2); width: 340px; }
 .field { display: flex; flex-direction: column; gap: 2px; }
-.label { font-size: 10px; letter-spacing: 0.08em; text-transform: uppercase; color: var(--muted); }
+.label { font-size: 11px; letter-spacing: var(--ls-section); text-transform: uppercase; font-weight: var(--fw-section); color: var(--muted); }
 .input,
 .textarea {
   width: 100%;

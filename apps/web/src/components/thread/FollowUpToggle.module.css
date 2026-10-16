@@ -1,7 +1,7 @@
 .toggle {
   display: inline-flex;
-  height: 20px;
-  border: 1px solid var(--border);
+  height: 22px;
+  border: 1px solid var(--border-strong);
   border-radius: var(--radius-sm);
   overflow: hidden;
 }
@@ -13,6 +13,6 @@
   font-size: 11px;
   cursor: pointer;
 }
-.option + .option { border-left: 1px solid var(--border); }
+.option + .option { border-left: 1px solid var(--border-strong); }
 .option[aria-pressed="true"] { background: var(--surface-2); color: var(--text); }
 .option:disabled { cursor: not-allowed; opacity: 0.6; }

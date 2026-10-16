@@ -1,14 +1,16 @@
-import { useState } from "react";
+import type { UserSettings } from "@tide/contracts";
 import { Select } from "../ui/Select.tsx";
+import { Checkbox } from "../ui/Choice.tsx";
 import {
-  readFollowUpMode,
-  readLimitPolicy,
-  writeFollowUpMode,
-  writeLimitPolicy,
-  type FollowUpMode,
-  type LimitPolicy,
-} from "./generalPrefs.ts";
+  setContinueAfterRestart,
+  setFollowUpDefault,
+  setLimitPolicyDefault,
+  useServerSettings,
+} from "../../state/serverSettings.ts";
 import section from "./Section.module.css";
+
+type FollowUpMode = UserSettings["followUpMode"];
+type LimitPolicy = UserSettings["limitPolicy"];
 
 const FOLLOW_UP: { value: FollowUpMode; label: string }[] = [
   { value: "steer", label: "Steer" },
@@ -19,10 +21,9 @@ const LIMIT: { value: LimitPolicy; label: string }[] = [
   { value: "reset", label: "Resume at reset" },
 ];
 
-/** Defaults for follow-up messages and usage limits; both live in localStorage. */
+/** Follow-up, usage-limit and restart defaults; server-side, so every client agrees. */
 export function GeneralSection() {
-  const [followUp, setFollowUp] = useState(readFollowUpMode);
-  const [limit, setLimit] = useState(readLimitPolicy);
+  const settings = useServerSettings((s) => s.settings);
 
   return (
     <div className={section.section}>
@@ -34,12 +35,9 @@ export function GeneralSection() {
           <span className={section.label}>Follow-up default</span>
           <Select
             label="Follow-up default"
-            value={followUp}
+            value={settings.followUpMode}
             options={FOLLOW_UP}
-            onSelect={(v) => {
-              setFollowUp(v);
-              writeFollowUpMode(v);
-            }}
+            onSelect={(v) => void setFollowUpDefault(v)}
             variant="field"
             size="md"
           />
@@ -48,20 +46,27 @@ export function GeneralSection() {
           <span className={section.label}>When a provider reports its usage limit</span>
           <Select
             label="Usage limit policy"
-            value={limit}
+            value={settings.limitPolicy}
             options={LIMIT}
-            onSelect={(v) => {
-              setLimit(v);
-              writeLimitPolicy(v);
-            }}
+            onSelect={(v) => void setLimitPolicyDefault(v)}
             variant="field"
             size="md"
           />
         </li>
+        <li className={section.row}>
+          <Checkbox
+            className={section.check}
+            checked={settings.continueAfterRestart}
+            onChange={(event) => void setContinueAfterRestart(event.target.checked)}
+          >
+            Continue threads after a restart
+          </Checkbox>
+        </li>
       </ul>
       <p className={section.note}>
-        Steer sends a message sent mid-turn into the running turn; Queue runs it after the turn ends. Switching a
-        thread to another harness carries a budgeted excerpt of its history, not the full session — handoffs are lossy.
+        Steer sends a message sent mid-turn into the running turn; Queue runs it after the turn ends (⌘↵ sends the
+        default, ⌥↵ the other). Switching a thread to another harness carries a budgeted excerpt of its history, not
+        the full session — handoffs are lossy.
       </p>
     </div>
   );

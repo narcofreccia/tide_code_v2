@@ -1,16 +1,38 @@
-import { useState } from "react";
+import { useEffect, useState } from "react";
 import type { Thread } from "@tide/contracts";
 import { archiveThread, detachWorktree } from "../../lib/threadActions.ts";
-import { useModel } from "../../state/model.ts";
+import { call, useModel } from "../../state/model.ts";
 import { useUi } from "../../state/ui.ts";
 import { Checkbox, Radio } from "../ui/Choice.tsx";
 import { ConfirmDialog } from "../ui/Dialog.tsx";
 import { ForkDialog, RollbackDialog } from "./TurnDialogs.tsx";
 import styles from "./ThreadDialogs.module.css";
 
-/** Archiving a worktree thread asks what happens to the directory; the branch always stays. */
+/** Uncommitted changes in the thread's worktree, once `vcs.status` answers; undefined until then or on error. */
+function useDirtyCount(threadId: string): number | undefined {
+  const [dirty, setDirty] = useState<number | undefined>(undefined);
+  useEffect(() => {
+    let live = true;
+    call("vcs.status", { threadId })
+      .then((status) => {
+        if (live) setDirty(status.dirty);
+      })
+      .catch(() => undefined);
+    return () => {
+      live = false;
+    };
+  }, [threadId]);
+  return dirty;
+}
+
+/**
+ * Archiving a worktree thread asks what happens to the directory; the branch always
+ * stays. Uncommitted work turns the default to "keep" and says what would be lost.
+ */
 export function ArchiveThreadDialog({ thread, onClose }: { thread: Thread; onClose: () => void }) {
-  const [keepWorktree, setKeepWorktree] = useState(false);
+  const dirty = useDirtyCount(thread.id);
+  const [choice, setKeepWorktree] = useState<boolean | undefined>(undefined);
+  const keepWorktree = choice ?? (dirty !== undefined && dirty > 0);
   return (
     <ConfirmDialog
       title={`Archive “${thread.title}”?`}
@@ -31,6 +53,11 @@ export function ArchiveThreadDialog({ thread, onClose }: { thread: Thread; onClo
           >
             Remove the worktree directory (branch is kept)
           </Radio>
+          {dirty !== undefined && dirty > 0 ? (
+            <span className={styles.warning} role="alert">
+              {dirty} uncommitted {dirty === 1 ? "change" : "changes"} will be lost
+            </span>
+          ) : null}
           <Radio
             className={styles.option}
             name="archive-worktree"

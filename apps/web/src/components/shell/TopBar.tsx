@@ -3,12 +3,10 @@ import { openPalette } from "../../lib/commands.ts";
 import { useModel } from "../../state/model.ts";
 import { useUi } from "../../state/ui.ts";
 import { useSelectedThread } from "../../state/hooks.ts";
-import { ThreadPills } from "../thread/ThreadPills.tsx";
 import { Button } from "../ui/Button.tsx";
 import { Kbd } from "../ui/Kbd.tsx";
 import { Select, type SelectOption } from "../ui/Select.tsx";
 import { Logo } from "./Logo.tsx";
-import { ThreadTitle } from "./ThreadTitle.tsx";
 import styles from "./TopBar.module.css";
 
 export function TopBar() {
@@ -46,23 +44,30 @@ export function TopBar() {
         <Kbd>⌘K</Kbd>
       </Button>
 
-      <Select
-        className={styles.switcher}
-        label="Project switcher"
-        align="start"
-        value={selectedProjectId ?? ""}
-        options={projectOptions}
-        onSelect={(id) => {
-          selectProject(id || null);
-          showMission();
-        }}
-      />
+      {thread ? null : (
+        <Select
+          className={styles.switcher}
+          label="Project switcher"
+          align="start"
+          value={selectedProjectId ?? ""}
+          options={projectOptions}
+          onSelect={(id) => {
+            selectProject(id || null);
+            showMission();
+          }}
+        />
+      )}
 
-      {thread ? <ThreadTitle thread={thread} /> : <span className={styles.idle}>Mission Control</span>}
+      {thread ? (
+        <nav className={styles.crumb} aria-label="Breadcrumb">
+          <span className={styles.crumbProject}>{model.projects[thread.projectId]?.title ?? "—"}</span>
+          <span aria-hidden="true">›</span>
+          <span className={styles.crumbThread}>{thread.title}</span>
+        </nav>
+      ) : (
+        <span className={styles.idle}>Mission Control</span>
+      )}
 
-      <div className={styles.pills} data-tauri-drag-region>
-        {thread ? <ThreadPills thread={thread} /> : null}
-      </div>
     </header>
   );
 }

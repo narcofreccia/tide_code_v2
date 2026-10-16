@@ -20,6 +20,7 @@ import {
   selectPrWatch,
   selectRunningThreads,
   selectSnoozed,
+  selectRailGroups,
   selectActiveTurn,
   selectInbox,
   selectThreadsNeedingAttention,
@@ -392,5 +393,46 @@ describe("R4 selectors", () => {
     const l = selectLineage(m, "src");
     expect(l.forks.map((t) => t.id)).toEqual(["f1"]);
     expect(selectLineage(m, "f1").source?.id).toBe("src");
+  });
+});
+
+describe("selectRailGroups", () => {
+  const rail = (threads: Thread[]): ReadModel => {
+    const m = emptyReadModel();
+    for (const t of threads) m.threads[t.id] = t;
+    return m;
+  };
+  const ids = (ts: Thread[]): string[] => ts.map((t) => t.id);
+
+  it("puts pinned threads in their own group at the top", () => {
+    const m = rail([thread("a", { updatedAt: 5 }), thread("b", { pinned: true, updatedAt: 1 })]);
+    const g = selectRailGroups(m, "p1", 0);
+    expect(ids(g.pinned)).toEqual(["b"]);
+    expect(ids(g.threads)).toEqual(["a"]);
+  });
+
+  it("collects snoozed threads, even pinned ones, until the snooze lapses", () => {
+    const m = rail([thread("s", { pinned: true, snoozedUntil: 100 }), thread("t")]);
+    expect(ids(selectRailGroups(m, "p1", 50).snoozed)).toEqual(["s"]);
+    expect(ids(selectRailGroups(m, "p1", 50).pinned)).toEqual([]);
+    expect(ids(selectRailGroups(m, "p1", 150).pinned)).toEqual(["s"]);
+  });
+
+  it("collects archived threads, ahead of snooze and pin", () => {
+    const m = rail([thread("x", { archivedAt: 9, pinned: true, snoozedUntil: 100 }), thread("y")]);
+    const g = selectRailGroups(m, "p1", 50);
+    expect(ids(g.archived)).toEqual(["x"]);
+    expect(g.snoozed).toEqual([]);
+    expect(ids(g.threads)).toEqual(["y"]);
+  });
+
+  it("keeps compareByAttention order inside each group and ignores other projects", () => {
+    const m = rail([
+      thread("old", { updatedAt: 1 }),
+      thread("new", { updatedAt: 3 }),
+      thread("asks", { updatedAt: 0, attention: "approval" }),
+      thread("other", { projectId: "p2" }),
+    ]);
+    expect(ids(selectRailGroups(m, "p1", 0).threads)).toEqual(["asks", "new", "old"]);
   });
 });

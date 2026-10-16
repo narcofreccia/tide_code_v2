@@ -22,7 +22,15 @@ interface ServerSettingsState {
 }
 
 export function defaultUserSettings(): UserSettings {
-  return { providerDefaults: {}, worktreeByDefault: true, decisions: { enabled: false, hasKey: false }, continueAfterRestart: false };
+  return {
+    providerDefaults: {},
+    worktreeByDefault: true,
+    decisions: { enabled: false, hasKey: false },
+    continueAfterRestart: false,
+    followUpMode: "steer",
+    limitPolicy: "manual",
+    teams: [],
+  };
 }
 
 export const useServerSettings = create<ServerSettingsState>(() => ({
@@ -47,6 +55,9 @@ function applyPatch(settings: UserSettings, patch: UserSettingsPatch): UserSetti
       hasKey: settings.decisions.hasKey,
     },
     continueAfterRestart: patch.continueAfterRestart ?? settings.continueAfterRestart,
+    followUpMode: patch.followUpMode ?? settings.followUpMode,
+    limitPolicy: patch.limitPolicy ?? settings.limitPolicy,
+    teams: patch.teams ?? settings.teams,
   };
 }
 
@@ -82,6 +93,18 @@ export function setWorktreeByDefault(worktreeByDefault: boolean): Promise<void> 
 
 export function worktreeByDefault(): boolean {
   return useServerSettings.getState().settings.worktreeByDefault;
+}
+
+export function setContinueAfterRestart(continueAfterRestart: boolean): Promise<void> {
+  return patchServerSettings({ continueAfterRestart });
+}
+
+export function setFollowUpDefault(followUpMode: UserSettings["followUpMode"]): Promise<void> {
+  return patchServerSettings({ followUpMode });
+}
+
+export function setLimitPolicyDefault(limitPolicy: UserSettings["limitPolicy"]): Promise<void> {
+  return patchServerSettings({ limitPolicy });
 }
 
 export function resetServerSettings(): void {

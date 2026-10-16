@@ -9,7 +9,7 @@ import type {
 } from "@tide/contracts";
 import { newId } from "@tide/contracts";
 import { call, dispatch, useModel, type DispatchResult } from "../state/model.ts";
-import { dispatchOrToast } from "./dispatchOrToast.ts";
+import { dispatchOrToast, errorText } from "./dispatchOrToast.ts";
 import { showToast } from "../state/toast.ts";
 import { useUi } from "../state/ui.ts";
 import { ensureStatus, invalidateThread } from "../state/vcs.ts";
@@ -20,23 +20,58 @@ export interface ThreadPatch {
   model?: string;
   mode?: RuntimeMode;
   interaction?: InteractionMode;
+  pinned?: boolean;
 }
 
 export function updateThread(threadId: string, patch: ThreadPatch): void {
   dispatchOrToast("Updating the thread", { type: "thread.update", threadId, ...patch });
 }
 
+/** The thread's title as the read model knows it, for toasts. */
+function titleOf(threadId: string): string {
+  return useModel.getState().model.threads[threadId]?.title ?? "thread";
+}
+
+/** Brings an archived thread back into the rail; its worktree is not recreated. */
+export function unarchiveThread(threadId: string): void {
+  dispatchOrToast("Restoring the thread", { type: "thread.unarchive", threadId });
+}
+
 /**
  * Archives a thread. `keepWorktree` is only meaningful for worktree threads —
- * the dialog asks, threads without one archive straight away.
+ * the dialog asks, threads without one archive straight away. The toast offers
+ * Undo (`thread.unarchive`) for a few seconds.
  */
 export function archiveThread(threadId: string, keepWorktree?: boolean): void {
-  dispatchOrToast("Archiving the thread", {
+  const title = titleOf(threadId);
+  dispatch({
     type: "thread.archive",
     threadId,
     ...(keepWorktree === undefined ? {} : { keepWorktree }),
-  });
-  useUi.getState().selectThread(null);
+  })
+    .then(() => showToast(`Archived “${title}”`, { label: "Undo", onClick: () => unarchiveThread(threadId) }))
+    .catch((error: unknown) => showToast(`Archiving the thread failed: ${errorText(error)}`));
+  const ui = useUi.getState();
+  if (ui.selectedThreadId === threadId) ui.selectThread(null);
+}
+
+export function setThreadPinned(threadId: string, pinned: boolean): void {
+  updateThread(threadId, { pinned });
+}
+
+/** `+ child`: opens the new-thread form with the parent filled in, instead of creating blind. */
+export function createChild(thread: { id: string; projectId: string }): void {
+  useUi.getState().openNewThread({ projectId: thread.projectId, parentThreadId: thread.id });
+}
+
+/** Copies a value and confirms it with a toast. */
+export async function copyText(text: string, what: string): Promise<void> {
+  try {
+    await navigator.clipboard?.writeText(text);
+    showToast(`Copied ${what}`);
+  } catch {
+    showToast(`Could not copy the ${what}`);
+  }
 }
 
 /** Opens the archive confirmation for worktree threads; archives the rest now. */
@@ -77,6 +112,7 @@ export interface NewThreadOptions {
   title?: string;
   model?: string;
   mode?: RuntimeMode;
+  interaction?: InteractionMode;
   useWorktree?: boolean;
   /** per-thread link overrides; omit to inherit every project link at its default access */
   links?: { linkId: string; access: LinkAccess }[];
@@ -96,6 +132,7 @@ export async function createThread(
     ...(options.parentThreadId === undefined ? {} : { parentThreadId: options.parentThreadId }),
     ...(options.model === undefined ? {} : { model: options.model }),
     ...(options.mode === undefined ? {} : { mode: options.mode }),
+    ...(options.interaction === undefined ? {} : { interaction: options.interaction }),
     ...(options.useWorktree === undefined ? {} : { useWorktree: options.useWorktree }),
     ...(options.links === undefined ? {} : { links: options.links }),
   });
@@ -192,17 +229,6 @@ export async function fetchTerminalCommand(threadId: string): Promise<string | u
 }
 
 // ---- git (P2) ----
-
-/** Restores the worktree to the checkpoint taken before `turnId`. */
-export async function revertTurn(threadId: string, turnId: string): Promise<void> {
-  try {
-    await dispatch({ type: "thread.revert", threadId, turnId });
-    invalidateThread(threadId);
-    showToast("Reverted to the checkpoint before this turn");
-  } catch (error) {
-    showToast(`Revert failed: ${error instanceof Error ? error.message : String(error)}`);
-  }
-}
 
 export interface PublishOptions {
   title?: string;

@@ -229,7 +229,9 @@ export function DiffHeader({
         </Button>
         <TurnActions thread={thread} turn={selectedTurn} running={running} />
         {thread.worktreePath === undefined ? (
-          <span className={styles.hint}>Runs in the main checkout — PR needs a worktree</span>
+          <span className={styles.hint} title="Runs in the main checkout — PR needs a worktree">
+            Runs in the main checkout — PR needs a worktree
+          </span>
         ) : (
           <>
             {thread.pr ? (

@@ -136,6 +136,38 @@ export function compareByAttention(a: Thread, b: Thread): number {
   return rank(a) - rank(b) || b.updatedAt - a.updatedAt || a.id.localeCompare(b.id);
 }
 
+/** One project's threads as the rail groups them. */
+export interface RailGroups {
+  /** pinned, not snoozed: kept at the top */
+  pinned: Thread[];
+  /** everything else that is live */
+  threads: Thread[];
+  /** snoozed until later; collapsed under "Snoozed · n" */
+  snoozed: Thread[];
+  /** archived; collapsed under "Archived · n", open read-only */
+  archived: Thread[];
+}
+
+/**
+ * The rail's groups for one project. Archived wins over snoozed, snoozed over
+ * pinned; each group keeps `compareByAttention` order.
+ */
+export function selectRailGroups(model: ReadModel, projectId: string, now: number = Date.now()): RailGroups {
+  const groups: RailGroups = { pinned: [], threads: [], snoozed: [], archived: [] };
+  for (const thread of Object.values(model.threads)) {
+    if (thread.projectId !== projectId) continue;
+    if (thread.archivedAt !== undefined) groups.archived.push(thread);
+    else if (isSnoozed(thread, now)) groups.snoozed.push(thread);
+    else if (thread.pinned === true) groups.pinned.push(thread);
+    else groups.threads.push(thread);
+  }
+  groups.pinned.sort(compareByAttention);
+  groups.threads.sort(compareByAttention);
+  groups.snoozed.sort(compareByAttention);
+  groups.archived.sort(compareByAttention);
+  return groups;
+}
+
 /** Non-archived threads whose projector-derived `attention` is set. */
 export function selectThreadsNeedingAttention(
   model: ReadModel,

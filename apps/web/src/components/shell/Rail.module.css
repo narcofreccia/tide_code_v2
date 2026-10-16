@@ -13,7 +13,8 @@
   height: var(--row-h);
   padding: 0 var(--sp-2);
 }
-.inbox { flex: 1; justify-content: space-between; }
+.mission { flex: 1; justify-content: flex-start; color: var(--text-2); }
+.mission:hover { color: var(--text); }
 .section {
   display: flex;
   align-items: center;
@@ -23,10 +24,11 @@
   margin-top: var(--sp-2);
 }
 .heading {
-  font-size: 10px;
-  letter-spacing: 0.08em;
+  font-size: 11px;
+  letter-spacing: var(--ls-section);
   text-transform: uppercase;
-  color: var(--muted);
+  font-weight: var(--fw-section);
+  color: var(--text-2);
 }
 .scroll { flex: 1; min-height: 0; overflow-y: auto; padding-top: var(--sp-1); }
 .foot {

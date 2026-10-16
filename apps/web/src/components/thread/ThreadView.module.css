@@ -6,3 +6,12 @@
   flex: 1;
   background: var(--bg);
 }
+.archived {
+  display: flex;
+  align-items: center;
+  justify-content: space-between;
+  gap: var(--sp-3);
+  padding: var(--sp-2) var(--sp-3);
+  border-top: 1px solid var(--border);
+  color: var(--muted);
+}

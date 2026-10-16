@@ -3,7 +3,7 @@
   display: inline-flex;
   align-items: center;
   gap: 2px;
-  font-size: 10px;
+  font-size: 11px;
   color: var(--muted);
 }
 .badge {
@@ -11,16 +11,19 @@
   align-items: center;
   gap: var(--sp-1);
   height: 18px;
-  padding: 0 6px;
-  border: 1px solid var(--border);
+  padding: 0 7px;
   border-radius: 999px;
+  background: var(--st-idle-soft);
   font-size: 11px;
   text-decoration: none;
-  color: var(--muted);
+  color: var(--text-2);
 }
-.badge:hover { border-color: var(--accent); color: var(--text); }
-.open { color: var(--accent); }
-.merged { color: var(--ok); }
-.closed { color: var(--danger); }
+.badge:hover { text-decoration: underline; }
+.open { color: var(--st-running); }
+.badge.open { background: var(--st-running-soft); }
+.merged { color: var(--st-ok); }
+.badge.merged { background: var(--st-ok-soft); }
+.closed { color: var(--st-error); }
+.badge.closed { background: var(--st-error-soft); }
 .merging { color: var(--accent); }
 .conflicted { color: var(--warn); }

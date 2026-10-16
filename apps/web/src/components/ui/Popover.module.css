@@ -8,8 +8,8 @@
   gap: var(--sp-2);
   padding: var(--sp-3);
   overflow: auto;
-  border: 1px solid var(--border);
+  border: 1px solid var(--border-strong);
   border-radius: var(--radius);
-  background: var(--surface);
+  background: var(--surface-raised);
   box-shadow: var(--shadow-pop);
 }

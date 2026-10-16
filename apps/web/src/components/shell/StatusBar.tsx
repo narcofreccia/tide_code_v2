@@ -1,7 +1,9 @@
 import type { Thread } from "@tide/contracts";
 import { useModel } from "../../state/model.ts";
-import { useLatestTurnStatus, useSelectedThread } from "../../state/hooks.ts";
+import { useSelectedThread } from "../../state/hooks.ts";
 import { contextTitle } from "../../lib/glassBox.ts";
+import { resolveServerUrl } from "../../lib/bootstrap.ts";
+import { threadStateLabel } from "../../lib/vocab.ts";
 import { ConnectionDot } from "../ui/ConnectionDot.tsx";
 import { PrBadge } from "../ui/VcsBadges.tsx";
 import { useSelectedDiffStats, useVcsStatus } from "../../state/vcs.ts";
@@ -68,23 +70,29 @@ function EditorPosition({ threadId }: { threadId: string }) {
   );
 }
 
+/** The server's host:port, shown on hover only. */
+function serverHost(): string {
+  try {
+    return new URL(resolveServerUrl()).host;
+  } catch {
+    return "";
+  }
+}
+
 export function StatusBar() {
   const status = useModel((s) => s.status);
-  const environmentId = useModel((s) => s.environmentId);
   const lastError = useModel((s) => s.lastError);
   const thread = useSelectedThread();
-  const turnStatus = useLatestTurnStatus(thread);
 
   return (
     <footer className={styles.bar}>
-      <span className={styles.item}>
+      <span className={styles.item} title={serverHost()}>
         <ConnectionDot status={status} />
         {LABEL[status] ?? status}
       </span>
-      <span className={styles.mono}>{environmentId ?? "no environment"}</span>
       {thread ? (
         <span className={styles.item}>
-          thread: {thread.interrupting === true ? "interrupting…" : (turnStatus ?? thread.status)}
+          thread: {threadStateLabel(thread)}
         </span>
       ) : null}
       {thread ? <ThreadStats thread={thread} /> : null}

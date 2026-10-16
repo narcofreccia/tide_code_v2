@@ -1,59 +1,44 @@
 import { create } from "zustand";
+import type { UserSettings } from "@tide/contracts";
+import { useServerSettings } from "../state/serverSettings.ts";
 
-export type FollowUpMode = "steer" | "queue";
-
-export const FOLLOW_UP_KEY = "tide.followUpMode";
-
-function readStored(): FollowUpMode | undefined {
-  try {
-    const value = window.localStorage.getItem(FOLLOW_UP_KEY);
-    return value === "steer" || value === "queue" ? value : undefined;
-  } catch {
-    return undefined;
-  }
-}
+export type FollowUpMode = UserSettings["followUpMode"];
 
 interface FollowUpState {
-  /** the user's saved default; undefined until they pick one */
-  stored: FollowUpMode | undefined;
-  set: (mode: FollowUpMode) => void;
+  /** per-thread choice made with the composer toggle; lives for this session only */
+  byThread: Record<string, FollowUpMode>;
+  set: (threadId: string, mode: FollowUpMode) => void;
 }
 
 export const useFollowUpStore = create<FollowUpState>((set) => ({
-  stored: readStored(),
-  set: (mode) => {
-    try {
-      window.localStorage.setItem(FOLLOW_UP_KEY, mode);
-    } catch {
-      /* private window: the choice lasts for this session only */
-    }
-    set({ stored: mode });
-  },
+  byThread: {},
+  set: (threadId, mode) => set((s) => ({ byThread: { ...s.byThread, [threadId]: mode } })),
 }));
 
-/** Test seam: re-reads localStorage (tests clear it between cases). */
+/** Test seam: forgets every per-thread choice. */
 export function resetFollowUp(): void {
-  useFollowUpStore.setState({ stored: readStored() });
+  useFollowUpStore.setState({ byThread: {} });
 }
 
 export interface FollowUp {
-  /** what the primary send button does while a turn runs */
+  /** what the primary send button and `⌘↵` do while a turn runs */
   mode: FollowUpMode;
-  /** what `⌘↵` does while a turn runs */
+  /** what `⌥↵` does while a turn runs */
   alternate: FollowUpMode;
   canSteer: boolean;
   setMode: (mode: FollowUpMode) => void;
 }
 
 /**
- * Steer is the default when the harness can; a harness that cannot steer is
- * pinned to queue regardless of the saved choice (which is kept for the next
- * harness that can).
+ * The thread's own choice wins, then Settings › General (server-side). A harness
+ * that cannot steer is pinned to queue regardless; the choice is kept for when
+ * the thread moves to a harness that can.
  */
-export function useFollowUp(canSteer: boolean): FollowUp {
-  const stored = useFollowUpStore((s) => s.stored);
-  const setMode = useFollowUpStore((s) => s.set);
-  const mode: FollowUpMode = canSteer ? (stored ?? "steer") : "queue";
+export function useFollowUp(threadId: string, canSteer: boolean): FollowUp {
+  const chosen = useFollowUpStore((s) => s.byThread[threadId]);
+  const setFor = useFollowUpStore((s) => s.set);
+  const fallback = useServerSettings((s) => s.settings.followUpMode);
+  const mode: FollowUpMode = canSteer ? (chosen ?? fallback) : "queue";
   const alternate: FollowUpMode = canSteer && mode === "queue" ? "steer" : "queue";
-  return { mode, alternate, canSteer, setMode };
+  return { mode, alternate, canSteer, setMode: (next) => setFor(threadId, next) };
 }

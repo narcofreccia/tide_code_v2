@@ -37,6 +37,8 @@ export {
   selectRunningThreads,
   selectLimited,
   selectSnoozed,
+  selectRailGroups,
+  type RailGroups,
   selectPrWatch,
   selectLineage,
   isSnoozed,

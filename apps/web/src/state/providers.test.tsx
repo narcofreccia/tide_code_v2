@@ -33,10 +33,10 @@ describe("provider roster honesty", () => {
     const offered = options("Thread provider");
     expect(offered.every((o) => o.disabled === "true")).toBe(true);
     expect(offered.map((o) => o.text)).toEqual([
-      "claude · checking…",
-      "codex · checking…",
-      "opencode · checking…",
-      "pi · checking…",
+      "Claude Code · checking…",
+      "Codex · checking…",
+      "OpenCode · checking…",
+      "Pi · checking…",
     ]);
   });
 
@@ -84,7 +84,7 @@ describe("provider roster honesty", () => {
 
     await waitFor(() => expect(useProvidersStore.getState().providers).toHaveLength(4));
     const offered = options("Thread provider");
-    expect(offered[0]).toEqual({ text: "claude", disabled: "false" });
+    expect(offered[0]).toEqual({ text: "Claude Code", disabled: "false" });
     expect(offered[1]?.disabled).toBe("true");
   });
 });

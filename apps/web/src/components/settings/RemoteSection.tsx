@@ -61,6 +61,9 @@ function ConnectForm() {
   );
 }
 
+/** Used by the Tailscale / SSH hints until `server.info` reports the bound port. */
+const DEFAULT_PORT = 3777;
+
 /** What this client talks to, how another device reaches it, and how to switch servers. */
 export function RemoteSection() {
   const info = useServerInfo();
@@ -68,6 +71,7 @@ export function RemoteSection() {
   const status = useModel((s) => s.status);
   const remote = info?.remote;
   const pairingUrl = remote?.pairingUrl;
+  const port = remote?.port ?? DEFAULT_PORT;
 
   return (
     <div className={section.section}>
@@ -145,13 +149,15 @@ export function RemoteSection() {
 
       <p className={section.note}>
         <strong>Tailscale</strong> — the safest way in from outside the LAN: run{" "}
-        <span className={section.code}>tailscale serve 3777</span> on this host and open the printed{" "}
+        <span className={section.code}>tailscale serve {port}</span> on this host and open the printed{" "}
         <span className={section.code}>*.ts.net</span> URL from any device on your tailnet.
       </p>
       <p className={section.note}>
         <strong>SSH port-forward</strong> — no exposure at all:{" "}
-        <span className={section.code}>ssh -L 3777:127.0.0.1:3777 host</span>, then open{" "}
-        <span className={section.code}>http://127.0.0.1:3777</span> locally.
+        <span className={section.code}>
+          ssh -L {port}:127.0.0.1:{port} host
+        </span>, then open{" "}
+        <span className={section.code}>http://127.0.0.1:{port}</span> locally.
       </p>
       <p className={section.note}>
         Binding beyond localhost is a server flag (<span className={section.code}>--host 0.0.0.0</span>

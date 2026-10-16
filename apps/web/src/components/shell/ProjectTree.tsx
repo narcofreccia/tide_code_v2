@@ -1,105 +1,144 @@
-import { compareByAttention, selectExpertsSessions, selectProjects, selectThreadsByProject } from "@tide/client";
-import type { Thread } from "@tide/contracts";
+import { useEffect, useState } from "react";
+import { selectExpertsSessions, selectProjectTotals, selectProjects, selectRailGroups } from "@tide/client";
+import type { Project, Thread } from "@tide/contracts";
 import { useModel } from "../../state/model.ts";
 import { useUi } from "../../state/ui.ts";
-import { relativeTime } from "../../lib/relativeTime.ts";
+import { useTicker } from "../mission/useTicker.ts";
 import { Button } from "../ui/Button.tsx";
+import { ContextMenu, type MenuPosition } from "../ui/Menu.tsx";
 import { NewThreadPopover } from "./NewThreadPopover.tsx";
 import { ExpertsGroup, sessionThreadIds } from "./ExpertsGroup.tsx";
-import { ThreadGlyph } from "../ui/StatusGlyph.tsx";
-import { MergeGlyph, PrGlyph, WorktreeGlyph } from "../ui/VcsBadges.tsx";
+import { RailThreadRow, parentOf } from "./RailThreadRow.tsx";
+import { projectMenu } from "./railMenus.ts";
 import styles from "./ProjectTree.module.css";
 
-const ROLE_GLYPH: Record<NonNullable<Thread["role"]>, string> = {
-  expert: "◆",
-  lead: "★",
-  delegate: "↳",
-};
-
-/** Delegation wins over the ordinary parent link, so a delegate nests under its caller. */
-function parentOf(thread: Thread): string | undefined {
-  return thread.delegatedBy ?? thread.parentThreadId;
-}
-
-function ThreadRow({ thread, siblings }: { thread: Thread; siblings: Thread[] }) {
-  const selectedThreadId = useUi((s) => s.selectedThreadId);
-  const view = useUi((s) => s.view);
-  const selectThread = useUi((s) => s.selectThread);
-  const children = siblings.filter((t) => parentOf(t) === thread.id);
+/** "Snoozed · n" / "Archived · n": collapsed until opened; flat, no nesting. */
+function CollapsedGroup({ name, threads }: { name: string; threads: Thread[] }) {
+  const [open, setOpen] = useState(false);
+  if (threads.length === 0) return null;
   return (
-    <li>
-      <button
-        type="button"
-        className={`${styles.thread} ${
-          view === "thread" && thread.id === selectedThreadId ? styles.active : ""
-        }`}
-        onClick={() => selectThread(thread.id)}
-      >
-        <ThreadGlyph thread={thread} />
-        {thread.role ? (
-          <span className={styles.roleGlyph} title={thread.role} aria-label={thread.role} role="img">
-            {ROLE_GLYPH[thread.role]}
-          </span>
-        ) : null}
-        <span className={styles.threadTitle}>{thread.title}</span>
-        <WorktreeGlyph thread={thread} />
-        <PrGlyph pr={thread.pr} />
-        <MergeGlyph thread={thread} />
-        <span className={styles.provider}>{thread.provider}</span>
-        <span className={styles.time}>{relativeTime(thread.updatedAt)}</span>
+    <div className={styles.group}>
+      <button type="button" className={styles.groupToggle} aria-expanded={open} onClick={() => setOpen(!open)}>
+        {open ? "▾" : "▸"} {name} · {threads.length}
       </button>
-      {children.length > 0 ? (
-        <ul className={styles.threads}>
-          {children.map((c) => (
-            <ThreadRow key={c.id} thread={c} siblings={siblings} />
+      {open ? (
+        <ul className={styles.threads} aria-label={`${name} threads`}>
+          {threads.map((t) => (
+            <RailThreadRow key={t.id} thread={t} siblings={[]} />
           ))}
         </ul>
       ) : null}
-    </li>
+    </div>
   );
 }
 
-function ProjectNode({ projectId, title, rootPath }: { projectId: string; title: string; rootPath: string }) {
+function ProjectNode({ project }: { project: Project }) {
   const model = useModel((s) => s.model);
+  const now = useTicker(60_000);
   const selectedProjectId = useUi((s) => s.selectedProjectId);
   const selectProject = useUi((s) => s.selectProject);
   const setNewExpertsProject = useUi((s) => s.setNewExpertsProject);
-  const threads = [...selectThreadsByProject(model, projectId)].sort(compareByAttention);
-  const ids = new Set(threads.map((t) => t.id));
-  // threads shown under a session or a delegating thread are not listed again at the top
-  const claimed = new Set(selectExpertsSessions(model, projectId).flatMap(sessionThreadIds));
-  const roots = threads.filter((t) => {
+  const [menu, setMenu] = useState<MenuPosition | undefined>(undefined);
+  const groups = selectRailGroups(model, project.id, now);
+  // threads shown under a session are not listed again at the top
+  const claimed = new Set(selectExpertsSessions(model, project.id).flatMap(sessionThreadIds));
+  const live = [...groups.pinned, ...groups.threads, ...groups.snoozed];
+  // a pinned parent keeps its children; anything nested under a listed parent is not a root
+  const nestable = [...groups.pinned, ...groups.threads];
+  const listed = new Set(nestable.map((t) => t.id));
+  const pinned = groups.pinned.filter((t) => !claimed.has(t.id));
+  const roots = groups.threads.filter((t) => {
     const parent = parentOf(t);
-    if (parent !== undefined && ids.has(parent)) return false;
+    if (parent !== undefined && listed.has(parent)) return false;
     return !claimed.has(t.id);
   });
-  const expanded = selectedProjectId === null || selectedProjectId === projectId;
+  const nestedUnder = groups.threads;
+  const totals = selectProjectTotals(model, project.id);
+  // the chevron overrides the default (follow the project scope) until the scope changes
+  const [override, setOverride] = useState<boolean | undefined>(undefined);
+  const scoped = selectedProjectId === null || selectedProjectId === project.id;
+  const expanded = override ?? scoped;
+  useEffect(() => setOverride(undefined), [selectedProjectId]);
 
   return (
     <li className={styles.project}>
-      <button
-        type="button"
-        className={`${styles.projectRow} ${selectedProjectId === projectId ? styles.active : ""}`}
-        onClick={() => selectProject(selectedProjectId === projectId ? null : projectId)}
+      <div
+        className={styles.row}
+        onContextMenu={(e) => {
+          e.preventDefault();
+          setMenu({ x: e.clientX, y: e.clientY });
+        }}
       >
-        <span className={styles.projectTitle}>{title}</span>
-        <span className={styles.path}>{rootPath}</span>
-      </button>
+        <button
+          type="button"
+          className={styles.chevron}
+          aria-label={`${expanded ? "Collapse" : "Expand"} ${project.title}`}
+          aria-expanded={expanded}
+          onClick={() => setOverride(!expanded)}
+        >
+          {expanded ? "▾" : "▸"}
+        </button>
+        <button
+          type="button"
+          className={`${styles.projectRow} ${selectedProjectId === project.id ? styles.active : ""}`}
+          title={project.rootPath}
+          onClick={() => selectProject(selectedProjectId === project.id ? null : project.id)}
+        >
+          <span className={styles.projectTitle}>{project.title}</span>
+          {totals.needsYou > 0 ? (
+            <span className={`${styles.badge} ${styles.badgeNeeds}`} title={`${totals.needsYou} need you`}>
+              ◐ {totals.needsYou}
+            </span>
+          ) : null}
+          {totals.running > 0 ? (
+            <span className={`${styles.badge} ${styles.badgeRunning}`} title={`${totals.running} running`}>
+              ● {totals.running}
+            </span>
+          ) : null}
+        </button>
+        <button
+          type="button"
+          className={styles.more}
+          aria-label={`Actions for ${project.title}`}
+          title="More actions"
+          onClick={(e) => {
+            const rect = e.currentTarget.getBoundingClientRect();
+            setMenu({ x: rect.left, y: rect.bottom });
+          }}
+        >
+          ⋯
+        </button>
+      </div>
+      {menu ? (
+        <ContextMenu position={menu} items={projectMenu(project)} onClose={() => setMenu(undefined)} label="Project actions" />
+      ) : null}
       {expanded ? (
         <>
+          {pinned.length > 0 ? (
+            <div className={styles.group}>
+              <span className={styles.groupHeading}>Pinned</span>
+              <ul className={styles.threads} aria-label="Pinned threads">
+                {pinned.map((t) => (
+                  <RailThreadRow key={t.id} thread={t} siblings={nestedUnder} />
+                ))}
+              </ul>
+            </div>
+          ) : null}
           <ExpertsGroup
-            projectId={projectId}
-            threads={threads}
-            renderThread={(t) => <ThreadRow key={t.id} thread={t} siblings={threads} />}
+            projectId={project.id}
+            threads={live}
+            renderThread={(t) => <RailThreadRow key={t.id} thread={t} siblings={live} />}
           />
           <ul className={styles.threads}>
             {roots.map((t) => (
-              <ThreadRow key={t.id} thread={t} siblings={threads} />
+              <RailThreadRow key={t.id} thread={t} siblings={nestedUnder} />
             ))}
           </ul>
+          <CollapsedGroup name="Snoozed" threads={groups.snoozed.filter((t) => !claimed.has(t.id))} />
+          <CollapsedGroup name="Archived" threads={groups.archived} />
           <div className={styles.newThread}>
-            <NewThreadPopover projectId={projectId} label="+ thread" variant="quiet" />
-            <Button variant="quiet" onClick={() => setNewExpertsProject(projectId)}>
+            <NewThreadPopover projectId={project.id} label="+ thread" variant="quiet" />
+            <Button variant="quiet" onClick={() => setNewExpertsProject(project.id)}>
               + Experts
             </Button>
           </div>
@@ -120,7 +159,7 @@ export function ProjectTree() {
   return (
     <ul className={styles.list}>
       {projects.map((p) => (
-        <ProjectNode key={p.id} projectId={p.id} title={p.title} rootPath={p.rootPath} />
+        <ProjectNode key={p.id} project={p} />
       ))}
     </ul>
   );

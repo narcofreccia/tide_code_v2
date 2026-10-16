@@ -112,7 +112,7 @@ export function MessageItem({ message, turn, showMeta }: MessageItemProps) {
       <div className={styles.body} data-role={message.role}>
         {queued ? (
           <span className={styles.queued}>
-            <Pill tone="accent">queued</Pill>
+            <Pill tone="idle">queued</Pill>
           </span>
         ) : null}
         {message.steer === true ? (
@@ -122,7 +122,7 @@ export function MessageItem({ message, turn, showMeta }: MessageItemProps) {
         ) : null}
         {rolledBack && isUser ? (
           <span className={styles.tag}>
-            <Pill>rolled back</Pill>
+            <Pill tone="interrupted">rolled back</Pill>
           </span>
         ) : null}
         {message.reasoning ? (

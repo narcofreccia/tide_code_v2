@@ -1,1 +1,21 @@
-.pills { display: flex; align-items: center; gap: var(--sp-2); min-width: 0; }
+.pills { display: flex; flex-wrap: wrap; align-items: center; gap: var(--sp-1) var(--sp-3); min-width: 0; }
+.slot { display: inline-flex; align-items: center; gap: var(--sp-1); min-width: 0; }
+.caption { color: var(--muted); font-size: 11px; white-space: nowrap; }
+.control { min-width: 96px; max-width: 220px; }
+.segmented {
+  display: inline-flex;
+  border: 1px solid var(--border-strong);
+  border-radius: var(--radius-sm);
+  overflow: hidden;
+  height: 22px;
+}
+.segment {
+  padding: 0 var(--sp-2);
+  border: none;
+  background: var(--surface-2);
+  color: var(--muted);
+  font-size: 11px;
+}
+.segment + .segment { border-left: 1px solid var(--border-strong); }
+.segment:hover:not(.active) { color: var(--text); }
+.active { background: var(--accent-soft); color: var(--accent); }

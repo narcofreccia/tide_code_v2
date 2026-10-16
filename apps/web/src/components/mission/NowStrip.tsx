@@ -15,7 +15,7 @@ function currentStep(steps: { text: string; status: string }[] | undefined): str
 
 /**
  * Everything with a turn in flight, longest-running first. Renders nothing when
- * nothing is running, so the page starts at the Inbox on a quiet morning.
+ * nothing is running, so a quiet morning shows only the Needs-you line.
  */
 export function NowStrip({ projectId }: { projectId?: string }) {
   const model = useModel((s) => s.model);
@@ -27,7 +27,7 @@ export function NowStrip({ projectId }: { projectId?: string }) {
 
   return (
     <section className={styles.section} aria-label="Now">
-      <h2 className={styles.label}>Now</h2>
+      <h2 className={styles.label}>Running now</h2>
       <ul className={styles.list}>
         {running.map(({ thread, startedAt }) => {
           const step = currentStep(thread.planProgress?.steps);
@@ -49,7 +49,7 @@ export function NowStrip({ projectId }: { projectId?: string }) {
                 {formatElapsed(now - startedAt)}
               </span>
               <Button
-                variant="quiet"
+                variant="quietDanger"
                 disabled={thread.interrupting === true}
                 aria-label={`Stop ${thread.title}`}
                 onClick={() => interruptTurn(thread.id)}

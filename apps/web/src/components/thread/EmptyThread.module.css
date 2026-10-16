@@ -1,0 +1,18 @@
+.empty {
+  display: flex;
+  flex-direction: column;
+  align-items: flex-start;
+  gap: var(--sp-2);
+  max-width: 560px;
+  margin: auto;
+  padding: var(--sp-4);
+  color: var(--muted);
+  font-size: 13px;
+}
+.title { margin: 0; color: var(--text); font-size: 15px; font-weight: 600; }
+.line { margin: 0; }
+.line code { font-family: var(--font-mono); color: var(--text); }
+.list { margin: var(--sp-2) 0; display: grid; gap: var(--sp-1); }
+.item { display: flex; gap: var(--sp-2); }
+.item dt { flex: none; width: 96px; color: var(--text); font-weight: 600; }
+.item dd { margin: 0; }

@@ -5,13 +5,25 @@ export interface DiffLine {
   text: string;
 }
 
+/**
+ * `--- a//repo/x.ts` → `--- /repo/x.ts`: drops git's `a/` `b/` side prefixes from
+ * file header lines and collapses the doubled slash an absolute path leaves behind.
+ */
+export function cleanDiffHeader(text: string): string {
+  let out = text;
+  if (out.startsWith("--- ") || out.startsWith("+++ ")) out = `${out.slice(0, 4)}${out.slice(4).replace(/^[ab]\//, "")}`;
+  else if (out.startsWith("diff --git ")) out = out.replace(/ [ab]\//g, " ");
+  else return out;
+  return out.replace(/\/{2,}/g, "/");
+}
+
 /** Classifies a unified diff line by line; no patch semantics, just colouring. */
 export function parseUnifiedDiff(diff: string): DiffLine[] {
   const lines = diff.replace(/\n$/, "").split("\n");
   return lines.map((text) => {
     if (text.startsWith("@@")) return { kind: "hunk" as const, text };
     if (text.startsWith("+++") || text.startsWith("---") || text.startsWith("diff ") || text.startsWith("index "))
-      return { kind: "meta" as const, text };
+      return { kind: "meta" as const, text: cleanDiffHeader(text) };
     if (text.startsWith("+")) return { kind: "add" as const, text };
     if (text.startsWith("-")) return { kind: "del" as const, text };
     return { kind: "context" as const, text };

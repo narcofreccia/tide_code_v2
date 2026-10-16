@@ -1,6 +1,7 @@
 import { useState } from "react";
 import { selectPrCounts, selectProjectLinks, selectProjectTotals, selectRecentThreads } from "@tide/client";
 import type { Project } from "@tide/contracts";
+import { PROVIDER_LABELS } from "../../lib/vocab.ts";
 import { relativeTime } from "../../lib/relativeTime.ts";
 import { archiveProject, renameProject } from "../../lib/projectActions.ts";
 import { useModel } from "../../state/model.ts";
@@ -51,8 +52,8 @@ function ProjectMenu({ project, onOpen }: { project: Project; onOpen: (dialog: P
 
 /**
  * One repository: what it costs, what is open and landed on it, its three most
- * recent threads, and the ways to start work. Flat — a hairline box on
- * `--surface`, never a card inside a card.
+ * recent threads, and the ways to start work. Cost and automations sit behind
+ * Details. Flat — a hairline box on `--surface`, never a card inside a card.
  */
 export function ProjectCard({ project }: { project: Project }) {
   const model = useModel((s) => s.model);
@@ -61,6 +62,7 @@ export function ProjectCard({ project }: { project: Project }) {
   const setNewExpertsProject = useUi((s) => s.setNewExpertsProject);
   const setLinksProject = useUi((s) => s.setLinksProject);
   const [dialog, setDialog] = useState<ProjectDialog>(null);
+  const [details, setDetails] = useState(false);
   const totals = selectProjectTotals(model, project.id);
   const prs = selectPrCounts(model, project.id);
   const recent = selectRecentThreads(model, project.id, 3);
@@ -77,11 +79,15 @@ export function ProjectCard({ project }: { project: Project }) {
       </div>
 
       <div className={styles.counts}>
-        <span>{totals.threads} threads</span>
-        <span>{totals.running} running</span>
-        <span>{totals.needsYou} needs you</span>
-        {prs.open > 0 ? <Pill>⇡ {prs.open} open</Pill> : null}
-        {prs.landed > 0 ? <Pill>✓ {prs.landed} merged</Pill> : null}
+        {totals.threads > 0 ? (
+          <span>
+            {totals.threads} {totals.threads === 1 ? "thread" : "threads"}
+          </span>
+        ) : null}
+        {totals.running > 0 ? <Pill tone="running">● {totals.running} running</Pill> : null}
+        {totals.needsYou > 0 ? <Pill tone="needs">◐ {totals.needsYou} needs you</Pill> : null}
+        {prs.open > 0 ? <Pill tone="running">⇡ {prs.open} open</Pill> : null}
+        {prs.landed > 0 ? <Pill tone="ok">✓ {prs.landed} merged</Pill> : null}
         <Button
           variant="link"
           className={styles.pushRight}
@@ -91,17 +97,24 @@ export function ProjectCard({ project }: { project: Project }) {
           {links.length === 0 ? "Link a repo" : `Links · ${links.length}`}
         </Button>
       </div>
-      <div className={styles.costRow}>
-        <CostSummary
-          todayUsd={totals.costTodayUsd}
-          lifetimeUsd={totals.costLifetimeUsd}
-          byProvider={totals.costByProvider}
-        />
-      </div>
-      <ProjectAutomations projectId={project.id} />
+      <button type="button" className={styles.details} aria-expanded={details} onClick={() => setDetails(!details)}>
+        {details ? "▾" : "▸"} Details
+      </button>
+      {details ? (
+        <div className={styles.detailsBody}>
+          <div className={styles.costRow}>
+            <CostSummary
+              todayUsd={totals.costTodayUsd}
+              lifetimeUsd={totals.costLifetimeUsd}
+              byProvider={totals.costByProvider}
+            />
+          </div>
+          <ProjectAutomations projectId={project.id} />
+        </div>
+      ) : null}
 
       {recent.length === 0 ? (
-        <p className={styles.empty}>No threads yet.</p>
+        <p className={styles.empty}>No threads. Each thread works on its own branch.</p>
       ) : (
         <ul className={styles.recent}>
           {recent.map((thread) => (
@@ -110,9 +123,8 @@ export function ProjectCard({ project }: { project: Project }) {
                 <ThreadGlyph thread={thread} />
                 <span className={styles.title}>{thread.title}</span>
                 <ThreadTags thread={thread} />
-                {thread.interrupting === true ? (
-                  <span className={styles.interrupting}>interrupting…</span>
-                ) : null}
+                {thread.interrupting === true ? <span className={styles.interrupting}>interrupting…</span> : null}
+                <span className={styles.meta}>{PROVIDER_LABELS[thread.provider]}</span>
                 <span className={styles.time}>{relativeTime(thread.updatedAt)}</span>
               </button>
             </li>
@@ -123,7 +135,7 @@ export function ProjectCard({ project }: { project: Project }) {
       <ProjectExperts projectId={project.id} projectTitle={project.title} />
 
       <div className={styles.actions}>
-        <NewThreadPopover projectId={project.id} />
+        <NewThreadPopover projectId={project.id} variant="ghost" />
         <Button onClick={() => setNewExpertsProject(project.id)}>Experts</Button>
         <Button
           variant="link"

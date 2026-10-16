@@ -79,8 +79,30 @@ export async function forkThread(threadId: string, turnId: string, options: Fork
   }
 }
 
+/** "14:05" today, "Fri 09:00" on another day. */
+export function formatUntil(until: number, now: number = Date.now()): string {
+  const at = new Date(until);
+  const sameDay = at.toDateString() === new Date(now).toDateString();
+  return sameDay
+    ? at.toLocaleTimeString([], { hour: "2-digit", minute: "2-digit" })
+    : at.toLocaleString([], { weekday: "short", hour: "2-digit", minute: "2-digit" });
+}
+
+/** 09:00 local time on the day after `now`. */
+export function tomorrowMorning(now: number = Date.now()): number {
+  const at = new Date(now);
+  at.setDate(at.getDate() + 1);
+  at.setHours(9, 0, 0, 0);
+  return at.getTime();
+}
+
+/** Hides the thread from the Inbox until `until`; the toast offers Undo (`thread.resume`). */
 export function snoozeThread(threadId: string, until: number): void {
-  dispatchOrToast("Snoozing the thread", { type: "thread.snooze", threadId, until, commandId: newId() });
+  dispatch({ type: "thread.snooze", threadId, until, commandId: newId() })
+    .then(() =>
+      showToast(`Snoozed until ${formatUntil(until)}`, { label: "Undo", onClick: () => resumeThread(threadId, false) }),
+    )
+    .catch((error: unknown) => showToast(`Snoozing the thread failed: ${errorText(error)}`));
 }
 
 export function resumeThread(threadId: string, continueNow: boolean): void {

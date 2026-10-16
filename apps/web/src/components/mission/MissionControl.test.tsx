@@ -2,7 +2,6 @@ import { afterEach, describe, expect, it } from "vitest";
 import { cleanup, fireEvent, render, screen, within } from "@testing-library/react";
 import type { ReadModel } from "@tide/contracts";
 import { MissionControl } from "./MissionControl.tsx";
-import { Rail } from "../shell/Rail.tsx";
 import {
   attachFakeStore,
   makeApproval,
@@ -108,14 +107,22 @@ describe("Mission Control", () => {
   it("says so quietly when nothing is waiting", () => {
     attachFakeStore(modelWith({ projects: { p1: project }, threads: {} }));
     render(<MissionControl />);
-    expect(screen.getByText("Nothing needs you right now.")).toBeDefined();
+    expect(screen.getByText("Nothing needs you")).toBeDefined();
+    expect(screen.queryByText(/Needs you ·/)).toBeNull();
   });
 
-  it("counts the inbox in the rail", () => {
-    attachFakeStore(fixture());
-    render(<Rail />);
-    const inboxButton = screen.getByText("Inbox").closest("button");
-    expect(inboxButton?.textContent).toBe("Inbox2");
+  it("orders the page Needs you, Running now, Projects, Harnesses", () => {
+    const model = fixture();
+    model.threads["t1"] = { ...model.threads["t1"]!, status: "running", latestTurnId: "u1" };
+    model.turns["u1"] = makeTurn("u1", { status: "running", startedAt: Date.now() - 5_000 });
+    attachFakeStore(model);
+    render(<MissionControl />);
+    const order = Array.from(document.querySelectorAll("section[aria-label]")).map((n) => n.getAttribute("aria-label"));
+    const at = (label: string): number => order.indexOf(label);
+    expect(at("Inbox")).toBeGreaterThanOrEqual(0);
+    expect(at("Inbox")).toBeLessThan(at("Now"));
+    expect(at("Now")).toBeLessThan(at("Projects"));
+    expect(at("Projects")).toBeLessThan(at("Providers"));
   });
 });
 
@@ -182,7 +189,7 @@ describe("Mission Control — projects", () => {
     const card = within(screen.getByLabelText("Project Tide"));
     expect(card.getByText("/src/tide")).toBeDefined();
     expect(card.getByText("4 threads")).toBeDefined();
-    expect(card.getByText("1 running")).toBeDefined();
+    expect(card.getByText("● 1 running")).toBeDefined();
     expect(card.getByText("⇡ 1 open")).toBeDefined();
     expect(card.getByText("Newest")).toBeDefined();
     expect(card.getByText("Older")).toBeDefined();
@@ -244,6 +251,10 @@ describe("Mission Control — providers", () => {
     ]);
     render(<MissionControl />);
     const strip = within(screen.getByLabelText("Providers"));
+    // folded to one line until opened
+    expect(strip.getByText("2 agents ready · 1 needs login · 1 not installed")).toBeDefined();
+    expect(strip.queryByLabelText("Claude Code: ready")).toBeNull();
+    fireEvent.click(strip.getByRole("button", { name: /Harnesses/ }));
     expect(strip.getByLabelText("Claude Code: ready")).toBeDefined();
     expect(strip.getByLabelText("Codex: not logged in")).toBeDefined();
     expect(strip.getByLabelText("OpenCode: not installed")).toBeDefined();
@@ -265,6 +276,7 @@ describe("Mission Control — providers", () => {
     setProvidersForTest([{ kind: "claude", installed: true, loggedIn: true, models: [], caps }]);
     render(<MissionControl />);
     const strip = within(screen.getByLabelText("Providers"));
+    fireEvent.click(strip.getByRole("button", { name: /Harnesses/ }));
     const badge = strip.getByLabelText(/rate limit limited/);
     expect(badge.textContent).toBe("⛔ limited · resets in 2h");
     expect(badge.getAttribute("title")).toContain("5-hour limit");

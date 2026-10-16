@@ -10,9 +10,9 @@ Three regions + top bar + status bar. Two regions collapse.
 
 | Region | Width | Content |
 |---|---|---|
-| Top bar | 36px | `⌘K` palette button · project switcher · thread title (inline rename) · right: provider / model / mode / interaction pills · turn state (Stop) |
-| Rail | 240px → 48px icons | **Inbox** (approvals, questions, plans-ready across all threads, with count) · projects → threads (child threads nested) · `+ thread` per project · bottom: Settings, connection |
-| Thread | flexible, primary | header (branch/worktree, PR badge, lineage chip `forked from <title>`, `⛔ Limited` menu, `Rolling back…` pill, actions: open in terminal, new child, archive, detach worktree) · pinned plan progress while running · stream of messages + activities · inline cards (approval, user-input, proposed plan) · composer |
+| Top bar | 36px | `⌘K` palette button · project switcher (Mission Control) or a `project › thread` breadcrumb (text only, while a thread is open) · focus modes · theme |
+| Rail | 240px → 48px icons | Mission Control link · **Needs you · n** (cross-project, from `selectInbox`, hidden when empty) · projects (chevron expands/collapses independently of selection; path in a tooltip; amber `◐ n` / accent `● n` badges only when non-zero) → threads (glyph, title, one trailing meta slot that swaps to `⋯` on hover; needs-you rows tinted) · `+ thread` per project · bottom: Settings, legend |
+| Thread | flexible, primary | header: one 32px row = state chip · title (inline rename: double-click or ✎) · branch chip (mono, tooltip = worktree path, `main checkout` when none) \| **Stop** (danger outline, only while running) · Terminal · Fork (latest settled turn) · `⋯` (New child, Roll back last turn…, Snooze ▸, Copy thread ID, Copy branch, Remove worktree…, Archive thread…); a 24px sub-row exists only when it has chips (PR / merge, lineage `forked from <title>`, `Limited` menu, `Rolling back…`, delegates, rate limit) · pinned plan progress while running · stream of messages + activities · inline cards (approval, user-input, proposed plan) · composer |
 | Workbench | flexible, secondary | tabs: **Changes** (default) · open files (Monaco) · tree toggle · terminal drawer |
 | Status bar | 24px | `⎇ branch (worktree)` · context % + cost · diff stats · provider health · connection |
 
@@ -21,10 +21,12 @@ Rail toggle `⌘B`. Terminal drawer `` ⌘` ``. Palette `⌘K`.
 
 ## Views
 
-**Mission Control** (no thread selected, or `⌘0`): grid/list of all active threads across
-projects with status glyph, provider, last activity, needs-attention badge; the Inbox at the
-top. Below the Inbox: a **Limited** section (lists threads parked on a usage limit with
-Resume now / At reset / Wait; hidden when empty) and a collapsed **Snoozed** section (Unsnooze).
+**Mission Control** (no thread selected, or `⌘0`), top to bottom in the order you act on it:
+**Needs you** (full width, every waiting card inline; one line `✓ Nothing needs you` when empty) ·
+**Running now** · **Limited** (threads parked on a usage limit with Resume now / At reset / Wait;
+hidden when empty) · **Projects** grid (one column, two from 1100px; counts only when non-zero;
+cost and automations behind a `Details` disclosure) · collapsed **Snoozed** (Unsnooze) · **Harnesses**
+folded to one line (`4 agents ready · 1 needs login`), expandable to the per-harness chips.
 A thread with a linked PR and a watch shows a PR watch pill on its card:
 `👁 PR #12 · ✔ · 3 comments`. This is the landing view. "New thread" from here asks project → provider → worktree?.
 
@@ -108,19 +110,50 @@ only in the collapsed Snoozed section, no glyph). Rail sorts needs-you first wit
 
 ## Design language
 
-- Tokens in `styles/tokens.css`: `--bg`, `--surface`, `--surface-2`, `--border`, `--text`,
-  `--muted`, `--accent` (single hue), `--ok`, `--warn`, `--danger`; radii 4/6/10; spacing 4-grid.
-  Dark default (settings default is `dark`, stamped pre-paint by an inline script in
-  `index.html`), light via `prefers-color-scheme` when the user picks System, or an
-  explicit toggle. `--shadow-pop` is the only shadow, and only on popovers.
-- Type: system UI stack 13px base; monospace for paths, commands, diffs.
+### Tokens (`styles/tokens.css`, dark default, light via `prefers-color-scheme` / `[data-theme]`)
+
+| Token | Dark | Light | Use |
+|---|---|---|---|
+| `--bg` | `#0b0d10` | `#eef1f5` | thread column, Mission Control, page |
+| `--surface` | `#13161b` | `#ffffff` | rail, top bar, status bar, composer, cards |
+| `--surface-2` | `#1b2028` | `#f3f5f8` | hover, inline fields, neutral chips |
+| `--surface-raised` | `#232934` | `#ffffff` + border | selected row, popovers, menus, dialogs, composer box |
+| `--border` / `--border-strong` | `#272d37` / `#38404d` | `#d5dbe5` / `#b7c0ce` | hairline dividers / controls and raised surfaces |
+| `--text` / `--text-2` / `--muted` | `#e6e9ef` / `#b3bac7` / `#8b93a3` | `#131722` / `#3d4555` / `#6a7285` | content / section headers and secondary text / hints |
+| `--accent`, `--accent-soft`, `--on-accent` | `#5b9dff`, 16%, `#fff` | `#2f6fe0`, 12%, `#fff` | one hue; fill only for the primary action |
+| `--st-running/needs/error/ok/limited/idle/interrupted` + `-soft` | blue / amber `#f2a93b` / red / green / violet `#a78bfa` / grey / orange `#e0794f`; soft = 14-16% tint | darker variants for contrast; soft = 11-15% tint | the one status language: glyphs, chips, row tints |
+
+Light separates surfaces with borders (raised is white plus `--border-strong`), dark with tone steps.
+Radii 4/6/10; spacing 4-grid. `--shadow-pop` is the only shadow, and only on popovers.
+`--fs-section: 11px` + weight 600 + `letter-spacing: .06em` (uppercase, `--text-2`) is the section header;
+**no text is smaller than 11px**.
+
+### Shape rules: state, setting and action never share a capsule
+
+- **State (read-only)** = `Pill` / the header state chip: borderless, fully rounded, sentence case, `--st-*-soft`
+  background with the matching text colour (`tone="running|needs|ok|error|limited|interrupted|idle|accent|muted"`).
+  It is never clickable. Providers, phases, counts and PR/merge labels are Pills.
+- **Setting** = `Select` trigger (`variant="pill"`, 22px, 4px radius, `--border-strong`, caption + value + chevron;
+  the composer slots carry the caption) and the Build | Plan / Steer | Queue segmented toggles (same 4px radius).
+- **Action** = `Button`: `primary` (accent fill, `--on-accent` text; at most one per surface: Send, Create thread,
+  Add repository), `ghost` (outlined), `quiet`, `link`, `danger` (outline, Stop in the header) and `quietDanger`
+  (composer Stop).
+- Layout: thread column on `--bg`; rail, top bar, composer on `--surface`; the composer's text box, the selected
+  row and every popover on `--surface-raised`.
+
+### General
+
+- Dark default (settings default is `dark`, stamped pre-paint by an inline script in `index.html`), light via
+  `prefers-color-scheme` when the user picks System, or an explicit toggle.
+- Type: system UI stack 13px base; monospace for paths, commands, diffs. Titles and selected states use weight
+  500-600; metadata is 11px `--muted`.
 - Flat surfaces, hairline borders, no nested cards, no shadows except popovers.
 - Motion only for state: streaming caret, running pulse, drawer slide (120ms).
-- Density: rows 28px in rail/lists, 24px activity lines.
+- Density: rows 28px in rail/lists, 24px activity lines, 32px thread header.
 
 ## Component inventory (apps/web/src/components)
 
-`shell/` TopBar, Rail, StatusBar, SplitPane, FocusModeSwitch · `mission/` MissionControl, Inbox, ProjectCard, ProjectLinks ·
+`shell/` TopBar, Rail, NeedsYouGroup, StatusBar, SplitPane, FocusModeSwitch · `mission/` MissionControl, Inbox, ProjectCard, ProjectLinks ·
 `thread/` ThreadHeader, ThreadLinkChips, Stream, MessageItem, ActivityRow, ActivityGroup, ApprovalCard,
 UserInputCard, PlanCard, PlanProgress, Composer, MentionPicker · `workbench/` Workbench,
 ChangesTab, DiffView, FileTab (Monaco), FileTree, TerminalDrawer · `experts/` Board, ExpertCard,
@@ -129,8 +162,8 @@ Popover, Dialog, Toast, Kbd.
 
 `Select` is one custom listbox (portalled, `position: fixed`, viewport-clamped via
 `ui/useAnchoredPanel.ts`, which `Popover` and `Menu` share) — never a native `<select>`.
-Two looks: `variant="pill"` (default, 20px, `size="sm"`) for the top bar and composer
-pills, `variant="field"` (28px, full width, `size="md"`) for dialogs and settings rows.
+Two looks: `variant="pill"` (default, 22px, 4px radius, `size="sm"`) for the top bar and composer
+settings, `variant="field"` (28px, full width, `size="md"`) for dialogs and settings rows.
 It grows a filter box when `searchable` or past eight options, and takes `description`,
 `group`, `icon`, `disabled` + `title` per option. `Checkbox`/`Radio` replace bare
 `<input type=checkbox|radio>` everywhere.

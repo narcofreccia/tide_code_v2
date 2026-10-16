@@ -15,7 +15,7 @@ describe("App shell", () => {
     render(<App />);
     expect(screen.getByLabelText("Mission Control")).toBeDefined();
     expect(screen.getByText("connected")).toBeDefined();
-    expect(screen.getAllByText("Inbox").length).toBeGreaterThan(0);
+    expect(screen.getAllByText("Mission Control").length).toBeGreaterThan(0);
   });
 
   it("switches focus mode with ⌘1/⌘2/⌘3 and toggles the rail with ⌘B", () => {

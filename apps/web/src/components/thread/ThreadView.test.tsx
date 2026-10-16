@@ -75,7 +75,8 @@ describe("ThreadView", () => {
 
   it("dispatches thread.archive and returns to Mission Control", () => {
     const fake = mount();
-    fireEvent.click(screen.getByText("Archive"));
+    fireEvent.click(screen.getByTitle("More actions"));
+    fireEvent.click(screen.getByRole("menuitem", { name: /Archive thread/ }));
     expect(fake.dispatch).toHaveBeenCalledWith({ type: "thread.archive", threadId: "t1" });
     expect(useUi.getState().view).toBe("mission");
   });

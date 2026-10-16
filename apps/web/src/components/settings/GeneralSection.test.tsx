@@ -1,20 +1,56 @@
 import { afterEach, describe, expect, it } from "vitest";
-import { cleanup, render, screen } from "@testing-library/react";
+import { act, cleanup, fireEvent, render, screen } from "@testing-library/react";
+import type { UserSettings } from "@tide/contracts";
 import { GeneralSection } from "./GeneralSection.tsx";
-import { chooseOption } from "../../testHarness.ts";
+import { chooseOption, mockRpc, resetUi } from "../../testHarness.ts";
+import { defaultUserSettings, useServerSettings } from "../../state/serverSettings.ts";
 
 afterEach(() => {
   cleanup();
-  localStorage.clear();
+  resetUi();
 });
 
+function serve() {
+  return mockRpc({
+    "settings.set": (p: { patch: Partial<UserSettings> }) => ({ ...defaultUserSettings(), ...p.patch }),
+  });
+}
+
 describe("General settings", () => {
-  it("stores the follow-up mode and limit policy", () => {
+  it("saves the follow-up default on the server", async () => {
+    const rpc = serve();
     render(<GeneralSection />);
     chooseOption("Follow-up default", "Queue");
-    expect(localStorage.getItem("tide.followUpMode")).toBe("queue");
+    await act(async () => undefined);
+    expect(rpc).toHaveBeenCalledWith("settings.set", { patch: { followUpMode: "queue" } });
+    expect(useServerSettings.getState().settings.followUpMode).toBe("queue");
+    expect(localStorage.getItem("tide.followUpMode")).toBeNull();
+  });
+
+  it("saves the usage-limit policy on the server", async () => {
+    const rpc = serve();
+    render(<GeneralSection />);
     chooseOption("Usage limit policy", "Resume at reset");
-    expect(localStorage.getItem("tide.limitPolicy")).toBe("reset");
+    await act(async () => undefined);
+    expect(rpc).toHaveBeenCalledWith("settings.set", { patch: { limitPolicy: "reset" } });
+    expect(localStorage.getItem("tide.limitPolicy")).toBeNull();
+  });
+
+  it("binds Continue threads after a restart", async () => {
+    const rpc = serve();
+    render(<GeneralSection />);
+    const box = screen.getByRole("checkbox", { name: "Continue threads after a restart" }) as HTMLInputElement;
+    expect(box.checked).toBe(false);
+    await act(async () => fireEvent.click(box));
+    expect(rpc).toHaveBeenCalledWith("settings.set", { patch: { continueAfterRestart: true } });
+    expect(box.checked).toBe(true);
+  });
+
+  it("shows the values the server holds", () => {
+    useServerSettings.setState({ settings: { ...defaultUserSettings(), followUpMode: "queue", limitPolicy: "reset" } });
+    render(<GeneralSection />);
+    expect(screen.getByRole("combobox", { name: "Follow-up default" }).textContent).toContain("Queue");
+    expect(screen.getByRole("combobox", { name: "Usage limit policy" }).textContent).toContain("Resume at reset");
     expect(screen.getByText(/handoffs are lossy/)).toBeDefined();
   });
 });

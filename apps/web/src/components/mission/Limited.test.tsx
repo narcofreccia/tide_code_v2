@@ -88,6 +88,7 @@ describe("Project automations line", () => {
     });
     attachFakeStore(model);
     render(<MissionControl />);
+    fireEvent.click(screen.getByRole("button", { name: /Details/ }));
     fireEvent.click(screen.getByText(/2 automations · next in 5m/));
     expect(useUi.getState().view).toBe("settings");
     expect(useUi.getState().settingsSection).toBe("automations");

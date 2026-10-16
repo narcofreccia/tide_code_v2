@@ -3,7 +3,8 @@ import { act, cleanup, fireEvent, render, screen } from "@testing-library/react"
 import { Composer } from "./Composer.tsx";
 import { attachFakeStore, makeMessage, makeThread, makeTurn, modelWithTurns, resetUi } from "../../testHarness.ts";
 import { PROVIDER_FIXTURE } from "../settings/fixtures.ts";
-import { resetFollowUp, FOLLOW_UP_KEY } from "../../lib/followUp.ts";
+import { resetFollowUp } from "../../lib/followUp.ts";
+import { useServerSettings } from "../../state/serverSettings.ts";
 import { setProvidersForTest } from "../../state/providers.ts";
 
 const STEERABLE = PROVIDER_FIXTURE.map((p) => (p.kind === "claude" ? { ...p, caps: { ...p.caps, steer: true } } : p));
@@ -36,24 +37,61 @@ describe("Composer follow-up mode", () => {
     );
   });
 
-  it("⌘↵ sends with the opposite of the default", async () => {
+  it("⌘↵ always sends in the selected mode", async () => {
+    setProvidersForTest(STEERABLE);
+    const fake = attachFakeStore(modelWithTurns(running, []));
+    render(<Composer thread={running} />);
+    const input = type("now");
+    await act(async () => {
+      fireEvent.keyDown(input, { key: "Enter", metaKey: true });
+    });
+    expect(fake.dispatch).toHaveBeenCalledWith(expect.objectContaining({ type: "turn.steer", text: "now" }));
+  });
+
+  it("⌥↵ sends with the alternate mode", async () => {
     setProvidersForTest(STEERABLE);
     const fake = attachFakeStore(modelWithTurns(running, []));
     render(<Composer thread={running} />);
     const input = type("later");
     await act(async () => {
-      fireEvent.keyDown(input, { key: "Enter", metaKey: true });
+      fireEvent.keyDown(input, { key: "Enter", altKey: true });
     });
     expect(fake.dispatch).toHaveBeenCalledWith(expect.objectContaining({ type: "turn.request", text: "later" }));
   });
 
-  it("persists the toggle in localStorage", () => {
+  it("hints both send keys, inverted when the mode is queue", () => {
     setProvidersForTest(STEERABLE);
     attachFakeStore(modelWithTurns(running, []));
     render(<Composer thread={running} />);
+    const hint = () => screen.getByText("⌥↵").parentElement?.textContent ?? "";
+    expect(hint()).toContain("⌘↵ steer · ⌥↵ queue");
     fireEvent.click(screen.getByRole("button", { name: "Queue", pressed: false }));
-    expect(window.localStorage.getItem(FOLLOW_UP_KEY)).toBe("queue");
+    expect(hint()).toContain("⌘↵ queue · ⌥↵ steer");
+  });
+
+  it("takes the default from server settings", async () => {
+    useServerSettings.setState((s) => ({ settings: { ...s.settings, followUpMode: "queue" } }));
+    setProvidersForTest(STEERABLE);
+    const fake = attachFakeStore(modelWithTurns(running, []));
+    render(<Composer thread={running} />);
+    const input = type("after");
+    await act(async () => {
+      fireEvent.keyDown(input, { key: "Enter", metaKey: true });
+    });
+    expect(fake.dispatch).toHaveBeenCalledWith(expect.objectContaining({ type: "turn.request", text: "after" }));
+  });
+
+  it("keeps the toggle per thread in memory, not in localStorage", () => {
+    setProvidersForTest(STEERABLE);
+    attachFakeStore(modelWithTurns(running, []));
+    const { unmount } = render(<Composer thread={running} />);
+    fireEvent.click(screen.getByRole("button", { name: "Queue", pressed: false }));
     expect(screen.getAllByText("Queue").length).toBeGreaterThan(1);
+    expect(JSON.stringify({ ...window.localStorage })).not.toMatch(/queue/i);
+    unmount();
+    const other = makeThread("t2", { status: "running" });
+    render(<Composer thread={other} />);
+    expect(screen.getByRole("button", { name: "Steer", pressed: true })).toBeDefined();
   });
 
   it("disables the toggle with a tooltip when the harness cannot steer", async () => {

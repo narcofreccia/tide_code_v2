@@ -5,7 +5,7 @@
   overflow: hidden;
 }
 .button {
-  width: 22px;
+  padding: 0 var(--sp-2);
   height: 20px;
   background: var(--surface-2);
   border: none;

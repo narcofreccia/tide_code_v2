@@ -60,14 +60,22 @@ describe("All threads", () => {
     expect(useUi.getState().selectedThreadId).toBe("t1");
   });
 
-  it("shows archived threads read-only behind the toggle", () => {
+  it("lists archived threads behind the toggle; a click opens one read-only", () => {
     attachFakeStore(fixture());
     render(<AllThreads projectId="p1" />);
     fireEvent.click(screen.getByLabelText("Archived"));
     const list = within(screen.getByLabelText("Archived threads"));
-    expect(list.getByLabelText("Gone (archived)")).toBeDefined();
-    expect(list.queryAllByRole("button")).toHaveLength(0);
     expect(screen.queryByText("Recent")).toBeNull();
+    fireEvent.click(list.getByLabelText("Gone (archived)"));
+    expect(useUi.getState().selectedThreadId).toBe("t4");
+  });
+
+  it("restores an archived thread", () => {
+    const fake = attachFakeStore(fixture());
+    render(<AllThreads projectId="p1" />);
+    fireEvent.click(screen.getByLabelText("Archived"));
+    fireEvent.click(within(screen.getByLabelText("Archived threads")).getByRole("button", { name: "Restore" }));
+    expect(fake.dispatch).toHaveBeenCalledWith({ type: "thread.unarchive", threadId: "t4" });
   });
 
   it("goes back to Mission Control", () => {
@@ -116,6 +124,8 @@ describe("Project card ⋯", () => {
     const card = within(screen.getByLabelText("Project Tide"));
     expect(card.getByText("⇡ 1 open")).toBeDefined();
     expect(card.getByText("✓ 1 merged")).toBeDefined();
+    expect(card.queryByText("$0 lifetime")).toBeNull();
+    fireEvent.click(card.getByRole("button", { name: /Details/ }));
     expect(card.getByText("$0 lifetime")).toBeDefined();
   });
 });

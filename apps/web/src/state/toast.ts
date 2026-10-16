@@ -1,8 +1,14 @@
 import { create } from "zustand";
 
+export interface ToastAction {
+  label: string;
+  onClick: () => void;
+}
+
 export interface ToastItem {
   id: number;
   text: string;
+  action?: ToastAction;
 }
 
 interface ToastState {
@@ -13,12 +19,14 @@ export const useToasts = create<ToastState>(() => ({ toasts: [] }));
 
 let nextId = 1;
 const DISMISS_MS = 3000;
+/** a toast that offers Undo stays long enough to reach for it */
+export const ACTION_DISMISS_MS = 6000;
 
-/** Transient confirmation ("Copied: claude --resume …"). Auto-dismisses. */
-export function showToast(text: string): void {
+/** Transient confirmation ("Copied: claude --resume …"). Auto-dismisses; an action keeps it up longer. */
+export function showToast(text: string, action?: ToastAction): void {
   const id = nextId++;
-  useToasts.setState((s) => ({ toasts: [...s.toasts, { id, text }] }));
-  setTimeout(() => dismissToast(id), DISMISS_MS);
+  useToasts.setState((s) => ({ toasts: [...s.toasts, { id, text, ...(action ? { action } : {}) }] }));
+  setTimeout(() => dismissToast(id), action ? ACTION_DISMISS_MS : DISMISS_MS);
 }
 
 export function dismissToast(id: number): void {

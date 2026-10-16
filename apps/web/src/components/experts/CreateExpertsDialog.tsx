@@ -86,55 +86,60 @@ export function CreateExpertsDialog({ projectId, onClose }: { projectId: string;
 
   return (
     <Dialog title="New experts session" onCancel={onClose}>
-      <label className={styles.field}>
-        <span className={styles.label}>topic</span>
-        <textarea
-          className={styles.topic}
-          aria-label="Topic"
-          placeholder="What should the panel work on?"
-          value={topic}
-          onChange={(e) => setTopic(e.target.value)}
-        />
-      </label>
-
-      <div className={styles.leadRow}>
-        <span className={styles.label}>lead</span>
-        <HarnessFields
-          name="Lead"
-          provider={lead.provider}
-          model={lead.model}
-          onChange={(patch) => setLead((prev) => ({ ...prev, ...patch }))}
-        />
-      </div>
-
-      <div className={styles.expertsHead}>
-        <span className={styles.label}>experts</span>
-        <Select
-          label="Preset"
-          value={preset}
-          options={EXPERT_PRESETS.map((p) => ({ value: p.key, label: p.name }))}
-          onSelect={setPreset}
-          variant="field"
-          size="md"
-        />
-        <Button onClick={() => setExperts((prev) => [...prev, fromPreset(preset, prev, lead.provider)])}>
-          + add expert
-        </Button>
-      </div>
-
-      <ul className={styles.list}>
-        {experts.map((expert, index) => (
-          <ExpertRowEditor
-            key={expert.key}
-            expert={expert}
-            index={index}
-            count={experts.length}
-            onChange={(patch) => patchExpert(index, patch)}
-            onMove={(to) => move(index, to)}
-            onRemove={() => setExperts((prev) => prev.filter((_, i) => i !== index))}
+      <div className={styles.body} data-testid="experts-dialog-body">
+        <label className={styles.field}>
+          <span className={styles.label}>topic</span>
+          <textarea
+            className={styles.topic}
+            aria-label="Topic"
+            placeholder="What should the panel work on?"
+            value={topic}
+            onChange={(e) => setTopic(e.target.value)}
           />
-        ))}
-      </ul>
+        </label>
+
+        <div className={styles.leadRow}>
+          <span className={styles.label}>lead</span>
+          <HarnessFields
+            name="Lead"
+            provider={lead.provider}
+            model={lead.model}
+            onChange={(patch) => setLead((prev) => ({ ...prev, ...patch }))}
+          />
+        </div>
+
+        <div className={styles.expertsHead}>
+          <span className={styles.label}>experts</span>
+          <Select
+            label="Preset"
+            value={preset}
+            options={EXPERT_PRESETS.map((p) => ({
+              value: p.key,
+              label: p.name,
+            }))}
+            onSelect={setPreset}
+            variant="field"
+            size="md"
+          />
+          <Button onClick={() => setExperts((prev) => [...prev, fromPreset(preset, prev, lead.provider)])}>
+            + add expert
+          </Button>
+        </div>
+
+        <ul className={styles.list}>
+          {experts.map((expert, index) => (
+            <ExpertRowEditor
+              key={expert.key}
+              expert={expert}
+              index={index}
+              count={experts.length}
+              onChange={(patch) => patchExpert(index, patch)}
+              onMove={(to) => move(index, to)}
+              onRemove={() => setExperts((prev) => prev.filter((_, i) => i !== index))}
+            />
+          ))}
+        </ul>
+      </div>
 
       <div className={styles.actions}>
         <Button variant="quiet" onClick={onClose}>

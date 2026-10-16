@@ -21,10 +21,25 @@ export interface Shortcut {
   key?: string;
   /** shift requirement; undefined means "don't care" */
   shift?: boolean;
+  /**
+   * Browsers reserve ⌘N / ⌘W, so outside the desktop shell the entry binds to
+   * this `KeyboardEvent.code` with ⌥ instead and shows `altKeys`.
+   */
+  browserAlt?: { code: string; keys: string };
   /** context the entry needs; defaults to "always" */
   when?: ShortcutScope;
   /** performs the action; `false` means it does not apply right now */
   run?: () => boolean | void;
+}
+
+/** True inside the Tauri shell, where ⌘N / ⌘W are ours to bind. */
+export function isDesktopShell(): boolean {
+  return typeof window !== "undefined" && ("__TAURI__" in window || "__TAURI_INTERNALS__" in window);
+}
+
+/** The label to show for a shortcut in this environment (`⌥N` in a browser tab). */
+export function shortcutKeys(shortcut: Shortcut): string {
+  return shortcut.browserAlt && !isDesktopShell() ? shortcut.browserAlt.keys : shortcut.keys;
 }
 
 /** Whether the current UI state satisfies a scope. */
@@ -60,6 +75,7 @@ export const SHORTCUTS: Shortcut[] = [
   },
   {
     id: "new-thread", keys: "⌘N", label: "New thread", group: "Navigation", key: "n", shift: false,
+    browserAlt: { code: "KeyN", keys: "⌥N" },
     when: "always",
     run: () => {
       const state = ui();
@@ -113,6 +129,7 @@ export const SHORTCUTS: Shortcut[] = [
   { id: "tree", keys: "⌘⇧E", label: "Toggle file tree", group: "Workbench", key: "e", shift: true, when: "workbench", run: () => toggleTree() },
   {
     id: "close-tab", keys: "⌘W", label: "Close tab", group: "Workbench", key: "w", shift: false,
+    browserAlt: { code: "KeyW", keys: "⌥W" },
     when: "workbench",
     run: () => {
       const id = threadId();
@@ -128,12 +145,20 @@ export const SHORTCUTS: Shortcut[] = [
 
 export const SHORTCUT_GROUPS: Shortcut["group"][] = ["Navigation", "View", "Thread", "Workbench"];
 
-/** Runs the ⌘/^ shortcut bound to this event; returns whether it was handled. */
+/** Runs the ⌘/^ shortcut bound to this event (⌥ for the browser alternates); returns whether it was handled. */
 export function handleShortcut(event: KeyboardEvent): boolean {
-  if (!event.metaKey && !event.ctrlKey) return false;
+  const desktop = isDesktopShell();
+  const alt = event.altKey && !event.metaKey && !event.ctrlKey;
+  if (!event.metaKey && !event.ctrlKey && !(alt && !desktop)) return false;
   const key = event.key.toLowerCase();
   for (const shortcut of SHORTCUTS) {
-    if (!shortcut.run || shortcut.key !== key) continue;
+    if (!shortcut.run) continue;
+    if (alt) {
+      if (shortcut.browserAlt?.code !== event.code) continue;
+    } else {
+      if (shortcut.key !== key) continue;
+      if (shortcut.browserAlt && !desktop) continue;
+    }
     if (shortcut.shift !== undefined && shortcut.shift !== event.shiftKey) continue;
     // out of context: let the key through to the surface rather than swallowing it
     if (!scopeApplies(shortcut.when)) return false;

@@ -27,17 +27,17 @@ describe("thread header R4", () => {
 
   it("offers the limited menu", () => {
     const fake = mount({ limited: { resume: "manual", at: 1, resetsAt: Date.now() + 7_200_000 } });
-    fireEvent.click(screen.getByText(/Limited/));
+    fireEvent.click(screen.getByText(/Resume options/));
     fireEvent.click(screen.getByText("Resume now"));
     expect(fake.dispatch).toHaveBeenCalledWith(
       expect.objectContaining({ type: "thread.resume", threadId: "t1", continue: true }),
     );
-    fireEvent.click(screen.getByText(/Limited/));
+    fireEvent.click(screen.getByText(/Resume options/));
     fireEvent.click(screen.getByText("Resume at reset"));
     expect(fake.dispatch).toHaveBeenCalledWith(
       expect.objectContaining({ type: "thread.limit-policy", resume: "reset" }),
     );
-    fireEvent.click(screen.getByText(/Limited/));
+    fireEvent.click(screen.getByText(/Resume options/));
     fireEvent.click(screen.getByText("Snooze 1h"));
     expect(fake.dispatch).toHaveBeenCalledWith(expect.objectContaining({ type: "thread.snooze", threadId: "t1" }));
   });

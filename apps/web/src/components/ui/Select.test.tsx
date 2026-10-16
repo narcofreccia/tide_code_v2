@@ -2,6 +2,7 @@ import { afterEach, describe, expect, it, vi } from "vitest";
 import { cleanup, fireEvent, render, screen, within } from "@testing-library/react";
 import { useState } from "react";
 import { Select, type SelectOption } from "./Select.tsx";
+import { Dialog } from "./Dialog.tsx";
 
 afterEach(cleanup);
 
@@ -163,5 +164,37 @@ describe("Select", () => {
     render(<Harness disabled />);
     fireEvent.click(screen.getByRole("combobox", { name: "Fruit" }));
     expect(screen.queryByRole("listbox")).toBeNull();
+  });
+
+  it("Escape inside a Dialog closes only the listbox, not the dialog", () => {
+    const onCancel = vi.fn();
+    render(
+      <Dialog title="Pick" onCancel={onCancel}>
+        <Harness />
+      </Dialog>,
+    );
+    open();
+    fireEvent.keyDown(listbox(), { key: "Escape" });
+    expect(screen.queryByRole("listbox")).toBeNull();
+    expect(onCancel).not.toHaveBeenCalled();
+
+    // with the listbox closed, Escape reaches the dialog again
+    fireEvent.keyDown(document.body, { key: "Escape" });
+    expect(onCancel).toHaveBeenCalledTimes(1);
+  });
+
+  it("closes an open listbox on Escape even when focus is elsewhere", () => {
+    render(
+      <>
+        <Harness />
+        <input aria-label="elsewhere" />
+      </>,
+    );
+    open();
+    const elsewhere = screen.getByRole("textbox", { name: "elsewhere" });
+    elsewhere.focus();
+    fireEvent.keyDown(elsewhere, { key: "Escape" });
+    expect(screen.queryByRole("listbox")).toBeNull();
+    expect(document.activeElement).toBe(elsewhere);
   });
 });

@@ -16,7 +16,7 @@ import { ALL_CHANGES, resolveSelection, selectTurn, useTurnDiff, useVcs } from "
 import { Button } from "../ui/Button.tsx";
 import { DiffHeader } from "./DiffHeader.tsx";
 import { DiffPane } from "./DiffPane.tsx";
-import { FileList } from "./FileList.tsx";
+import { FileList, uniqueByPath } from "./FileList.tsx";
 import { MergeState } from "./MergeState.tsx";
 import styles from "./ChangesTab.module.css";
 
@@ -64,7 +64,7 @@ function ChangesFor({ thread }: { thread: Thread }) {
     if (next) selectTurn(thread.id, next.id);
   });
 
-  const files = diff.data?.files ?? [];
+  const files = uniqueByPath(diff.data?.files ?? []);
   const linked = linkedGroups(diff.data);
   const firstLinked = linked[0]?.files[0];
   const fallbackKey =

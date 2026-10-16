@@ -25,7 +25,7 @@ describe("StatusGlyph merged", () => {
 
   it("ThreadGlyph reads merged from a merged PR too", () => {
     render(<ThreadGlyph thread={makeThread("t1", { pr: { url: "u", number: 1, state: "merged", updatedAt: 1 } })} />);
-    expect(screen.getByLabelText("merged").textContent).toBe("✓");
+    expect(screen.getByLabelText("Merged").textContent).toBe("✓");
   });
 });
 

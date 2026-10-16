@@ -1,4 +1,5 @@
 import { selectProjects } from "@tide/client";
+import type { ReadModel } from "@tide/contracts";
 import { PROVIDER_LABELS, PROVIDERS } from "../../lib/vocab.ts";
 import { useModel } from "../../state/model.ts";
 import { providerStatus, useProviderRoster } from "../../state/providers.ts";
@@ -33,6 +34,11 @@ function Row({
       <span className={styles.checkAction}>{action}</span>
     </li>
   );
+}
+
+/** Mission Control mounts `MissionEmpty` while this holds: no repository yet, or no thread yet. */
+export function shouldShowGettingStarted(model: ReadModel): boolean {
+  return Object.keys(model.projects).length === 0 || Object.keys(model.threads).length === 0;
 }
 
 /**
@@ -70,11 +76,18 @@ export function MissionEmpty() {
     setNewProjectOpen(true);
   };
 
+  // once a repository exists the card shrinks to the checklist and stays until the first thread
+  const compact = projects.length > 0;
+
   return (
     <div className={styles.emptyState}>
-      <Logo size={40} />
-      <h2 className={styles.wordmark}>Tide</h2>
-      <p className={styles.tagline}>Threads on any coding harness, each on its own worktree.</p>
+      {compact ? null : (
+        <>
+          <Logo size={40} />
+          <h2 className={styles.wordmark}>Tide</h2>
+          <p className={styles.tagline}>Threads on any coding harness, each on its own worktree.</p>
+        </>
+      )}
       <ul className={styles.checklist} aria-label="Getting started">
         <Row
           done={projects.length > 0}
@@ -85,7 +98,11 @@ export function MissionEmpty() {
               ? `${projects.length} added · ${firstProject.rootPath}`
               : "Point Tide at a git repo; threads get worktrees under it."
           }
-          action={<Button onClick={addRepository}>Add repository</Button>}
+          action={
+            <Button variant={projects.length === 0 ? "primary" : "ghost"} onClick={addRepository}>
+              Add repository
+            </Button>
+          }
         />
         <Row
           done={ready.length > 0}

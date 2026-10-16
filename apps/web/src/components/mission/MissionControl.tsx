@@ -3,7 +3,9 @@ import { useModel } from "../../state/model.ts";
 import { useUi } from "../../state/ui.ts";
 import { InboxColumn } from "./InboxColumn.tsx";
 import { LimitedSection, SnoozedSection } from "./LimitedSection.tsx";
-import { MissionEmpty } from "./MissionEmpty.tsx";
+import { Fragment } from "react";
+import { MissionEmpty, shouldShowGettingStarted } from "./MissionEmpty.tsx";
+import { HowTideWorks, shouldShowHowItWorks } from "../shell/HowTideWorks.tsx";
 import { NowStrip } from "./NowStrip.tsx";
 import { ProjectCard } from "./ProjectCard.tsx";
 import { ProjectTotals } from "./ProjectTotals.tsx";
@@ -11,10 +13,10 @@ import { ProvidersStrip } from "./ProvidersStrip.tsx";
 import styles from "./MissionControl.module.css";
 
 /**
- * The landing view. Now (what is running) on top, then two columns: the Inbox on
- * the left — every waiting card rendered inline so it can be answered here — and
- * the projects plus the harness roster on the right. The project scope comes from
- * the top bar's switcher; this view only reflects it.
+ * The landing view, in the order you act on it: Needs you (full width, every
+ * waiting card rendered inline so it can be answered here), Running now, Limited,
+ * the Projects grid, Snoozed, and the harness roster folded to one line. The
+ * project scope comes from the top bar's switcher; this view only reflects it.
  */
 export function MissionControl() {
   const model = useModel((s) => s.model);
@@ -23,6 +25,8 @@ export function MissionControl() {
     (p) => selectedProjectId === null || p.id === selectedProjectId,
   );
   const scoped = selectedProjectId === null ? undefined : selectedProjectId;
+  const gettingStarted = shouldShowGettingStarted(model);
+  const howItWorks = shouldShowHowItWorks(model);
 
   return (
     <section className={styles.view} aria-label="Mission Control">
@@ -40,23 +44,23 @@ export function MissionControl() {
         <MissionEmpty />
       ) : (
         <>
+          {gettingStarted ? <MissionEmpty /> : null}
+          <InboxColumn {...(scoped === undefined ? {} : { projectId: scoped })} />
           <NowStrip {...(scoped === undefined ? {} : { projectId: scoped })} />
           <LimitedSection />
-          <div className={styles.columns}>
-            <div className={styles.column}>
-              <InboxColumn {...(scoped === undefined ? {} : { projectId: scoped })} />
+          <section className={styles.section} aria-label="Projects">
+            <h2 className={styles.label}>Projects</h2>
+            <div className={styles.projectGrid}>
+              {projects.map((project, index) => (
+                <Fragment key={project.id}>
+                  <ProjectCard project={project} />
+                  {index === 0 && howItWorks ? <HowTideWorks /> : null}
+                </Fragment>
+              ))}
             </div>
-            <div className={styles.column}>
-              <section className={styles.section} aria-label="Projects">
-                <h2 className={styles.label}>Projects</h2>
-                {projects.map((project) => (
-                  <ProjectCard key={project.id} project={project} />
-                ))}
-              </section>
-              <SnoozedSection />
-              <ProvidersStrip />
-            </div>
-          </div>
+          </section>
+          <SnoozedSection />
+          <ProvidersStrip />
         </>
       )}
     </section>

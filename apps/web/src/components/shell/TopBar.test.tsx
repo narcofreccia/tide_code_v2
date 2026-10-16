@@ -24,27 +24,21 @@ afterEach(() => {
 });
 
 describe("TopBar", () => {
-  it("renames the thread on Enter and switches provider", () => {
-    const fake = attachFakeStore(modelWith({ threads: { t1: thread } }));
+  it("shows only a project › thread breadcrumb while a thread is open", () => {
+    attachFakeStore(
+      modelWith({
+        projects: { p1: { id: "p1", title: "Tide", rootPath: "/src/tide", createdAt: 1, updatedAt: 1 } },
+        threads: { t1: thread },
+      }),
+    );
     useUi.setState({ selectedThreadId: "t1", view: "thread" });
     render(<TopBar />);
-
-    const title = screen.getByLabelText<HTMLInputElement>("Thread title");
-    expect(title.value).toBe("Refactor router");
-    fireEvent.change(title, { target: { value: "Router cleanup" } });
-    fireEvent.blur(title);
-    expect(fake.dispatch).toHaveBeenCalledWith({
-      type: "thread.update",
-      threadId: "t1",
-      title: "Router cleanup",
-    });
-
-    chooseOption("Provider", "codex");
-    expect(fake.dispatch).toHaveBeenCalledWith({
-      type: "thread.update",
-      threadId: "t1",
-      provider: "codex",
-    });
+    const crumb = screen.getByLabelText("Breadcrumb");
+    expect(crumb.textContent).toBe("Tide›Refactor router");
+    // renaming moved to the thread header
+    expect(screen.queryByLabelText("Thread title")).toBeNull();
+    expect(screen.queryByTitle("Rename")).toBeNull();
+    expect(screen.queryByLabelText("Provider")).toBeNull();
   });
 
   it("switches project through the listbox", () => {

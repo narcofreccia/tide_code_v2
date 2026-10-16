@@ -1,14 +1,22 @@
+/* Read-only state or metadata: borderless, tinted, sentence case. Never interactive. */
 .pill {
   display: inline-flex;
   align-items: center;
+  gap: var(--sp-1);
   height: 18px;
-  padding: 0 6px;
-  border: 1px solid var(--border);
+  padding: 0 7px;
   border-radius: 999px;
-  color: var(--muted);
-  font-size: 10px;
-  letter-spacing: 0.04em;
-  text-transform: uppercase;
+  background: var(--st-idle-soft);
+  color: var(--text-2);
+  font-size: 11px;
+  font-weight: 500;
   white-space: nowrap;
 }
-.accent { color: var(--accent); border-color: var(--accent); }
+.muted { background: var(--surface-2); color: var(--text-2); }
+.accent, .running { background: var(--st-running-soft); color: var(--st-running); }
+.needs { background: var(--st-needs-soft); color: var(--st-needs); }
+.ok { background: var(--st-ok-soft); color: var(--st-ok); }
+.error { background: var(--st-error-soft); color: var(--st-error); }
+.limited { background: var(--st-limited-soft); color: var(--st-limited); }
+.interrupted { background: var(--st-interrupted-soft); color: var(--st-interrupted); }
+.idle { background: var(--st-idle-soft); color: var(--st-idle); }

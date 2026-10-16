@@ -17,3 +17,17 @@
   text-align: left;
   box-shadow: var(--shadow-pop);
 }
+.withAction { display: flex; align-items: center; gap: var(--sp-3); }
+.text { flex: 1; min-width: 0; }
+.action,
+.close {
+  flex: none;
+  padding: 0;
+  background: transparent;
+  border: 0;
+  font: inherit;
+  cursor: pointer;
+}
+.action { color: var(--accent); font-weight: 600; }
+.action:hover { text-decoration: underline; }
+.close { color: var(--muted); }

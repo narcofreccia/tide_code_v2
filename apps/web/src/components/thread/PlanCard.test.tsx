@@ -35,7 +35,7 @@ describe("PlanCard", () => {
     render(<PlanCard plan={makePlan("pl1")} provider="claude" />);
 
     fireEvent.click(screen.getByText("Implement in new thread ▾"));
-    chooseOption("Thread provider", "codex");
+    chooseOption("Thread provider", "Codex");
     fireEvent.click(screen.getByText("Go"));
 
     expect(fake.dispatch).toHaveBeenCalledWith({

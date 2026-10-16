@@ -86,8 +86,8 @@
 
 .group {
   color: var(--muted);
-  text-transform: uppercase;
-  letter-spacing: 0.04em;
+  text-transform: uppercase; font-weight: var(--fw-section);
+  letter-spacing: var(--ls-section);
   font-size: 11px;
 }
 

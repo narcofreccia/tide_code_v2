@@ -19,8 +19,8 @@
   margin: 0 0 var(--sp-2);
   font-size: 13px;
   color: var(--muted);
-  text-transform: uppercase;
-  letter-spacing: 0.04em;
+  text-transform: uppercase; font-weight: var(--fw-section);
+  letter-spacing: var(--ls-section);
 }
 
 .list {

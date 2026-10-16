@@ -1,8 +1,20 @@
+/*
+ * The Dialog panel itself is shared; the form body scrolls so the whole panel
+ * stays inside 90vh (title + actions take the rest) and Start stays reachable.
+ */
+.body {
+  display: flex;
+  flex-direction: column;
+  gap: var(--sp-3);
+  max-height: calc(90vh - 120px);
+  overflow: auto;
+  min-height: 0;
+}
 .field { display: flex; flex-direction: column; gap: var(--sp-1); }
 .label {
-  font-size: 10px;
-  letter-spacing: 0.08em;
-  text-transform: uppercase;
+  font-size: 11px;
+  letter-spacing: var(--ls-section);
+  text-transform: uppercase; font-weight: var(--fw-section);
   color: var(--muted);
 }
 .topic,

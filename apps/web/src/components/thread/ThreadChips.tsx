@@ -33,10 +33,9 @@ export function LimitedBadge({ thread }: { thread: Thread }) {
   const limited = thread.limited;
   if (!limited) return null;
   const resetsAt = limited.resetsAt;
-  const reset = resetsAt === undefined ? "" : ` · resets ${relativeUntil(resetsAt)}`;
   return (
     <Popover
-      label={`⛔ Limited${reset}`}
+      label="Resume options"
       title={limited.note ?? "The harness hit its usage limit"}
       variant="quiet"
       align="end"

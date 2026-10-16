@@ -1,7 +1,7 @@
 import styles from "./Button.module.css";
 
 /** `link` is the inline accent text action ("all threads →", "open as thread", tab ×). */
-export type ButtonVariant = "primary" | "ghost" | "quiet" | "link";
+export type ButtonVariant = "primary" | "ghost" | "quiet" | "link" | "danger" | "quietDanger";
 
 export function Button({
   variant = "ghost",

@@ -6,6 +6,8 @@ import { ActivityGroup } from "./ActivityGroup.tsx";
 import { ActivityRow } from "./ActivityRow.tsx";
 import { ApprovalCard } from "./ApprovalCard.tsx";
 import { ChildGroup } from "./ChildGroup.tsx";
+import { EmptyThread } from "./EmptyThread.tsx";
+import { HarnessEvents, collapsePassThrough, isPassThrough } from "./HarnessEvents.tsx";
 import { HandoffCard } from "./HandoffCard.tsx";
 import { NoticeRow } from "./NoticeRow.tsx";
 import { MessageItem } from "./MessageItem.tsx";
@@ -76,7 +78,10 @@ function lastPendingApprovalId(entries: TimelineItem[]): string | undefined {
 export function Stream({ threadId, provider }: { threadId: string; provider: ProviderKind }) {
   const model = useModel((s) => s.model);
   const entries = selectTimeline(model, threadId);
-  const { top, nested } = splitChildren(entries);
+  const split = splitChildren(entries);
+  const { entries: top, groups } = collapsePassThrough(split.top);
+  const nested = split.nested;
+  const thread = model.threads[threadId];
   const nodes = groupActivities(top);
   const liveApprovalId = lastPendingApprovalId(entries);
   const metaIds = metaMessageIds(top, model);
@@ -100,7 +105,7 @@ export function Stream({ threadId, provider }: { threadId: string; provider: Pro
   }, [signature]);
 
   if (entries.length === 0) {
-    return <div className={styles.empty}>No messages yet. Send the first prompt below.</div>;
+    return thread ? <EmptyThread thread={thread} /> : <div className={styles.empty}>No messages yet.</div>;
   }
 
   return (
@@ -145,6 +150,10 @@ export function Stream({ threadId, provider }: { threadId: string; provider: Pro
           if (activity.kind === "child") {
             const child: ActivityOf<"child"> = activity;
             return <ChildGroup key={child.id} child={child} activities={nested.get(child.childKey) ?? []} />;
+          }
+          if (isPassThrough(activity)) {
+            const events = groups.get(activity.id);
+            if (events) return <HarnessEvents key={activity.id} activities={events} />;
           }
           return <ActivityRow key={activity.id} activity={activity} />;
         })}

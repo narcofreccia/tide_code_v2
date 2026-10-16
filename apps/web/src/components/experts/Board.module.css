@@ -60,7 +60,7 @@
 .expertName { font-weight: 600; overflow: hidden; text-overflow: ellipsis; white-space: nowrap; }
 .expertRole { color: var(--muted); font-size: 11px; }
 .expertMeta { display: flex; align-items: center; gap: var(--sp-1); }
-.model { color: var(--muted); font-size: 10px; font-family: var(--font-mono); }
+.model { color: var(--muted); font-size: 11px; font-family: var(--font-mono); }
 
 .glyph { line-height: 1; }
 .pending { color: var(--muted); }
@@ -73,8 +73,8 @@
 .lane { display: flex; flex-direction: column; gap: var(--sp-2); min-width: 0; }
 .laneTitle {
   margin: 0;
-  font-size: 10px;
-  letter-spacing: 0.08em;
+  font-size: 11px;
+  letter-spacing: var(--ls-section);
   text-transform: uppercase;
   color: var(--muted);
   font-weight: 600;
@@ -95,7 +95,7 @@
 .cardHead { display: flex; align-items: center; gap: var(--sp-1); min-width: 0; }
 .author { font-weight: 600; }
 .arrow, .recipient { color: var(--muted); }
-.time { margin-left: auto; color: var(--muted); font-size: 10px; font-variant-numeric: tabular-nums; }
+.time { margin-left: auto; color: var(--muted); font-size: 11px; font-variant-numeric: tabular-nums; }
 .messageText { margin: 0; white-space: pre-wrap; overflow-wrap: anywhere; }
 .empty { color: var(--muted); margin: 0; }
 

@@ -5,7 +5,9 @@ import { Button } from "../ui/Button.tsx";
 import { Kbd } from "../ui/Kbd.tsx";
 import { Pill } from "../ui/Pill.tsx";
 import { AddProjectForm } from "./AddProjectForm.tsx";
+import { NeedsYouGroup } from "./NeedsYouGroup.tsx";
 import { ProjectTree } from "./ProjectTree.tsx";
+import { StatusLegend } from "./StatusLegend.tsx";
 import styles from "./Rail.module.css";
 
 export function Rail() {
@@ -27,7 +29,7 @@ export function Rail() {
         <Button variant="quiet" onClick={showMission} title="Mission Control (⌘0)" aria-label="Mission Control">
           ◫
         </Button>
-        {inboxCount > 0 ? <Pill tone="accent">{inboxCount}</Pill> : null}
+        {inboxCount > 0 ? <Pill tone="needs">{inboxCount}</Pill> : null}
         <Button variant="quiet" onClick={toggleSettings} title="Settings" aria-label="Settings">
           ⚙
         </Button>
@@ -41,15 +43,16 @@ export function Rail() {
         <Button variant="quiet" onClick={toggleRail} title="Collapse rail" aria-label="Collapse rail">
           ☰
         </Button>
-        <Button variant="quiet" onClick={showMission} className={styles.inbox}>
-          Inbox
-          <Pill {...(inboxCount > 0 ? { tone: "accent" as const } : {})}>{inboxCount}</Pill>
+        <Button variant="quiet" onClick={showMission} className={styles.mission} title="Mission Control (⌘0)">
+          Mission Control
         </Button>
       </div>
 
+      <NeedsYouGroup />
+
       <div className={styles.section}>
         <span className={styles.heading}>Projects</span>
-        <Button variant="quiet" onClick={() => setNewProjectOpen(!newProjectOpen)}>
+        <Button variant="quiet" onClick={() => setNewProjectOpen(!newProjectOpen)} title="Add a repository">
           + project
         </Button>
       </div>
@@ -67,6 +70,7 @@ export function Rail() {
         >
           ⚙ Settings
         </Button>
+        <StatusLegend />
         <Kbd>⌘B</Kbd>
       </div>
     </nav>

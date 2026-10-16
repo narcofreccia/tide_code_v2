@@ -11,8 +11,8 @@
   white-space: nowrap;
 }
 .button:disabled { opacity: 0.45; cursor: default; }
-.primary { background: var(--accent); border-color: var(--accent); color: #fff; }
-.ghost { border-color: var(--border); background: var(--surface-2); }
+.primary { background: var(--accent); border-color: var(--accent); color: var(--on-accent); }
+.ghost { border-color: var(--border-strong); background: var(--surface-2); }
 .ghost:hover:not(:disabled) { border-color: var(--accent); }
 .quiet { color: var(--muted); padding: 0 4px; }
 .quiet:hover:not(:disabled) { color: var(--text); }
@@ -26,3 +26,9 @@
   text-align: left;
 }
 .link:hover:not(:disabled) { text-decoration: underline; }
+/* the one destructive-but-reachable action (Stop): outline, never filled */
+.danger { border-color: var(--danger); color: var(--danger); background: transparent; }
+.danger:hover:not(:disabled) { background: var(--danger-soft); }
+/* quiet destructive: text only, tinted on hover */
+.quietDanger { color: var(--muted); padding: 0 4px; }
+.quietDanger:hover:not(:disabled) { color: var(--danger); background: var(--danger-soft); }
