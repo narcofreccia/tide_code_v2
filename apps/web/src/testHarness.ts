@@ -113,6 +113,7 @@ export function resetUi(): void {
     newProjectOpen: false,
     newThreadProjectId: null,
     newThreadParentId: null,
+    newThreadTab: "thread",
     projectDialog: null,
     linksProjectId: null,
     paletteOpen: false,

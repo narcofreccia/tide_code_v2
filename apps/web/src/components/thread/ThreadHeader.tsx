@@ -9,6 +9,7 @@ import { latestSettledTurnId } from "../shell/railMenus.ts";
 import { LimitedBadge, LineageChip, RollbackPill } from "./ThreadChips.tsx";
 import { DelegatedBy, DelegatesPopover } from "./Delegates.tsx";
 import { headerMenu } from "./headerMenu.ts";
+import { TeamStrip } from "./TeamStrip.tsx";
 import { ThreadTitle } from "./ThreadTitle.tsx";
 import { Button } from "../ui/Button.tsx";
 import { ContextMenu, type MenuPosition } from "../ui/Menu.tsx";
@@ -140,6 +141,7 @@ export function ThreadHeader({ thread }: { thread: Thread }) {
           <RateLimitBadge limit={thread.rateLimit} />
         </div>
       ) : null}
+      {thread.team ? <TeamStrip thread={thread} /> : null}
       {menu ? (
         <ContextMenu
           position={menu}

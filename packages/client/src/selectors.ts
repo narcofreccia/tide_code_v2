@@ -11,6 +11,7 @@ import type {
   ProposedPlan,
   ReadModel,
   ScheduledTask,
+  TeamStage,
   Thread,
   Turn,
 } from "@tide/contracts";
@@ -456,4 +457,35 @@ export function selectScheduledTasks(model: ReadModel, projectId?: string): Sche
   return Object.values(model.scheduledTasks)
     .filter((t) => t.archivedAt === undefined && (projectId === undefined || t.projectId === projectId))
     .sort((a, b) => (a.nextRunAt ?? Number.MAX_SAFE_INTEGER) - (b.nextRunAt ?? Number.MAX_SAFE_INTEGER) || a.createdAt - b.createdAt);
+}
+
+/** One chip of a team run's pipeline. */
+export type TeamStageStatus = "pending" | "running" | "needs-you" | "done" | "error";
+export interface TeamStageView {
+  stage: TeamStage;
+  /** stage 1 is the lead itself; later stages are the latest matching delegate */
+  thread?: Thread;
+  status: TeamStageStatus;
+}
+
+function stageStatus(thread: Thread | undefined): TeamStageStatus {
+  if (thread === undefined) return "pending";
+  if (thread.attention !== undefined || thread.limited !== undefined) return "needs-you";
+  if (thread.status === "running") return "running";
+  if (thread.status === "error" || thread.status === "interrupted") return "error";
+  return "done";
+}
+
+/** The pipeline of a team lead: its stages in order, each with the delegate that runs it. */
+export function selectTeamStages(model: ReadModel, leadId: string): TeamStageView[] {
+  const lead = model.threads[leadId];
+  if (lead?.team === undefined) return [];
+  const delegates = selectDelegates(model, leadId);
+  return lead.team.stages.map((stage, index) => {
+    const thread =
+      index === 0
+        ? lead
+        : delegates.filter((d) => d.delegateRole === stage.role).at(-1);
+    return { stage, ...(thread === undefined ? {} : { thread }), status: stageStatus(thread) };
+  });
 }

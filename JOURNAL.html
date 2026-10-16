@@ -60,9 +60,9 @@
         <h1>Tide v2 — Project Journal</h1>
         <div class="sub">Focused agentic code editor &amp; orchestrator over Claude Code · Codex · OpenCode · Pi. Started 2026-08-30.</div>
         <div class="kpi">
-          <div class="box"><b>R4</b><span>orchestration parity · landed, Claude live-proven, replay harness in</span></div>
-          <div class="box"><b>98</b><span>commits (incl. this one)</span></div>
-          <div class="box"><b>1502</b><span>tests passing</span></div>
+          <div class="box"><b>R5</b><span>usable cockpit · W1–W3 landed, W4 web + walkthrough in flight</span></div>
+          <div class="box"><b>107</b><span>commits (incl. this one)</span></div>
+          <div class="box"><b>1,649</b><span>tests passing</span></div>
         </div>
         <div class="howto">
           How to use: read at session start; flip <code>class="status done|wip|todo|blocked"</code> + label as work lands; add dated notes under the phase;
@@ -95,6 +95,22 @@
       </table>
 
       <h2>Phase board</h2>
+      <details class="phase" open>
+        <summary><span class="title"><h3>R5 — Usable cockpit (audit of 2026-10-15/16)</h3><small>2026-10-16 audit · W1 basics + correctness · W2 explanation layer · W3 visual system · W4 team runs · browser walkthrough #2</small></span><span class="badge status wip">wip</span></summary>
+        <div class="body">
+          <p class="note">2026-10-16 — Andrea got lost in the desktop app: no way to remove a thread, unlabelled pills, a flat look, and no answer to "how do I run a mixed-harness orchestrator". Three Opus audits (wiring, UX review, a headless-browser walkthrough with 66 screenshots) produced the plan in the user's plans dir; four waves were approved and W1–W3 are landed.</p>
+          <ul class="tasks">
+            <li><span class="badge status done">done</span><span class="t"><b>W1 — basics + correctness</b> (<code>5cf6df2</code> server, <code>5e6d0a2</code> web): thread and project unarchive, pin, auto-title from the first prompt, rail context menus + ⋯, Pinned / Snoozed / Archived groups, Undo toasts, New thread form (title, permissions, Build | Plan), ⌘↵ sends the selected mode (⌥↵ the other), Settings › General bound to the server (follow-up default, usage-limit policy, continue after restart), delegate wake-ups (DelegationReactor), settings defaults for server-created threads, split-view height, Changes overflow, duplicate keys, Monaco dispose, phantom diff line, experts dialog scroll, Escape layering, Remote port, <code>thread.revert</code> removed.</span></li>
+            <li><span class="badge status done">done</span><span class="t"><b>W2 — explanation layer</b> (<code>5e6d0a2</code>): Agent / Model / Permissions / Build | Plan captions with hints, one state vocabulary + legend, EmptyThread card, getting-started until the first thread, Experts explainer, "How Tide works", ⌥N / ⌥W in the browser, pass-through rows collapsed.</span></li>
+            <li><span class="badge status done">done</span><span class="t"><b>W3 — visual system</b> (<code>5e6d0a2</code>): tokens (elevation, <code>--border-strong</code>, <code>--text-2</code>, status colours + soft tints), shape split state / setting / action, rail Needs-you group + badges, header restructure with Stop / Terminal / Fork / ⋯, Mission Control reorder, no text under 11px.</span></li>
+            <li><span class="badge status done">done</span><span class="t"><b>W4 — team runs, server</b> (<code>5cf6df2</code>): <code>team.run</code>, inherited worktrees, <code>agent.thread.diff</code> + <code>tide_thread_diff</code>, presets, <code>docs/WORKFLOWS.md</code>.</span></li>
+            <li><span class="badge status wip">wip</span><span class="t"><b>W4 — team runs, web</b>: Team tab, pipeline strip, Settings › Teams.</span></li>
+            <li><span class="badge status wip">wip</span><span class="t"><b>Browser walkthrough #2</b> on <code>5e6d0a2</code>.</span></li>
+          </ul>
+          <p class="note">2026-10-16 — Suite at <code>5e6d0a2</code>: 1,649 tests (contracts 19, server 551, web 524, client 52, mcp 27, driver-testing 36, claude 64, codex 81, opencode 79, pi 104, pi-extensions 112).</p>
+        </div>
+      </details>
+
       <details class="phase" open>
         <summary><span class="title"><h3>R4 — Orchestration parity (T3 Code Orchestrator V2 comparison)</h3><small>2026-10-15 comparison vs T3 Code Orchestrator V2 · wave 0 contracts + decider + receipts · wave 1 drivers + server reactor · wave 3 tide-mcp · wave 4 queue editing · wave 5 web · wave 6 scheduled tasks · WT replay · wave 7 docs</small></span><span class="badge status wip">wip</span></summary>
         <div class="body">
@@ -338,6 +354,8 @@
         <tr><td>R4</td><td>2026-10-15</td><td>test: transport replay harness — real driver + reactor + engine, only the wire is faked</td><td class="sha">e9ba231</td></tr>
         <tr><td>R4</td><td>2026-10-15</td><td>fix(driver-opencode): point the 1.x hint at npm i -g @opencode/cli</td><td class="sha">0a15397</td></tr>
         <tr><td>R4</td><td>2026-10-15</td><td>fix(driver-codex,contracts,server): thread/rollback fallback on Codex 0.147; provider switch drops the old model</td><td class="sha">71a1f26</td></tr>
+        <tr><td>R5</td><td>2026-10-16</td><td>feat(contracts,server,tide-mcp): R5 — unarchive, pin, auto-title, delegate wake-ups, settings defaults, team runs, inherited worktrees, agent diff</td><td class="sha">5cf6df2</td></tr>
+        <tr><td>R5</td><td>2026-10-16</td><td>feat(web,client): R5 — context menus, unarchive, user-language pills, status language, empty states, visual system</td><td class="sha">5e6d0a2</td></tr>
       </table>
 
       <h2>Open questions &amp; follow-ups</h2>
@@ -365,6 +383,8 @@
         <li>Codex is installed (0.147) but <strong>not logged in</strong> on this machine (<code>codex login status</code> → Not logged in), so the Codex driver's model turn settled with a 401 (a genuine recorded fixture). Andrea: run <code>codex login</code>, then <code>TIDE_LIVE=1 pnpm --filter @tide/driver-codex test</code> and <code>pnpm --filter @tide/driver-codex record</code> to re-record success fixtures.</li>
         <li>Pi has no credentials on this machine (auth.json empty, no Ollama) — the Pi driver's model turn is untested live. Andrea: run <code>pi</code> once and <code>/login</code>, or install Ollama, then re-run the four-provider check.</li>
         <li>Design canvas of key screens (Mission Control, thread split, plan card, approval) once the P1 thread panel exists — for visual tweaking.</li>
+        <li><strong>R5 open (2026-10-16):</strong> Delete vs archive: archive is the only removal (branch kept); a true delete with worktree + branch cleanup is not offered — keep it that way?</li>
+        <li><strong>R5 open (2026-10-16):</strong> Team runs: the lead cannot use native plan mode (it would block <code>tide_delegate</code>); the planner stage runs in Build with a plan-first brief.</li>
       </ul>
 
       <div class="editable">

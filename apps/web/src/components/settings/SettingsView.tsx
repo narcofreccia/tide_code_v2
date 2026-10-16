@@ -7,6 +7,7 @@ import { ProvidersSection } from "./ProvidersSection.tsx";
 import { GitSection } from "./GitSection.tsx";
 import { DecisionsSection } from "./DecisionsSection.tsx";
 import { AutomationsSection } from "./AutomationsSection.tsx";
+import { TeamsSection } from "./TeamsSection.tsx";
 import { AppearanceSection } from "./AppearanceSection.tsx";
 import { KeyboardSection } from "./KeyboardSection.tsx";
 import { RemoteSection } from "./RemoteSection.tsx";
@@ -19,6 +20,7 @@ const LABELS: Record<SettingsSection, string> = {
   git: "Git",
   decisions: "Decisions",
   automations: "Automations",
+  teams: "Teams",
   appearance: "Appearance",
   keyboard: "Keyboard",
   remote: "Remote",
@@ -37,6 +39,8 @@ function Body({ section }: { section: SettingsSection }) {
       return <DecisionsSection />;
     case "automations":
       return <AutomationsSection />;
+    case "teams":
+      return <TeamsSection />;
     case "appearance":
       return <AppearanceSection />;
     case "keyboard":

@@ -18,6 +18,11 @@ const ROLE_GLYPH: Record<NonNullable<Thread["role"]>, string> = {
   delegate: "↳",
 };
 
+/** Rail tags stay short; the tooltip carries the full role. */
+export function truncateRole(role: string): string {
+  return role.length > 12 ? `${role.slice(0, 11)}…` : role;
+}
+
 /** Delegation wins over the ordinary parent link, so a delegate nests under its caller. */
 export function parentOf(thread: Thread): string | undefined {
   return thread.delegatedBy ?? thread.parentThreadId;
@@ -97,12 +102,22 @@ export function RailThreadRow({ thread, siblings }: { thread: Thread; siblings: 
                 {ROLE_GLYPH[thread.role]}
               </span>
             ) : null}
+            {thread.team ? (
+              <span className={styles.roleGlyph} title={`Team run: ${thread.team.name}`} aria-label="team" role="img">
+                ⛓
+              </span>
+            ) : null}
             {thread.pinned && !archived ? (
               <span className={styles.roleGlyph} title="pinned" aria-label="pinned" role="img">
                 ⊙
               </span>
             ) : null}
             <span className={`${styles.threadTitle} ${loud ? styles.loud : ""}`}>{thread.title}</span>
+            {thread.delegateRole ? (
+              <span className={styles.roleTag} title={`Role: ${thread.delegateRole}`}>
+                {truncateRole(thread.delegateRole)}
+              </span>
+            ) : null}
             <span className={styles.meta}>
               {hasVcs ? (
                 <>

@@ -127,3 +127,4 @@
   cursor: pointer;
 }
 .groupToggle:hover { color: var(--text); }
+.roleTag { flex: none; max-width: 90px; overflow: hidden; text-overflow: ellipsis; white-space: nowrap; padding: 0 var(--sp-1); border-radius: var(--radius-sm); background: var(--st-idle-soft); color: var(--st-idle); font-size: 10px; line-height: 14px; }

@@ -37,3 +37,21 @@
 .segment + .segment { border-left: 1px solid var(--border); }
 .segment:hover:not(.active) { color: var(--text); }
 .active { background: var(--accent-soft); color: var(--accent); }
+.stack { display: flex; flex-direction: column; gap: var(--sp-1); }
+.textarea {
+  min-height: 72px;
+  padding: var(--sp-2);
+  border: 1px solid var(--border);
+  border-radius: var(--radius-sm);
+  background: var(--surface);
+  color: var(--text);
+  font: inherit;
+  resize: vertical;
+}
+.textarea::placeholder { color: var(--muted); }
+.stages { list-style: none; margin: 0; padding: 0; border: 1px solid var(--border); border-radius: var(--radius-sm); }
+.stageRow { display: flex; align-items: center; gap: var(--sp-2); min-height: 24px; padding: 0 var(--sp-2); border-bottom: 1px solid var(--border); font-size: 12px; }
+.stageRow:last-child { border-bottom: 0; }
+.stageRole { flex: 1; min-width: 0; overflow: hidden; text-overflow: ellipsis; white-space: nowrap; }
+.stageMeta { color: var(--muted); font-size: 11px; }
+.tabs { align-self: flex-start; }

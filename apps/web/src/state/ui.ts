@@ -5,7 +5,7 @@ import { useModel } from "./model.ts";
 export type FocusMode = "thread" | "split" | "workbench";
 /** `threads` is the per-project "All threads" list opened from Mission Control. */
 export type View = "mission" | "thread" | "settings" | "experts" | "threads";
-export type SettingsSection = "general" | "providers" | "git" | "decisions" | "automations" | "appearance" | "keyboard" | "remote" | "about";
+export type SettingsSection = "general" | "providers" | "git" | "decisions" | "automations" | "teams" | "appearance" | "keyboard" | "remote" | "about";
 
 export const SETTINGS_SECTIONS: SettingsSection[] = [
   "general",
@@ -13,6 +13,7 @@ export const SETTINGS_SECTIONS: SettingsSection[] = [
   "git",
   "decisions",
   "automations",
+  "teams",
   "appearance",
   "keyboard",
   "remote",
@@ -33,9 +34,12 @@ export interface ProjectDialog {
   projectId: string;
 }
 
+export type NewThreadTab = "thread" | "team";
+
 export interface NewThreadRequest {
   projectId?: string;
   parentThreadId?: string;
+  tab?: NewThreadTab;
 }
 
 interface UiState {
@@ -55,6 +59,8 @@ interface UiState {
   newThreadProjectId: string | null;
   /** `+ child` / "New child thread": the parent the new-thread form is prefilled with */
   newThreadParentId: string | null;
+  /** which side of the new-thread form opens first */
+  newThreadTab: NewThreadTab;
   /** project rename / archive dialog raised from the rail */
   projectDialog: ProjectDialog | null;
   /** project whose "Linked repositories" editor is open, null when closed */
@@ -117,6 +123,7 @@ export const useUi = create<UiState>()(
       newProjectOpen: false,
       newThreadProjectId: null,
       newThreadParentId: null,
+      newThreadTab: "thread",
       projectDialog: null,
       linksProjectId: null,
       paletteOpen: false,
@@ -155,12 +162,12 @@ export const useUi = create<UiState>()(
       closeSettings: () => set((s) => (s.view === "settings" ? { view: s.settingsReturnTo } : s)),
       setSettingsSection: (settingsSection) => set({ settingsSection }),
       setNewProjectOpen: (newProjectOpen) => set({ newProjectOpen }),
-      setNewThreadProject: (newThreadProjectId) => set({ newThreadProjectId, newThreadParentId: null }),
-      openNewThread: ({ projectId, parentThreadId }) => {
+      setNewThreadProject: (newThreadProjectId) => set({ newThreadProjectId, newThreadParentId: null, newThreadTab: "thread" }),
+      openNewThread: ({ projectId, parentThreadId, tab }) => {
         const parent = parentThreadId === undefined ? undefined : useModel.getState().model.threads[parentThreadId];
         const project = projectId ?? parent?.projectId;
         if (project === undefined) return;
-        set({ newThreadProjectId: project, newThreadParentId: parent ? parent.id : null });
+        set({ newThreadProjectId: project, newThreadParentId: parent ? parent.id : null, newThreadTab: tab ?? "thread" });
       },
       setProjectDialog: (projectDialog) => set({ projectDialog }),
       setLinksProject: (linksProjectId) => set({ linksProjectId }),

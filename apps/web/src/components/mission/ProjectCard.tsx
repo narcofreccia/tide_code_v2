@@ -110,6 +110,14 @@ export function ProjectCard({ project }: { project: Project }) {
             />
           </div>
           <ProjectAutomations projectId={project.id} />
+          <div className={styles.costRow}>
+            <Button
+              onClick={() => useUi.getState().openNewThread({ projectId: project.id, tab: "team" })}
+              title="Start a multi-harness team run on this project"
+            >
+              Team run
+            </Button>
+          </div>
         </div>
       ) : null}
 

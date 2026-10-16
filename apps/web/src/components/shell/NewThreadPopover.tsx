@@ -13,7 +13,8 @@ import {
 import { ThreadLinkPicker, useLinkChoices } from "./ThreadLinkPicker.tsx";
 import { ProviderPicker, useThreadDraft } from "../thread/ProviderPicker.tsx";
 import { useModel } from "../../state/model.ts";
-import { useUi } from "../../state/ui.ts";
+import { useUi, type NewThreadTab } from "../../state/ui.ts";
+import { NewTeamFields } from "./NewTeamFields.tsx";
 import { Button } from "../ui/Button.tsx";
 import { Dialog } from "../ui/Dialog.tsx";
 import { Popover } from "../ui/Popover.tsx";
@@ -54,7 +55,7 @@ function InteractionSwitch({ value, onChange }: { value: InteractionMode; onChan
  * create. Shared by the rail popover, Mission Control and the ⌘N dialog, so all
  * three ask exactly the same questions. `parentThreadId` makes it a child thread.
  */
-export function NewThreadFields({
+function ThreadFields({
   projectId,
   parentThreadId,
   onDone,
@@ -131,6 +132,57 @@ export function NewThreadFields({
   );
 }
 
+function TabSwitch({ value, onChange }: { value: NewThreadTab; onChange: (tab: NewThreadTab) => void }) {
+  return (
+    <div className={`${styles.segmented} ${styles.tabs}`} role="radiogroup" aria-label="Kind">
+      {(["thread", "team"] as const).map((tab) => (
+        <button
+          key={tab}
+          type="button"
+          role="radio"
+          aria-checked={value === tab}
+          className={`${styles.segment} ${value === tab ? styles.active : ""}`}
+          onClick={() => onChange(tab)}
+        >
+          {tab === "thread" ? "Thread" : "Team"}
+        </button>
+      ))}
+    </div>
+  );
+}
+
+/**
+ * The new-thread form with its Thread | Team switch. A child thread has no Team
+ * side: a team run always starts a fresh lead.
+ */
+export function NewThreadFields({
+  projectId,
+  parentThreadId,
+  initialTab = "thread",
+  onDone,
+}: {
+  projectId: string | undefined;
+  parentThreadId?: string;
+  initialTab?: NewThreadTab;
+  onDone: () => void;
+}) {
+  const [tab, setTab] = useState<NewThreadTab>(parentThreadId === undefined ? initialTab : "thread");
+  return (
+    <>
+      {parentThreadId === undefined ? <TabSwitch value={tab} onChange={setTab} /> : null}
+      {tab === "team" ? (
+        <NewTeamFields projectId={projectId} onDone={onDone} />
+      ) : (
+        <ThreadFields
+          projectId={projectId}
+          {...(parentThreadId === undefined ? {} : { parentThreadId })}
+          onDone={onDone}
+        />
+      )}
+    </>
+  );
+}
+
 /** The anchored form the rail and Mission Control open. */
 export function NewThreadPopover({
   projectId,
@@ -154,6 +206,7 @@ export function NewThreadPopover({
 export function NewThreadDialogHost() {
   const projectId = useUi((s) => s.newThreadProjectId);
   const parentThreadId = useUi((s) => s.newThreadParentId);
+  const initialTab = useUi((s) => s.newThreadTab);
   const setNewThreadProject = useUi((s) => s.setNewThreadProject);
   if (projectId === null) return null;
   return (
@@ -162,6 +215,7 @@ export function NewThreadDialogHost() {
         key={`${projectId}:${parentThreadId ?? ""}`}
         projectId={projectId}
         {...(parentThreadId === null ? {} : { parentThreadId })}
+        initialTab={initialTab}
         onDone={() => setNewThreadProject(null)}
       />
     </Dialog>

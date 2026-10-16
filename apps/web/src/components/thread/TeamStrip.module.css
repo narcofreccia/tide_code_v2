@@ -1,0 +1,33 @@
+.strip {
+  display: flex;
+  align-items: center;
+  gap: var(--sp-2);
+  height: 24px;
+  padding: 0 var(--sp-3);
+  border-top: 1px solid var(--border);
+  overflow-x: auto;
+  white-space: nowrap;
+}
+.name { color: var(--muted); font-size: 11px; text-transform: uppercase; letter-spacing: var(--ls-section); font-weight: var(--fw-section); }
+.item { display: inline-flex; align-items: center; gap: var(--sp-2); }
+.arrow { color: var(--muted); font-size: 11px; }
+.chip {
+  display: inline-flex;
+  align-items: center;
+  gap: var(--sp-1);
+  height: 18px;
+  padding: 0 var(--sp-2);
+  border: 0;
+  border-radius: var(--radius-sm);
+  font: inherit;
+  font-size: 11px;
+  cursor: pointer;
+  background: var(--st-idle-soft);
+  color: var(--st-idle);
+}
+.chip:disabled { cursor: default; }
+.chip[data-status="running"] { background: var(--st-running-soft); color: var(--st-running); }
+.chip[data-status="needs-you"] { background: var(--st-needs-soft); color: var(--st-needs); }
+.chip[data-status="done"] { background: var(--st-ok-soft); color: var(--st-ok); }
+.chip[data-status="error"] { background: var(--st-error-soft); color: var(--st-error); }
+.chip:not(:disabled):hover { filter: brightness(1.15); }
