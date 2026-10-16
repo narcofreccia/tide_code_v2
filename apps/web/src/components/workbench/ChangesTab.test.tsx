@@ -3,6 +3,7 @@ import { act, cleanup, fireEvent, render, screen, waitFor, within } from "@testi
 import type { DiffResult } from "@tide/contracts";
 import { ThreadDialogHost } from "../thread/ThreadDialogs.tsx";
 import { useUi } from "../../state/ui.ts";
+import { useModel } from "../../state/model.ts";
 import {
   attachFakeStore,
   makeMessage,
@@ -92,6 +93,50 @@ describe("ChangesTab", () => {
     expect(rpc).toHaveBeenCalledWith("vcs.turnDiff", { threadId: "t1", turnId: "u2" });
     expect(screen.getByText("Turn 2 of 2 ▾")).toBeDefined();
     expect(await screen.findByTestId("monaco")).toHaveProperty("textContent", "before::after");
+  });
+
+  it("refetches the selected turn's diff when its after-checkpoint lands, and drops a stale in-flight reply", async () => {
+    setup();
+    let calls = 0;
+    const resolvers: Array<() => void> = [];
+    mockRpc({
+      "vcs.turnDiff": () => {
+        calls += 1;
+        const n = calls;
+        return new Promise((resolve) =>
+          resolvers.push(() =>
+            resolve(n === 1 ? diff() : diff({ files: [{ path: "src/new.ts", status: "added", additions: 1, deletions: 0, patch: "@@ -0,0 +1 @@\n+x\n" }] })),
+          ),
+        );
+      },
+      "vcs.fileAt": () => ({ content: "x", binary: false, missing: false }),
+    });
+    render(<ChangesTab />);
+    await waitFor(() => expect(calls).toBe(1));
+    // the after-checkpoint lands while the first fetch is still in flight
+    act(() => {
+      const model = useModel.getState().model;
+      useModel.setState({
+        model: {
+          ...model,
+          turns: { ...model.turns, u2: makeTurn("u2", { requestedAt: 2, checkpoint: cp("s1", "s3", 1, 0) }) },
+        },
+      });
+    });
+    await waitFor(() => expect(calls).toBe(2));
+    await act(async () => {
+      resolvers[1]?.();
+      resolvers[0]?.();
+    });
+    await waitFor(() => expect(screen.getByRole("option", { name: /new\.ts/ })).toBeDefined());
+    expect(screen.queryByRole("option", { name: /a\.ts/ })).toBeNull();
+  });
+
+  it("says 'No changes in this turn' for a settled turn with an empty diff", async () => {
+    setup();
+    mockRpc({ "vcs.turnDiff": () => diff({ files: [] }) });
+    render(<ChangesTab />);
+    expect(await screen.findByText("No changes in this turn")).toBeDefined();
   });
 
   it("steps turns with [ and ] and switches to the whole-thread diff", async () => {

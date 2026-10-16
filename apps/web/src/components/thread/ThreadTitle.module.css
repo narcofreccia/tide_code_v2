@@ -1,4 +1,4 @@
-.wrap { display: flex; align-items: center; gap: var(--sp-1); min-width: 60px; max-width: 520px; }
+.wrap { display: flex; align-items: center; gap: var(--sp-1); flex: 1 1 auto; min-width: 8ch; max-width: 520px; }
 .text {
   min-width: 0;
   overflow: hidden;

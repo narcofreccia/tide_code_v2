@@ -129,7 +129,8 @@ function ProjectNode({ project }: { project: Project }) {
             threads={live}
             renderThread={(t) => <RailThreadRow key={t.id} thread={t} siblings={live} />}
           />
-          <ul className={styles.threads}>
+          {pinned.length > 0 && roots.length > 0 ? <span className={styles.groupHeading}>Threads</span> : null}
+          <ul className={styles.threads} aria-label={pinned.length > 0 ? "Other threads" : undefined}>
             {roots.map((t) => (
               <RailThreadRow key={t.id} thread={t} siblings={nestedUnder} />
             ))}

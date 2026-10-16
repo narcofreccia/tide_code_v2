@@ -42,16 +42,23 @@ function message(error: unknown): string {
   return error instanceof Error ? error.message : String(error);
 }
 
+/** Bumped by `invalidateThread`; a response that started under an older value is stale and dropped. */
+const generations = new Map<string, number>();
+const generationOf = (threadId: string): number => generations.get(threadId) ?? 0;
+
 async function loadDiff(threadId: string, turnId: TurnSelection): Promise<void> {
   const key = diffKey(threadId, turnId);
+  const generation = generationOf(threadId);
   patchDiff(key, { loading: true });
   try {
     const data =
       turnId === ALL_CHANGES
         ? await call("vcs.threadDiff", { threadId })
         : await call("vcs.turnDiff", { threadId, turnId });
+    if (generation !== generationOf(threadId)) return;
     patchDiff(key, { loading: false, data });
   } catch (error) {
+    if (generation !== generationOf(threadId)) return;
     const text = message(error);
     patchDiff(key, { loading: false, error: text });
     showToast(`Diff failed: ${text}`);
@@ -84,6 +91,7 @@ export function ensureStatus(threadId: string, force = false): void {
 
 /** Drops every cached diff of a thread so the next read refetches. */
 export function invalidateThread(threadId: string): void {
+  generations.set(threadId, generationOf(threadId) + 1);
   useVcs.setState((s) => {
     const diffs: Record<string, Entry<DiffResult>> = {};
     for (const [key, value] of Object.entries(s.diffs)) {
@@ -100,6 +108,7 @@ export function selectTurn(threadId: string, turnId: TurnSelection | undefined):
 export function resetVcs(): void {
   useVcs.setState({ diffs: {}, statuses: {}, selection: {} });
   signatures.clear();
+  generations.clear();
 }
 
 /**
@@ -127,7 +136,7 @@ function turnSignature(model: ReadModel, turnId: string): string {
   const turn = model.turns[turnId];
   if (!turn) return "";
   const cp = turn.checkpoint;
-  return `${turn.status}|${turn.settledAt ?? ""}|${cp?.before ?? ""}|${cp?.after ?? ""}|${cp?.stats?.files ?? ""}`;
+  return `${turn.status}|${turn.settledAt ?? ""}|${cp?.before ?? ""}|${cp?.after ?? ""}|${cp?.stats?.files ?? ""}|${cp?.stats?.additions ?? ""}|${cp?.stats?.deletions ?? ""}`;
 }
 
 function onModelChange(model: ReadModel): void {

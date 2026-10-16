@@ -12,7 +12,7 @@ Three regions + top bar + status bar. Two regions collapse.
 |---|---|---|
 | Top bar | 36px | `⌘K` palette button · project switcher (Mission Control) or a `project › thread` breadcrumb (text only, while a thread is open) · focus modes · theme |
 | Rail | 240px → 48px icons | Mission Control link · **Needs you · n** (cross-project, from `selectInbox`, hidden when empty) · projects (chevron expands/collapses independently of selection; path in a tooltip; amber `◐ n` / accent `● n` badges only when non-zero) → threads (glyph, title, one trailing meta slot that swaps to `⋯` on hover; needs-you rows tinted) · `+ thread` per project · bottom: Settings, legend |
-| Thread | flexible, primary | header: one 32px row = state chip · title (inline rename: double-click or ✎) · branch chip (mono, tooltip = worktree path, `main checkout` when none) \| **Stop** (danger outline, only while running) · Terminal · Fork (latest settled turn) · `⋯` (New child, Roll back last turn…, Snooze ▸, Copy thread ID, Copy branch, Remove worktree…, Archive thread…); a 24px sub-row exists only when it has chips (PR / merge, lineage `forked from <title>`, `Limited` menu, `Rolling back…`, delegates, rate limit) · pinned plan progress while running · stream of messages + activities · inline cards (approval, user-input, proposed plan) · composer |
+| Thread | flexible, primary | header: one 32px row = state chip · title (inline rename: double-click or ✎) · branch chip (mono, tooltip = worktree path, `main checkout` when none) \| Terminal · Fork (latest settled turn) · `⋯` (below ~560px container width Terminal and Fork fold into `⋯`; Stop lives only in the composer) (New child, Roll back last turn…, Snooze ▸, Copy thread ID, Copy branch, Remove worktree…, Archive thread…); a 24px sub-row exists only when it has chips (PR / merge, lineage `forked from <title>`, `Limited` menu, `Rolling back…`, delegates, rate limit) · pinned plan progress while running · stream of messages + activities · inline cards (approval, user-input, proposed plan) · composer |
 | Workbench | flexible, secondary | tabs: **Changes** (default) · open files (Monaco) · tree toggle · terminal drawer |
 | Status bar | 24px | `⎇ branch (worktree)` · context % + cost · diff stats · provider health · connection |
 
@@ -136,7 +136,7 @@ Radii 4/6/10; spacing 4-grid. `--shadow-pop` is the only shadow, and only on pop
 - **Setting** = `Select` trigger (`variant="pill"`, 22px, 4px radius, `--border-strong`, caption + value + chevron;
   the composer slots carry the caption) and the Build | Plan / Steer | Queue segmented toggles (same 4px radius).
 - **Action** = `Button`: `primary` (accent fill, `--on-accent` text; at most one per surface: Send, Create thread,
-  Add repository), `ghost` (outlined), `quiet`, `link`, `danger` (outline, Stop in the header) and `quietDanger`
+  Add repository), `ghost` (outlined), `quiet`, `link`, `danger` (outline) and `quietDanger`
   (composer Stop).
 - Layout: thread column on `--bg`; rail, top bar, composer on `--surface`; the composer's text box, the selected
   row and every popover on `--surface-raised`.

@@ -1,5 +1,5 @@
 import { useState } from "react";
-import type { InteractionMode, RuntimeMode } from "@tide/contracts";
+import type { InteractionMode, RuntimeMode, Thread } from "@tide/contracts";
 import { createThread } from "../../lib/threadActions.ts";
 import { runOrToast } from "../../lib/dispatchOrToast.ts";
 import {
@@ -50,6 +50,15 @@ function InteractionSwitch({ value, onChange }: { value: InteractionMode; onChan
   );
 }
 
+function lastCreated(threads: Record<string, Thread>, projectId: string | undefined): Thread | undefined {
+  let best: Thread | undefined;
+  for (const t of Object.values(threads)) {
+    if (t.projectId !== projectId) continue;
+    if (best === undefined || t.createdAt > best.createdAt) best = t;
+  }
+  return best;
+}
+
 /**
  * title · provider · model · permissions · Build|Plan · worktree · links, then
  * create. Shared by the rail popover, Mission Control and the ⌘N dialog, so all
@@ -65,7 +74,15 @@ function ThreadFields({
   onDone: () => void;
 }) {
   const parent = useModel((s) => (parentThreadId === undefined ? undefined : s.model.threads[parentThreadId]));
-  const [draft, patch] = useThreadDraft(parent?.provider ?? "claude");
+  // a fresh thread starts from the project's most recently created one; Settings defaults otherwise
+  const last = useModel((s) =>
+    parentThreadId === undefined || projectId === undefined ? lastCreated(s.model.threads, projectId) : undefined,
+  );
+  const [draft, patch] = useThreadDraft(
+    parent?.provider ?? last?.provider ?? "claude",
+    parent === undefined ? (last?.model ?? "") : "",
+    parent === undefined ? last?.mode : undefined,
+  );
   const [title, setTitle] = useState("");
   const [interaction, setInteraction] = useState<InteractionMode>("default");
   const linkChoices = useLinkChoices(projectId);

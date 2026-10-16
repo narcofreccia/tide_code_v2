@@ -40,10 +40,15 @@ export function draftForProvider(
 }
 
 /** Draft state for the plan and new-thread pickers; switching harness re-picks its defaults. */
-export function useThreadDraft(provider: ProviderKind, model = ""): [ThreadDraft, (patch: Partial<ThreadDraft>) => void] {
+export function useThreadDraft(
+  provider: ProviderKind,
+  model = "",
+  mode?: RuntimeMode,
+): [ThreadDraft, (patch: Partial<ThreadDraft>) => void] {
   const providers = useProviders();
   const [draft, setDraft] = useState<ThreadDraft>(() => ({
     ...draftForProvider(provider, providers, model),
+    ...(mode === undefined ? {} : { mode }),
     useWorktree: worktreeByDefault(),
   }));
   return [draft, (patch) => setDraft((prev) => ({ ...prev, ...patch }))];

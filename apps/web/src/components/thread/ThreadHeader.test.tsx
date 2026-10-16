@@ -66,20 +66,34 @@ describe("ThreadHeader", () => {
     expect(screen.getByRole<HTMLButtonElement>("button", { name: "Terminal" }).disabled).toBe(true);
   });
 
-  it("stops the turn from a danger button that exists only while running", () => {
+  it("has no Stop button (the composer owns Stop)", () => {
     mockRpc({ "thread.terminalCommand": () => ({}) });
-    const fake = mount({ status: "running" });
-    fireEvent.click(screen.getByRole("button", { name: "Stop" }));
-    expect(fake.dispatch).toHaveBeenCalledWith({ type: "turn.interrupt", threadId: "t1" });
-    cleanup();
-    mount({ status: "idle" });
+    mount({ status: "running" });
     expect(screen.queryByRole("button", { name: "Stop" })).toBeNull();
   });
 
-  it("disables Stop while the turn is being interrupted", () => {
+  it("folds Terminal and Fork into the menu when the container is narrow", () => {
     mockRpc({ "thread.terminalCommand": () => ({}) });
-    mount({ status: "running", interrupting: true });
-    expect(screen.getByRole<HTMLButtonElement>("button", { name: "Stop" }).disabled).toBe(true);
+    let cb: ResizeObserverCallback = () => undefined;
+    vi.stubGlobal(
+      "ResizeObserver",
+      class {
+        constructor(c: ResizeObserverCallback) {
+          cb = c;
+        }
+        observe() {}
+        disconnect() {}
+        unobserve() {}
+      },
+    );
+    mount();
+    act(() => cb([{ contentRect: { width: 400 } } as ResizeObserverEntry], {} as ResizeObserver));
+    expect(screen.queryByRole("button", { name: "Terminal" })).toBeNull();
+    expect(screen.queryByRole("button", { name: "Fork" })).toBeNull();
+    fireEvent.click(screen.getByRole("button", { name: "More actions" }));
+    expect(screen.getByRole("menuitem", { name: /Terminal/ })).toBeDefined();
+    expect(screen.getByRole("menuitem", { name: /Fork/ })).toBeDefined();
+    vi.unstubAllGlobals();
   });
 
   it("forks from the latest settled turn", () => {

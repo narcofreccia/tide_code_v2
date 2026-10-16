@@ -13,9 +13,12 @@ afterEach(() => {
 
 const project = { id: "p1", title: "Tide", rootPath: "/src/tide", createdAt: 1, updatedAt: 1 };
 
-function open(parentThreadId?: string) {
+function open(parentThreadId?: string, threads?: Record<string, ReturnType<typeof makeThread>>) {
   const fake = attachFakeStore(
-    modelWith({ projects: { p1: project }, threads: { t1: makeThread("t1", { title: "Parent", provider: "codex" }) } }),
+    modelWith({
+      projects: { p1: project },
+      threads: threads ?? { t1: makeThread("t1", { title: "Parent", provider: "codex" }) },
+    }),
   );
   render(<NewThreadDialogHost />);
   act(() => useUi.getState().openNewThread({ projectId: "p1", ...(parentThreadId ? { parentThreadId } : {}) }));
@@ -54,8 +57,20 @@ describe("new thread form", () => {
     useServerSettings.setState((s) => ({
       settings: { ...s.settings, providerDefaults: { claude: { mode: "auto-accept-edits" } } },
     }));
-    open();
+    open(undefined, {});
     expect(screen.getByRole("combobox", { name: "Thread permissions" }).textContent).toContain("Auto-edit");
+  });
+
+  it("defaults agent, model and permissions to the project's most recent thread", async () => {
+    const fake = open(undefined, {
+      old: makeThread("old", { provider: "claude", createdAt: 1 }),
+      recent: makeThread("recent", { provider: "codex", model: "gpt-x", mode: "full-access", createdAt: 5 }),
+    });
+    fireEvent.click(screen.getByText("Create thread"));
+    const cmd = await created(fake);
+    expect(cmd["provider"]).toBe("codex");
+    expect(cmd["model"]).toBe("gpt-x");
+    expect(cmd["mode"]).toBe("full-access");
   });
 
   it("switches Build | Plan and sends interaction plan", async () => {

@@ -22,7 +22,8 @@
   overflow: hidden;
 }
 .branch {
-  flex: none;
+  flex: 0 1 auto;
+  min-width: 0;
   max-width: 220px;
   padding: 0 6px;
   border-radius: var(--radius-sm);
@@ -35,7 +36,7 @@
   text-overflow: ellipsis;
   white-space: nowrap;
 }
-.actions { display: flex; flex: none; gap: var(--sp-1); margin-left: auto; }
+.actions { display: flex; flex: 0 0 auto; gap: var(--sp-1); margin-left: auto; }
 .stat { color: var(--muted); font-variant-numeric: tabular-nums; font-size: 11px; }
 
 .delegates { list-style: none; margin: 0; padding: 0; min-width: 200px; }

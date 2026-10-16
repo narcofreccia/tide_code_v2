@@ -154,6 +154,15 @@ describe("rail groups", () => {
     expect(within(screen.getByLabelText("Pinned threads")).getByText("Star")).toBeDefined();
   });
 
+  it("labels the remaining threads only when a Pinned group exists", () => {
+    mount([makeThread("t1", { title: "Plain", updatedAt: 9 }), makeThread("t2", { title: "Star", pinned: true })]);
+    expect(screen.getByText("Threads")).toBeDefined();
+    expect(within(screen.getByLabelText("Other threads")).getByText("Plain")).toBeDefined();
+    cleanup();
+    mount([makeThread("t1", { title: "Plain" })]);
+    expect(screen.queryByText("Threads")).toBeNull();
+  });
+
   it("collapses snoozed and archived threads behind counted toggles", () => {
     mount([
       makeThread("t1", { title: "Live" }),

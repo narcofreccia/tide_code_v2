@@ -22,6 +22,7 @@ import { MergeState } from "./MergeState.tsx";
 import styles from "./ChangesTab.module.css";
 
 const EMPTY = "No changes in this thread yet.";
+const EMPTY_TURN = "No changes in this turn";
 
 function firstPrompt(model: ReadModel, threadId: string): string {
   return selectThreadMessages(model, threadId).find((m) => m.role === "user")?.text ?? "";
@@ -110,7 +111,9 @@ function ChangesFor({ thread }: { thread: Thread }) {
           </Button>
         </p>
       ) : null}
-      {diff.data && nothing && !diff.error ? <p className={styles.empty}>{EMPTY}</p> : null}
+      {diff.data && nothing && !diff.error ? (
+        <p className={styles.empty}>{selectedTurn ? EMPTY_TURN : EMPTY}</p>
+      ) : null}
       {nothing ? null : (
         <div className={styles.body}>
           <FileList

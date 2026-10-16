@@ -1,7 +1,7 @@
-import { useEffect, useState } from "react";
+import { useEffect, useRef, useState } from "react";
 import { selectDelegates } from "@tide/client";
 import type { Thread } from "@tide/contracts";
-import { fetchTerminalCommand, interruptTurn } from "../../lib/threadActions.ts";
+import { fetchTerminalCommand } from "../../lib/threadActions.ts";
 import { runInThreadTerminal } from "../../lib/openInTerminal.ts";
 import { useModel } from "../../state/model.ts";
 import { useUi } from "../../state/ui.ts";
@@ -18,6 +18,24 @@ import { StateGlyph } from "../ui/StatusGlyph.tsx";
 import { MergeGlyph, PrBadge } from "../ui/VcsBadges.tsx";
 import { threadStateKey, threadStateLabel } from "../../lib/vocab.ts";
 import styles from "./ThreadHeader.module.css";
+
+/** Below this container width Terminal and Fork fold into the `⋯` menu. */
+export const NARROW_PX = 560;
+
+function useNarrow(ref: React.RefObject<HTMLElement | null>): boolean {
+  const [narrow, setNarrow] = useState(false);
+  useEffect(() => {
+    const el = ref.current;
+    if (!el || typeof ResizeObserver === "undefined") return;
+    const ro = new ResizeObserver((entries) => {
+      const width = entries[0]?.contentRect.width ?? el.clientWidth;
+      setNarrow(width > 0 && width < NARROW_PX);
+    });
+    ro.observe(el);
+    return () => ro.disconnect();
+  }, [ref]);
+  return narrow;
+}
 
 const NO_COMMAND = "No harness session to resume yet";
 
@@ -56,8 +74,8 @@ function hasChips(thread: Thread, delegates: number): boolean {
 }
 
 /**
- * One 32px row: state · title · branch on the left; Stop (only while running),
- * Terminal, Fork and `⋯` on the right. Lineage, limits, rollback and delegates
+ * One 32px row: state · title · branch on the left; Terminal, Fork and `⋯` on the right
+ * (Terminal and Fork fold into `⋯` when narrow; Stop lives in the composer). Lineage, limits, rollback and delegates
  * get a 24px sub-row that is absent when there is nothing to show.
  */
 export function ThreadHeader({ thread }: { thread: Thread }) {
@@ -67,11 +85,12 @@ export function ThreadHeader({ thread }: { thread: Thread }) {
   const forkTurn = useModel((s) => latestSettledTurnId(s.model, thread.id));
   const delegates = useModel((s) => selectDelegates(s.model, thread.id).length);
   const [menu, setMenu] = useState<MenuPosition | undefined>(undefined);
-  const running = thread.status === "running";
+  const mainRef = useRef<HTMLDivElement>(null);
+  const narrow = useNarrow(mainRef);
 
   return (
     <header className={styles.header}>
-      <div className={styles.main}>
+      <div className={styles.main} ref={mainRef}>
         <span className={styles.state} data-state={state} title={word}>
           <StateGlyph state={state} />
           {word}
@@ -85,16 +104,8 @@ export function ThreadHeader({ thread }: { thread: Thread }) {
           {thread.branch ?? "main checkout"}
         </span>
         <div className={styles.actions}>
-          {running ? (
-            <Button
-              variant="danger"
-              disabled={thread.interrupting === true}
-              title="Stop the running turn (Esc)"
-              onClick={() => interruptTurn(thread.id)}
-            >
-              Stop
-            </Button>
-          ) : null}
+          {narrow ? null : (
+            <>
           <Button
             variant="quiet"
             disabled={command === undefined}
@@ -115,6 +126,8 @@ export function ThreadHeader({ thread }: { thread: Thread }) {
           >
             Fork
           </Button>
+            </>
+          )}
           <Button
             variant="quiet"
             title="More actions"
@@ -145,7 +158,7 @@ export function ThreadHeader({ thread }: { thread: Thread }) {
       {menu ? (
         <ContextMenu
           position={menu}
-          items={headerMenu(useModel.getState().model, thread)}
+          items={headerMenu(useModel.getState().model, thread, Date.now(), narrow ? { terminal: command, fork: forkTurn } : undefined)}
           onClose={() => setMenu(undefined)}
           label="Thread actions"
         />
