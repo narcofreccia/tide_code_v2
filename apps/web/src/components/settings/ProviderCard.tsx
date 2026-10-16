@@ -1,7 +1,7 @@
 import type { ProviderStatusDto } from "@tide/contracts";
-import { PROVIDER_LABELS, RUNTIME_MODES } from "../../lib/vocab.ts";
+import { PROVIDER_LABELS, RUNTIME_MODES, RUNTIME_MODE_HINTS, RUNTIME_MODE_LABELS } from "../../lib/vocab.ts";
 import { resolveLoginCommand, runOrCopy } from "../../lib/providerLogin.ts";
-import { loadProviders } from "../../state/providers.ts";
+import { loadProviders, modelChoiceValue, modelChoices } from "../../state/providers.ts";
 import { setProviderDefault, useServerSettings } from "../../state/serverSettings.ts";
 import { useUi } from "../../state/ui.ts";
 import { Button } from "../ui/Button.tsx";
@@ -9,6 +9,7 @@ import { Pill } from "../ui/Pill.tsx";
 import { Select, type SelectOption } from "../ui/Select.tsx";
 import section from "./Section.module.css";
 import styles from "./ProviderCard.module.css";
+import { plural } from "../../lib/format.ts";
 
 const CAPS: { key: keyof ProviderStatusDto["caps"]; label: string }[] = [
   { key: "planMode", label: "plan mode" },
@@ -37,7 +38,7 @@ function ModelList({ status }: { status: ProviderStatusDto }) {
   if (status.models.length === 0) return <p className={section.note}>No models reported.</p>;
   return (
     <details className={styles.models}>
-      <summary>{status.models.length} models</summary>
+      <summary>{plural(status.models.length, "model")}</summary>
       {[...families].map(([family, models]) => (
         <div key={family}>
           <span className={section.group}>{family}</span>
@@ -62,10 +63,12 @@ export function ProviderCard({ status }: { status: ProviderStatusDto }) {
   const threadId = useUi((s) => s.selectedThreadId);
   const { glyph, text, tone } = statusOf(status);
   const command = resolveLoginCommand(status);
-  const modelOptions: SelectOption<string>[] = [
-    { value: "", label: "harness default" },
-    ...status.models.map((m) => ({ value: m.id, label: m.label })),
-  ];
+  const modelOptions: SelectOption<string>[] = modelChoices(status.models, kind);
+  const modeOptions = RUNTIME_MODES.map((mode) => ({
+    value: mode,
+    label: RUNTIME_MODE_LABELS[mode],
+    description: RUNTIME_MODE_HINTS[mode],
+  }));
 
   return (
     <article className={styles.card} aria-label={PROVIDER_LABELS[kind]}>
@@ -109,7 +112,7 @@ export function ProviderCard({ status }: { status: ProviderStatusDto }) {
           <span className={section.label}>default model</span>
           <Select
             label={`${PROVIDER_LABELS[kind]} default model`}
-            value={defaults.model ?? ""}
+            value={modelChoiceValue(status.models, defaults.model)}
             options={modelOptions}
             onSelect={(model) => void setProviderDefault(kind, { model })}
             variant="field"
@@ -121,7 +124,7 @@ export function ProviderCard({ status }: { status: ProviderStatusDto }) {
           <Select
             label={`${PROVIDER_LABELS[kind]} default mode`}
             value={defaults.mode ?? "approval-required"}
-            options={RUNTIME_MODES}
+            options={modeOptions}
             onSelect={(mode) => void setProviderDefault(kind, { mode })}
             variant="field"
             size="md"

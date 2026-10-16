@@ -92,8 +92,9 @@ describe("Settings › Providers", () => {
     render(<ProvidersSection />);
     const claude = within(screen.getByLabelText("Claude Code"));
     expect(claude.getByText("2 models")).toBeDefined();
-    // the listbox is closed, so the model list is the only place it shows
-    expect(claude.getAllByText("Sonnet 4.6")).toHaveLength(1);
+    // the model list, plus the default-model field showing the harness default
+    expect(claude.getAllByText("Sonnet 4.6")).toHaveLength(2);
+    expect(claude.getByRole("combobox", { name: "Claude Code default model" }).textContent).toContain("Sonnet 4.6");
     expect(claude.getByText("opus")).toBeDefined();
     expect(claude.getByText("default")).toBeDefined();
     expect(within(screen.getByLabelText("Pi")).getByText("No models reported.")).toBeDefined();

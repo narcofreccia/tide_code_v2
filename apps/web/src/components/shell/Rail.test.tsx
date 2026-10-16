@@ -70,6 +70,18 @@ describe("Rail", () => {
     });
   });
 
+  it("names the project after a typed path when the title is empty", () => {
+    const fake = attachFakeStore(modelWith({}));
+    render(<Rail />);
+    fireEvent.click(screen.getByText("+ project"));
+    const path = screen.getByLabelText("Project root path");
+    fireEvent.change(path, { target: { value: "/src/atlas/" } });
+    fireEvent.blur(path);
+    expect((screen.getByLabelText("Project title") as HTMLInputElement).value).toBe("atlas");
+    fireEvent.click(screen.getByText("Create"));
+    expect(fake.dispatch).toHaveBeenCalledWith({ type: "project.create", title: "atlas", rootPath: "/src/atlas/" });
+  });
+
   it("refuses a relative root path without dispatching", () => {
     const fake = attachFakeStore(modelWith({}));
     render(<Rail />);

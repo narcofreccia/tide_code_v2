@@ -1,5 +1,5 @@
 import { afterEach, describe, expect, it } from "vitest";
-import { cleanup, fireEvent, render, screen } from "@testing-library/react";
+import { act, cleanup, fireEvent, render, screen } from "@testing-library/react";
 import type { Thread } from "@tide/contracts";
 import { TopBar } from "./TopBar.tsx";
 import { chooseOption, resetUi, attachFakeStore, modelWith } from "../../testHarness.ts";
@@ -39,6 +39,24 @@ describe("TopBar", () => {
     expect(screen.queryByLabelText("Thread title")).toBeNull();
     expect(screen.queryByTitle("Rename")).toBeNull();
     expect(screen.queryByLabelText("Provider")).toBeNull();
+  });
+
+  it("follows the view, not the last selected thread", () => {
+    attachFakeStore(
+      modelWith({
+        projects: { p1: { id: "p1", title: "Tide", rootPath: "/src/tide", createdAt: 1, updatedAt: 1 } },
+        threads: { t1: thread },
+      }),
+    );
+    useUi.setState({ selectedThreadId: "t1", view: "mission" });
+    render(<TopBar />);
+    expect(screen.queryByLabelText("Breadcrumb")).toBeNull();
+    expect(screen.getByText("Mission Control")).toBeDefined();
+    act(() => useUi.setState({ view: "settings" }));
+    expect(screen.queryByLabelText("Breadcrumb")).toBeNull();
+    expect(screen.getByText("Settings")).toBeDefined();
+    act(() => useUi.setState({ view: "thread" }));
+    expect(screen.getByLabelText("Breadcrumb").textContent).toBe("Tide›Refactor router");
   });
 
   it("switches project through the listbox", () => {

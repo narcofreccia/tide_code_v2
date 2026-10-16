@@ -91,7 +91,7 @@ function ThreadFields({
       <label className={styles.field}>
         <span className={styles.label}>title</span>
         <input
-          className={styles.input}
+          className={`${styles.input} ${styles.titleInput}`}
           aria-label="Thread title"
           placeholder="Auto from your first message"
           value={title}

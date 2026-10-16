@@ -4,6 +4,7 @@ import { useModel } from "../../state/model.ts";
 import { useUi } from "../../state/ui.ts";
 import { Button } from "../ui/Button.tsx";
 import styles from "./MissionControl.module.css";
+import { plural } from "../../lib/format.ts";
 
 /** "2 automations · next in 5m" on the project card; hidden when the project has none. */
 export function ProjectAutomations({ projectId }: { projectId: string }) {
@@ -21,7 +22,7 @@ export function ProjectAutomations({ projectId }: { projectId: string }) {
   return (
     <div className={styles.costRow}>
       <Button variant="link" onClick={open} title="Open Settings › Automations">
-        {tasks.length} {tasks.length === 1 ? "automation" : "automations"}
+        {plural(tasks.length, "automation")}
         {soonest === undefined ? " · paused" : ` · next ${relativeUntil(soonest)}`}
       </Button>
     </div>

@@ -1,5 +1,5 @@
 import { afterEach, describe, expect, it } from "vitest";
-import { cleanup, render, screen, waitFor } from "@testing-library/react";
+import { cleanup, fireEvent, render, screen, waitFor } from "@testing-library/react";
 import type { UserSettings, UserSettingsPatch } from "@tide/contracts";
 import { ProviderCard } from "./ProviderCard.tsx";
 import { PROVIDER_FIXTURE } from "./fixtures.ts";
@@ -43,13 +43,23 @@ describe("per-provider defaults", () => {
     render(<ProviderCard status={PROVIDER_FIXTURE[0]!} />);
     chooseOption("Claude Code default model", "Opus 4.6");
     await waitFor(() => expect(patches).toHaveLength(1));
-    chooseOption("Claude Code default mode", "auto");
+    chooseOption("Claude Code default mode", /^Auto(?!-)/);
 
     await waitFor(() =>
       expect(useServerSettings.getState().settings.providerDefaults.claude).toEqual({ model: "opus-4-6", mode: "auto" }),
     );
     expect(patches[1]).toEqual({ providerDefaults: { claude: { model: "opus-4-6", mode: "auto" } } });
     expect(window.localStorage.getItem("tide.providerDefaults")).toBeNull();
+  });
+
+  it("lists the default modes in user language with their hints", () => {
+    setProvidersForTest(PROVIDER_FIXTURE);
+    render(<ProviderCard status={PROVIDER_FIXTURE[0]!} />);
+    expect(screen.getByRole("combobox", { name: "Claude Code default mode" }).textContent).toContain("Ask first");
+    fireEvent.click(screen.getByRole("combobox", { name: "Claude Code default mode" }));
+    const names = screen.getAllByRole("option").map((o) => o.textContent ?? "");
+    expect(names.some((n) => n.includes("approval-required"))).toBe(false);
+    expect(names.some((n) => n.includes("Auto-edit") && n.includes("asks before commands"))).toBe(true);
   });
 
   it("feeds useThreadDraft from the server defaults, overriding the harness default model", () => {

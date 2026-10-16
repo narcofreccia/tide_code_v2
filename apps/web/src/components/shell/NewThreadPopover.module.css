@@ -17,6 +17,8 @@
   font: inherit;
 }
 .input::placeholder { color: var(--muted); }
+/* wide enough for "Auto from your first message"; the popover grows to fit */
+.titleInput { min-width: 220px; }
 .parent { margin: 0; color: var(--muted); font-size: 11px; }
 .segmented {
   display: inline-flex;

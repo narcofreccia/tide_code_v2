@@ -229,3 +229,26 @@ describe("rail project menu", () => {
     expect(writeText).toHaveBeenCalledWith("/src/tide");
   });
 });
+
+describe("rail Experts explainer", () => {
+  it("sits below the threads and the + thread / + Experts links", () => {
+    mount([makeThread("t1", { title: "Router" })]);
+    const explainer = screen.getByLabelText("About Experts");
+    const row = screen.getByText("Router");
+    const links = screen.getByRole("button", { name: "+ Experts" });
+    const follows = (a: Node, b: Node): boolean => (a.compareDocumentPosition(b) & Node.DOCUMENT_POSITION_FOLLOWING) !== 0;
+    expect(follows(row, explainer)).toBe(true);
+    expect(follows(links, explainer)).toBe(true);
+  });
+});
+
+describe("rail row marks", () => {
+  it("puts the pin mark after the title, out of the status slot, and names the harness in the tooltip", () => {
+    mount([makeThread("t2", { title: "Star", pinned: true, provider: "codex" })]);
+    const title = screen.getByText("Star");
+    const pin = screen.getByRole("img", { name: "pinned" });
+    expect(title.compareDocumentPosition(pin) & Node.DOCUMENT_POSITION_FOLLOWING).toBeTruthy();
+    expect(pin.textContent).not.toContain("⊙");
+    expect(title.closest("button")?.getAttribute("title")).toMatch(/^X · Codex/);
+  });
+});

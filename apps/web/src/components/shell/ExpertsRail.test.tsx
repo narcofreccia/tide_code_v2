@@ -45,7 +45,7 @@ describe("Rail experts group", () => {
     const group = within(screen.getByText("Experts").closest("div") as HTMLElement);
     expect(group.getByText("Shard the index")).toBeDefined();
     expect(group.getByText("Exploring")).toBeDefined();
-    expect(group.getByText("1 experts")).toBeDefined();
+    expect(group.getByText("1 expert")).toBeDefined();
   });
 
   it("nests expert and lead threads under the session with their role glyphs", () => {

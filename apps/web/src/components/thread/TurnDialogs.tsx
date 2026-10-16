@@ -7,6 +7,7 @@ import { ConfirmDialog, Dialog } from "../ui/Dialog.tsx";
 import { Button } from "../ui/Button.tsx";
 import { HarnessFields } from "./ProviderPicker.tsx";
 import styles from "./ThreadDialogs.module.css";
+import picker from "./ProviderPicker.module.css";
 
 /** Undo a turn and everything after it; files are restored only when a checkpoint exists. */
 export function RollbackDialog({ thread, turn, onClose }: { thread: Thread; turn: Turn; onClose: () => void }) {
@@ -64,8 +65,8 @@ export function ForkDialog({ thread, turn, onClose }: { thread: Thread; turn: Tu
   };
   return (
     <Dialog title="Fork from here" onCancel={onClose}>
-      <label className={styles.option}>
-        <span className={styles.branch}>title</span>
+      <label className={picker.field}>
+        <span className={picker.label}>Title</span>
         <input
           className={styles.field}
           aria-label="Fork title"

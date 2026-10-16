@@ -44,15 +44,20 @@ export function unarchiveThread(threadId: string): void {
  */
 export function archiveThread(threadId: string, keepWorktree?: boolean): void {
   const title = titleOf(threadId);
+  // archived from inside the thread: Undo also brings the user back to it
+  const wasOpen = useUi.getState().selectedThreadId === threadId;
+  const undo = (): void => {
+    unarchiveThread(threadId);
+    if (wasOpen) useUi.getState().selectThread(threadId);
+  };
   dispatch({
     type: "thread.archive",
     threadId,
     ...(keepWorktree === undefined ? {} : { keepWorktree }),
   })
-    .then(() => showToast(`Archived “${title}”`, { label: "Undo", onClick: () => unarchiveThread(threadId) }))
+    .then(() => showToast(`Archived “${title}”`, { label: "Undo", onClick: undo }))
     .catch((error: unknown) => showToast(`Archiving the thread failed: ${errorText(error)}`));
-  const ui = useUi.getState();
-  if (ui.selectedThreadId === threadId) ui.selectThread(null);
+  if (wasOpen) useUi.getState().selectThread(null);
 }
 
 export function setThreadPinned(threadId: string, pinned: boolean): void {

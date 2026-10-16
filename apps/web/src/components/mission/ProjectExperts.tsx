@@ -5,6 +5,7 @@ import { useUi } from "../../state/ui.ts";
 import { Button } from "../ui/Button.tsx";
 import { Pill } from "../ui/Pill.tsx";
 import styles from "./MissionControl.module.css";
+import { plural } from "../../lib/format.ts";
 
 /** The project's live Experts sessions, listed under its card. */
 export function ProjectExperts({ projectId, projectTitle }: { projectId: string; projectTitle: string }) {
@@ -42,7 +43,7 @@ export function ProjectExperts({ projectId, projectTitle }: { projectId: string;
                 <span className={styles.title}>{session.topic}</span>
                 {lead?.attention === "plan" ? <Pill tone="needs">needs you</Pill> : null}
                 <Pill>{PHASE_LABELS[session.phase]}</Pill>
-                <span className={styles.meta}>{session.experts.length} experts</span>
+                <span className={styles.meta}>{plural(session.experts.length, "expert")}</span>
               </button>
             </li>
           );

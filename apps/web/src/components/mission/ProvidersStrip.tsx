@@ -9,6 +9,7 @@ import { useUi } from "../../state/ui.ts";
 import { resolveLoginCommand, runOrCopy } from "../../lib/providerLogin.ts";
 import { Button } from "../ui/Button.tsx";
 import styles from "./MissionControl.module.css";
+import { plural } from "../../lib/format.ts";
 
 /** `✓ ready · ⚠ not logged in · ✕ not installed` — the whole harness roster in one line. */
 export function providerChipState(
@@ -28,7 +29,7 @@ export function rosterSummary(providers: ProviderStatusDto[], loading: boolean):
   const ready = states.filter((s) => s?.installed === true && s.loggedIn).length;
   const needsLogin = states.filter((s) => s?.installed === true && !s.loggedIn).length;
   const missing = states.length - ready - needsLogin;
-  const parts = [`${ready} ${ready === 1 ? "agent" : "agents"} ready`];
+  const parts = [`${plural(ready, "agent")} ready`];
   if (needsLogin > 0) parts.push(`${needsLogin} needs login`);
   if (missing > 0) parts.push(`${missing} not installed`);
   return parts.join(" · ");

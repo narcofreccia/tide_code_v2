@@ -2,12 +2,13 @@ import { useState } from "react";
 import type { Handoff, Turn } from "@tide/contracts";
 import { Pill } from "../ui/Pill.tsx";
 import styles from "./HandoffCard.module.css";
+import { plural } from "../../lib/format.ts";
 
 /** `covers 6 turns, 2 omitted` */
 export function handoffCoverage(handoff: Handoff): string {
   const n = handoff.coveredTurnIds.length;
   const m = handoff.omittedTurnIds.length;
-  return `covers ${n} turn${n === 1 ? "" : "s"}, ${m} omitted`;
+  return `covers ${plural(n, "turn")}, ${m} omitted`;
 }
 
 /** The verbatim history a harness was given when the thread changed harness or forked. Collapsed by default. */

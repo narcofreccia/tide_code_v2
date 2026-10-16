@@ -34,9 +34,15 @@ export function AddProjectForm({ onDone }: { onDone: () => void }) {
   };
   const fail = (err: unknown): void => setError(err instanceof Error ? err.message : String(err));
 
-  const submitExisting = (): void => {
-    const t = title.trim();
+  /** A typed (not picked) path names the project too, when no title was given. */
+  const deriveTitle = (): void => {
     const p = rootPath.trim();
+    if (title.trim() === "" && p.startsWith("/")) setTitle(basename(p));
+  };
+
+  const submitExisting = (): void => {
+    const p = rootPath.trim();
+    const t = title.trim() || (p.startsWith("/") ? basename(p) : "");
     if (!t || !p) return setError("Title and root path are required");
     if (!p.startsWith("/")) return setError("Root path must be absolute");
     setBusy(true);
@@ -112,6 +118,7 @@ export function AddProjectForm({ onDone }: { onDone: () => void }) {
             aria-label="Project root path"
             value={rootPath}
             onChange={(e) => setRootPath(e.target.value)}
+            onBlur={deriveTitle}
           />
           <Button onClick={() => setPicking(true)}>Browse…</Button>
         </div>

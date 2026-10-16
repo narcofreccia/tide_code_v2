@@ -119,6 +119,28 @@ describe("archive undo toast", () => {
     expect(fake.dispatch).toHaveBeenCalledWith({ type: "thread.unarchive", threadId: "t1" });
     expect(useToasts.getState().toasts).toHaveLength(0);
   });
+
+  it("re-selects the thread on Undo when it was archived from inside it", async () => {
+    attachFakeStore(modelWith({ threads: { t1: makeThread("t1", { title: "Plain" }) } }));
+    useUi.setState({ selectedThreadId: "t1", view: "thread" });
+    render(
+      <>
+        <ThreadHeader thread={makeThread("t1", { title: "Plain" })} />
+        <ToastHost />
+      </>,
+    );
+    mockRpc({ "thread.terminalCommand": () => ({ cwd: "/r", command: "x" }) });
+    fireEvent.click(screen.getByTitle("More actions"));
+    await act(async () => {
+      fireEvent.click(screen.getByRole("menuitem", { name: /Archive thread/ }));
+    });
+    expect(useUi.getState().view).toBe("mission");
+    await act(async () => {
+      fireEvent.click(screen.getByRole("button", { name: "Undo" }));
+    });
+    expect(useUi.getState().selectedThreadId).toBe("t1");
+    expect(useUi.getState().view).toBe("thread");
+  });
 });
 
 describe("detach dialog", () => {

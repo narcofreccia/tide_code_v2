@@ -16,7 +16,8 @@ import { ALL_CHANGES, resolveSelection, selectTurn, useTurnDiff, useVcs } from "
 import { Button } from "../ui/Button.tsx";
 import { DiffHeader } from "./DiffHeader.tsx";
 import { DiffPane } from "./DiffPane.tsx";
-import { FileList, uniqueByPath } from "./FileList.tsx";
+import { FileList } from "./FileList.tsx";
+import { uniqueByPath } from "../../lib/diffStats.ts";
 import { MergeState } from "./MergeState.tsx";
 import styles from "./ChangesTab.module.css";
 

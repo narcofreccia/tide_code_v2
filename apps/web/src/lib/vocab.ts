@@ -11,6 +11,9 @@ export const PROVIDER_LABELS: Record<ProviderKind, string> = {
   opencode: "OpenCode",
   pi: "Pi",
 };
+
+/** One-letter harness mark, used where a full name does not fit (rail tooltips). */
+export const PROVIDER_MONOGRAMS: Record<ProviderKind, string> = { claude: "C", codex: "X", opencode: "O", pi: "P" };
 export const RUNTIME_MODES: RuntimeMode[] = [
   "approval-required",
   "auto-accept-edits",
@@ -40,6 +43,8 @@ export const INTERACTION_HINTS: Record<InteractionMode, string> = {
 
 export const DEFAULT_MODEL_LABEL = "Default model";
 export const defaultModelHint = (provider: ProviderKind): string => `Whatever ${PROVIDER_LABELS[provider]} picks`;
+/** The hint on the model the harness itself marks as its default. */
+export const harnessDefaultHint = (provider: ProviderKind): string => `${PROVIDER_LABELS[provider]}'s default`;
 
 /** One status language: every surface (header chip, status bar, rail glyph) derives from this. */
 export type ThreadStateKey =

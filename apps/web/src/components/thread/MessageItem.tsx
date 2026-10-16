@@ -94,12 +94,14 @@ export interface MessageItemProps {
   turn?: Turn;
   /** last assistant message of a settled turn — the one that carries the footer */
   showMeta?: boolean;
+  /** the turn waited behind an earlier one; its prompt keeps the tag after it ran */
+  wasQueued?: boolean;
 }
 
 /** User turns stay plain text; assistant prose renders as markdown. */
-export function MessageItem({ message, turn, showMeta }: MessageItemProps) {
+export function MessageItem({ message, turn, showMeta, wasQueued }: MessageItemProps) {
   const isUser = message.role === "user";
-  const queued = isUser && turn?.status === "queued" ? turn : undefined;
+  const queued = isUser && message.steer !== true && (turn?.status === "queued" || wasQueued === true);
   const streaming = message.streaming === true;
   const rolledBack = turn?.rolledBack === true;
   const menuTurn =
@@ -111,7 +113,7 @@ export function MessageItem({ message, turn, showMeta }: MessageItemProps) {
     >
       <div className={styles.body} data-role={message.role}>
         {queued ? (
-          <span className={styles.queued}>
+          <span className={styles.queued} title="Sent while an earlier turn was running">
             <Pill tone="idle">queued</Pill>
           </span>
         ) : null}

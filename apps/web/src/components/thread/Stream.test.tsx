@@ -52,6 +52,36 @@ describe("Stream", () => {
     expect(screen.getByText("a.ts")).toBeDefined();
   });
 
+  it("renders a queued turn after the turn it waited behind, keeping its queued tag", () => {
+    const first = makeTurn("u1", { status: "completed", requestedAt: 1, startedAt: 1, settledAt: 10 });
+    const queued = makeTurn("u2", { status: "completed", requestedAt: 5, startedAt: 10, settledAt: 12 });
+    const model = modelWithTurns(thread, [first, queued], [
+      makeMessage("p1", { text: "run sleep" }),
+      makeMessage("p2", { turnId: "u2", text: "reply QUEUED" }),
+      makeMessage("r1", { role: "assistant", text: "THREE" }),
+      makeMessage("r2", { role: "assistant", turnId: "u2", text: "QUEUED" }),
+    ]);
+    // log order: the queued prompt landed while u1 was still working
+    const bash = makeTool("bash", { toolName: "Bash", input: { command: "sleep 5" } });
+    model.activities[bash.id] = bash;
+    model.threadTimeline[thread.id] = [
+      { kind: "message", id: "p1" },
+      { kind: "message", id: "p2" },
+      { kind: "activity", id: "bash" },
+      { kind: "message", id: "r1" },
+      { kind: "message", id: "r2" },
+    ];
+    attachFakeStore(model);
+    render(<Stream threadId="t1" provider="claude" />);
+    const order = [...document.querySelectorAll("li")]
+      .map((li) => li.textContent ?? "")
+      .filter((text) => /run sleep|reply QUEUED|sleep 5|^THREE/.test(text));
+    expect(order.map((t) => (t.includes("reply QUEUED") ? "p2" : t.includes("run sleep") ? "p1" : t.includes("sleep 5") ? "bash" : "r1"))).toEqual(["p1", "bash", "r1", "p2"]);
+    const prompt = screen.getByText("reply QUEUED").closest("li");
+    expect(prompt?.textContent).toContain("queued");
+    expect(screen.getByText("run sleep").closest("li")?.textContent).not.toContain("queued");
+  });
+
   it("marks only the last pending approval as the live prompt", () => {
     attachFakeStore(
       modelWithTimeline(thread, [

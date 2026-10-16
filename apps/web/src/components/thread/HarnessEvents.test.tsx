@@ -24,6 +24,18 @@ describe("pass-through harness rows", () => {
     expect(groups.get("a")?.map((x) => x.id)).toEqual(["a", "b"]);
   });
 
+  it("collapses harness-named info rows without a payload, e.g. Codex notifications", () => {
+    const { entries, groups } = collapsePassThrough([
+      info("a", "u1", "codex: mcpServer/startupStatus/updated"),
+      info("b", "u1", "codex: account/updated"),
+      info("c", "u1", "PONG"),
+      info("d", "u1", "codex: turn/moderationMetadata"),
+      info("e", "u1", "opencode: session.updated"),
+    ]);
+    expect(entries.map((e) => (e.kind === "activity" ? e.activity.id : ""))).toEqual(["a", "c"]);
+    expect(groups.get("a")?.map((x) => x.id)).toEqual(["a", "b", "d", "e"]);
+  });
+
   it("renders a muted count that opens to the raw rows", () => {
     const rows = collapsePassThrough([
       info("a", "u1", "claude: system/one", {}),

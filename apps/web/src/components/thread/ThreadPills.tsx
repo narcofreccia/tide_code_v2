@@ -1,6 +1,5 @@
 import type { InteractionMode, ProviderKind, Thread } from "@tide/contracts";
 import {
-  DEFAULT_MODEL_LABEL,
   INTERACTION_HINTS,
   INTERACTION_LABELS,
   INTERACTION_MODES,
@@ -9,10 +8,16 @@ import {
   RUNTIME_MODES,
   RUNTIME_MODE_HINTS,
   RUNTIME_MODE_LABELS,
-  defaultModelHint,
 } from "../../lib/vocab.ts";
 import { updateThread, type ThreadPatch } from "../../lib/threadActions.ts";
-import { defaultModelOf, providerStatus, unavailableReason, useProviders } from "../../state/providers.ts";
+import {
+  defaultModelOf,
+  modelChoiceValue,
+  modelChoices,
+  providerStatus,
+  unavailableReason,
+  useProviders,
+} from "../../state/providers.ts";
 import { showToast } from "../../state/toast.ts";
 import { Select, type SelectOption } from "../ui/Select.tsx";
 import styles from "./ThreadPills.module.css";
@@ -73,10 +78,7 @@ export function ThreadPills({ thread }: { thread: Thread }) {
     };
   });
   const models = providerStatus(providers, thread.provider)?.models ?? [];
-  const modelOptions: SelectOption<string>[] = [
-    { value: "", label: DEFAULT_MODEL_LABEL, description: defaultModelHint(thread.provider) },
-    ...models.map((m) => ({ value: m.id, label: m.label })),
-  ];
+  const modelOptions: SelectOption<string>[] = modelChoices(models, thread.provider);
   const modeOptions: SelectOption<Thread["mode"]>[] = RUNTIME_MODES.map((mode) => ({
     value: mode,
     label: RUNTIME_MODE_LABELS[mode],
@@ -113,7 +115,7 @@ export function ThreadPills({ thread }: { thread: Thread }) {
         <Select
           label="Model"
           className={styles.control}
-          value={thread.model ?? ""}
+          value={modelChoiceValue(models, thread.model)}
           options={modelOptions}
           onSelect={(model) => applyNextTurn({ model })}
         />

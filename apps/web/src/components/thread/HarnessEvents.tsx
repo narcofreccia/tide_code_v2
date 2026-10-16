@@ -3,12 +3,20 @@ import type { Activity } from "@tide/contracts";
 import type { TimelineItem } from "@tide/client";
 import { ActivityRow } from "./ActivityRow.tsx";
 import styles from "./ActivityRow.module.css";
+import { plural } from "../../lib/format.ts";
 
 type Note = Extract<Activity, { kind: "info" | "error" }>;
 
-/** Raw harness frames Tide does not model (`claude: system/task_notification`). Declines stay visible. */
+/** `claude: system/task_notification`, `codex: mcpServer/startupStatus/updated`, … */
+const HARNESS_FRAME = /^(claude|codex|opencode|pi): /;
+
+/**
+ * Raw harness frames Tide does not model: info rows carrying the native payload
+ * or named after the harness frame they pass through. Declines stay visible.
+ */
 export function isPassThrough(activity: Activity): activity is Note {
-  return activity.kind === "info" && activity.payload !== undefined && !/declined/.test(activity.text);
+  if (activity.kind !== "info" || /declined/.test(activity.text)) return false;
+  return activity.payload !== undefined || HARNESS_FRAME.test(activity.text);
 }
 
 export interface Collapsed {
@@ -48,7 +56,7 @@ export function HarnessEvents({ activities }: { activities: Note[] }) {
       <button type="button" className={styles.row} aria-expanded={open} onClick={() => setOpen((v) => !v)}>
         <span className={styles.glyph}>{open ? "▾" : "▸"}</span>
         <span className={`${styles.summary} ${styles.info}`}>
-          {activities.length} harness {activities.length === 1 ? "event" : "events"}
+          {plural(activities.length, "harness event")}
         </span>
       </button>
       {open ? (

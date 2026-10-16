@@ -24,11 +24,23 @@ const toasts = (): string[] => useToasts.getState().toasts.map((t) => t.text);
 describe("ThreadPills", () => {
   it("lists the harness's own models, never a hardcoded table", () => {
     mount();
-    expect(optionLabels("Model")).toEqual([
-      "Default modelWhatever Claude Code picks",
-      "Opus 4.6",
-      "Sonnet 4.6",
+    expect(optionLabels("Model")).toEqual(["Opus 4.6", "Sonnet 4.6Claude Code's default"]);
+  });
+
+  it("shows the harness default as selected when the thread names no model", () => {
+    mount();
+    expect(screen.getByRole("combobox", { name: "Model" }).textContent).toContain("Sonnet 4.6");
+  });
+
+  it("offers the synthetic default only when the harness names none", () => {
+    useToasts.setState({ toasts: [] });
+    setProvidersForTest([
+      { ...PROVIDER_FIXTURE[0]!, models: [{ id: "a", label: "Alpha" }, { id: "b", label: "Beta" }] },
+      ...PROVIDER_FIXTURE.slice(1),
     ]);
+    attachFakeStore(modelWith({}));
+    render(<ThreadPills thread={makeThread("t1")} />);
+    expect(optionLabels("Model")).toEqual(["Default modelWhatever Claude Code picks", "Alpha", "Beta"]);
   });
 
   it("says why an unavailable harness cannot be picked", () => {

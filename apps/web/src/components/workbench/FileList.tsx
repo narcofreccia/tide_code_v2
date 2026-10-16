@@ -1,8 +1,10 @@
 import { useEffect, useRef } from "react";
 import type { DiffFile } from "@tide/contracts";
 import { diffStatus, linkedKey, type LinkedDiffGroup } from "../../lib/linkedDiff.ts";
+import { uniqueByPath } from "../../lib/diffStats.ts";
 import { Button } from "../ui/Button.tsx";
 import styles from "./FileList.module.css";
+import { plural } from "../../lib/format.ts";
 
 const GLYPH: Record<DiffFile["status"], string> = { added: "A", modified: "M", deleted: "D", renamed: "R" };
 
@@ -19,16 +21,6 @@ interface Row {
   deletions?: number;
   /** hover text: the absolute path for linked rows */
   title: string;
-}
-
-/**
- * One entry per path, keeping the last one seen. A diff re-read while a turn is
- * still writing can report the same path twice (e.g. added, then modified).
- */
-export function uniqueByPath<T extends { path: string }>(files: readonly T[]): T[] {
-  const byPath = new Map<string, T>();
-  for (const file of files) byPath.set(file.path, file);
-  return [...byPath.values()];
 }
 
 function mainRows(files: DiffFile[]): Row[] {
@@ -136,7 +128,7 @@ export function FileList({
     <div className={styles.panel}>
       <div className={styles.head}>
         <span className={styles.heading}>
-          {rows.length} file{rows.length === 1 ? "" : "s"}
+          {plural(rows.length, "file")}
         </span>
         <Button variant="quiet" onClick={onToggle} title="Hide files" aria-label="Hide files">
           ◂

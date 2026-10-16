@@ -17,6 +17,7 @@ import { ThreadTags } from "./ThreadTags.tsx";
 import { ProjectExperts } from "./ProjectExperts.tsx";
 import { ProjectAutomations } from "./ProjectAutomations.tsx";
 import styles from "./MissionControl.module.css";
+import { plural } from "../../lib/format.ts";
 
 type ProjectDialog = "rename" | "archive" | null;
 
@@ -81,7 +82,7 @@ export function ProjectCard({ project }: { project: Project }) {
       <div className={styles.counts}>
         {totals.threads > 0 ? (
           <span>
-            {totals.threads} {totals.threads === 1 ? "thread" : "threads"}
+            {plural(totals.threads, "thread")}
           </span>
         ) : null}
         {totals.running > 0 ? <Pill tone="running">● {totals.running} running</Pill> : null}

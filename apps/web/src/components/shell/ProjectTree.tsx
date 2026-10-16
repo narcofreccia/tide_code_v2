@@ -7,7 +7,7 @@ import { useTicker } from "../mission/useTicker.ts";
 import { Button } from "../ui/Button.tsx";
 import { ContextMenu, type MenuPosition } from "../ui/Menu.tsx";
 import { NewThreadPopover } from "./NewThreadPopover.tsx";
-import { ExpertsGroup, sessionThreadIds } from "./ExpertsGroup.tsx";
+import { ExpertsExplainer, ExpertsGroup, sessionThreadIds } from "./ExpertsGroup.tsx";
 import { RailThreadRow, parentOf } from "./RailThreadRow.tsx";
 import { projectMenu } from "./railMenus.ts";
 import styles from "./ProjectTree.module.css";
@@ -142,6 +142,7 @@ function ProjectNode({ project }: { project: Project }) {
               + Experts
             </Button>
           </div>
+          <ExpertsExplainer projectId={project.id} />
         </>
       ) : null}
     </li>

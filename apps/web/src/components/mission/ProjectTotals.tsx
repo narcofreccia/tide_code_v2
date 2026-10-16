@@ -2,6 +2,7 @@ import { selectCostRollup, selectProjects, selectProjectTotals, type ProjectTota
 import { useModel } from "../../state/model.ts";
 import { CostSummary } from "./CostSummary.tsx";
 import styles from "./MissionControl.module.css";
+import { plural } from "../../lib/format.ts";
 
 /** Folds per-project counts into one; context is the max, never a sum. Cost is recomputed, not folded. */
 function foldCounts(parts: Totals[]): Pick<Totals, "threads" | "running" | "needsYou" | "maxContextPercent"> {
@@ -31,7 +32,7 @@ function Values({
     <>
       <span className={styles.totalsValue}>{counts.running} running</span>
       <span className={styles.totalsValue}>{counts.needsYou} needs you</span>
-      <span className={styles.totalsValue}>{counts.threads} threads</span>
+      <span className={styles.totalsValue}>{plural(counts.threads, "thread")}</span>
       <span className={styles.totalsValue}>
         {counts.maxContextPercent === undefined ? "ctx —" : `max ctx ${counts.maxContextPercent}%`}
       </span>

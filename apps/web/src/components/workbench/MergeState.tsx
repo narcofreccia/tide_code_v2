@@ -4,6 +4,7 @@ import { mergeThread } from "../../lib/threadActions.ts";
 import { openFileTab } from "../../state/workbench.ts";
 import { Button } from "../ui/Button.tsx";
 import styles from "./MergeAction.module.css";
+import { plural } from "../../lib/format.ts";
 
 /**
  * What the last `thread.merge` is doing: a spinner while it runs; the
@@ -55,7 +56,7 @@ export function MergeState({ thread, running }: { thread: Thread; running: boole
       <section className={styles.state} data-status="conflicted" aria-label="Merge conflicts">
         <div className={styles.stateHead}>
           <span className={`${styles.stateTitle} ${styles.conflicted}`}>
-            ⚠ Merge conflicted{files.length > 0 ? ` in ${files.length} file${files.length === 1 ? "" : "s"}` : ""}
+            ⚠ Merge conflicted{files.length > 0 ? ` in ${plural(files.length, "file")}` : ""}
           </span>
           {retry}
         </div>

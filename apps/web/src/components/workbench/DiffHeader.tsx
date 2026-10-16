@@ -13,6 +13,7 @@ import { ALL_CHANGES, ensureStatus, type TurnSelection } from "../../state/vcs.t
 import { useUi } from "../../state/ui.ts";
 import { openFileTab } from "../../state/workbench.ts";
 import { firstChangedLine } from "../../lib/diff.ts";
+import { diffTotals } from "../../lib/diffStats.ts";
 import { TurnSelector } from "./TurnSelector.tsx";
 import styles from "./DiffHeader.module.css";
 
@@ -185,10 +186,7 @@ export function DiffHeader({
     onRefresh();
     ensureStatus(thread.id, true);
   };
-  const total = (diff?.files ?? []).reduce(
-    (acc, f) => ({ additions: acc.additions + f.additions, deletions: acc.deletions + f.deletions }),
-    { additions: 0, deletions: 0 },
-  );
+  const total = diffTotals(selection === ALL_CHANGES ? undefined : selectedTurn, diff);
 
   return (
     <div className={styles.header}>
@@ -199,7 +197,7 @@ export function DiffHeader({
         selection={selection}
         onSelect={onSelect}
       />
-      {diff ? (
+      {total ? (
         <span className={styles.stats}>
           <span className={styles.add}>+{total.additions}</span>{" "}
           <span className={styles.del}>−{total.deletions}</span>

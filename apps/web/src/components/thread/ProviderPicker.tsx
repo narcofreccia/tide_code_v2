@@ -2,13 +2,15 @@ import { useState } from "react";
 import type { ProviderKind, ProviderStatusDto, RuntimeMode } from "@tide/contracts";
 import {
   defaultModelOf,
+  modelChoiceValue,
+  modelChoices,
   providerStatus,
   unavailableReason,
   useProviderRoster,
   useProviders,
 } from "../../state/providers.ts";
 import { providerDefault, worktreeByDefault } from "../../state/serverSettings.ts";
-import { DEFAULT_MODEL_LABEL, PROVIDERS, PROVIDER_LABELS, defaultModelHint } from "../../lib/vocab.ts";
+import { PROVIDERS, PROVIDER_LABELS } from "../../lib/vocab.ts";
 import { Checkbox } from "../ui/Choice.tsx";
 import { Select, type SelectOption } from "../ui/Select.tsx";
 import styles from "./ProviderPicker.module.css";
@@ -76,10 +78,7 @@ export function HarnessFields({
     };
   });
   const models = providerStatus(providers, provider)?.models ?? [];
-  const modelOptions: SelectOption<string>[] = [
-    { value: "", label: DEFAULT_MODEL_LABEL, description: defaultModelHint(provider) },
-    ...models.map((m) => ({ value: m.id, label: m.label })),
-  ];
+  const modelOptions: SelectOption<string>[] = modelChoices(models, provider);
 
   return (
     <>
@@ -98,7 +97,7 @@ export function HarnessFields({
         <span className={styles.label}>Model</span>
         <Select
           label={`${name} model`}
-          value={model}
+          value={modelChoiceValue(models, model)}
           options={modelOptions}
           onSelect={(next) => onChange({ model: next })}
           variant="field"

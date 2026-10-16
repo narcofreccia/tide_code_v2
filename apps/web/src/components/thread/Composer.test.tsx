@@ -46,6 +46,29 @@ describe("Composer", () => {
     expect(fake.dispatch).toHaveBeenCalledWith({ type: "turn.interrupt", threadId: "t1" });
   });
 
+  it("shows one Stop with Esc inside it and a single steer/queue hint while running", () => {
+    attachFakeStore(modelWith({}));
+    setProvidersForTest(PROVIDER_FIXTURE);
+    render(<Composer thread={makeThread("t1", { status: "running" })} />);
+    const stops = screen.getAllByRole("button", { name: /Stop/ });
+    expect(stops).toHaveLength(1);
+    expect(stops[0]?.querySelector("kbd")?.textContent).toBe("Esc");
+    expect(screen.queryByText("stop")).toBeNull();
+    expect(screen.getByRole("group", { name: "Follow-up mode" })).toBeDefined();
+    // the settings pills sit on their own row, apart from the send controls
+    const pills = screen.getByRole("combobox", { name: "Model" });
+    expect(pills.closest("[class*='settings']")).not.toBeNull();
+    expect(stops[0]?.closest("[class*='settings']")).toBeNull();
+  });
+
+  it("hides Stop and the follow-up toggle when idle", () => {
+    attachFakeStore(modelWith({}));
+    render(<Composer thread={makeThread("t1")} />);
+    expect(screen.queryByRole("button", { name: /Stop/ })).toBeNull();
+    expect(screen.queryByRole("group", { name: "Follow-up mode" })).toBeNull();
+    expect(screen.getByText("send")).toBeDefined();
+  });
+
   it("interrupts on Esc while running", () => {
     const fake = attachFakeStore(modelWith({}));
     render(<Composer thread={makeThread("t1", { status: "running" })} />);

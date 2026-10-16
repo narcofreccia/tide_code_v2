@@ -43,7 +43,9 @@
 .time { color: var(--muted); font-size: 11px; font-variant-numeric: tabular-nums; }
 /* the one trailing slot: time or PR/merge state, swapped for ⋯ while the row is hovered */
 .meta { flex: none; display: inline-flex; align-items: center; gap: var(--sp-1); }
-.threadRow .meta { padding-right: var(--sp-1); }
+.threadRow .meta { padding-right: var(--sp-1); margin-left: auto; }
+/* thread rows: the title hugs its text so the pin mark sits right after it */
+.threadRow .threadTitle { flex: 0 1 auto; }
 .threadRow:hover .meta,
 .threadRow:focus-within .meta { visibility: hidden; }
 .threadRow .more { position: absolute; right: var(--sp-1); top: 4px; margin: 0; }
@@ -72,6 +74,8 @@
   color: var(--text-2);
 }
 .roleGlyph { color: var(--muted); font-size: 11px; }
+/* after the title, so the status slot before it stays a status */
+.pinMark { flex: none; font-size: 9px; opacity: 0.7; }
 .needsYou { color: var(--st-needs); }
 /* a row holds the main button and the hover ⋯ */
 .row { position: relative; display: flex; align-items: center; min-width: 0; border-left: 2px solid transparent; }

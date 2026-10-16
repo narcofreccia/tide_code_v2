@@ -66,6 +66,14 @@ describe("project totals", () => {
     expect(row).not.toContain("Other");
   });
 
+  it("says 1 thread, not 1 threads", () => {
+    attachFakeStore(fixture());
+    render(<ProjectTotals projectId="p2" />);
+    const row = screen.getByLabelText("Project totals").textContent ?? "";
+    expect(row).toContain("1 thread");
+    expect(row).not.toContain("1 threads");
+  });
+
   it("shows one strip per project when none is selected", () => {
     attachFakeStore(fixture());
     render(<ProjectTotals />);

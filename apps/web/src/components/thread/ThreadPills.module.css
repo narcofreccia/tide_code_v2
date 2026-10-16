@@ -1,7 +1,7 @@
 .pills { display: flex; flex-wrap: wrap; align-items: center; gap: var(--sp-1) var(--sp-3); min-width: 0; }
 .slot { display: inline-flex; align-items: center; gap: var(--sp-1); min-width: 0; }
 .caption { color: var(--muted); font-size: 11px; white-space: nowrap; }
-.control { min-width: 96px; max-width: 220px; }
+.control { min-width: 112px; max-width: 260px; flex-shrink: 0; }
 .segmented {
   display: inline-flex;
   border: 1px solid var(--border-strong);

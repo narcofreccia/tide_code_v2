@@ -41,6 +41,17 @@ function setup(tasks: ScheduledTask[]) {
 }
 
 describe("Settings › Automations", () => {
+  it("words the empty state for the scope", () => {
+    setup([]);
+    expect(screen.getByText("No automations for this project.")).toBeDefined();
+    cleanup();
+    useUi.setState({ selectedProjectId: null });
+    attachFakeStore(modelWith({ projects: { p1: project } }));
+    render(<AutomationsSection />);
+    expect(screen.queryByText(/for this project/)).toBeNull();
+    expect(screen.getByText("No automations in Tide yet.")).toBeDefined();
+  });
+
   it("renders schedule words, target, next run and runs", () => {
     setup([
       task("a", { nextRunAt: Date.now() + 3 * 3600_000, provider: "codex" }),

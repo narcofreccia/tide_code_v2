@@ -3,7 +3,7 @@ import type { Thread } from "@tide/contracts";
 import { updateThread } from "../../lib/threadActions.ts";
 import { isThreadMerged } from "@tide/client";
 import { relativeTime } from "../../lib/relativeTime.ts";
-import { PROVIDER_LABELS, threadStateKey } from "../../lib/vocab.ts";
+import { PROVIDER_LABELS, PROVIDER_MONOGRAMS, threadStateKey } from "../../lib/vocab.ts";
 import { useModel } from "../../state/model.ts";
 import { useUi } from "../../state/ui.ts";
 import { ContextMenu, type MenuItem, type MenuPosition } from "../ui/Menu.tsx";
@@ -68,7 +68,10 @@ export function RailThreadRow({ thread, siblings }: { thread: Thread; siblings: 
   const state = threadStateKey(thread);
   const loud = state === "needs" || state === "running";
   const hasVcs = thread.pr !== undefined || thread.merge !== undefined || isThreadMerged(thread);
-  const tip = [PROVIDER_LABELS[thread.provider], thread.worktreePath === undefined ? undefined : `worktree ${thread.worktreePath}`]
+  const tip = [
+    `${PROVIDER_MONOGRAMS[thread.provider]} · ${PROVIDER_LABELS[thread.provider]}`,
+    thread.worktreePath === undefined ? undefined : `worktree ${thread.worktreePath}`,
+  ]
     .filter(Boolean)
     .join(" · ");
 
@@ -107,12 +110,12 @@ export function RailThreadRow({ thread, siblings }: { thread: Thread; siblings: 
                 ⛓
               </span>
             ) : null}
+            <span className={`${styles.threadTitle} ${loud ? styles.loud : ""}`}>{thread.title}</span>
             {thread.pinned && !archived ? (
-              <span className={styles.roleGlyph} title="pinned" aria-label="pinned" role="img">
-                ⊙
+              <span className={styles.pinMark} title="Pinned" aria-label="pinned" role="img">
+                📌
               </span>
             ) : null}
-            <span className={`${styles.threadTitle} ${loud ? styles.loud : ""}`}>{thread.title}</span>
             {thread.delegateRole ? (
               <span className={styles.roleTag} title={`Role: ${thread.delegateRole}`}>
                 {truncateRole(thread.delegateRole)}

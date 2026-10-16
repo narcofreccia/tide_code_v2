@@ -1,7 +1,7 @@
 import { useEffect, useRef, useState } from "react";
 import { createPortal } from "react-dom";
 import { Button } from "./Button.tsx";
-import { useAnchoredPanel } from "./useAnchoredPanel.ts";
+import { LAYER_ATTR, useAnchoredPanel } from "./useAnchoredPanel.ts";
 import styles from "./Popover.module.css";
 
 /**
@@ -34,6 +34,8 @@ export function Popover({
     const onDown = (e: MouseEvent): void => {
       const target = e.target as Node;
       if (anchor.current?.contains(target) || panel.current?.contains(target)) return;
+      // a Select listbox or menu opened from inside the panel lives in its own portal
+      if (target instanceof Element && target.closest(`[${LAYER_ATTR}]`)) return;
       setOpen(false);
     };
     const onKey = (e: KeyboardEvent): void => {
@@ -64,7 +66,7 @@ export function Popover({
       </Button>
       {open
         ? createPortal(
-            <div ref={panel} className={styles.panel} style={style} role="dialog">
+            <div ref={panel} className={styles.panel} style={style} role="dialog" data-tide-layer="">
               {children(() => setOpen(false))}
             </div>,
             document.body,

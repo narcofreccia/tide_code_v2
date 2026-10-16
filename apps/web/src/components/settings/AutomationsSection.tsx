@@ -13,6 +13,7 @@ import { ConfirmDialog } from "../ui/Dialog.tsx";
 import { TaskDialog } from "./TaskDialog.tsx";
 import styles from "./Automations.module.css";
 import section from "./Section.module.css";
+import { plural } from "../../lib/format.ts";
 
 type Editing = { task?: ScheduledTask; projectId: string } | null;
 
@@ -53,10 +54,17 @@ function TaskRow({
         ) : (
           <span>{last}</span>
         )}
-        <span>{task.runs} runs</span>
+        <span>{plural(task.runs, "run")}</span>
       </div>
     </li>
   );
+}
+
+/** Empty-state wording that matches the scope the top bar's switcher set. */
+function emptyText(scoped: boolean, grouped: boolean, title: string): string {
+  if (scoped) return "No automations for this project.";
+  if (grouped) return "No automations.";
+  return `No automations in ${title} yet.`;
 }
 
 /** Settings › Automations: scheduled prompts for the selected project (or every project). */
@@ -98,7 +106,7 @@ export function AutomationsSection() {
               </div>
             ) : null}
             {tasks.length === 0 ? (
-              <p className={section.note}>No automations{grouped ? "" : " for this project"}.</p>
+              <p className={section.note}>{emptyText(selectedProjectId !== null, grouped, project.title)}</p>
             ) : (
               <ul className={section.rows}>
                 {tasks.map((task) => (

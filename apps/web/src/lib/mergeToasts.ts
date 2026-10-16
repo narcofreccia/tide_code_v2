@@ -2,6 +2,7 @@ import { useEffect } from "react";
 import type { MergeState, ReadModel } from "@tide/contracts";
 import { useModel } from "../state/model.ts";
 import { showToast } from "../state/toast.ts";
+import { plural } from "./format.ts";
 
 type Seen = Map<string, MergeState | undefined>;
 
@@ -27,7 +28,7 @@ export function mergeOutcomeToasts(seen: Seen, model: ReadModel): string[] {
     if (after.status === "merged") out.push(`Merged ${thread.title}${thread.baseBranch ? ` into ${thread.baseBranch}` : ""}`);
     else if (after.status === "conflicted") {
       const n = after.files?.length ?? 0;
-      out.push(`Merge conflicted: ${thread.title}${n > 0 ? ` (${n} file${n === 1 ? "" : "s"})` : ""}`);
+      out.push(`Merge conflicted: ${thread.title}${n > 0 ? ` (${plural(n, "file")})` : ""}`);
     } else out.push(`Merge failed: ${thread.title}${after.error ? ` — ${after.error}` : ""}`);
   }
   return out;

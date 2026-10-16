@@ -155,6 +155,7 @@ export function Select<T extends string>({
     }
     if (e.key === "ArrowDown" || e.key === "ArrowUp") {
       e.preventDefault();
+      e.stopPropagation();
       setActive((i) => step(visible, i, e.key === "ArrowDown" ? 1 : -1));
       return;
     }
@@ -165,6 +166,7 @@ export function Select<T extends string>({
     }
     if (e.key === "Enter" || (e.key === " " && !withFilter)) {
       e.preventDefault();
+      e.stopPropagation();
       commit(visible[active]);
       return;
     }
@@ -258,6 +260,7 @@ export function Select<T extends string>({
               style={panelStyle}
               tabIndex={-1}
               onKeyDown={onKeyDown}
+              data-tide-layer=""
             >
               {withFilter ? (
                 <input

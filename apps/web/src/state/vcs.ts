@@ -4,6 +4,7 @@ import { selectCheckpointTurns, selectThreadTurns } from "@tide/client";
 import type { DiffResult, ReadModel, VcsStatus } from "@tide/contracts";
 import { call, useModel } from "./model.ts";
 import { showToast } from "./toast.ts";
+import { diffTotals, type DiffTotals } from "../lib/diffStats.ts";
 
 /** `"all"` means the whole-thread diff (`vcs.threadDiff`). */
 export type TurnSelection = string;
@@ -188,21 +189,12 @@ export function useVcsStatus(threadId: string | undefined): StatusQuery {
 }
 
 /** `+n −m` for the turn the Changes tab is showing; read-only, never fetches. */
-export function useSelectedDiffStats(threadId: string | undefined): { additions: number; deletions: number; files: number } | undefined {
+export function useSelectedDiffStats(threadId: string | undefined): DiffTotals | undefined {
   const explicit = useVcs((s) => (threadId ? s.selection[threadId] : undefined));
   const model = useModel((s) => s.model);
   const selection = threadId ? resolveSelection(model, threadId, explicit) : undefined;
   const entry = useVcs((s) => (threadId && selection ? s.diffs[diffKey(threadId, selection)] : undefined));
-  if (entry?.data) {
-    let additions = 0;
-    let deletions = 0;
-    for (const file of entry.data.files) {
-      additions += file.additions;
-      deletions += file.deletions;
-    }
-    return { additions, deletions, files: entry.data.files.length };
-  }
-  if (!threadId || selection === undefined || selection === ALL_CHANGES) return undefined;
-  const stats = model.turns[selection]?.checkpoint?.stats;
-  return stats ? { additions: stats.additions, deletions: stats.deletions, files: stats.files } : undefined;
+  if (!threadId || selection === undefined) return undefined;
+  const turn = selection === ALL_CHANGES ? undefined : model.turns[selection];
+  return diffTotals(turn, entry?.data);
 }

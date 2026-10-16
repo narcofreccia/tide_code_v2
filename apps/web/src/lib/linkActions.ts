@@ -2,6 +2,7 @@ import type { LinkAccess } from "@tide/contracts";
 import { call, dispatch } from "../state/model.ts";
 import { showToast } from "../state/toast.ts";
 import { invalidateThread } from "../state/vcs.ts";
+import { plural } from "./format.ts";
 
 /** The fields the links editor collects for one linked repository. */
 export interface LinkDraft {
@@ -71,7 +72,7 @@ export async function revertLinkedChanges(threadId: string, linkId: string, file
     });
     invalidateThread(threadId);
     const count = result.reverted.length;
-    showToast(`Reverted ${count} file${count === 1 ? "" : "s"} in the linked repository`);
+    showToast(`Reverted ${plural(count, "file")} in the linked repository`);
   } catch (error) {
     report("Reverting linked changes", error);
   }

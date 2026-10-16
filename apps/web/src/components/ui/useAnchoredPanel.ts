@@ -16,6 +16,13 @@ export interface AnchoredPanelOptions {
   point?: AnchorPoint | undefined;
 }
 
+/**
+ * Marks a portalled floating layer (Select listbox, menu, popover panel). An
+ * outside-click handler treats a mousedown inside any such layer as "inside",
+ * so picking a Select option never closes the popover that hosts the Select.
+ */
+export const LAYER_ATTR = "data-tide-layer";
+
 /** Keeps popovers off the very edge of the window. */
 const MARGIN = 8;
 const HIDDEN: CSSProperties = { position: "fixed", top: 0, left: 0, visibility: "hidden" };

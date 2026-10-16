@@ -53,6 +53,8 @@ describe("fork dialog", () => {
     replyWithEvents(fake, [{ type: "thread.created", thread: makeThread("t2", { title: "Router (fork)" }) } as never]);
     const dialog = screen.getByRole("dialog");
     expect((within(dialog).getByLabelText("Fork title") as HTMLInputElement).value).toBe("Router (fork)");
+    // same caption style as Agent / Model
+    expect(within(dialog).getByText("Title").className).toBe(within(dialog).getByText("Agent").className);
     expect((within(dialog).getByLabelText("Use a worktree") as HTMLInputElement).checked).toBe(true);
     fireEvent.click(within(dialog).getByText("Fork"));
     expect(fake.dispatch).toHaveBeenCalledWith(

@@ -7,6 +7,7 @@ import { Button } from "../ui/Button.tsx";
 import { Pill } from "../ui/Pill.tsx";
 import styles from "./ProjectTree.module.css";
 import own from "./ExpertsGroup.module.css";
+import { plural } from "../../lib/format.ts";
 
 /** The session's own threads: the lead first, then the panel in roster order. */
 export function sessionThreadIds(session: ExpertsSession): string[] {
@@ -20,6 +21,27 @@ export function sessionThreadIds(session: ExpertsSession): string[] {
 function needsYou(session: ExpertsSession, threads: Map<string, Thread>): boolean {
   const lead = session.lead.threadId ? threads.get(session.lead.threadId) : undefined;
   return lead?.attention === "plan";
+}
+
+/**
+ * What Experts is, for a project that has never run a session. It sits below the
+ * thread list and its "+ thread · + Experts" links, never between project and threads.
+ */
+export function ExpertsExplainer({ projectId }: { projectId: string }) {
+  const hasSessions = useModel((s) => selectExpertsSessions(s.model, projectId).length > 0);
+  const setNewExpertsProject = useUi((s) => s.setNewExpertsProject);
+  if (hasSessions) return null;
+  return (
+    <div className={styles.experts} aria-label="About Experts">
+      <span className={styles.groupHeading}>Experts</span>
+      <p className={own.emptyHint}>
+        Several agents explore a question, discuss, and propose one plan.{" "}
+        <Button variant="link" onClick={() => setNewExpertsProject(projectId)}>
+          Start an Experts session
+        </Button>
+      </p>
+    </div>
+  );
 }
 
 /**
@@ -40,20 +62,7 @@ export function ExpertsGroup({
   const selectedExpertsSessionId = useUi((s) => s.selectedExpertsSessionId);
   const view = useUi((s) => s.view);
   const selectExpertsSession = useUi((s) => s.selectExpertsSession);
-  const setNewExpertsProject = useUi((s) => s.setNewExpertsProject);
-  if (sessions.length === 0) {
-    return (
-      <div className={styles.experts}>
-        <span className={styles.groupHeading}>Experts</span>
-        <p className={own.emptyHint}>
-          Several agents explore a question, discuss, and propose one plan.{" "}
-          <Button variant="link" onClick={() => setNewExpertsProject(projectId)}>
-            Start an Experts session
-          </Button>
-        </p>
-      </div>
-    );
-  }
+  if (sessions.length === 0) return null;
   const byId = new Map(threads.map((t) => [t.id, t]));
 
   return (
@@ -81,7 +90,7 @@ export function ExpertsGroup({
                 </span>
               ) : null}
               <Pill>{PHASE_LABELS[session.phase]}</Pill>
-              <span className={styles.provider}>{session.experts.length} experts</span>
+              <span className={styles.provider}>{plural(session.experts.length, "expert")}</span>
             </button>
             <ul className={styles.threads}>
               {sessionThreadIds(session)

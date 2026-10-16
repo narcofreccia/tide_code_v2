@@ -2,7 +2,7 @@ import { useEffect } from "react";
 import { create } from "zustand";
 import type { ProviderKind, ProviderStatusDto } from "@tide/contracts";
 import { call } from "./model.ts";
-import { PROVIDERS } from "../lib/vocab.ts";
+import { DEFAULT_MODEL_LABEL, PROVIDERS, defaultModelHint, harnessDefaultHint } from "../lib/vocab.ts";
 
 interface ProvidersState {
   providers: ProviderStatusDto[];
@@ -83,10 +83,39 @@ export function providerStatus(
   return providers.find((p) => p.kind === kind);
 }
 
-/** The harness's own default model id, else its first. */
+/**
+ * The model the harness marks as its default. Undefined when it names none: the
+ * thread then sends no model and the harness picks ("Default model" entry).
+ */
 export function defaultModelOf(providers: ProviderStatusDto[], kind: ProviderKind): string | undefined {
-  const models = providerStatus(providers, kind)?.models ?? [];
-  return (models.find((m) => m.default) ?? models[0])?.id;
+  return providerStatus(providers, kind)?.models.find((m) => m.default)?.id;
+}
+
+export interface ModelChoice {
+  value: string;
+  label: string;
+  description?: string;
+}
+
+/**
+ * The model list a picker offers. When the harness marks one of its models as
+ * the default, that entry carries the "default" hint and stands for "no explicit
+ * model"; only a harness that names no default gets the synthetic entry.
+ */
+export function modelChoices(models: ProviderStatusDto["models"], kind: ProviderKind): ModelChoice[] {
+  const listed = models.map((m) => ({
+    value: m.id,
+    label: m.label,
+    ...(m.default ? { description: harnessDefaultHint(kind) } : {}),
+  }));
+  if (models.some((m) => m.default)) return listed;
+  return [{ value: "", label: DEFAULT_MODEL_LABEL, description: defaultModelHint(kind) }, ...listed];
+}
+
+/** The picker value for a stored model: unset shows as the harness's own default entry. */
+export function modelChoiceValue(models: ProviderStatusDto["models"], model: string | undefined): string {
+  if (model !== undefined && model !== "") return model;
+  return models.find((m) => m.default)?.id ?? "";
 }
 
 /** Why a provider cannot be used, if it cannot. */

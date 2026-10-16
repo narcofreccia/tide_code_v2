@@ -1,7 +1,8 @@
 import { Fragment, useEffect, useRef, useState } from "react";
-import { groupActivities, selectTimeline, type TimelineItem } from "@tide/client";
+import { groupActivities, selectThreadTurns, selectTimeline, type TimelineItem } from "@tide/client";
 import type { Activity, ActivityOf, ProviderKind, ReadModel, TurnStatus } from "@tide/contracts";
 import { useModel } from "../../state/model.ts";
+import { orderByTurn, queuedTurnIds } from "../../lib/streamOrder.ts";
 import { ActivityGroup } from "./ActivityGroup.tsx";
 import { ActivityRow } from "./ActivityRow.tsx";
 import { ApprovalCard } from "./ApprovalCard.tsx";
@@ -77,7 +78,9 @@ function lastPendingApprovalId(entries: TimelineItem[]): string | undefined {
 
 export function Stream({ threadId, provider }: { threadId: string; provider: ProviderKind }) {
   const model = useModel((s) => s.model);
-  const entries = selectTimeline(model, threadId);
+  const turns = selectThreadTurns(model, threadId);
+  const entries = orderByTurn(selectTimeline(model, threadId), turns);
+  const queuedTurns = queuedTurnIds(turns);
   const split = splitChildren(entries);
   const { entries: top, groups } = collapsePassThrough(split.top);
   const nested = split.nested;
@@ -135,6 +138,7 @@ export function Stream({ threadId, provider }: { threadId: string; provider: Pro
                   message={node.message}
                   {...(turn === undefined ? {} : { turn })}
                   {...(metaIds.has(node.message.id) ? { showMeta: true } : {})}
+                  {...(queuedTurns.has(node.message.turnId) ? { wasQueued: true } : {})}
                 />
               </Fragment>
             );

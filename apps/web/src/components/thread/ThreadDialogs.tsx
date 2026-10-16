@@ -7,6 +7,7 @@ import { Checkbox, Radio } from "../ui/Choice.tsx";
 import { ConfirmDialog } from "../ui/Dialog.tsx";
 import { ForkDialog, RollbackDialog } from "./TurnDialogs.tsx";
 import styles from "./ThreadDialogs.module.css";
+import { plural } from "../../lib/format.ts";
 
 /** Uncommitted changes in the thread's worktree, once `vcs.status` answers; undefined until then or on error. */
 function useDirtyCount(threadId: string): number | undefined {
@@ -55,7 +56,7 @@ export function ArchiveThreadDialog({ thread, onClose }: { thread: Thread; onClo
           </Radio>
           {dirty !== undefined && dirty > 0 ? (
             <span className={styles.warning} role="alert">
-              {dirty} uncommitted {dirty === 1 ? "change" : "changes"} will be lost
+              {plural(dirty, "uncommitted change")} will be lost
             </span>
           ) : null}
           <Radio

@@ -2,7 +2,7 @@ import { selectProjects } from "@tide/client";
 import { openPalette } from "../../lib/commands.ts";
 import { useModel } from "../../state/model.ts";
 import { useUi } from "../../state/ui.ts";
-import { useSelectedThread } from "../../state/hooks.ts";
+import { useViewHeading } from "../../state/hooks.ts";
 import { Button } from "../ui/Button.tsx";
 import { Kbd } from "../ui/Kbd.tsx";
 import { Select, type SelectOption } from "../ui/Select.tsx";
@@ -16,7 +16,7 @@ export function TopBar() {
   const selectProject = useUi((s) => s.selectProject);
   const showMission = useUi((s) => s.showMission);
   const selectThread = useUi((s) => s.selectThread);
-  const thread = useSelectedThread();
+  const heading = useViewHeading();
 
   const projectOptions: SelectOption<string>[] = [
     { value: "", label: "All projects" },
@@ -44,7 +44,7 @@ export function TopBar() {
         <Kbd>⌘K</Kbd>
       </Button>
 
-      {thread ? null : (
+      {heading.kind === "thread" ? null : (
         <Select
           className={styles.switcher}
           label="Project switcher"
@@ -58,14 +58,14 @@ export function TopBar() {
         />
       )}
 
-      {thread ? (
+      {heading.kind === "thread" ? (
         <nav className={styles.crumb} aria-label="Breadcrumb">
-          <span className={styles.crumbProject}>{model.projects[thread.projectId]?.title ?? "—"}</span>
+          <span className={styles.crumbProject}>{heading.projectTitle}</span>
           <span aria-hidden="true">›</span>
-          <span className={styles.crumbThread}>{thread.title}</span>
+          <span className={styles.crumbThread}>{heading.thread.title}</span>
         </nav>
       ) : (
-        <span className={styles.idle}>Mission Control</span>
+        <span className={styles.idle}>{heading.label}</span>
       )}
 
     </header>

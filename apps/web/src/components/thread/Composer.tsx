@@ -248,11 +248,13 @@ export function Composer({ thread }: { thread: Thread }) {
         }}
         onKeyDown={onKeyDown}
       />
-      <div className={styles.actions}>
+      <div className={styles.settings}>
         <ThreadPills thread={thread} />
         <ThreadLinkChips threadId={thread.id} />
+      </div>
+      <div className={styles.actions}>
+        {running ? <FollowUpToggle followUp={followUp} provider={thread.provider} /> : null}
         <span className={styles.hint}>
-          {running ? <FollowUpToggle followUp={followUp} provider={thread.provider} /> : null}
           {interrupting ? (
             <span className={styles.interrupting}>interrupting…</span>
           ) : (
@@ -264,23 +266,25 @@ export function Composer({ thread }: { thread: Thread }) {
                   <Kbd>⌥↵</Kbd> {followUp.alternate}
                 </>
               ) : null}
-              {running ? (
-                <>
-                  {" · "}
-                  <Kbd>Esc</Kbd> stop
-                </>
-              ) : null}
             </>
           )}
         </span>
-        {running ? (
-          <Button variant="quietDanger" disabled={interrupting} onClick={() => interruptTurn(thread.id)}>
-            Stop
+        <span className={styles.buttons}>
+          {running ? (
+            <Button
+              variant="quietDanger"
+              disabled={interrupting}
+              title="Stop the running turn (Esc)"
+              onClick={() => interruptTurn(thread.id)}
+            >
+              <span>Stop</span>
+              <Kbd>Esc</Kbd>
+            </Button>
+          ) : null}
+          <Button variant="primary" onClick={() => send()} disabled={busy || nothingToSend}>
+            {primaryLabel}
           </Button>
-        ) : null}
-        <Button variant="primary" onClick={() => send()} disabled={busy || nothingToSend}>
-          {primaryLabel}
-        </Button>
+        </span>
       </div>
       <ProviderSwitchHint thread={thread} />
     </div>

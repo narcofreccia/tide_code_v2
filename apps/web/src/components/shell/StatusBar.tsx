@@ -1,6 +1,6 @@
 import type { Thread } from "@tide/contracts";
 import { useModel } from "../../state/model.ts";
-import { useSelectedThread } from "../../state/hooks.ts";
+import { useShownThread } from "../../state/hooks.ts";
 import { contextTitle } from "../../lib/glassBox.ts";
 import { resolveServerUrl } from "../../lib/bootstrap.ts";
 import { threadStateLabel } from "../../lib/vocab.ts";
@@ -82,7 +82,7 @@ function serverHost(): string {
 export function StatusBar() {
   const status = useModel((s) => s.status);
   const lastError = useModel((s) => s.lastError);
-  const thread = useSelectedThread();
+  const thread = useShownThread();
 
   return (
     <footer className={styles.bar}>

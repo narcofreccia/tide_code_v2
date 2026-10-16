@@ -72,6 +72,7 @@ export function ContextMenu({
       role="menu"
       aria-label={label}
       style={style}
+      data-tide-layer=""
       onKeyDown={(e) => {
         if (e.key === "ArrowDown") setFocused((v) => Math.min(enabled.length - 1, v + 1));
         else if (e.key === "ArrowUp") setFocused((v) => Math.max(0, v - 1));
