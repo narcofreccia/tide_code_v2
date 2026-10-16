@@ -34,7 +34,7 @@ describe("Mission Control empty state", () => {
     providers(false);
     attachFakeStore(modelWith({}));
     const { container } = render(<MissionControl />);
-    expect(container.querySelector("svg")?.getAttribute("width")).toBe("40");
+    expect(container.querySelector("svg")?.getAttribute("height")).toBe("40");
     expect(screen.getByText("Tide")).toBeDefined();
     expect(screen.getByText("Threads on any coding harness, each on its own worktree.")).toBeDefined();
 

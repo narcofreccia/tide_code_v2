@@ -11,23 +11,24 @@ afterEach(() => {
 });
 
 describe("Logo", () => {
-  it("draws the mark at the asked size, taking the surrounding colour", () => {
+  it("draws the mark and the word at the asked height, text taking the surrounding colour", () => {
     const { container } = render(<Logo size={40} className="x" />);
     const svg = container.querySelector("svg") as SVGSVGElement;
-    expect(svg.getAttribute("width")).toBe("40");
     expect(svg.getAttribute("height")).toBe("40");
+    expect(Number(svg.getAttribute("width"))).toBeGreaterThan(40);
     expect(svg.getAttribute("class")).toBe("x");
-    // braces inherit the text colour; the wave keeps its brand gradient
-    expect([...svg.querySelectorAll("text")].map((t) => t.getAttribute("fill"))).toEqual([
-      "currentColor",
-      "currentColor",
-    ]);
-    expect(svg.querySelector("image")).toBeTruthy();
+    const text = svg.querySelector("text") as SVGTextElement;
+    expect(text.textContent).toBe("code");
+    expect(text.getAttribute("fill")).toBe("currentColor");
+    expect(text.getAttribute("font-weight")).toBe("700");
+    // the mark keeps its brand gradient
+    expect(svg.querySelectorAll("path")).toHaveLength(2);
+    expect(svg.querySelectorAll("linearGradient")).toHaveLength(2);
   });
 
   it("defaults to the 18px top-bar size", () => {
     const { container } = render(<Logo />);
-    expect(container.querySelector("svg")?.getAttribute("width")).toBe("18");
+    expect(container.querySelector("svg")?.getAttribute("height")).toBe("18");
   });
 
   it("goes back to Mission Control from the top bar", () => {
