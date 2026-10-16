@@ -299,14 +299,21 @@ export class Git {
    * branch). Nothing is ever written to any ref here; the caller decides where to point.
    */
   async snapshot(message = "tide checkpoint"): Promise<string> {
+    return this.#withSnapshotTree(async (tree) => {
+      const head = await this.revParse("HEAD");
+      const args = [...TIDE_IDENTITY, "commit-tree", tree, ...(head ? ["-p", head] : []), "-m", message];
+      return (await this.run(args)).trim();
+    });
+  }
+
+  /** Builds the working-tree snapshot tree in a throwaway index (real index untouched) and hands its sha to `fn`. */
+  async #withSnapshotTree<T>(fn: (tree: string) => Promise<T>): Promise<T> {
     const dir = await mkdtemp(join(tmpdir(), "tide-index-"));
     const indexFile = join(dir, "index");
     try {
       await this.run(["add", "-A"], { GIT_INDEX_FILE: indexFile });
       const tree = (await this.run(["write-tree"], { GIT_INDEX_FILE: indexFile })).trim();
-      const head = await this.revParse("HEAD");
-      const args = [...TIDE_IDENTITY, "commit-tree", tree, ...(head ? ["-p", head] : []), "-m", message];
-      return (await this.run(args)).trim();
+      return await fn(tree);
     } finally {
       await rm(dir, { recursive: true, force: true });
     }
@@ -358,9 +365,14 @@ export class Git {
     return isBinary(r.stdout) ? { binary: true, missing: false } : { content: r.stdout.toString("utf8"), binary: false, missing: false };
   }
 
-  /** Structured diff `base` → `head` (`WORKTREE` = working tree incl. untracked files). */
+  /** Structured diff `base` → `head` (`WORKTREE` = snapshot of the working tree incl. untracked, ignore-respecting). */
   async diff(base: string, head: string, options: DiffOptions = {}): Promise<DiffFile[]> {
-    const range = head === WORKTREE ? [base] : [base, head];
+    if (head === WORKTREE) return this.#withSnapshotTree((tree) => this.#diffRefs(base, tree, options));
+    return this.#diffRefs(base, head, options);
+  }
+
+  async #diffRefs(base: string, head: string, options: DiffOptions): Promise<DiffFile[]> {
+    const range = [base, head];
     const numstat = parseNumstat(await this.run(["diff", "--numstat", "-M", "-z", ...range]));
     const nameStatus = parseNameStatus(await this.run(["diff", "--name-status", "-M", "-z", ...range]));
     const entries: RawDiffEntry[] = numstat.map((n) => ({ ...n, status: nameStatus.get(n.path) ?? (n.oldPath !== undefined ? "renamed" : "modified") }));
@@ -369,7 +381,6 @@ export class Git {
     for (const e of entries) {
       files.push(await this.#toDiffFile(e, range, options));
     }
-    if (head === WORKTREE) files.push(...(await this.#untracked(options)));
     files.sort((a, b) => a.path.localeCompare(b.path));
     return files;
   }
@@ -388,30 +399,6 @@ export class Git {
     const patch = await this.tryRun(["diff", "--no-color", "-M", ...range, "--", ...paths]);
     if (patch.code === 0 && patch.stdout !== "") file.patch = capPatch(patch.stdout);
     return file;
-  }
-
-  /** Untracked, non-ignored files rendered as additions against /dev/null. */
-  async #untracked(options: DiffOptions): Promise<DiffFile[]> {
-    const listed = await this.tryRun(["ls-files", "--others", "--exclude-standard", "-z"]);
-    if (listed.code !== 0) return [];
-    const out: DiffFile[] = [];
-    for (const path of listed.stdout.split("\0").filter((p) => p !== "")) {
-      const stat = await this.tryRun(["diff", "--no-index", "--numstat", "-z", "--", "/dev/null", path]);
-      const parsed = parseNumstat(stat.stdout)[0];
-      const file: DiffFile = {
-        path,
-        status: "added",
-        additions: parsed?.additions ?? 0,
-        deletions: 0,
-        ...(parsed?.binary === true ? { binary: true } : {}),
-      };
-      if (options.stat !== true && parsed?.binary !== true) {
-        const patch = await this.tryRun(["diff", "--no-color", "--no-index", "--", "/dev/null", path]);
-        if (patch.stdout !== "") file.patch = capPatch(patch.stdout.replace(/^(--- |\+\+\+ )a?\/dev\/null$/m, "--- /dev/null"));
-      }
-      out.push(file);
-    }
-    return out;
   }
 }
 

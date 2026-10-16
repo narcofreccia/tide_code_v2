@@ -98,6 +98,57 @@ describe("CheckpointService — diffs", () => {
     expect(settled.files[0]).toMatchObject({ path: "a.txt", additions: 1, deletions: 0 });
   });
 
+  describe("live diff with untracked files in the checkpoint", () => {
+    async function setup() {
+      const r = await repo();
+      const cp = service();
+      await r.write(".gitignore", "ignored.log\n");
+      await r.write("keep.txt", "keep\n");
+      await r.write("old-name.txt", "the quick brown fox\njumps over\nthe lazy dog\nagain and again\n");
+      await r.commit("base");
+      await r.write("hello.md", "hi\n");
+      const before = await cp.recordBefore(r.dir, "T1", "U1");
+      const live = async () => (await cp.turnDiff(r.dir, turn("U1", { before: before.ref }))).files;
+      return { r, live };
+    }
+
+    it("reports nothing when nothing changed", async () => {
+      const { live } = await setup();
+      expect(await live()).toEqual([]);
+    });
+
+    it("reports one modified entry when the untracked file changes", async () => {
+      const { r, live } = await setup();
+      await r.write("hello.md", "hi\nthere\n");
+      const files = await live();
+      expect(files).toHaveLength(1);
+      expect(files[0]).toMatchObject({ path: "hello.md", status: "modified", additions: 1, deletions: 0 });
+    });
+
+    it("reports one added entry for a new untracked file", async () => {
+      const { r, live } = await setup();
+      await r.write("fresh.md", "new\n");
+      const files = await live();
+      expect(files).toHaveLength(1);
+      expect(files[0]).toMatchObject({ path: "fresh.md", status: "added" });
+    });
+
+    it("excludes ignored files", async () => {
+      const { r, live } = await setup();
+      await r.write("ignored.log", "noise\n");
+      expect(await live()).toEqual([]);
+    });
+
+    it("still detects renames", async () => {
+      const { r, live } = await setup();
+      await r.remove("old-name.txt");
+      await r.write("new-name.txt", "the quick brown fox\njumps over\nthe lazy dog\nagain and again\n");
+      const files = await live();
+      expect(files).toHaveLength(1);
+      expect(files[0]).toMatchObject({ path: "new-name.txt", oldPath: "old-name.txt", status: "renamed" });
+    });
+  });
+
   it("turnDiff of an uncheckpointed turn is empty", async () => {
     const r = await repo();
     expect((await service().turnDiff(r.dir, turn("U9"))).files).toEqual([]);
