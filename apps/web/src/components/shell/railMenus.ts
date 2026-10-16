@@ -3,7 +3,9 @@ import type { Project, ReadModel, Thread } from "@tide/contracts";
 import {
   copyText,
   createChild,
+  isEmptyThread,
   requestArchive,
+  requestDelete,
   setThreadPinned,
   unarchiveThread,
 } from "../../lib/threadActions.ts";
@@ -43,6 +45,7 @@ export function archivedThreadMenu(thread: Thread): MenuItem[] {
     { label: "Open", onSelect: () => useUi.getState().selectThread(thread.id) },
     { label: "Restore", onSelect: () => unarchiveThread(thread.id) },
     ...copyItems(thread),
+    { label: "Delete…", danger: true, separatorBefore: true, onSelect: () => requestDelete(thread) },
   ];
 }
 
@@ -57,6 +60,7 @@ export function threadMenu(
   const ui = useUi.getState();
   const forkTurn = latestSettledTurnId(model, thread.id);
   const hasSession = thread.nativeSessionId !== undefined;
+  const empty = isEmptyThread(thread.id);
   return [
     { label: "Open", onSelect: () => ui.selectThread(thread.id) },
     { label: "Rename…", onSelect: startRename },
@@ -91,7 +95,8 @@ export function threadMenu(
       ...(thread.worktreePath === undefined ? { hint: "no worktree" } : {}),
       onSelect: () => ui.setThreadDialog({ kind: "detach", threadId: thread.id }),
     },
-    { label: "Archive…", danger: true, onSelect: () => requestArchive(thread) },
+    ...(empty ? [] : [{ label: "Archive…", danger: true, onSelect: () => requestArchive(thread) }]),
+    { label: empty ? "Delete" : "Delete…", danger: true, onSelect: () => requestDelete(thread) },
   ];
 }
 

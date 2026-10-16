@@ -1,6 +1,6 @@
 import { useEffect, useState } from "react";
 import type { Thread } from "@tide/contracts";
-import { archiveThread, detachWorktree } from "../../lib/threadActions.ts";
+import { archiveThread, deleteThread, detachWorktree } from "../../lib/threadActions.ts";
 import { call, useModel } from "../../state/model.ts";
 import { useUi } from "../../state/ui.ts";
 import { Checkbox, Radio } from "../ui/Choice.tsx";
@@ -73,6 +73,36 @@ export function ArchiveThreadDialog({ thread, onClose }: { thread: Thread; onClo
   );
 }
 
+/** Hard delete: the thread, its conversation, branch and checkpoints go for good. */
+export function DeleteThreadDialog({ thread, onClose }: { thread: Thread; onClose: () => void }) {
+  return (
+    <ConfirmDialog
+      title={`Delete “${thread.title}”?`}
+      confirmLabel="Delete"
+      danger
+      onCancel={onClose}
+      onConfirm={() => {
+        deleteThread(thread.id);
+        onClose();
+      }}
+      body={
+        <span className={styles.options}>
+          <span>This removes the thread and its conversation for good.</span>
+          {thread.branch ? <span>Branch {thread.branch} and its checkpoints are deleted too.</span> : null}
+          {thread.worktreePath ? (
+            <>
+              <span className={styles.path}>{thread.worktreePath}</span>
+              <span className={styles.warning} role="alert">
+                Uncommitted changes in this worktree are discarded.
+              </span>
+            </>
+          ) : null}
+        </span>
+      }
+    />
+  );
+}
+
 /** Removes the worktree directory of a live thread; deleting the branch is opt-in. */
 export function DetachWorktreeDialog({ thread, onClose }: { thread: Thread; onClose: () => void }) {
   const [deleteBranch, setDeleteBranch] = useState(false);
@@ -115,6 +145,7 @@ export function ThreadDialogHost() {
   if (!dialog || !thread) return null;
   const close = (): void => setThreadDialog(null);
   if (dialog.kind === "archive") return <ArchiveThreadDialog thread={thread} onClose={close} />;
+  if (dialog.kind === "delete") return <DeleteThreadDialog thread={thread} onClose={close} />;
   if (dialog.kind === "detach") return <DetachWorktreeDialog thread={thread} onClose={close} />;
   const turn = dialog.turnId === undefined ? undefined : model.turns[dialog.turnId];
   if (!turn) return null;

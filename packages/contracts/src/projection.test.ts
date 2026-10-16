@@ -19,6 +19,26 @@ describe("projection", () => {
     expect(m.messages["m2"]).toMatchObject({ text: "hello", streaming: false });
     expect(m.turns["u1"]?.status).toBe("completed");
   });
+  it("thread.deleted drops the thread and everything keyed to it", () => {
+    const m = replay(emptyReadModel(), [
+      rec(1, { type: "project.created", project: { id: "p1", title: "T", rootPath: "/x", createdAt: 1, updatedAt: 1 } }),
+      rec(2, { type: "thread.created", thread: { id: "t1", projectId: "p1", title: "A", provider: "claude", mode: "approval-required", interaction: "default", status: "idle", createdAt: 2, updatedAt: 2 } }),
+      rec(3, { type: "thread.created", thread: { id: "t2", projectId: "p1", title: "B", provider: "claude", mode: "approval-required", interaction: "default", status: "idle", createdAt: 3, updatedAt: 3 } }),
+      rec(4, { type: "turn.requested", turn: { id: "u1", threadId: "t1", status: "requested", requestedAt: 4 }, userMessage: { id: "m1", threadId: "t1", turnId: "u1", role: "user", text: "hi", createdAt: 4 } }),
+      rec(5, { type: "turn.requested", turn: { id: "u2", threadId: "t2", status: "requested", requestedAt: 5 }, userMessage: { id: "m2", threadId: "t2", turnId: "u2", role: "user", text: "yo", createdAt: 5 } }),
+      rec(6, { type: "thread.deleted", threadId: "t1", projectId: "p1", at: 6 }),
+    ]);
+    expect(m.threads["t1"]).toBeUndefined();
+    expect(m.turns["u1"]).toBeUndefined();
+    expect(m.messages["m1"]).toBeUndefined();
+    expect(m.threadMessages["t1"]).toBeUndefined();
+    expect(m.threadTimeline["t1"]).toBeUndefined();
+    expect(m.threads["t2"]?.title).toBe("B");
+    expect(m.turns["u2"]?.threadId).toBe("t2");
+    expect(m.messages["m2"]?.text).toBe("yo");
+    const again = applyRecord(m, rec(7, { type: "thread.deleted", threadId: "t1", projectId: "p1", at: 7 }));
+    expect(again.threads).toEqual(m.threads);
+  });
   it("ignores already-applied seqs", () => {
     const base = replay(emptyReadModel(), [rec(1, { type: "project.created", project: { id: "p1", title: "T", rootPath: "/x", createdAt: 1, updatedAt: 1 } })]);
     const again = applyRecord(base, rec(1, { type: "project.archived", projectId: "p1", archivedAt: 9 }));

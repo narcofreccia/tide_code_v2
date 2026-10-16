@@ -46,4 +46,4 @@ button.row:hover { background: var(--surface-2); }
 .archivedItem { display: flex; align-items: center; border-bottom: 1px solid var(--border); }
 .archivedItem > .row { flex: 1; min-width: 0; border-bottom: none; }
 .restore { flex: none; width: 72px; }
-.withRestore { padding-right: calc(72px + var(--sp-2)); }
+.withRestore { padding-right: calc(144px + var(--sp-2)); }

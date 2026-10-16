@@ -71,6 +71,61 @@ describe("VcsReactor — checkpoint ref lifetime", () => {
   });
 });
 
+describe("VcsReactor — thread.delete", () => {
+  async function withWork(h: Awaited<ReturnType<typeof harness>>, title: string) {
+    const t = await newThread(h, { useWorktree: true, title });
+    h.control.script(
+      effect(async (options) => {
+        await writeFile(join(options.cwd, "w.txt"), "w\n", "utf8");
+      }),
+      emit({ type: "settled", status: "completed" }),
+    );
+    await requestTurn(h, t.id, "go");
+    return t;
+  }
+
+  it("an archived thread loses its branch, checkpoint refs and archived-work ref", async () => {
+    const h = await harness(cleanups);
+    const a = await withWork(h, "Gone Soon");
+    const b = await withWork(h, "Stays");
+    // dirty at archive time: the work is parked on refs/tide/archived/<id>
+    await writeFile(join(a.worktreePath!, "scratch.txt"), "unsaved\n", "utf8");
+    await h.app.engine.dispatch({ type: "thread.archive", threadId: a.id });
+    await h.settle();
+    expect(existsSync(a.worktreePath!)).toBe(false);
+    expect(await h.repo.git.revParse(`refs/tide/archived/${a.id}`)).toBeDefined();
+
+    await h.app.engine.dispatch({ type: "thread.delete", threadId: a.id });
+    await h.settle();
+
+    expect(h.model().threads[a.id]).toBeUndefined();
+    expect(Object.values(h.model().turns).filter((t) => t.threadId === a.id)).toEqual([]);
+    expect(await h.repo.git.revParse("refs/heads/tide/gone-soon")).toBeUndefined();
+    expect(await h.repo.git.listRefs(`refs/tide/checkpoints/${a.id}/`)).toEqual([]);
+    expect(await h.repo.git.revParse(`refs/tide/archived/${a.id}`)).toBeUndefined();
+    // the neighbour is untouched
+    expect(existsSync(b.worktreePath!)).toBe(true);
+    expect(await h.repo.git.revParse(`refs/heads/${b.branch}`)).toBeDefined();
+    expect((await h.repo.git.listRefs(`refs/tide/checkpoints/${b.id}/`)).length).toBe(2);
+  });
+
+  it("a live thread loses its worktree directory, session and branch", async () => {
+    const h = await harness(cleanups);
+    const a = await withWork(h, "Live Delete");
+    const closedBefore = h.control.closed.length;
+
+    await h.app.engine.dispatch({ type: "thread.delete", threadId: a.id });
+    await h.settle();
+
+    expect(h.model().threads[a.id]).toBeUndefined();
+    expect(existsSync(a.worktreePath!)).toBe(false);
+    expect((await h.repo.git.worktreeList()).map((w) => w.path)).not.toContain(a.worktreePath);
+    expect(await h.repo.git.revParse("refs/heads/tide/live-delete")).toBeUndefined();
+    expect(await h.repo.git.listRefs(`refs/tide/checkpoints/${a.id}/`)).toEqual([]);
+    expect(h.control.closed.length).toBeGreaterThan(closedBefore);
+  });
+});
+
 describe("VcsReactor — detach failures surface on the thread", () => {
   it("keeps a worktree whose uncommitted work cannot be preserved, and says so", async () => {
     const h = await harness(cleanups);

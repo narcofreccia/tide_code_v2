@@ -35,6 +35,7 @@ export function decide(model: ReadModel, command: Command, ctx: DecideContext): 
     case "thread.update":
     case "thread.archive":
     case "thread.unarchive":
+    case "thread.delete":
     case "thread.triage":
     case "thread.limited":
     case "thread.limit-policy":

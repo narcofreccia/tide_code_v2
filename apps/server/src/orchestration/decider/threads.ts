@@ -28,6 +28,7 @@ type ThreadCommand =
   | CommandOf<"thread.update">
   | CommandOf<"thread.archive">
   | CommandOf<"thread.unarchive">
+  | CommandOf<"thread.delete">
   | CommandOf<"thread.triage">
   | CommandOf<"thread.limited">
   | CommandOf<"thread.limit-policy">
@@ -132,6 +133,35 @@ export function decideThread(model: ReadModel, command: ThreadCommand, ctx: Deci
       if (!project) return fail("not-found", `unknown project ${thread.projectId}`);
       if (isArchived(project)) return fail("conflict", `project ${project.id} is archived; unarchive it first`);
       return ok({ type: "thread.unarchived", threadId: thread.id, at: ctx.now });
+    }
+
+    case "thread.delete": {
+      const thread = model.threads[command.threadId];
+      if (!thread) return fail("not-found", `unknown thread ${command.threadId}`);
+      if (thread.status === "running") return fail("busy", `thread ${thread.id} is running`);
+      const others = Object.values(model.threads).filter((t) => t.id !== thread.id);
+      // lineage would dangle: children are deleted first (archived or not)
+      if (others.some((t) => t.parentThreadId === thread.id || t.delegatedBy === thread.id)) {
+        return fail("conflict", `thread ${thread.id} still has child threads; delete them first`);
+      }
+      // same rule as vcs/restore.ts `sharingThread`: removing the worktree would pull it from under a live thread
+      if (thread.worktreePath !== undefined && others.some((t) => t.archivedAt === undefined && t.worktreePath === thread.worktreePath)) {
+        return fail("conflict", `another live thread shares the worktree of thread ${thread.id}; archive it first`);
+      }
+      if (thread.expertsSessionId !== undefined) {
+        const session = model.expertsSessions[thread.expertsSessionId];
+        if (session && session.phase !== "archived") {
+          return fail("conflict", "thread belongs to a live Experts session; archive the session first");
+        }
+      }
+      return ok({
+        type: "thread.deleted",
+        threadId: thread.id,
+        projectId: thread.projectId,
+        ...(thread.worktreePath !== undefined ? { worktreePath: thread.worktreePath } : {}),
+        ...(thread.branch !== undefined ? { branch: thread.branch } : {}),
+        at: ctx.now,
+      });
     }
 
     case "thread.limited": {

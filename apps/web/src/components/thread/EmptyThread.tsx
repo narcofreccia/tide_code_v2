@@ -1,4 +1,5 @@
 import type { Thread } from "@tide/contracts";
+import { useUi } from "../../state/ui.ts";
 import { Button } from "../ui/Button.tsx";
 import styles from "./EmptyThread.module.css";
 
@@ -19,6 +20,7 @@ const EXPLAINERS: Array<{ term: string; body: string }> = [
 
 /** What a brand-new thread is, shown instead of an empty stream. */
 export function EmptyThread({ thread }: { thread: Thread }) {
+  const openNewThread = useUi((s) => s.openNewThread);
   const where =
     thread.worktreePath !== undefined && thread.branch ? (
       <>
@@ -40,6 +42,13 @@ export function EmptyThread({ thread }: { thread: Thread }) {
           </div>
         ))}
       </dl>
+      <p className={styles.line}>
+        One thread has one agent. To have several work together (one plans, another builds, a third reviews), start a{" "}
+        <Button variant="link" onClick={() => openNewThread({ projectId: thread.projectId, tab: "team" })}>
+          Team run
+        </Button>{" "}
+        instead.
+      </p>
       <Button
         onClick={() => window.dispatchEvent(new CustomEvent<string>(COMPOSE_EVENT, { detail: EXAMPLE_PROMPT }))}
       >

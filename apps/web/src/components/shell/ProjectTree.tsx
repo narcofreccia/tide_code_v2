@@ -10,17 +10,30 @@ import { NewThreadPopover } from "./NewThreadPopover.tsx";
 import { ExpertsExplainer, ExpertsGroup, sessionThreadIds } from "./ExpertsGroup.tsx";
 import { RailThreadRow, parentOf } from "./RailThreadRow.tsx";
 import { projectMenu } from "./railMenus.ts";
+import { clearEmptyArchived } from "../../lib/threadActions.ts";
 import styles from "./ProjectTree.module.css";
 
 /** "Snoozed · n" / "Archived · n": collapsed until opened; flat, no nesting. */
-function CollapsedGroup({ name, threads }: { name: string; threads: Thread[] }) {
+function CollapsedGroup({ name, threads, clearable }: { name: string; threads: Thread[]; clearable?: boolean }) {
   const [open, setOpen] = useState(false);
   if (threads.length === 0) return null;
   return (
     <div className={styles.group}>
-      <button type="button" className={styles.groupToggle} aria-expanded={open} onClick={() => setOpen(!open)}>
-        {open ? "▾" : "▸"} {name} · {threads.length}
-      </button>
+      <div className={styles.groupHead}>
+        <button type="button" className={styles.groupToggle} aria-expanded={open} onClick={() => setOpen(!open)}>
+          {open ? "▾" : "▸"} {name} · {threads.length}
+        </button>
+        {clearable ? (
+          <button
+            type="button"
+            className={styles.groupClear}
+            title="Delete archived threads that have no turns"
+            onClick={() => clearEmptyArchived(threads)}
+          >
+            Clear
+          </button>
+        ) : null}
+      </div>
       {open ? (
         <ul className={styles.threads} aria-label={`${name} threads`}>
           {threads.map((t) => (
@@ -136,7 +149,7 @@ function ProjectNode({ project }: { project: Project }) {
             ))}
           </ul>
           <CollapsedGroup name="Snoozed" threads={groups.snoozed.filter((t) => !claimed.has(t.id))} />
-          <CollapsedGroup name="Archived" threads={groups.archived} />
+          <CollapsedGroup name="Archived" threads={groups.archived} clearable />
           <div className={styles.newThread}>
             <NewThreadPopover projectId={project.id} label="+ thread" variant="quiet" />
             <Button variant="quiet" onClick={() => setNewExpertsProject(project.id)}>

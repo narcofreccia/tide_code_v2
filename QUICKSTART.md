@@ -122,6 +122,7 @@ Applications, open. Same behaviour as B. Updates are checked at launch and every
 | Thread worktrees | `~/.tide/worktrees/<project>/<thread>/`, branch `tide/<title>` |
 | Checkpoints | `refs/tide/checkpoints/…` in your repo (refs only, no commits on your branches) |
 | Settings | top bar → Settings: providers, git, appearance, keyboard, remote, decisions |
+| Deleting | "Delete…" (rail right-click, header ⋯, Archived group) removes a thread, its branch and checkpoints for good; archive keeps them |
 | Escape hatch | thread header → "Open in terminal" runs `claude --resume <id>` (or the harness's equivalent) in the worktree |
 
 ## 6. Keyboard
@@ -133,7 +134,7 @@ Applications, open. Same behaviour as B. Updates are checked at launch and every
 ## 7. Checks
 
 ```sh
-pnpm typecheck && pnpm test     # 1,238 tests
+pnpm typecheck && pnpm test     # 1,700+ tests
 curl localhost:3777/health      # {"ok":true,…}
 ```
 

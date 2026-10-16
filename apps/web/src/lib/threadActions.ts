@@ -60,6 +60,45 @@ export function archiveThread(threadId: string, keepWorktree?: boolean): void {
   if (wasOpen) useUi.getState().selectThread(null);
 }
 
+/** True when the thread has no conversation at all: nothing to confirm or archive. */
+export function isEmptyThread(threadId: string): boolean {
+  return (useModel.getState().model.threadMessages[threadId]?.length ?? 0) === 0;
+}
+
+/**
+ * Hard-deletes a thread, its branch and checkpoints. The server refuses while it
+ * runs or while another thread descends from it / shares its worktree.
+ */
+export function deleteThread(threadId: string): void {
+  const title = titleOf(threadId);
+  if (useUi.getState().selectedThreadId === threadId) useUi.getState().selectThread(null);
+  dispatch({ type: "thread.delete", threadId })
+    .then(() => showToast(`Deleted “${title}”`))
+    .catch((error: unknown) => showToast(`Deleting the thread failed: ${errorText(error)}`));
+}
+
+/** Opens the delete confirmation; a thread with no turns goes straight away. */
+export function requestDelete(thread: { id: string }): void {
+  if (isEmptyThread(thread.id)) {
+    deleteThread(thread.id);
+    return;
+  }
+  useUi.getState().setThreadDialog({ kind: "delete", threadId: thread.id });
+}
+
+/** Deletes every archived thread of a project that has no turns; returns how many. */
+export function clearEmptyArchived(threads: { id: string }[]): void {
+  const empty = threads.filter((t) => isEmptyThread(t.id));
+  if (empty.length === 0) {
+    showToast("No empty archived threads");
+    return;
+  }
+  Promise.allSettled(empty.map((t) => dispatch({ type: "thread.delete", threadId: t.id }))).then((results) => {
+    const ok = results.filter((r) => r.status === "fulfilled").length;
+    showToast(`Deleted ${ok} empty ${ok === 1 ? "thread" : "threads"}`);
+  });
+}
+
 export function setThreadPinned(threadId: string, pinned: boolean): void {
   updateThread(threadId, { pinned });
 }

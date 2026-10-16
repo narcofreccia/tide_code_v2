@@ -1,6 +1,8 @@
+import { existsSync } from "node:fs";
 import {
   newId as defaultNewId,
   type Activity,
+  type EventOf,
   type EventRecord,
   type InternalCommand,
   type MergeStrategy,
@@ -129,6 +131,9 @@ export class VcsReactor {
         // archiving frees the disk unless the user asked to keep the checkout; checkpoint refs
         // stay (unarchive needs them for diff/rollback/fork) and die only with the branch
         if (event.keepWorktree !== true) this.#enqueue(event.threadId, async () => void (await this.#detach(event.threadId, false)));
+        return;
+      case "thread.deleted":
+        this.#enqueue(event.threadId, () => this.#destroy(event));
         return;
       case "worktree.detach-requested": {
         const { threadId, deleteBranch } = event;
@@ -326,6 +331,50 @@ export class VcsReactor {
     } catch (err) {
       this.#log("[vcs] checkpoint ref cleanup failed", err);
     }
+  }
+
+  /**
+   * `thread.deleted`: the thread is already gone from the model, so everything comes from the
+   * event. Session, worktree, `tide/*` branch, checkpoint refs and the archived-work ref go, each
+   * best-effort and logged (there is no thread left to post an error on). Nothing still in the
+   * model is touched: a checkout or branch another thread uses stays.
+   */
+  async #destroy(event: EventOf<"thread.deleted">): Promise<void> {
+    const { threadId, worktreePath, branch } = event;
+    const model = this.#engine.getModel();
+    const project = model.projects[event.projectId];
+    const step = async (what: string, task: () => Promise<void>): Promise<void> => {
+      try {
+        await task();
+      } catch (err) {
+        this.#log(`[vcs] delete ${threadId}: ${what} failed`, err);
+      }
+    };
+    await step("session close", async () => void (await this.#sessions?.close(threadId)));
+    if (!project) {
+      this.#log(`[vcs] delete ${threadId}: unknown project ${event.projectId}; repository left as is`);
+      return;
+    }
+    const others = Object.values(model.threads).filter((t) => t.id !== threadId);
+    if (worktreePath !== undefined) {
+      if (worktreePath === project.rootPath || others.some((t) => t.worktreePath === worktreePath)) {
+        this.#log(`[vcs] delete ${threadId}: worktree ${worktreePath} kept, still in use`);
+      } else {
+        this.#onDetach?.(threadId, worktreePath);
+        if (existsSync(worktreePath)) await step("worktree removal", () => this.#worktrees.removePath(project.rootPath, worktreePath));
+      }
+    }
+    if (branch !== undefined && others.some((t) => t.branch === branch)) {
+      this.#log(`[vcs] delete ${threadId}: branch ${branch} kept, another thread uses it`);
+    } else {
+      await step("branch deletion", () => this.#deleteBranch(project.rootPath, branch));
+    }
+    await step("checkpoint ref cleanup", async () => {
+      const removed = await this.#checkpoints.deleteThreadRefs(project.rootPath, threadId);
+      if (removed > 0) this.#log(`[vcs] removed ${removed} checkpoint ref(s) of ${threadId}`);
+    });
+    await step("archived ref cleanup", () => this.#git(project.rootPath).deleteRef(`refs/tide/archived/${threadId}`));
+    this.#worktreeFailures.delete(threadId);
   }
 
   async #deleteBranch(rootPath: string, branch: string | undefined): Promise<void> {

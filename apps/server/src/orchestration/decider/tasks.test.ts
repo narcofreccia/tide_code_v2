@@ -115,4 +115,12 @@ describe("decide: task.fire / task.run-now", () => {
     const detached = run(t2.model, { type: "worktree.detached", threadId: wt.threadId } as never);
     expect(tryRun(detached.model, { type: "task.fire", commandId: "c", taskId })).toMatchObject({ ok: false, error: { code: "conflict" } });
   });
+
+  it("refuses to fire into a deleted thread", () => {
+    const f = base();
+    const t = created(f, { threadId: f.threadId });
+    const deleted = run(t.model, { type: "thread.delete", threadId: f.threadId }).model;
+    expect(tryRun(deleted, { type: "task.fire", commandId: "c", taskId: t.taskId })).toMatchObject({ ok: false, error: { code: "not-found" } });
+    expect(tryRun(deleted, { type: "task.run-now", taskId: t.taskId })).toMatchObject({ ok: false, error: { code: "not-found" } });
+  });
 });

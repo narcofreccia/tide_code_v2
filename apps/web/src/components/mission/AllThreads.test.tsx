@@ -128,4 +128,12 @@ describe("Project card ⋯", () => {
     fireEvent.click(card.getByRole("button", { name: /Details/ }));
     expect(card.getByText("$0 lifetime")).toBeDefined();
   });
+
+  it("deletes an archived thread: empty goes straight away", () => {
+    const fake = attachFakeStore(fixture());
+    render(<AllThreads projectId="p1" />);
+    fireEvent.click(screen.getByLabelText("Archived"));
+    fireEvent.click(within(screen.getByLabelText("Archived threads")).getByRole("button", { name: "Delete…" }));
+    expect(fake.dispatch).toHaveBeenCalledWith({ type: "thread.delete", threadId: "t4" });
+  });
 });

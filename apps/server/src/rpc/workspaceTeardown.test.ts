@@ -91,6 +91,15 @@ describe("workspace teardown", () => {
     expect(watcher.size).toBe(0);
   });
 
+  it("kills terminals and stops the worktree watch when the thread is deleted", async () => {
+    const { engine, threadId, worktreePath, ptys, watcher, killed } = await setup();
+    await ptys.create(threadId, "/tmp", 80, 24, "/bin/sh");
+    watcher.subscribe(worktreePath, () => undefined);
+    await engine.dispatch({ type: "thread.delete", threadId });
+    expect(killed()).toBe(1);
+    expect(watcher.size).toBe(0);
+  });
+
   it("teardown() is what the vcs reactor calls right before removing a worktree", async () => {
     const { threadId, worktreePath, ptys, watcher, killed, services } = await setup();
     await ptys.create(threadId, "/tmp", 80, 24, "/bin/sh");

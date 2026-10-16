@@ -22,7 +22,7 @@ export const SETTINGS_SECTIONS: SettingsSection[] = [
 
 /** A thread-scoped modal the palette or the thread header can raise. */
 export interface ThreadDialog {
-  kind: "archive" | "detach" | "rollback" | "fork";
+  kind: "archive" | "delete" | "detach" | "rollback" | "fork";
   threadId: string;
   /** rollback / fork: the turn the action starts from */
   turnId?: string;

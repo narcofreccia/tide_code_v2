@@ -72,6 +72,12 @@ export function createWorkspaceServices(options: WorkspaceOptions): WorkspaceSer
       // a checkout another live thread still runs in keeps its watcher
       teardown(event.threadId, thread !== undefined && sharingThread(model, thread) === undefined ? thread.worktreePath : undefined);
     }
+    else if (event.type === "thread.deleted") {
+      // the thread is gone from the model; any live thread left on the same path keeps the watcher
+      const shared = event.worktreePath !== undefined &&
+        Object.values(options.engine.getModel().threads).some((t) => t.archivedAt === undefined && t.worktreePath === event.worktreePath);
+      teardown(event.threadId, shared ? undefined : event.worktreePath);
+    }
     else if (event.type === "worktree.detached") ptys.killThread(event.threadId);
   });
   return {

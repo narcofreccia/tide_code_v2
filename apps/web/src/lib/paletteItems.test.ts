@@ -63,6 +63,7 @@ describe("palette items", () => {
       expect.arrayContaining([
         "thread:terminal",
         "thread:archive",
+        "thread:delete",
         "thread:child",
         "thread:implement-plan",
         "thread:detach",

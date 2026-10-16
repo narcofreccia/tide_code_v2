@@ -172,3 +172,17 @@ describe("detach dialog", () => {
     expect((screen.getByRole("checkbox") as HTMLInputElement).disabled).toBe(true);
   });
 });
+
+describe("delete dialog", () => {
+  it("confirms with the branch and path, then dispatches thread.delete", () => {
+    const fake = mount();
+    act(() => useUi.getState().setThreadDialog({ kind: "delete", threadId: "t1" }));
+    const dialog = screen.getByRole("dialog");
+    expect(within(dialog).getByText("Delete “Refactor router”?")).toBeDefined();
+    expect(within(dialog).getByText(/Branch tide\/t1 and its checkpoints are deleted too/)).toBeDefined();
+    expect(within(dialog).getByText("/wt/t1")).toBeDefined();
+    expect(fake.dispatch).not.toHaveBeenCalled();
+    fireEvent.click(within(dialog).getByRole("button", { name: "Delete" }));
+    expect(fake.dispatch).toHaveBeenCalledWith({ type: "thread.delete", threadId: "t1" });
+  });
+});

@@ -98,9 +98,13 @@ export class WorktreeManager {
   }
 
   async remove(project: Project, thread: Thread): Promise<void> {
-    const worktreePath = thread.worktreePath ?? this.pathFor(project, thread);
-    await this.#withLock(project.rootPath, async () => {
-      const root = this.#git(project.rootPath);
+    await this.removePath(project.rootPath, thread.worktreePath ?? this.pathFor(project, thread));
+  }
+
+  /** Same, from bare paths: `thread.deleted` has no thread left in the model to read them from. */
+  async removePath(rootPath: string, worktreePath: string): Promise<void> {
+    await this.#withLock(rootPath, async () => {
+      const root = this.#git(rootPath);
       try {
         await root.worktreeRemove(worktreePath, true);
       } catch (err) {

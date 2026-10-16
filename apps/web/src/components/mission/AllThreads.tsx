@@ -6,7 +6,7 @@ import { relativeTime } from "../../lib/relativeTime.ts";
 import { PROVIDER_LABELS } from "../../lib/vocab.ts";
 import { useModel } from "../../state/model.ts";
 import { useUi } from "../../state/ui.ts";
-import { unarchiveThread } from "../../lib/threadActions.ts";
+import { requestDelete, unarchiveThread } from "../../lib/threadActions.ts";
 import { Button } from "../ui/Button.tsx";
 import { Checkbox } from "../ui/Choice.tsx";
 import { ThreadGlyph } from "../ui/StatusGlyph.tsx";
@@ -91,6 +91,9 @@ export function AllThreads({ projectId }: { projectId: string }) {
                   </button>
                   <Button variant="quiet" className={styles.restore} onClick={() => unarchiveThread(thread.id)}>
                     Restore
+                  </Button>
+                  <Button variant="quiet" className={styles.restore} onClick={() => requestDelete(thread)}>
+                    Delete…
                   </Button>
                 </div>
               ) : (

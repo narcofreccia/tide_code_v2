@@ -3,7 +3,7 @@ import { describe, expect, it } from "vitest";
 import type { DriverEnv } from "@tide/contracts";
 import { fakeSpawn } from "./fake-app-server.ts";
 import { codexDriver } from "./index.ts";
-import { CODEX_CAPS, INSTALL_HINT, LOGIN_COMMAND, LOGIN_HINT, parseVersion, toModelInfo } from "./status.ts";
+import { CODEX_CAPS, FREE_PLAN_NOTE, INSTALL_HINT, LOGIN_COMMAND, LOGIN_HINT, accountLabel, parseVersion, toModelInfo } from "./status.ts";
 import { mcpEnvAndArgs } from "./app-server.ts";
 import { collaborationModeFor, policyFor } from "./modes.ts";
 
@@ -39,7 +39,7 @@ describe("status", () => {
     expect(status.kind).toBe("codex");
     expect(status.installed).toBe(true);
     expect(status.loggedIn).toBe(true);
-    expect(status.hint).toBeUndefined();
+    expect(status.hint).toBe("ChatGPT pro plan");
     expect(status.loginCommand).toBeUndefined();
     expect(status.models).toEqual([{ id: "gpt-5.6-sol", label: "GPT-5.6-Sol", family: "gpt-5.6", default: true }]);
     expect(status.caps).toEqual({ ...CODEX_CAPS });
@@ -63,6 +63,38 @@ describe("status", () => {
     expect(status.hint).toBe(LOGIN_HINT);
     expect(status.loginCommand).toBe(LOGIN_COMMAND);
     await instance.dispose();
+  });
+
+  it("labels a free ChatGPT plan and warns that its catalogue is limited", async () => {
+    const { spawn } = fakeSpawn((server) => {
+      server.account = { type: "chatgpt", email: "dev@example.com", planType: "free" };
+    });
+    const instance = await codexDriver.create({ binaryPath: process.execPath, spawnImpl: spawn }, env);
+    const status = await instance.status();
+    expect(status.loggedIn).toBe(true);
+    expect(status.hint).toContain("free plan");
+    expect(status.hint).toContain("--with-api-key");
+    expect(status.hint).toBe("ChatGPT free plan" + FREE_PLAN_NOTE);
+    await instance.dispose();
+  });
+
+  it("labels an API-key account", async () => {
+    const { spawn } = fakeSpawn((server) => {
+      server.account = { type: "apiKey" };
+    });
+    const instance = await codexDriver.create({ binaryPath: process.execPath, spawnImpl: spawn }, env);
+    const status = await instance.status();
+    expect(status.loggedIn).toBe(true);
+    expect(status.hint).toBe("OpenAI API key");
+    await instance.dispose();
+  });
+
+  it("derives account labels defensively from the Account union", () => {
+    expect(accountLabel(null)).toBeUndefined();
+    expect(accountLabel(undefined)).toBeUndefined();
+    expect(accountLabel({ type: "apiKey" })).toBe("OpenAI API key");
+    expect(accountLabel({ type: "chatgpt", email: null, planType: "plus" })).toBe("ChatGPT plus plan");
+    expect(accountLabel({ type: "amazonBedrock", usesCodexManagedCredentials: false })).toBeUndefined();
   });
 
   it("reports a missing binary with an install hint and no models", async () => {

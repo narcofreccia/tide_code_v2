@@ -72,6 +72,12 @@ export const ThreadUpdate = Type.Object({
 /** R5: bring an archived thread back (its worktree is not recreated; the branch is still there) */
 export const ThreadUnarchive = Type.Object({ type: Type.Literal("thread.unarchive"), commandId: CommandId, threadId: Type.String() });
 export const ProjectUnarchive = Type.Object({ type: Type.Literal("project.unarchive"), commandId: CommandId, projectId: Type.String() });
+/**
+ * R5: remove a thread for good — its turns, messages and activities leave the read model; the
+ * server removes its worktree, its `tide/*` branch and its checkpoint refs. Refused while the
+ * thread runs, while a live thread still descends from it or shares its worktree.
+ */
+export const ThreadDelete = Type.Object({ type: Type.Literal("thread.delete"), commandId: CommandId, threadId: Type.String() });
 export const ThreadArchive = Type.Object({
   type: Type.Literal("thread.archive"), commandId: CommandId,
   threadId: Type.String(),
@@ -242,7 +248,7 @@ export const ExpertsArchive = Type.Object({ type: Type.Literal("experts.archive"
 
 export const ClientCommand = Type.Union([
   ProjectCreate, ProjectUpdate, ProjectArchive, ProjectUnarchive, ProjectLinkAdd, ProjectLinkUpdate, ProjectLinkRemove,
-  ThreadCreate, ThreadUpdate, ThreadArchive, ThreadUnarchive,
+  ThreadCreate, ThreadUpdate, ThreadArchive, ThreadUnarchive, ThreadDelete,
   TurnRequest, TurnInterrupt, TurnDequeue,
   ApprovalRespond, UserInputRespond,
   PlanImplement, PlanDismiss,

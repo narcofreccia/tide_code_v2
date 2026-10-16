@@ -38,6 +38,10 @@ describe("Engine", () => {
     await expect(
       engine.dispatch({ type: "project.create", title: "", rootPath: "/repo" }),
     ).rejects.toMatchObject({ code: "invalid-command" });
+    await expect(engine.dispatch({ type: "thread.obliterate", threadId: "x" } as never)).rejects.toMatchObject({
+      code: "invalid-command",
+      message: expect.stringContaining('unknown command type "thread.obliterate"'),
+    });
     expect(store.lastSeq()).toBe(0);
   });
 

@@ -73,6 +73,30 @@ function dropMessage(model: ReadModel, threadId: string, messageId: string): Rea
   };
 }
 
+/** Everything keyed by or belonging to the thread leaves the model; other threads keep their lineage fields. */
+function dropThread(model: ReadModel, threadId: string): ReadModel {
+  if (!model.threads[threadId]) return model;
+  const without = <T extends { threadId?: string }>(record: Record<string, T>): Record<string, T> =>
+    Object.fromEntries(Object.entries(record).filter(([, v]) => v.threadId !== threadId));
+  const threads = { ...model.threads };
+  delete threads[threadId];
+  const threadMessages = { ...model.threadMessages };
+  delete threadMessages[threadId];
+  const threadTimeline = { ...model.threadTimeline };
+  delete threadTimeline[threadId];
+  return {
+    ...model,
+    threads,
+    turns: without(model.turns),
+    messages: without(model.messages),
+    activities: without(model.activities),
+    plans: without(model.plans),
+    handoffs: without(model.handoffs),
+    threadMessages,
+    threadTimeline,
+  };
+}
+
 /** `turn.requested` and the steer fallback share this: a queued turn waits, a live one takes the thread. */
 function requestTurn(model: ReadModel, turn: Turn, userMessage: Message): ReadModel {
   let next: ReadModel = addUserMessage({ ...model, turns: { ...model.turns, [turn.id]: turn } }, userMessage);
@@ -171,6 +195,8 @@ export function applyEvent(model: ReadModel, event: DomainEvent): ReadModel {
       delete next.archivedAt;
       return { ...model, threads: { ...model.threads, [t.id]: next } };
     }
+    case "thread.deleted":
+      return dropThread(model, event.threadId);
     case "project.unarchived": {
       const p = model.projects[event.projectId];
       if (!p) return model;

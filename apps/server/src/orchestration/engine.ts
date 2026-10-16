@@ -12,6 +12,15 @@ import {
 import { decide, type DecideDefaults } from "./decider/index.ts";
 import type { EventStore } from "./store.ts";
 
+/** Every `type` literal the command union accepts, flattened across its nested unions. */
+const KNOWN_COMMAND_TYPES: ReadonlySet<string> = new Set(
+  CommandSchema.anyOf.flatMap((member) =>
+    (member as { anyOf?: Array<{ properties?: { type?: { const?: unknown } } }> }).anyOf?.flatMap((m) =>
+      typeof m.properties?.type?.const === "string" ? [m.properties.type.const] : [],
+    ) ?? [],
+  ),
+);
+
 /** Rejection carrying a stable machine code (invalid-command / not-found / conflict / busy). */
 export class CommandError extends Error {
   readonly code: string;
@@ -103,6 +112,12 @@ export class Engine {
 
   async #process(command: Command): Promise<DispatchResult> {
     if (!Check(CommandSchema, command)) {
+      // a union error names the first member's missing fields, which says nothing about an
+      // unknown type (typically a client newer than the server)
+      const type = (command as { type?: unknown } | null)?.type;
+      if (typeof type === "string" && !KNOWN_COMMAND_TYPES.has(type)) {
+        throw new CommandError("invalid-command", `unknown command type "${type}" (is the server older than the client? restart it)`);
+      }
       const first = Errors(CommandSchema, command)[0];
       throw new CommandError("invalid-command", first?.message ?? "invalid command");
     }

@@ -126,6 +126,7 @@ describe("ThreadHeader", () => {
       "Copy branch",
       "Remove worktree…",
       "Archive thread…",
+      "Delete thread",
     ]);
   });
 

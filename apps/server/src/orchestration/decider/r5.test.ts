@@ -3,7 +3,7 @@ import { emptyReadModel, type Command, type DomainEvent, type ReadModel } from "
 import { delegatePrompt } from "../../experts/prompts.ts";
 import { titleFromPrompt } from "./autoTitle.ts";
 import { decide } from "./index.ts";
-import { apply, completeTurn, ctx, eventOf, run, withThread } from "./r4.fixtures.ts";
+import { apply, completeTurn, ctx, eventOf, run, startTurn, tryRun, withThread } from "./r4.fixtures.ts";
 import type { DecideDefaults } from "./types.ts";
 
 /** Runs a command with user-settings defaults in the context. */
@@ -50,6 +50,81 @@ describe("decide: thread.unarchive / project.unarchive", () => {
     let model = run(first.model, { type: "project.archive", projectId: a }).model;
     model = run(model, { type: "project.create", title: "B", rootPath: "/same" }).model;
     expect(decide(model, { type: "project.unarchive", projectId: a }, ctx)).toMatchObject({ ok: false, error: { code: "conflict" } });
+  });
+});
+
+describe("decide: thread.delete", () => {
+  it("deletes an archived thread and the model forgets its turns and messages", () => {
+    const f = withThread("claude", true);
+    const projectId = f.model.threads[f.threadId]?.projectId;
+    const { model, turnId } = completeTurn(f.model, f.threadId, "hi", "hello");
+    const archived = run(model, { type: "thread.archive", threadId: f.threadId, keepWorktree: true }).model;
+    const deleted = run(archived, { type: "thread.delete", threadId: f.threadId });
+    expect(deleted.events).toEqual([
+      { type: "thread.deleted", threadId: f.threadId, projectId, worktreePath: "/wt/thread", branch: "tide/login", at: ctx.now },
+    ]);
+    expect(deleted.model.threads[f.threadId]).toBeUndefined();
+    expect(deleted.model.turns[turnId]).toBeUndefined();
+    expect(Object.values(deleted.model.messages).filter((m) => m.threadId === f.threadId)).toEqual([]);
+    expect(deleted.model.threadMessages[f.threadId]).toBeUndefined();
+    expect(tryRun(deleted.model, { type: "thread.delete", threadId: f.threadId })).toMatchObject({ ok: false, error: { code: "not-found" } });
+  });
+
+  it("deletes a live idle thread; the event carries no paths it does not have", () => {
+    const f = withThread();
+    const deleted = run(f.model, { type: "thread.delete", threadId: f.threadId });
+    expect(deleted.events).toEqual([{ type: "thread.deleted", threadId: f.threadId, projectId: f.model.threads[f.threadId]?.projectId, at: ctx.now }]);
+    expect(deleted.model.threads[f.threadId]).toBeUndefined();
+  });
+
+  it("refuses a running thread and an unknown one", () => {
+    const f = withThread();
+    const { model } = startTurn(f.model, f.threadId, "go");
+    expect(tryRun(model, { type: "thread.delete", threadId: f.threadId })).toMatchObject({ ok: false, error: { code: "busy" } });
+    expect(tryRun(model, { type: "thread.delete", threadId: "nope" })).toMatchObject({ ok: false, error: { code: "not-found" } });
+  });
+
+  it("refuses a thread with children, archived or not, until they are deleted", () => {
+    const f = withThread();
+    const d = run(f.model, { type: "thread.delegate", fromThreadId: f.threadId, provider: "codex", prompt: "go", useWorktree: false });
+    const childId = eventOf(d.events, "thread.created").thread.id;
+    let model = run(d.model, { type: "turn.settle", turnId: eventOf(d.events, "turn.requested").turn.id, status: "completed" }).model;
+    model = run(model, { type: "thread.archive", threadId: childId }).model;
+    expect(tryRun(model, { type: "thread.delete", threadId: f.threadId })).toMatchObject({ ok: false, error: { code: "conflict", message: `thread ${f.threadId} still has child threads; delete them first` } });
+    model = run(model, { type: "thread.delete", threadId: childId }).model;
+    expect(run(model, { type: "thread.delete", threadId: f.threadId }).model.threads[f.threadId]).toBeUndefined();
+
+    const g = withThread();
+    const projectId = g.model.threads[g.threadId]?.projectId ?? "";
+    const fork = run(g.model, { type: "thread.create", projectId, provider: "claude", parentThreadId: g.threadId });
+    expect(tryRun(fork.model, { type: "thread.delete", threadId: g.threadId })).toMatchObject({ ok: false, error: { code: "conflict" } });
+  });
+
+  it("refuses a thread whose worktree another live thread shares", () => {
+    const f = withThread("claude", true);
+    const projectId = f.model.threads[f.threadId]?.projectId ?? "";
+    const other = run(f.model, { type: "thread.create", projectId, provider: "codex" });
+    const otherId = eventOf(other.events, "thread.created").thread.id;
+    let model = run(other.model, { type: "worktree.attach", threadId: otherId, worktreePath: "/wt/thread", branch: "tide/login" }).model;
+    expect(tryRun(model, { type: "thread.delete", threadId: f.threadId })).toMatchObject({ ok: false, error: { code: "conflict" } });
+    model = run(model, { type: "thread.archive", threadId: otherId, keepWorktree: true }).model;
+    expect(tryRun(model, { type: "thread.delete", threadId: f.threadId })).toMatchObject({ ok: true });
+  });
+
+  it("refuses an Experts thread until its session is archived", () => {
+    const f = withThread();
+    const projectId = f.model.threads[f.threadId]?.projectId ?? "";
+    const created = run(f.model, { type: "experts.create", projectId, topic: "t", experts: [{ key: "a", name: "A", role: "r", provider: "claude" }], lead: { provider: "claude" } });
+    const sessionId = eventOf(created.events, "experts.created").session.id;
+    const started = run(created.model, { type: "experts.start", sessionId });
+    const expertId = started.events.flatMap((e) => (e.type === "thread.created" && e.thread.role === "expert" ? [e.thread.id] : []))[0] ?? "";
+    let model = started.model;
+    for (const t of Object.values(model.threads)) {
+      if (t.status === "running" && t.latestTurnId !== undefined) model = run(model, { type: "turn.settle", turnId: t.latestTurnId, status: "completed" }).model;
+    }
+    expect(tryRun(model, { type: "thread.delete", threadId: expertId })).toMatchObject({ ok: false, error: { code: "conflict", message: "thread belongs to a live Experts session; archive the session first" } });
+    model = run(model, { type: "experts.archive", sessionId }).model;
+    expect(tryRun(model, { type: "thread.delete", threadId: expertId })).toMatchObject({ ok: true });
   });
 });
 

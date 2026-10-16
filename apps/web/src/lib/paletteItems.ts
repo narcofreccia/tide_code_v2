@@ -11,6 +11,7 @@ import {
   implementPlan,
   interruptTurn,
   requestArchive,
+  requestDelete,
 } from "./threadActions.ts";
 
 export type PaletteGroup = "Actions" | "Go to" | "Thread";
@@ -75,6 +76,12 @@ function threadItems(model: ReadModel, thread: Thread): PaletteItem[] {
       run: () => interruptTurn(thread.id),
     });
   }
+  items.push({
+    id: "thread:delete",
+    label: "Delete thread…",
+    group: "Thread",
+    run: () => requestDelete(thread),
+  });
   if (thread.worktreePath !== undefined) {
     items.push({
       id: "thread:detach",

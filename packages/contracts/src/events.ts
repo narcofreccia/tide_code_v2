@@ -40,6 +40,14 @@ export const ThreadUpdated = evt("thread.updated", {
 });
 export const ThreadArchived = evt("thread.archived", { threadId: Type.String(), archivedAt: Type.Number(), keepWorktree: Type.Optional(Type.Boolean()) });
 export const ThreadUnarchived = evt("thread.unarchived", { threadId: Type.String(), at: Type.Number() });
+/** self-contained: the projector drops the thread, so reactors read the paths from here */
+export const ThreadDeleted = evt("thread.deleted", {
+  threadId: Type.String(),
+  projectId: Type.String(),
+  worktreePath: Type.Optional(Type.String()),
+  branch: Type.Optional(Type.String()),
+  at: Type.Number(),
+});
 export const ProjectUnarchived = evt("project.unarchived", { projectId: Type.String(), at: Type.Number() });
 
 /** `turn.status` is `queued` when another turn of the thread is still running. Image bytes live
@@ -213,7 +221,7 @@ export const DomainEvent = Type.Union([
   WorktreeDetachRequested,
   WorktreeDetached,
   CheckpointRecorded,
-  ThreadUnarchived, ProjectUnarchived,
+  ThreadUnarchived, ProjectUnarchived, ThreadDeleted,
   PublishRequested,
   MergeRequested,
   MergeCompleted,

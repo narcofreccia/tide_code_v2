@@ -4,6 +4,7 @@ import { promisify } from "node:util";
 import type { DriverEnv, ModelInfo, ProviderStatus } from "@tide/contracts";
 import { AppServer, mergedEnv } from "./app-server.ts";
 import type { CodexConfig } from "./types.ts";
+import type { Account } from "./generated/v2/Account.ts";
 import type { GetAccountResponse } from "./generated/v2/GetAccountResponse.ts";
 import type { Model } from "./generated/v2/Model.ts";
 import type { ModelListResponse } from "./generated/v2/ModelListResponse.ts";
@@ -28,6 +29,9 @@ export const LOGIN_HINT = "Run `codex login` in a terminal";
 /** Verified against `codex --help` (codex-cli 0.147): login is its own subcommand. */
 export const LOGIN_COMMAND = "codex login";
 export const INSTALL_HINT = "Install Codex: run `npm i -g @openai/codex` in a terminal";
+export const FREE_PLAN_LABEL = "ChatGPT free plan";
+export const FREE_PLAN_NOTE =
+  ": this plan lists only the GPT-6-Luna and GPT-5.6 models — sign in with a paid ChatGPT plan or an API key (printenv OPENAI_API_KEY | codex login --with-api-key) for the full catalogue";
 
 async function exec(file: string, args: string[], timeout = 10_000, env?: NodeJS.ProcessEnv): Promise<string | undefined> {
   try {
@@ -66,9 +70,19 @@ export function toModelInfo(models: Model[], defaultModel: string | undefined): 
     });
 }
 
+/** Short human label for the signed-in account; `undefined` when signed out or unrecognised. */
+export function accountLabel(account: Account | null | undefined): string | undefined {
+  if (!account) return undefined;
+  if (account.type === "apiKey") return "OpenAI API key";
+  if (account.type === "chatgpt" && typeof account.planType === "string") return `ChatGPT ${account.planType} plan`;
+  return undefined;
+}
+
 interface Probe {
   loggedIn: boolean;
   models: ModelInfo[];
+  /** e.g. `ChatGPT pro plan`, present only when signed in with a recognised account */
+  account?: string;
 }
 
 /**
@@ -89,7 +103,12 @@ export async function probe(binary: string, config: CodexConfig, env: DriverEnv)
     });
     const account = await server.request<GetAccountResponse>("account/read", {});
     const models = await server.request<ModelListResponse>("model/list", {});
-    return { loggedIn: account.account !== null, models: toModelInfo(models.data ?? [], config.defaultModel) };
+    const label = accountLabel(account.account);
+    return {
+      loggedIn: account.account !== null,
+      models: toModelInfo(models.data ?? [], config.defaultModel),
+      ...(label ? { account: label } : {}),
+    };
   } catch (error) {
     env.log(`[codex] status probe failed: ${error instanceof Error ? error.message : String(error)}`);
     return { loggedIn: false, models: [] };
@@ -105,13 +124,14 @@ export async function buildStatus(config: CodexConfig, env: DriverEnv): Promise<
   }
   const versionOutput = await exec(binary, ["--version"], 15_000);
   const version = versionOutput ? parseVersion(versionOutput) : undefined;
-  const { loggedIn, models } = await probe(binary, config, env);
+  const { loggedIn, models, account } = await probe(binary, config, env);
+  const accountHint = account === undefined ? undefined : account === FREE_PLAN_LABEL ? account + FREE_PLAN_NOTE : account;
   return {
     kind: "codex",
     installed: true,
     loggedIn,
     ...(version ? { version } : {}),
-    ...(loggedIn ? {} : { hint: LOGIN_HINT, loginCommand: LOGIN_COMMAND }),
+    ...(loggedIn ? (accountHint ? { hint: accountHint } : {}) : { hint: LOGIN_HINT, loginCommand: LOGIN_COMMAND }),
     models,
     caps: { ...CODEX_CAPS },
   };

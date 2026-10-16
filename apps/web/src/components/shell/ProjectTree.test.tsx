@@ -15,9 +15,11 @@ afterEach(() => {
 
 const project = { id: "p1", title: "Tide", rootPath: "/src/tide", createdAt: 1, updatedAt: 1 };
 
-function mount(threads: Thread[], turns = [makeTurn("u1", { status: "completed" })]) {
+function mount(threads: Thread[], turns = [makeTurn("u1", { status: "completed" })], withMessages = true) {
   const model = modelWith({ projects: { p1: project }, threads: Object.fromEntries(threads.map((t) => [t.id, t])) });
   for (const turn of turns) model.turns[turn.id] = turn;
+  // threads default to having a conversation; tests for empty ones override
+  for (const t of threads) model.threadMessages[t.id] = withMessages ? ["m1"] : [];
   const fake = attachFakeStore(model);
   render(
     <>
@@ -56,6 +58,7 @@ describe("rail thread menu", () => {
       "Copy branchno branch",
       "Remove worktree…no worktree",
       "Archive…",
+      "Delete…",
     ]);
   });
 
@@ -259,5 +262,65 @@ describe("rail row marks", () => {
     expect(title.compareDocumentPosition(pin) & Node.DOCUMENT_POSITION_FOLLOWING).toBeTruthy();
     expect(pin.textContent).not.toContain("⊙");
     expect(title.closest("button")?.getAttribute("title")).toMatch(/^X · Codex/);
+  });
+
+  it("offers Delete… on live threads, and plain Delete (no Archive) for an empty one", () => {
+    mount([makeThread("t1", { title: "Router" })]);
+    const names = within(openMenu("Router")).getAllByRole("menuitem").map((n) => n.textContent);
+    expect(names).toContain("Archive…");
+    expect(names).toContain("Delete…");
+    cleanup();
+    mount([makeThread("t1", { title: "Blank" })], [], false);
+    const empty = within(openMenu("Blank")).getAllByRole("menuitem").map((n) => n.textContent);
+    expect(empty).toContain("Delete");
+    expect(empty).not.toContain("Archive…");
+  });
+
+  it("deletes an empty thread at once, with a toast and no dialog", async () => {
+    const fake = mount([makeThread("t1", { title: "Blank" })], [], false);
+    const menu = openMenu("Blank");
+    await act(async () => {
+      choose(menu, "Delete");
+    });
+    expect(fake.dispatch).toHaveBeenCalledWith({ type: "thread.delete", threadId: "t1" });
+    expect(screen.queryByRole("dialog")).toBeNull();
+    expect(screen.getByText("Deleted “Blank”")).toBeDefined();
+  });
+
+  it("asks first for a thread with a conversation", () => {
+    const fake = mount([makeThread("t1", { title: "Router" })]);
+    choose(openMenu("Router"), "Delete…");
+    expect(fake.dispatch).not.toHaveBeenCalled();
+    expect(useUi.getState().threadDialog).toEqual({ kind: "delete", threadId: "t1" });
+  });
+
+  it("shows the server's reason when the delete is refused", async () => {
+    const fake = mount([makeThread("t1", { title: "Blank" })], [], false);
+    fake.dispatch.mockRejectedValue(new Error("another thread descends from it"));
+    const menu = openMenu("Blank");
+    await act(async () => {
+      choose(menu, "Delete");
+    });
+    expect(screen.getByText("Deleting the thread failed: another thread descends from it")).toBeDefined();
+  });
+
+  it("archived threads offer Delete…, and Clear removes the empty ones", async () => {
+    const fake = mount(
+      [makeThread("a1", { title: "Old", archivedAt: 5 }), makeThread("a2", { title: "Blank", archivedAt: 5 })],
+      [],
+    );
+    useUi.setState({});
+    // a1 has messages (mount default); make a2 empty
+    const { useModel } = await import("../../state/model.ts");
+    useModel.getState().model.threadMessages["a2"] = [];
+    fireEvent.click(screen.getByRole("button", { name: /Archived · 2/ }));
+    expect(within(openMenu("Old")).getByRole("menuitem", { name: "Delete…" })).toBeDefined();
+    fireEvent.keyDown(document, { key: "Escape" });
+    await act(async () => {
+      fireEvent.click(screen.getByRole("button", { name: "Clear" }));
+    });
+    expect(fake.dispatch).toHaveBeenCalledTimes(1);
+    expect(fake.dispatch).toHaveBeenCalledWith({ type: "thread.delete", threadId: "a2" });
+    expect(screen.getByText("Deleted 1 empty thread")).toBeDefined();
   });
 });

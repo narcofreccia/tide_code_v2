@@ -30,6 +30,7 @@ export function aggregateIdOf(event: DomainEvent): string | null {
     case "thread.updated":
     case "thread.archived":
     case "thread.unarchived":
+    case "thread.deleted":
       return event.threadId;
     case "project.unarchived":
       return event.projectId;

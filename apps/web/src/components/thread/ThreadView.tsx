@@ -1,5 +1,5 @@
 import type { Thread } from "@tide/contracts";
-import { unarchiveThread } from "../../lib/threadActions.ts";
+import { requestDelete, unarchiveThread } from "../../lib/threadActions.ts";
 import { Button } from "../ui/Button.tsx";
 import { Composer } from "./Composer.tsx";
 import { PlanProgress } from "./PlanProgress.tsx";
@@ -14,6 +14,9 @@ function ArchivedBar({ thread }: { thread: Thread }) {
       <span>Archived — read-only.</span>
       <Button variant="ghost" onClick={() => unarchiveThread(thread.id)}>
         Restore
+      </Button>
+      <Button variant="ghost" onClick={() => requestDelete(thread)}>
+        Delete…
       </Button>
     </div>
   );

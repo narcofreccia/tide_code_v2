@@ -35,6 +35,8 @@ export class FakeAppServer implements ChildLike {
   listedTurns: string[] = [];
   /** methods that should answer with a JSON-RPC error instead of a result */
   failMethods = new Map<string, string>();
+  /** the `account` answered by `account/read`; `null` is signed out */
+  account: { type: string; [key: string]: unknown } | null = { type: "chatgpt", email: "dev@example.com", planType: "pro" };
   /** result of `account/rateLimits/read` (the default `{}` carries no snapshot) */
   rateLimits: unknown = {};
 
@@ -133,7 +135,7 @@ export class FakeAppServer implements ChildLike {
       case "thread/turns/list":
         return { data: this.listedTurns.map((id) => ({ id, items: [], itemsView: "notLoaded", status: "completed" })), nextCursor: null, backwardsCursor: null };
       case "account/read":
-        return { account: { type: "chatgpt", email: "dev@example.com", planType: "pro" }, requiresOpenaiAuth: false };
+        return { account: this.account, requiresOpenaiAuth: false };
       case "account/rateLimits/read":
         return this.rateLimits;
       case "model/list":

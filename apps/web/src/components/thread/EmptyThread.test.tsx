@@ -2,6 +2,7 @@ import { afterEach, describe, expect, it, vi } from "vitest";
 import { cleanup, fireEvent, render, screen } from "@testing-library/react";
 import { COMPOSE_EVENT, EXAMPLE_PROMPT, EmptyThread } from "./EmptyThread.tsx";
 import { makeThread } from "../../testHarness.ts";
+import { useUi } from "../../state/ui.ts";
 
 afterEach(cleanup);
 
@@ -23,8 +24,16 @@ describe("EmptyThread", () => {
     const listener = (e: Event): void => seen((e as CustomEvent<string>).detail);
     window.addEventListener(COMPOSE_EVENT, listener);
     render(<EmptyThread thread={makeThread("t1")} />);
-    fireEvent.click(screen.getByRole("button"));
+    fireEvent.click(screen.getByRole("button", { name: /^Try:/ }));
     window.removeEventListener(COMPOSE_EVENT, listener);
     expect(seen).toHaveBeenCalledWith(EXAMPLE_PROMPT);
   });
+});
+
+it("points at Team runs for multi-agent work", () => {
+  render(<EmptyThread thread={makeThread("t1")} />);
+  fireEvent.click(screen.getByRole("button", { name: "Team run" }));
+  const ui = useUi.getState();
+  expect(ui.newThreadTab).toBe("team");
+  expect(ui.newThreadProjectId).toBe("p1");
 });

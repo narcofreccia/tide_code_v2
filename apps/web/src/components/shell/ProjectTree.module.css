@@ -132,3 +132,14 @@
 }
 .groupToggle:hover { color: var(--text); }
 .roleTag { flex: none; max-width: 90px; overflow: hidden; text-overflow: ellipsis; white-space: nowrap; padding: 0 var(--sp-1); border-radius: var(--radius-sm); background: var(--st-idle-soft); color: var(--st-idle); font-size: 10px; line-height: 14px; }
+.groupHead { display: flex; align-items: center; justify-content: space-between; }
+.groupClear {
+  height: 20px;
+  padding: 0 var(--sp-2);
+  border: 0;
+  background: transparent;
+  color: var(--muted);
+  font-size: 11px;
+  cursor: pointer;
+}
+.groupClear:hover { color: var(--danger); }
