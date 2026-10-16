@@ -16,22 +16,58 @@ afterEach(async () => {
   while (cleanups.length > 0) await cleanups.pop()?.();
 });
 
-describe("VcsReactor — checkpoint ref GC", () => {
-  it("archiving a thread deletes its checkpoint refs and nobody else's", async () => {
-    const h = await harness(cleanups);
-    const a = await newThread(h, { useWorktree: true, title: "Gone" });
-    const b = await newThread(h, { useWorktree: true, title: "Stays" });
+describe("VcsReactor — checkpoint ref lifetime", () => {
+  async function twoThreads(h: Awaited<ReturnType<typeof harness>>) {
+    const a = await newThread(h, { useWorktree: true, title: "Mine" });
+    const b = await newThread(h, { useWorktree: true, title: "Other" });
     for (const t of [a, b]) {
-      h.control.script(emit({ type: "settled", status: "completed" }));
+      h.control.script(
+        effect(async (options) => {
+          await writeFile(join(options.cwd, "w.txt"), "w\n", "utf8");
+        }),
+        emit({ type: "settled", status: "completed" }),
+      );
       await requestTurn(h, t.id, "go");
     }
-    expect((await h.repo.git.listRefs(`refs/tide/checkpoints/${a.id}/`)).length).toBe(2);
+    return { a, b };
+  }
+  const refs = (h: Awaited<ReturnType<typeof harness>>, id: string) => h.repo.git.listRefs(`refs/tide/checkpoints/${id}/`);
 
+  it("archive with keepWorktree then unarchive keeps refs, and the turn diff still works", async () => {
+    const h = await harness(cleanups);
+    const { a } = await twoThreads(h);
     await h.app.engine.dispatch({ type: "thread.archive", threadId: a.id, keepWorktree: true });
     await h.settle();
+    await h.app.engine.dispatch({ type: "thread.unarchive", threadId: a.id });
+    await h.settle();
+    expect((await refs(h, a.id)).length).toBe(2);
+    const turn = Object.values(h.model().turns).find((t) => t.threadId === a.id)!;
+    const diff = await h.app.checkpoints.turnDiff(a.worktreePath!, turn);
+    expect(diff.files.map((f) => f.path)).toEqual(["w.txt"]);
+  });
 
-    expect(await h.repo.git.listRefs(`refs/tide/checkpoints/${a.id}/`)).toEqual([]);
-    expect((await h.repo.git.listRefs(`refs/tide/checkpoints/${b.id}/`)).length).toBe(2);
+  it("archive without keepWorktree removes the directory but refs still serve the turn diff", async () => {
+    const h = await harness(cleanups);
+    const { a, b } = await twoThreads(h);
+    await h.app.engine.dispatch({ type: "thread.archive", threadId: a.id });
+    await h.settle();
+    await h.app.engine.dispatch({ type: "thread.unarchive", threadId: a.id });
+    await h.settle();
+    expect(existsSync(a.worktreePath!)).toBe(false);
+    expect((await refs(h, a.id)).length).toBe(2);
+    expect((await refs(h, b.id)).length).toBe(2);
+    const turn = Object.values(h.model().turns).find((t) => t.threadId === a.id)!;
+    const diff = await h.app.checkpoints.turnDiff(h.repo.dir, turn);
+    expect(diff.files.map((f) => f.path)).toEqual(["w.txt"]);
+  });
+
+  it("detach with deleteBranch removes that thread's refs only", async () => {
+    const h = await harness(cleanups);
+    const { a, b } = await twoThreads(h);
+    await h.app.engine.dispatch({ type: "worktree.detach", threadId: a.id, deleteBranch: true });
+    await h.settle();
+    expect(await refs(h, a.id)).toEqual([]);
+    expect((await refs(h, b.id)).length).toBe(2);
   });
 });
 

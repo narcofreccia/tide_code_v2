@@ -30,7 +30,7 @@ swallow `node_modules/` or a `.env`, so that case stays a manual `git init`.
 | Commit / PR | `git add -A` + commit + push of `tide/<thread>` in the worktree, `gh pr create` | no |
 | Merge back (squash / merge / rebase) | done in a temporary worktree of the base branch under `~/.tide/worktrees/.merge-<thread>`; the base branch ref moves only when that succeeds | **fast-forward only, and only if your checkout is clean**. A dirty checkout keeps its files; the completion note gives the one `read-tree` command to sync later |
 | Conflict | nothing moves; the thread shows the conflicting files; resolve in the worktree (terminal tab) and retry | no |
-| Archive a thread | removes the worktree directory, keeps the branch unless you say otherwise, deletes the checkpoint refs | no |
+| Archive a thread | removes the worktree directory, keeps the branch unless you say otherwise; checkpoint refs are kept so unarchive still has diffs and rollback (they go only when the branch is deleted) | no |
 
 Threads **without** a worktree (you unticked it, or the folder is not a repo) run in the
 checkout itself. Tide disables revert and PR there and says so in the thread.

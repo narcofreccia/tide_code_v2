@@ -168,6 +168,18 @@ describe("rpc vcs.turnDiff / vcs.threadDiff", () => {
     expect(result?.files[0]).toMatchObject({ status: "added", additions: 1 });
   });
 
+  it("a turn whose checkpoint ref was deleted answers not-found with a readable message", async () => {
+    const s = await setup();
+    const before = await s.checkpoints.recordBefore(s.repo.dir, s.threadId, s.turnId);
+    await s.engine.dispatch({ type: "checkpoint.record", turnId: s.turnId, phase: "before", ref: before.ref });
+    const after = await s.checkpoints.recordAfter(s.repo.dir, s.threadId, s.turnId);
+    await s.engine.dispatch({ type: "checkpoint.record", turnId: s.turnId, phase: "after", ref: after.ref });
+    await s.checkpoints.deleteThreadRefs(s.repo.dir, s.threadId);
+
+    const { error } = await s.call("vcs.turnDiff", { threadId: s.threadId, turnId: s.turnId });
+    expect(error).toEqual({ code: "not-found", message: "checkpoint for this turn is gone" });
+  });
+
   it("rejects a turn that is not on the thread", async () => {
     const s = await setup();
     const { error } = await s.call("vcs.turnDiff", { threadId: s.threadId, turnId: "nope" });

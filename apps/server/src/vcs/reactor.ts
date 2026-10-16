@@ -126,14 +126,16 @@ export class VcsReactor {
         return;
       }
       case "thread.archived":
-        // archiving frees the disk unless the user asked to keep the checkout; the turn
-        // checkpoints die with the thread either way
+        // archiving frees the disk unless the user asked to keep the checkout; checkpoint refs
+        // stay (unarchive needs them for diff/rollback/fork) and die only with the branch
         if (event.keepWorktree !== true) this.#enqueue(event.threadId, async () => void (await this.#detach(event.threadId, false)));
-        this.#enqueue(event.threadId, () => this.#gcCheckpoints(event.threadId));
         return;
       case "worktree.detach-requested": {
         const { threadId, deleteBranch } = event;
-        this.#enqueue(threadId, async () => void (await this.#detach(threadId, deleteBranch === true)));
+        this.#enqueue(threadId, async () => {
+          const detached = await this.#detach(threadId, deleteBranch === true);
+          if (detached && deleteBranch === true) await this.#gcCheckpoints(threadId);
+        });
         return;
       }
       case "merge.requested": {
@@ -314,7 +316,7 @@ export class VcsReactor {
     this.#log(`[vcs] uncommitted work preserved at refs/tide/archived/${threadId}`, sha);
   }
 
-  /** Drops `refs/tide/checkpoints/<threadId>/*` once nothing can revert to them any more. */
+  /** Drops `refs/tide/checkpoints/<threadId>/*`; called only once the thread's branch is deleted. */
   async #gcCheckpoints(threadId: string): Promise<void> {
     const ctx = this.#context(threadId);
     if (!ctx) return;

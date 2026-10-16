@@ -4,7 +4,7 @@ import { isAbsolute, relative, resolve } from "node:path";
 import { resolveLinkedDirs } from "../provider/links.ts";
 import { threadCwd } from "../provider/sessions.ts";
 import type { CheckpointService } from "../vcs/checkpoints.ts";
-import { Git, WORKTREE } from "../vcs/git.ts";
+import { Git, GitError, WORKTREE } from "../vcs/git.ts";
 import { Gh, type GhLike } from "../vcs/gh.ts";
 import { safeRelativePath } from "../workspace/paths.ts";
 import { RpcException, type RpcRouter } from "./router.ts";
@@ -35,6 +35,16 @@ export { safeRelativePath };
 /** The project link a resolved `LinkedDir` came from; links are keyed by path in the model. */
 function linkIdFor(project: Project, path: string): string | undefined {
   return (project.links ?? []).find((link) => link.path === path)?.id;
+}
+
+/** A diff against a deleted checkpoint ref surfaces as a GitError; the client shows this text instead. */
+async function goneAsNotFound<T>(run: () => Promise<T>): Promise<T> {
+  try {
+    return await run();
+  } catch (err) {
+    if (err instanceof GitError) throw new RpcException("not-found", "checkpoint for this turn is gone");
+    throw err;
+  }
 }
 
 export function registerVcsHandlers(router: RpcRouter, deps: VcsHandlerDeps): void {
@@ -132,12 +142,12 @@ export function registerVcsHandlers(router: RpcRouter, deps: VcsHandlerDeps): vo
     const ctx = context(input.threadId);
     const turn = ctx.turns.find((t) => t.id === input.turnId);
     if (!turn) throw new RpcException("not-found", `unknown turn ${input.turnId} on thread ${input.threadId}`);
-    return withLinked(ctx, await deps.checkpoints.turnDiff(ctx.cwd, turn));
+    return withLinked(ctx, await goneAsNotFound(() => deps.checkpoints.turnDiff(ctx.cwd, turn)));
   });
 
   router.register("vcs.threadDiff", async (input) => {
     const ctx = context(input.threadId);
-    return withLinked(ctx, await deps.checkpoints.threadDiff(ctx.cwd, ctx.thread, ctx.turns));
+    return withLinked(ctx, await goneAsNotFound(() => deps.checkpoints.threadDiff(ctx.cwd, ctx.thread, ctx.turns)));
   });
 
   /**
