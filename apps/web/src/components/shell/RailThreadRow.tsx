@@ -4,6 +4,7 @@ import { updateThread } from "../../lib/threadActions.ts";
 import { isThreadMerged } from "@tide/client";
 import { relativeTime } from "../../lib/relativeTime.ts";
 import { PROVIDER_LABELS, PROVIDER_MONOGRAMS, threadStateKey } from "../../lib/vocab.ts";
+import { useServerSettings } from "../../state/serverSettings.ts";
 import { useModel } from "../../state/model.ts";
 import { useUi } from "../../state/ui.ts";
 import { ContextMenu, type MenuItem, type MenuPosition } from "../ui/Menu.tsx";
@@ -19,6 +20,9 @@ const ROLE_GLYPH: Record<NonNullable<Thread["role"]>, string> = {
 };
 
 /** Rail tags stay short; the tooltip carries the full role. */
+/** delegate outcomes the rail paints as a problem */
+const BAD_LABELS = new Set(["failed", "blocked", "fail"]);
+
 export function truncateRole(role: string): string {
   return role.length > 12 ? `${role.slice(0, 11)}…` : role;
 }
@@ -63,6 +67,9 @@ export function RailThreadRow({ thread, siblings }: { thread: Thread; siblings: 
   const selectThread = useUi((s) => s.selectThread);
   const [menu, setMenu] = useState<{ at: MenuPosition; items: MenuItem[] } | undefined>(undefined);
   const [renaming, setRenaming] = useState(false);
+  const low = useServerSettings((s) => s.settings.decisions.grayZone.low);
+  const j = thread.judge;
+  const judge = thread.delegatedBy !== undefined && thread.status !== "running" && j?.label !== undefined && j.confidence >= low ? { label: j.label, source: j.source, confidence: j.confidence } : undefined;
   const children = siblings.filter((t) => parentOf(t) === thread.id);
   const archived = thread.archivedAt !== undefined;
   const state = threadStateKey(thread);
@@ -119,6 +126,11 @@ export function RailThreadRow({ thread, siblings }: { thread: Thread; siblings: 
             {thread.delegateRole ? (
               <span className={styles.roleTag} title={`Role: ${thread.delegateRole}`}>
                 {truncateRole(thread.delegateRole)}
+              </span>
+            ) : null}
+            {judge ? (
+              <span className={`${styles.roleTag} ${BAD_LABELS.has(judge.label) ? styles.badTag : ""}`} title={`Judge: ${judge.source} ${judge.confidence.toFixed(2)}`}>
+                {judge.label}
               </span>
             ) : null}
             <span className={styles.meta}>

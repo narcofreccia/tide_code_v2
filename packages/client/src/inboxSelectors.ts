@@ -52,6 +52,11 @@ function urgencyOf(item: InboxItem): number {
   return item.thread.triage?.urgency ?? -1;
 }
 
+/** 1 for an approval the judge rated consequential: those come first. */
+function consequentialOf(item: InboxItem): number {
+  return item.activity?.kind === "approval" && item.activity.judge?.label === "consequential" ? 1 : 0;
+}
+
 /**
  * Everything waiting on the user — every pending card, not one per thread.
  * Ordered by triage urgency (highest first) when the decisions model scored the
@@ -75,6 +80,6 @@ export function selectInbox(model: ReadModel, projectId?: string, now: number = 
     }
   }
   return out.sort(
-    (a, b) => urgencyOf(b) - urgencyOf(a) || a.since - b.since || a.key.localeCompare(b.key),
+    (a, b) => consequentialOf(b) - consequentialOf(a) || urgencyOf(b) - urgencyOf(a) || a.since - b.since || a.key.localeCompare(b.key),
   );
 }

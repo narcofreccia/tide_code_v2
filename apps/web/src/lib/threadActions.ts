@@ -24,6 +24,7 @@ export interface ThreadPatch {
   mode?: RuntimeMode;
   interaction?: InteractionMode;
   pinned?: boolean;
+  autoAllowRoutine?: boolean;
 }
 
 export function updateThread(threadId: string, patch: ThreadPatch): void {

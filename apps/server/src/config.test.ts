@@ -19,6 +19,11 @@ describe("resolveConfig — server.json", () => {
   it("creates an identity once and reuses it", () => {
     const dir = home();
     const first = resolveConfig(["--data", ":memory:"], { TIDE_HOME: dir });
+    // settings follow --data so a scratch server never writes into ~/.tide
+    expect(first.settingsPath).toBeUndefined();
+    const scratch = resolveConfig(["--data", join(dir, "scratch")], { TIDE_HOME: dir });
+    expect(scratch.settingsPath).toBe(join(dir, "scratch", "settings.json"));
+    expect(resolveConfig([], { TIDE_HOME: dir }).settingsPath).toBe(join(dir, "settings.json"));
     const second = resolveConfig(["--data", ":memory:"], { TIDE_HOME: dir });
     expect(second.token).toBe(first.token);
     expect(second.environmentId).toBe(first.environmentId);

@@ -1,5 +1,6 @@
 import type { ReadModel, Thread } from "@tide/contracts";
-import { createChild, deleteNeedsConfirm, isEmptyThread, requestArchive, requestDelete } from "../../lib/threadActions.ts";
+import { useServerSettings } from "../../state/serverSettings.ts";
+import { createChild, deleteNeedsConfirm, isEmptyThread, requestArchive, requestDelete, updateThread } from "../../lib/threadActions.ts";
 import { snoozeThread, tomorrowMorning } from "../../lib/turnActions.ts";
 import { runInThreadTerminal } from "../../lib/openInTerminal.ts";
 import { useUi } from "../../state/ui.ts";
@@ -17,6 +18,8 @@ export function headerMenu(
 ): MenuItem[] {
   const ui = useUi.getState();
   const lastTurn = latestSettledTurnId(model, thread.id);
+  const decisions = useServerSettings.getState().settings.decisions;
+  const autoAllowOff = !decisions.enabled || !decisions.hasKey ? "needs a Jev key" : !decisions.sites.approvals ? "approvals judge is off" : undefined;
   const folded: MenuItem[] = narrow
     ? [
         {
@@ -55,6 +58,13 @@ export function headerMenu(
         { label: "1 hour", onSelect: () => snoozeThread(thread.id, now + HOUR) },
         { label: "Until tomorrow 09:00", onSelect: () => snoozeThread(thread.id, tomorrowMorning(now)) },
       ],
+    },
+    {
+      label: "Auto-allow routine approvals (this thread)",
+      checked: thread.autoAllowRoutine === true,
+      disabled: autoAllowOff !== undefined,
+      ...(autoAllowOff !== undefined ? { hint: autoAllowOff } : {}),
+      onSelect: () => updateThread(thread.id, { autoAllowRoutine: thread.autoAllowRoutine !== true }),
     },
     ...copyItems(thread),
     {

@@ -13,6 +13,7 @@ import {
   resetUi,
   chooseOption,
 } from "../../testHarness.ts";
+import { defaultUserSettings, useServerSettings } from "../../state/serverSettings.ts";
 import { useUi } from "../../state/ui.ts";
 import { threadTabs } from "../../state/workbench.ts";
 
@@ -141,5 +142,34 @@ describe("Experts board", () => {
     render(<ExpertsView sessionId="x1" />);
     fireEvent.keyDown(window, { key: "Escape" });
     expect(useUi.getState().view).toBe("mission");
+  });
+});
+
+describe("Experts board convergence chip", () => {
+  const judge = (patch: Partial<{ label: string; confidence: number; at: number }> = {}) => ({ site: "experts" as const, label: "true", confidence: 0.82, source: "jev" as const, at: 5, ...patch });
+  const chip = () => screen.queryByText("Experts agree (jev 0.82)");
+
+  it("offers the next phase when the experts agree and nothing moved since", () => {
+    useServerSettings.setState({ settings: defaultUserSettings() });
+    const fake = attachFakeStore(modelWithExperts(makeExpertsSession("x1", { judge: judge(), updatedAt: 5 }), [], []));
+    render(<Board sessionId="x1" />);
+    expect(chip()).not.toBeNull();
+    fireEvent.click(screen.getByText("Move to Discussing?"));
+    expect(fake.dispatch).toHaveBeenCalledWith(expect.objectContaining({ type: "experts.set-phase", sessionId: "x1", phase: "discussing" }));
+  });
+
+  it("stays hidden when stale, unsure, negative or past discussing", () => {
+    useServerSettings.setState({ settings: defaultUserSettings() });
+    for (const s of [
+      makeExpertsSession("x1", { judge: judge(), updatedAt: 9 }),
+      makeExpertsSession("x1", { judge: judge({ confidence: 0.4 }), updatedAt: 5 }),
+      makeExpertsSession("x1", { judge: judge({ label: "false" }), updatedAt: 5 }),
+      makeExpertsSession("x1", { judge: judge(), updatedAt: 5, phase: "synthesizing" }),
+    ]) {
+      attachFakeStore(modelWithExperts(s, [], []));
+      render(<Board sessionId="x1" />);
+      expect(screen.queryByText(/Experts agree/)).toBeNull();
+      cleanup();
+    }
   });
 });

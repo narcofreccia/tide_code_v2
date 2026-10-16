@@ -4,6 +4,7 @@ import { Button } from "../ui/Button.tsx";
 import { Composer } from "./Composer.tsx";
 import { PlanProgress } from "./PlanProgress.tsx";
 import { Stream } from "./Stream.tsx";
+import { StuckBanner } from "./StuckBanner.tsx";
 import { ThreadHeader } from "./ThreadHeader.tsx";
 import styles from "./ThreadView.module.css";
 
@@ -27,6 +28,7 @@ export function ThreadView({ thread }: { thread: Thread }) {
     <section className={styles.column} aria-label="Thread" data-thread-column>
       <ThreadHeader thread={thread} />
       {thread.planProgress ? <PlanProgress progress={thread.planProgress} /> : null}
+      <StuckBanner thread={thread} />
       <Stream threadId={thread.id} provider={thread.provider} />
       {thread.archivedAt === undefined ? <Composer thread={thread} /> : <ArchivedBar thread={thread} />}
     </section>

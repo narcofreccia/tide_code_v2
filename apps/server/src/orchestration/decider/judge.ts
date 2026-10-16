@@ -6,7 +6,7 @@ type JudgeCommand = CommandOf<"judge.record"> | CommandOf<"handoff.refine">;
 /**
  * R6: verdicts from the decision layer. `judge.record` annotates a thread, an approval activity
  * or an experts session; `handoff.refine` replaces a pending handoff's selection with the
- * judge's, only while no turn has delivered it yet.
+ * judge's, only while no turn has delivered it yet (a requested turn may still be waiting on it).
  */
 export function decideJudge(model: ReadModel, command: JudgeCommand, ctx: DecideContext): DecideResult {
   switch (command.type) {
@@ -27,8 +27,12 @@ export function decideJudge(model: ReadModel, command: JudgeCommand, ctx: Decide
       if (!handoff) return fail("not-found", `unknown handoff ${command.handoffId}`);
       const thread = model.threads[handoff.threadId];
       if (!thread) return fail("not-found", `unknown thread ${handoff.threadId}`);
-      const delivered = Object.values(model.turns).some((t) => t.handoffId === handoff.id && t.handoffDelivery !== undefined);
-      if (thread.pendingHandoffId !== handoff.id || delivered) return fail("conflict", `handoff ${handoff.id} is no longer pending`);
+      // pending on the thread, or taken by a turn that has not delivered it yet (the provider
+      // reactor waits briefly for the judge before delivering)
+      const takers = Object.values(model.turns).filter((t) => t.handoffId === handoff.id);
+      const delivered = takers.some((t) => t.handoffDelivery !== undefined || t.settledAt !== undefined);
+      const pending = thread.pendingHandoffId === handoff.id || takers.length > 0;
+      if (!pending || delivered) return fail("conflict", `handoff ${handoff.id} is no longer pending`);
       return ok({
         type: "handoff.refined",
         handoffId: handoff.id,

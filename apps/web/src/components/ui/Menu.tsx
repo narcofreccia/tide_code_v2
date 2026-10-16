@@ -12,6 +12,8 @@ export interface MenuItem {
   hint?: string;
   danger?: boolean;
   separatorBefore?: boolean;
+  /** a toggle: rendered as a checkbox item with a check mark when true */
+  checked?: boolean;
   /** a nested list ("Snooze ▸"); choosing the item swaps the menu to it */
   submenu?: MenuItem[];
 }
@@ -84,7 +86,8 @@ export function ContextMenu({
         <button
           key={item.label}
           type="button"
-          role="menuitem"
+          role={item.checked === undefined ? "menuitem" : "menuitemcheckbox"}
+          {...(item.checked === undefined ? {} : { "aria-checked": item.checked })}
           disabled={item.disabled === true}
           autoFocus={index === focused}
           {...(item.submenu ? { "aria-haspopup": "menu" as const } : {})}
@@ -106,7 +109,10 @@ export function ContextMenu({
             item.onSelect?.();
           }}
         >
-          <span className={styles.label}>{item.label}</span>
+          <span className={styles.label}>
+            {item.checked === true ? "✓ " : ""}
+            {item.label}
+          </span>
           {item.hint ? <span className={styles.hint}>{item.hint}</span> : null}
           {item.submenu ? <span className={styles.chevron}>▸</span> : null}
         </button>

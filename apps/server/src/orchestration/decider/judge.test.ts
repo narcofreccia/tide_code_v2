@@ -53,12 +53,13 @@ describe("decide: handoff.refine", () => {
     expect(model.handoffs[h.handoffId]).toMatchObject({ text: "refined", coveredTurnIds: [h.turnIds[1]], omittedTurnIds: [h.turnIds[0]], judge });
   });
 
-  it("refuses an unknown handoff and one a turn already took", () => {
+  it("refuses an unknown handoff and one a turn already delivered", () => {
     const h = withPendingHandoff();
     const cmd = { type: "handoff.refine" as const, handoffId: h.handoffId, text: "x", coveredTurnIds: [], omittedTurnIds: [], judge };
     expect(tryRun(h.model, { ...cmd, handoffId: "nope" })).toMatchObject({ ok: false, error: { code: "not-found" } });
     const taken = run(h.model, { type: "turn.request", threadId: h.threadId, text: "go on" });
-    expect(tryRun(taken.model, cmd)).toMatchObject({ ok: false, error: { code: "conflict" } });
+    // taken but not delivered yet: the turn may still be waiting for the judge
+    expect(tryRun(taken.model, cmd)).toMatchObject({ ok: true });
     const turnId = eventOf(taken.events, "turn.requested").turn.id;
     const delivered = run(taken.model, { type: "handoff.delivered", turnId, delivery: "inline" }).model;
     expect(tryRun(delivered, cmd)).toMatchObject({ ok: false, error: { code: "conflict" } });

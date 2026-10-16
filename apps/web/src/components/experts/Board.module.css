@@ -130,3 +130,5 @@
   font: inherit;
 }
 .composerBar { display: flex; align-items: center; gap: var(--sp-2); }
+
+.converged { display: flex; align-items: center; gap: var(--sp-2); padding: 0 var(--sp-2); border-radius: var(--radius-sm); background: var(--st-ok-soft); color: var(--st-ok); font-size: 12px; }

@@ -15,6 +15,8 @@ export interface CliFlags {
 export interface ServerConfig {
   tideHome: string;
   dataDir: string;
+  /** settings.json: beside the data when `--data` points elsewhere (scratch runs must never touch ~/.tide) */
+  settingsPath?: string;
   /** ":memory:" is honoured so tests can run without touching the disk */
   dbPath: string;
   environmentId: string;
@@ -141,6 +143,7 @@ export function resolveConfig(argv: string[] = [], env: NodeJS.ProcessEnv = proc
   return {
     tideHome,
     dataDir,
+    ...(isMemory ? {} : { settingsPath: dataOverride !== undefined ? join(dataDir, "settings.json") : join(tideHome, "settings.json") }),
     dbPath: isMemory ? ":memory:" : join(dataDir, "events.sqlite"),
     environmentId: identity.environmentId,
     token: identity.token,

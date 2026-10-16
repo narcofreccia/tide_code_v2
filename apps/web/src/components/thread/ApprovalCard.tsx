@@ -2,8 +2,10 @@ import { useEffect } from "react";
 import type { ActivityOf, ApprovalDecision } from "@tide/contracts";
 import { toolTarget } from "../../lib/activity.ts";
 import { diffStats, parseUnifiedDiff } from "../../lib/diff.ts";
+import { useServerSettings } from "../../state/serverSettings.ts";
 import { respondApproval } from "../../lib/threadActions.ts";
 import { Button } from "../ui/Button.tsx";
+import { Pill } from "../ui/Pill.tsx";
 import { Kbd } from "../ui/Kbd.tsx";
 import styles from "./Card.module.css";
 
@@ -47,6 +49,8 @@ function DiffPreview({ diff }: { diff: string }) {
  */
 export function ApprovalCard({ activity, active }: { activity: ActivityOf<"approval">; active: boolean }) {
   const pending = activity.status === "pending";
+  const low = useServerSettings((s) => s.settings.decisions.grayZone.low);
+  const judged = activity.judge?.label !== undefined && activity.judge.confidence >= low ? activity.judge : undefined;
   const target = toolTarget(activity.input);
   const respond = (decision: ApprovalDecision): void =>
     respondApproval(activity.threadId, activity.requestId, decision);
@@ -81,6 +85,11 @@ export function ApprovalCard({ activity, active }: { activity: ActivityOf<"appro
       <section className={`${styles.card} ${styles.attention}`} aria-label={`Approval: ${activity.toolName}`}>
         <div className={styles.head}>
           <span className={styles.title}>{activity.title ?? activity.toolName}</span>
+          {judged ? (
+            <Pill tone={judged.label === "consequential" ? "needs" : "muted"}>
+              <span title={`${judged.source} ${judged.confidence.toFixed(2)}`}>{judged.label}</span>
+            </Pill>
+          ) : null}
           <span className={styles.target}>{target}</span>
         </div>
         {activity.description ? <p className={styles.description}>{activity.description}</p> : null}

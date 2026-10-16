@@ -35,6 +35,15 @@ function rig(options: { enabled?: boolean; jev?: ReturnType<typeof fakeBackend>;
 }
 
 describe("Judge", () => {
+  it("never runs a Jev-required site (stuck) on the fallback alone", async () => {
+    const fallback = fakeBackend("fallback", () => ({ label: "true", confidence: 1 }));
+    const { judge } = rig({ jev: fakeBackend("jev", () => ({}), { available: () => false }), fallback });
+    expect(judge.enabled("stuck")).toBe(false);
+    expect(judge.enabled("approvals")).toBe(true);
+    const verdicts = await judge.ask({ ...perItem, site: "stuck" });
+    expect(verdicts.every((v) => v.source === "none")).toBe(true);
+  });
+
   it("site disabled or no backend: one none verdict per unit, nothing asked or recorded", async () => {
     const jev = fakeBackend("jev", () => ({ confidence: 1 }));
     const off = rig({ enabled: false, jev });

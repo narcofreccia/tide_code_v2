@@ -44,6 +44,8 @@ export type CancelTimer = () => void;
 export const INTERRUPT_TIMEOUT_ERROR = "driver did not honour interrupt; session closed";
 
 const DEFAULT_INTERRUPT_TIMEOUT_MS = 30_000;
+/** how long a turn waits for the handoff judge's refine before shipping the recency selection */
+export const HANDOFF_READY_WAIT_MS = 1_500;
 
 const realTimer = (fn: () => void, ms: number): CancelTimer => {
   const timer = setTimeout(fn, ms);
@@ -61,6 +63,8 @@ export interface ReactorOptions {
    * promoted after a restart). The read model keeps only attachment metadata.
    */
   imagesFor?: (turnId: string) => ImageInput[] | undefined;
+  /** resolves when the handoff judge is done with `handoffId` (undefined: nothing running) */
+  handoffReady?: (handoffId: string) => Promise<void> | undefined;
   /** grace period a driver gets to honour an interrupt before the turn is force-settled */
   interruptTimeoutMs?: number;
   /** injectable clock so tests drive the interrupt watchdog by hand instead of sleeping */
@@ -80,6 +84,7 @@ export class ProviderReactor {
   #sessions: SessionDirectory;
   #beforeTurn: ((threadId: string, turnId: string) => Promise<void>) | undefined;
   #imagesFor: ((turnId: string) => ImageInput[] | undefined) | undefined;
+  #handoffReady: ((handoffId: string) => Promise<void> | undefined) | undefined;
   /** turns already handed to a thread's chain (from `turn.requested` or a promotion) */
   #known = new Set<string>();
   #now: () => number;
@@ -100,6 +105,7 @@ export class ProviderReactor {
     this.#sessions = options.sessions;
     this.#beforeTurn = options.beforeTurn;
     this.#imagesFor = options.imagesFor;
+    this.#handoffReady = options.handoffReady;
     this.#interruptTimeoutMs = options.interruptTimeoutMs ?? DEFAULT_INTERRUPT_TIMEOUT_MS;
     this.#schedule = options.schedule ?? realTimer;
     this.#now = options.now ?? (() => Date.now());
@@ -421,8 +427,10 @@ export class ProviderReactor {
    * the fork point), otherwise the history goes inline ahead of the user's text.
    */
   async #openFor(thread: Thread, project: Project, turnId: string, input: TurnInput): Promise<{ session: ProviderSession; prompt: TurnInput }> {
+    const handoffId = this.#engine.getModel().turns[turnId]?.handoffId;
+    if (handoffId !== undefined) await this.#awaitHandoff(handoffId);
     const model = this.#engine.getModel();
-    const hasHandoff = model.turns[turnId]?.handoffId !== undefined;
+    const hasHandoff = handoffId !== undefined;
     let plan: DeliveryPlan | undefined;
     if (hasHandoff) {
       let caps = {};
@@ -454,7 +462,29 @@ export class ProviderReactor {
     } else delivery = "inline";
     session ??= await this.#sessions.getOrOpen(thread, project);
     await this.#dispatch({ type: "handoff.delivered", turnId, delivery });
-    return { session, prompt: delivery === "native" ? input : { ...input, text: inlinePrompt(plan.handoff, input.text) } };
+    // re-read: a refine that landed while the session opened is the text to ship (later ones are refused)
+    const handoff = this.#engine.getModel().handoffs[plan.handoff.id] ?? plan.handoff;
+    return { session, prompt: delivery === "native" ? input : { ...input, text: inlinePrompt(handoff, input.text) } };
+  }
+
+  /** Gives the handoff judge a short window to refine the selection; never blocks a turn longer. */
+  async #awaitHandoff(handoffId: string): Promise<void> {
+    let ready: Promise<void> | undefined;
+    try {
+      ready = this.#handoffReady?.(handoffId);
+    } catch (err) {
+      this.#log("[reactor] handoffReady failed", err);
+    }
+    if (ready === undefined) return;
+    let cancel: CancelTimer | undefined;
+    const timeout = new Promise<void>((resolve) => {
+      cancel = this.#schedule(resolve, HANDOFF_READY_WAIT_MS);
+    });
+    try {
+      await Promise.race([ready.catch(() => undefined), timeout]);
+    } finally {
+      cancel?.();
+    }
   }
 
   #errorActivity(threadId: string, turnId: string, text: string): Activity {

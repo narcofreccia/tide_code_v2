@@ -23,6 +23,7 @@ import {
   selectSnoozed,
   selectRailGroups,
   selectActiveTurn,
+  selectIdleMs,
   selectInbox,
   selectThreadsNeedingAttention,
   selectProjectLinks,
@@ -247,6 +248,24 @@ describe("selectInbox", () => {
     expect(inbox.map((i) => i.key)).toEqual(["q1", "thread:t3", "a1"]);
     expect(inbox[1]?.attention).toBe("plan");
   });
+
+  it("puts approvals the judge rated consequential first, whatever the urgency", () => {
+    const verdict = (label: string) => ({ site: "approvals" as const, label, confidence: 0.9, source: "jev" as const, at: 1 });
+    const model = build({
+      threads: [
+        thread("t1", { attention: "approval" }),
+        thread("t2", { attention: "approval", triage: { needsUser: 0.9, stuck: 0.1, urgency: 0.9, at: 1 } }),
+        thread("t3", { attention: "approval" }),
+      ],
+      activities: [
+        approval("a1", { createdAt: 1, judge: verdict("routine") }),
+        approval("a2", { threadId: "t2", createdAt: 2, judge: verdict("routine") }),
+        approval("a3", { threadId: "t3", createdAt: 9, judge: verdict("consequential") }),
+      ],
+      timeline: { t1: [{ kind: "activity", id: "a1" }], t2: [{ kind: "activity", id: "a2" }], t3: [{ kind: "activity", id: "a3" }] },
+    });
+    expect(selectInbox(model).map((i) => i.key)).toEqual(["a3", "a2", "a1"]);
+  });
 });
 
 describe("groupActivities", () => {
@@ -452,5 +471,23 @@ describe("descendantThreads", () => {
     const ids = descendantThreads(model, "root").map((t) => t.id).sort();
     expect(ids).toEqual(["deleg", "fork", "loop"]);
     expect(descendantThreads(model, "other")).toEqual([]);
+  });
+});
+
+describe("selectIdleMs", () => {
+  const thread = { id: "t1", projectId: "p1", title: "T", provider: "claude", mode: "approval-required", interaction: "default", status: "running", createdAt: 100, updatedAt: 9_000, latestTurnId: "u1" } as Thread;
+  it("measures from the latest message, activity or turn time, ignoring updatedAt", () => {
+    const model: ReadModel = {
+      ...emptyReadModel(),
+      threads: { t1: thread },
+      messages: { m1: { id: "m1", threadId: "t1", turnId: "u1", role: "user", text: "go", createdAt: 200 } },
+      threadMessages: { t1: ["m1"] },
+      activities: { a1: { id: "a1", threadId: "t1", turnId: "u1", kind: "info", text: "x", createdAt: 300, updatedAt: 1_000 } as Activity },
+      threadTimeline: { t1: [{ kind: "message", id: "m1" }, { kind: "activity", id: "a1" }] as TimelineEntry[] },
+      turns: { u1: { id: "u1", threadId: "t1", status: "running", requestedAt: 200, startedAt: 250 } },
+    };
+    expect(selectIdleMs(model, thread, 61_000)).toBe(60_000);
+    const { latestTurnId: _drop, ...fresh } = thread;
+    expect(selectIdleMs({ ...emptyReadModel(), threads: { t1: fresh } }, fresh, 50)).toBe(0);
   });
 });

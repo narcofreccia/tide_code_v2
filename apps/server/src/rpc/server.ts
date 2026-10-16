@@ -106,7 +106,12 @@ export async function startServer(deps: ServerDeps): Promise<ServerHandle> {
     ...(deps.judgeLedger !== undefined ? { judgeLedger: deps.judgeLedger } : {}),
   });
   registerAgentHandlers(router, { engine });
-  registerAgentThreadHandlers(router, { engine, registry, ...(deps.delegateWaits !== undefined ? { waits: deps.delegateWaits } : {}) });
+  registerAgentThreadHandlers(router, {
+    engine,
+    registry,
+    ...(deps.delegateWaits !== undefined ? { waits: deps.delegateWaits } : {}),
+    ...(deps.settings !== undefined ? { grayZone: () => (deps.settings as SettingsStore).get().decisions.grayZone } : {}),
+  });
   const checkpoints = deps.checkpoints ?? new CheckpointService();
   registerAgentDiffHandler(router, { engine, checkpoints });
   registerVcsHandlers(router, {

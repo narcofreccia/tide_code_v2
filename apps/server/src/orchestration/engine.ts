@@ -10,6 +10,7 @@ import {
   type ReadModel,
 } from "@tide/contracts";
 import { decide, type DecideDefaults } from "./decider/index.ts";
+import { handoffCapFromEnv } from "./handoff/select.ts";
 import type { EventStore } from "./store.ts";
 
 /** Every `type` literal the command union accepts, flattened across its nested unions. */
@@ -37,6 +38,8 @@ export interface EngineOptions {
   newId?: () => string;
   /** user settings the decider reads (limit policy, worktree/provider defaults); read per command */
   defaults?: () => DecideDefaults;
+  /** upper bound for recorded handoffs; defaults to `TIDE_HANDOFF_TOKEN_CAP` */
+  handoffCap?: number | undefined;
 }
 
 export interface DispatchResult {
@@ -55,6 +58,7 @@ export class Engine {
   #now: () => number;
   #newId: () => string;
   #defaults: () => DecideDefaults;
+  #handoffCap: number | undefined;
   #model: ReadModel;
   #listeners = new Set<EventListener>();
   /** tail of the serial processing chain; also the drain() handle */
@@ -65,6 +69,7 @@ export class Engine {
     this.#now = options.now ?? (() => Date.now());
     this.#newId = options.newId ?? (() => defaultNewId());
     this.#defaults = options.defaults ?? (() => ({}));
+    this.#handoffCap = "handoffCap" in options ? options.handoffCap : handoffCapFromEnv();
     this.#model = replay(emptyReadModel(), options.store.readAll());
   }
 
@@ -129,7 +134,7 @@ export class Engine {
       }
     }
     const ts = this.#now();
-    const decision = decide(this.#model, command, { ...this.#defaults(), now: ts, newId: this.#newId });
+    const decision = decide(this.#model, command, { ...this.#defaults(), now: ts, newId: this.#newId, ...(this.#handoffCap !== undefined ? { handoffCap: this.#handoffCap } : {}) });
     if (!decision.ok) throw new CommandError(decision.error.code, decision.error.message);
     if (decision.events.length === 0 && commandId === undefined) return { seq: this.#model.seq, events: [] };
 

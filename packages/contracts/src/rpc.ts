@@ -379,7 +379,7 @@ export const rpcMethods = {
   /** resolves when the thread's live turn settles (or at once when idle); a timeout never cancels anything */
   "agent.thread.wait": unary(
     Type.Object({ threadId: Type.String(), turnId: Type.Optional(Type.String()), timeoutMs: Type.Optional(Type.Number({ minimum: 1000, maximum: 600000 })) }),
-    Type.Object({ status: Type.String(), settled: Type.Boolean(), timedOut: Type.Boolean(), attention: Type.Optional(Type.String()), lastAssistantText: Type.Optional(Type.String()), error: Type.Optional(Type.String()) }),
+    Type.Object({ status: Type.String(), settled: Type.Boolean(), timedOut: Type.Boolean(), attention: Type.Optional(Type.String()), lastAssistantText: Type.Optional(Type.String()), error: Type.Optional(Type.String()), judge: Type.Optional(Type.Object({ label: Type.String(), confidence: Type.Number(), source: Type.String() })) }),
   ),
   "agent.thread.interrupt": unary(Type.Object({ threadId: Type.String() }), Type.Object({ ok: Type.Boolean() })),
   /** pending questions (never approvals: agents cannot approve tool calls) on a thread */

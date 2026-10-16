@@ -55,7 +55,7 @@ async function setup(): Promise<Setup> {
   if (parent?.type !== "thread.created") throw new Error("expected thread");
   const waits = new DelegateWaits();
   const clock = manualTimers();
-  const reactor = new DelegationReactor({ engine, waits, schedule: clock.schedule, log: () => undefined });
+  const reactor = new DelegationReactor({ engine, waits, schedule: clock.schedule, grayZone: () => ({ low: 0.6, high: 0.85 }), log: () => undefined });
   reactor.start();
   let n = 0;
   const s: Setup = {
@@ -173,6 +173,36 @@ describe("DelegationReactor — wake-ups", () => {
     await s.engine.dispatch({ type: "turn.start", turnId: again.turn.id, provider: "codex" });
     await s.finish(again.turn.id, "more done");
     expect(s.clock.timers).toHaveLength(1);
+  });
+});
+
+describe("DelegationReactor — judge verdict", () => {
+  const verdict = (label: string, confidence: number) => ({ site: "delegates" as const, label, confidence, source: "jev" as const, at: 2_000 });
+
+  it("adds the judge line and label to the summary when the verdict landed and is confident", async () => {
+    const s = await setup();
+    const d = await s.delegate("Fix types");
+    await s.finish(d.turnId, "All green.");
+    await s.engine.dispatch({ type: "judge.record", target: { kind: "thread", id: d.threadId }, verdict: verdict("done", 0.912) });
+    s.clock.fire();
+    await s.settle();
+    const [prompt] = parentPrompts(s);
+    expect(prompt?.notification).toEqual({ source: "delegate", summary: "Fix types finished — done" });
+    expect(prompt?.text).toBe(`Delegate "Fix types" (codex) finished: completed. Last reply:\nAll green.\nJudge: done (jev 0.91)\nUse tide_delegate_status / tide_thread_read ${d.threadId} for details.`);
+  });
+
+  it("ships without the verdict when it is missing at flush or below the gray zone's low", async () => {
+    const s = await setup();
+    const a = await s.delegate("A");
+    const b = await s.delegate("B");
+    await s.finish(a.turnId, "a");
+    await s.finish(b.turnId, "b");
+    await s.engine.dispatch({ type: "judge.record", target: { kind: "thread", id: b.threadId }, verdict: verdict("failed", 0.4) });
+    s.clock.fire();
+    await s.settle();
+    const [prompt] = parentPrompts(s);
+    expect(prompt?.text).not.toContain("Judge:");
+    expect(prompt?.notification?.summary).toBe("2 delegates finished");
   });
 });
 

@@ -153,4 +153,34 @@ describe("Engine", () => {
       expect(store.lastSeq()).toBe(seq);
     });
   });
+
+  it("passes TIDE_HANDOFF_TOKEN_CAP to the decider as the handoff cap", async () => {
+    const run = async (handoffCap?: number): Promise<number> => {
+      const engine = new Engine({ store: await memoryStore(), ...(handoffCap !== undefined ? { handoffCap } : {}) });
+      const p = await engine.dispatch({ type: "project.create", title: "T", rootPath: "/repo" });
+      const projectId = (p.events[0]?.event as { project: { id: string } }).project.id;
+      const t = await engine.dispatch({ type: "thread.create", projectId, provider: "claude" });
+      const threadId = (t.events[0]?.event as { thread: { id: string } }).thread.id;
+      for (let i = 0; i < 6; i++) {
+        const r = await engine.dispatch({ type: "turn.request", threadId, text: `${i}`.repeat(1500) });
+        const turnId = (r.events.find((e) => e.event.type === "turn.requested")?.event as { turn: { id: string } }).turn.id;
+        await engine.dispatch({ type: "turn.start", turnId, provider: "claude" });
+        await engine.dispatch({ type: "turn.settle", turnId, status: "completed" });
+      }
+      await engine.dispatch({ type: "thread.update", threadId, provider: "codex" });
+      const h = Object.values(engine.getModel().handoffs)[0];
+      return h?.omittedTurnIds.length ?? -1;
+    };
+    const saved = process.env["TIDE_HANDOFF_TOKEN_CAP"];
+    try {
+      delete process.env["TIDE_HANDOFF_TOKEN_CAP"];
+      expect(await run()).toBe(0);
+      process.env["TIDE_HANDOFF_TOKEN_CAP"] = "1024";
+      expect(await run()).toBeGreaterThan(0);
+      expect(await run(64_000)).toBe(0);
+    } finally {
+      if (saved === undefined) delete process.env["TIDE_HANDOFF_TOKEN_CAP"];
+      else process.env["TIDE_HANDOFF_TOKEN_CAP"] = saved;
+    }
+  });
 });

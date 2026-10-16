@@ -5,6 +5,9 @@ import type { DriverRegistry } from "../provider/registry.ts";
 import type { SettingsStore } from "../settings.ts";
 import type { Ask, JudgeBackend, JudgeCall, JudgeUnit, JudgeVerdict } from "./judge.ts";
 
+/** A label is a few tokens, but a schema-constrained reply is a tool call with JSON around it. */
+export const FALLBACK_MAX_OUTPUT_TOKENS = 256;
+
 export const FALLBACK_TIMEOUT_MS = 25_000;
 export const FALLBACK_SYSTEM = "You are a classifier. Answer with exactly one label from the list and nothing else.";
 /** chars per state token when clipping the state for the fallback prompt */
@@ -128,7 +131,7 @@ export class FallbackJudge implements JudgeBackend {
         prompt: fallbackPrompt(call, unit),
         ...(pick.model !== undefined ? { model: pick.model } : {}),
         labels: Object.keys(labelsOf(unit.ask)),
-        maxOutputTokens: 16,
+        maxOutputTokens: FALLBACK_MAX_OUTPUT_TOKENS,
         timeoutMs,
         signal: AbortSignal.timeout(timeoutMs),
         cwd,

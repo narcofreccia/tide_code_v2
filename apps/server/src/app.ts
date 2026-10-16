@@ -4,6 +4,10 @@ import type { Transport } from "./decisions/client.ts";
 import type { Judge } from "./decisions/judge.ts";
 import type { JudgeLedger } from "./decisions/ledger.ts";
 import { TriageReactor } from "./decisions/reactor.ts";
+import { HandoffSite } from "./decisions/sites/handoff.ts";
+import { ApprovalsSite } from "./decisions/sites/approvals.ts";
+import { DelegatesSite } from "./decisions/sites/delegates.ts";
+import { ExpertsSite } from "./decisions/sites/experts.ts";
 import { createJudgeService } from "./decisions/service.ts";
 import { ExpertsReactor } from "./experts/reactor.ts";
 import { TideMcpProvisioner } from "./mcp/provision.ts";
@@ -96,7 +100,7 @@ export async function createApp(options: AppOptions): Promise<App> {
   const environmentId = persisted ?? config.environmentId;
 
   // One settings store for the engine (decider defaults), the RPC server and the decisions client.
-  const settings = options.settings ?? new SettingsStore({ ...(config.dataDir === ":memory:" ? {} : { path: SettingsStore.pathFor(config.tideHome) }), log });
+  const settings = options.settings ?? new SettingsStore({ ...(config.settingsPath === undefined ? {} : { path: config.settingsPath }), log });
   const engine = new Engine({ store, defaults: () => deciderDefaults(settings) });
   const registry = new DriverRegistry({ env: { dataDir: config.dataDir, log } });
   if (options.registerDrivers) await options.registerDrivers(registry);
@@ -127,9 +131,12 @@ export async function createApp(options: AppOptions): Promise<App> {
   });
   vcs.start();
 
+  // created with the judge below; a turn carrying a handoff waits briefly for its refine
+  let handoffSite: HandoffSite | undefined;
   const reactor = new ProviderReactor({
     engine,
     sessions,
+    handoffReady: (handoffId) => handoffSite?.pending(handoffId),
     beforeTurn: (_threadId, turnId) => checkpoints.beforeReady(turnId),
     imagesFor: (turnId) => imagesOf(store, turnId),
     log,
@@ -155,6 +162,15 @@ export async function createApp(options: AppOptions): Promise<App> {
   });
   const triage = new TriageReactor({ engine, judge, log });
   triage.start();
+  handoffSite = new HandoffSite({ engine, judge, log });
+  handoffSite.start();
+  const grayZone = () => settings.get().decisions.grayZone;
+  const decisionSites = [
+    new DelegatesSite({ engine, judge, log }),
+    new ApprovalsSite({ engine, judge, grayZone, log }),
+    new ExpertsSite({ engine, judge, grayZone, autoAdvance: () => settings.get().decisions.expertsAutoAdvance, log }),
+  ];
+  for (const site of decisionSites) site.start();
 
   // After every reactor subscribed: the dead turns' settles must reach the vcs reactor (after-
   // checkpoint), the experts reactor (expert status) and the provider reactor (which runs the
@@ -165,7 +181,7 @@ export async function createApp(options: AppOptions): Promise<App> {
 
   // after recovery: turns settled as "interrupted" by a restart must not wake their parents
   const delegateWaits = new DelegateWaits();
-  const delegation = new DelegationReactor({ engine, waits: delegateWaits, log, ...(options.delegationSchedule !== undefined ? { schedule: options.delegationSchedule } : {}) });
+  const delegation = new DelegationReactor({ engine, waits: delegateWaits, grayZone, log, ...(options.delegationSchedule !== undefined ? { schedule: options.delegationSchedule } : {}) });
   delegation.start();
 
   // after recovery: a slot due during the downtime fires once, never as a burst
@@ -221,10 +237,12 @@ export async function createApp(options: AppOptions): Promise<App> {
       reactor.stop();
       experts.stop();
       triage.stop();
+      handoffSite?.stop();
       vcs.stop();
       rollback.stop();
       limits.stop();
       delegation.stop();
+      for (const site of decisionSites) site.stop();
       scheduler.stop();
       prWatch.stop();
       await server?.close();
@@ -247,7 +265,7 @@ export async function createApp(options: AppOptions): Promise<App> {
 
       // 3. give the reactors a bounded window to finish their git/driver work before the
       //    store they write into is closed under them
-      await withTimeout(Promise.all([reactor.drain(), vcs.drain(), triage.drain(), rollback.drain(), prWatch.drain(), scheduler.drain(), delegation.drain()]), options.shutdownTimeoutMs ?? DEFAULT_SHUTDOWN_TIMEOUT_MS, log);
+      await withTimeout(Promise.all([reactor.drain(), vcs.drain(), triage.drain(), rollback.drain(), prWatch.drain(), scheduler.drain(), delegation.drain(), ...decisionSites.map((site) => site.drain())]), options.shutdownTimeoutMs ?? DEFAULT_SHUTDOWN_TIMEOUT_MS, log);
 
       workspace.close();
       await sessions.closeAll();

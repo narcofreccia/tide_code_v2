@@ -1,5 +1,6 @@
 import { selectExpertsBoard } from "@tide/client";
-import { archiveExpertsSession, PHASE_LABELS } from "../../lib/expertsActions.ts";
+import { archiveExpertsSession, nextPhase, PHASE_LABELS, setExpertsPhase } from "../../lib/expertsActions.ts";
+import { useServerSettings } from "../../state/serverSettings.ts";
 import { useModel } from "../../state/model.ts";
 import { useUi } from "../../state/ui.ts";
 import { Button } from "../ui/Button.tsx";
@@ -20,9 +21,17 @@ export function Board({ sessionId }: { sessionId: string }) {
   const model = useModel((s) => s.model);
   const board = selectExpertsBoard(model, sessionId);
   const selectedThreadId = useUi((s) => s.selectedThreadId);
+  const low = useServerSettings((s) => s.settings.decisions.grayZone.low);
 
   if (!board) return <p className={styles.empty}>This experts session is gone.</p>;
   const { session } = board;
+  // the verdict is only news until something else moves the session (a phase change, a new finding)
+  const verdict = session.judge;
+  const next = nextPhase(session.phase);
+  const converged =
+    (session.phase === "exploring" || session.phase === "discussing") && next !== undefined && verdict?.label === "true" && verdict.confidence >= low && verdict.at >= session.updatedAt
+      ? { verdict, next }
+      : undefined;
 
   return (
     <div className={styles.board} aria-label="Experts board">
@@ -39,6 +48,16 @@ export function Board({ sessionId }: { sessionId: string }) {
       </header>
 
       <PhaseStepper sessionId={session.id} phase={session.phase} />
+      {converged ? (
+        <div className={styles.converged} role="status">
+          <span>
+            Experts agree ({converged.verdict.source} {converged.verdict.confidence.toFixed(2)})
+          </span>
+          <Button variant="quiet" onClick={() => setExpertsPhase(session.id, converged.next)}>
+            Move to {PHASE_LABELS[converged.next]}?
+          </Button>
+        </div>
+      ) : null}
 
       <div className={styles.experts} aria-label="Experts">
         {session.experts.map((expert) => (

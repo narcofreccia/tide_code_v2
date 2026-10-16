@@ -100,6 +100,9 @@ export interface JudgeOptions {
 
 export const OVER_BUDGET = "over budget";
 
+/** Frequent, per-item sites that must not run on the fallback alone. */
+export const JEV_REQUIRED_SITES: ReadonlySet<JudgeSite> = new Set<JudgeSite>(["stuck"]);
+
 export const noneVerdict = (id: string, error?: string): JudgeVerdict => ({ id, confidence: 0, source: "none", tokens: 0, elapsedMs: 0, ...(error !== undefined ? { error } : {}) });
 
 const itemPrefix = (key: string, instructions: string): string => `About item "${key}": ${instructions}`;
@@ -150,9 +153,16 @@ export class Judge {
     this.#log = options.log ?? (() => undefined);
   }
 
-  /** Whether `ask` on this site would reach any backend (callers skip work otherwise). */
+  /**
+   * Whether `ask` on this site would reach any backend (callers skip work otherwise). Sites in
+   * `JEV_ONLY_WITHOUT_FALLBACK` run only when Jev is up: they fire often (every settled turn), so
+   * a harness model standing in for Jev would burn tokens on sweeps — the judge is for moments
+   * where one cheap verdict changes something.
+   */
   enabled(site: JudgeSite): boolean {
-    return this.#siteEnabled(site) && (this.#jev.available() || this.#fallback?.available() === true);
+    if (!this.#siteEnabled(site)) return false;
+    if (this.#jev.available()) return true;
+    return this.#fallback?.available() === true && !JEV_REQUIRED_SITES.has(site);
   }
 
   grayZone(): { low: number; high: number } {

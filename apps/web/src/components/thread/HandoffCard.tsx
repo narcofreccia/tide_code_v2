@@ -4,8 +4,10 @@ import { Pill } from "../ui/Pill.tsx";
 import styles from "./HandoffCard.module.css";
 import { plural } from "../../lib/format.ts";
 
-/** `covers 6 turns, 2 omitted` */
+/** `covers 6 turns, 2 omitted`, or once the judge refined it `12 items, 9 kept by judge (jev 0.87), 3 dropped` */
 export function handoffCoverage(handoff: Handoff): string {
+  const j = handoff.judge;
+  if (j !== undefined) return `${j.kept + j.dropped} items, ${j.kept} kept by judge (${j.source} ${j.confidence.toFixed(2)}), ${j.dropped} dropped`;
   const n = handoff.coveredTurnIds.length;
   const m = handoff.omittedTurnIds.length;
   return `covers ${plural(n, "turn")}, ${m} omitted`;

@@ -1,6 +1,7 @@
 import { afterEach, describe, expect, it } from "vitest";
 import { cleanup, fireEvent, render, screen } from "@testing-library/react";
 import { ApprovalCard } from "./ApprovalCard.tsx";
+import { defaultUserSettings, useServerSettings } from "../../state/serverSettings.ts";
 import { attachFakeStore, makeApproval, modelWith, resetUi } from "../../testHarness.ts";
 
 afterEach(() => {
@@ -65,5 +66,26 @@ describe("ApprovalCard", () => {
     );
     expect(screen.getByText("Allowed Edit")).toBeDefined();
     expect(screen.queryByText("Allow for session")).toBeNull();
+  });
+});
+
+describe("ApprovalCard judge pill", () => {
+  const verdict = (label: string, confidence: number) => ({ site: "approvals" as const, label, confidence, source: "jev" as const, at: 1 });
+
+  it("shows routine / consequential with the source and confidence when it clears the gray zone's low", () => {
+    useServerSettings.setState({ settings: defaultUserSettings() });
+    attachFakeStore(modelWith({}));
+    render(<ApprovalCard activity={makeApproval("a1", { judge: verdict("consequential", 0.88) })} active />);
+    expect(screen.getByText("consequential").getAttribute("title")).toBe("jev 0.88");
+  });
+
+  it("hides a verdict below low and a card without one", () => {
+    useServerSettings.setState({ settings: defaultUserSettings() });
+    attachFakeStore(modelWith({}));
+    render(<ApprovalCard activity={makeApproval("a1", { judge: verdict("routine", 0.4) })} active />);
+    expect(screen.queryByText("routine")).toBeNull();
+    cleanup();
+    render(<ApprovalCard activity={makeApproval("a2")} active />);
+    expect(screen.queryByText("routine")).toBeNull();
   });
 });

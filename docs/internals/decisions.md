@@ -64,3 +64,54 @@ the most recent verdicts.
 
 Triage (`triage.ts`, `reactor.ts`) is the first site: one `per-item` question per project on site
 `stuck`, three sub-questions per thread; only `stuck` may reach the fallback.
+
+## Sites: handoff, stuck
+
+**handoff** (`sites/handoff.ts`). Runs only when a recorded handoff had to omit turns, since that
+is the only case where a ranking can change what the next harness reads. The latest request, the
+latest answer and the original request are always kept. The judge labels each remaining item
+`keep`/`drop` in one `per-item` question (`shared`: first and latest user text, ≤400 chars each;
+items: `{kind, turn, text≤240}`, keyed by timeline position). The rank is `keep` → score or
+confidence, `drop` → 1 − that, no verdict → 0.5. `selectHandoffRanked` fills the same budget in
+that order (ties go to the newest item) and renders the same text, and `handoff.refine` records
+it along with `{kept, dropped, source, confidence (mean), at}`. If every verdict is `none`,
+nothing is dispatched. When a turn carrying the handoff opens, the provider reactor waits up to
+1.5 s (`HANDOFF_READY_WAIT_MS`) for `pending(handoffId)` and reads the handoff after
+`handoff.delivered`. A refine that lands after that point is refused with `conflict`, logged
+once, and the recency selection stands. The handoff card shows
+`N items, K kept by judge (jev 0.87), D dropped`.
+
+**stuck** (triage). `thread.triage.stuck ≥ 0.7` on a running thread shows a banner above the
+stream: `Looks stuck for N min (jev 0.78)`, where N comes from `selectIdleMs` (the client copy of
+`lastActivityAt`). The banner offers **Stop** (`turn.interrupt`), **Nudge** (`turn.steer` with a
+status-check question) and a dismiss that lasts for the current turn. It never acts on its own.
+
+## Sites: delegates, approvals, experts
+
+Each site (`apps/server/src/decisions/sites/`) is a small reactor: it subscribes to the engine,
+checks `judge.enabled(site)`, asks exactly one clipped question at one moment, and persists the
+verdict with `judge.record`. Nothing here blocks the flow it annotates.
+
+- **delegates**: on `turn.settled` of a delegate (thread with `delegatedBy`, no longer running),
+  one `label` question (`delegate:<thread>:<turn>`: task ≤ 600, last reply ≤ 1500, outcome, error,
+  pending question) with labels `done | blocked | needs-user | failed`, or `pass | fail |
+  inconclusive` when the role matches `/review|test|qa/i`. The verdict lands on `Thread.judge`.
+  The parent's wake-up (`delegation.ts`) never waits for it: if the verdict is there at the 2 s
+  flush and its confidence is at least `grayZone.low`, the block gains
+  `Judge: <label> (<source> <confidence>)` and a single-delegate summary becomes
+  `<title> finished — <label>`. `agent.thread.wait` returns `judge: {label, confidence, source}` under
+  the same rule. The rail shows the label next to the role tag (red for failed / blocked / fail).
+- **approvals**: on a pending approval (once per activity id) one `routine | consequential` question
+  with tool name, title, description, input (≤ 800 chars), the first 40 diff lines and path-like
+  strings. The card shows the label as a pill when confidence ≥ `low`; the Inbox puts
+  consequential approvals first. **Auto-allow is opt-in per thread** (`autoAllowRoutine`, header
+  menu) and needs all three: the thread opted in; the verdict is `routine` from Jev with
+  confidence ≥ `grayZone.high` (a fallback verdict never qualifies); the approval is still pending
+  when the verdict lands. It then dispatches `approval.respond accept` and posts an info activity
+  `Auto-allowed (routine, jev 0.93)`.
+- **experts**: when every bound expert is idle in exploring / discussing and the session has more
+  findings than at the last question, one `yes-no` ("have the experts converged?", id
+  `experts:<session>:<findings>`) over the topic, phase, the last two findings per expert and the
+  last message per expert. The Board shows "Experts agree — Move to <next>?" while the verdict is
+  newer than the session's last change. With `expertsAutoAdvance`, a Jev yes at score ≥ `high`
+  advances one phase, never twice for the same findings count.

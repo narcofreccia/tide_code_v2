@@ -507,3 +507,17 @@ export function selectTeamStages(model: ReadModel, leadId: string): TeamStageVie
     return { stage, ...(thread === undefined ? {} : { thread }), status: stageStatus(thread) };
   });
 }
+
+/**
+ * Milliseconds since anything happened on a thread (messages, activities, its latest turn's
+ * request/start/settle), ignoring triage, which bumps `updatedAt`. Mirrors the server's
+ * `lastActivityAt` (decisions/triage.ts).
+ */
+export function selectIdleMs(model: ReadModel, thread: Thread, now: number = Date.now()): number {
+  let last = thread.createdAt;
+  for (const id of model.threadMessages[thread.id] ?? []) last = Math.max(last, model.messages[id]?.createdAt ?? 0);
+  for (const entry of model.threadTimeline[thread.id] ?? []) if (entry.kind === "activity") last = Math.max(last, model.activities[entry.id]?.updatedAt ?? 0);
+  const turn = thread.latestTurnId !== undefined ? model.turns[thread.latestTurnId] : undefined;
+  if (turn) last = Math.max(last, turn.requestedAt, turn.startedAt ?? 0, turn.settledAt ?? 0);
+  return Math.max(0, now - last);
+}

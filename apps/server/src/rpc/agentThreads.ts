@@ -15,6 +15,8 @@ export interface AgentThreadDeps {
   schedule?: (fn: () => void, ms: number) => CancelTimer;
   /** marks a caller blocked on a thread, so the delegation reactor does not also wake it */
   waits?: DelegateWaits;
+  /** gray zone getter: a judge verdict below `low` is left out of `agent.thread.wait` */
+  grayZone?: () => { low: number; high: number };
 }
 
 const DEFAULT_LIST_LIMIT = 20;
@@ -135,7 +137,7 @@ export function readTimeline(
 
 type WaitResult = RpcOutput<"agent.thread.wait">;
 
-function waitResult(model: ReadModel, threadId: string, turnId: string | undefined, timedOut: boolean): WaitResult {
+function waitResult(model: ReadModel, threadId: string, turnId: string | undefined, timedOut: boolean, low?: number): WaitResult {
   const thread = model.threads[threadId];
   const turn = turnId === undefined ? undefined : model.turns[turnId];
   const text = lastAssistantText(model, threadId);
@@ -147,6 +149,9 @@ function waitResult(model: ReadModel, threadId: string, turnId: string | undefin
     ...(thread?.attention !== undefined ? { attention: thread.attention } : {}),
     ...(text !== undefined ? { lastAssistantText: text } : {}),
     ...(turn?.error !== undefined ? { error: turn.error } : {}),
+    ...(thread?.judge?.label !== undefined && low !== undefined && thread.judge.confidence >= low
+      ? { judge: { label: thread.judge.label, confidence: thread.judge.confidence, source: thread.judge.source } }
+      : {}),
   };
 }
 
@@ -160,12 +165,13 @@ export function waitForThread(
   turnId: string | undefined,
   timeoutMs: number,
   schedule: (fn: () => void, ms: number) => CancelTimer = realTimer,
+  grayZone?: () => { low: number; high: number },
 ): Promise<WaitResult> {
   const model = engine.getModel();
   const thread = model.threads[threadId];
   const target = turnId ?? (thread?.status === "running" ? thread.latestTurnId : undefined);
   const done = (m: ReadModel): boolean => target === undefined || m.turns[target] === undefined || m.turns[target]?.settledAt !== undefined;
-  if (done(model)) return Promise.resolve(waitResult(model, threadId, target, false));
+  if (done(model)) return Promise.resolve(waitResult(model, threadId, target, false, grayZone?.().low));
   return new Promise((resolve) => {
     let cancel: CancelTimer | undefined;
     const off = engine.subscribe((record) => {
@@ -175,7 +181,7 @@ export function waitForThread(
     function finish(timedOut: boolean): void {
       off();
       cancel?.();
-      resolve(waitResult(engine.getModel(), threadId, target, timedOut));
+      resolve(waitResult(engine.getModel(), threadId, target, timedOut, grayZone?.().low));
     }
     cancel = schedule(() => finish(true), timeoutMs);
   });
@@ -258,7 +264,7 @@ export function registerAgentThreadHandlers(router: RpcRouter, deps: AgentThread
     const target = reachable(model, caller, input.threadId);
     const end = deps.waits?.begin(caller.id, target.id);
     try {
-      return await waitForThread(engine, target.id, input.turnId, input.timeoutMs ?? DEFAULT_WAIT_MS, deps.schedule);
+      return await waitForThread(engine, target.id, input.turnId, input.timeoutMs ?? DEFAULT_WAIT_MS, deps.schedule, deps.grayZone);
     } finally {
       end?.();
     }

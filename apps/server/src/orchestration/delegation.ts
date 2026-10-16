@@ -59,6 +59,8 @@ export interface FinishedDelegate {
   outcome: DelegateOutcome;
   error?: string;
   lastReply?: string;
+  /** the delegates-site verdict, only when it was confident enough to show */
+  judge?: { label: string; source: string; confidence: number };
 }
 
 function clip(text: string, max: number): string {
@@ -74,6 +76,7 @@ function finishedBlock(d: FinishedDelegate): string {
   return [
     `Delegate "${d.title}" (${d.provider}) finished: ${describeOutcome(d)}. Last reply:`,
     d.lastReply !== undefined ? clip(d.lastReply, DELEGATE_REPLY_CHARS) : "(no reply)",
+    ...(d.judge !== undefined ? [`Judge: ${d.judge.label} (${d.judge.source} ${d.judge.confidence.toFixed(2)})`] : []),
     `Use tide_delegate_status / tide_thread_read ${d.threadId} for details.`,
   ].join("\n");
 }
@@ -85,6 +88,7 @@ export function delegatesFinishedText(delegates: readonly FinishedDelegate[]): s
 
 export function delegatesFinishedSummary(delegates: readonly FinishedDelegate[]): string {
   const only = delegates.length === 1 ? delegates[0] : undefined;
+  if (only?.judge !== undefined) return `${only.title} finished — ${only.judge.label}`;
   return only !== undefined ? `${only.title} finished` : `${delegates.length} delegates finished`;
 }
 
@@ -99,6 +103,8 @@ export interface DelegationReactorOptions {
   /** one-shot timer for the batch window (tests pass a manual clock) */
   schedule?: (fn: () => void, ms: number) => CancelTimer;
   batchMs?: number;
+  /** gray zone getter: a delegate's judge verdict below `low` is left out of the wake-up */
+  grayZone?: () => { low: number; high: number };
   log?: (msg: string, data?: unknown) => void;
 }
 
@@ -119,6 +125,7 @@ export class DelegationReactor {
   #waits: DelegateWaits | undefined;
   #schedule: (fn: () => void, ms: number) => CancelTimer;
   #batchMs: number;
+  #grayZone: (() => { low: number; high: number }) | undefined;
   #log: (msg: string, data?: unknown) => void;
   #batches = new Map<string, Batch>();
   /** user-input activity id → the parent turn that relays it */
@@ -131,6 +138,7 @@ export class DelegationReactor {
     this.#waits = options.waits;
     this.#schedule = options.schedule ?? realTimer;
     this.#batchMs = options.batchMs ?? DELEGATE_BATCH_MS;
+    this.#grayZone = options.grayZone;
     this.#log = options.log ?? ((msg, data) => (data === undefined ? console.error(msg) : console.error(msg, data)));
   }
 
@@ -233,6 +241,9 @@ export class DelegationReactor {
       const child = model.threads[threadId];
       if (!child) continue;
       const lastReply = lastAssistantText(model, threadId);
+      const low = this.#grayZone?.().low;
+      const j = child.judge;
+      const judge = j?.label !== undefined && low !== undefined && j.confidence >= low ? { label: j.label, source: j.source, confidence: j.confidence } : undefined;
       delegates.push({
         threadId,
         title: child.title,
@@ -240,6 +251,7 @@ export class DelegationReactor {
         outcome,
         ...(error !== undefined ? { error } : {}),
         ...(lastReply !== undefined ? { lastReply } : {}),
+        ...(judge !== undefined ? { judge } : {}),
       });
     }
     if (delegates.length === 0) return;

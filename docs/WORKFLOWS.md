@@ -94,3 +94,5 @@ Limits:
   told in its prompt to plan and not edit.
 - **Merging.** The branch to merge belongs to the stage that owns the worktree (usually the
   implementer). Stages that inherited it cannot merge or publish.
+
+Decision answers from Jev (Settings › Decisions) annotate handoff ranking, delegate outcomes, approvals, experts convergence and stuck threads; they never start or merge a stage on their own.

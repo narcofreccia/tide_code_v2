@@ -17,6 +17,7 @@ export {
   compareByAttention,
   groupActivities,
   selectActiveTurn,
+  selectIdleMs,
   selectCheckpointTurns,
   selectDelegates,
   descendantThreads,

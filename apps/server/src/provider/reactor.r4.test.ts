@@ -3,7 +3,8 @@ import type { DomainEvent, EventOf } from "@tide/contracts";
 import { openDatabase } from "../db/sqlite.ts";
 import { Engine } from "../orchestration/engine.ts";
 import { EventStore } from "../orchestration/store.ts";
-import { ProviderReactor } from "./reactor.ts";
+import { ManualClock } from "../decisions/testing.ts";
+import { ProviderReactor, type ReactorOptions } from "./reactor.ts";
 import { DriverRegistry } from "./registry.ts";
 import { SessionDirectory } from "./sessions.ts";
 import { awaitInterrupt, awaitSteer, createFakeDriver, emit, type FakeDriverControl } from "./testing/fakeDriver.ts";
@@ -41,7 +42,7 @@ function waitFor(engine: Engine, match: (event: DomainEvent) => boolean): Promis
 }
 
 /** Two harnesses so provider switches and forks can be exercised; `caps` applies to claude. */
-async function harness(caps: { steer?: boolean; fork?: boolean; rollback?: boolean } = {}): Promise<Harness> {
+async function harness(caps: { steer?: boolean; fork?: boolean; rollback?: boolean } = {}, extra: Partial<Pick<ReactorOptions, "handoffReady" | "schedule">> = {}): Promise<Harness> {
   const store = new EventStore(await openDatabase(":memory:"));
   const engine = new Engine({ store });
   const claude = createFakeDriver("claude");
@@ -51,7 +52,7 @@ async function harness(caps: { steer?: boolean; fork?: boolean; rollback?: boole
   registry.register(claude.driver);
   registry.register(codex.driver);
   const sessions = new SessionDirectory({ registry, autoReap: false, log: () => undefined, model: () => engine.getModel() });
-  const reactor = new ProviderReactor({ engine, sessions, log: () => undefined });
+  const reactor = new ProviderReactor({ engine, sessions, log: () => undefined, ...extra });
   reactor.start();
   const events: DomainEvent[] = [];
   engine.subscribe((r) => void events.push(r.event));
@@ -211,5 +212,51 @@ describe("ProviderReactor: limits", () => {
     h.claude.script(emit({ type: "settled", status: "error", error: "tool crashed" }));
     await turn(h, h.threadId, "go");
     expect(h.engine.getModel().threads[h.threadId]?.limited).toBeUndefined();
+  });
+});
+
+describe("ProviderReactor: handoff judge window", () => {
+  const judge = { kept: 3, dropped: 1, source: "jev" as const, confidence: 0.9, at: 1 };
+
+  async function switched(extra: Partial<Pick<ReactorOptions, "handoffReady" | "schedule">>): Promise<Harness> {
+    const h = await harness({}, extra);
+    h.claude.script(emit({ type: "session", nativeSessionId: "c-1" }), emit({ type: "assistant.delta", messageKey: "m", delta: "claude answer" }), emit({ type: "settled", status: "completed" }));
+    await turn(h, h.threadId, "first question");
+    await h.engine.dispatch({ type: "thread.update", threadId: h.threadId, provider: "codex" });
+    h.codex.script(emit({ type: "settled", status: "completed" }));
+    return h;
+  }
+
+  it("ships a refine that lands within the window", async () => {
+    const clock = new ManualClock();
+    let engine: Engine | undefined;
+    const h = await switched({
+      schedule: clock.schedule,
+      handoffReady: (handoffId) => (async () => void (await engine?.dispatch({ type: "handoff.refine", handoffId, text: "REFINED", coveredTurnIds: [], omittedTurnIds: [], judge })))(),
+    });
+    engine = h.engine;
+    await turn(h, h.threadId, "next");
+    expect(h.codex.sessionFor(h.threadId)?.inputs[0]?.text).toBe("REFINED\n\n---\n\nUser message:\nnext");
+    expect(clock.pending).toBe(0);
+  });
+
+  it("ships the recency selection when the judge is slower, and refuses the late refine", async () => {
+    const clock = new ManualClock();
+    let called!: () => void;
+    const asked = new Promise<void>((resolve) => (called = resolve));
+    const h = await switched({
+      schedule: clock.schedule,
+      handoffReady: () => {
+        called();
+        return new Promise<void>(() => undefined);
+      },
+    });
+    await h.engine.dispatch({ type: "turn.request", threadId: h.threadId, text: "next" });
+    await asked;
+    clock.advance(1_500);
+    await h.reactor.drain();
+    const handoff = first(h.events, "handoff.recorded").handoff;
+    expect(h.codex.sessionFor(h.threadId)?.inputs[0]?.text).toBe(`${handoff.text}\n\n---\n\nUser message:\nnext`);
+    await expect(h.engine.dispatch({ type: "handoff.refine", handoffId: handoff.id, text: "LATE", coveredTurnIds: [], omittedTurnIds: [], judge })).rejects.toMatchObject({ code: "conflict" });
   });
 });

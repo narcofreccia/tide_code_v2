@@ -1,4 +1,4 @@
-import type { HandoffStrategy, ProviderKind, ReadModel, Turn } from "@tide/contracts";
+import type { Handoff, HandoffStrategy, ProviderKind, ReadModel, Turn } from "@tide/contracts";
 
 /**
  * Portable context for a harness that has not seen the thread (provider switch, fork onto a
@@ -24,6 +24,14 @@ export interface HandoffBudgetOptions {
   window?: number | undefined;
 }
 
+/** `TIDE_HANDOFF_TOKEN_CAP` as an int, when set and parseable. */
+export function handoffCapFromEnv(env: Record<string, string | undefined> = process.env): number | undefined {
+  const raw = env["TIDE_HANDOFF_TOKEN_CAP"];
+  if (raw === undefined || raw.trim() === "") return undefined;
+  const n = Number.parseInt(raw, 10);
+  return Number.isFinite(n) ? n : undefined;
+}
+
 /** Bytes available for history: never more than the cap, never into the reserve the harness needs for tools, instructions and work. */
 export function handoffBudget(options: HandoffBudgetOptions = {}): number {
   const raw = typeof options.cap === "string" ? Number.parseInt(options.cap, 10) : options.cap;
@@ -33,7 +41,7 @@ export function handoffBudget(options: HandoffBudgetOptions = {}): number {
   return Math.max(0, Math.min(cap, window - reserve));
 }
 
-interface Item {
+export interface HandoffItem {
   turnId: string;
   turnIndex: number;
   /** position inside the thread's timeline (chronological tiebreak) */
@@ -66,9 +74,9 @@ function inputCommand(input: unknown): string | undefined {
 }
 
 /** Everything a later harness may need, in thread order, limited to `turns`. */
-export function collectItems(model: ReadModel, threadId: string, turns: Turn[]): Item[] {
+export function collectItems(model: ReadModel, threadId: string, turns: Turn[]): HandoffItem[] {
   const index = new Map(turns.map((t, i) => [t.id, i]));
-  const items: Item[] = [];
+  const items: HandoffItem[] = [];
   const timeline = model.threadTimeline[threadId] ?? [];
   timeline.forEach((entry, pos) => {
     if (entry.kind === "message") {
@@ -108,7 +116,7 @@ export function collectItems(model: ReadModel, threadId: string, turns: Turn[]):
   return items;
 }
 
-const LABEL: Record<Item["kind"], string> = {
+const LABEL: Record<HandoffItem["kind"], string> = {
   user: "Historical user",
   assistant: "Historical assistant",
   command: "Command run",
@@ -117,7 +125,7 @@ const LABEL: Record<Item["kind"], string> = {
   plan: "Proposed plan",
 };
 
-function render(item: Item, turnNo: number): string {
+function render(item: HandoffItem, turnNo: number): string {
   return `[${LABEL[item.kind]}; turn=${turnNo}]\n${item.text}\n`;
 }
 
@@ -125,6 +133,9 @@ export interface HandoffSelection {
   text: string;
   coveredTurnIds: string[];
   omittedTurnIds: string[];
+  /** items placed / items available */
+  chosen: number;
+  items: number;
 }
 
 export interface SelectHandoffOptions {
@@ -138,27 +149,26 @@ export interface SelectHandoffOptions {
   sourceTitle: string;
 }
 
-/**
- * Picks whole items into the budget: the latest user request, the latest answer, the original
- * request, then newest to oldest. Renders them in chronological order with a coverage header
- * and instructions for fetching what was left out.
- */
-export function selectHandoff(model: ReadModel, options: SelectHandoffOptions): HandoffSelection {
-  const { turns } = options;
-  const items = collectItems(model, options.threadId, turns);
-  const turnNo = new Map(turns.map((t, i) => [t.id, i + 1]));
-  const size = (item: Item): number => Buffer.byteLength(render(item, turnNo.get(item.turnId) ?? 0), "utf8");
-
-  const priority: Item[] = [];
+/** The always-kept items (latest user request, latest answer, original request) and the rest, newest first. */
+function splitPriority(items: HandoffItem[]): { priority: HandoffItem[]; rest: HandoffItem[] } {
+  const priority: HandoffItem[] = [];
   const lastUser = [...items].reverse().find((i) => i.kind === "user");
   const lastAssistant = [...items].reverse().find((i) => i.kind === "assistant");
   const firstUser = items.find((i) => i.kind === "user");
   for (const i of [lastUser, lastAssistant, firstUser]) if (i && !priority.includes(i)) priority.push(i);
   const rest = [...items].reverse().filter((i) => !priority.includes(i));
+  return { priority, rest };
+}
 
-  const chosen = new Set<Item>();
+/** Fills the budget with whole items in `order`, then renders the chosen ones chronologically. */
+function fill(items: HandoffItem[], order: HandoffItem[], options: SelectHandoffOptions): HandoffSelection {
+  const { turns } = options;
+  const turnNo = new Map(turns.map((t, i) => [t.id, i + 1]));
+  const size = (item: HandoffItem): number => Buffer.byteLength(render(item, turnNo.get(item.turnId) ?? 0), "utf8");
+
+  const chosen = new Set<HandoffItem>();
   let used = 0;
-  for (const item of [...priority, ...rest]) {
+  for (const item of order) {
     const bytes = size(item);
     if (used + bytes > options.budgetBytes) continue;
     chosen.add(item);
@@ -181,7 +191,52 @@ export function selectHandoff(model: ReadModel, options: SelectHandoffOptions): 
     omittedItems > 0 ? `Call the Tide tool \`tide_thread_read\` (view "activity") on this thread for anything omitted. Working state (tool results, your previous reasoning) is not carried over.` : `Working state (tool results, previous reasoning) is not carried over.`,
     `Continue from the user's next message below.`,
   ].join("\n");
-  return { text: `${header}\n\n${body}`.trimEnd(), coveredTurnIds, omittedTurnIds };
+  return { text: `${header}\n\n${body}`.trimEnd(), coveredTurnIds, omittedTurnIds, chosen: chosen.size, items: items.length };
+}
+
+/**
+ * Picks whole items into the budget: the latest user request, the latest answer, the original
+ * request, then newest to oldest. Renders them in chronological order with a coverage header
+ * and instructions for fetching what was left out.
+ */
+export function selectHandoff(model: ReadModel, options: SelectHandoffOptions): HandoffSelection {
+  const items = collectItems(model, options.threadId, options.turns);
+  const { priority, rest } = splitPriority(items);
+  return fill(items, [...priority, ...rest], options);
+}
+
+/**
+ * Like `selectHandoff`, but the non-priority items go in `rank` order (keyed by item `pos`,
+ * highest first; unranked items score 0.5; ties newest first). Same budget, same text format.
+ */
+export function selectHandoffRanked(model: ReadModel, options: SelectHandoffOptions, rank: ReadonlyMap<number, number>): HandoffSelection {
+  const items = collectItems(model, options.threadId, options.turns);
+  const { priority, rest } = splitPriority(items);
+  const score = (i: HandoffItem): number => rank.get(i.pos) ?? 0.5;
+  const ranked = [...rest].sort((a, b) => score(b) - score(a) || b.pos - a.pos);
+  return fill(items, [...priority, ...ranked], options);
+}
+
+export interface HandoffCandidates {
+  /** the selection options that rebuild the recorded handoff (budget excluded) */
+  options: Omit<SelectHandoffOptions, "budgetBytes">;
+  priority: HandoffItem[];
+  /** newest first, as the recency selection orders them */
+  rest: HandoffItem[];
+}
+
+/**
+ * The items a recorded handoff chose from, rebuilt from the read model: the source thread's
+ * surviving turns spanning the handoff's covered and omitted turns.
+ */
+export function handoffCandidates(model: ReadModel, handoff: Handoff): HandoffCandidates {
+  const source = model.threads[handoff.sourceThreadId];
+  const ids = new Set([...handoff.coveredTurnIds, ...handoff.omittedTurnIds]);
+  const all = handoffTurns(model, handoff.sourceThreadId);
+  const idx = all.flatMap((t, i) => (ids.has(t.id) ? [i] : []));
+  const turns = idx.length === 0 ? [] : all.slice(idx[0], (idx[idx.length - 1] ?? 0) + 1);
+  const options = { threadId: handoff.sourceThreadId, toProvider: handoff.toProvider, strategy: handoff.strategy, turns, sourceTitle: source?.title ?? "" };
+  return { options, ...splitPriority(collectItems(model, handoff.sourceThreadId, turns)) };
 }
 
 /** The settled, surviving turns of a thread, oldest first; `sinceTurnId` keeps only what came after it, `untilTurnId` stops there (inclusive). */

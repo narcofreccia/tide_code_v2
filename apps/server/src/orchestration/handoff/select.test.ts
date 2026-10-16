@@ -1,6 +1,6 @@
 import { describe, it, expect } from "vitest";
 import { emptyReadModel, replay, type EventRecord, type ReadModel } from "@tide/contracts";
-import { collectItems, handoffBudget, handoffTurns, selectHandoff } from "./select.ts";
+import { collectItems, handoffBudget, handoffCandidates, handoffCapFromEnv, handoffTurns, selectHandoff, selectHandoffRanked } from "./select.ts";
 
 let seqCounter = 0;
 const rec = (event: EventRecord["event"]): EventRecord => ({ seq: ++seqCounter, ts: seqCounter, event });
@@ -194,5 +194,60 @@ describe("selectHandoff", () => {
     const sel = selectHandoff(model, { ...base, budgetBytes: tight + render("Historical assistant", 3, body("C")) });
     expect(sel.text).toContain(body("C"));
     expect(sel.coveredTurnIds).toEqual(["t1", "t3", "t4"]);
+  });
+});
+
+describe("selectHandoffRanked", () => {
+  const body = (s: string): string => s.repeat(200);
+  const model = build([
+    { id: "t1", at: 1, user: body("a"), assistant: body("A") },
+    { id: "t2", at: 2, user: body("b"), assistant: body("B") },
+    { id: "t3", at: 3, user: body("c"), assistant: body("C") },
+    { id: "t4", at: 4, user: body("d"), assistant: body("D") },
+  ]);
+  const turns = handoffTurns(model, "t1");
+  const render = (label: string, n: number, text: string): number => Buffer.byteLength(`[${label}; turn=${n}]\n${text}\n`, "utf8");
+  const tight = render("Historical user", 4, body("d")) + render("Historical assistant", 4, body("D")) + render("Historical user", 1, body("a"));
+  const base = { threadId: "t1", toProvider: "codex" as const, strategy: "full" as const, turns, sourceTitle: "Src" };
+  const posOf = (text: string): number => collectItems(model, "t1", turns).find((i) => i.text === text)?.pos ?? -1;
+
+  it("puts the highest-ranked item after the priority ones, same budget and format", () => {
+    const budget = tight + render("Historical user", 2, body("b"));
+    const sel = selectHandoffRanked(model, { ...base, budgetBytes: budget }, new Map([[posOf(body("b")), 0.9], [posOf(body("C")), 0.1]]));
+    expect(sel.text).toContain(body("b"));
+    expect(sel.text).not.toContain(body("C"));
+    expect(sel.coveredTurnIds).toEqual(["t1", "t2", "t4"]);
+    expect(sel.omittedTurnIds).toEqual(["t3"]);
+    expect(sel.chosen).toBe(4);
+    expect(sel.items).toBe(8);
+    expect(sel.text.split("\n")[0]).toBe('# Context handoff: history of thread "Src"');
+  });
+  it("breaks ties newest first (equals the recency selection with no ranks)", () => {
+    const budget = tight + render("Historical assistant", 3, body("C"));
+    expect(selectHandoffRanked(model, { ...base, budgetBytes: budget }, new Map()).text).toBe(selectHandoff(model, { ...base, budgetBytes: budget }).text);
+  });
+});
+
+describe("handoffCandidates", () => {
+  it("rebuilds the turns and items a handoff chose from", () => {
+    const body = (s: string): string => s.repeat(50);
+    const model = build([
+      { id: "t1", at: 1, user: body("a"), assistant: body("A") },
+      { id: "t2", at: 2, user: body("b"), assistant: body("B") },
+      { id: "t3", at: 3, user: body("c") },
+    ]);
+    const handoff = { id: "h", threadId: "t1", sourceThreadId: "t1", toProvider: "codex" as const, strategy: "delta" as const, coveredTurnIds: ["t2"], omittedTurnIds: ["t3"], text: "x", createdAt: 1 };
+    const c = handoffCandidates(model, handoff);
+    expect(c.options.turns.map((t) => t.id)).toEqual(["t2", "t3"]);
+    expect(c.priority.map((i) => i.text)).toEqual([body("c"), body("B"), body("b")]);
+    expect(c.rest).toEqual([]);
+  });
+});
+
+describe("handoffCapFromEnv", () => {
+  it("parses an int, ignores unset or garbage", () => {
+    expect(handoffCapFromEnv({ TIDE_HANDOFF_TOKEN_CAP: "4000" })).toBe(4000);
+    expect(handoffCapFromEnv({})).toBeUndefined();
+    expect(handoffCapFromEnv({ TIDE_HANDOFF_TOKEN_CAP: "x" })).toBeUndefined();
   });
 });

@@ -111,6 +111,11 @@ Applications, open. Same behaviour as B. Updates are checked at launch and every
   state on the thread's card (`👁 PR #n · ✔ · 3 comments`).
 - **Settings › General** sets the default follow-up mode (Steer or Queue) and the usage-limit
   policy (Wait for me or Resume at reset).
+- **Decisions (Settings › Decisions).** Optional. TypeSafe's Jev answers small yes/no and label
+  questions (handoff ranking, delegate outcomes, approval risk, experts convergence, stuck
+  threads) and Tide shows the answers; it never acts on them. Paste a key, pick a fallback judge
+  (a harness on your own subscription, asked only when Jev is unsure), tune the gray zone and
+  per-site switches, and watch today's spend and recent verdicts.
 - **Several harnesses on one task** (plan → build → review, `tide_delegate`, team runs): see
   [`docs/WORKFLOWS.md`](docs/WORKFLOWS.md).
 

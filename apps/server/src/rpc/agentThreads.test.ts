@@ -139,6 +139,17 @@ describe("agent thread tools: read / send / wait", () => {
     expect(await agent.call("agent.thread.wait", { threadId: target })).toMatchObject({ settled: true, status: "idle", lastAssistantText: "done later" });
   });
 
+  it("returns the judge verdict when it is confident enough", async () => {
+    const target = await thread("Judged");
+    const verdict = (confidence: number) => ({ site: "delegates" as const, label: "done", confidence, source: "jev" as const, at: 1 });
+    await app.engine.dispatch({ type: "judge.record", target: { kind: "thread", id: target }, verdict: verdict(0.9) });
+    const grayZone = () => ({ low: 0.6, high: 0.85 });
+    expect(await waitForThread(app.engine, target, undefined, 5_000, undefined, grayZone)).toMatchObject({ settled: true, judge: { label: "done", confidence: 0.9, source: "jev" } });
+    expect(await waitForThread(app.engine, target, undefined, 5_000)).not.toHaveProperty("judge");
+    await app.engine.dispatch({ type: "judge.record", target: { kind: "thread", id: target }, verdict: verdict(0.3) });
+    expect(await waitForThread(app.engine, target, undefined, 5_000, undefined, grayZone)).not.toHaveProperty("judge");
+  });
+
   it("times out without cancelling the turn", async () => {
     const target = await thread("Slow");
     control.scriptFor(target, emit({ type: "session", nativeSessionId: "slow-1" }), awaitInterrupt(), emit({ type: "settled", status: "completed" }));
