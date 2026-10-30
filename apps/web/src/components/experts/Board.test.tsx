@@ -116,7 +116,7 @@ describe("Experts board", () => {
     const synthesis = within(screen.getByLabelText("Synthesis"));
     expect(synthesis.getByText("Ship the writer split")).toBeDefined();
     expect(screen.getByLabelText("Proposed plan")).toBeDefined();
-    expect(screen.getByText("Implement in new thread ▾")).toBeDefined();
+    expect(screen.getByRole("button", { name: /Implement in new thread/ })).toBeDefined();
   });
 
   it("opens an expert's thread beside the board and keeps the board as a workbench tab", () => {

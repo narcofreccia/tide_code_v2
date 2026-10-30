@@ -1,4 +1,5 @@
 import { dismissToast, useToasts, type ToastItem } from "../../state/toast.ts";
+import { Icon } from "./Icon.tsx";
 import styles from "./Toast.module.css";
 
 function ActionToast({ toast, action }: { toast: ToastItem; action: NonNullable<ToastItem["action"]> }) {
@@ -16,7 +17,7 @@ function ActionToast({ toast, action }: { toast: ToastItem; action: NonNullable<
         {action.label}
       </button>
       <button type="button" className={styles.close} aria-label="Dismiss" onClick={() => dismissToast(toast.id)}>
-        ×
+        <Icon name="close" size={14} />
       </button>
     </div>
   );

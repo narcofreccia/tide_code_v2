@@ -1,9 +1,7 @@
 import { selectThreadLinks } from "@tide/client";
 import { useModel } from "../../state/model.ts";
+import { Icon } from "../ui/Icon.tsx";
 import styles from "./ThreadLinkChips.module.css";
-
-/** Linked repos are secondary roots, so they carry the same glyph everywhere. */
-export const LINK_GLYPH = "⧉";
 
 /**
  * The linked repositories this thread can reach, read-only: a live thread's set
@@ -20,7 +18,7 @@ export function ThreadLinkChips({ threadId }: { threadId: string }) {
           className={styles.chip}
           title={link.note ? `${link.path} — ${link.note}` : link.path}
         >
-          <span aria-hidden="true">{LINK_GLYPH}</span>
+          <Icon name="folder" size={12} />
           <span className={styles.label}>{link.label}</span>
           <span className={styles.access}>{access === "write" ? "rw" : "ro"}</span>
         </li>

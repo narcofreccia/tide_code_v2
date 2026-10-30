@@ -9,6 +9,7 @@ import {
   useTerminals,
 } from "../../../state/terminals.ts";
 import { Button } from "../../ui/Button.tsx";
+import { Icon } from "../../ui/Icon.tsx";
 import { Kbd } from "../../ui/Kbd.tsx";
 import styles from "./TerminalDrawer.module.css";
 
@@ -93,7 +94,7 @@ export function TerminalDrawer({ threadId }: { threadId: string }) {
               aria-label={`Close ${title(tab.ptyId, tab.title, index)}`}
               onClick={() => void killPty(threadId, tab.ptyId)}
             >
-              ×
+              <Icon name="close" size={12} />
             </Button>
           </span>
         ))}
@@ -103,7 +104,7 @@ export function TerminalDrawer({ threadId }: { threadId: string }) {
           title="New terminal"
           onClick={() => void createPty(threadId, DEFAULT_COLS, DEFAULT_ROWS)}
         >
-          +
+          <Icon name="plus" size={14} />
         </Button>
         <Button variant="quiet" className={styles.hide} onClick={toggleDrawer} title="Hide terminal">
           Hide <Kbd>⌘`</Kbd>

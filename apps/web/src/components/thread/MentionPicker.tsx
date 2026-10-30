@@ -5,6 +5,7 @@ import { useFileIndex } from "../../state/files.ts";
 import { useModel } from "../../state/model.ts";
 import { ListPickerList, PickerNote } from "../ui/ListPicker.tsx";
 import { PathRow } from "../ui/PathRow.tsx";
+import { Icon } from "../ui/Icon.tsx";
 import styles from "./MentionPicker.module.css";
 
 const LIMIT = 8;
@@ -100,7 +101,8 @@ export function MentionPicker({
             itemKey={(t) => t.id}
             renderItem={(t) => (
               <span className={styles.thread}>
-                <span aria-hidden="true">💬</span> {t.title}
+                <Icon name="inbox" size={12} />
+                {t.title}
               </span>
             )}
             active={cursor - paths.length}

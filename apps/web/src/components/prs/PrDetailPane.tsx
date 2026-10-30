@@ -8,6 +8,7 @@ import { showToast } from "../../state/toast.ts";
 import { useModel } from "../../state/model.ts";
 import { useUi } from "../../state/ui.ts";
 import { Button } from "../ui/Button.tsx";
+import { Icon } from "../ui/Icon.tsx";
 import { Pill } from "../ui/Pill.tsx";
 import { Select } from "../ui/Select.tsx";
 import { AddressButton, MergeBox, ReviewBox } from "./PrActions.tsx";
@@ -111,7 +112,7 @@ export function PrDetailPane({ entry, onClose }: { entry: PrEntry; onClose: () =
     <section className={styles.pane} aria-label={`PR #${pr.number}`}>
       <header className={styles.header}>
         <Button variant="quiet" onClick={onClose} aria-label="Close PR" title="Back to the list">
-          ←
+          <Icon name="chevronRight" className={styles.back ?? ""} />
         </Button>
         <h3 className={styles.title}>
           <span className={styles.number}>#{pr.number}</span> {pr.title ?? pr.url}
@@ -127,7 +128,8 @@ export function PrDetailPane({ entry, onClose }: { entry: PrEntry; onClose: () =
       </p>
       <div className={styles.links}>
         <a className={styles.external} href={pr.url} target="_blank" rel="noreferrer">
-          Open in browser ↗
+          Open in browser
+          <Icon name="external" size={12} />
         </a>
         <ThreadLink entry={entry} />
         <AddressButton entry={view} comments={comments} />

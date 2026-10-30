@@ -8,21 +8,23 @@ import { effortsOf, nextEffort, threadProviderStatus, useProvidersStore } from "
 import { showToast } from "../state/toast.ts";
 import { updateThread } from "./threadActions.ts";
 import { useServerSettings } from "../state/serverSettings.ts";
-import { formatBinding, normalizeEvent, type BindingEntry } from "./keybindings.ts";
+import { RAIL_BINDINGS, formatBinding, normalizeEvent, type BindingEntry } from "./keybindings.ts";
 
 /**
  * When an entry applies. `thread` needs a selected thread, `workbench` needs one
  * with the workbench on screen (focus mode is not "thread"), `experts` needs the
- * board open. Anything else is always live.
+ * board open. `rail` entries are single keys dispatched by the rail's own handler
+ * (`shell/useInboxKeys` via `matchRailBinding`), never by `handleShortcut`; they are
+ * listed here so Settings › Keyboard shows and rebinds them. Anything else is always live.
  */
-export type ShortcutScope = "always" | "thread" | "workbench" | "experts";
+export type ShortcutScope = "always" | "thread" | "workbench" | "experts" | "rail";
 
 export interface Shortcut {
   id: string;
   /** display form, e.g. `⌘⇧D` */
   keys: string;
   label: string;
-  group: "Navigation" | "View" | "Thread" | "Workbench";
+  group: "Navigation" | "View" | "Thread" | "Workbench" | "Rail";
   /** `KeyboardEvent.key` (lowercased) this binds to; omitted when another surface owns it */
   key?: string;
   /** shift requirement; undefined means "don't care" */
@@ -32,6 +34,8 @@ export interface Shortcut {
    * this `KeyboardEvent.code` with ⌥ instead and shows `altKeys`.
    */
   browserAlt?: { code: string; keys: string };
+  /** a bare shipped binding in `keybindings.ts` form (`j`, `enter`), for keys with no modifier */
+  binding?: string;
   /** context the entry needs; defaults to "always" */
   when?: ShortcutScope;
   /** performs the action; `false` means it does not apply right now */
@@ -53,6 +57,7 @@ export function shortcutKeys(shortcut: Shortcut, overrides: Record<string, strin
 /** The shipped binding of an entry in this environment, in `keybindings.ts` form; undefined for surface-owned entries. */
 export function defaultBinding(shortcut: Shortcut): string | undefined {
   if (!shortcut.run) return undefined;
+  if (shortcut.binding !== undefined) return shortcut.binding;
   if (shortcut.browserAlt && !isDesktopShell()) {
     const key = shortcut.browserAlt.code.replace(/^(Key|Digit)/, "").toLowerCase();
     return `alt+${key}`;
@@ -71,7 +76,8 @@ export function bindingEntries(overrides: Record<string, string>): BindingEntry[
     entries.push({
       id: shortcut.id,
       label: shortcut.label,
-      ...(shortcut.when ? { when: shortcut.when } : {}),
+      // rail keys are live wherever focus is outside a text field: as wide as "always"
+      ...(shortcut.when && shortcut.when !== "rail" ? { when: shortcut.when } : {}),
       binding,
       isDefault: !overrides[shortcut.id],
     });
@@ -105,6 +111,8 @@ function cycleEffort(): boolean {
 export function scopeApplies(scope: ShortcutScope = "always"): boolean {
   const state = ui();
   if (scope === "always") return true;
+  // dispatched by the rail's key handler, not the global map or the palette
+  if (scope === "rail") return false;
   if (scope === "experts") return state.view === "experts" && state.selectedExpertsSessionId !== null;
   if (state.selectedThreadId === null) return false;
   return scope === "thread" || state.focusMode !== "thread";
@@ -120,6 +128,22 @@ function currentProjectId(): string | undefined {
   const fromThread = id ? model.threads[id]?.projectId : undefined;
   return fromThread ?? Object.keys(model.projects)[0];
 }
+
+/**
+ * The rail's single keys, read from the same `RAIL_BINDINGS` (ids and defaults) the rail's
+ * handler matches against, so a rebinding saved under `rail.next` moves the key there too.
+ * `run` only marks them rebindable in Settings; `when: "rail"` keeps `handleShortcut` and the
+ * palette off them.
+ */
+const RAIL_SHORTCUTS: Shortcut[] = RAIL_BINDINGS.map((entry) => ({
+  id: entry.id,
+  keys: entry.binding === "enter" ? "↵" : entry.binding,
+  label: entry.label,
+  group: "Rail",
+  binding: entry.binding,
+  when: "rail",
+  run: () => false,
+}));
 
 /**
  * Single source of truth for the keyboard map: `handleShortcut` dispatches from it
@@ -217,9 +241,10 @@ export const SHORTCUTS: Shortcut[] = [
   { id: "diff-layout", keys: "⌘⇧D", label: "Unified / side-by-side diff", group: "Workbench", key: "d", shift: true, when: "workbench", run: () => ui().toggleDiffSideBySide() },
   { id: "prev-turn", keys: "[", label: "Previous turn", group: "Workbench", when: "workbench" },
   { id: "next-turn", keys: "]", label: "Next turn", group: "Workbench", when: "workbench" },
+  ...RAIL_SHORTCUTS,
 ];
 
-export const SHORTCUT_GROUPS: Shortcut["group"][] = ["Navigation", "View", "Thread", "Workbench"];
+export const SHORTCUT_GROUPS: Shortcut["group"][] = ["Navigation", "View", "Thread", "Workbench", "Rail"];
 
 /** Runs the shortcut bound to this event (⌘/^, ⌥ for the browser alternates, or the user's own chord); returns whether it was handled. */
 export function handleShortcut(event: KeyboardEvent): boolean {

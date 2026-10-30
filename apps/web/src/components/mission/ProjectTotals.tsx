@@ -1,5 +1,8 @@
 import { selectCostRollup, selectProjects, selectProjectTotals, type ProjectTotals as Totals } from "@tide/client";
 import { useModel } from "../../state/model.ts";
+import { formatUsd } from "../../lib/glassBox.ts";
+import { PROVIDER_LABELS } from "../../lib/vocab.ts";
+import { Pill } from "../ui/Pill.tsx";
 import { CostSummary } from "./CostSummary.tsx";
 import styles from "./MissionControl.module.css";
 import { plural } from "../../lib/format.ts";
@@ -24,18 +27,39 @@ function foldCounts(parts: Totals[]): Pick<Totals, "threads" | "running" | "need
 function Values({
   counts,
   cost,
+  pills = false,
 }: {
   counts: Pick<Totals, "threads" | "running" | "needsYou" | "maxContextPercent">;
   cost: { todayUsd: number; lifetimeUsd: number; byProvider: Totals["costByProvider"] };
+  /** the Mission Control header: every figure as a muted meta pill, cost split in the tooltip */
+  pills?: boolean;
 }) {
+  const ctx = counts.maxContextPercent === undefined ? "ctx —" : `max ctx ${counts.maxContextPercent}%`;
+  if (pills) {
+    const split = cost.byProvider
+      .map((row) => `${PROVIDER_LABELS[row.provider]} ${formatUsd(row.lifetimeUsd)}`)
+      .join(" · ");
+    return (
+      <>
+        <Pill tone={counts.running > 0 ? "running" : "muted"}>{counts.running} running</Pill>
+        <Pill tone={counts.needsYou > 0 ? "needs" : "muted"}>{counts.needsYou} needs you</Pill>
+        <Pill>{plural(counts.threads, "thread")}</Pill>
+        <Pill>{ctx}</Pill>
+        <span title="Turns that settled today (local time)">
+          <Pill>{formatUsd(cost.todayUsd)} today</Pill>
+        </span>
+        <span title={`Every turn this scope has ever run, archived threads included${split ? `. ${split}` : ""}`}>
+          <Pill>{formatUsd(cost.lifetimeUsd)} lifetime</Pill>
+        </span>
+      </>
+    );
+  }
   return (
     <>
       <span className={styles.totalsValue}>{counts.running} running</span>
       <span className={styles.totalsValue}>{counts.needsYou} needs you</span>
       <span className={styles.totalsValue}>{plural(counts.threads, "thread")}</span>
-      <span className={styles.totalsValue}>
-        {counts.maxContextPercent === undefined ? "ctx —" : `max ctx ${counts.maxContextPercent}%`}
-      </span>
+      <span className={styles.totalsValue}>{ctx}</span>
       <CostSummary {...cost} />
     </>
   );
@@ -56,8 +80,8 @@ export function ProjectTotals({ projectId, aggregate }: { projectId?: string; ag
   if (aggregate === true) {
     const cost = selectCostRollup(model, projects.map((p) => p.id));
     return (
-      <div className={styles.totals} aria-label="Project totals">
-        <Values counts={foldCounts(totals)} cost={cost} />
+      <div className={styles.headPills} aria-label="Project totals">
+        <Values counts={foldCounts(totals)} cost={cost} pills />
       </div>
     );
   }

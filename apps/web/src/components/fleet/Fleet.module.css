@@ -1,8 +1,8 @@
 /* shared bits of the fleet surfaces: status dot, host meters, env tag */
 .dot {
   display: inline-block;
-  width: 7px;
-  height: 7px;
+  width: 8px;
+  height: 8px;
   border-radius: 50%;
   background: var(--muted);
   flex: none;
@@ -15,42 +15,37 @@
 .bars {
   display: inline-flex;
   align-items: center;
-  gap: var(--sp-2);
+  gap: var(--sp-3);
   color: var(--muted);
   font-size: var(--fs-sm);
+  line-height: var(--lh-tight);
 }
 .bar {
   display: inline-flex;
   align-items: center;
   gap: var(--sp-1);
 }
+.barName { font-size: var(--fs-xs); }
 .meter {
-  width: 44px;
+  width: 48px;
   height: 4px;
   appearance: none;
   border: 0;
   border-radius: 2px;
-  background: var(--surface-raised);
+  background: var(--surface-2);
   overflow: hidden;
 }
-.meter::-webkit-meter-bar { background: var(--surface-raised); border: 0; border-radius: 2px; height: 4px; }
-.meter::-webkit-meter-optimum-value { background: var(--ok); }
-.meter::-webkit-meter-suboptimum-value { background: var(--warn); }
-.meter::-webkit-meter-even-less-good-value { background: var(--danger); }
-.meter::-moz-meter-bar { background: var(--ok); }
+.meter::-webkit-meter-bar { background: var(--surface-2); border: 0; border-radius: 2px; height: 4px; }
+.meter::-webkit-meter-optimum-value { background: var(--text-2); }
+.meter::-webkit-meter-suboptimum-value,
+.meter::-webkit-meter-even-less-good-value { background: var(--st-needs); }
+.meter::-moz-meter-bar { background: var(--text-2); }
+.hot { color: var(--st-needs); }
+.hot .meter::-webkit-meter-optimum-value { background: var(--st-needs); }
+.hot .meter::-moz-meter-bar { background: var(--st-needs); }
 .busy { font-variant-numeric: tabular-nums; }
+.busyOn { color: var(--st-running); }
 
-.tag {
-  flex: none;
-  max-width: 96px;
-  overflow: hidden;
-  text-overflow: ellipsis;
-  white-space: nowrap;
-  padding: 0 var(--sp-1);
-  border: 1px solid var(--border);
-  border-radius: var(--radius-sm);
-  color: var(--muted);
-  font-size: var(--fs-xs);
-  line-height: 14px;
-}
+.tag { flex: none; max-width: 96px; }
+.tagName { min-width: 0; overflow: hidden; text-overflow: ellipsis; }
 .tagOffline { opacity: 0.6; text-decoration: line-through; }

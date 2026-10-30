@@ -2,7 +2,7 @@ import { useEffect, useState } from "react";
 import type { EnvRoute } from "@tide/contracts";
 import { Button } from "../ui/Button.tsx";
 import { Select } from "../ui/Select.tsx";
-import section from "../settings/Section.module.css";
+import { Icon } from "../ui/Icon.tsx";
 import { guessRouteKind, ROUTE_KINDS, ROUTE_LABELS, toWsUrl } from "./envView.ts";
 import styles from "./Environments.module.css";
 
@@ -23,7 +23,7 @@ function UrlField({ value, label, onSave }: { value: string; label: string; onSa
   };
   return (
     <input
-      className={section.input}
+      className={styles.input}
       aria-label={label}
       value={draft}
       onChange={(e) => setDraft(e.target.value)}
@@ -78,7 +78,7 @@ export function RoutesEditor({ routes, onChange }: { routes: EnvRoute[]; onChang
               onSave={(url) => set(ordered.map((r, i) => (i === index ? { ...r, url } : r)))}
             />
             <Button variant="quiet" aria-label={`Move route ${index + 1} up`} disabled={index === 0} onClick={() => move(index, index - 1)}>
-              ↑
+              <Icon name="arrowUp" size={14} />
             </Button>
             <Button
               variant="quiet"
@@ -86,7 +86,7 @@ export function RoutesEditor({ routes, onChange }: { routes: EnvRoute[]; onChang
               disabled={index === ordered.length - 1}
               onClick={() => move(index, index + 1)}
             >
-              ↓
+              <Icon name="arrowUp" size={14} className={styles.down} />
             </Button>
             <Button
               variant="quietDanger"
@@ -95,7 +95,7 @@ export function RoutesEditor({ routes, onChange }: { routes: EnvRoute[]; onChang
               title={ordered.length === 1 ? "A machine needs at least one route" : undefined}
               onClick={() => set(ordered.filter((_, i) => i !== index))}
             >
-              ×
+              <Icon name="close" size={14} />
             </Button>
           </li>
         ))}
@@ -109,7 +109,7 @@ export function RoutesEditor({ routes, onChange }: { routes: EnvRoute[]; onChang
         }}
       >
         <input
-          className={section.input}
+          className={styles.input}
           aria-label="New route URL"
           placeholder="http://100.101.102.103:3777 or wss://relay.example/…"
           value={adding}

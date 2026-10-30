@@ -1,20 +1,14 @@
 import type { ExpertState, Thread } from "@tide/contracts";
 import { openExpertThread } from "../../lib/expertsActions.ts";
+import { Icon } from "../ui/Icon.tsx";
 import { Pill } from "../ui/Pill.tsx";
 import styles from "./Board.module.css";
 
-const GLYPH: Record<ExpertState["status"], string> = {
-  pending: "◌",
-  working: "●",
-  idle: "○",
-  error: "✕",
-};
-
-/** ◌ pending · ● working · ○ idle · ✕ error — the expert's own run state. */
+/** Dashed ring pending · filled dot working · ring idle · cross error — the expert's own run state. */
 export function ExpertStatusGlyph({ status }: { status: ExpertState["status"] }) {
   return (
     <span className={`${styles.glyph} ${styles[status] ?? ""}`} title={status} aria-label={status} role="img">
-      {GLYPH[status]}
+      {status === "error" ? <Icon name="close" size={12} /> : <span className={styles.dot} />}
     </span>
   );
 }

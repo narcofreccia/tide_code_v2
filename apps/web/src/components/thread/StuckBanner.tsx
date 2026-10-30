@@ -6,6 +6,7 @@ import { runOrToast } from "../../lib/dispatchOrToast.ts";
 import { interruptTurn } from "../../lib/threadActions.ts";
 import { steerTurn } from "../../lib/turnActions.ts";
 import { Button } from "../ui/Button.tsx";
+import { Icon } from "../ui/Icon.tsx";
 import styles from "./StuckBanner.module.css";
 
 /** Triage's `stuck` at or above this shows the banner. */
@@ -35,7 +36,7 @@ export function StuckBanner({ thread }: { thread: Thread }) {
         Nudge
       </Button>
       <Button variant="quiet" aria-label="Dismiss" title="Dismiss for this turn" onClick={() => setDismissedTurn(thread.latestTurnId)}>
-        ×
+        <Icon name="close" size={14} />
       </Button>
     </div>
   );

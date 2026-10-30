@@ -10,6 +10,7 @@ import { useUi } from "../../state/ui.ts";
 import { requestDelete, unarchiveThread } from "../../lib/threadActions.ts";
 import { Button } from "../ui/Button.tsx";
 import { Checkbox } from "../ui/Choice.tsx";
+import { Icon } from "../ui/Icon.tsx";
 import { ThreadGlyph } from "../ui/StatusGlyph.tsx";
 import { MergeGlyph, PrGlyph } from "../ui/VcsBadges.tsx";
 import styles from "./AllThreads.module.css";
@@ -55,13 +56,16 @@ export function AllThreads({ projectId }: { projectId: string }) {
   return (
     <section className={styles.view} aria-label="All threads">
       <div className={styles.head}>
-        <Button variant="link" onClick={() => showAllThreads(null)}>
-          ← Mission Control
-        </Button>
-        <h1 className={styles.pageTitle}>{project?.title ?? "Unknown project"}</h1>
-        <span className={styles.muted}>
-          {threads.length} {archived ? "archived" : "threads"}
-        </span>
+        <div className={styles.headText}>
+          <Button variant="quiet" className={styles.back} onClick={() => showAllThreads(null)}>
+            <Icon name="chevronRight" size={12} className={`${styles.backIcon}`} />
+            Mission Control
+          </Button>
+          <h1 className={styles.pageTitle}>{project?.title ?? "Unknown project"}</h1>
+          <span className={styles.meta}>
+            {threads.length} {archived ? "archived" : "threads"}
+          </span>
+        </div>
         <Checkbox className={styles.toggle} checked={archived} onChange={(e) => setArchived(e.target.checked)}>
           Archived
         </Checkbox>

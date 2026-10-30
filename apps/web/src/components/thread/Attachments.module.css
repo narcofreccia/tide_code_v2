@@ -10,7 +10,7 @@
   display: inline-flex;
   align-items: center;
   gap: var(--sp-1);
-  padding: 2px 4px 2px 2px;
+  padding: 2px var(--sp-1) 2px 2px;
   border: 1px solid var(--border);
   border-radius: var(--radius);
   background: var(--surface-2);
@@ -24,16 +24,19 @@
 }
 .meta { color: var(--muted); font-size: var(--fs-sm); font-variant-numeric: tabular-nums; }
 .remove {
+  display: inline-flex;
+  align-items: center;
   border: none;
+  border-radius: var(--radius-sm);
   background: none;
   color: var(--muted);
-  padding: 0 2px;
+  padding: 2px;
   cursor: pointer;
-  line-height: 1;
 }
 .remove:hover { color: var(--danger); }
 
 /* R11: file and context-thread chips share the image strip's look */
-.file { padding: 0 4px 0 var(--sp-2); height: 24px; font-size: var(--fs-sm); }
+.kind { flex: none; color: var(--muted); }
+.file { padding: 0 var(--sp-1) 0 var(--sp-2); height: 24px; font-size: var(--fs-sm); }
 .name { max-width: 220px; overflow: hidden; text-overflow: ellipsis; white-space: nowrap; }
 .stale { border-style: dashed; opacity: 0.7; }

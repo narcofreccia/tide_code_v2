@@ -10,7 +10,7 @@
   min-height: 0;
   overflow-y: auto;
 }
-.empty { flex: 1; padding: var(--sp-4); color: var(--muted); }
+.empty { flex: 1; padding: var(--sp-4); color: var(--muted); font-size: var(--fs-sm); }
 .newPill {
   position: absolute;
   left: 50%;
@@ -22,5 +22,6 @@
   border-radius: 999px;
   background: var(--surface);
   color: var(--accent);
+  font-size: var(--fs-sm);
   box-shadow: var(--shadow-pop);
 }

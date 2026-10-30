@@ -8,6 +8,7 @@ import { useModel } from "../../state/model.ts";
 import { useUi } from "../../state/ui.ts";
 import { SplitPane } from "../shell/SplitPane.tsx";
 import { Button } from "../ui/Button.tsx";
+import { Icon } from "../ui/Icon.tsx";
 import { Select } from "../ui/Select.tsx";
 import { PrDetailPane } from "./PrDetailPane.tsx";
 import { PrRow } from "./PrRow.tsx";
@@ -61,12 +62,15 @@ export function PrsView() {
   const list = (
     <section className={styles.view} aria-label="Pull requests">
       <div className={styles.head}>
-        <h2 className={styles.pageTitle}>Pull requests</h2>
-        <span className={styles.count}>{plural(shown.length, "PR")}</span>
-        <span className={styles.fetched}>
-          {loading ? "loading…" : fetchedText(fetchedAt)}
-        </span>
+        <div className={styles.headText}>
+          <h2 className={styles.pageTitle}>Pull requests</h2>
+          <p className={styles.metaLine}>
+            <span className={styles.count}>{plural(shown.length, "PR")}</span>
+            <span className={styles.fetched}>{loading ? "loading…" : fetchedText(fetchedAt)}</span>
+          </p>
+        </div>
         <Button variant="quiet" className={styles.refresh} disabled={loading} onClick={() => void loadPrs({ refresh: true })}>
+          <Icon name="refresh" size={14} />
           Refresh
         </Button>
       </div>

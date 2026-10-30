@@ -5,6 +5,7 @@ import { PROVIDER_LABELS, threadHarnessLabel } from "../../lib/vocab.ts";
 import { useProvidersSnapshot } from "../../state/providers.ts";
 import { useModel } from "../../state/model.ts";
 import { useUi } from "../../state/ui.ts";
+import { Icon } from "../ui/Icon.tsx";
 import styles from "./TeamStrip.module.css";
 
 const STATUS_WORDS: Record<TeamStageStatus, string> = {
@@ -39,7 +40,7 @@ export function TeamStrip({ thread }: { thread: Thread }) {
         const harness = stageThread?.providerId === undefined ? PROVIDER_LABELS[stage.provider] : threadHarnessLabel(providers, stageThread);
         return (
         <span key={stage.key} className={styles.item}>
-          {i > 0 ? <span className={styles.arrow} aria-hidden="true">→</span> : null}
+          {i > 0 ? <Icon name="chevronRight" size={12} className={`${styles.arrow}`} /> : null}
           <button
             type="button"
             className={styles.chip}

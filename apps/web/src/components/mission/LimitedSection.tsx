@@ -7,6 +7,7 @@ import { useProvidersSnapshot } from "../../state/providers.ts";
 import { useModel } from "../../state/model.ts";
 import { useUi } from "../../state/ui.ts";
 import { Button } from "../ui/Button.tsx";
+import { Icon } from "../ui/Icon.tsx";
 import { Pill } from "../ui/Pill.tsx";
 import { useTicker } from "./useTicker.ts";
 import mc from "./MissionControl.module.css";
@@ -100,7 +101,8 @@ export function SnoozedSection() {
           aria-expanded={open}
           onClick={() => setOpen(!open)}
         >
-          {open ? "▾" : "▸"} Snoozed · {snoozed.length}
+          <Icon name="chevronRight" size={12} className={`${open ? mc.chevronOpen : mc.chevron}`} />
+          Snoozed · {snoozed.length}
         </button>
       </h2>
       {open ? (

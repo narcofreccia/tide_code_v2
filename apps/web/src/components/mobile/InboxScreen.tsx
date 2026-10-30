@@ -2,9 +2,12 @@ import { useState } from "react";
 import { selectInbox, selectProjects, selectRailGroups } from "@tide/client";
 import type { Project, Thread } from "@tide/contracts";
 import { useModel } from "../../state/model.ts";
+import { useRailSearch } from "../../state/railSearch.ts";
 import { useServerSettings } from "../../state/serverSettings.ts";
 import { useUi } from "../../state/ui.ts";
 import { useTicker } from "../mission/useTicker.ts";
+import { RailSearchInput, RailSearchResults } from "../shell/RailSearch.tsx";
+import { Icon } from "../ui/Icon.tsx";
 import { SwipeRow } from "./SwipeRow.tsx";
 import styles from "./InboxScreen.module.css";
 
@@ -15,7 +18,8 @@ function Section({ name, threads, collapsible }: { name: string; threads: Thread
     <section className={styles.group} aria-label={name}>
       {collapsible ? (
         <button type="button" className={styles.toggle} aria-expanded={open} onClick={() => setOpen(!open)}>
-          {open ? "▾" : "▸"} {name} · {threads.length}
+          <Icon name="chevronRight" size={14} className={`${styles.chevron} ${open ? styles.chevronOpen : ""}`} />
+          {name} <span className={styles.count}>· {threads.length}</span>
         </button>
       ) : (
         <h3 className={styles.heading}>
@@ -39,14 +43,16 @@ function byProject(projects: Project[], threads: Thread[]): Thread[] {
 }
 
 /**
- * The phone's landing screen: the rail's inbox groups at full width, rows 44px tall and
- * swipeable. Needs you · Inbox, then Working · Snoozed · Settled folded away.
+ * The phone's landing screen: the rail's search field and inbox groups at full width, rows
+ * 44px tall and swipeable. Needs you · Inbox, then Working · Snoozed · Settled folded away.
+ * A query swaps the groups for the rail's own results list.
  */
 export function InboxScreen() {
   const model = useModel((s) => s.model);
   const now = useTicker(60_000);
   const workingSection = useServerSettings((s) => s.settings.inbox.workingSection);
   const openNewThread = useUi((s) => s.openNewThread);
+  const query = useRailSearch((s) => s.query);
   const projects = selectProjects(model);
 
   const waiting = new Set(selectInbox(model).map((i) => i.thread.id));
@@ -67,17 +73,25 @@ export function InboxScreen() {
   return (
     <section className={styles.screen} aria-label="Inbox">
       <header className={styles.head}>
+        <RailSearchInput projectId={null} />
         <button type="button" className={styles.new} onClick={() => openNewThread({})}>
-          + Thread
+          <Icon name="plus" size={16} />
+          Thread
         </button>
       </header>
       <div className={styles.scroll}>
-        <Section name="Needs you" threads={byProject(projects, needs)} />
-        <Section name="Inbox" threads={byProject(projects, inbox)} />
-        <Section name="Working" threads={working} collapsible />
-        <Section name="Snoozed" threads={snoozed} collapsible />
-        <Section name="Settled" threads={settled} collapsible />
-        {empty ? <p className={styles.empty}>Nothing here yet. Add a project and a thread from the desktop app or with + Thread.</p> : null}
+        {query.trim() !== "" ? (
+          <RailSearchResults query={query} projectId={null} projectIds={projects.map((p) => p.id)} showProject={projects.length > 1} />
+        ) : (
+          <>
+            <Section name="Needs you" threads={byProject(projects, needs)} />
+            <Section name="Inbox" threads={byProject(projects, inbox)} />
+            <Section name="Working" threads={working} collapsible />
+            <Section name="Snoozed" threads={snoozed} collapsible />
+            <Section name="Settled" threads={settled} collapsible />
+            {empty ? <p className={styles.empty}>Nothing here yet. Add a project and a thread from the desktop app or with + Thread.</p> : null}
+          </>
+        )}
       </div>
     </section>
   );

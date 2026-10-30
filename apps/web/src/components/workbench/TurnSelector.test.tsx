@@ -24,8 +24,8 @@ describe("TurnSelector", () => {
   it("lists only turns with a checkpoint, labelled by prompt, plus All changes", () => {
     render(<TurnSelector model={model} threadId="t1" turns={turns} selection="u2" onSelect={() => {}} />);
 
-    expect(screen.getByText("Turn 2 of 2 ▾")).toBeDefined();
-    fireEvent.click(screen.getByText("Turn 2 of 2 ▾"));
+    expect(screen.getByText("Turn 2 of 2")).toBeDefined();
+    fireEvent.click(screen.getByText("Turn 2 of 2"));
 
     const options = screen.getAllByRole("option");
     expect(options).toHaveLength(3);
@@ -41,7 +41,7 @@ describe("TurnSelector", () => {
     const onSelect = vi.fn();
     render(<TurnSelector model={model} threadId="t1" turns={turns} selection="u2" onSelect={onSelect} />);
 
-    fireEvent.click(screen.getByText("Turn 2 of 2 ▾"));
+    fireEvent.click(screen.getByText("Turn 2 of 2"));
     fireEvent.click(screen.getByText("All changes"));
     expect(onSelect).toHaveBeenCalledWith(ALL_CHANGES);
   });

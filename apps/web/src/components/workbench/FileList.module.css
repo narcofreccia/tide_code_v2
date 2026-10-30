@@ -23,7 +23,7 @@
   height: 24px;
   padding: 0 var(--sp-1) 0 var(--sp-2);
 }
-.heading { font-size: var(--fs-xs); letter-spacing: var(--ls-section); text-transform: uppercase; font-weight: var(--fw-section); color: var(--muted); }
+.heading { font-size: var(--fs-xs); letter-spacing: var(--ls-label); text-transform: uppercase; font-weight: var(--fw-semibold); color: var(--muted); }
 .list { list-style: none; margin: 0; padding: 0; flex: 1; min-height: 0; overflow-y: auto; }
 .list:focus-visible { outline: 1px solid var(--accent); outline-offset: -1px; }
 .row {
@@ -74,3 +74,4 @@
 .groupPath { color: var(--muted); font-family: var(--font-mono); font-weight: 400; }
 .revert { font-size: var(--fs-sm); }
 .groupList { list-style: none; margin: 0; padding: 0; }
+.flip { transform: rotate(180deg); }

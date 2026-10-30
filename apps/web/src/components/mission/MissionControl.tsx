@@ -32,15 +32,17 @@ export function MissionControl() {
 
   return (
     <section className={styles.view} aria-label="Mission Control">
-      <div className={styles.head}>
-        <h1 className={styles.pageTitle}>Mission Control</h1>
-        <span className={styles.scope}>
-          {scoped === undefined ? "All projects" : (model.projects[scoped]?.title ?? "—")}
-        </span>
+      <header className={styles.head}>
+        <div className={styles.headText}>
+          <h1 className={styles.pageTitle}>Mission Control</h1>
+          <span className={styles.scope}>
+            {scoped === undefined ? "All projects" : (model.projects[scoped]?.title ?? "—")}
+          </span>
+        </div>
         <div className={styles.headTotals}>
           <ProjectTotals aggregate {...(scoped === undefined ? {} : { projectId: scoped })} />
         </div>
-      </div>
+      </header>
 
       {projects.length === 0 ? (
         <MissionEmpty />

@@ -12,5 +12,5 @@
   flex: 1;
   min-width: 0;
   color: var(--st-needs);
-  font-weight: 600;
+  font-weight: var(--fw-semibold);
 }

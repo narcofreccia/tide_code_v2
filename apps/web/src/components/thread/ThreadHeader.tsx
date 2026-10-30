@@ -12,6 +12,7 @@ import { headerMenu } from "./headerMenu.ts";
 import { TeamStrip } from "./TeamStrip.tsx";
 import { ThreadTitle } from "./ThreadTitle.tsx";
 import { Button } from "../ui/Button.tsx";
+import { Icon } from "../ui/Icon.tsx";
 import { ContextMenu, type MenuPosition } from "../ui/Menu.tsx";
 import { RateLimitBadge } from "../ui/RateLimitBadge.tsx";
 import { StateGlyph } from "../ui/StatusGlyph.tsx";
@@ -19,7 +20,7 @@ import { MergeGlyph, PrBadge } from "../ui/VcsBadges.tsx";
 import { threadStateKey, threadStateLabel } from "../../lib/vocab.ts";
 import styles from "./ThreadHeader.module.css";
 
-/** Below this container width Terminal and Fork fold into the `⋯` menu. */
+/** Below this container width Terminal and Fork fold into the More menu. */
 export const NARROW_PX = 560;
 
 function useNarrow(ref: React.RefObject<HTMLElement | null>): boolean {
@@ -74,8 +75,8 @@ function hasChips(thread: Thread, delegates: number): boolean {
 }
 
 /**
- * One 32px row: state · title · branch on the left; Terminal, Fork and `⋯` on the right
- * (Terminal and Fork fold into `⋯` when narrow; Stop lives in the composer). Lineage, limits, rollback and delegates
+ * One 32px row: state · title · branch on the left; Terminal, Fork and More on the right
+ * (Terminal and Fork fold into More when narrow; Stop lives in the composer). Lineage, limits, rollback and delegates
  * get a 24px sub-row that is absent when there is nothing to show.
  */
 export function ThreadHeader({ thread }: { thread: Thread }) {
@@ -100,8 +101,8 @@ export function ThreadHeader({ thread }: { thread: Thread }) {
           className={styles.branch}
           title={thread.worktreePath ?? "Runs in the project's main checkout"}
         >
-          {thread.worktreePath === undefined ? "" : "⎇ "}
-          {thread.branch ?? "main checkout"}
+          {thread.worktreePath === undefined ? null : <Icon name="branch" size={12} className={`${styles.branchIcon}`} />}
+          <span className={styles.branchName}>{thread.branch ?? "main checkout"}</span>
         </span>
         <div className={styles.actions}>
           {narrow ? null : (
@@ -114,6 +115,7 @@ export function ThreadHeader({ thread }: { thread: Thread }) {
               if (command) void runInThreadTerminal(thread.id, command);
             }}
           >
+            <Icon name="terminal" size={14} />
             Terminal
           </Button>
           <Button
@@ -124,6 +126,7 @@ export function ThreadHeader({ thread }: { thread: Thread }) {
               if (forkTurn) useUi.getState().setThreadDialog({ kind: "fork", threadId: thread.id, turnId: forkTurn });
             }}
           >
+            <Icon name="branch" size={14} />
             Fork
           </Button>
             </>
@@ -138,7 +141,7 @@ export function ThreadHeader({ thread }: { thread: Thread }) {
               setMenu({ x: rect.left, y: rect.bottom });
             }}
           >
-            ⋯
+            <Icon name="more" />
           </Button>
         </div>
       </div>

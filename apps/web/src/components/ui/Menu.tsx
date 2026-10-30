@@ -1,5 +1,6 @@
 import { useEffect, useRef, useState } from "react";
 import { createPortal } from "react-dom";
+import { Icon } from "./Icon.tsx";
 import { useAnchoredPanel } from "./useAnchoredPanel.ts";
 import styles from "./Menu.module.css";
 
@@ -62,8 +63,9 @@ export function ContextMenu({
     };
   }, [onClose]);
 
+  // inside a submenu the first row leads back to the parent list
   const shown: MenuItem[] = nested
-    ? [{ label: `◂ ${nested.label}`, onSelect: () => setNested(undefined) }, ...nested.items]
+    ? [{ label: nested.label, onSelect: () => setNested(undefined) }, ...nested.items]
     : items;
   const enabled = shown.filter((i) => !i.disabled);
 
@@ -84,7 +86,7 @@ export function ContextMenu({
     >
       {shown.map((item, index) => (
         <button
-          key={item.label}
+          key={nested && index === 0 ? `back:${item.label}` : item.label}
           type="button"
           role={item.checked === undefined ? "menuitem" : "menuitemcheckbox"}
           {...(item.checked === undefined ? {} : { "aria-checked": item.checked })}
@@ -109,12 +111,13 @@ export function ContextMenu({
             item.onSelect?.();
           }}
         >
-          <span className={styles.label}>
-            {item.checked === true ? "✓ " : ""}
-            {item.label}
-          </span>
+          {nested && index === 0 ? <Icon name="chevronLeft" size={14} className={styles.chevron} /> : null}
+          {item.checked === undefined ? null : (
+            <span className={styles.check}>{item.checked ? <Icon name="check" size={14} /> : null}</span>
+          )}
+          <span className={styles.label}>{item.label}</span>
           {item.hint ? <span className={styles.hint}>{item.hint}</span> : null}
-          {item.submenu ? <span className={styles.chevron}>▸</span> : null}
+          {item.submenu ? <Icon name="chevronRight" size={14} className={styles.chevron} /> : null}
         </button>
       ))}
     </div>,

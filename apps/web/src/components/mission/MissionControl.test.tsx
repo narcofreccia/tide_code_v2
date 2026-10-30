@@ -100,7 +100,7 @@ describe("Mission Control", () => {
   it("jumps to the thread from an inbox header", () => {
     attachFakeStore(fixture());
     render(<MissionControl />);
-    fireEvent.click(screen.getAllByText("jump →")[0] as HTMLElement);
+    fireEvent.click(screen.getByRole("button", { name: "Open Plan ready" }));
     expect(useUi.getState().selectedThreadId).toBe("t3");
   });
 
@@ -189,8 +189,8 @@ describe("Mission Control — projects", () => {
     const card = within(screen.getByLabelText("Project Tide"));
     expect(card.getByText("/src/tide")).toBeDefined();
     expect(card.getByText("4 threads")).toBeDefined();
-    expect(card.getByText("● 1 running")).toBeDefined();
-    expect(card.getByText("⇡ 1 open")).toBeDefined();
+    expect(card.getByText("1 running")).toBeDefined();
+    expect(card.getByText("1 open")).toBeDefined();
     expect(card.getByText("Newest")).toBeDefined();
     expect(card.getByText("Older")).toBeDefined();
     expect(card.queryByText("Oldest")).toBeNull();

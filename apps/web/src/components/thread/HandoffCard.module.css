@@ -1,6 +1,6 @@
 .card {
   border: 1px solid var(--border);
-  border-radius: var(--radius);
+  border-radius: var(--radius-lg);
   background: var(--surface);
 }
 .head {
@@ -8,8 +8,8 @@
   align-items: center;
   gap: var(--sp-2);
   width: 100%;
-  min-height: var(--activity-h);
-  padding: 0 var(--sp-2);
+  min-height: var(--row-h);
+  padding: 0 var(--sp-3);
   border: none;
   background: none;
   color: var(--muted);
@@ -17,11 +17,11 @@
   cursor: pointer;
 }
 .head:hover { color: var(--text); }
-.title { color: var(--text); font-weight: 600; }
-.meta { font-size: var(--fs-sm); }
+.title { color: var(--text); font-weight: var(--fw-medium); }
+.meta { display: inline-flex; align-items: center; gap: var(--sp-1); font-size: var(--fs-sm); color: var(--muted); }
 .text {
   margin: 0;
-  padding: var(--sp-2);
+  padding: var(--sp-2) var(--sp-3);
   max-height: 260px;
   overflow: auto;
   border-top: 1px solid var(--border);

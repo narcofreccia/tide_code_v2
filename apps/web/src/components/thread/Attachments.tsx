@@ -11,6 +11,7 @@ import {
   thumbnailUrl,
   type PendingImage,
 } from "../../lib/images.ts";
+import { Icon } from "../ui/Icon.tsx";
 import styles from "./Attachments.module.css";
 
 export interface Attachments {
@@ -109,7 +110,7 @@ export function AttachmentStrip({ images, onRemove }: { images: PendingImage[]; 
             aria-label={`Remove attachment ${image.id}`}
             onClick={() => onRemove(image.id)}
           >
-            ×
+            <Icon name="close" size={12} />
           </button>
         </li>
       ))}

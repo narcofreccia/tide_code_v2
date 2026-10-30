@@ -9,7 +9,7 @@ export interface IconProps {
   size?: number;
   /** when set, the icon is meaningful on its own: `role="img"` + `aria-label` */
   label?: string;
-  className?: string;
+  className?: string | undefined;
 }
 
 /** Inline SVG icon in the stroke style of the set: currentColor, 1.75, round caps. */

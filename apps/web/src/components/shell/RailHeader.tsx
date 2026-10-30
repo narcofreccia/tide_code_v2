@@ -3,6 +3,7 @@ import type { Project } from "@tide/contracts";
 import { useUi } from "../../state/ui.ts";
 import { Icon } from "../ui/Icon.tsx";
 import { ContextMenu, type MenuItem, type MenuPosition } from "../ui/Menu.tsx";
+import { StatusLegendButton } from "../ui/StatusLegendButton.tsx";
 import { RailSearchInput } from "./RailSearch.tsx";
 import styles from "./RailHeader.module.css";
 
@@ -68,6 +69,7 @@ export function RailHeader({ projects, scoped }: { projects: readonly Project[];
           <Icon name="chevronDown" size={12} />
         </button>
       </div>
+      <StatusLegendButton align="start" />
       {menu ? <ContextMenu position={menu.at} items={menu.items} onClose={() => setMenu(undefined)} label="New" /> : null}
     </div>
   );

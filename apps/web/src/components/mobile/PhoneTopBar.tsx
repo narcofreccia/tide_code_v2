@@ -1,9 +1,10 @@
 import { useUi } from "../../state/ui.ts";
 import { useViewHeading } from "../../state/hooks.ts";
+import { Icon } from "../ui/Icon.tsx";
 import { useMobileNav } from "./mobileNav.ts";
 import styles from "./PhoneTopBar.module.css";
 
-/** Phone top bar: a back button and the screen title; threads add Code and ⚙ actions. */
+/** Phone top bar: a back chevron and the screen title; threads add Code and settings actions. */
 export function PhoneTopBar() {
   const view = useUi((s) => s.view);
   const heading = useViewHeading();
@@ -37,7 +38,7 @@ export function PhoneTopBar() {
     <header className={styles.bar} data-phone-topbar>
       {nested ? (
         <button type="button" className={styles.back} aria-label={codeOpen ? "Back to thread" : "Back to inbox"} onClick={back}>
-          ‹
+          <Icon name="chevronLeft" size={24} />
         </button>
       ) : null}
       <span className={styles.title}>{title}</span>
@@ -49,7 +50,7 @@ export function PhoneTopBar() {
             aria-label="Thread settings"
             onClick={() => useMobileNav.getState().setSheetOpen(true)}
           >
-            ⚙
+            <Icon name="settings" size={20} />
           </button>
           <button
             type="button"

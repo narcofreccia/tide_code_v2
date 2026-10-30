@@ -10,6 +10,7 @@ import {
   type WorkbenchTab,
 } from "../../state/workbench.ts";
 import { Button } from "../ui/Button.tsx";
+import { Icon } from "../ui/Icon.tsx";
 import styles from "./Workbench.module.css";
 
 function label(tab: WorkbenchTab): string {
@@ -60,17 +61,17 @@ function FileTabButton({
       >
         <span className={styles.glyph}>{fileGlyph(tab.path)}</span>
         {label(tab)}
-        {tab.pinned ? <span className={styles.pin} aria-label="pinned">📌</span> : null}
+        {tab.pinned ? <Icon name="pin" size={12} label="pinned" className={styles.pin ?? ""} /> : null}
         {dirty ? <span className={styles.dot} aria-label="unsaved changes" /> : null}
       </button>
-      <Button variant="quiet" aria-label={`Close ${label(tab)}`} onClick={() => closeTab(threadId, tab)}>
-        ×
+      <Button variant="quiet" className={styles.close} aria-label={`Close ${label(tab)}`} onClick={() => closeTab(threadId, tab)}>
+        <Icon name="close" size={12} />
       </Button>
     </span>
   );
 }
 
-/** Changes first, then Search and the open files; drag to reorder, × or middle-click to close. */
+/** Changes first, then Search and the open files; drag to reorder, the close button or middle-click to close. */
 export function TabStrip({
   threadId,
   tabs,
@@ -115,8 +116,8 @@ export function TabStrip({
               {label(tab)}
             </button>
             {tab.kind === "changes" ? null : (
-              <Button variant="quiet" aria-label={`Close ${label(tab)}`} onClick={() => closeTab(threadId, tab)}>
-                ×
+              <Button variant="quiet" className={styles.close} aria-label={`Close ${label(tab)}`} onClick={() => closeTab(threadId, tab)}>
+                <Icon name="close" size={12} />
               </Button>
             )}
           </span>

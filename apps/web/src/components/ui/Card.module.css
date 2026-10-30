@@ -1,0 +1,30 @@
+/* docs/design/ui.md § Surfaces: flat, hairline, no shadow */
+.card {
+  min-width: 0;
+  background: var(--surface);
+  border: 1px solid var(--border);
+  border-radius: var(--radius-lg);
+}
+.head {
+  display: flex;
+  align-items: center;
+  justify-content: space-between;
+  gap: var(--sp-3);
+  padding: var(--sp-3) var(--sp-4);
+}
+.head + .body { border-top: 1px solid var(--border); }
+.title {
+  margin: 0;
+  min-width: 0;
+  font-size: var(--fs-md);
+  font-weight: var(--fw-medium);
+  line-height: var(--lh-tight);
+}
+.actions { display: flex; align-items: center; gap: var(--sp-2); flex: none; }
+.body {
+  display: flex;
+  flex-direction: column;
+  gap: var(--sp-3);
+  padding: var(--sp-3) var(--sp-4);
+  min-width: 0;
+}

@@ -2,6 +2,7 @@ import { useState } from "react";
 import type { Activity } from "@tide/contracts";
 import type { TimelineItem } from "@tide/client";
 import { ActivityRow } from "./ActivityRow.tsx";
+import { Chevron } from "./Chevron.tsx";
 import styles from "./ActivityRow.module.css";
 import { plural } from "../../lib/format.ts";
 
@@ -54,7 +55,9 @@ export function HarnessEvents({ activities }: { activities: Note[] }) {
   return (
     <li className={styles.item}>
       <button type="button" className={styles.row} aria-expanded={open} onClick={() => setOpen((v) => !v)}>
-        <span className={styles.glyph}>{open ? "▾" : "▸"}</span>
+        <span className={styles.glyph}>
+          <Chevron open={open} />
+        </span>
         <span className={`${styles.summary} ${styles.info}`}>
           {plural(activities.length, "harness event")}
         </span>

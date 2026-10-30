@@ -47,6 +47,18 @@ export const ICONS = {
   sun: `${circle(12, 12, 4)}M12 2.5v2M12 19.5v2M2.5 12h2M19.5 12h2M5.3 5.3l1.4 1.4M17.3 17.3l1.4 1.4M5.3 18.7l1.4-1.4M17.3 6.7l1.4-1.4`,
   moon: "M20 14.5A8 8 0 1 1 9.5 4a6.5 6.5 0 0 0 10.5 10.5z",
   keyboard: "M3 6h18v12H3zM7 9.5h.01M10.5 9.5h.01M14 9.5h.01M17.5 9.5h.01M7 12.5h.01M17.5 12.5h.01M8.5 15h7",
+  image: `M4 5.5h16v13H4z${circle(9, 10, 1.5)}M4 16l5-4.5 4 3.5 3-2.5 4 3.5`,
+  chat: "M4 5.5h16v10.5H10l-4.5 3.5V16H4z",
+  question: `${circle(12, 12, 8.5)}M9.5 9.5a2.5 2.5 0 0 1 5 0c0 1.7-2.5 2-2.5 4M12 16.5h.01`,
+  arrowUp: "M12 19V5M6 11l6-6 6 6",
+  arrowRight: "M5 12h14M13 6l6 6-6 6",
+  chevronLeft: "M15 6l-6 6 6 6",
+  info: `${circle(12, 12, 8.5)}M12 11v5.5M12 7.5h.01`,
+  zap: "M13 3 5 13.5h6L10 21l8-10.5h-6z",
+  clock: `${circle(12, 12, 8.5)}M12 7.5V12h4`,
+  link: "M10 14a4 4 0 0 0 5.7 0l3-3a4 4 0 0 0-5.7-5.7l-1 1M14 10a4 4 0 0 0-5.7 0l-3 3a4 4 0 0 0 5.7 5.7l1-1",
+  warning: "M12 4 2.5 20h19zM12 10v4.5M12 17.5h.01",
+  sidebar: "M4 5h16v14H4zM9.5 5v14",
 } as const satisfies Record<string, string>;
 
 export type IconName = keyof typeof ICONS;

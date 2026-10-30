@@ -5,11 +5,26 @@
   min-height: var(--row-h);
   padding: 0 var(--sp-2);
   border-bottom: 1px solid var(--border);
+  border-left: 2px solid transparent;
+  transition: background var(--dur-fast) var(--ease);
 }
+.row:hover { background: var(--surface-hover); }
 .title { flex: 1; min-width: 0; overflow: hidden; text-overflow: ellipsis; white-space: nowrap; }
 .meta { flex: none; color: var(--muted); font-variant-numeric: tabular-nums; font-size: var(--fs-sm); }
 .actions { display: flex; gap: var(--sp-1); flex: none; }
-.toggle { padding: 0; background: transparent; border: none; color: inherit; font: inherit; cursor: pointer; }
+.toggle {
+  display: inline-flex;
+  align-items: center;
+  gap: var(--sp-1);
+  padding: 0;
+  background: transparent;
+  border: none;
+  color: inherit;
+  font: inherit;
+  letter-spacing: inherit;
+  text-transform: inherit;
+  cursor: pointer;
+}
 .roleTag {
   flex: none;
   padding: 0 var(--sp-1);

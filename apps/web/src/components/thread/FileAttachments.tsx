@@ -5,6 +5,7 @@ import { threadMentionIds, removeThreadMention } from "../../lib/mentions.ts";
 import { setDraft, useDrafts } from "../../state/drafts.ts";
 import { useModel } from "../../state/model.ts";
 import { showToast } from "../../state/toast.ts";
+import { Icon } from "../ui/Icon.tsx";
 import styles from "./Attachments.module.css";
 
 const NONE: DraftFile[] = [];
@@ -58,11 +59,11 @@ export function FileChips({ files, onRemove }: { files: readonly DraftFile[]; on
             className={`${styles.item} ${styles.file} ${stale ? styles.stale : ""}`}
             title={stale ? "Re-attach: file contents are not kept across reloads" : file.mediaType}
           >
-            <span aria-hidden="true">📄</span>
+            <Icon name="file" size={12} className={`${styles.kind}`} />
             <span className={styles.name}>{file.name}</span>
             <span className={styles.meta}>{formatBytes(file.bytes)}</span>
             <button type="button" className={styles.remove} aria-label={`Remove ${file.name}`} onClick={() => onRemove(file.id)}>
-              ×
+              <Icon name="close" size={12} />
             </button>
           </li>
         );
@@ -71,7 +72,7 @@ export function FileChips({ files, onRemove }: { files: readonly DraftFile[]; on
   );
 }
 
-/** The threads an `@thread:<id>` in the text points at; ✕ takes the token out of the text. */
+/** The threads an `@thread:<id>` in the text points at; the close button takes the token out of the text. */
 export function ThreadContextChips({ text, onChange }: { text: string; onChange: (text: string) => void }) {
   const threads = useModel((s) => s.model.threads);
   const ids = threadMentionIds(text);
@@ -80,7 +81,7 @@ export function ThreadContextChips({ text, onChange }: { text: string; onChange:
     <ul className={styles.strip} aria-label="Context threads">
       {ids.map((id) => (
         <li key={id} className={`${styles.item} ${styles.file}`} title={`Thread ${id}`}>
-          <span aria-hidden="true">💬</span>
+          <Icon name="inbox" size={12} className={`${styles.kind}`} />
           <span className={styles.name}>{threads[id]?.title ?? id}</span>
           <button
             type="button"
@@ -88,7 +89,7 @@ export function ThreadContextChips({ text, onChange }: { text: string; onChange:
             aria-label={`Remove context thread ${threads[id]?.title ?? id}`}
             onClick={() => onChange(removeThreadMention(text, id))}
           >
-            ×
+            <Icon name="close" size={12} />
           </button>
         </li>
       ))}

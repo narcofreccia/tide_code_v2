@@ -50,10 +50,10 @@ afterEach(() => {
   resetUi();
 });
 
-describe("Merge ▾", () => {
+describe("Merge action", () => {
   it("dispatches thread.merge with the chosen strategy and branch deletion", async () => {
     const fake = await mount();
-    const trigger = screen.getByText("Merge ▾");
+    const trigger = screen.getByText("Merge");
     expect(trigger.closest("button")?.getAttribute("title")).toBe("Merge tide/t1 → main");
     fireEvent.click(trigger);
     const panel = within(screen.getByLabelText("Merge options"));
@@ -73,7 +73,7 @@ describe("Merge ▾", () => {
 
   it("defaults to squash and leaves the branch", async () => {
     const fake = await mount();
-    fireEvent.click(screen.getByText("Merge ▾"));
+    fireEvent.click(screen.getByText("Merge"));
     await act(async () => {
       fireEvent.click(within(screen.getByLabelText("Merge options")).getByText("Merge"));
     });
@@ -95,7 +95,7 @@ describe("Merge ▾", () => {
     useUi.setState({ selectedThreadId: "t1", view: "thread" });
     mockRpc({ "vcs.turnDiff": () => diff(), "vcs.fileAt": () => ({ content: "x", binary: false, missing: false }) });
     render(<ChangesTab />);
-    const button = (await screen.findByText("Merge ▾")).closest("button") as HTMLButtonElement;
+    const button = (await screen.findByText("Merge")).closest("button") as HTMLButtonElement;
     expect(button.disabled).toBe(true);
     expect(button.getAttribute("title")).toBe(reason);
   });
@@ -138,7 +138,7 @@ describe("merge state", () => {
       merge: { status: "conflicted", strategy: "rebase", files: ["src/a.ts", "src/b.ts"], at: 1 },
     });
     const panel = within(screen.getByLabelText("Merge conflicts"));
-    expect(panel.getByText("⚠ Merge conflicted in 2 files")).toBeDefined();
+    expect(panel.getByText("Merge conflicted in 2 files")).toBeDefined();
     expect(panel.getByText(/Resolve the conflicts in the worktree/)).toBeDefined();
     fireEvent.click(panel.getByText("src/b.ts"));
     expect(threadTabs("t1").some((t) => t.kind === "file" && t.path === "src/b.ts")).toBe(true);
@@ -157,7 +157,7 @@ describe("merge state", () => {
 
   it("says merged with the short sha", async () => {
     await mount({ mergedAt: 2, merge: { status: "merged", strategy: "squash", sha: "abcdef123456", at: 2 } });
-    expect(screen.getByRole("status").textContent).toContain("✓ merged");
+    expect(screen.getByRole("status").textContent).toContain("merged");
     expect(screen.getByRole("status").textContent).toContain("abcdef1");
   });
 });

@@ -11,7 +11,7 @@ import { runOrToast } from "../../lib/dispatchOrToast.ts";
 import { Button } from "../ui/Button.tsx";
 import { ConfirmDialog } from "../ui/Dialog.tsx";
 import { Pill } from "../ui/Pill.tsx";
-import section from "../settings/Section.module.css";
+import { Icon } from "../ui/Icon.tsx";
 import { EnvDot, HostBars } from "./FleetBits.tsx";
 import { activeRoute, connectionLabel, harnessSummary, hostLine, httpOriginOf, statusOf } from "./envView.ts";
 import { openAddMachine } from "./fleetUi.ts";
@@ -39,7 +39,11 @@ export function MachineCard({ env }: { env: KnownEnvironment }) {
       <div className={styles.cardHead}>
         <EnvDot connection={status.connection} />
         <span className={styles.cardName}>{name}</span>
-        {primary ? <Pill tone="accent">primary</Pill> : null}
+        {primary ? (
+          <Pill size="sm" tone="accent">
+            primary
+          </Pill>
+        ) : null}
         <span className={styles.cardStatus}>{connectionLabel(status)}</span>
         {info?.host ? <HostBars host={info.host} /> : null}
       </div>
@@ -72,6 +76,7 @@ export function MachineCard({ env }: { env: KnownEnvironment }) {
         {origin ? (
           <a className={styles.linkButton} href={origin} target="_blank" rel="noreferrer">
             Open in browser
+            <Icon name="external" size={12} />
           </a>
         ) : null}
         <Button variant="quiet" aria-expanded={showRoutes} onClick={() => setShowRoutes(!showRoutes)}>
@@ -102,7 +107,7 @@ export function MachineCard({ env }: { env: KnownEnvironment }) {
           }}
         />
       ) : null}
-      <span className={section.secondary}>{route ? route.url : "no route"}</span>
+      <span className={styles.cardRoute}>{route ? route.url : "no route"}</span>
     </li>
   );
 }

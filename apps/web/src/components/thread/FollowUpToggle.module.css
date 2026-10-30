@@ -12,7 +12,9 @@
   color: var(--muted);
   font-size: var(--fs-sm);
   cursor: pointer;
+  transition: background var(--dur-fast) var(--ease), color var(--dur-fast) var(--ease);
 }
+.option:hover:not(:disabled) { color: var(--text); }
 .option + .option { border-left: 1px solid var(--border-strong); }
 .option[aria-pressed="true"] { background: var(--surface-2); color: var(--text); }
 .option:disabled { cursor: not-allowed; opacity: 0.6; }

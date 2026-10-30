@@ -9,8 +9,8 @@ import type { PrEntry } from "./prData.ts";
 import styles from "./Prs.module.css";
 
 /**
- * One PR: readiness · `#n title` · repo · author · head → base · checks · review ·
- * +/- · thread · environment · age. The row opens the detail pane; the thread tag
+ * One 28px PR row: readiness glyph · title · `repo#n` · author · readiness/checks/review
+ * pills · +/- · age, then the thread tag and environment. The row opens the detail pane; the thread tag
  * opens the thread.
  */
 export function PrRow({
@@ -34,6 +34,8 @@ export function PrRow({
   const review = reviewText(pr);
   const branch = pr.head ? `${pr.head} → ${pr.base ?? "?"}` : "";
 
+  const tone = READINESS_TONE[readiness.label];
+
   return (
     <li className={`${styles.item} ${selected ? styles.selected : ""}`}>
       <button
@@ -43,24 +45,18 @@ export function PrRow({
         aria-current={selected ? "true" : undefined}
         aria-label={`PR #${pr.number} ${pr.title ?? ""}`.trim()}
       >
-        <span className={styles.ready} title={readiness.reasons.join(" · ")}>
-          <Pill tone={READINESS_TONE[readiness.label]}>{readiness.label}</Pill>
-        </span>
+        <span className={`${styles.glyph} ${styles[`tone_${tone}`] ?? ""}`} aria-hidden="true" />
         <span className={styles.titleCell}>
-          <span className={styles.number}>#{pr.number}</span> <span className={styles.title}>{pr.title ?? pr.url}</span>
+          <span className={styles.title}>{pr.title ?? pr.url}</span>
+          <span className={styles.repo} title={branch || undefined}>
+            {pr.repo ?? ""}#{pr.number}
+          </span>
+          {pr.author ? <span className={styles.author}>@{pr.author}</span> : null}
         </span>
-        <span className={styles.meta}>
-          {pr.repo ? <span className={styles.repo}>{pr.repo}</span> : null}
-          {pr.author ? <span>@{pr.author}</span> : null}
-          {branch ? (
-            <span className={styles.branch} title={branch}>
-              {branch}
-            </span>
-          ) : null}
-        </span>
-        <span className={styles.checks}>
-          {checks ? <span className={checks.includes("✘") ? styles.fail : styles.pass}>{checks}</span> : null}
-          {review ? <span className={styles.review}>{review}</span> : null}
+        <span className={styles.pills} title={readiness.reasons.join(" · ")}>
+          <Pill tone={tone}>{readiness.label}</Pill>
+          {checks ? <Pill tone={checks.includes("✘") ? "error" : "ok"}>{checks}</Pill> : null}
+          {review ? <Pill>{review}</Pill> : null}
         </span>
         <span className={styles.stats}>
           {pr.additions === undefined && pr.deletions === undefined ? null : (
@@ -71,19 +67,21 @@ export function PrRow({
         </span>
         <span className={styles.age}>{relativeTime(pr.updatedAt, now)}</span>
       </button>
-      <span className={styles.tags}>
-        {thread ? (
-          <button
-            type="button"
-            className={styles.threadTag}
-            title={`Open thread: ${thread.title}`}
-            onClick={() => selectThread(thread.id)}
-          >
-            ⌁ {thread.title}
-          </button>
-        ) : null}
-        {showEnv ? <Pill>{environmentName(entry.envId)}</Pill> : null}
-      </span>
+      {thread || showEnv ? (
+        <span className={styles.tags}>
+          {thread ? (
+            <button
+              type="button"
+              className={styles.threadTag}
+              title={`Open thread: ${thread.title}`}
+              onClick={() => selectThread(thread.id)}
+            >
+              {thread.title}
+            </button>
+          ) : null}
+          {showEnv ? <Pill>{environmentName(entry.envId)}</Pill> : null}
+        </span>
+      ) : null}
     </li>
   );
 }

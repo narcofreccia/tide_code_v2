@@ -7,8 +7,8 @@
   font-size: var(--fs-sm);
 }
 .icon {
-  width: 16px;
-  text-align: center;
+  flex: none;
+  margin: 0 2px;
   color: var(--accent);
 }
 .notice[data-source="restart"] .icon { color: var(--warn); }

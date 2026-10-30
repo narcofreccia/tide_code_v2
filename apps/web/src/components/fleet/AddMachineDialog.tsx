@@ -4,7 +4,6 @@ import { errorText } from "../../lib/dispatchOrToast.ts";
 import { showToast } from "../../state/toast.ts";
 import { Dialog } from "../ui/Dialog.tsx";
 import { DialogFrame, FrameField } from "../ui/DialogFrame.tsx";
-import section from "../settings/Section.module.css";
 import { guessRouteKind, httpOriginOf, toWsUrl } from "./envView.ts";
 import { closeAddMachine, useFleetUi } from "./fleetUi.ts";
 import styles from "./Environments.module.css";
@@ -36,13 +35,13 @@ function TabSwitch({ value, onChange }: { value: Tab; onChange: (tab: Tab) => vo
 function ReachHints() {
   return (
     <div className={styles.hints}>
-      <p className={section.note}>
-        <strong>Tailscale</strong>: on the other machine run <span className={section.code}>tailscale serve 3777</span> and use
-        the printed <span className={section.code}>*.ts.net</span> URL. Nothing is exposed beyond your tailnet.
+      <p className={styles.note}>
+        <strong>Tailscale</strong>: on the other machine run <span className={styles.code}>tailscale serve 3777</span> and use
+        the printed <span className={styles.code}>*.ts.net</span> URL. Nothing is exposed beyond your tailnet.
       </p>
-      <p className={section.note}>
-        <strong>SSH tunnel</strong>: <span className={section.code}>ssh -L 3778:127.0.0.1:3777 host</span>, then use{" "}
-        <span className={section.code}>http://127.0.0.1:3778</span> here.
+      <p className={styles.note}>
+        <strong>SSH tunnel</strong>: <span className={styles.code}>ssh -L 3778:127.0.0.1:3777 host</span>, then use{" "}
+        <span className={styles.code}>http://127.0.0.1:3778</span> here.
       </p>
     </div>
   );
@@ -96,7 +95,7 @@ function AddMachineForm({ initialUrl }: { initialUrl: string }) {
       <div className={styles.sheetRows}>
         <FrameField label="URL" caption="The address the other machine shows under Pair another device">
           <input
-            className={section.input}
+            className={styles.input}
             aria-label="Machine URL"
             placeholder="http://192.168.1.20:3777"
             autoFocus
@@ -107,7 +106,7 @@ function AddMachineForm({ initialUrl }: { initialUrl: string }) {
         {tab === "code" ? (
           <FrameField label="Code" caption="6 digits, valid for 5 minutes, works once">
             <input
-              className={`${section.input} ${styles.codeInput}`}
+              className={`${styles.input} ${styles.codeInput}`}
               aria-label="Pairing code"
               inputMode="numeric"
               autoComplete="one-time-code"
@@ -120,7 +119,7 @@ function AddMachineForm({ initialUrl }: { initialUrl: string }) {
         ) : (
           <FrameField label="Token" caption="Printed by tide-server at start; kept only in this browser">
             <input
-              className={section.input}
+              className={styles.input}
               type="password"
               autoComplete="off"
               aria-label="Machine token"

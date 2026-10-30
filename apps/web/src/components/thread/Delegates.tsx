@@ -3,18 +3,24 @@ import type { Thread } from "@tide/contracts";
 import { useModel } from "../../state/model.ts";
 import { useUi } from "../../state/ui.ts";
 import { Button } from "../ui/Button.tsx";
+import { Icon } from "../ui/Icon.tsx";
 import { Popover } from "../ui/Popover.tsx";
 import { StatusGlyph } from "../ui/StatusGlyph.tsx";
 import styles from "./ThreadHeader.module.css";
 
-/** "↳ n delegated": the threads this one spawned, with a jump into each. */
+/** "n delegated": the threads this one spawned, with a jump into each. */
 export function DelegatesPopover({ threadId }: { threadId: string }) {
   const model = useModel((s) => s.model);
   const delegates = selectDelegates(model, threadId);
   const selectThread = useUi((s) => s.selectThread);
   if (delegates.length === 0) return null;
   return (
-    <Popover variant="quiet" label={`↳ ${delegates.length} delegated`} title="Threads this one delegated">
+    <Popover variant="quiet" label={
+        <>
+          <Icon name="branch" size={12} />
+          {delegates.length} delegated
+        </>
+      } title="Threads this one delegated">
       {(close) => (
         <ul className={styles.delegates}>
           {delegates.map((d: Thread) => (

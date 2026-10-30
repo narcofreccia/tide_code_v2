@@ -3,6 +3,7 @@ import type { ProviderKind } from "@tide/contracts";
 import { stream, type StreamControl } from "../../state/model.ts";
 import { errorText } from "../../lib/dispatchOrToast.ts";
 import { Button } from "../ui/Button.tsx";
+import { SettingRow } from "../settings/ui/SettingRow.tsx";
 import styles from "./Environments.module.css";
 
 type Key = ProviderKind | "general";
@@ -49,24 +50,31 @@ export function UpdateHarnesses() {
 
   const entries = Object.entries(logs) as [Key, Log][];
   return (
-    <div className={styles.update}>
-      <div className={styles.updateHead}>
-        <span className={styles.subTitle}>Harness CLIs</span>
+    <SettingRow
+      label="Harness CLIs"
+      help="Runs each installed CLI's own update command on this machine"
+      control={
         <Button disabled={running} onClick={start}>
           {running ? "Updating…" : "Update harnesses"}
         </Button>
-      </div>
-      {entries.map(([key, log]) => (
-        <section key={key} className={styles.log} aria-label={`${key} update log`}>
-          <header className={styles.logHead}>
-            <span>{key === "general" ? "updater" : key}</span>
-            <span className={log.ok === false ? styles.bad : log.ok === true ? styles.good : styles.muted}>
-              {!log.done ? "running…" : log.ok === false ? "failed" : "done"}
-            </span>
-          </header>
-          <pre className={styles.logBody}>{log.lines.join("\n")}</pre>
-        </section>
-      ))}
-    </div>
+      }
+      extra={
+        entries.length === 0 ? undefined : (
+          <div className={styles.logs}>
+            {entries.map(([key, log]) => (
+              <section key={key} className={styles.log} aria-label={`${key} update log`}>
+                <header className={styles.logHead}>
+                  <span>{key === "general" ? "updater" : key}</span>
+                  <span className={log.ok === false ? styles.bad : log.ok === true ? styles.good : styles.muted}>
+                    {!log.done ? "running…" : log.ok === false ? "failed" : "done"}
+                  </span>
+                </header>
+                <pre className={styles.logBody}>{log.lines.join("\n")}</pre>
+              </section>
+            ))}
+          </div>
+        )
+      }
+    />
   );
 }

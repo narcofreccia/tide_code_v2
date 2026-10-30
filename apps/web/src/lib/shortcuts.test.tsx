@@ -144,3 +144,22 @@ describe("custom keybindings", () => {
     expect(press("e", { shiftKey: true })).toBe(true);
   });
 });
+
+describe("rail keys in the registry", () => {
+  it("lists every RAIL_BINDINGS id under Rail with its bare default", async () => {
+    const { RAIL_BINDINGS } = await import("./keybindings.ts");
+    const { bindingEntries, defaultBinding } = await import("./shortcuts.ts");
+    const rail = SHORTCUTS.filter((s) => s.group === "Rail");
+    expect(rail.map((s) => s.id)).toEqual(RAIL_BINDINGS.map((b) => b.id));
+    expect(rail.map((s) => s.keys)).toEqual(["/", "j", "k", "↵", "e", "s", "m", "x"]);
+    for (const shortcut of rail) expect(defaultBinding(shortcut)).toBe(RAIL_BINDINGS.find((b) => b.id === shortcut.id)?.binding);
+    const entries = bindingEntries({ "rail.next": "mod+j" });
+    expect(entries.find((e) => e.id === "rail.next")).toMatchObject({ binding: "mod+j", isDefault: false });
+    expect(entries.find((e) => e.id === "rail.prev")).toMatchObject({ binding: "k", isDefault: true });
+    expect(shortcutKeys(rail.find((s) => s.id === "rail.next")!, { "rail.next": "mod+j" })).toMatch(/J/);
+  });
+
+  it("leaves dispatch to the rail's own handler", () => {
+    expect(handleShortcut(new KeyboardEvent("keydown", { key: "j" }))).toBe(false);
+  });
+});

@@ -91,7 +91,7 @@ describe("ChangesTab", () => {
 
     await waitFor(() => expect(screen.getByRole("option", { name: /a\.ts/ })).toBeDefined());
     expect(rpc).toHaveBeenCalledWith("vcs.turnDiff", { threadId: "t1", turnId: "u2" });
-    expect(screen.getByText("Turn 2 of 2 ▾")).toBeDefined();
+    expect(screen.getByText("Turn 2 of 2")).toBeDefined();
     expect(await screen.findByTestId("monaco")).toHaveProperty("textContent", "before::after");
   });
 
@@ -147,23 +147,23 @@ describe("ChangesTab", () => {
       "vcs.fileAt": () => ({ content: "x", binary: false, missing: false }),
     });
     render(<ChangesTab />);
-    await waitFor(() => expect(screen.getByText("Turn 2 of 2 ▾")).toBeDefined());
+    await waitFor(() => expect(screen.getByText("Turn 2 of 2")).toBeDefined());
 
     act(() => {
       fireEvent.keyDown(window, { key: "[" });
     });
-    await waitFor(() => expect(screen.getByText("Turn 1 of 2 ▾")).toBeDefined());
+    await waitFor(() => expect(screen.getByText("Turn 1 of 2")).toBeDefined());
     expect(rpc).toHaveBeenCalledWith("vcs.turnDiff", { threadId: "t1", turnId: "u1" });
 
     act(() => {
       fireEvent.keyDown(window, { key: "]" });
     });
-    await waitFor(() => expect(screen.getByText("Turn 2 of 2 ▾")).toBeDefined());
+    await waitFor(() => expect(screen.getByText("Turn 2 of 2")).toBeDefined());
 
-    fireEvent.click(screen.getByText("Turn 2 of 2 ▾"));
+    fireEvent.click(screen.getByText("Turn 2 of 2"));
     fireEvent.click(screen.getByText("All changes"));
     await waitFor(() => expect(rpc).toHaveBeenCalledWith("vcs.threadDiff", { threadId: "t1" }));
-    expect(screen.getByText(`All changes ▾`)).toBeDefined();
+    expect(screen.getByText(`All changes`)).toBeDefined();
   });
 
   it("falls back to the patch view for a binary file", async () => {

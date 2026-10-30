@@ -10,6 +10,7 @@ import { ApprovalCard } from "../thread/ApprovalCard.tsx";
 import { PlanCard } from "../thread/PlanCard.tsx";
 import { UserInputCard } from "../thread/UserInputCard.tsx";
 import { Button } from "../ui/Button.tsx";
+import { Icon } from "../ui/Icon.tsx";
 import { Pill } from "../ui/Pill.tsx";
 import { StatusGlyph } from "../ui/StatusGlyph.tsx";
 import { useTicker } from "./useTicker.ts";
@@ -67,7 +68,7 @@ export function InboxColumn({ projectId }: { projectId?: string }) {
     <section className={styles.section} aria-label="Inbox" tabIndex={-1} onKeyDown={onKeyDown}>
       {count === 0 ? (
         <p className={styles.clear}>
-          <span aria-hidden="true">✓</span> Nothing needs you
+          <Icon name="check" size={14} /> Nothing needs you
         </p>
       ) : (
         <h2 className={`${styles.label} ${styles.labelNeeds}`}>Needs you · {count}</h2>
@@ -101,8 +102,15 @@ export function InboxColumn({ projectId }: { projectId?: string }) {
                   <span className={styles.waiting} title={new Date(item.since).toLocaleString()}>
                     waiting {relativeTime(item.since, now)}
                   </span>
-                  <Button variant="link" className={styles.jump} onClick={() => selectThread(item.thread.id)}>
-                    jump →
+                  <Button
+                    variant="quiet"
+                    className={styles.jump}
+                    aria-label={`Open ${item.thread.title}`}
+                    title="Open the thread"
+                    onClick={() => selectThread(item.thread.id)}
+                  >
+                    Open
+                    <Icon name="chevronRight" size={12} />
                   </Button>
                 </div>
                 {item.notification === undefined ? null : <p className={limited.subtitle}>{item.notification}</p>}

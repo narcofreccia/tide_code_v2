@@ -24,14 +24,12 @@
   font: inherit;
   cursor: pointer;
 }
-.item:hover:not(:disabled),
-.item:focus-visible {
-  background: var(--accent-soft);
-  outline: none;
-}
+.item:hover:not(:disabled) { background: var(--surface-hover); }
+.item:focus-visible { background: var(--selection); }
 .item:disabled { color: var(--muted); cursor: default; }
 .danger { color: var(--danger); }
 .separated { margin-top: var(--sp-1); border-top: 1px solid var(--border); padding-top: var(--sp-1); }
 .label { flex: 1; white-space: nowrap; }
 .hint { color: var(--muted); font-size: var(--fs-sm); white-space: nowrap; }
 .chevron { color: var(--muted); }
+.check { display: inline-flex; width: 14px; flex: none; color: var(--accent); }

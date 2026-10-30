@@ -3,24 +3,27 @@
   display: flex;
   align-items: center;
   gap: var(--sp-2);
-  height: 28px;
+  height: var(--row-h-nav);
   padding: 0 var(--sp-2);
   border-bottom: 1px solid var(--border);
+  background: var(--surface);
 }
 .url {
   flex: 1;
   min-width: 0;
-  height: 22px;
+  height: 24px;
   padding: 0 var(--sp-2);
-  background: var(--surface-raised);
+  background: var(--bg);
   border: 1px solid var(--border);
-  border-radius: var(--radius-sm);
+  border-radius: var(--radius);
   color: var(--text);
   font-family: var(--font-mono);
   font-size: var(--fs-xs);
 }
+/* the rail search field: --bg well, hairline, accent border on focus instead of the ring */
 .url:focus { border-color: var(--accent); outline: none; }
-.external { flex: none; color: var(--accent); font-size: var(--fs-sm); white-space: nowrap; }
+.url:focus-visible { box-shadow: none; }
+.external { flex: none; display: inline-flex; align-items: center; gap: var(--sp-1); color: var(--accent); font-size: var(--fs-sm); white-space: nowrap; }
 /* pages paint their own background; white under them matches a browser tab */
 .frame { flex: 1; width: 100%; min-height: 0; border: 0; background: #fff; }
 

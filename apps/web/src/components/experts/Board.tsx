@@ -7,6 +7,7 @@ import { Button } from "../ui/Button.tsx";
 import { Pill } from "../ui/Pill.tsx";
 import { BoardComposer } from "./BoardComposer.tsx";
 import { ExpertCard } from "./ExpertCard.tsx";
+import { ExpertsEmpty } from "./ExpertsEmpty.tsx";
 import { DiscussionLane, FindingsFeed } from "./FindingsFeed.tsx";
 import { PhaseStepper } from "./PhaseStepper.tsx";
 import { SynthesisPanel } from "./SynthesisPanel.tsx";
@@ -23,7 +24,7 @@ export function Board({ sessionId }: { sessionId: string }) {
   const selectedThreadId = useUi((s) => s.selectedThreadId);
   const low = useServerSettings((s) => s.settings.decisions.grayZone.low);
 
-  if (!board) return <p className={styles.empty}>This experts session is gone.</p>;
+  if (!board) return <ExpertsEmpty note="This experts session is gone." />;
   const { session } = board;
   // the verdict is only news until something else moves the session (a phase change, a new finding)
   const verdict = session.judge;
@@ -36,9 +37,9 @@ export function Board({ sessionId }: { sessionId: string }) {
   return (
     <div className={styles.board} aria-label="Experts board">
       <header className={styles.header}>
-        <span className={styles.topic} title={session.topic}>
+        <h2 className={styles.topic} title={session.topic}>
           {session.topic}
-        </span>
+        </h2>
         <Pill tone={session.phase === "ready" ? "needs" : "muted"}>{PHASE_LABELS[session.phase]}</Pill>
         <div className={styles.headerActions}>
           <Button variant="quiet" onClick={() => archiveExpertsSession(session.id)}>

@@ -4,7 +4,7 @@ import { errorText } from "../../lib/dispatchOrToast.ts";
 import { copyText } from "../../lib/threadActions.ts";
 import { envOpt } from "./envView.ts";
 import { Button } from "../ui/Button.tsx";
-import section from "../settings/Section.module.css";
+import { SettingRow } from "../settings/ui/SettingRow.tsx";
 import styles from "./Environments.module.css";
 
 interface Pairing {
@@ -50,44 +50,51 @@ export function PairDevice({ envId }: { envId: string | undefined }) {
   };
 
   return (
-    <div className={styles.pair}>
-      <div className={section.head}>
-        <span className={styles.subTitle}>Pair another device</span>
+    <SettingRow
+      label="Pair another device"
+      help="A one-time 6-digit code another device exchanges for this machine's token"
+      control={
         <Button variant={pairing && !expired ? "quiet" : "primary"} disabled={busy} onClick={request}>
           {pairing ? "New code" : "Pair another device"}
         </Button>
-      </div>
-      {error ? <p className={styles.error} role="alert">{error}</p> : null}
-      {pairing ? (
-        <div className={styles.pairBody} aria-label="Pairing code">
-          <span className={`${styles.code} ${expired ? styles.expired : ""}`} data-testid="pairing-code">
-            {pairing.code}
-          </span>
-          <span className={section.note}>
-            {expired ? "Expired — ask for a new code." : `Expires in ${countdown(pairing.expiresAt, now)} · works once`}
-          </span>
-          {pairing.urls.length > 0 ? (
-            <ul className={styles.urls} aria-label="Pairing URLs">
-              {pairing.urls.map((url) => (
-                <li key={url} className={styles.urlRow}>
-                  <span className={section.value}>{url}</span>
-                  <Button variant="quiet" onClick={() => void copyText(url, "URL")}>
-                    Copy
-                  </Button>
-                </li>
-              ))}
-            </ul>
-          ) : (
-            <p className={section.note}>
-              This server only listens on localhost. Start it with <span className={section.code}>--host 0.0.0.0</span> (or
-              put it on Tailscale) so the other device can reach it.
-            </p>
-          )}
-          <p className={section.note}>
-            On the other device open Tide → Settings → Environments → Add machine, enter one of these URLs and this code.
-          </p>
-        </div>
-      ) : null}
-    </div>
+      }
+      extra={
+        error || pairing ? (
+          <>
+            {error ? <p className={styles.error} role="alert">{error}</p> : null}
+            {pairing ? (
+              <div className={styles.pairBody} aria-label="Pairing code">
+                <span className={`${styles.pairCode} ${expired ? styles.expired : ""}`} data-testid="pairing-code">
+                  {pairing.code}
+                </span>
+                <span className={styles.note}>
+                  {expired ? "Expired — ask for a new code." : `Expires in ${countdown(pairing.expiresAt, now)} · works once`}
+                </span>
+                {pairing.urls.length > 0 ? (
+                  <ul className={styles.urls} aria-label="Pairing URLs">
+                    {pairing.urls.map((url) => (
+                      <li key={url} className={styles.urlRow}>
+                        <span className={styles.value}>{url}</span>
+                        <Button variant="quiet" onClick={() => void copyText(url, "URL")}>
+                          Copy
+                        </Button>
+                      </li>
+                    ))}
+                  </ul>
+                ) : (
+                  <p className={styles.note}>
+                    This server only listens on localhost. Start it with <span className={styles.code}>--host 0.0.0.0</span> (or
+                    put it on Tailscale) so the other device can reach it.
+                  </p>
+                )}
+                <p className={styles.note}>
+                  On the other device open Tide → Settings → Environments → Add machine, enter one of these URLs and this code.
+                </p>
+              </div>
+            ) : null}
+          </>
+        ) : undefined
+      }
+    />
   );
 }

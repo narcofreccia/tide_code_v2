@@ -9,6 +9,7 @@ import { useModel } from "../../state/model.ts";
 import { useUi } from "../../state/ui.ts";
 import { NewThreadPopover } from "../shell/NewThreadPopover.tsx";
 import { Button } from "../ui/Button.tsx";
+import { Icon } from "../ui/Icon.tsx";
 import { ProjectIcon } from "../ui/ProjectIcon.tsx";
 import { ConfirmDialog, PromptDialog } from "../ui/Dialog.tsx";
 import { Pill } from "../ui/Pill.tsx";
@@ -23,10 +24,24 @@ import { plural } from "../../lib/format.ts";
 
 type ProjectDialog = "rename" | "archive" | null;
 
-/** `⋯` on the card: rename, archive (confirmed). */
+const PATH_MAX = 44;
+
+/** `/Users/me/dev/…/tide_code_v2`: keeps the root and the repo folder, drops the middle. */
+export function middleEllipsis(path: string, max = PATH_MAX): string {
+  if (path.length <= max) return path;
+  const tail = Math.ceil((max - 1) * 0.6);
+  return `${path.slice(0, max - 1 - tail)}…${path.slice(path.length - tail)}`;
+}
+
+/** `more` on the card: rename, archive (confirmed). */
 function ProjectMenu({ project, onOpen }: { project: Project; onOpen: (dialog: ProjectDialog) => void }) {
   return (
-    <Popover label="⋯" title={`More actions for ${project.title}`} variant="quiet" align="end">
+    <Popover
+      label={<Icon name="more" label={`More actions for ${project.title}`} />}
+      title={`More actions for ${project.title}`}
+      variant="quiet"
+      align="end"
+    >
       {(close) => (
         <div className={styles.menu}>
           <Button
@@ -54,9 +69,9 @@ function ProjectMenu({ project, onOpen }: { project: Project; onOpen: (dialog: P
 }
 
 /**
- * One repository: what it costs, what is open and landed on it, its three most
- * recent threads, and the ways to start work. Cost and automations sit behind
- * Details. Flat — a hairline box on `--surface`, never a card inside a card.
+ * One repository: a header (icon, name, path, menu), one meta line, its three most
+ * recent threads as rail-density rows, and a footer to start work. Cost and
+ * automations sit behind Details. Flat — a hairline card on `--surface`.
  */
 export function ProjectCard({ project }: { project: Project }) {
   const providers = useProvidersSnapshot();
@@ -71,6 +86,7 @@ export function ProjectCard({ project }: { project: Project }) {
   const prs = selectPrCounts(model, project.id);
   const recent = selectRecentThreads(model, project.id, 3);
   const links = selectProjectLinks(model, project.id);
+  const lastActive = recent[0]?.updatedAt;
 
   return (
     <article className={styles.card} aria-label={`Project ${project.title}`}>
@@ -78,19 +94,20 @@ export function ProjectCard({ project }: { project: Project }) {
         <ProjectIcon project={project} />
         <h3 className={styles.cardTitle}>{project.title}</h3>
         <span className={styles.path} title={project.rootPath}>
-          {project.rootPath}
+          {middleEllipsis(project.rootPath)}
         </span>
         <ProjectMenu project={project} onOpen={setDialog} />
       </div>
 
       <div className={styles.counts}>
-        {totals.threads > 0 ? (
-          <span>
-            {plural(totals.threads, "thread")}
-          </span>
-        ) : null}
-        {totals.running > 0 ? <Pill tone="running">● {totals.running} running</Pill> : null}
-        {totals.needsYou > 0 ? <Pill tone="needs">◐ {totals.needsYou} needs you</Pill> : null}
+        <span className={styles.facts}>
+          <span>{plural(totals.threads, "thread")}</span>
+          {totals.running > 0 ? <span className={styles.factRunning}>{totals.running} running</span> : null}
+          {totals.needsYou > 0 ? <span className={styles.factNeeds}>{totals.needsYou} needs you</span> : null}
+          {lastActive === undefined ? null : (
+            <span title={new Date(lastActive).toLocaleString()}>active {relativeTime(lastActive)}</span>
+          )}
+        </span>
         {prs.open > 0 ? (
           <button
             type="button"
@@ -99,22 +116,27 @@ export function ProjectCard({ project }: { project: Project }) {
             title={`Pull requests in ${project.title}`}
             aria-label={`${prs.open} open pull requests in ${project.title}`}
           >
-            <Pill tone="running">⇡ {prs.open} open</Pill>
+            <Pill tone="running">
+              <Icon name="pullRequest" size={12} />
+              {prs.open} open
+            </Pill>
           </button>
         ) : null}
-        {prs.landed > 0 ? <Pill tone="ok">✓ {prs.landed} merged</Pill> : null}
-        <Button
-          variant="link"
-          className={styles.pushRight}
-          onClick={() => setLinksProject(project.id)}
-          title="Linked repositories"
-        >
+        {prs.landed > 0 ? (
+          <Pill tone="ok">
+            <Icon name="check" size={12} />
+            {prs.landed} merged
+          </Pill>
+        ) : null}
+        <span className={styles.pushRight} />
+        <Button variant="quiet" onClick={() => setLinksProject(project.id)} title="Linked repositories">
           {links.length === 0 ? "Link a repo" : `Links · ${links.length}`}
         </Button>
+        <button type="button" className={styles.details} aria-expanded={details} onClick={() => setDetails(!details)}>
+          <Icon name="chevronRight" size={12} className={`${details ? styles.chevronOpen : styles.chevron}`} />
+          Details
+        </button>
       </div>
-      <button type="button" className={styles.details} aria-expanded={details} onClick={() => setDetails(!details)}>
-        {details ? "▾" : "▸"} Details
-      </button>
       {details ? (
         <div className={styles.detailsBody}>
           <div className={styles.costRow}>
@@ -137,18 +159,22 @@ export function ProjectCard({ project }: { project: Project }) {
       ) : null}
 
       {recent.length === 0 ? (
-        <p className={styles.empty}>No threads. Each thread works on its own branch.</p>
+        <p className={styles.cardEmpty}>No threads. Each thread works on its own branch.</p>
       ) : (
         <ul className={styles.recent}>
           {recent.map((thread) => (
             <li key={thread.id}>
               <button type="button" className={styles.recentRow} onClick={() => selectThread(thread.id)}>
-                <ThreadGlyph thread={thread} />
-                <span className={styles.title}>{thread.title}</span>
+                <span className={styles.rowGlyph}>
+                  <ThreadGlyph thread={thread} />
+                </span>
+                <span className={styles.rowTitle}>{thread.title}</span>
                 <ThreadTags thread={thread} />
                 {thread.interrupting === true ? <span className={styles.interrupting}>interrupting…</span> : null}
-                <span className={styles.meta}>{threadHarnessLabel(providers, thread)}</span>
-                <span className={styles.time}>{relativeTime(thread.updatedAt)}</span>
+                <span className={styles.rowMeta}>
+                  <span>{threadHarnessLabel(providers, thread)}</span>
+                  <span className={styles.time}>{relativeTime(thread.updatedAt)}</span>
+                </span>
               </button>
             </li>
           ))}
@@ -158,15 +184,18 @@ export function ProjectCard({ project }: { project: Project }) {
       <ProjectExperts projectId={project.id} projectTitle={project.title} />
 
       <div className={styles.actions}>
-        <NewThreadPopover projectId={project.id} variant="ghost" />
-        <Button onClick={() => setNewExpertsProject(project.id)}>Experts</Button>
+        <NewThreadPopover projectId={project.id} variant="primary" />
+        <Button variant="quiet" onClick={() => setNewExpertsProject(project.id)}>
+          Experts
+        </Button>
         <Button
-          variant="link"
+          variant="quiet"
           className={styles.pushRight}
           onClick={() => showAllThreads(project.id)}
           aria-label={`All threads in ${project.title}`}
         >
-          all threads →
+          All threads
+          <Icon name="chevronRight" size={12} />
         </Button>
       </div>
 

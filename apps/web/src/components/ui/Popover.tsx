@@ -12,6 +12,8 @@ import styles from "./Popover.module.css";
 export function Popover({
   label,
   title,
+  ariaLabel,
+  triggerClassName,
   variant = "ghost",
   disabled,
   align = "start",
@@ -20,6 +22,9 @@ export function Popover({
 }: {
   label: React.ReactNode;
   title?: string;
+  /** accessible name of the trigger when `label` is an icon or a lone glyph */
+  ariaLabel?: string;
+  triggerClassName?: string | undefined;
   variant?: "primary" | "ghost" | "quiet";
   disabled?: boolean;
   align?: "start" | "end";
@@ -61,6 +66,8 @@ export function Popover({
         variant={variant}
         disabled={disabled}
         {...(title === undefined ? {} : { title })}
+        {...(ariaLabel === undefined ? {} : { "aria-label": ariaLabel })}
+        className={triggerClassName}
         aria-expanded={open}
         aria-haspopup="dialog"
         onClick={() => setOpen((v) => !v)}

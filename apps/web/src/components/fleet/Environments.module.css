@@ -1,41 +1,59 @@
-/* Settings › Environments and its sheet; layout on top of settings/Section.module.css */
-.field { flex: 1; display: flex; justify-content: flex-end; max-width: 320px; }
-.subTitle { font-weight: 500; }
+/*
+ * Settings › Environments and the add-machine sheet. Page structure comes from the settings
+ * primitives (SettingsGroup › SettingRow); this file only styles what sits inside a row.
+ */
+.input {
+  min-width: 0;
+  width: 100%;
+  height: var(--row-h);
+  padding: 0 var(--sp-2);
+  background: var(--bg);
+  border: 1px solid var(--border);
+  border-radius: var(--radius-sm);
+  color: var(--text);
+  font: inherit;
+  font-family: var(--font-mono);
+  font-size: var(--fs-xs);
+}
+.input:focus { outline: none; border-color: var(--accent); }
+
+/* read-only values (paths, versions, URLs) */
+.value {
+  font-family: var(--font-mono);
+  font-size: var(--fs-xs);
+  color: var(--text-2);
+  overflow-wrap: anywhere;
+}
+.code { font-family: var(--font-mono); font-size: var(--fs-xs); color: var(--text); }
+.note { margin: 0; font-size: var(--fs-sm); line-height: var(--lh-body); color: var(--muted); }
 .error { margin: 0; color: var(--danger); font-size: var(--fs-sm); }
 .muted { color: var(--muted); }
 .good { color: var(--ok); }
 .bad { color: var(--danger); }
 
+/* URL lists under a row (LAN, pairing) */
+.urls { list-style: none; margin: 0; padding: 0; display: flex; flex-direction: column; gap: var(--sp-1); }
+.urlRow { display: flex; align-items: center; justify-content: space-between; gap: var(--sp-2); min-height: var(--row-h); }
+
 /* pairing */
-.pair,
-.update {
-  display: flex;
-  flex-direction: column;
-  gap: var(--sp-2);
-  padding: var(--sp-3);
-  border: 1px solid var(--border);
-  border-radius: var(--radius);
-  background: var(--surface);
-}
 .pairBody { display: flex; flex-direction: column; gap: var(--sp-2); }
-.code {
+.pairCode {
   font-family: var(--font-mono);
   font-size: var(--fs-display);
+  line-height: var(--lh-tight);
   letter-spacing: 0.3em;
   color: var(--text);
 }
 .expired { color: var(--muted); text-decoration: line-through; }
-.urls { list-style: none; margin: 0; padding: 0; display: flex; flex-direction: column; gap: var(--sp-1); }
-.urlRow { display: flex; align-items: center; justify-content: space-between; gap: var(--sp-2); }
 
-/* harness updates */
-.updateHead { display: flex; align-items: center; justify-content: space-between; gap: var(--sp-2); }
+/* harness update logs */
+.logs { display: flex; flex-direction: column; gap: var(--sp-2); }
 .log { border: 1px solid var(--border); border-radius: var(--radius-sm); overflow: hidden; }
 .logHead {
   display: flex;
   justify-content: space-between;
   padding: var(--sp-1) var(--sp-2);
-  background: var(--surface-raised);
+  background: var(--surface-2);
   font-size: var(--fs-sm);
 }
 .logBody {
@@ -49,19 +67,18 @@
   white-space: pre-wrap;
 }
 
-/* other machines */
-.cards { list-style: none; margin: 0; padding: 0; display: flex; flex-direction: column; gap: var(--sp-2); }
+/* other machines: flat entries split by hairlines inside the group, never cards in a card */
+.cards { list-style: none; margin: calc(-1 * var(--sp-3)) 0; padding: 0; display: flex; flex-direction: column; }
 .card {
   display: flex;
   flex-direction: column;
   gap: var(--sp-2);
-  padding: var(--sp-3);
-  border: 1px solid var(--border);
-  border-radius: var(--radius);
-  background: var(--surface);
+  padding: var(--sp-3) 0;
+  min-width: 0;
 }
-.cardHead { display: flex; align-items: center; gap: var(--sp-2); flex-wrap: wrap; }
-.cardName { font-weight: 600; }
+.card + .card { border-top: 1px solid var(--border); }
+.cardHead { display: flex; align-items: center; gap: var(--sp-2); flex-wrap: wrap; min-height: var(--row-h); }
+.cardName { font-size: var(--fs-base); font-weight: var(--fw-medium); }
 .cardStatus { flex: 1; color: var(--muted); font-size: var(--fs-sm); }
 .facts {
   display: grid;
@@ -71,41 +88,31 @@
   font-size: var(--fs-sm);
 }
 .facts dt { color: var(--muted); }
-.facts dd { margin: 0; font-family: var(--font-mono); overflow-wrap: anywhere; }
+.facts dd { margin: 0; font-family: var(--font-mono); font-size: var(--fs-xs); color: var(--text-2); overflow-wrap: anywhere; }
 .cardActions { display: flex; flex-wrap: wrap; align-items: center; gap: var(--sp-2); }
+.cardRoute { font-family: var(--font-mono); font-size: var(--fs-xs); color: var(--muted); overflow-wrap: anywhere; }
 .linkButton {
   display: inline-flex;
   align-items: center;
+  gap: var(--sp-1);
   height: 24px;
-  padding: 0 8px;
+  padding: 0 var(--sp-2);
   border: 1px solid var(--border-strong);
   border-radius: var(--radius-sm);
   background: var(--surface-2);
   color: var(--text);
   text-decoration: none;
-  font-size: var(--fs-sm);
 }
 .linkButton:hover { border-color: var(--accent); }
 
 .routes { display: flex; flex-direction: column; gap: var(--sp-1); }
 .routeList { list-style: none; margin: 0; padding: 0; display: flex; flex-direction: column; gap: var(--sp-1); }
 .route { display: flex; align-items: center; gap: var(--sp-1); }
+.route > :first-child { flex: none; width: 128px; }
 
-/* relay fold */
-.fold {
-  display: inline-flex;
-  align-items: baseline;
-  gap: var(--sp-2);
-  padding: 0;
-  border: 0;
-  background: transparent;
-  color: var(--text);
-  font: inherit;
-  font-size: var(--fs-md);
-  font-weight: 600;
-  cursor: pointer;
-}
-.foldSummary { color: var(--muted); font-weight: 400; font-size: var(--fs-sm); }
+/* relay form: rows inside one form keep the group's hairlines */
+.formRows > * + * { border-top: 1px solid var(--border); }
+.wideField { width: 280px; max-width: 100%; }
 
 /* add-machine sheet */
 .segmented {
@@ -125,8 +132,12 @@
   font-size: var(--fs-sm);
   cursor: pointer;
 }
+.segment:hover { background: var(--surface-hover); }
 .segment + .segment { border-left: 1px solid var(--border-strong); }
-.segmentOn { background: var(--accent-soft); color: var(--accent); font-weight: 500; }
+.segmentOn, .segmentOn:hover { background: var(--selection); color: var(--accent); font-weight: var(--fw-medium); }
 .sheetRows { display: flex; flex-direction: column; gap: var(--sp-2); }
 .codeInput { letter-spacing: 0.3em; max-width: 140px; }
-.hints { display: flex; flex-direction: column; gap: var(--sp-1); margin-top: var(--sp-3); font-size: var(--fs-sm); }
+.hints { display: flex; flex-direction: column; gap: var(--sp-1); margin-top: var(--sp-3); }
+.route > .input { flex: 1; width: auto; }
+/* no arrowDown in the icon set: arrowUp turned around */
+.down { transform: rotate(180deg); }

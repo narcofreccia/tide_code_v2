@@ -3,6 +3,7 @@ import type { DiffFile } from "@tide/contracts";
 import { diffStatus, linkedKey, type LinkedDiffGroup } from "../../lib/linkedDiff.ts";
 import { uniqueByPath } from "../../lib/diffStats.ts";
 import { Button } from "../ui/Button.tsx";
+import { Icon } from "../ui/Icon.tsx";
 import styles from "./FileList.module.css";
 import { plural } from "../../lib/format.ts";
 
@@ -111,7 +112,7 @@ export function FileList({
     return (
       <div className={styles.collapsed}>
         <Button variant="quiet" onClick={onToggle} title="Show files" aria-label="Show files">
-          ▸
+          <Icon name="chevronRight" size={14} />
         </Button>
         <span className={styles.count}>{rows.length}</span>
       </div>
@@ -131,7 +132,7 @@ export function FileList({
           {plural(rows.length, "file")}
         </span>
         <Button variant="quiet" onClick={onToggle} title="Hide files" aria-label="Hide files">
-          ◂
+          <Icon name="chevronRight" size={14} className={styles.flip ?? ""} />
         </Button>
       </div>
       <ul

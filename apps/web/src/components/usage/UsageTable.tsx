@@ -2,7 +2,7 @@ import type { ProviderStatusDto, UsageRow } from "@tide/contracts";
 import { formatTokens, formatUsd } from "../../lib/glassBox.ts";
 import { instanceLabel } from "../../lib/vocab.ts";
 import { Pill } from "../ui/Pill.tsx";
-import { groupByHarness, sumRows, type UsageTotals } from "./usageMath.ts";
+import { groupByHarness, sumRows, totalTokens, type UsageTotals } from "./usageMath.ts";
 import styles from "./Usage.module.css";
 
 const reported = (t: UsageTotals): string => (t.costUsd === undefined ? "—" : formatUsd(t.costUsd));
@@ -26,13 +26,34 @@ export function SourceChip({ source }: { source: UsageRow["source"] }) {
   return source === "tide" ? <Pill tone="accent">Tide</Pill> : <Pill>outside Tide (harness logs)</Pill>;
 }
 
+/** The window at a glance: tokens, turns, reported and estimated spend, in one card. */
+export function UsageSummaryCards({ rows }: { rows: readonly UsageRow[] }) {
+  const t = sumRows(rows);
+  const cells: { label: string; value: string }[] = [
+    { label: "Tokens", value: formatTokens(totalTokens(t)) },
+    { label: "Turns", value: String(t.turns) },
+    { label: "Reported", value: reported(t) },
+    { label: "Estimated", value: estimated(t) },
+  ];
+  return (
+    <dl className={styles.summary} aria-label="Totals">
+      {cells.map((c) => (
+        <div key={c.label} className={styles.stat}>
+          <dt className={styles.statLabel}>{c.label}</dt>
+          <dd className={styles.statValue}>{c.value}</dd>
+        </div>
+      ))}
+    </dl>
+  );
+}
+
 /** Harness → model, with the source of each row, a subtotal per harness and a grand total. */
 export function UsageTable({ rows, providers }: { rows: readonly UsageRow[]; providers: readonly ProviderStatusDto[] }) {
   if (rows.length === 0) return <p className={styles.note}>No turns in this window.</p>;
   const groups = groupByHarness(rows);
   const total = sumRows(rows);
   return (
-    <div className={styles.tableWrap}>
+    <div className={styles.card}>
       <table className={styles.table}>
         <thead>
           <tr>

@@ -10,7 +10,7 @@
 }
 .name { color: var(--muted); font-size: var(--fs-xs); text-transform: uppercase; letter-spacing: var(--ls-section); font-weight: var(--fw-section); }
 .item { display: inline-flex; align-items: center; gap: var(--sp-2); }
-.arrow { color: var(--muted); font-size: var(--fs-sm); }
+.arrow { flex: none; color: var(--muted); }
 .chip {
   display: inline-flex;
   align-items: center;

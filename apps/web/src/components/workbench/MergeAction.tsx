@@ -4,11 +4,12 @@ import { MERGE_STRATEGIES, mergeBlockedReason, mergeTarget } from "../../lib/mer
 import { mergeThread } from "../../lib/threadActions.ts";
 import { Button } from "../ui/Button.tsx";
 import { Checkbox, Radio } from "../ui/Choice.tsx";
+import { Icon } from "../ui/Icon.tsx";
 import { Popover } from "../ui/Popover.tsx";
 import styles from "./MergeAction.module.css";
 
 /**
- * `Merge ▾` — lands the thread's branch on its base (locally, or by merging its
+ * The `Merge` menu button: lands the thread's branch on its base (locally, or by merging its
  * PR). Disabled, with the reason on hover, while it cannot run.
  */
 export function MergeAction({ thread, running }: { thread: Thread; running: boolean }) {
@@ -17,7 +18,13 @@ export function MergeAction({ thread, running }: { thread: Thread; running: bool
   const blocked = mergeBlockedReason(thread, running);
   return (
     <Popover
-      label="Merge ▾"
+      label={
+        <>
+          <Icon name="merge" size={14} />
+          <span>Merge</span>
+          <Icon name="chevronDown" size={12} />
+        </>
+      }
       title={blocked ?? `Merge ${mergeTarget(thread)}`}
       variant="quiet"
       disabled={blocked !== undefined}

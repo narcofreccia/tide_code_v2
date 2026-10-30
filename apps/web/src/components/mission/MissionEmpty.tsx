@@ -7,6 +7,7 @@ import { useUi } from "../../state/ui.ts";
 import { Logo } from "../shell/Logo.tsx";
 import { NewThreadPopover } from "../shell/NewThreadPopover.tsx";
 import { Button } from "../ui/Button.tsx";
+import { Icon } from "../ui/Icon.tsx";
 import styles from "./MissionControl.module.css";
 
 function Row({
@@ -25,7 +26,7 @@ function Row({
   return (
     <li className={styles.checkRow} data-done={done ? "true" : "false"} aria-label={`${step} ${label}`}>
       <span className={styles.checkMark} aria-hidden="true">
-        {done ? "✓" : step}
+        {done ? <Icon name="check" size={14} /> : step}
       </span>
       <span className={styles.checkBody}>
         <span>{label}</span>

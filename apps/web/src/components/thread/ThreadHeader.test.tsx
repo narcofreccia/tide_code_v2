@@ -113,7 +113,7 @@ describe("ThreadHeader", () => {
     expect(screen.getByRole<HTMLButtonElement>("button", { name: "Fork" }).disabled).toBe(true);
   });
 
-  it("offers every secondary action in the ⋯ menu", () => {
+  it("offers every secondary action in the More menu", () => {
     mockRpc({ "thread.terminalCommand": () => ({}) });
     mount({ worktreePath: "/wt/t1", branch: "tide/t1" });
     fireEvent.click(screen.getByRole("button", { name: "More actions" }));
@@ -122,7 +122,7 @@ describe("ThreadHeader", () => {
       "New child thread",
       "Roll back last turn…no finished turn",
       "Settle",
-      "Snooze▸",
+      "Snooze",
       "Link a PR…",
       "Copy thread ID",
       "Copy branch",
@@ -217,7 +217,7 @@ describe("ThreadHeader", () => {
   it("names the branch in a chip, or the main checkout when there is none", () => {
     mockRpc({ "thread.terminalCommand": () => ({}) });
     mount({ worktreePath: "/wt/t1", branch: "tide/t1" });
-    expect(screen.getByText("⎇ tide/t1").getAttribute("title")).toBe("/wt/t1");
+    expect(screen.getByText("tide/t1").parentElement?.getAttribute("title")).toBe("/wt/t1");
     cleanup();
     mount();
     expect(screen.getByText("main checkout")).toBeDefined();

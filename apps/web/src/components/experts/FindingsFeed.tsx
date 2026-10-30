@@ -2,6 +2,7 @@ import ReactMarkdown from "react-markdown";
 import remarkGfm from "remark-gfm";
 import type { ExpertsFinding, ExpertsMessage, ExpertsSession } from "@tide/contracts";
 import { relativeTime } from "../../lib/relativeTime.ts";
+import { Icon } from "../ui/Icon.tsx";
 import { authorLabel } from "./labels.ts";
 import markdown from "../thread/MessageItem.module.css";
 import styles from "./Board.module.css";
@@ -60,9 +61,7 @@ export function DiscussionLane({
             >
               <div className={styles.cardHead}>
                 <span className={styles.author}>{authorLabel(session, message.from)}</span>
-                <span className={styles.arrow} aria-hidden="true">
-                  →
-                </span>
+                <Icon name="chevronRight" size={12} className={styles.arrow ?? ""} />
                 <span className={styles.recipient}>{authorLabel(session, message.to)}</span>
                 <span className={styles.time}>{relativeTime(message.createdAt)}</span>
               </div>

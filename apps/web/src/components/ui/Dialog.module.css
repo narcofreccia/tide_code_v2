@@ -19,6 +19,9 @@
   border-radius: var(--radius-lg);
   box-shadow: var(--shadow-pop);
 }
+.sm { width: min(420px, 90vw); }
+.md { width: min(560px, 90vw); }
+.lg { width: min(760px, 90vw); }
 .paletteScrim { z-index: 90; padding-top: 12vh; }
 .palette {
   width: min(640px, 94vw);
@@ -31,7 +34,7 @@
   box-shadow: var(--shadow-pop);
   overflow: hidden;
 }
-.title { margin: 0; font-size: var(--fs-base); font-weight: 600; }
+.title { margin: 0; font-size: var(--fs-md); font-weight: var(--fw-semibold); line-height: var(--lh-tight); }
 .body { margin: 0; color: var(--muted); }
 .field { display: flex; flex-direction: column; gap: var(--sp-1); }
 .label { color: var(--muted); font-size: var(--fs-sm); }

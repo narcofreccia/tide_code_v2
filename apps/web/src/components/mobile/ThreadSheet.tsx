@@ -5,7 +5,7 @@ import { BottomSheet } from "./BottomSheet.tsx";
 import { useMobileNav } from "./mobileNav.ts";
 import styles from "./BottomSheet.module.css";
 
-/** The composer's pill row on a phone: collapsed behind the top bar's ⚙ into one sheet. */
+/** The composer's pill row on a phone: collapsed behind the top bar's settings button into one sheet. */
 export function ThreadSheet() {
   const open = useMobileNav((s) => s.sheetOpen);
   const thread = useSelectedThread();

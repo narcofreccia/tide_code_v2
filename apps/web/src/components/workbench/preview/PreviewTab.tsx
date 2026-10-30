@@ -1,6 +1,7 @@
 import { useEffect, useState } from "react";
 import { openPreviewTab } from "../../../state/workbench.ts";
 import { Button } from "../../ui/Button.tsx";
+import { Icon } from "../../ui/Icon.tsx";
 import styles from "./Preview.module.css";
 
 /** Full rights for a dev server on another origin; never `allow-same-origin` on Tide's own. */
@@ -40,7 +41,7 @@ export function PreviewTab({ threadId, url }: { threadId: string; url: string })
         }}
       >
         <Button variant="quiet" type="button" title="Reload" aria-label="Reload preview" onClick={() => setNonce((n) => n + 1)}>
-          ↻
+          <Icon name="refresh" size={14} />
         </Button>
         <input
           className={styles.url}
@@ -51,6 +52,7 @@ export function PreviewTab({ threadId, url }: { threadId: string; url: string })
         />
         <a className={styles.external} href={url} target="_blank" rel="noreferrer">
           Open in browser
+          <Icon name="external" size={12} />
         </a>
       </form>
       <iframe key={`${url}#${nonce}`} className={styles.frame} title="Preview" src={url} sandbox={previewSandbox(url)} />

@@ -1,6 +1,6 @@
 .tab { display: flex; flex-direction: column; flex: 1; min-height: 0; }
 .body { display: flex; flex: 1; min-height: 0; }
-.empty { margin: 0; padding: var(--sp-4); color: var(--muted); }
+.empty { margin: 0; padding: var(--sp-4); color: var(--muted); font-size: var(--fs-sm); }
 .error {
   display: flex;
   align-items: center;

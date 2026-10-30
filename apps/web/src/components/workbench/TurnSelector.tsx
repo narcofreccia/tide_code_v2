@@ -1,5 +1,6 @@
 import type { ReadModel, Turn } from "@tide/contracts";
 import { selectTurnPrompt } from "@tide/client";
+import { Icon } from "../ui/Icon.tsx";
 import { Popover } from "../ui/Popover.tsx";
 import { ALL_CHANGES, type TurnSelection } from "../../state/vcs.ts";
 import styles from "./TurnSelector.module.css";
@@ -47,7 +48,14 @@ export function TurnSelector({
       : `Turn ${index + 1} of ${turns.length}`;
 
   return (
-    <Popover label={`${label} ▾`} title="Choose which turn to diff" variant="quiet">
+    <Popover
+      label={
+        <>
+          <span>{label}</span>
+          <Icon name="chevronDown" size={12} />
+        </>
+      }
+      title="Choose which turn to diff" variant="quiet">
       {(close) => (
         <ul className={styles.menu} role="listbox" aria-label="Turns">
           {turns.map((turn, i) => (

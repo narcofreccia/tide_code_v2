@@ -1,6 +1,7 @@
 import { applyStash, removeStash, stashDraft, type StashedDraft } from "../../state/drafts.ts";
 import { Button } from "../ui/Button.tsx";
 import { Kbd } from "../ui/Kbd.tsx";
+import { Icon } from "../ui/Icon.tsx";
 import styles from "./Composer.module.css";
 
 interface Props {
@@ -49,7 +50,7 @@ export function DraftsBar({ threadId, restored, hasText, stash, open, onOpen }: 
                 {preview(d)}
               </button>
               <button type="button" className={styles.stashDrop} aria-label="Discard stash" onClick={() => removeStash(d.id)}>
-                ×
+                <Icon name="close" size={14} />
               </button>
             </li>
           ))}

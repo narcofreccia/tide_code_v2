@@ -13,18 +13,23 @@
   overflow: hidden;
   padding: 0 var(--sp-2);
   font-size: var(--fs-md);
-  font-weight: 600;
+  font-weight: var(--fw-semibold);
+  line-height: var(--lh-tight);
   text-overflow: ellipsis;
   white-space: nowrap;
 }
 .back, .action {
   flex: none;
+  display: inline-flex;
+  align-items: center;
+  justify-content: center;
   min-width: 44px;
   min-height: 44px;
   border: 0;
+  border-radius: var(--radius);
   background: transparent;
   color: var(--accent);
   font-size: var(--fs-md);
 }
-.back { font-size: var(--fs-display); line-height: 1; }
-.action[aria-pressed="true"] { font-weight: 600; }
+.back:active, .action:active { background: var(--surface-hover); }
+.action[aria-pressed="true"] { font-weight: var(--fw-semibold); background: var(--selection); }

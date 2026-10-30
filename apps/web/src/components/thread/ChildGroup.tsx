@@ -4,6 +4,7 @@ import type { Activity, ActivityOf } from "@tide/contracts";
 import { useUi } from "../../state/ui.ts";
 import { ActivityGroup } from "./ActivityGroup.tsx";
 import { ActivityRow } from "./ActivityRow.tsx";
+import { LiveLabel } from "./LiveLabel.tsx";
 import { Button } from "../ui/Button.tsx";
 import { effectiveChildStatus, useTurnSettled } from "./activities/turnSettled.ts";
 import styles from "./ActivityRow.module.css";
@@ -28,7 +29,11 @@ export function ChildGroup({ child, activities }: { child: ActivityOf<"child">; 
           onClick={() => setOpen((v) => !v)}
         >
           <span className={`${styles.glyph} ${tone}`}>◇</span>
-          <span className={styles.name}>subagent: {child.name}</span>
+          {status === "running" ? (
+            <LiveLabel className={styles.liveName} text={`subagent: ${child.name}`} />
+          ) : (
+            <span className={styles.name}>subagent: {child.name}</span>
+          )}
           <span className={styles.target}>{child.description ?? child.summary}</span>
           <span className={`${styles.mark} ${tone}`}>{MARK[status] ?? ""}</span>
         </button>

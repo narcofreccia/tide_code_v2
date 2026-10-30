@@ -51,6 +51,26 @@ describe("ChildGroup settling", () => {
     expect(subagentButton().getAttribute("aria-expanded")).toBe("true");
   });
 
+  it("draws a running sub-agent's label with the live shimmer, a settled one plain", () => {
+    setup("running");
+    const { container, unmount } = render(
+      <ul>
+        <ChildGroup child={child} activities={[]} />
+      </ul>,
+    );
+    const live = container.querySelector("[data-live-label]");
+    expect(live?.textContent).toContain("subagent: explorer");
+    unmount();
+    setup("completed");
+    const settled = render(
+      <ul>
+        <ChildGroup child={child} activities={[]} />
+      </ul>,
+    );
+    expect(settled.container.querySelector("[data-live-label]")).toBeNull();
+    expect(subagentButton().textContent).toContain("subagent: explorer");
+  });
+
   it.each(["completed", "error", "interrupted"] as const)(
     "renders a still-running sub-agent as done once its turn is %s",
     (status) => {

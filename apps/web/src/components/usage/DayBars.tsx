@@ -14,12 +14,14 @@ function dayTitle(day: UsageSummary["days"][number]): string {
 export function DayBars({ days }: { days: UsageSummary["days"] }) {
   if (days.length === 0) return <p className={styles.note}>No usage in this window.</p>;
   const max = Math.max(...days.map((d) => d.tokens));
+  // an 11px "MM-DD" needs ~32px; past two weeks label about ten days, always the last
+  const every = days.length > 14 ? Math.ceil(days.length / 10) : 1;
   return (
     <div className={styles.bars} role="list" aria-label="Tokens per day">
-      {days.map((day) => (
+      {days.map((day, i) => (
         <div key={day.day} className={styles.barCol} role="listitem" title={dayTitle(day)} aria-label={dayTitle(day)}>
           <span className={`${styles.bar} ${styles[`h${barStep(day.tokens, max)}`] ?? ""}`} />
-          <span className={styles.barLabel}>{day.day.slice(5)}</span>
+          <span className={styles.barLabel}>{i % every === 0 || i === days.length - 1 ? day.day.slice(5) : ""}</span>
         </div>
       ))}
     </div>

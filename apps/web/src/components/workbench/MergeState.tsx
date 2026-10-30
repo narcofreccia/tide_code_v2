@@ -3,13 +3,14 @@ import { mergeTarget } from "../../lib/merge.ts";
 import { mergeThread } from "../../lib/threadActions.ts";
 import { openFileTab } from "../../state/workbench.ts";
 import { Button } from "../ui/Button.tsx";
+import { Icon } from "../ui/Icon.tsx";
 import styles from "./MergeAction.module.css";
 import { plural } from "../../lib/format.ts";
 
 /**
  * What the last `thread.merge` is doing: a spinner while it runs; the
  * conflicted files (each opens in the editor) with a retry; the error with a
- * retry; a quiet `✓ merged` once it landed. Renders nothing before any merge.
+ * retry; a quiet "merged" with a check once it landed. Renders nothing before any merge.
  */
 export function MergeState({ thread, running }: { thread: Thread; running: boolean }) {
   const merge = thread.merge;
@@ -40,7 +41,10 @@ export function MergeState({ thread, running }: { thread: Thread; running: boole
     return (
       <div className={styles.state} data-status="merged" role="status">
         <div className={styles.stateHead}>
-          <span className={styles.merged}>✓ merged</span>
+          <span className={styles.merged}>
+            <Icon name="check" size={12} />
+            merged
+          </span>
           <span className={styles.stateHint}>
             {mergeTarget(thread)}
             {merge.sha ? ` · ${merge.sha.slice(0, 7)}` : ""}
@@ -56,7 +60,7 @@ export function MergeState({ thread, running }: { thread: Thread; running: boole
       <section className={styles.state} data-status="conflicted" aria-label="Merge conflicts">
         <div className={styles.stateHead}>
           <span className={`${styles.stateTitle} ${styles.conflicted}`}>
-            ⚠ Merge conflicted{files.length > 0 ? ` in ${plural(files.length, "file")}` : ""}
+            Merge conflicted{files.length > 0 ? ` in ${plural(files.length, "file")}` : ""}
           </span>
           {retry}
         </div>
@@ -82,7 +86,10 @@ export function MergeState({ thread, running }: { thread: Thread; running: boole
   return (
     <section className={styles.state} data-status="error" aria-label="Merge error">
       <div className={styles.stateHead}>
-        <span className={`${styles.stateTitle} ${styles.error}`}>✕ Merge failed</span>
+        <span className={`${styles.stateTitle} ${styles.error}`}>
+          <Icon name="close" size={12} />
+          Merge failed
+        </span>
         {retry}
       </div>
       {merge.error ? <p className={styles.message}>{merge.error}</p> : null}

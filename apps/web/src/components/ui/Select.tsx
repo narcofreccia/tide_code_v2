@@ -2,6 +2,7 @@ import { useEffect, useId, useMemo, useRef, useState } from "react";
 import { createPortal } from "react-dom";
 import { fuzzyRank } from "../../lib/fuzzy.ts";
 import { useAnchoredPanel } from "./useAnchoredPanel.ts";
+import { Icon } from "./Icon.tsx";
 import styles from "./Select.module.css";
 
 export interface SelectOption<T extends string> {
@@ -222,7 +223,7 @@ export function Select<T extends string>({
           )}
         </span>
         <span className={styles.check} aria-hidden="true">
-          {option.value === value ? "✓" : ""}
+          {option.value === value ? <Icon name="check" size={12} /> : null}
         </span>
       </li>,
     );
@@ -248,9 +249,7 @@ export function Select<T extends string>({
         }}
       >
         <span className={styles.value}>{selected ? labelOf(selected) : placeholder}</span>
-        <span className={styles.chevron} aria-hidden="true">
-          ▾
-        </span>
+        <Icon name="chevronDown" size={12} className={styles.chevron} />
       </button>
       {open
         ? createPortal(

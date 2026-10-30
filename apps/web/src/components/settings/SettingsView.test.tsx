@@ -79,7 +79,7 @@ describe("Settings view", () => {
     render(<SettingsView />);
     fireEvent.change(screen.getByLabelText("Search settings"), { target: { value: "merge back" } });
     const nav = screen.getByLabelText("Settings sections");
-    expect([...nav.querySelectorAll("li")].map((li) => li.textContent)).toEqual(["Inbox", "Git"]);
+    expect([...nav.querySelectorAll("li")].map((li) => li.textContent)).toEqual(["Inbox", "Git", "Keyboard"]);
     const results = screen.getByLabelText("Matching settings");
     fireEvent.click(within(results).getByText(/Merge back strategy/));
     expect(useUi.getState().settingsSection).toBe("git");

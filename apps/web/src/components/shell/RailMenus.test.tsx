@@ -54,7 +54,7 @@ describe("rail thread menu", () => {
       "Open in terminalno session yet",
       "New child thread",
       "Fork…",
-      "Snooze▸",
+      "Snooze",
       "Copy thread ID",
       "Copy branchno branch",
       "Remove worktree…no worktree",

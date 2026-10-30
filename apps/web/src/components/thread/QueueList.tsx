@@ -4,6 +4,7 @@ import { dequeueTurn } from "../../lib/threadActions.ts";
 import { editQueuedTurn, promoteTurn, reorderQueue } from "../../lib/turnActions.ts";
 import { useModel } from "../../state/model.ts";
 import { Button } from "../ui/Button.tsx";
+import { Icon } from "../ui/Icon.tsx";
 import styles from "./QueueList.module.css";
 
 function QueueRow({
@@ -92,7 +93,7 @@ function QueueRow({
             disabled={index === 0}
             onClick={() => onMove(-1)}
           >
-            ↑
+            <Icon name="chevronDown" size={14} className={`${styles.up}`} />
           </button>
           <button
             type="button"
@@ -101,7 +102,7 @@ function QueueRow({
             disabled={index === count - 1}
             onClick={() => onMove(1)}
           >
-            ↓
+            <Icon name="chevronDown" size={14} />
           </button>
           <button
             type="button"
@@ -113,7 +114,7 @@ function QueueRow({
               setEditing(true);
             }}
           >
-            ✎
+            <Icon name="edit" size={14} />
           </button>
           {canPromote ? (
             <button
@@ -132,7 +133,7 @@ function QueueRow({
             title="Remove this queued turn"
             onClick={() => dequeueTurn(turnId)}
           >
-            ×
+            <Icon name="close" size={14} />
           </button>
         </>
       )}

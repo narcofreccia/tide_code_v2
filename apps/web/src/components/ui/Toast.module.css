@@ -14,6 +14,9 @@
   border-radius: var(--radius);
   background: var(--surface-2);
   color: var(--text);
+  font: inherit;
+  font-size: var(--fs-base);
+  line-height: var(--lh-body);
   text-align: left;
   box-shadow: var(--shadow-pop);
 }
@@ -28,6 +31,7 @@
   font: inherit;
   cursor: pointer;
 }
-.action { color: var(--accent); font-weight: 600; }
+.action { color: var(--accent); font-weight: var(--fw-semibold); }
 .action:hover { text-decoration: underline; }
-.close { color: var(--muted); }
+.close { display: inline-flex; color: var(--muted); }
+.close:hover { color: var(--text); }

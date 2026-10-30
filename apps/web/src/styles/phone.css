@@ -3,6 +3,12 @@
  * code owns. Attribute hooks only: `data-composer-pills`, `data-thread-column`.
  */
 @media (max-width: 720px) {
+  /* touch targets: list and rail rows grow to 44px (compact density included) */
+  :root,
+  :root[data-density="compact"] {
+    --row-h: 44px;
+  }
+
   html, body { overscroll-behavior: none; }
   body { font-size: var(--fs-md); }
 
@@ -17,14 +23,14 @@
     padding-left: max(var(--sp-2), env(safe-area-inset-left));
     padding-right: max(var(--sp-2), env(safe-area-inset-right));
   }
-  /* pills collapse into the top bar's ⚙ sheet */
+  /* pills collapse into the top bar's thread-settings sheet */
   [data-composer-pills] { display: none; }
 
   /* toasts sit above the tab bar, full width */
   div[role="status"][aria-live="polite"] {
     left: var(--sp-3);
     right: var(--sp-3);
-    bottom: calc(60px + env(safe-area-inset-bottom));
+    bottom: calc(64px + env(safe-area-inset-bottom));
   }
   div[role="status"][aria-live="polite"] > * { max-width: none; }
 }

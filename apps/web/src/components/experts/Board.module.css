@@ -7,7 +7,8 @@
   min-height: 0;
   height: 100%;
   overflow: auto;
-  padding: var(--sp-3);
+  padding: var(--sp-4) var(--sp-5);
+  background: var(--bg);
 }
 
 /* header */
@@ -15,10 +16,13 @@
 .topic {
   flex: 1;
   min-width: 0;
+  margin: 0;
   overflow: hidden;
   text-overflow: ellipsis;
   white-space: nowrap;
-  font-weight: 600;
+  font-size: var(--fs-lg);
+  font-weight: var(--fw-semibold);
+  line-height: var(--lh-tight);
 }
 .headerActions { display: flex; align-items: center; gap: var(--sp-2); }
 
@@ -26,17 +30,21 @@
 .stepper { display: flex; align-items: center; gap: var(--sp-2); flex-wrap: wrap; }
 .steps { display: flex; align-items: center; gap: var(--sp-1); list-style: none; margin: 0; padding: 0; flex: 1; }
 .step { display: flex; align-items: center; }
-.step + .step::before { content: "→"; color: var(--muted); padding: 0 var(--sp-1); }
+.stepSep { color: var(--muted); margin: 0 var(--sp-1); }
 .stepButton {
   background: none;
   border: none;
   padding: 0 var(--sp-1);
   height: var(--row-h);
+  border-radius: var(--radius-sm);
   color: var(--muted);
   font: inherit;
+  font-size: var(--fs-sm);
+  transition: color var(--dur-fast) var(--ease), background var(--dur-fast) var(--ease);
 }
-.stepDone .stepButton { color: var(--text); }
-.stepActive .stepButton { color: var(--accent); font-weight: 600; }
+.stepButton:hover { background: var(--surface-hover); color: var(--text); }
+.stepDone .stepButton { color: var(--text-2); }
+.stepActive .stepButton { color: var(--accent); font-weight: var(--fw-semibold); }
 
 /* expert cards */
 .experts { display: flex; gap: var(--sp-2); flex-wrap: wrap; }
@@ -46,25 +54,32 @@
   gap: var(--sp-1);
   min-width: 140px;
   flex: 1 1 140px;
-  padding: var(--sp-2);
+  padding: var(--sp-2) var(--sp-3);
   border: 1px solid var(--border);
-  border-radius: var(--radius);
+  border-left: 2px solid var(--border);
+  border-radius: var(--radius-lg);
   background: var(--surface);
   color: inherit;
+  font-size: var(--fs-base);
   text-align: left;
+  transition: background var(--dur-fast) var(--ease);
 }
-.expert:hover:enabled { background: var(--surface-2); }
+.expert:hover:enabled { background: var(--surface-hover); }
 .expert:disabled { opacity: 0.6; }
-.selected { border-color: var(--accent); background: var(--accent-soft); }
+.selected,
+.selected:hover:enabled { background: var(--selection); border-left-color: var(--selection-bar); }
 .expertHead { display: flex; align-items: center; gap: var(--sp-1); min-width: 0; }
-.expertName { font-weight: 600; overflow: hidden; text-overflow: ellipsis; white-space: nowrap; }
+.expertName { font-weight: var(--fw-medium); overflow: hidden; text-overflow: ellipsis; white-space: nowrap; }
 .expertRole { color: var(--muted); font-size: var(--fs-sm); }
 .expertMeta { display: flex; align-items: center; gap: var(--sp-1); }
 .model { color: var(--muted); font-size: var(--fs-xs); font-family: var(--font-mono); }
 
-.glyph { line-height: 1; }
+.glyph { flex: none; display: inline-flex; align-items: center; justify-content: center; width: 12px; height: 12px; }
+.dot { width: 8px; height: 8px; border-radius: 50%; border: 1.5px solid currentColor; }
 .pending { color: var(--muted); }
-.working { color: var(--accent); }
+.pending .dot { border-style: dashed; }
+.working { color: var(--st-running); }
+.working .dot { background: currentColor; }
 .idle { color: var(--muted); }
 .error { color: var(--danger); }
 
@@ -74,30 +89,58 @@
 .laneTitle {
   margin: 0;
   font-size: var(--fs-xs);
-  letter-spacing: var(--ls-section);
+  letter-spacing: var(--ls-label);
   text-transform: uppercase;
   color: var(--muted);
-  font-weight: 600;
+  font-weight: var(--fw-semibold);
 }
 .cards { list-style: none; margin: 0; padding: 0; display: flex; flex-direction: column; gap: var(--sp-2); }
 .finding,
 .message {
   border: 1px solid var(--border);
-  border-radius: var(--radius);
+  border-radius: var(--radius-lg);
   background: var(--surface);
-  padding: var(--sp-2);
+  padding: var(--sp-2) var(--sp-3);
   display: flex;
   flex-direction: column;
   gap: var(--sp-1);
   min-width: 0;
+  font-size: var(--fs-base);
 }
-.mine { border-color: var(--accent); background: var(--accent-soft); }
+.mine { background: var(--selection); border-left: 2px solid var(--selection-bar); }
 .cardHead { display: flex; align-items: center; gap: var(--sp-1); min-width: 0; }
-.author { font-weight: 600; }
+.author { font-weight: var(--fw-medium); }
 .arrow, .recipient { color: var(--muted); }
+.arrow { flex: none; }
 .time { margin-left: auto; color: var(--muted); font-size: var(--fs-sm); font-variant-numeric: tabular-nums; }
 .messageText { margin: 0; white-space: pre-wrap; overflow-wrap: anywhere; }
-.empty { color: var(--muted); margin: 0; }
+.empty { color: var(--muted); margin: 0; font-size: var(--fs-sm); }
+
+/* no board: what Experts is + the one action */
+.emptyState {
+  max-width: var(--measure);
+  margin: var(--sp-7) auto 0;
+  padding: 0 var(--sp-4);
+  display: flex;
+  flex-direction: column;
+  align-items: center;
+  gap: var(--sp-2);
+  text-align: center;
+}
+.emptyIcon {
+  display: inline-flex;
+  align-items: center;
+  justify-content: center;
+  width: 40px;
+  height: 40px;
+  border: 1px solid var(--border);
+  border-radius: var(--radius-lg);
+  background: var(--surface);
+  color: var(--text-2);
+}
+.emptyTitle { margin: var(--sp-1) 0 0; font-size: var(--fs-lg); font-weight: var(--fw-semibold); line-height: var(--lh-tight); }
+.emptyNote { margin: 0; font-size: var(--fs-sm); color: var(--warn); }
+.emptyText { margin: 0 0 var(--sp-2); font-size: var(--fs-sm); line-height: var(--lh-body); color: var(--muted); }
 
 /* synthesis */
 .synthesis {
@@ -128,7 +171,8 @@
   border-radius: var(--radius);
   padding: var(--sp-2);
   font: inherit;
+  font-size: var(--fs-base);
 }
 .composerBar { display: flex; align-items: center; gap: var(--sp-2); }
 
-.converged { display: flex; align-items: center; gap: var(--sp-2); padding: 0 var(--sp-2); border-radius: var(--radius-sm); background: var(--st-ok-soft); color: var(--st-ok); font-size: var(--fs-sm); }
+.converged { display: flex; align-items: center; gap: var(--sp-2); min-height: var(--row-h); padding: 0 var(--sp-2); border-radius: var(--radius-sm); background: var(--st-ok-soft); color: var(--st-ok); font-size: var(--fs-sm); }

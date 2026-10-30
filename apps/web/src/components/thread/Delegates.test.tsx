@@ -23,7 +23,7 @@ describe("delegates in the thread header", () => {
     mockRpc({ "thread.terminalCommand": () => ({}) });
     render(<ThreadHeader thread={model.threads.parent!} />);
 
-    fireEvent.click(screen.getByText("↳ 2 delegated"));
+    fireEvent.click(screen.getByRole("button", { name: "2 delegated" }));
     expect(screen.getByText("Audit locks")).toBeDefined();
     fireEvent.click(screen.getByText("Bench the writer"));
     expect(useUi.getState().selectedThreadId).toBe("d1");

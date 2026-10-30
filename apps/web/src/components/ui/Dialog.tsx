@@ -2,6 +2,8 @@ import { useEffect, useRef, useState } from "react";
 import { Button } from "./Button.tsx";
 import styles from "./Dialog.module.css";
 
+export type DialogSize = "sm" | "md" | "lg";
+
 /**
  * Modal shell: centred panel over a scrim, Escape cancels, focus starts inside.
  * `variant="palette"` is the flush, top-anchored look of ⌘K / ⌘P: no padding and
@@ -14,11 +16,14 @@ export function Dialog({
   onCancel,
   children,
   variant = "form",
+  size = "sm",
 }: {
   title: string;
   onCancel: () => void;
   children: React.ReactNode;
   variant?: "form" | "palette" | "sheet";
+  /** width of the `form` panel: 420 / 560 / 760px, never wider than 90vw */
+  size?: DialogSize;
 }) {
   const palette = variant === "palette";
   const sheet = variant === "sheet";
@@ -38,7 +43,8 @@ export function Dialog({
       onMouseDown={onCancel}
     >
       <div
-        className={palette ? styles.palette : sheet ? styles.sheet : styles.panel}
+        className={palette ? styles.palette : sheet ? styles.sheet : `${styles.panel} ${styles[size] ?? ""}`}
+        data-size={palette || sheet ? undefined : size}
         role="dialog"
         aria-modal="true"
         aria-label={title}

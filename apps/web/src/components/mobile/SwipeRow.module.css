@@ -4,8 +4,10 @@
   inset: 0;
   display: flex;
   align-items: center;
+  gap: var(--sp-2);
   padding: 0 var(--sp-4);
-  font-weight: 600;
+  font-size: var(--fs-md);
+  font-weight: var(--fw-semibold);
   color: var(--text-2);
   opacity: 0;
 }
@@ -21,5 +23,5 @@
   touch-action: pan-y;
 }
 .dragging { transition: none; }
-.surface:not(.dragging) { transition: transform 0.15s ease-out; }
+.surface:not(.dragging) { transition: transform var(--dur) var(--ease); }
 .rows { margin: 0; padding: 0; list-style: none; }

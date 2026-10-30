@@ -1,5 +1,6 @@
 import type { FsEntry } from "@tide/contracts";
 import { fileGlyph } from "../../../lib/fileIcons.ts";
+import { Icon } from "../../ui/Icon.tsx";
 import styles from "./FileTree.module.css";
 
 /** Deeper rows stop indenting; FileTree.module.css carries one rule per level. */
@@ -47,7 +48,9 @@ export function TreeRow({
         }}
         onContextMenu={onContextMenu}
       >
-        <span className={styles.twisty}>{isDir ? (expanded ? "▾" : "▸") : ""}</span>
+        <span className={styles.twisty}>
+          {isDir ? <Icon name="chevronRight" size={12} className={expanded ? (styles.twistyOpen ?? "") : ""} /> : null}
+        </span>
         <span className={styles.glyph}>{fileGlyph(entry.path, entry.kind)}</span>
         <span className={styles.name}>{entry.name}</span>
       </button>

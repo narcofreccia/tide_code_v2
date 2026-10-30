@@ -6,6 +6,7 @@ import { runOrToast } from "../../lib/dispatchOrToast.ts";
 import { focusComposer } from "../../lib/composerFocus.ts";
 import { useUi } from "../../state/ui.ts";
 import { Button } from "../ui/Button.tsx";
+import { Icon } from "../ui/Icon.tsx";
 import { Popover } from "../ui/Popover.tsx";
 import { ProviderPicker, useThreadDraft } from "./ProviderPicker.tsx";
 import markdown from "./MessageItem.module.css";
@@ -31,7 +32,15 @@ export function PlanCard({ plan, provider }: { plan: ProposedPlan; provider: Pro
         </div>
         {plan.status === "proposed" ? (
           <div className={styles.actions}>
-            <Popover variant="primary" label="Implement in new thread ▾">
+            <Popover
+              variant="primary"
+              label={
+                <>
+                  Implement in new thread
+                  <Icon name="chevronDown" size={12} />
+                </>
+              }
+            >
               {(close) => (
                 <>
                   <ProviderPicker draft={draft} onChange={patch} />

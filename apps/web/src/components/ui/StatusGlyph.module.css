@@ -1,7 +1,10 @@
+/* every glyph sits in the same 10px box, so ● ◐ ✕ line up in rows and chips */
 .glyph {
-  display: inline-block;
-  width: 12px;
-  text-align: center;
+  display: inline-flex;
+  align-items: center;
+  justify-content: center;
+  width: 10px;
+  height: 10px;
   font-size: var(--fs-sm);
   line-height: 1;
   flex: none;

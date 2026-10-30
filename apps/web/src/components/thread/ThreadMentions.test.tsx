@@ -30,7 +30,7 @@ describe("@thread context mentions", () => {
     fireEvent.change(input, { target: { value: "see @auth" } });
     const list = await screen.findByRole("listbox", { name: "Mention a thread" });
     const options = Array.from(list.querySelectorAll('[role="option"]')).map((o) => o.textContent);
-    expect(options).toEqual(["💬 Fix auth flow"]);
+    expect(options).toEqual(["Fix auth flow"]);
     fireEvent.mouseDown(screen.getByRole("option", { name: /Fix auth flow/ }));
     expect(input.value).toBe("see @thread:t2 ");
     // the chip strip names the thread

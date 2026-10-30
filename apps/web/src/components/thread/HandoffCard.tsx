@@ -1,6 +1,8 @@
 import { useState } from "react";
 import type { Handoff, Turn } from "@tide/contracts";
+import { Icon } from "../ui/Icon.tsx";
 import { Pill } from "../ui/Pill.tsx";
+import { Chevron } from "./Chevron.tsx";
 import styles from "./HandoffCard.module.css";
 import { plural } from "../../lib/format.ts";
 
@@ -19,14 +21,16 @@ export function HandoffCard({ handoff, delivery }: { handoff: Handoff; delivery:
   return (
     <li className={styles.card}>
       <button type="button" className={styles.head} aria-expanded={open} onClick={() => setOpen(!open)}>
-        <span>{open ? "▾" : "▸"}</span>
+        <Chevron open={open} />
         <span className={styles.title}>Handoff</span>
         <Pill>{handoff.strategy}</Pill>
         <span className={styles.meta}>{handoffCoverage(handoff)}</span>
         {delivery === undefined ? null : <Pill tone="accent">{delivery}</Pill>}
         {handoff.fromProvider === undefined ? null : (
-          <span className={styles.meta}>
-            {handoff.fromProvider} → {handoff.toProvider}
+          <span className={styles.meta} aria-label={`${handoff.fromProvider} to ${handoff.toProvider}`}>
+            {handoff.fromProvider}
+            <Icon name="arrowRight" size={12} />
+            {handoff.toProvider}
           </span>
         )}
       </button>

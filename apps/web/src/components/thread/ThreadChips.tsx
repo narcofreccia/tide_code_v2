@@ -6,6 +6,7 @@ import { useUi } from "../../state/ui.ts";
 import { Button } from "../ui/Button.tsx";
 import { Pill } from "../ui/Pill.tsx";
 import { Popover } from "../ui/Popover.tsx";
+import { Icon } from "../ui/Icon.tsx";
 import styles from "./ThreadHeader.module.css";
 
 const HOUR = 3_600_000;
@@ -55,14 +56,16 @@ export function LimitedBadge({ thread }: { thread: Thread }) {
               aria-pressed={limited.resume === "reset"}
               onClick={act(() => setLimitPolicy(thread.id, "reset"))}
             >
-              {limited.resume === "reset" ? "✓ " : ""}Resume at reset
+              <Icon name="check" size={12} className={limited.resume === "reset" ? `${styles.checkOn}` : `${styles.checkOff}`} />
+              Resume at reset
             </Button>
             <Button
               variant="quiet"
               aria-pressed={limited.resume === "manual"}
               onClick={act(() => setLimitPolicy(thread.id, "manual"))}
             >
-              {limited.resume === "manual" ? "✓ " : ""}Wait for me
+              <Icon name="check" size={12} className={limited.resume === "manual" ? `${styles.checkOn}` : `${styles.checkOff}`} />
+              Wait for me
             </Button>
             <Button variant="quiet" onClick={act(() => snoozeThread(thread.id, Date.now() + HOUR))}>
               Snooze 1h

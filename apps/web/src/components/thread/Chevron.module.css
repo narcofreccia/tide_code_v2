@@ -1,0 +1,7 @@
+/* Disclosure chevron: points right when closed, turns down when open. */
+.chevron {
+  flex: none;
+  color: var(--muted);
+  transition: transform var(--dur-fast) var(--ease);
+}
+.open { transform: rotate(90deg); }

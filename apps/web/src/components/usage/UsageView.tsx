@@ -9,7 +9,7 @@ import { patchServerSettings, useServerSettings } from "../../state/serverSettin
 import { Checkbox } from "../ui/Choice.tsx";
 import { DayBars } from "./DayBars.tsx";
 import { LimitsPanel } from "./LimitsPanel.tsx";
-import { UsageTable } from "./UsageTable.tsx";
+import { UsageSummaryCards, UsageTable } from "./UsageTable.tsx";
 import { windowRange, type EnvUsage, type UsageWindow } from "./usageMath.ts";
 import styles from "./Usage.module.css";
 
@@ -67,6 +67,7 @@ function EnvSection({ usage, titled }: { usage: EnvUsage; titled: boolean }) {
       ) : null}
       {summary ? (
         <>
+          {summary.rows.length > 0 ? <UsageSummaryCards rows={summary.rows} /> : null}
           <DayBars days={summary.days} />
           <UsageTable rows={summary.rows} providers={providers} />
           <p className={styles.legend}>
@@ -100,8 +101,11 @@ export function UsageView() {
 
   return (
     <section className={styles.view} aria-label="Usage page">
-      <div className={styles.head}>
+      <header className={styles.pageHead}>
         <h2 className={styles.pageTitle}>Usage</h2>
+        <p className={styles.blurb}>Tokens and spend by harness and model, and each harness's current limits.</p>
+      </header>
+      <div className={styles.head} role="toolbar" aria-label="Usage window">
         <div className={styles.windowPicker} role="radiogroup" aria-label="Window">
           {WINDOWS.map((w) => (
             <button

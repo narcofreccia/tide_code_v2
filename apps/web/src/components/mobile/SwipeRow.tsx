@@ -4,9 +4,9 @@ import { settleThreads } from "../../lib/inboxActions.ts";
 import { unsettleThread } from "../../lib/threadActions.ts";
 import { useSwipeRow } from "../../lib/swipe.ts";
 import { RailThreadRow } from "../shell/RailThreadRow.tsx";
+import { Icon } from "../ui/Icon.tsx";
 import { SnoozeSheet } from "./SnoozeSheet.tsx";
 import styles from "./SwipeRow.module.css";
-
 
 /**
  * A phone inbox row: swipe right to settle (unsettle when already settled), left for
@@ -31,7 +31,9 @@ export function SwipeRow({ thread }: { thread: Thread }) {
         className={`${styles.under} ${swipe.reveal === "right" ? styles.right : swipe.reveal === "left" ? styles.left : ""} ${swipe.armed ? styles.armed : ""}`}
         aria-hidden="true"
       >
-        {label}
+        {swipe.reveal === "right" ? <Icon name="check" size={20} /> : null}
+        {label === "" ? null : <span>{label}</span>}
+        {swipe.reveal === "left" ? <Icon name="snooze" size={20} /> : null}
       </div>
       <div
         ref={surface}

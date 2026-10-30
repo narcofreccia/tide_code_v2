@@ -44,7 +44,7 @@ export function editorItems(model: ReadModel, thread: Thread): MenuItem[] {
   }));
 }
 
-/** The thread header's `⋯`: everything that is not Terminal / Fork (those fold in when narrow). */
+/** The thread header's More menu: everything that is not Terminal / Fork (those fold in when narrow). */
 export function headerMenu(
   model: ReadModel,
   thread: Thread,

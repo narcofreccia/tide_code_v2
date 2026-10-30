@@ -8,6 +8,7 @@ import { orderedInstances, providerStatus, useProviderRoster } from "../../state
 import { useUi } from "../../state/ui.ts";
 import { resolveLoginCommand, runOrCopy } from "../../lib/providerLogin.ts";
 import { Button } from "../ui/Button.tsx";
+import { Icon } from "../ui/Icon.tsx";
 import styles from "./MissionControl.module.css";
 import { plural } from "../../lib/format.ts";
 
@@ -58,7 +59,8 @@ export function ProvidersStrip() {
     <section className={styles.section} aria-label="Providers">
       <h2 className={styles.label}>
         <button type="button" className={styles.fold} aria-expanded={expanded} onClick={() => setExpanded(!expanded)}>
-          {expanded ? "▾" : "▸"} Harnesses
+          <Icon name="chevronRight" size={12} className={`${expanded ? styles.chevronOpen : styles.chevron}`} />
+          Harnesses
           <span className={styles.foldSummary}>{rosterSummary(providers, loading)}</span>
         </button>
       </h2>
@@ -80,7 +82,13 @@ export function ProvidersStrip() {
                   title={`${name} — ${text}. Open Settings › Providers`}
                 >
                   <span className={`${styles.chipGlyph} ${styles[tone] ?? ""}`} aria-hidden="true">
-                    {glyph}
+                    {glyph === "✓" ? (
+                      <Icon name="check" size={12} />
+                    ) : glyph === "✕" ? (
+                      <Icon name="close" size={12} />
+                    ) : (
+                      <span className={styles.chipDot} />
+                    )}
                   </span>
                   <span>{name}</span>
                   <span className={styles.chipHint}>{text}</span>

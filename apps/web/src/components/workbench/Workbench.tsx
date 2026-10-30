@@ -5,6 +5,7 @@ import { useModel } from "../../state/model.ts";
 import { watchDocs } from "../../state/docs.ts";
 import { openExpertsTab, toggleTree, useActiveTab, useThreadTabs, useWorkbench } from "../../state/workbench.ts";
 import { toggleDrawer, useTerminals } from "../../state/terminals.ts";
+import { Icon } from "../ui/Icon.tsx";
 import { Kbd } from "../ui/Kbd.tsx";
 import { ChangesTab } from "./ChangesTab.tsx";
 import { TabStrip } from "./TabStrip.tsx";
@@ -42,7 +43,7 @@ function WorkbenchFor({ threadId, expertsSessionId }: { threadId: string; expert
           aria-label="Toggle file tree"
           onClick={toggleTree}
         >
-          ▤
+          <Icon name="folder" size={14} />
         </button>
         <PreviewMenu threadId={threadId} />
         <button
@@ -52,6 +53,7 @@ function WorkbenchFor({ threadId, expertsSessionId }: { threadId: string; expert
           title="Toggle terminal drawer"
           onClick={toggleDrawer}
         >
+          <Icon name="terminal" size={14} />
           Terminal <Kbd>⌘`</Kbd>
         </button>
       </TabStrip>

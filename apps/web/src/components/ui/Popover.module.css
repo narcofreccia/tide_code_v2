@@ -12,5 +12,7 @@
   border-radius: var(--radius);
   background: var(--surface-raised);
   box-shadow: var(--shadow-pop);
+  font-size: var(--fs-base);
+  line-height: var(--lh-body);
 }
 .flush { width: min(560px, calc(100vw - 16px)); max-width: none; padding: 0; gap: 0; overflow: hidden; }

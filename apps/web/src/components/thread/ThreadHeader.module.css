@@ -23,19 +23,22 @@
 }
 .branch {
   flex: 0 1 auto;
+  display: inline-flex;
+  align-items: center;
+  gap: var(--sp-1);
   min-width: 0;
   max-width: 220px;
-  padding: 0 6px;
+  padding: 0 var(--sp-1);
   border-radius: var(--radius-sm);
   background: var(--surface-2);
   color: var(--text-2);
   font-family: var(--font-mono);
   font-size: var(--fs-xs);
   line-height: 18px;
-  overflow: hidden;
-  text-overflow: ellipsis;
   white-space: nowrap;
 }
+.branchIcon { flex: none; color: var(--muted); }
+.branchName { min-width: 0; overflow: hidden; text-overflow: ellipsis; }
 .actions { display: flex; flex: 0 0 auto; gap: var(--sp-1); margin-left: auto; }
 .stat { color: var(--muted); font-variant-numeric: tabular-nums; font-size: var(--fs-sm); }
 
@@ -88,12 +91,12 @@
   align-items: center;
   gap: var(--sp-1);
   height: 20px;
-  padding: 0 8px;
+  padding: 0 var(--sp-2);
   border-radius: 999px;
   background: var(--st-idle-soft);
   color: var(--st-idle);
   font-size: var(--fs-sm);
-  font-weight: 600;
+  font-weight: var(--fw-semibold);
   white-space: nowrap;
 }
 .state[data-state="running"] { background: var(--st-running-soft); color: var(--st-running); }
@@ -103,3 +106,6 @@
 .state[data-state="limited"] { background: var(--st-limited-soft); color: var(--st-limited); }
 .state[data-state="interrupted"],
 .state[data-state="interrupting"] { background: var(--st-interrupted-soft); color: var(--st-interrupted); }
+/* the limit menu's chosen resume policy: a check in a fixed slot so labels stay aligned */
+.checkOn { flex: none; color: var(--accent); }
+.checkOff { flex: none; visibility: hidden; }

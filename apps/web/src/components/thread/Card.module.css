@@ -1,16 +1,16 @@
 /* Shared inline-card shell: approval, user input, proposed plan. */
 .card {
   border: 1px solid var(--border);
-  border-radius: var(--radius);
+  border-radius: var(--radius-lg);
   background: var(--surface);
-  padding: var(--sp-2) var(--sp-3);
+  padding: var(--sp-3) var(--sp-4);
   display: flex;
   flex-direction: column;
   gap: var(--sp-2);
 }
 .attention { border-color: var(--accent); }
 .head { display: flex; align-items: center; gap: var(--sp-2); }
-.title { color: var(--text); }
+.title { color: var(--text); font-weight: var(--fw-medium); }
 .target {
   flex: 1;
   min-width: 0;
@@ -21,16 +21,17 @@
   font-size: var(--fs-xs);
   color: var(--muted);
 }
-.description { margin: 0; color: var(--muted); }
+.description { margin: 0; color: var(--muted); font-size: var(--fs-sm); line-height: var(--lh-body); }
 .actions { display: flex; align-items: center; gap: var(--sp-2); flex-wrap: wrap; }
-.hint { color: var(--muted); display: inline-flex; align-items: center; gap: var(--sp-1); }
+.hint { color: var(--muted); font-size: var(--fs-sm); display: inline-flex; align-items: center; gap: var(--sp-1); }
 .resolved {
   display: flex;
   align-items: center;
   gap: var(--sp-2);
-  height: 24px;
+  height: var(--activity-h);
   padding: 0 var(--sp-2);
   color: var(--muted);
+  font-size: var(--fs-sm);
 }
 .question { display: flex; flex-direction: column; gap: var(--sp-2); }
 .questionText { color: var(--text); }
@@ -66,8 +67,8 @@
   font-size: var(--fs-xs);
 }
 .diffLine { display: block; padding: 0 var(--sp-2); white-space: pre; }
-.add { background: rgb(78 201 160 / 0.12); color: var(--ok); }
-.del { background: rgb(239 106 106 / 0.12); color: var(--danger); }
+.add { background: var(--st-ok-soft); color: var(--ok); }
+.del { background: var(--danger-soft); color: var(--danger); }
 .hunk { color: var(--accent); }
 .meta { color: var(--muted); }
 .context { color: var(--text); }

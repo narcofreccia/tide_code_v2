@@ -44,7 +44,8 @@
 .row:hover { background: var(--surface-2); }
 .selected { background: var(--accent-soft); }
 .ignored { opacity: 0.45; }
-.twisty { width: 10px; color: var(--muted); font-size: var(--fs-sm); }
+.twisty { flex: none; width: 12px; display: inline-flex; align-items: center; color: var(--muted); }
+.twistyOpen { transform: rotate(90deg); }
 .glyph { width: 14px; color: var(--muted); font-family: var(--font-mono); font-size: var(--fs-xs); }
 .name { overflow: hidden; text-overflow: ellipsis; white-space: nowrap; }
 .note { margin: 0; padding: var(--sp-2); color: var(--muted); }

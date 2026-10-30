@@ -82,7 +82,7 @@ describe("All threads", () => {
     attachFakeStore(fixture());
     useUi.getState().showAllThreads("p1");
     render(<AllThreads projectId="p1" />);
-    fireEvent.click(screen.getByText("← Mission Control"));
+    fireEvent.click(screen.getByRole("button", { name: "Mission Control" }));
     expect(useUi.getState().view).toBe("mission");
   });
 
@@ -100,7 +100,7 @@ describe("Project card ⋯", () => {
   it("renames the project", () => {
     const fake = attachFakeStore(fixture());
     render(<MissionControl />);
-    fireEvent.click(within(screen.getByLabelText("Project Tide")).getByText("⋯"));
+    fireEvent.click(within(screen.getByLabelText("Project Tide")).getByRole("button", { name: "More actions for Tide" }));
     fireEvent.click(screen.getByText("Rename…"));
     const input = screen.getByLabelText("Project name");
     fireEvent.change(input, { target: { value: "Tide v2" } });
@@ -111,7 +111,7 @@ describe("Project card ⋯", () => {
   it("archives only after confirming", () => {
     const fake = attachFakeStore(fixture());
     render(<MissionControl />);
-    fireEvent.click(within(screen.getByLabelText("Project Tide")).getByText("⋯"));
+    fireEvent.click(within(screen.getByLabelText("Project Tide")).getByRole("button", { name: "More actions for Tide" }));
     fireEvent.click(screen.getByText("Archive project…"));
     expect(fake.dispatch).not.toHaveBeenCalled();
     fireEvent.click(within(screen.getByRole("dialog", { name: "Archive project" })).getByText("Archive"));
@@ -122,8 +122,8 @@ describe("Project card ⋯", () => {
     attachFakeStore(fixture());
     render(<MissionControl />);
     const card = within(screen.getByLabelText("Project Tide"));
-    expect(card.getByText("⇡ 1 open")).toBeDefined();
-    expect(card.getByText("✓ 1 merged")).toBeDefined();
+    expect(card.getByText("1 open")).toBeDefined();
+    expect(card.getByText("1 merged")).toBeDefined();
     expect(card.queryByText("$0 lifetime")).toBeNull();
     fireEvent.click(card.getByRole("button", { name: /Details/ }));
     expect(card.getByText("$0 lifetime")).toBeDefined();

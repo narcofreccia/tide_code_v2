@@ -18,7 +18,7 @@
   display: flex;
   align-items: center;
   gap: var(--sp-1);
-  height: 24px;
+  height: var(--row-h);
   padding: 0 var(--sp-2);
   border-bottom: 1px solid var(--border);
 }
@@ -33,9 +33,12 @@
   font: inherit;
   font-size: var(--fs-sm);
   cursor: pointer;
+  transition: color var(--dur-fast) var(--ease), background var(--dur-fast) var(--ease);
 }
-.activeTab { color: var(--text); background: var(--surface-2); border-color: var(--border); }
+.tab:hover { color: var(--text); background: var(--surface-hover); }
+.activeTab,
+.activeTab:hover { color: var(--text); background: var(--surface-2); border-color: var(--border); }
 .hide { margin-left: auto; font-size: var(--fs-sm); }
 .body { flex: 1; min-height: 0; padding: var(--sp-1) var(--sp-2); overflow: hidden; }
 .surface { width: 100%; height: 100%; }
-.note { margin: 0; padding: var(--sp-2); color: var(--muted); }
+.note { margin: 0; padding: var(--sp-2); color: var(--muted); font-size: var(--fs-sm); }

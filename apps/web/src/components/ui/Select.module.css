@@ -39,7 +39,7 @@
   text-overflow: ellipsis;
   white-space: nowrap;
 }
-.chevron { flex: none; font-size: var(--fs-sm); opacity: 0.7; }
+.chevron { flex: none; color: var(--muted); }
 
 .panel {
   z-index: 80; /* above Dialog (70), below the palette (90) */
@@ -93,7 +93,7 @@
   color: var(--text);
   cursor: pointer;
 }
-.active { background: var(--accent-soft); }
+.active { background: var(--selection); }
 .selected .optionLabel { color: var(--accent); }
 .disabledOption { color: var(--muted); cursor: default; }
 .disabledOption.active { background: transparent; }
@@ -102,7 +102,7 @@
 .optionLabel { overflow: hidden; text-overflow: ellipsis; white-space: nowrap; }
 .description { color: var(--muted); font-size: var(--fs-sm); }
 .icon { flex: none; color: var(--muted); }
-.check { flex: none; width: 10px; color: var(--accent); font-size: var(--fs-sm); }
+.check { flex: none; display: inline-flex; width: 12px; color: var(--accent); }
 
 .group {
   padding: var(--sp-1) var(--sp-2) 2px;
