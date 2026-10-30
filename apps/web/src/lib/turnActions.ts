@@ -1,4 +1,4 @@
-import type { ImageInput, ProviderKind } from "@tide/contracts";
+import type { AttachmentRef, ImageInput, ProviderKind } from "@tide/contracts";
 import { newId } from "@tide/contracts";
 import { dispatch, type DispatchResult } from "../state/model.ts";
 import { invalidateThread } from "../state/vcs.ts";
@@ -12,6 +12,7 @@ export async function steerTurn(
   text: string,
   images?: ImageInput[],
   commandId: string = newId(),
+  attachments?: AttachmentRef[],
 ): Promise<void> {
   await dispatch({
     type: "turn.steer",
@@ -19,6 +20,7 @@ export async function steerTurn(
     text,
     commandId,
     ...(images === undefined || images.length === 0 ? {} : { images }),
+    ...(attachments === undefined || attachments.length === 0 ? {} : { attachments }),
   });
 }
 

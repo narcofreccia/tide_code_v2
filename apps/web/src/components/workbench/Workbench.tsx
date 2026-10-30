@@ -13,6 +13,8 @@ import { FileTab } from "./editor/FileTab.tsx";
 import { SearchPanel } from "./search/SearchPanel.tsx";
 import { Board } from "../experts/Board.tsx";
 import { TerminalDrawer } from "./terminal/TerminalDrawer.tsx";
+import { PreviewMenu } from "./preview/PreviewMenu.tsx";
+import { PreviewTab } from "./preview/PreviewTab.tsx";
 import styles from "./Workbench.module.css";
 
 function WorkbenchFor({ threadId, expertsSessionId }: { threadId: string; expertsSessionId?: string }) {
@@ -42,6 +44,7 @@ function WorkbenchFor({ threadId, expertsSessionId }: { threadId: string; expert
         >
           ▤
         </button>
+        <PreviewMenu threadId={threadId} />
         <button
           type="button"
           className={styles.terminalToggle}
@@ -62,6 +65,7 @@ function WorkbenchFor({ threadId, expertsSessionId }: { threadId: string; expert
             expertsSessionId === undefined ? null : <Board sessionId={expertsSessionId} />
           ) : null}
           {active.kind === "file" ? <FileTab key={active.path} threadId={threadId} path={active.path} /> : null}
+          {active.kind === "preview" ? <PreviewTab threadId={threadId} url={active.url} /> : null}
         </div>
       </div>
 

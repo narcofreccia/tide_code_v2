@@ -6,15 +6,20 @@ import { FileService } from "../workspace/files.ts";
 import { PtyManager } from "../workspace/pty/index.ts";
 import { search as runSearch, type SearchOptions, type SearchResult } from "../workspace/search.ts";
 import { FsWatcher } from "../workspace/watcher.ts";
+import { PortLister } from "../workspace/ports.ts";
+import { registerAttachmentHandlers } from "./attachments.ts";
 import { RpcException, type RpcRouter } from "./router.ts";
 
 export type SearchFn = (cwd: string, options: SearchOptions) => Promise<SearchResult>;
 
 export interface WorkspaceServices {
+  engine: Engine;
   files: FileService;
   watcher: FsWatcher;
   ptys: PtyManager;
   search: SearchFn;
+  /** listening ports under the thread's terminals (cached 3 s) */
+  ports: PortLister;
   /** thread -> cwd (worktree path, else project root) */
   cwdFor: (threadId: string) => string;
   /** directory browser for the project picker */
@@ -30,6 +35,7 @@ export interface WorkspaceOptions {
   watcher?: FsWatcher;
   ptys?: PtyManager;
   search?: SearchFn;
+  ports?: PortLister;
   log?: (msg: string, data?: unknown) => void;
 }
 
@@ -81,10 +87,12 @@ export function createWorkspaceServices(options: WorkspaceOptions): WorkspaceSer
     else if (event.type === "worktree.detached") ptys.killThread(event.threadId);
   });
   return {
+    engine: options.engine,
     files,
     watcher,
     ptys,
     search,
+    ports: options.ports ?? new PortLister(),
     cwdFor,
     browse: (input) => browseDirectories(options.engine.getModel(), input),
     teardown,
@@ -100,6 +108,8 @@ export function registerWorkspaceHandlers(router: RpcRouter, services: Workspace
   const { files, watcher, ptys, search, cwdFor } = services;
 
   // ---- files ----
+  registerAttachmentHandlers(router, { engine: services.engine, cwdFor });
+
   router.register("fs.list", async (input) => ({
     entries: await files.list(input.threadId, input.path),
   }));
@@ -154,6 +164,13 @@ export function registerWorkspaceHandlers(router: RpcRouter, services: Workspace
       ...(input.glob !== undefined ? { glob: input.glob } : {}),
       ...(input.limit !== undefined ? { limit: input.limit } : {}),
     });
+  });
+
+  // ---- ports (Preview tab) ----
+  // roots are the thread's terminal shells; harness child pids are not exposed by SessionDirectory
+  router.register("ports.list", async (input) => {
+    cwdFor(input.threadId); // not-found for unknown threads
+    return { ports: await services.ports.list(ptys.pids(input.threadId)) };
   });
 
   // ---- terminals ----

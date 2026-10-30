@@ -60,7 +60,7 @@
         <h1>Tide v2 — Project Journal</h1>
         <div class="sub">Focused agentic code editor &amp; orchestrator over Claude Code · Codex · OpenCode · Pi. Started 2026-08-30.</div>
         <div class="kpi">
-          <div class="box"><b>R10</b><span>GitHub deep + usage landed (2026-10-30) · next R11 surface parity</span></div>
+          <div class="box"><b>R11</b><span>surface parity round in progress (last of the T3 comparison)</span></div>
           <div class="box"><b>133</b><span>commits (incl. this one)</span></div>
           <div class="box"><b>2,403</b><span>tests passing</span></div>
         </div>
@@ -96,6 +96,18 @@
 
       <h2>Phase board</h2>
       <details class="phase" open>
+        <summary><span class="title"><h3>R11 — Surface parity (2026-10-30)</h3><small>any-file attachments the agent reads from disk · @thread context chips and drag-in · cite a selection · HTML visual replies + Mermaid · Preview tab with port detection · rebindable keys synced · VS Code theme import + fonts · project icons · <code>tide triage</code> · phone polish</small></span><span class="badge status wip">wip</span></summary>
+        <div class="body">
+           <p class="note">2026-10-30 — the last round of the T3 comparison: the small things people notice. Survey: images only (and a drop handler that swallowed other files), no selection handling, react-markdown without html/mermaid, no ports, read-only keyboard section, hand-copied Monaco palette, no project icon field, no triage command, two phone overflows left from R9.</p>
+           <ul class="tasks">
+             <li><span class="badge status done">done</span><span class="t"><b>Contracts</b> (<code>7c37655</code>): <code>AttachmentRef</code> on turns and messages + <code>attachments.upload</code>, <code>Project.icon</code> + <code>project.detectIcon</code>, <code>ports.list</code>, <code>UserSettings.keybindings</code>.</span></li>
+             <li><span class="badge status wip">wip</span><span class="t"><b>Server</b> (Sonnet): attachments under <code>.tide/attachments/</code> with <code>info/exclude</code>, prompt footer, ports from PTY descendants, favicon detection, <code>tide triage</code> with redaction.</span></li>
+             <li><span class="badge status wip">wip</span><span class="t"><b>Web — composer/thread</b> (Opus): file chips + upload, @thread picker/expansion/drag, Cite, html iframe sandbox + mermaid, Preview tab.</span></li>
+             <li><span class="badge status wip">wip</span><span class="t"><b>Web — settings</b> (Sonnet): rebindable keys, VS Code theme import + fonts reaching Monaco, project icon dialog, phone fixes for EmptyThread and Settings.</span></li>
+           </ul>
+        </div>
+      </details>
+      <details class="phase">
         <summary><span class="title"><h3>R10 — GitHub deep &amp; usage glass-box (2026-10-30)</h3><small>forge interface (GitHub first) · PR tab sorted by readiness with files, comments, review, merge · PRs linked to threads · PR watch v2 with specific wake-ups · Usage page: Tide turns plus the harnesses' own logs, reported vs labelled estimates · limits always in the status bar</small></span><span class="badge status done">done</span></summary>
         <div class="body">
            <p class="note">2026-10-30 — T3 Code's PR tab and Usage page were gaps 4 and 5. Survey: <code>gh.ts</code> knew only create / merge / view with five fields, PR watch woke the agent with "look at it", two refresh paths, no auth check, no forge abstraction; cost existed only for turns run through Tide and Codex reports none; harness logs on this Mac hold the rest (Claude jsonl with repeated message ids, Codex rollouts + sqlite, OpenCode sqlite, Pi jsonl).</p>
@@ -458,6 +470,8 @@
         <tr><td>R9</td><td>2026-10-30</td><td>docs: journal — R9 done (environments, relay, PWA), live check noted</td><td class="sha">bab8bc0</td></tr>
         <tr><td>R10</td><td>2026-10-30</td><td>feat(contracts): R10 — PullRequest facts for the PR tab, pr.* RPCs behind a forge, pr.link, usage.summary with labelled estimates, glassBox settings</td><td class="sha">a8fbb17</td></tr>
         <tr><td>R10</td><td>2026-10-30</td><td>feat: R10 GitHub deep + usage glass-box — forge interface, PR tab, PR watch v2, PR linking, Usage page from Tide turns and harness logs, limits in the status bar</td><td class="sha">8feed71</td></tr>
+        <tr><td>R10</td><td>2026-10-30</td><td>docs: journal — R10 done (forge, PR tab, usage), live check noted</td><td class="sha">9dbce4f</td></tr>
+        <tr><td>R11</td><td>2026-10-30</td><td>feat(contracts): R11 — file attachments on disk (AttachmentRef, attachments.upload), project icons, ports.list for the Preview tab, synced keybindings</td><td class="sha">7c37655</td></tr>
         <tr><td>R5</td><td>2026-10-16</td><td>fix(server): archiving keeps checkpoint refs (unarchive needs them); missing ref → not-found</td><td class="sha">d30687f</td></tr>
         <tr><td>R5</td><td>2026-10-16</td><td>fix(web): walkthrough #2 round — popover keeps selects, composer toolbar, stream grouped by turn, stale breadcrumb, labels</td><td class="sha">6b2666e</td></tr>
         <tr><td>R5</td><td>2026-10-16</td><td>fix(vcs): live diffs compare against a snapshot tree of the working tree, not git&#39;s index</td><td class="sha">ff2b45c</td></tr>

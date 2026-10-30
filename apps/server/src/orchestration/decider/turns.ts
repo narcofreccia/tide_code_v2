@@ -1,6 +1,6 @@
 import type { CommandOf, Message, ReadModel, Turn, TurnStatus } from "@tide/contracts";
 import { autoTitleEvent } from "./autoTitle.ts";
-import { attachmentsOf, fail, isArchived, ok, type DecideContext, type DecideResult } from "./types.ts";
+import { attachmentsOf, badAttachment, fail, isArchived, ok, type DecideContext, type DecideResult } from "./types.ts";
 
 type TurnCommand =
   | CommandOf<"turn.request">
@@ -30,6 +30,8 @@ export function decideTurn(model: ReadModel, command: TurnCommand, ctx: DecideCo
         const dup = Object.values(model.turns).find((t) => t.threadId === thread.id && t.requestId === command.requestId);
         if (dup) return fail("conflict", `turn ${dup.id} already carries requestId ${command.requestId}`);
       }
+      const badFile = badAttachment(command.attachments);
+      if (badFile !== undefined) return fail("invalid-command", badFile);
       // a follow-up typed while the harness is busy waits its turn instead of being refused
       const queued = thread.status === "running";
       const turn: Turn = {
@@ -48,7 +50,7 @@ export function decideTurn(model: ReadModel, command: TurnCommand, ctx: DecideCo
         turnId: turn.id,
         role: "user",
         text: command.text,
-        ...attachmentsOf(images),
+        ...attachmentsOf(images, command.attachments),
         ...(command.notification !== undefined ? { notification: command.notification } : {}),
         createdAt: ctx.now,
       };

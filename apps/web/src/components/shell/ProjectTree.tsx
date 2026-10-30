@@ -6,6 +6,8 @@ import { useServerSettings } from "../../state/serverSettings.ts";
 import { useUi } from "../../state/ui.ts";
 import { useTicker } from "../mission/useTicker.ts";
 import { Button } from "../ui/Button.tsx";
+import { ProjectIcon } from "../ui/ProjectIcon.tsx";
+import { detectIconOnce } from "../../lib/projectIcon.ts";
 import { ContextMenu, type MenuPosition } from "../ui/Menu.tsx";
 import { NewThreadPopover } from "./NewThreadPopover.tsx";
 import { ExpertsExplainer, ExpertsGroup, sessionThreadIds } from "./ExpertsGroup.tsx";
@@ -78,6 +80,10 @@ function ProjectNode({ project }: { project: Project }) {
   const scoped = selectedProjectId === null || selectedProjectId === project.id;
   const expanded = override ?? scoped;
   useEffect(() => setOverride(undefined), [selectedProjectId]);
+  const hasIcon = project.icon !== undefined;
+  useEffect(() => {
+    if (!hasIcon) detectIconOnce(project.id);
+  }, [hasIcon, project.id]);
 
   return (
     <li className={styles.project}>
@@ -103,6 +109,7 @@ function ProjectNode({ project }: { project: Project }) {
           title={project.rootPath}
           onClick={() => selectProject(selectedProjectId === project.id ? null : project.id)}
         >
+          <ProjectIcon project={project} />
           <span className={styles.projectTitle}>{project.title}</span>
           {multiEnv ? <EnvTag envId={envOfProject(project.id)} /> : null}
           {totals.needsYou > 0 ? (

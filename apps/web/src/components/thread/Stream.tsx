@@ -14,6 +14,7 @@ import { NoticeRow } from "./NoticeRow.tsx";
 import { MessageItem } from "./MessageItem.tsx";
 import { PlanCard } from "./PlanCard.tsx";
 import { UserInputCard } from "./UserInputCard.tsx";
+import { CiteButton } from "./CiteButton.tsx";
 import styles from "./Stream.module.css";
 
 const BOTTOM_SLACK = 48;
@@ -88,6 +89,12 @@ export function Stream({ threadId, provider }: { threadId: string; provider: Pro
   const nodes = groupActivities(top);
   const liveApprovalId = lastPendingApprovalId(entries);
   const metaIds = metaMessageIds(top, model);
+  const turnNumber = new Map(turns.map((t, i) => [t.id, i + 1]));
+  const citeLabel = (turnId: string): string => {
+    const n = turnNumber.get(turnId);
+    const title = thread?.title ?? "this thread";
+    return n === undefined ? `"${title}"` : `turn ${n} of "${title}"`;
+  };
 
   const scroller = useRef<HTMLOListElement>(null);
   const atBottom = useRef(true);
@@ -139,6 +146,7 @@ export function Stream({ threadId, provider }: { threadId: string; provider: Pro
                   {...(turn === undefined ? {} : { turn })}
                   {...(metaIds.has(node.message.id) ? { showMeta: true } : {})}
                   {...(queuedTurns.has(node.message.turnId) ? { wasQueued: true } : {})}
+                  {...(node.message.role === "assistant" ? { citeLabel: citeLabel(node.message.turnId) } : {})}
                 />
               </Fragment>
             );
@@ -162,6 +170,7 @@ export function Stream({ threadId, provider }: { threadId: string; provider: Pro
           return <ActivityRow key={activity.id} activity={activity} />;
         })}
       </ol>
+      <CiteButton root={scroller} />
       {hasNew ? (
         <button type="button" className={styles.newPill} onClick={toBottom}>
           ↓ new

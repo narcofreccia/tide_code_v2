@@ -13,6 +13,7 @@ import {
 } from "@tide/contracts";
 import type { Engine } from "../orchestration/engine.ts";
 import { isUsageLimitError } from "../orchestration/limits.ts";
+import { attachmentFooter } from "../workspace/attachments.ts";
 import { activityKey, mergeActivity } from "./activities.ts";
 import { inlinePrompt, planHandoffDelivery, type DeliveryPlan } from "./handoffDelivery.ts";
 import { instanceIdOf, type SessionDirectory } from "./sessions.ts";
@@ -33,6 +34,9 @@ interface TurnRun {
 }
 
 /** Drops every `${turnId}:…` entry of a settled turn: harness keys (request ids, tool ids) repeat across turns. */
+/** The prompt text the harness gets: the typed text plus the "Attached files" footer for uploaded files. */
+const textOf = (m: { text: string; attachments?: ReadonlyArray<{ mediaType: string; bytes: number; name?: string; path?: string }> }): string => m.text + attachmentFooter(m.attachments);
+
 function dropTurnKeys(map: Map<string, string>, turnId: string): void {
   const prefix = `${turnId}:`;
   for (const key of [...map.keys()]) if (key.startsWith(prefix)) map.delete(key);
@@ -147,14 +151,14 @@ export class ProviderReactor {
     const event = record.event;
     switch (event.type) {
       case "turn.requested":
-        this.#accept(event.turn.threadId, event.turn.id, event.userMessage.text, event.images);
+        this.#accept(event.turn.threadId, event.turn.id, textOf(event.userMessage), event.images);
         return;
       // the harness could not take a steer: the message became a turn of its own, run like any other
       case "turn.steer-fell-back":
-        this.#accept(event.threadId, event.turn.id, event.userMessage.text, event.images);
+        this.#accept(event.threadId, event.turn.id, textOf(event.userMessage), event.images);
         return;
       case "turn.steered":
-        this.#track(this.#steer(event.threadId, event.turnId, event.message.id, { text: event.message.text, ...(event.images && event.images.length > 0 ? { images: event.images } : {}) }));
+        this.#track(this.#steer(event.threadId, event.turnId, event.message.id, { text: textOf(event.message), ...(event.images && event.images.length > 0 ? { images: event.images } : {}) }));
         return;
       case "turn.dequeued":
         this.#known.delete(event.turnId);
@@ -244,7 +248,7 @@ export class ProviderReactor {
     if (model.threads[threadId]?.latestTurnId !== next || model.turns[next]?.status !== "requested") return;
     const message = (model.threadMessages[threadId] ?? []).map((id) => model.messages[id]).find((m) => m?.turnId === next && m.role === "user");
     const images = this.#imagesFor?.(next);
-    const input: TurnInput = { text: message?.text ?? "", ...(images !== undefined && images.length > 0 ? { images } : {}) };
+    const input: TurnInput = { text: message !== undefined ? textOf(message) : "", ...(images !== undefined && images.length > 0 ? { images } : {}) };
     this.#known.add(next);
     this.#enqueue(threadId, () => this.#runTurn(threadId, next, input));
   }

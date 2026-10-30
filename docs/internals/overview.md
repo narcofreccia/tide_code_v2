@@ -153,6 +153,21 @@ expert threads with a findings/messages board and a synthesis that becomes a Pro
 the lead thread. `Thread.attention` (approval / question / plan) is derived by the projector
 and drives the Inbox and the ◐ glyph.
 
+## Attachments, ports, icons (R11)
+
+`attachments.upload` writes user files to `<thread cwd>/.tide/attachments/<id>/<name>` (≤ 10 files, ≤ 20 MB
+total, no path separators in names) and appends `.tide/` once to the repository's `info/exclude` (for a linked
+worktree `git rev-parse --git-path info/exclude` resolves to the common dir; `.gitignore` is never touched).
+`turn.request`/`turn.steer` carry the returned refs; the decider keeps `name`/`path` on `Message.attachments`
+and the provider reactor appends `Attached files (read them from disk):` + one `- path (mime, size)` line per
+file to the prompt only (the stored message text is unchanged). Worktree threads lose their uploads with the
+worktree; at server start, `.tide/attachments/<id>` dirs older than 30 days under each project root are removed.
+`ports.list` runs `lsof -nP -iTCP -sTCP:LISTEN -Fpcn` (fallback `ss -ltnp`) plus `ps -axo pid=,ppid=,comm=`
+(cached 3 s) and returns listeners whose process descends from a terminal shell of the thread; harness child
+pids are not exposed by `SessionDirectory`, so a server the agent starts itself is found only when it runs in
+a Tide terminal. `project.detectIcon` looks for a favicon (≤ 32 KB) in the usual places of the project root.
+`tide triage` writes a redacted diagnostics report to `<TIDE_HOME>/triage/<time>.md` (see `remote.md`).
+
 ## Providers
 
 `ProviderDriver → ProviderInstance → ProviderSession` (`packages/contracts/src/driver.ts`).

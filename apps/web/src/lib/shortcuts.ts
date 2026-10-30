@@ -7,6 +7,8 @@ import { toggleTheme } from "../state/settings.ts";
 import { effortsOf, nextEffort, threadProviderStatus, useProvidersStore } from "../state/providers.ts";
 import { showToast } from "../state/toast.ts";
 import { updateThread } from "./threadActions.ts";
+import { useServerSettings } from "../state/serverSettings.ts";
+import { formatBinding, normalizeEvent, type BindingEntry } from "./keybindings.ts";
 
 /**
  * When an entry applies. `thread` needs a selected thread, `workbench` needs one
@@ -41,9 +43,40 @@ export function isDesktopShell(): boolean {
   return typeof window !== "undefined" && ("__TAURI__" in window || "__TAURI_INTERNALS__" in window);
 }
 
-/** The label to show for a shortcut in this environment (`⌥N` in a browser tab). */
-export function shortcutKeys(shortcut: Shortcut): string {
+/** The label to show for a shortcut in this environment (`⌥N` in a browser tab, or the user's own chord). */
+export function shortcutKeys(shortcut: Shortcut, overrides: Record<string, string> = {}): string {
+  const custom = overrides[shortcut.id];
+  if (custom) return formatBinding(custom);
   return shortcut.browserAlt && !isDesktopShell() ? shortcut.browserAlt.keys : shortcut.keys;
+}
+
+/** The shipped binding of an entry in this environment, in `keybindings.ts` form; undefined for surface-owned entries. */
+export function defaultBinding(shortcut: Shortcut): string | undefined {
+  if (!shortcut.run) return undefined;
+  if (shortcut.browserAlt && !isDesktopShell()) {
+    const key = shortcut.browserAlt.code.replace(/^(Key|Digit)/, "").toLowerCase();
+    return `alt+${key}`;
+  }
+  if (shortcut.key === undefined) return undefined;
+  return `mod${shortcut.shift ? "+shift" : ""}+${shortcut.key}`;
+}
+
+/** Every rebindable entry with the chord it answers to right now. */
+export function bindingEntries(overrides: Record<string, string>): BindingEntry[] {
+  const entries: BindingEntry[] = [];
+  for (const shortcut of SHORTCUTS) {
+    const fallback = defaultBinding(shortcut);
+    const binding = overrides[shortcut.id] || fallback;
+    if (binding === undefined) continue;
+    entries.push({
+      id: shortcut.id,
+      label: shortcut.label,
+      ...(shortcut.when ? { when: shortcut.when } : {}),
+      binding,
+      isDefault: !overrides[shortcut.id],
+    });
+  }
+  return entries;
 }
 
 /**
@@ -188,21 +221,28 @@ export const SHORTCUTS: Shortcut[] = [
 
 export const SHORTCUT_GROUPS: Shortcut["group"][] = ["Navigation", "View", "Thread", "Workbench"];
 
-/** Runs the ⌘/^ shortcut bound to this event (⌥ for the browser alternates); returns whether it was handled. */
+/** Runs the shortcut bound to this event (⌘/^, ⌥ for the browser alternates, or the user's own chord); returns whether it was handled. */
 export function handleShortcut(event: KeyboardEvent): boolean {
   const desktop = isDesktopShell();
   const alt = event.altKey && !event.metaKey && !event.ctrlKey;
-  if (!event.metaKey && !event.ctrlKey && !(alt && !desktop)) return false;
+  if (!event.metaKey && !event.ctrlKey && !alt) return false;
+  const overrides = useServerSettings.getState().settings.keybindings ?? {};
+  const chord = normalizeEvent(event);
+  if (chord === null) return false;
   const key = event.key.toLowerCase();
   for (const shortcut of SHORTCUTS) {
     if (!shortcut.run) continue;
-    if (alt) {
-      if (shortcut.browserAlt?.code !== event.code) continue;
+    const custom = overrides[shortcut.id];
+    if (custom) {
+      if (custom !== chord) continue;
+    } else if (alt) {
+      if (desktop || shortcut.browserAlt?.code !== event.code) continue;
+      if (shortcut.shift !== undefined && shortcut.shift !== event.shiftKey) continue;
     } else {
       if (shortcut.key !== key) continue;
       if (shortcut.browserAlt && !desktop) continue;
+      if (shortcut.shift !== undefined && shortcut.shift !== event.shiftKey) continue;
     }
-    if (shortcut.shift !== undefined && shortcut.shift !== event.shiftKey) continue;
     // out of context: let the key through to the surface rather than swallowing it
     if (!scopeApplies(shortcut.when)) return false;
     // `false` = not right now: a later entry on the same key (⌘⇧E effort → file tree) may take it

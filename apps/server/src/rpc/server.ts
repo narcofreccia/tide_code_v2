@@ -14,6 +14,8 @@ import { CheckpointService } from "../vcs/checkpoints.ts";
 import type { GhLike } from "../vcs/gh.ts";
 import { GitHubForge } from "../vcs/forge/github.ts";
 import { ForgeResolver } from "../vcs/forge/resolver.ts";
+import { registerProjectIconHandlers } from "./projectIcon.ts";
+import { sweepAttachments } from "../workspace/attachments.ts";
 import { registerPrHandlers } from "./pr.ts";
 import { AgentTokenStore } from "./agentTickets.ts";
 import { registerAgentHandlers } from "./agent.ts";
@@ -170,6 +172,13 @@ export async function startServer(deps: ServerDeps): Promise<ServerHandle> {
   const workspace = deps.workspace ?? createWorkspaceServices({ engine });
   const ownsWorkspace = deps.workspace === undefined;
   registerWorkspaceHandlers(router, workspace);
+  registerProjectIconHandlers(router, { engine });
+  // no-worktree threads write attachments into the project root; drop upload dirs older than 30 days
+  void (async () => {
+    let removed = 0;
+    for (const p of Object.values(engine.getModel().projects)) removed += await sweepAttachments(p.rootPath, Date.now());
+    if (removed > 0) console.error(`[attachments] removed ${removed} upload dir(s) older than 30 days`);
+  })().catch(() => undefined);
 
   const http: Server = createServer(
     createHttpHandler({

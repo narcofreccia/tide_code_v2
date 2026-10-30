@@ -53,6 +53,7 @@ function backendFrom(mod: NodePtyModule): PtyBackend {
         env: spec.env,
       });
       return {
+        pid: proc.pid,
         onData: (cb) => proc.onData(cb),
         onExit: (cb) =>
           proc.onExit(({ exitCode, signal }) =>

@@ -32,3 +32,8 @@
   line-height: 1;
 }
 .remove:hover { color: var(--danger); }
+
+/* R11: file and context-thread chips share the image strip's look */
+.file { padding: 0 4px 0 var(--sp-2); height: 24px; font-size: 12px; }
+.name { max-width: 220px; overflow: hidden; text-overflow: ellipsis; white-space: nowrap; }
+.stale { border-style: dashed; opacity: 0.7; }

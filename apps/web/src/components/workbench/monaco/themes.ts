@@ -1,7 +1,9 @@
 import { THEME_EVENT } from "../../../state/settings.ts";
+import { liveToken } from "../../../lib/theme.ts";
+import { blend, colorToHex, isDarkColor } from "../../../lib/vscodeTheme.ts";
 import type * as Monaco from "monaco-editor";
 
-/** Mirrors `styles/tokens.css`; Monaco needs literal hex, so the palettes live here. */
+/** Static fallbacks for `styles/tokens.css`; Monaco needs literal hex, and the live tokens (custom themes included) are read over them. */
 interface Palette {
   bg: string;
   surface2: string;
@@ -62,14 +64,39 @@ function theme(base: "vs" | "vs-dark", p: Palette): Monaco.editor.IStandaloneThe
   };
 }
 
-/** Idempotent: registering the same theme twice is harmless but pointless. */
-let defined = false;
+/** The painted tokens as a Palette, so a custom theme reaches the editor. */
+export function livePalette(fallback: Palette): Palette {
+  const hex = (token: string, base: string): string => colorToHex(liveToken(token, base));
+  const bg = hex("--bg", fallback.bg);
+  return {
+    bg,
+    surface2: hex("--surface-2", fallback.surface2),
+    border: hex("--border", fallback.border),
+    text: hex("--text", fallback.text),
+    muted: hex("--muted", fallback.muted),
+    accentSoft: blend(hex("--accent", fallback.accentSoft), bg, 0.2),
+    added: blend(hex("--ok", fallback.added), bg, 0.2),
+    removed: blend(hex("--danger", fallback.removed), bg, 0.2),
+  };
+}
+
+let registered: typeof Monaco | undefined;
+
+/** Defines both names; the one in use is built from the live tokens and re-defined on `THEME_EVENT`. */
+function define(monaco: typeof Monaco): void {
+  const active = preferredTheme();
+  const live = livePalette(active === LIGHT_THEME ? LIGHT : DARK);
+  const base = isDarkColor(live.bg) ? "vs-dark" : "vs";
+  monaco.editor.defineTheme(DARK_THEME, active === DARK_THEME ? theme(base, live) : theme("vs-dark", DARK));
+  monaco.editor.defineTheme(LIGHT_THEME, active === LIGHT_THEME ? theme(base, live) : theme("vs", LIGHT));
+  monaco.editor.setTheme(active);
+}
 
 export function defineThemes(monaco: typeof Monaco): void {
-  if (defined) return;
-  defined = true;
-  monaco.editor.defineTheme(DARK_THEME, theme("vs-dark", DARK));
-  monaco.editor.defineTheme(LIGHT_THEME, theme("vs", LIGHT));
+  if (registered === monaco) return;
+  registered = monaco;
+  define(monaco);
+  window.addEventListener(THEME_EVENT, () => define(monaco));
 }
 
 /** Explicit choice (Settings › Appearance) first, else the OS colour scheme. */

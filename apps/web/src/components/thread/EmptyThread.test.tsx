@@ -26,7 +26,7 @@ describe("EmptyThread", () => {
     render(<EmptyThread thread={makeThread("t1")} />);
     fireEvent.click(screen.getByRole("button", { name: /^Try:/ }));
     window.removeEventListener(COMPOSE_EVENT, listener);
-    expect(seen).toHaveBeenCalledWith(EXAMPLE_PROMPT);
+    expect(seen).toHaveBeenCalledWith({ text: EXAMPLE_PROMPT, mode: "replace" });
   });
 });
 

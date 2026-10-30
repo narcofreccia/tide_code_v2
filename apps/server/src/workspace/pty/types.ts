@@ -20,6 +20,8 @@ export interface PtyHandle {
   write(data: string): void;
   resize(cols: number, rows: number): void;
   kill(): void;
+  /** OS pid of the shell, when the backend knows it (ports.list walks its descendants) */
+  pid?: number | undefined;
 }
 
 /**

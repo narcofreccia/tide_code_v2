@@ -10,9 +10,22 @@ export interface SerializedImage {
   bytes: number;
 }
 
+/**
+ * A non-image file waiting in a draft (R11): metadata only. The bytes stay in memory
+ * (`lib/attachments.ts`), so after a reload the chip remains but needs a re-attach.
+ */
+export interface DraftFile {
+  id: string;
+  name: string;
+  mediaType: string;
+  bytes: number;
+}
+
 export interface Draft {
   text: string;
   images: SerializedImage[];
+  /** R11; absent = none */
+  files?: DraftFile[];
   updatedAt: number;
 }
 
@@ -33,7 +46,7 @@ const DEBOUNCE_MS = 300;
 const threadKey = (id: string): string => `thread:${id}`;
 const stashKey = (id: string): string => `stash:${id}`;
 
-const empty = (d: Draft): boolean => d.text.trim() === "" && d.images.length === 0;
+const empty = (d: Draft): boolean => d.text.trim() === "" && d.images.length === 0 && (d.files?.length ?? 0) === 0;
 
 // ---- IndexedDB: tiny key -> SerializedImage[] helper, silent on failure ----
 
@@ -74,8 +87,8 @@ const idbGet = (key: string): Promise<SerializedImage[] | undefined> =>
 // ---- localStorage: text + metadata ----
 
 interface Stored {
-  drafts: Record<string, { text: string; updatedAt: number; images: number }>;
-  stash: { id: string; text: string; updatedAt: number; images: number }[];
+  drafts: Record<string, { text: string; updatedAt: number; images: number; files?: DraftFile[] }>;
+  stash: { id: string; text: string; updatedAt: number; images: number; files?: DraftFile[] }[];
 }
 
 function readStored(): Stored | undefined {
@@ -89,6 +102,9 @@ function readStored(): Stored | undefined {
   }
 }
 
+const filesOf = (d: { files?: DraftFile[] }): { files?: DraftFile[] } =>
+  d.files && d.files.length > 0 ? { files: d.files } : {};
+
 let timer: ReturnType<typeof setTimeout> | undefined;
 let dirtyImages = new Set<string>();
 
@@ -99,9 +115,9 @@ export function flushDrafts(): void {
   const { drafts, stash } = useDrafts.getState();
   const stored: Stored = {
     drafts: Object.fromEntries(
-      Object.entries(drafts).map(([id, d]) => [id, { text: d.text, updatedAt: d.updatedAt, images: d.images.length }]),
+      Object.entries(drafts).map(([id, d]) => [id, { text: d.text, updatedAt: d.updatedAt, images: d.images.length, ...filesOf(d) }]),
     ),
-    stash: stash.map((d) => ({ id: d.id, text: d.text, updatedAt: d.updatedAt, images: d.images.length })),
+    stash: stash.map((d) => ({ id: d.id, text: d.text, updatedAt: d.updatedAt, images: d.images.length, ...filesOf(d) })),
   };
   try {
     writeScoped(DRAFTS_STORAGE_KEY, JSON.stringify(stored));
@@ -131,9 +147,9 @@ export function hydrateDrafts(): Promise<void> {
   if (!stored) return Promise.resolve();
   const drafts: Record<string, Draft> = {};
   for (const [id, d] of Object.entries(stored.drafts ?? {})) {
-    drafts[id] = { text: d.text ?? "", images: [], updatedAt: d.updatedAt ?? 0 };
+    drafts[id] = { text: d.text ?? "", images: [], ...filesOf(d), updatedAt: d.updatedAt ?? 0 };
   }
-  const stash: StashedDraft[] = (stored.stash ?? []).map((d) => ({ id: d.id, text: d.text ?? "", images: [], updatedAt: d.updatedAt ?? 0 }));
+  const stash: StashedDraft[] = (stored.stash ?? []).map((d) => ({ id: d.id, text: d.text ?? "", images: [], ...filesOf(d), updatedAt: d.updatedAt ?? 0 }));
   useDrafts.setState((s) => ({ drafts: { ...drafts, ...s.drafts }, stash: s.stash.length > 0 ? s.stash : stash }));
   const jobs: Promise<void>[] = [];
   for (const [id, d] of Object.entries(stored.drafts ?? {})) {
@@ -164,11 +180,12 @@ export function getDraft(threadId: string): Draft | undefined {
   return useDrafts.getState().drafts[threadId];
 }
 
-export function setDraft(threadId: string, patch: Partial<Pick<Draft, "text" | "images">>): void {
+export function setDraft(threadId: string, patch: Partial<Pick<Draft, "text" | "images" | "files">>): void {
   const prev = useDrafts.getState().drafts[threadId];
   const next: Draft = {
     text: patch.text ?? prev?.text ?? "",
     images: patch.images ?? prev?.images ?? [],
+    ...filesOf({ files: patch.files ?? prev?.files ?? [] }),
     updatedAt: Date.now(),
   };
   if (empty(next)) {
@@ -206,7 +223,11 @@ export function applyStash(threadId: string, stashId?: string): boolean {
   if (!entry) return false;
   const cur = getDraft(threadId);
   const text = [cur?.text.trimEnd(), entry.text].filter((t) => t && t.trim() !== "").join("\n\n");
-  setDraft(threadId, { text, images: [...(cur?.images ?? []), ...entry.images].slice(0, 8) });
+  setDraft(threadId, {
+    text,
+    images: [...(cur?.images ?? []), ...entry.images].slice(0, 8),
+    files: [...(cur?.files ?? []), ...(entry.files ?? [])].slice(0, 10),
+  });
   removeStash(entry.id);
   return true;
 }

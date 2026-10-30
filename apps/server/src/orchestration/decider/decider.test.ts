@@ -450,3 +450,31 @@ describe("decide: plans", () => {
     expect(decide(emptyReadModel(), { type: "plan.dismiss", planId: "nope" }, ctx)).toMatchObject({ ok: false, error: { code: "not-found" } });
   });
 });
+
+describe("decide: R11 attachments and project icons", () => {
+  const ref = { name: "spec.pdf", path: ".tide/attachments/01X/spec.pdf", mediaType: "application/pdf", bytes: 1200 };
+
+  it("copies file attachment metadata next to image metadata on turn.request and turn.steer", () => {
+    const { model, threadId } = withThread();
+    const r = run(model, { type: "turn.request", threadId, text: "see", images: [{ mediaType: "image/png", data: "AAAA" }], attachments: [ref] });
+    const requested = r.events.find((e) => e.type === "turn.requested");
+    expect(requested?.type === "turn.requested" && requested.userMessage.attachments).toEqual([{ mediaType: "image/png", bytes: 3 }, { mediaType: "application/pdf", bytes: 1200, name: "spec.pdf", path: ref.path }]);
+    const steered = run(r.model, { type: "turn.steer", threadId, text: "also", attachments: [ref] }).events[0];
+    expect(steered?.type === "turn.steered" && steered.message.attachments?.[0]).toMatchObject({ name: "spec.pdf", path: ref.path });
+  });
+
+  it("refuses attachment paths outside .tide/attachments/", () => {
+    const { model, threadId } = withThread();
+    for (const path of ["/etc/passwd", "../x", ".tide/attachments/../../x"]) {
+      expect(decide(model, { type: "turn.request", threadId, text: "x", attachments: [{ ...ref, path }] }, ctx)).toMatchObject({ ok: false, error: { code: "invalid-command" } });
+    }
+  });
+
+  it("sets and clears a project icon", () => {
+    const { model, projectId } = withProject();
+    const set = run(model, { type: "project.update", projectId, icon: { kind: "emoji", value: "🌊" } });
+    expect(set.model.projects[projectId]?.icon).toEqual({ kind: "emoji", value: "🌊" });
+    const cleared = run(set.model, { type: "project.update", projectId, icon: null });
+    expect(cleared.model.projects[projectId]?.icon).toBeUndefined();
+  });
+});

@@ -7,7 +7,9 @@ export type WorkbenchTab =
   | { kind: "changes" }
   | { kind: "search" }
   | { kind: "experts" }
-  | { kind: "file"; path: string; pinned?: boolean };
+  | { kind: "file"; path: string; pinned?: boolean }
+  /** R11: a dev server in an iframe; one per thread, its URL editable in place */
+  | { kind: "preview"; url: string };
 
 export const CHANGES_TAB: WorkbenchTab = { kind: "changes" };
 
@@ -132,6 +134,15 @@ export function openExpertsTab(threadId: string, focus = false): void {
     ? tabs
     : [tabs[0] ?? CHANGES_TAB, { kind: "experts" as const }, ...tabs.slice(1)];
   write(threadId, next, focus ? "experts" : undefined);
+}
+
+/** Opens (or retargets) the thread's Preview tab and focuses it. */
+export function openPreviewTab(threadId: string, url: string): void {
+  const tabs = threadTabs(threadId);
+  const next = tabs.some((t) => t.kind === "preview")
+    ? tabs.map((t) => (t.kind === "preview" ? { kind: "preview" as const, url } : t))
+    : [...tabs, { kind: "preview" as const, url }];
+  write(threadId, next, "preview");
 }
 
 export function openSearchTab(threadId: string): void {

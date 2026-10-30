@@ -1,5 +1,6 @@
 import type {
   ApprovalDecision,
+  AttachmentRef,
   ImageInput,
   InteractionMode,
   LinkAccess,
@@ -236,6 +237,7 @@ export async function sendTurn(
   text: string,
   images?: ImageInput[],
   requestId: string = newId(),
+  attachments?: AttachmentRef[],
 ): Promise<void> {
   await dispatch({
     type: "turn.request",
@@ -243,6 +245,7 @@ export async function sendTurn(
     text,
     requestId,
     ...(images === undefined || images.length === 0 ? {} : { images }),
+    ...(attachments === undefined || attachments.length === 0 ? {} : { attachments }),
   });
 }
 

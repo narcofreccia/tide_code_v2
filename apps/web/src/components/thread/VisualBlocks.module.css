@@ -1,0 +1,47 @@
+.html {
+  display: flex;
+  flex-direction: column;
+  margin: 0 0 var(--sp-2);
+  border: 1px solid var(--border);
+  border-radius: var(--radius);
+  overflow: hidden;
+  white-space: normal;
+  width: min(720px, 100%);
+}
+.header {
+  display: flex;
+  align-items: center;
+  gap: var(--sp-3);
+  padding: 2px var(--sp-2);
+  background: var(--surface-2);
+  border-bottom: 1px solid var(--border);
+  font-size: 11px;
+}
+.title { color: var(--muted); margin-right: auto; }
+/* the srcdoc document paints its own background; give it a neutral one under it */
+.frame { display: block; width: 100%; border: 0; background: #fff; }
+.handle {
+  height: 6px;
+  cursor: ns-resize;
+  background: var(--surface-2);
+  border-top: 1px solid var(--border);
+  touch-action: none;
+}
+.handle:hover { background: var(--border-strong); }
+.source {
+  margin: 0;
+  max-height: 320px;
+  overflow: auto;
+  border-top: 1px solid var(--border);
+  border-radius: 0;
+}
+.mermaid {
+  margin: 0 0 var(--sp-2);
+  padding: var(--sp-2);
+  overflow-x: auto;
+  background: var(--surface-2);
+  border: 1px solid var(--border);
+  border-radius: var(--radius);
+  white-space: normal;
+}
+.mermaid :global(svg) { max-width: 100%; height: auto; }

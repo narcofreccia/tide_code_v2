@@ -1,4 +1,5 @@
 import { useState } from "react";
+import { THREAD_DRAG_TYPE } from "../../lib/mentions.ts";
 import type { Thread } from "@tide/contracts";
 import { settleThread, unsettleThread, updateThread } from "../../lib/threadActions.ts";
 import { isThreadMerged } from "@tide/client";
@@ -123,6 +124,12 @@ export function RailThreadRow({ thread, siblings }: { thread: Thread; siblings: 
           .filter(Boolean)
           .join(" ")}
         data-rail-thread={thread.id}
+        draggable={!renaming}
+        onDragStart={(e) => {
+          // R11: dropped on the composer, it becomes an @thread context mention
+          e.dataTransfer.setData(THREAD_DRAG_TYPE, thread.id);
+          e.dataTransfer.effectAllowed = "copy";
+        }}
         onContextMenu={(e) => {
           e.preventDefault();
           openMenu({ x: e.clientX, y: e.clientY });

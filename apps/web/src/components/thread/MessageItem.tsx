@@ -6,6 +6,9 @@ import { formatDuration } from "../../lib/activity.ts";
 import { formatBytes } from "../../lib/images.ts";
 import { formatTokens } from "../../lib/glassBox.ts";
 import { useUi } from "../../state/ui.ts";
+import { openFileTab } from "../../state/workbench.ts";
+import { cite } from "../../lib/cite.ts";
+import { MarkdownPre } from "./VisualBlocks.tsx";
 import { Button } from "../ui/Button.tsx";
 import { Popover } from "../ui/Popover.tsx";
 import { Pill } from "../ui/Pill.tsx";
@@ -88,6 +91,40 @@ function TurnMenu({ turn }: { turn: Turn }) {
   );
 }
 
+const MARKDOWN_COMPONENTS = { pre: MarkdownPre };
+
+type MessageAttachment = NonNullable<Message["attachments"]>[number];
+
+/** Images are metadata pills; R11 files live in the worktree and open in the workbench. */
+function Attachments({ message }: { message: Message }) {
+  const list = message.attachments ?? [];
+  if (list.length === 0) return null;
+  const open = (a: MessageAttachment): void => {
+    if (a.path !== undefined) openFileTab(message.threadId, a.path);
+  };
+  return (
+    <span className={styles.attachments}>
+      {list.map((attachment, i) =>
+        attachment.path === undefined ? (
+          <Pill key={`${attachment.mediaType}-${i}`}>
+            🖼 {attachment.mediaType} · {formatBytes(attachment.bytes)}
+          </Pill>
+        ) : (
+          <button
+            key={attachment.path}
+            type="button"
+            className={styles.fileChip}
+            title={`Open ${attachment.path}`}
+            onClick={() => open(attachment)}
+          >
+            📄 {attachment.name ?? attachment.path.slice(attachment.path.lastIndexOf("/") + 1)} · {formatBytes(attachment.bytes)}
+          </button>
+        ),
+      )}
+    </span>
+  );
+}
+
 export interface MessageItemProps {
   message: Message;
   /** the turn this message belongs to, when the model knows it */
@@ -96,10 +133,12 @@ export interface MessageItemProps {
   showMeta?: boolean;
   /** the turn waited behind an earlier one; its prompt keeps the tag after it ran */
   wasQueued?: boolean;
+  /** R11: where a citation of this message says it came from, e.g. `turn 3 of "Fix auth"` */
+  citeLabel?: string;
 }
 
 /** User turns stay plain text; assistant prose renders as markdown. */
-export function MessageItem({ message, turn, showMeta, wasQueued }: MessageItemProps) {
+export function MessageItem({ message, turn, showMeta, wasQueued, citeLabel }: MessageItemProps) {
   const isUser = message.role === "user";
   const queued = isUser && message.steer !== true && (turn?.status === "queued" || wasQueued === true);
   const streaming = message.streaming === true;
@@ -110,6 +149,7 @@ export function MessageItem({ message, turn, showMeta, wasQueued }: MessageItemP
     <li
       className={`${isUser ? styles.user : styles.assistant} ${rolledBack ? styles.rolledBack : ""}`}
       {...(rolledBack ? { "data-rolled-back": "true" } : {})}
+      {...(!isUser ? { "data-cite-label": citeLabel ?? "" } : {})}
     >
       <div className={styles.body} data-role={message.role}>
         {queued ? (
@@ -134,21 +174,22 @@ export function MessageItem({ message, turn, showMeta, wasQueued }: MessageItemP
           message.text
         ) : (
           <div className={styles.markdown}>
-            <ReactMarkdown remarkPlugins={[remarkGfm]}>{message.text}</ReactMarkdown>
+            <ReactMarkdown remarkPlugins={[remarkGfm]} components={MARKDOWN_COMPONENTS}>
+              {message.text}
+            </ReactMarkdown>
           </div>
         )}
-        {message.attachments === undefined || message.attachments.length === 0 ? null : (
-          <span className={styles.attachments}>
-            {message.attachments.map((attachment, i) => (
-              <Pill key={`${attachment.mediaType}-${i}`}>
-                🖼 {attachment.mediaType} · {formatBytes(attachment.bytes)}
-              </Pill>
-            ))}
-          </span>
-        )}
+        <Attachments message={message} />
         {streaming ? <span className={styles.caret} aria-label="streaming" /> : null}
       </div>
       {menuTurn ? <TurnMenu turn={menuTurn} /> : null}
+      {!isUser && !streaming && message.text.trim() !== "" ? (
+        <span className={styles.actions}>
+          <Button variant="quiet" title="Quote this reply in the composer" onClick={() => cite(message.text, citeLabel)}>
+            Quote
+          </Button>
+        </span>
+      ) : null}
       {showMeta === true && turn ? <TurnMeta turn={turn} /> : null}
     </li>
   );

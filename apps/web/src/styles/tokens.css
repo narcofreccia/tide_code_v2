@@ -53,6 +53,7 @@
   --font: ui-sans-serif, -apple-system, BlinkMacSystemFont, "Segoe UI", Roboto, Helvetica, Arial,
     sans-serif;
   --font-mono: ui-monospace, SFMono-Regular, "SF Mono", Menlo, Consolas, monospace;
+  --font-size-base: 13px;
 
   /* density: rows in rails/lists, activity lines in the stream */
   --row-h: 28px;

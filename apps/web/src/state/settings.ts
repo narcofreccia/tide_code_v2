@@ -1,6 +1,7 @@
 import { create } from "zustand";
 import { persist } from "zustand/middleware";
 import { resetServerSettings } from "./serverSettings.ts";
+import { DEFAULT_FONTS, applyCustomTheme, applyFonts, type CustomTheme, type FontSettings } from "../lib/theme.ts";
 
 export type Theme = "system" | "dark" | "light";
 export type Density = "comfortable" | "compact";
@@ -11,8 +12,13 @@ export const DENSITIES: Density[] = ["comfortable", "compact"];
 interface SettingsState {
   theme: Theme;
   density: Density;
+  /** an imported VS Code theme laid over the stock tokens; per device */
+  customTheme?: CustomTheme;
+  fonts: FontSettings;
   setTheme: (theme: Theme) => void;
   setDensity: (density: Density) => void;
+  setCustomTheme: (theme: CustomTheme | undefined) => void;
+  setFonts: (patch: { ui?: string | undefined; mono?: string | undefined; size?: FontSettings["size"] }) => void;
 }
 
 export const SETTINGS_STORAGE_KEY = "tide.settings";
@@ -26,11 +32,29 @@ export const useSettings = create<SettingsState>()(
     (set) => ({
       theme: "dark",
       density: "comfortable",
+      fonts: DEFAULT_FONTS,
       setTheme: (theme) => set({ theme }),
       setDensity: (density) => set({ density }),
+      setCustomTheme: (customTheme) =>
+        set((s) => {
+          const { customTheme: _drop, ...rest } = s;
+          return customTheme ? { ...rest, customTheme } : rest;
+        }, true),
+      setFonts: (patch) =>
+        set((s) => {
+          const fonts = { ...s.fonts, ...patch } as FontSettings;
+          if (!fonts.ui) delete fonts.ui;
+          if (!fonts.mono) delete fonts.mono;
+          return { fonts };
+        }),
     }),
     // provider defaults and worktreeByDefault moved to the server (state/serverSettings.ts)
-    { name: SETTINGS_STORAGE_KEY, partialize: (s) => ({ theme: s.theme, density: s.density }) },
+    { name: SETTINGS_STORAGE_KEY, partialize: (s) => ({
+        theme: s.theme,
+        density: s.density,
+        fonts: s.fonts,
+        ...(s.customTheme ? { customTheme: s.customTheme } : {}),
+      }), },
   ),
 );
 
@@ -65,6 +89,8 @@ export function toggleTheme(): "dark" | "light" {
 }
 
 function sync(state: SettingsState): void {
+  applyCustomTheme(state.customTheme);
+  applyFonts(state.fonts);
   applyAppearance(state.theme, state.density);
 }
 
@@ -72,6 +98,7 @@ sync(useSettings.getState());
 useSettings.subscribe(sync);
 
 export function resetSettings(): void {
-  useSettings.setState({ theme: "dark", density: "comfortable" });
+  const { customTheme: _drop, ...rest } = useSettings.getState();
+  useSettings.setState({ ...rest, theme: "dark", density: "comfortable", fonts: DEFAULT_FONTS }, true);
   resetServerSettings();
 }

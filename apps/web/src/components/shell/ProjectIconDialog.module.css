@@ -1,0 +1,15 @@
+.current { display: flex; align-items: center; gap: var(--sp-2); font-weight: 600; }
+.block { display: flex; align-items: center; flex-wrap: wrap; gap: var(--sp-2); }
+label.block { flex-direction: column; align-items: stretch; gap: var(--sp-1); }
+.label { color: var(--muted); font-size: 11px; }
+.hint { color: var(--muted); }
+.input {
+  height: 26px;
+  padding: 0 var(--sp-2);
+  background: var(--surface);
+  border: 1px solid var(--border);
+  border-radius: var(--radius-sm);
+  color: var(--text);
+  font: inherit;
+}
+.actions { display: flex; justify-content: flex-end; gap: var(--sp-2); }

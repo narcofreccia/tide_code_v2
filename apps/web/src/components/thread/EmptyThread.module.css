@@ -16,3 +16,11 @@
 .item { display: flex; gap: var(--sp-2); }
 .item dt { flex: none; width: 96px; color: var(--text); font-weight: 600; }
 .item dd { margin: 0; }
+
+@media (max-width: 720px) {
+  .empty { margin: 0; max-width: none; width: 100%; box-sizing: border-box; }
+  .item { flex-direction: column; gap: 0; }
+  .item dt { width: auto; }
+  /* the example prompt is long: let it wrap instead of forcing a horizontal scroll */
+  .empty > button { white-space: normal; height: auto; min-height: var(--row-h); padding-block: var(--sp-1); text-align: left; max-width: 100%; }
+}

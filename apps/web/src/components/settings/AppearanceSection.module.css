@@ -1,0 +1,4 @@
+.wrapRow { flex-wrap: wrap; }
+.controls { display: flex; align-items: center; flex-wrap: wrap; gap: var(--sp-2); min-width: 0; }
+.swatches { flex: none; max-width: 100%; }
+.error { margin: 0; color: var(--danger); }

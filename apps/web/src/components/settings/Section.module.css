@@ -38,6 +38,7 @@
 
 .row {
   display: flex;
+  flex-wrap: wrap;
   align-items: center;
   justify-content: space-between;
   gap: var(--sp-3);
@@ -122,3 +123,8 @@
 .ok { color: var(--ok); }
 .stack { display: flex; flex-direction: column; gap: 2px; min-width: 0; }
 .secondary { color: var(--muted); font-family: var(--font-mono); font-size: 11px; overflow-wrap: anywhere; }
+
+@media (max-width: 720px) {
+  .table { display: block; overflow-x: auto; }
+  .formRow { flex-wrap: wrap; }
+}

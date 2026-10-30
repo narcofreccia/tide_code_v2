@@ -115,3 +115,23 @@
 .turnMenu { opacity: 0.5; }
 .turnMenu:hover, .turnMenu:focus-within { opacity: 1; }
 .menuItems { display: flex; flex-direction: column; min-width: 200px; }
+
+.fileChip {
+  display: inline-flex;
+  align-items: center;
+  gap: var(--sp-1);
+  padding: 0 var(--sp-2);
+  border: 1px solid var(--border);
+  border-radius: var(--radius-sm);
+  background: var(--surface-2);
+  color: var(--text);
+  font: inherit;
+  font-size: 11px;
+  cursor: pointer;
+}
+.fileChip:hover { border-color: var(--accent); }
+
+/* hover actions under an assistant reply */
+.actions { display: inline-flex; gap: var(--sp-1); opacity: 0; }
+.assistant:hover .actions,
+.actions:focus-within { opacity: 1; }

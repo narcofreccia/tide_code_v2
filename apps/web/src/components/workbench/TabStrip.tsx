@@ -16,6 +16,7 @@ function label(tab: WorkbenchTab): string {
   if (tab.kind === "changes") return "Changes";
   if (tab.kind === "search") return "Search";
   if (tab.kind === "experts") return "Board";
+  if (tab.kind === "preview") return "Preview";
   return tab.path.slice(tab.path.lastIndexOf("/") + 1);
 }
 

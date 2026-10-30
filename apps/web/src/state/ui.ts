@@ -34,7 +34,7 @@ export interface ThreadDialog {
 
 /** A project-scoped modal raised from the rail's context menu. */
 export interface ProjectDialog {
-  kind: "rename" | "archive";
+  kind: "rename" | "archive" | "icon";
   projectId: string;
 }
 

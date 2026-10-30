@@ -156,7 +156,7 @@ describe("Composer", () => {
     expect(screen.queryByLabelText("Attached images")).toBeNull();
   });
 
-  it("refuses images when the harness does not take them", async () => {
+  it("attaches images as files when the harness does not take them inline", async () => {
     useToasts.setState({ toasts: [] });
     setProvidersForTest(PROVIDER_FIXTURE);
     attachFakeStore(modelWith({}));
@@ -164,10 +164,9 @@ describe("Composer", () => {
 
     pasteFiles([pngFile()]);
 
-    await waitFor(() =>
-      expect(useToasts.getState().toasts.map((t) => t.text)).toEqual(["This harness does not accept images"]),
-    );
+    await waitFor(() => expect(screen.getByLabelText("Attached files")).toBeDefined());
     expect(screen.queryByLabelText("Attached images")).toBeNull();
+    expect(useToasts.getState().toasts).toEqual([]);
   });
 
   it("grows the textarea up to eight rows", () => {

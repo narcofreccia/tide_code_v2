@@ -1,0 +1,9 @@
+.sr { position: absolute; width: 1px; height: 1px; overflow: hidden; clip-path: inset(50%); }
+.listening { color: var(--accent); }
+.conflict { display: block; color: var(--danger); font-size: 11px; }
+.saved { margin-left: var(--sp-2); color: var(--ok); font-size: 11px; }
+.fixed { color: var(--muted); font-size: 11px; }
+.actions { text-align: right; white-space: nowrap; }
+@media (max-width: 720px) {
+  .actions { white-space: normal; }
+}

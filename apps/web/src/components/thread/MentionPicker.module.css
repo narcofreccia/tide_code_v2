@@ -15,3 +15,13 @@
   box-shadow: var(--shadow-pop);
   overflow: auto;
 }
+.section {
+  margin: 0;
+  padding: var(--sp-1) var(--sp-3) 0;
+  color: var(--muted);
+  font-size: 11px;
+  letter-spacing: var(--ls-section);
+  text-transform: uppercase;
+  font-weight: var(--fw-section);
+}
+.thread { overflow: hidden; text-overflow: ellipsis; white-space: nowrap; }

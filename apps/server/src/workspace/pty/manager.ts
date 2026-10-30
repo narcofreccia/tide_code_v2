@@ -182,6 +182,15 @@ export class PtyManager {
     return out;
   }
 
+  /** Shell pids of the thread's live terminals (those whose backend reports one). */
+  pids(threadId: string): number[] {
+    const out: number[] = [];
+    for (const entry of this.#ptys.values()) {
+      if (entry.threadId === threadId && entry.alive && typeof entry.handle.pid === "number") out.push(entry.handle.pid);
+    }
+    return out;
+  }
+
   /** Kills every live terminal of a thread (its worktree is going away, or the thread was archived). */
   killThread(threadId: string): number {
     let killed = 0;

@@ -1,4 +1,4 @@
-import type { DomainEvent, EventOf, ImageInput, Message, ProviderKind, RuntimeMode, Turn, UserSettings } from "@tide/contracts";
+import type { AttachmentRef, DomainEvent, EventOf, ImageInput, Message, ProviderKind, RuntimeMode, Turn, UserSettings } from "@tide/contracts";
 
 /** The user settings the decider reads (supplied by the engine from `SettingsStore`). */
 export interface DecideDefaults {
@@ -59,10 +59,21 @@ export const fail = (code: string, message: string): DecideResult => ({ ok: fals
 
 export const isArchived = (e: { archivedAt?: number }): boolean => e.archivedAt !== undefined;
 
-/** Attachment metadata kept on a user message (the image bytes ride only on the event). */
-export function attachmentsOf(images: ImageInput[] | undefined): Pick<Message, "attachments"> {
-  if (images === undefined || images.length === 0) return {};
-  return { attachments: images.map((img) => ({ mediaType: img.mediaType, bytes: Math.floor((img.data.length * 3) / 4) })) };
+/** Attachment metadata kept on a user message (the image bytes ride only on the event; files are on disk). */
+export function attachmentsOf(images: ImageInput[] | undefined, files?: AttachmentRef[]): Pick<Message, "attachments"> {
+  const list = [
+    ...(images ?? []).map((img) => ({ mediaType: img.mediaType, bytes: Math.floor((img.data.length * 3) / 4) })),
+    ...(files ?? []).map((f) => ({ mediaType: f.mediaType, bytes: f.bytes, name: f.name, path: f.path })),
+  ];
+  return list.length === 0 ? {} : { attachments: list };
+}
+
+/** Uploaded files must live under `.tide/attachments/`; anything else is refused so a prompt footer cannot point elsewhere. */
+export function badAttachment(files: AttachmentRef[] | undefined): string | undefined {
+  for (const f of files ?? []) {
+    if (!f.path.startsWith(".tide/attachments/") || f.path.split("/").includes("..")) return `attachment path ${f.path} is outside .tide/attachments/`;
+  }
+  return undefined;
 }
 
 /** Builds the `turn.requested` event that seeds a thread with `text`. */

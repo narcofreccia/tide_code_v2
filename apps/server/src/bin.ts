@@ -34,6 +34,15 @@ async function main(): Promise<number | undefined> {
       console.log(result.text);
       return result.code;
     }
+    case "triage": {
+      const { runTriage, hostProbes } = await import("./cli/triage.ts");
+      const result = await runTriage(
+        { issue: command.issue, noAgent: command.noAgent },
+        { probes: hostProbes(), version: VERSION, binary: process.execPath, ...(command.port !== undefined ? { port: command.port } : {}) },
+      );
+      console.log(result.text);
+      return result.code;
+    }
     case "service": {
       const { runService } = await import("./cli/service.ts");
       const result = await runService(command.action, command.serveArgs);

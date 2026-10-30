@@ -122,6 +122,23 @@ async function harness(options: HarnessOptions = {}): Promise<Harness> {
 const activitiesOf = (model: ReadModel, threadId: string) =>
   (model.threadTimeline[threadId] ?? []).filter((e) => e.kind === "activity").map((e) => model.activities[e.id]);
 
+describe("ProviderReactor: file attachments", () => {
+  it("appends the Attached files footer to the prompt but keeps the stored message text clean", async () => {
+    const h = await harness();
+    h.control.script(emit({ type: "settled", status: "completed" }));
+    const res = await h.engine.dispatch({
+      type: "turn.request",
+      threadId: h.threadId,
+      text: "read this",
+      attachments: [{ name: "spec.pdf", path: ".tide/attachments/X/spec.pdf", mediaType: "application/pdf", bytes: 1_258_291 }],
+    });
+    const requested = pick(res.events, "turn.requested");
+    await h.reactor.drain();
+    expect(h.control.sessionFor(h.threadId)?.inputs.map((i) => i.text)).toEqual(["read this\n\nAttached files (read them from disk):\n- .tide/attachments/X/spec.pdf (application/pdf, 1.2 MB)"]);
+    expect(requested.userMessage.text).toBe("read this");
+  });
+});
+
 describe("ProviderReactor: queued turns and reasoning", () => {
   it("runs a queued follow-up after the live turn settles, on the same session, in order", async () => {
     const h = await harness();

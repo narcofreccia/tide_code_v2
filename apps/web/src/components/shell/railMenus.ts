@@ -127,6 +127,7 @@ export function projectMenu(project: Project): MenuItem[] {
     { label: "New thread…", onSelect: () => ui.openNewThread({ projectId: project.id }) },
     { label: "New Experts session…", onSelect: () => ui.setNewExpertsProject(project.id) },
     { label: "Rename…", onSelect: () => ui.setProjectDialog({ kind: "rename", projectId: project.id }) },
+    { label: "Project icon…", onSelect: () => ui.setProjectDialog({ kind: "icon", projectId: project.id }) },
     { label: "Linked repositories…", onSelect: () => ui.setLinksProject(project.id) },
     { label: "Copy path", onSelect: () => void copyText(project.rootPath, "path") },
     {

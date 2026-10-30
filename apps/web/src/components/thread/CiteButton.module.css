@@ -1,0 +1,17 @@
+.cite {
+  position: fixed;
+  left: var(--cite-x, 50%);
+  top: var(--cite-y, 50%);
+  transform: translate(-50%, calc(-100% - 6px));
+  z-index: 20;
+  height: 22px;
+  padding: 0 var(--sp-2);
+  border: 1px solid var(--accent);
+  border-radius: var(--radius);
+  background: var(--surface);
+  color: var(--accent);
+  font-size: 11px;
+  box-shadow: var(--shadow-pop);
+  cursor: pointer;
+}
+.cite:hover { background: var(--surface-2); }

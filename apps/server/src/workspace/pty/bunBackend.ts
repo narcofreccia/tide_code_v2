@@ -68,6 +68,7 @@ export function createBunBackend(): PtyBackend {
       });
 
       return {
+        pid: (proc as { pid?: number }).pid,
         onData: (cb) => {
           onData = cb;
         },

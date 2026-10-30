@@ -119,3 +119,28 @@ describe("shortcuts registry", () => {
     expect(handleShortcut(new KeyboardEvent("keydown", { key: "ñ", code: "KeyN", altKey: true }))).toBe(false);
   });
 });
+
+describe("custom keybindings", () => {
+  it("honours a rebound chord and drops the old default", async () => {
+    const { useServerSettings } = await import("../state/serverSettings.ts");
+    attachFakeStore(modelWith({ threads: { t1: makeThread("t1") } }));
+    useUi.getState().selectThread("t1");
+    useServerSettings.setState({ settings: { ...useServerSettings.getState().settings, keybindings: { "focus-split": "mod+shift+9" } } });
+    expect(press("9", { shiftKey: true })).toBe(true);
+    expect(useUi.getState().focusMode).toBe("split");
+    useUi.getState().setFocusMode("thread");
+    expect(press("2")).toBe(false);
+    expect(useUi.getState().focusMode).toBe("thread");
+    useServerSettings.setState({ settings: { ...useServerSettings.getState().settings, keybindings: {} } });
+  });
+
+  it("keeps ⌘⇧E falling through from effort to the file tree by default", async () => {
+    const { useWorkbench } = await import("../state/workbench.ts").then((m) => ({ useWorkbench: m }));
+    void useWorkbench;
+    attachFakeStore(modelWith({ threads: { t1: makeThread("t1") } }));
+    useUi.getState().selectThread("t1");
+    useUi.getState().setFocusMode("workbench");
+    // effort has no models to cycle in this fixture, so the key reaches "Toggle file tree"
+    expect(press("e", { shiftKey: true })).toBe(true);
+  });
+});

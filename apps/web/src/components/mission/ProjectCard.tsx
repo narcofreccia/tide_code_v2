@@ -9,6 +9,7 @@ import { useModel } from "../../state/model.ts";
 import { useUi } from "../../state/ui.ts";
 import { NewThreadPopover } from "../shell/NewThreadPopover.tsx";
 import { Button } from "../ui/Button.tsx";
+import { ProjectIcon } from "../ui/ProjectIcon.tsx";
 import { ConfirmDialog, PromptDialog } from "../ui/Dialog.tsx";
 import { Pill } from "../ui/Pill.tsx";
 import { Popover } from "../ui/Popover.tsx";
@@ -74,6 +75,7 @@ export function ProjectCard({ project }: { project: Project }) {
   return (
     <article className={styles.card} aria-label={`Project ${project.title}`}>
       <div className={styles.cardHead}>
+        <ProjectIcon project={project} />
         <h3 className={styles.cardTitle}>{project.title}</h3>
         <span className={styles.path} title={project.rootPath}>
           {project.rootPath}

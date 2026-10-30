@@ -1,35 +1,40 @@
 import { useEffect, useRef, useState } from "react";
-import { useDrafts } from "../../state/drafts.ts";
+import { getDraft, useDrafts } from "../../state/drafts.ts";
 import { useComposerDraft } from "./useComposerDraft.ts";
 import type { Thread } from "@tide/contracts";
-import { newId } from "@tide/contracts";
-import { interruptTurn, sendTurn, turnRequestLanded } from "../../lib/threadActions.ts";
-import { steerTurn } from "../../lib/turnActions.ts";
-import { useFollowUp, type FollowUpMode } from "../../lib/followUp.ts";
-import { errorText } from "../../lib/dispatchOrToast.ts";
-import { showToast } from "../../state/toast.ts";
+import { interruptTurn } from "../../lib/threadActions.ts";
+import { useFollowUp } from "../../lib/followUp.ts";
 import { threadProviderStatus, useProviders, useThreadHarnessLabel } from "../../state/providers.ts";
 import { useUi } from "../../state/ui.ts";
 import { useWorkbench } from "../../state/workbench.ts";
 import { registerComposerFocus } from "../../lib/composerFocus.ts";
-import { applyMention, expandMentions, findMentionQuery, normalizePastedPath } from "../../lib/mentions.ts";
+import {
+  THREAD_DRAG_TYPE,
+  THREAD_PREFIX,
+  applyMention,
+  findMentionQuery,
+  insertAt,
+  normalizePastedPath,
+  threadMention,
+  threadMentionIds,
+} from "../../lib/mentions.ts";
+import { filesOf, splitFiles, transferHasFiles } from "../../lib/attachments.ts";
+import { COMPOSE_EVENT, applyCompose, readComposeDetail } from "../../lib/cite.ts";
 import { Button } from "../ui/Button.tsx";
 import { Kbd } from "../ui/Kbd.tsx";
 import { AttachmentStrip, useAttachments } from "./Attachments.tsx";
-import { imageFilesOf } from "../../lib/images.ts";
-import { MentionPicker, useMentionMatches } from "./MentionPicker.tsx";
+import { FileChips, ThreadContextChips, useFileAttachments } from "./FileAttachments.tsx";
+import { MentionPicker, useMentionMatches, type MentionItem } from "./MentionPicker.tsx";
+import { useComposerSend } from "./useComposerSend.ts";
 import { SlashPicker, useSlash } from "./SlashPicker.tsx";
 import type { SlashCommandInfo } from "@tide/contracts";
 import { ThreadLinkChips } from "./ThreadLinkChips.tsx";
 import { ThreadPills } from "./ThreadPills.tsx";
 import { FollowUpToggle } from "./FollowUpToggle.tsx";
 import { ProviderSwitchHint } from "./ProviderSwitchHint.tsx";
-import { COMPOSE_EVENT } from "./EmptyThread.tsx";
 import { DraftsBar } from "./DraftsBar.tsx";
 import { QueueList } from "./QueueList.tsx";
 import styles from "./Composer.module.css";
-
-const NO_IMAGES = "This harness does not accept images";
 
 const MIN_ROWS = 3;
 const MAX_ROWS = 8;
@@ -67,14 +72,13 @@ function threadColumnHasFocus(composer: HTMLElement | null): boolean {
 }
 
 export function Composer({ thread }: { thread: Thread }) {
-  const [busy, setBusy] = useState(false);
   const [mention, setMention] = useState<{ start: number; query: string; caret: number } | undefined>(undefined);
   const [cursor, setCursor] = useState(0);
   const input = useRef<HTMLTextAreaElement>(null);
   const root = useRef<HTMLDivElement>(null);
-  // idempotency key of the draft in flight: a retry of the same text reuses it
-  const pending = useRef<{ text: string; requestId: string } | undefined>(undefined);
+  const picker = useRef<HTMLInputElement>(null);
   const attachments = useAttachments();
+  const fileAttachments = useFileAttachments(thread.id);
   const draft = useComposerDraft(thread.id, attachments);
   const { text, setText } = draft;
   const stash = useDrafts((s) => s.stash);
@@ -85,26 +89,39 @@ export function Composer({ thread }: { thread: Thread }) {
   const followUp = useFollowUp(thread.id, status?.caps.steer === true);
   const running = thread.status === "running";
   const interrupting = thread.interrupting === true;
-  const matches = useMentionMatches(thread.id, mention?.query);
+  const matches = useMentionMatches(thread.id, mention?.query, thread.projectId);
   const listsCommands = status?.caps.commands === true;
   const slash = useSlash(thread, text, listsCommands);
   const harness = useThreadHarnessLabel(thread);
+  const files = fileAttachments.files;
+  const { send, busy, uploading } = useComposerSend({
+    thread,
+    text,
+    images: attachments.images,
+    files,
+    followUp,
+    onSent: () => {
+      draft.clear();
+      attachments.clear();
+    },
+  });
 
   useEffect(() => registerComposerFocus(() => input.current?.focus()), []);
 
-  // "Try an example" and friends fill the composer; they never send
+  // "Try an example", Cite and Quote fill the composer; they never send
   useEffect(() => {
     const onCompose = (e: Event): void => {
-      const detail = (e as CustomEvent<unknown>).detail;
-      if (typeof detail !== "string") return;
-      setText(detail);
+      const detail = readComposeDetail((e as CustomEvent<unknown>).detail);
+      if (!detail) return;
+      const next = applyCompose(getDraft(thread.id)?.text ?? "", detail);
+      setText(next);
       setMention(undefined);
       slash.close();
-      input.current?.focus();
+      placeCaret(next.length);
     };
     window.addEventListener(COMPOSE_EVENT, onCompose);
     return () => window.removeEventListener(COMPOSE_EVENT, onCompose);
-  }, []);
+  }, [thread.id, setText]);
 
   // Esc is also "close" for dialogs, popovers, the palette and Settings; stopping
   // the turn is only what it means while the thread column itself owns the focus.
@@ -121,13 +138,21 @@ export function Composer({ thread }: { thread: Thread }) {
     return () => window.removeEventListener("keydown", onKey);
   }, [running, interrupting, thread.id]);
 
-  const attach = (files: File[]): void => {
-    if (files.length === 0) return;
-    if (!acceptsImages) {
-      showToast(NO_IMAGES);
-      return;
-    }
-    void attachments.add(files);
+  /** Images ride inline when the harness takes them; everything else is uploaded on send. */
+  const attach = (picked: File[]): void => {
+    if (picked.length === 0) return;
+    const split = splitFiles(picked, acceptsImages);
+    if (split.images.length > 0) void attachments.add(split.images);
+    fileAttachments.add(split.files);
+  };
+
+  /** Drops `@thread:<id> ` at the caret (rail drag, picker). */
+  const insertThread = (id: string): void => {
+    if (threadMentionIds(text).includes(id)) return;
+    const caret = input.current?.selectionStart ?? text.length;
+    const next = insertAt(text, caret, threadMention(id));
+    setText(next.text);
+    placeCaret(next.caret);
   };
 
   const sync = (value: string, caret: number): void => {
@@ -156,50 +181,21 @@ export function Composer({ thread }: { thread: Thread }) {
     placeCaret(next.caret);
   };
 
-  const pick = (path: string): void => {
-    if (!mention) return;
-    const next = applyMention(text, mention, mention.caret, path);
+  const pick = (item: MentionItem | undefined): void => {
+    if (!mention || !item) return;
+    const token = item.kind === "file" ? item.path : `${THREAD_PREFIX}${item.id}`;
+    const next = applyMention(text, mention, mention.caret, token);
     setText(next.text);
     setMention(undefined);
     placeCaret(next.caret);
   };
 
-  /**
-   * Sending while the thread runs is allowed: the server queues the turn behind
-   * the live one, so a follow-up never has to wait for the agent to stop.
-   */
-  const send = (how?: FollowUpMode, background = false): void => {
-    const value = text.trim();
-    if ((!value && attachments.images.length === 0) || busy) return;
-    const steer = running && (how ?? followUp.mode) === "steer" && followUp.canSteer;
-    const images = attachments.images.map((image) => ({ mediaType: image.mediaType, data: image.data }));
-    const prompt = expandMentions(value);
-    if (pending.current?.text !== prompt) pending.current = { text: prompt, requestId: newId() };
-    const { requestId } = pending.current;
-    const sent = (): void => {
-      pending.current = undefined;
-      draft.clear();
-      attachments.clear();
-      if (background) useUi.getState().showMission();
-    };
-    setBusy(true);
-    const delivery = steer ? steerTurn(thread.id, prompt, images, requestId) : sendTurn(thread.id, prompt, images, requestId);
-    delivery
-      .then(sent)
-      .catch((error: unknown) => {
-        // the first attempt landed before the socket dropped: the retry was refused, not lost
-        if (!steer && turnRequestLanded(thread.id, requestId)) sent();
-        else showToast(`Sending failed: ${errorText(error)}`);
-      })
-      .finally(() => setBusy(false));
-  };
-
   const onKeyDown = (e: React.KeyboardEvent<HTMLTextAreaElement>): void => {
-    if (mention && matches.paths.length > 0) {
-      if (e.key === "ArrowDown") setCursor((v) => Math.min(matches.paths.length - 1, v + 1));
+    if (mention && matches.items.length > 0) {
+      if (e.key === "ArrowDown") setCursor((v) => Math.min(matches.items.length - 1, v + 1));
       else if (e.key === "ArrowUp") setCursor((v) => Math.max(0, v - 1));
-      else if (e.key === "Enter" && !e.metaKey && !e.ctrlKey) pick(matches.paths[cursor] ?? "");
-      else if (e.key === "Tab") pick(matches.paths[cursor] ?? "");
+      else if (e.key === "Enter" && !e.metaKey && !e.ctrlKey) pick(matches.items[cursor]);
+      else if (e.key === "Tab") pick(matches.items[cursor]);
       else if (e.key === "Escape") setMention(undefined);
       else return onDefaultKey(e);
       e.preventDefault();
@@ -225,37 +221,44 @@ export function Composer({ thread }: { thread: Thread }) {
     // running: ⌘↵ sends in the selected mode; idle: ⌘↵ sends in the background. ⌥↵ sends the other mode
     if (e.metaKey || e.ctrlKey) {
       e.preventDefault();
-      if (running) send(followUp.mode);
-      else send(undefined, true);
+      if (running) void send(followUp.mode);
+      else void send(undefined, true);
     } else if (e.altKey) {
       e.preventDefault();
-      send(running ? followUp.alternate : undefined);
+      void send(running ? followUp.alternate : undefined);
     }
   };
 
   const rows = Math.min(MAX_ROWS, Math.max(MIN_ROWS, text.split("\n").length));
-  const nothingToSend = text.trim() === "" && attachments.images.length === 0;
-  const primaryLabel = !running ? "Send" : followUp.mode === "steer" ? "Steer" : "Queue";
+  const nothingToSend = text.trim() === "" && attachments.images.length === 0 && files.length === 0;
+  const primaryLabel = uploading > 0 ? "Uploading…" : !running ? "Send" : followUp.mode === "steer" ? "Steer" : "Queue";
 
   return (
     <div
       className={styles.composer}
       ref={root}
       onDragOver={(e) => {
-        if (imageFilesOf(e.dataTransfer).length > 0 || (e.dataTransfer?.types ?? []).includes("Files")) {
-          e.preventDefault();
-        }
+        const types = e.dataTransfer?.types ?? [];
+        if (types.includes(THREAD_DRAG_TYPE) || transferHasFiles(e.dataTransfer)) e.preventDefault();
       }}
       onDrop={(e) => {
-        const files = imageFilesOf(e.dataTransfer);
-        if (files.length === 0) return;
+        // a rail thread becomes an @thread mention
+        const threadId = e.dataTransfer?.getData(THREAD_DRAG_TYPE) ?? "";
+        if (threadId !== "") {
+          e.preventDefault();
+          if (threadId !== thread.id) insertThread(threadId);
+          return;
+        }
+        // any file: never let the browser navigate to it; images vs files is decided in attach
+        if (!transferHasFiles(e.dataTransfer)) return;
         e.preventDefault();
-        attach(files);
+        attach(filesOf(e.dataTransfer));
       }}
     >
       {mention ? <MentionPicker matches={matches} cursor={cursor} onPick={pick} /> : null}
       {!mention && slash.query ? <SlashPicker slash={slash} cursor={cursor} onPick={pickCommand} /> : null}
       <AttachmentStrip images={attachments.images} onRemove={attachments.remove} />
+      <FileChips files={files} onRemove={fileAttachments.remove} />
       <QueueList threadId={thread.id} running={running} canSteer={followUp.canSteer} />
       <textarea
         ref={input}
@@ -274,10 +277,10 @@ export function Composer({ thread }: { thread: Thread }) {
           else slash.sync(element.value, caret);
         }}
         onPaste={(e) => {
-          const files = imageFilesOf(e.clipboardData);
-          if (files.length > 0) {
+          const pastedFiles = filesOf(e.clipboardData);
+          if (pastedFiles.length > 0) {
             e.preventDefault();
-            attach(files);
+            attach(pastedFiles);
             return;
           }
           const pasted = e.clipboardData.getData("text");
@@ -292,6 +295,7 @@ export function Composer({ thread }: { thread: Thread }) {
         }}
         onKeyDown={onKeyDown}
       />
+      <ThreadContextChips text={text} onChange={setText} />
       {slash.unknown === undefined ? null : (
         <p className={styles.switchHint} role="status">
           Unknown command for {harness}; it will be sent as text
@@ -302,6 +306,20 @@ export function Composer({ thread }: { thread: Thread }) {
         <ThreadLinkChips threadId={thread.id} />
       </div>
       <div className={styles.actions}>
+        <input
+          ref={picker}
+          type="file"
+          multiple
+          hidden
+          aria-label="Attach files"
+          onChange={(e) => {
+            attach(Array.from(e.currentTarget.files ?? []));
+            e.currentTarget.value = "";
+          }}
+        />
+        <Button variant="quiet" title="Attach files" aria-label="Attach files…" onClick={() => picker.current?.click()}>
+          📎
+        </Button>
         {running ? <FollowUpToggle followUp={followUp} provider={thread.provider} /> : null}
         <DraftsBar
           threadId={thread.id}
@@ -312,7 +330,9 @@ export function Composer({ thread }: { thread: Thread }) {
           onOpen={setStashOpen}
         />
         <span className={styles.hint}>
-          {interrupting ? (
+          {uploading > 0 ? (
+            <span role="status">Uploading {uploading === 1 ? "1 file" : `${uploading} files`}…</span>
+          ) : interrupting ? (
             <span className={styles.interrupting}>interrupting…</span>
           ) : (
             <>
@@ -338,7 +358,7 @@ export function Composer({ thread }: { thread: Thread }) {
               <Kbd>Esc</Kbd>
             </Button>
           ) : null}
-          <Button variant="primary" onClick={() => send()} disabled={busy || nothingToSend}>
+          <Button variant="primary" onClick={() => void send()} disabled={busy || nothingToSend}>
             {primaryLabel}
           </Button>
         </span>

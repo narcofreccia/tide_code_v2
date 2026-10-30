@@ -67,3 +67,30 @@
   overflow-y: auto;
   padding: var(--sp-4);
 }
+
+/* phone: the section list becomes a scrollable strip of pills above the content */
+@media (max-width: 720px) {
+  .view {
+    grid-template-columns: minmax(0, 1fr);
+    grid-template-rows: auto minmax(0, 1fr);
+  }
+  .nav {
+    flex-direction: row;
+    align-items: center;
+    gap: var(--sp-2);
+    padding: var(--sp-2) var(--sp-3);
+    border-right: 0;
+    border-bottom: 1px solid var(--border);
+    overflow-x: auto;
+    overflow-y: hidden;
+    -webkit-overflow-scrolling: touch;
+    scrollbar-width: none;
+  }
+  .nav::-webkit-scrollbar { display: none; }
+  .heading { display: none; }
+  .list { display: flex; flex: none; gap: var(--sp-1); }
+  .list > li { flex: none; }
+  .navItem { width: auto; padding: 0 var(--sp-3); border-radius: 999px; white-space: nowrap; }
+  .navFoot { flex: none; padding-top: 0; border-top: 0; }
+  .content { padding: var(--sp-3); }
+}

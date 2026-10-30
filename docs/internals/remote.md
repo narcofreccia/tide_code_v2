@@ -10,10 +10,12 @@ servers. This page covers what one server exposes and how a client gets in.
 tide serve [--host 0.0.0.0] [--port 3777] [--data <dir>] [--name <machine name>] [--web <dir>] [--log <file>]
 tide pair [--port <n>] [--host <h>] [--no-qr]
 tide doctor [--port <n>]
+tide triage [--issue] [--no-agent] [--port <n>]
 tide service install [serve flags] | uninstall | status
 tide --version
 ```
 
+- `tide triage` writes `<TIDE_HOME>/triage/<time>.md` (doctor checks, version/OS/node, binary path, last 200 log lines, settings.json; bearer token, `decisions.apiKey`, `sk-`/`ghp_`-style strings redacted). It never launches an agent: it prints `claude "Read <file> and help me fix Tide on this machine"` to paste, or with `--issue` a GitHub issue body.
 - `tide serve` binds every interface by default. The no-subcommand form (desktop sidecar,
   `pnpm dev`) stays on `127.0.0.1`.
 - On start it prints the environment id, the name, one `http://<ip>:<port>` line per routable

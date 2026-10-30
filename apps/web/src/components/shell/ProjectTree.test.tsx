@@ -200,6 +200,7 @@ describe("rail project menu", () => {
       "New thread…",
       "New Experts session…",
       "Rename…",
+      "Project icon…",
       "Linked repositories…",
       "Copy path",
       "Archive project…",

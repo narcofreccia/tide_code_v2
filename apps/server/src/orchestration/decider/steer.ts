@@ -1,5 +1,5 @@
 import type { CommandOf, Message, ReadModel, Thread, Turn, TurnStatus } from "@tide/contracts";
-import { attachmentsOf, fail, isArchived, ok, type DecideContext, type DecideResult } from "./types.ts";
+import { attachmentsOf, badAttachment, fail, isArchived, ok, type DecideContext, type DecideResult } from "./types.ts";
 
 type SteerCommand =
   | CommandOf<"turn.steer">
@@ -43,13 +43,15 @@ export function decideSteer(model: ReadModel, command: SteerCommand, ctx: Decide
       if (thread.rollback?.status === "rolling") return fail("busy", `thread ${thread.id} is rolling back`);
       const turn = liveTurn(model, thread);
       if (!turn) return fail("conflict", NOTHING_RUNNING);
+      const badFile = badAttachment(command.attachments);
+      if (badFile !== undefined) return fail("invalid-command", badFile);
       const message: Message = {
         id: ctx.newId(),
         threadId: thread.id,
         turnId: turn.id,
         role: "user",
         text: command.text,
-        ...attachmentsOf(command.images),
+        ...attachmentsOf(command.images, command.attachments),
         steer: true,
         createdAt: ctx.now,
       };

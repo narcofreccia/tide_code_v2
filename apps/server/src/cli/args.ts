@@ -8,6 +8,7 @@ export type CliCommand =
   | { cmd: "serve"; args: string[]; legacy: boolean }
   | { cmd: "pair"; port?: number; host?: string; qr: boolean }
   | { cmd: "doctor"; port?: number }
+  | { cmd: "triage"; issue: boolean; noAgent: boolean; port?: number }
   | { cmd: "service"; action: "install" | "uninstall" | "status"; serveArgs: string[] };
 
 export class CliError extends Error {}
@@ -19,6 +20,8 @@ export const USAGE = `usage:
              ask the running server for a one-time pairing code (6 digits, 5 minutes)
   tide doctor [--port <n>]
              check node, git/gh/rg, harness CLIs, TIDE_HOME, the port and server.json
+  tide triage [--issue] [--no-agent] [--port <n>]
+             write a redacted diagnostics report to <TIDE_HOME>/triage/<time>.md; prints the command to hand it to your harness, or a GitHub issue body with --issue
   tide service install [serve flags] | uninstall | status
              run \`tide serve\` at login (launchd on macOS, systemd --user on Linux)
   tide --version
@@ -74,6 +77,17 @@ export function parseCli(argv: string[]): CliCommand {
       if (rest.length === 0) return { cmd: "doctor" };
       if (rest[0] === "--port" && rest.length === 2) return { cmd: "doctor", port: portOf(rest[1], "--port") };
       throw new CliError(`unknown argument ${String(rest[0])} for tide doctor`);
+    }
+    case "triage": {
+      const out: { cmd: "triage"; issue: boolean; noAgent: boolean; port?: number } = { cmd: "triage", issue: false, noAgent: false };
+      for (let i = 0; i < rest.length; i++) {
+        const arg = rest[i];
+        if (arg === "--issue") out.issue = true;
+        else if (arg === "--no-agent") out.noAgent = true;
+        else if (arg === "--port") out.port = portOf(rest[++i], "--port");
+        else throw new CliError(`unknown argument ${String(arg)} for tide triage`);
+      }
+      return out;
     }
     case "service": {
       const [action, ...serveArgs] = rest;

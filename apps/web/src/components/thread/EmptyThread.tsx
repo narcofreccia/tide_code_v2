@@ -1,13 +1,14 @@
 import type { Thread } from "@tide/contracts";
 import { useUi } from "../../state/ui.ts";
 import { Button } from "../ui/Button.tsx";
+import { COMPOSE_EVENT, compose } from "../../lib/cite.ts";
 import styles from "./EmptyThread.module.css";
 
 /**
- * `window` event the composer listens for: `detail` is the text to put in the
- * composer (it does not send). Dispatched by the example-prompt button.
+ * `window` event the composer listens for (see `lib/cite.ts`): `detail` is a string
+ * (replace) or `{ text, mode: "replace" | "append" }`. It never sends.
  */
-export const COMPOSE_EVENT = "tide:compose";
+export { COMPOSE_EVENT };
 
 export const EXAMPLE_PROMPT = "Explain the structure of this repo, then suggest one small cleanup.";
 
@@ -50,7 +51,7 @@ export function EmptyThread({ thread }: { thread: Thread }) {
         instead.
       </p>
       <Button
-        onClick={() => window.dispatchEvent(new CustomEvent<string>(COMPOSE_EVENT, { detail: EXAMPLE_PROMPT }))}
+        onClick={() => compose(EXAMPLE_PROMPT)}
       >
         Try: “{EXAMPLE_PROMPT}”
       </Button>

@@ -67,3 +67,17 @@ describe("drafts store", () => {
     expect(second).not.toBe(third);
   });
 });
+
+describe("R11 file attachments in drafts", () => {
+  it("persists file metadata (not bytes) and counts a files-only draft as non-empty", async () => {
+    const file = { id: "file-1", name: "spec.pdf", mediaType: "application/pdf", bytes: 3 };
+    setDraft("t1", { files: [file] });
+    expect(getDraft("t1")?.files).toEqual([file]);
+    flushDrafts();
+    resetDrafts();
+    await hydrateDrafts();
+    expect(getDraft("t1")?.files).toEqual([file]);
+    setDraft("t1", { files: [] });
+    expect(getDraft("t1")).toBeUndefined();
+  });
+});
