@@ -1,126 +1,100 @@
-import { selectInbox, selectOpenPrCount } from "@tide/client";
-import { usePrs } from "../prs/prData.ts";
+import { useEffect, useLayoutEffect, useRef } from "react";
+import { selectProjects } from "@tide/client";
 import { useModel } from "../../state/model.ts";
-import { useUi } from "../../state/ui.ts";
-import { Button } from "../ui/Button.tsx";
-import { Kbd } from "../ui/Kbd.tsx";
-import { Pill } from "../ui/Pill.tsx";
-import { AddProjectForm } from "./AddProjectForm.tsx";
-import { NeedsYouGroup } from "./NeedsYouGroup.tsx";
-import { ProjectTree } from "./ProjectTree.tsx";
+import { clampRailWidth, useUi } from "../../state/ui.ts";
+import { useRailSearch } from "../../state/railSearch.ts";
+import { detectIconOnce } from "../../lib/projectIcon.ts";
+import { ProjectChips } from "./ProjectChips.tsx";
+import { RailEmpty } from "./RailEmpty.tsx";
+import { RailGroups } from "./RailGroups.tsx";
+import { RailHeader } from "./RailHeader.tsx";
+import { RailSearchResults } from "./RailSearch.tsx";
 import { RailSelectionBar } from "./RailSelectionBar.tsx";
+import { Strip } from "./Strip.tsx";
 import { useInboxKeys } from "./useInboxKeys.ts";
 import { useMarkSeen } from "./useMarkSeen.ts";
-import { StatusLegend } from "./StatusLegend.tsx";
 import styles from "./Rail.module.css";
 
-/** Open PRs: the PR tab's list once it has loaded, else the thread-linked ones the read model knows. */
-function useOpenPrCount(): number {
-  const listed = usePrs((s) => (s.fetchedAt === undefined ? undefined : s.items.filter((i) => i.pr.state === "open").length));
-  const known = useModel((s) => selectOpenPrCount(s.model));
-  return listed ?? known;
+/** Projects without an icon get one detected once (favicon / emoji), wherever they are listed. */
+function useDetectIcons(ids: string): void {
+  useEffect(() => {
+    for (const id of ids.split("\n")) if (id !== "") detectIconOnce(id);
+  }, [ids]);
 }
 
-/** The two R10 pages under Mission Control: "Pull requests · n open" and "Usage". */
-function RailPages({ view }: { view: string }) {
-  const open = useOpenPrCount();
-  const showPrs = useUi((s) => s.showPrs);
-  const showUsage = useUi((s) => s.showUsage);
+/** Drag handle on the panel's right edge: 240–360px, persisted. */
+function ResizeHandle() {
+  const start = useRef<{ x: number; width: number } | undefined>(undefined);
   return (
-    <div className={styles.pages}>
-      <Button
-        variant="quiet"
-        className={`${styles.page} ${view === "prs" ? styles.activePage : ""}`}
-        aria-current={view === "prs" ? "page" : undefined}
-        onClick={() => showPrs(null)}
-      >
-        Pull requests{open > 0 ? ` · ${open} open` : ""}
-      </Button>
-      <Button
-        variant="quiet"
-        className={`${styles.page} ${view === "usage" ? styles.activePage : ""}`}
-        aria-current={view === "usage" ? "page" : undefined}
-        onClick={() => showUsage()}
-      >
-        Usage
-      </Button>
-    </div>
+    <div
+      className={styles.resize}
+      role="separator"
+      aria-orientation="vertical"
+      aria-label="Resize rail"
+      onPointerDown={(e) => {
+        start.current = { x: e.clientX, width: useUi.getState().railWidth };
+        e.currentTarget.setPointerCapture(e.pointerId);
+      }}
+      onPointerMove={(e) => {
+        if (start.current === undefined) return;
+        useUi.getState().setRailWidth(start.current.width + e.clientX - start.current.x);
+      }}
+      onPointerUp={() => {
+        start.current = undefined;
+      }}
+      onDoubleClick={() => useUi.getState().setRailWidth(clampRailWidth(280))}
+    />
   );
 }
 
-export function Rail() {
-  const inboxCount = useModel((s) => selectInbox(s.model).length);
-  const collapsed = useUi((s) => s.railCollapsed);
-  const toggleRail = useUi((s) => s.toggleRail);
-  const view = useUi((s) => s.view);
-  const showMission = useUi((s) => s.showMission);
-  const toggleSettings = useUi((s) => s.toggleSettings);
-  const newProjectOpen = useUi((s) => s.newProjectOpen);
-  const setNewProjectOpen = useUi((s) => s.setNewProjectOpen);
-  useInboxKeys();
-  useMarkSeen();
+/** The rail panel: header (search, New), project chips, then the groups or the search results. */
+function RailPanel() {
+  const model = useModel((s) => s.model);
+  const projects = selectProjects(model);
+  const selectedProjectId = useUi((s) => s.selectedProjectId);
+  const width = useUi((s) => s.railWidth);
+  const navRef = useRef<HTMLElement>(null);
+  // a custom property, not a style object: the CSS owns the layout
+  useLayoutEffect(() => {
+    navRef.current?.style.setProperty("--rail-w", `${width}px`);
+  }, [width]);
+  const query = useRailSearch((s) => s.query);
+  const scoped = projects.find((p) => p.id === selectedProjectId);
+  const projectIds = scoped ? [scoped.id] : projects.map((p) => p.id);
+  const showProject = scoped === undefined && projects.length > 1;
+  const anyThread = Object.values(model.threads).some((t) => projectIds.includes(t.projectId));
+  useDetectIcons(projects.filter((p) => p.icon === undefined).map((p) => p.id).join("\n"));
 
-  if (collapsed) {
-    return (
-      <nav className={`${styles.rail} ${styles.collapsed}`} aria-label="Navigation">
-        <Button variant="quiet" onClick={toggleRail} title="Expand rail (⌘B)" aria-label="Expand rail">
-          ☰
-        </Button>
-        <Button variant="quiet" onClick={showMission} title="Mission Control (⌘0)" aria-label="Mission Control">
-          ◫
-        </Button>
-        <Button variant="quiet" onClick={() => useUi.getState().showPrs(null)} title="Pull requests" aria-label="Pull requests">
-          ⇡
-        </Button>
-        <Button variant="quiet" onClick={() => useUi.getState().showUsage()} title="Usage" aria-label="Usage">
-          ▥
-        </Button>
-        {inboxCount > 0 ? <Pill tone="needs">{inboxCount}</Pill> : null}
-        <Button variant="quiet" onClick={toggleSettings} title="Settings" aria-label="Settings">
-          ⚙
-        </Button>
-      </nav>
-    );
-  }
+  let body: React.ReactNode;
+  if (projects.length === 0) body = <RailEmpty kind="projects" />;
+  else if (query.trim() !== "")
+    body = <RailSearchResults query={query} projectId={scoped?.id ?? null} projectIds={projectIds} showProject={showProject} />;
+  else if (!anyThread) body = <RailEmpty kind="threads" projectId={scoped?.id ?? projects[0]?.id ?? ""} />;
+  else body = <RailGroups projectIds={projectIds} showProject={showProject} />;
 
   return (
-    <nav className={styles.rail} aria-label="Navigation">
-      <div className={styles.head}>
-        <Button variant="quiet" onClick={toggleRail} title="Collapse rail" aria-label="Collapse rail">
-          ☰
-        </Button>
-        <Button variant="quiet" onClick={showMission} className={styles.mission} title="Mission Control (⌘0)">
-          Mission Control
-        </Button>
-      </div>
-      <RailPages view={view} />
-
+    <nav ref={navRef} className={styles.panel} aria-label="Navigation">
+      <RailHeader projects={projects} scoped={scoped} />
+      <ProjectChips projects={projects} />
       <RailSelectionBar />
-      <NeedsYouGroup />
-
-      <div className={styles.section}>
-        <span className={styles.heading}>Projects</span>
-        <Button variant="quiet" onClick={() => setNewProjectOpen(!newProjectOpen)} title="Add a repository">
-          + project
-        </Button>
-      </div>
-      {newProjectOpen ? <AddProjectForm onDone={() => setNewProjectOpen(false)} /> : null}
-
-      <div className={styles.scroll}>
-        <ProjectTree />
-      </div>
-
-      <div className={styles.foot}>
-        <Button
-          variant="quiet"
-          onClick={toggleSettings}
-          className={view === "settings" ? styles.activeFoot : undefined}
-        >
-          ⚙ Settings
-        </Button>
-        <StatusLegend />
-        <Kbd>⌘B</Kbd>
-      </div>
+      <div className={styles.scroll}>{body}</div>
+      <ResizeHandle />
     </nav>
+  );
+}
+
+/**
+ * Desktop sidebar: the 44px icon strip, always, and beside it the rail panel
+ * unless collapsed (⌘B, or the strip's Inbox button).
+ */
+export function Rail() {
+  const collapsed = useUi((s) => s.railCollapsed);
+  useInboxKeys();
+  useMarkSeen();
+  return (
+    <div className={styles.sidebar}>
+      <Strip />
+      {collapsed ? null : <RailPanel />}
+    </div>
   );
 }

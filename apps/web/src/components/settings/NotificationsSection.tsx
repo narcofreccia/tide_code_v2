@@ -1,6 +1,5 @@
 import { useEffect, useState } from "react";
 import { selectProjects } from "@tide/client";
-import { Checkbox } from "../ui/Choice.tsx";
 import { useModel } from "../../state/model.ts";
 import {
   permissionState,
@@ -8,7 +7,17 @@ import {
   useNotifications,
   type PermissionState,
 } from "../../state/notifications.ts";
-import section from "./Section.module.css";
+import type { SectionMeta } from "./search.ts";
+import { SettingNote, SettingsGroup } from "./ui/SettingsGroup.tsx";
+import { SettingsPage } from "./ui/SettingsPage.tsx";
+import { SettingRow } from "./ui/SettingRow.tsx";
+import { SettingToggle } from "./ui/SettingToggle.tsx";
+
+export const META: SectionMeta = {
+  title: "Notifications",
+  blurb: "OS notifications when a thread needs you, finishes, fails or hits a usage limit while you look elsewhere.",
+  keywords: ["Notify me when a thread needs me, finishes, fails or hits a usage limit", "Play a short sound", "Muted projects", "mute"],
+};
 
 /** OS notifications when a thread needs you, finishes, fails or hits a usage limit while you look elsewhere. */
 export function NotificationsSection() {
@@ -30,61 +39,50 @@ export function NotificationsSection() {
   const blocked = permission === "denied" || permission === "unsupported";
 
   return (
-    <div className={section.section}>
-      <div className={section.head}>
-        <h3 className={section.title}>Notifications</h3>
-      </div>
-      <ul className={section.rows}>
-        <li className={section.row}>
-          <Checkbox
-            className={section.check}
-            checked={enabled}
-            disabled={blocked}
-            onChange={(event) => void onEnable(event.target.checked)}
-          >
-            Notify me when a thread needs me, finishes, fails or hits a usage limit
-          </Checkbox>
-        </li>
-        <li className={section.row}>
-          <Checkbox
-            className={section.check}
-            checked={sound}
-            disabled={!enabled}
-            onChange={(event) => setSound(event.target.checked)}
-          >
-            Play a short sound
-          </Checkbox>
-        </li>
-      </ul>
-      {blocked ? (
-        <p className={section.note} role="status">
-          {permission === "denied"
-            ? "Notifications are blocked. Allow them for Tide in your browser or system settings, then come back."
-            : "This environment does not support notifications."}
-        </p>
-      ) : null}
+    <SettingsPage title={META.title} blurb={META.blurb}>
+      <SettingsGroup
+        title="This device"
+        help="Nothing fires for the thread you are looking at while Tide has focus. Clicking a notification opens its thread in the browser; the desktop app brings Tide forward."
+      >
+        <SettingRow
+          label="Notify me when a thread needs me, finishes, fails or hits a usage limit"
+          control={(id) => (
+            <SettingToggle
+              id={id}
+              checked={enabled}
+              disabled={blocked}
+              onChange={(on) => {
+                void onEnable(on);
+              }}
+            />
+          )}
+        />
+        <SettingRow
+          label="Play a short sound"
+          control={(id) => <SettingToggle id={id} checked={sound} disabled={!enabled} onChange={setSound} />}
+        />
+        {blocked ? (
+          <SettingNote role="status">
+            {permission === "denied"
+              ? "Notifications are blocked. Allow them for Tide in your browser or system settings, then come back."
+              : "This environment does not support notifications."}
+          </SettingNote>
+        ) : null}
+      </SettingsGroup>
       {projects.length > 0 ? (
-        <>
-          <h4 className={section.title}>Muted projects</h4>
-          <ul className={section.rows}>
-            {projects.map((p) => (
-              <li key={p.id} className={section.row}>
-                <Checkbox
-                  className={section.check}
-                  checked={mutedProjectIds.includes(p.id)}
-                  onChange={() => toggleProjectMuted(p.id)}
-                >
-                  {p.title}
-                </Checkbox>
-              </li>
-            ))}
-          </ul>
-        </>
+        <SettingsGroup title="Muted projects" help="A muted project's threads never notify.">
+          {projects.map((p) => (
+            <SettingRow
+              key={p.id}
+              id={`setting-muted-${p.id}`}
+              label={p.title}
+              control={(id) => (
+                <SettingToggle id={id} checked={mutedProjectIds.includes(p.id)} onChange={() => toggleProjectMuted(p.id)} />
+              )}
+            />
+          ))}
+        </SettingsGroup>
       ) : null}
-      <p className={section.note}>
-        Nothing fires for the thread you are looking at while Tide has focus. Clicking a notification opens its thread
-        in the browser; the desktop app brings Tide forward.
-      </p>
-    </div>
+    </SettingsPage>
   );
 }

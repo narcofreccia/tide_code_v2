@@ -1,5 +1,9 @@
 import { useServerInfo } from "../../lib/useServerInfo.ts";
-import section from "./Section.module.css";
+import type { SectionMeta } from "./search.ts";
+import { SettingsGroup } from "./ui/SettingsGroup.tsx";
+import { SettingsPage } from "./ui/SettingsPage.tsx";
+import { SettingRow } from "./ui/SettingRow.tsx";
+import styles from "./ui/settings.module.css";
 
 const LINKS = [
   { href: "https://github.com/narcofreccia/tide_code_v2", label: "Repository" },
@@ -8,39 +12,36 @@ const LINKS = [
   { href: "https://opencode.ai", label: "OpenCode" },
 ];
 
+export const META: SectionMeta = {
+  title: "About",
+  blurb: "Tide is an orchestrator for the coding harnesses you already pay for. It never stores provider credentials.",
+  keywords: ["Server version", "Started", "version", ...LINKS.map((l) => l.label)],
+};
+
 export function AboutSection() {
   const info = useServerInfo();
   return (
-    <div className={section.section}>
-      <div className={section.head}>
-        <h3 className={section.title}>About</h3>
-      </div>
-      <ul className={section.rows}>
-        <li className={section.row}>
-          <span className={section.label}>Server version</span>
-          <span className={section.value}>{info?.version ?? "—"}</span>
-        </li>
-        <li className={section.row}>
-          <span className={section.label}>Started</span>
-          <span className={section.value}>
-            {info ? new Date(info.startedAt).toLocaleString() : "—"}
-          </span>
-        </li>
-      </ul>
-      <ul className={section.rows}>
+    <SettingsPage title={META.title} blurb={META.blurb}>
+      <SettingsGroup title="Server">
+        <SettingRow label="Server version" control={<span className={styles.value}>{info?.version ?? "—"}</span>} />
+        <SettingRow
+          label="Started"
+          control={<span className={styles.value}>{info ? new Date(info.startedAt).toLocaleString() : "—"}</span>}
+        />
+      </SettingsGroup>
+      <SettingsGroup title="Links">
         {LINKS.map((link) => (
-          <li key={link.href} className={section.row}>
-            <span className={section.label}>{link.label}</span>
-            <a href={link.href} target="_blank" rel="noreferrer" className={section.value}>
-              {link.href}
-            </a>
-          </li>
+          <SettingRow
+            key={link.href}
+            label={link.label}
+            control={
+              <a href={link.href} target="_blank" rel="noreferrer" className={styles.value}>
+                {link.href}
+              </a>
+            }
+          />
         ))}
-      </ul>
-      <p className={section.note}>
-        Tide is an orchestrator for the coding harnesses you already pay for. It never stores
-        provider credentials.
-      </p>
-    </div>
+      </SettingsGroup>
+    </SettingsPage>
   );
 }

@@ -1,21 +1,31 @@
-import { useState } from "react";
+import { useEffect, useRef, useState } from "react";
 import { THREAD_DRAG_TYPE } from "../../lib/mentions.ts";
 import type { Thread } from "@tide/contracts";
-import { settleThread, unsettleThread, updateThread } from "../../lib/threadActions.ts";
+import { canMergeBack, mergeBackThread, settleThread, unsettleThread, updateThread } from "../../lib/threadActions.ts";
 import { isThreadMerged } from "@tide/client";
-import { relativeTime } from "../../lib/relativeTime.ts";
+import type { SearchHit } from "@tide/contracts";
+import { relativeTime, relativeUntil } from "../../lib/relativeTime.ts";
 import { PROVIDER_MONOGRAMS, threadStateKey } from "../../lib/vocab.ts";
 import { useThreadHarnessLabel } from "../../state/providers.ts";
 import { useServerSettings } from "../../state/serverSettings.ts";
 import { useModel } from "../../state/model.ts";
 import { useUi } from "../../state/ui.ts";
 import { activityCount, isUnread, useLastSeen } from "../../state/lastSeen.ts";
-import { selectRailRange, setRailAnchor, toggleRailSelected, useRailSelection } from "../../state/railSelection.ts";
+import {
+  requestRailSnooze,
+  selectRailRange,
+  setRailAnchor,
+  toggleRailSelected,
+  useRailMenuRequest,
+  useRailSelection,
+} from "../../state/railSelection.ts";
 import { ContextMenu, type MenuItem, type MenuPosition } from "../ui/Menu.tsx";
 import { ThreadGlyph } from "../ui/StatusGlyph.tsx";
-import { MergeGlyph, PrGlyph } from "../ui/VcsBadges.tsx";
-import { threadMenu } from "./railMenus.ts";
-import styles from "./ProjectTree.module.css";
+import { MergeGlyph } from "../ui/VcsBadges.tsx";
+import { Icon } from "../ui/Icon.tsx";
+import { firstGrapheme } from "../ui/ProjectIcon.tsx";
+import { snoozeItems, threadMenu } from "./railMenus.ts";
+import styles from "./RailThreadRow.module.css";
 
 const ROLE_GLYPH: Record<NonNullable<Thread["role"]>, string> = {
   expert: "◆",
@@ -45,7 +55,7 @@ export const SETTLE_TAGS: Record<NonNullable<Thread["settleReason"]>, string> = 
 };
 
 /** Thread ids of the rail's rows in visible order: what a shift-click range spans. */
-function visibleOrder(from: HTMLElement): string[] {
+export function visibleOrder(from: HTMLElement): string[] {
   const root: ParentNode = from.closest("nav") ?? document;
   const ids = Array.from(root.querySelectorAll<HTMLElement>("[data-rail-thread]")).map((n) => n.dataset.railThread ?? "");
   return [...new Set(ids.filter((id) => id !== ""))];
@@ -80,17 +90,33 @@ function RenameField({ thread, onDone }: { thread: Thread; onDone: () => void })
   );
 }
 
-/** A rail thread row with right-click and hover `⋯` menus; children nest below it. */
-export function RailThreadRow({ thread, siblings }: { thread: Thread; siblings: readonly Thread[] }) {
+export interface RailThreadRowProps {
+  thread: Thread;
+  siblings: readonly Thread[];
+  /** scope is All and there is more than one project: a project initial in the meta column */
+  showProject?: boolean;
+  /** a server search hit: its snippet is the second line */
+  hit?: SearchHit;
+}
+
+/**
+ * A rail thread row: status glyph (a settle box on hover), title, meta column
+ * (harness, project, time), an optional tag line, and hover merge / `…` actions.
+ * Children (forks, delegates) nest below it.
+ */
+export function RailThreadRow({ thread, siblings, showProject = false, hit }: RailThreadRowProps) {
   const active = useUi((s) => s.view === "thread" && s.selectedThreadId === thread.id);
   const selectThread = useUi((s) => s.selectThread);
   const picked = useRailSelection((s) => s.ids.includes(thread.id));
   const count = useModel((s) => activityCount(s.model, thread.id));
+  const projectTitle = useModel((s) => (showProject ? s.model.projects[thread.projectId]?.title : undefined));
   const selectedId = useUi((s) => (s.view === "thread" ? s.selectedThreadId : null));
   const unread = useLastSeen((s) => isUnread(thread, count, s, selectedId));
+  const snoozeAsked = useRailMenuRequest((s) => s.snoozeFor === thread.id);
   const settled = thread.settledAt !== undefined;
-  const [menu, setMenu] = useState<{ at: MenuPosition; items: MenuItem[] } | undefined>(undefined);
+  const [menu, setMenu] = useState<{ at: MenuPosition; items: MenuItem[]; label: string } | undefined>(undefined);
   const [renaming, setRenaming] = useState(false);
+  const rowRef = useRef<HTMLDivElement>(null);
   const low = useServerSettings((s) => s.settings.decisions.grayZone.low);
   const j = thread.judge;
   const judge = thread.delegatedBy !== undefined && thread.status !== "running" && j?.label !== undefined && j.confidence >= low ? { label: j.label, source: j.source, confidence: j.confidence } : undefined;
@@ -98,7 +124,9 @@ export function RailThreadRow({ thread, siblings }: { thread: Thread; siblings: 
   const archived = thread.archivedAt !== undefined;
   const state = threadStateKey(thread);
   const loud = state === "needs" || state === "running";
-  const hasVcs = thread.pr !== undefined || thread.merge !== undefined || isThreadMerged(thread);
+  const merged = thread.merge !== undefined || isThreadMerged(thread);
+  const mergeable = !archived && canMergeBack(thread);
+  const snoozedUntil = thread.snoozedUntil !== undefined && thread.snoozedUntil > Date.now() ? thread.snoozedUntil : undefined;
   const harness = useThreadHarnessLabel(thread);
   const tip = [
     `${PROVIDER_MONOGRAMS[thread.provider]} · ${harness}`,
@@ -106,19 +134,31 @@ export function RailThreadRow({ thread, siblings }: { thread: Thread; siblings: 
   ]
     .filter(Boolean)
     .join(" · ");
+  const hasTags =
+    hit !== undefined || (settled && thread.settleReason !== undefined) || thread.pr !== undefined || merged ||
+    judge !== undefined || thread.delegateRole !== undefined || snoozedUntil !== undefined;
 
   const openMenu = (at: MenuPosition): void =>
-    setMenu({ at, items: threadMenu(useModel.getState().model, thread, () => setRenaming(true)) });
+    setMenu({ at, label: "Thread actions", items: threadMenu(useModel.getState().model, thread, () => setRenaming(true)) });
+
+  // `s` on the focused row: the snooze choices, anchored under the row
+  useEffect(() => {
+    if (!snoozeAsked) return;
+    requestRailSnooze(null);
+    const rect = rowRef.current?.getBoundingClientRect();
+    setMenu({ at: { x: rect?.left ?? 0, y: rect?.bottom ?? 0 }, label: "Snooze", items: snoozeItems(thread.id) });
+  }, [snoozeAsked, thread.id]);
 
   return (
     <li>
       <div
+        ref={rowRef}
         className={[
           styles.row,
-          styles.threadRow,
           active ? styles.active : "",
           picked ? styles.picked : "",
           archived ? styles.archived : "",
+          settled ? styles.settled : "",
           state === "needs" ? styles.needsRow : "",
         ]
           .filter(Boolean)
@@ -140,8 +180,9 @@ export function RailThreadRow({ thread, siblings }: { thread: Thread; siblings: 
         ) : (
           <button
             type="button"
-            className={styles.thread}
+            className={styles.main}
             title={tip}
+            data-rail-main=""
             aria-pressed={picked ? true : undefined}
             onClick={(e) => {
               if (e.shiftKey) {
@@ -156,49 +197,67 @@ export function RailThreadRow({ thread, siblings }: { thread: Thread; siblings: 
               selectThread(thread.id);
             }}
           >
-            <ThreadGlyph thread={thread} />
-            {thread.role ? (
-              <span className={styles.roleGlyph} title={thread.role} aria-label={thread.role} role="img">
-                {ROLE_GLYPH[thread.role]}
+            <span className={styles.line}>
+              <span className={styles.glyph}>
+                <ThreadGlyph thread={thread} />
               </span>
-            ) : null}
-            {thread.team ? (
-              <span className={styles.roleGlyph} title={`Team run: ${thread.team.name}`} aria-label="team" role="img">
-                ⛓
-              </span>
-            ) : null}
-            <span className={`${styles.threadTitle} ${loud ? styles.loud : ""}`}>{thread.title}</span>
-            {thread.pinned && !archived ? (
-              <span className={styles.pinMark} title="Pinned" aria-label="pinned" role="img">
-                📌
-              </span>
-            ) : null}
-            {thread.delegateRole ? (
-              <span className={styles.roleTag} title={`Role: ${thread.delegateRole}`}>
-                {truncateRole(thread.delegateRole)}
-              </span>
-            ) : null}
-            {judge ? (
-              <span className={`${styles.roleTag} ${BAD_LABELS.has(judge.label) ? styles.badTag : ""}`} title={`Judge: ${judge.source} ${judge.confidence.toFixed(2)}`}>
-                {judge.label}
-              </span>
-            ) : null}
-            {settled && thread.settleReason ? (
-              <span className={styles.settleTag} title="Settled: out of the inbox, worktree kept">
-                {SETTLE_TAGS[thread.settleReason]}
-              </span>
-            ) : null}
-            {unread ? <span className={styles.unread} aria-label="unread" role="img" title="New activity" /> : null}
-            <span className={styles.meta}>
-              {hasVcs ? (
-                <>
-                  <PrGlyph pr={thread.pr} />
-                  <MergeGlyph thread={thread} />
-                </>
-              ) : (
+              {thread.role ? (
+                <span className={styles.roleGlyph} title={thread.role} aria-label={thread.role} role="img">
+                  {ROLE_GLYPH[thread.role]}
+                </span>
+              ) : null}
+              {thread.team ? (
+                <span className={styles.roleGlyph} title={`Team run: ${thread.team.name}`} aria-label="team" role="img">
+                  ⛓
+                </span>
+              ) : null}
+              <span className={`${styles.title} ${loud ? styles.loud : ""}`}>{thread.title}</span>
+              {thread.pinned && !archived ? <Icon name="pin" size={12} label="pinned" className={styles.pinMark ?? ""} /> : null}
+              {unread ? <span className={styles.unread} aria-label="unread" role="img" title="New activity" /> : null}
+              <span className={styles.meta}>
+                <span className={styles.monogram} title={harness}>
+                  {PROVIDER_MONOGRAMS[thread.provider]}
+                </span>
+                {projectTitle !== undefined ? (
+                  <span className={styles.projectPill} title={projectTitle}>
+                    {firstGrapheme(projectTitle).toUpperCase()}
+                  </span>
+                ) : null}
                 <span className={styles.time}>{relativeTime(thread.updatedAt)}</span>
-              )}
+              </span>
             </span>
+            {hasTags ? (
+              <span className={styles.tags}>
+                {hit !== undefined ? (
+                  <span className={styles.snippet} title={hit.snippet}>
+                    {hit.field === "message" ? <Icon name="search" size={12} label="message match" /> : null}
+                    <span className={styles.snippetText}>{hit.snippet}</span>
+                  </span>
+                ) : null}
+                {settled && thread.settleReason ? (
+                  <span className={styles.settleTag} title="Settled: out of the inbox, worktree kept">
+                    {SETTLE_TAGS[thread.settleReason]}
+                  </span>
+                ) : null}
+                {thread.pr !== undefined ? <span className={styles.tag}>PR #{thread.pr.number}</span> : null}
+                {merged ? <MergeGlyph thread={thread} /> : null}
+                {thread.delegateRole ? (
+                  <span className={styles.roleTag} title={`Role: ${thread.delegateRole}`}>
+                    {truncateRole(thread.delegateRole)}
+                  </span>
+                ) : null}
+                {judge ? (
+                  <span className={`${styles.roleTag} ${BAD_LABELS.has(judge.label) ? styles.badTag : ""}`} title={`Judge: ${judge.source} ${judge.confidence.toFixed(2)}`}>
+                    {judge.label}
+                  </span>
+                ) : null}
+                {snoozedUntil !== undefined ? (
+                  <span className={styles.tag}>
+                    <Icon name="snooze" size={12} /> {relativeUntil(snoozedUntil)}
+                  </span>
+                ) : null}
+              </span>
+            ) : null}
           </button>
         )}
         {archived ? null : (
@@ -209,29 +268,42 @@ export function RailThreadRow({ thread, siblings }: { thread: Thread; siblings: 
             title={settled ? "Unsettle: back to the inbox" : "Settle: close from the inbox, worktree kept (⌘Z undoes)"}
             onClick={() => (settled ? unsettleThread(thread.id) : settleThread(thread.id))}
           >
-            {settled ? "✓" : ""}
+            {settled ? <Icon name="check" size={12} /> : null}
           </button>
         )}
-        <button
-          type="button"
-          className={styles.more}
-          aria-label={`Actions for ${thread.title}`}
-          title="More actions"
-          onClick={(e) => {
-            const rect = e.currentTarget.getBoundingClientRect();
-            openMenu({ x: rect.left, y: rect.bottom });
-          }}
-        >
-          ⋯
-        </button>
+        <span className={styles.actions}>
+          {mergeable ? (
+            <button
+              type="button"
+              className={styles.action}
+              aria-label={`Merge back ${thread.title}`}
+              title="Merge back into the base branch (m)"
+              onClick={() => void mergeBackThread(thread.id)}
+            >
+              <Icon name="merge" size={14} />
+            </button>
+          ) : null}
+          <button
+            type="button"
+            className={styles.action}
+            aria-label={`Actions for ${thread.title}`}
+            title="More actions"
+            onClick={(e) => {
+              const rect = e.currentTarget.getBoundingClientRect();
+              openMenu({ x: rect.left, y: rect.bottom });
+            }}
+          >
+            <Icon name="more" size={14} />
+          </button>
+        </span>
       </div>
       {menu ? (
-        <ContextMenu position={menu.at} items={menu.items} onClose={() => setMenu(undefined)} label="Thread actions" />
+        <ContextMenu position={menu.at} items={menu.items} onClose={() => setMenu(undefined)} label={menu.label} />
       ) : null}
       {children.length > 0 ? (
-        <ul className={styles.threads}>
+        <ul className={styles.children}>
           {children.map((c) => (
-            <RailThreadRow key={c.id} thread={c} siblings={siblings} />
+            <RailThreadRow key={c.id} thread={c} siblings={siblings} showProject={showProject} />
           ))}
         </ul>
       ) : null}

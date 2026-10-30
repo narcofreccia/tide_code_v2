@@ -2,7 +2,7 @@ import { afterEach, describe, expect, it } from "vitest";
 import { act, cleanup, fireEvent, render, screen } from "@testing-library/react";
 import type { Thread } from "@tide/contracts";
 import { TopBar } from "./TopBar.tsx";
-import { chooseOption, resetUi, attachFakeStore, modelWith } from "../../testHarness.ts";
+import { resetUi, attachFakeStore, modelWith } from "../../testHarness.ts";
 import { useUi } from "../../state/ui.ts";
 
 const thread: Thread = {
@@ -59,17 +59,20 @@ describe("TopBar", () => {
     expect(screen.getByLabelText("Breadcrumb").textContent).toBe("Tide›Refactor router");
   });
 
-  it("switches project through the listbox", () => {
+  it("has no project switcher or ⌘K pill: projects are picked in the rail, the palette is an icon", () => {
     attachFakeStore(
       modelWith({
         projects: { p1: { id: "p1", title: "Tide", rootPath: "/src/tide", createdAt: 1, updatedAt: 1 } },
       }),
     );
     render(<TopBar />);
-    expect(screen.getByRole("combobox", { name: "Project switcher" }).textContent).toContain("All projects");
-    chooseOption("Project switcher", /^Tide/);
-    expect(useUi.getState().selectedProjectId).toBe("p1");
-    expect(useUi.getState().view).toBe("mission");
+    expect(screen.queryByRole("combobox", { name: "Project switcher" })).toBeNull();
+    expect(screen.queryByText("⌘K")).toBeNull();
+    const palette = screen.getByRole("button", { name: "Command palette" });
+    expect(palette.getAttribute("title")).toBe("Command palette (⌘K)");
+    fireEvent.click(palette);
+    expect(useUi.getState().paletteOpen).toBe(true);
+    expect(screen.getByRole("button", { name: "Toggle light/dark" })).toBeDefined();
   });
 
   it("is draggable and takes the traffic-light inset on the mac desktop shell", () => {

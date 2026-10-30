@@ -7,7 +7,16 @@ import { MachineCard } from "../fleet/MachineCard.tsx";
 import { RelayPanel } from "../fleet/RelayPanel.tsx";
 import { ThisMachine } from "../fleet/ThisMachine.tsx";
 import fleet from "../fleet/Environments.module.css";
-import section from "./Section.module.css";
+import type { SectionMeta } from "./search.ts";
+import { SettingBlock, SettingNote, SettingsGroup } from "./ui/SettingsGroup.tsx";
+import { SettingsPage } from "./ui/SettingsPage.tsx";
+
+export const META: SectionMeta = {
+  title: "Environments",
+  blurb:
+    "Every machine running tide-server that this window drives. This machine is the primary: its settings are the ones these pages edit.",
+  keywords: ["This machine", "Machine name", "SSH host", "Other machines", "Add machine", "Pair another device", "Relay", "remote"],
+};
 
 /**
  * Settings › Environments: every machine running tide-server that this window drives.
@@ -23,32 +32,35 @@ export function EnvironmentsSection() {
   const others = environments.filter((env) => env.id !== primaryId && env.id !== info?.environmentId);
 
   return (
-    <div className={section.section}>
+    <SettingsPage title={META.title} blurb={META.blurb}>
       <ThisMachine info={info} envId={primaryId} />
 
-      <section className={section.section} aria-label="Other machines">
-        <div className={section.head}>
-          <h3 className={section.title}>Other machines</h3>
+      <SettingsGroup
+        title="Other machines"
+        actions={
           <Button variant="primary" onClick={() => openAddMachine()}>
             Add machine
           </Button>
-        </div>
+        }
+      >
         {others.length === 0 ? (
-          <p className={section.note}>
+          <SettingNote>
             None yet. Run Tide on another computer (a desktop, a build box, a VM), pick Pair another device there, and add
             it here: its projects and threads show up in this window and keep running on that machine.
-          </p>
+          </SettingNote>
         ) : (
-          <ul className={fleet.cards}>
-            {others.map((env) => (
-              <MachineCard key={env.id} env={env} />
-            ))}
-          </ul>
+          <SettingBlock>
+            <ul className={fleet.cards}>
+              {others.map((env) => (
+                <MachineCard key={env.id} env={env} />
+              ))}
+            </ul>
+          </SettingBlock>
         )}
-      </section>
+      </SettingsGroup>
 
       <RelayPanel info={info} />
       <AddMachineDialog />
-    </div>
+    </SettingsPage>
   );
 }

@@ -6,18 +6,56 @@ Tide is an orchestrator that includes an editor, not an editor with a chat panel
 
 ## Shell
 
-Three regions + top bar + status bar. Two regions collapse.
+Desktop (≥ 720px): `[Strip 44px][Rail 280px, drag 240–360][main]` under a 36px top bar, over a 24px status
+bar. `⌘B` (or the strip's Inbox button) collapses the rail; the strip stays. The phone layout
+(`components/mobile`) is separate.
 
 | Region | Width | Content |
 |---|---|---|
-| Top bar | 36px | `⌘K` palette button · project switcher (Mission Control) or a `project › thread` breadcrumb (text only, while a thread is open) · focus modes · theme |
-| Rail | 240px → 48px icons | Mission Control link · **Needs you · n** (cross-project, from `selectInbox`, hidden when empty) · projects (chevron expands/collapses independently of selection; path in a tooltip; amber `◐ n` / accent `● n` badges only when non-zero) → threads (glyph, title, one trailing meta slot that swaps to `⋯` on hover; needs-you rows tinted) · `+ thread` per project · bottom: Settings, legend |
+| Top bar | 36px | logo (→ Mission Control) · `Project › Thread` breadcrumb, or the page heading (`--fs-md --fw-medium`) · right: env chip (multi-environment only), connection dot, theme toggle, `search` icon = command palette (`⌘K`). No project switcher: projects are picked in the rail. Carries `data-tauri-drag-region`. |
+| Strip | 44px | `--surface`, hairline right border. Top: Mission Control (`⌘0`), Inbox (toggles the rail; amber badge = threads that need you), Pull requests (badge = open PRs), Usage, Experts (new session). Bottom: Environments (only with more than one environment; → Settings › Environments), Settings (`⌘,`). 36×36 icon buttons, `title="Name (shortcut)"`; the active page has `aria-current="page"`, `--selection` fill and a 2px `--selection-bar` on the left edge. |
+| Rail | 280px, resizable 240–360 (persisted) | see **Rail anatomy** |
 | Thread | flexible, primary | header: one 32px row = state chip · title (inline rename: double-click or ✎) · branch chip (mono, tooltip = worktree path, `main checkout` when none) \| Terminal · Fork (latest settled turn) · `⋯` (below ~560px container width Terminal and Fork fold into `⋯`; Stop lives only in the composer) (New child, Roll back last turn…, Snooze ▸, Copy thread ID, Copy branch, Remove worktree…, Archive thread…); a 24px sub-row exists only when it has chips (PR / merge, lineage `forked from <title>`, `Limited` menu, `Rolling back…`, delegates, rate limit) · pinned plan progress while running · stream of messages + activities · inline cards (approval, user-input, proposed plan) · composer |
 | Workbench | flexible, secondary | tabs: **Changes** (default) · open files (Monaco) · tree toggle · terminal drawer |
 | Status bar | 24px | `⎇ branch (worktree)` · context % + cost · diff stats · provider health · connection |
 
 Focus modes: `⌘1` Thread only · `⌘2` Split (default 45/55, draggable) · `⌘3` Workbench only.
 Rail toggle `⌘B`. Terminal drawer `` ⌘` ``. Palette `⌘K`.
+
+### Rail anatomy
+
+**Projects are a filter, not a tree.** The rail is one flat list of threads for the current scope
+(All, or one project); there is no project node to expand.
+
+1. **Header**: search field (`search` icon, "Search threads"; `/` focuses it, Esc clears) and one `New`
+   split button: the main half starts a thread in the scoped project (or asks which project when the
+   scope is All); the chevron offers Thread · Experts session · Team… · Add project… (a dialog).
+2. **Project chips** (hidden with exactly one project): `All`, then per project `icon Name · n` (n = threads
+   in Inbox + Needs you), a `--st-running` dot when something runs and a `--st-needs` dot when something
+   waits. Click scopes the rail (`selectedProjectId`); right-click or `…` opens the project menu (new
+   thread / Experts, rename, icon, linked repositories, copy path, Project settings…, Archive project…).
+   The row scrolls horizontally and fades past five chips.
+3. **Groups**, in order: **Needs you · Inbox · Working · Snoozed · Settled · Archived**. A label row is
+   `--fs-xs` uppercase + count + chevron; the fold is remembered per group (Settled and Archived start
+   folded); Archived has `Clear` (deletes empty archived threads). Pinned threads lead the Inbox. An
+   Experts session sits in its lead's group with its expert and lead threads nested; delegates and
+   children nest under their parent. Empty groups are not drawn.
+4. **Thread row** (`--row-h`): 20px status slot (the glyph; on hover the settle checkbox) · title
+   (`--fs-base`, ellipsis) · meta column (`--fs-sm --muted`: harness monogram, project initial when the
+   scope is All with more than one project, relative time). A second line only when there is a tag:
+   settle reason, `PR #n`, merge state, delegate role / outcome, snoozed-until, or a search snippet.
+   Hover actions: merge back (`merge`, when the thread has an unmerged branch and is not running) and
+   `…`. Selected: `--selection` fill + 2px `--selection-bar`; multi-selected the same; ⌘-click toggles,
+   shift-click extends, a bulk bar (Settle · Snooze · Regenerate titles) appears above the list.
+5. **Search**: the local filter (title, project, harness) applies on every keystroke; from two characters
+   `threads.search` also runs on every connected environment (debounced 250ms). While a query is active
+   the groups give way to one **Results · n** list: local matches first, then server hits not already
+   listed, each with its snippet (a `search` icon marks a message match). "Nothing matches" when empty.
+6. **Empty states**: no project → "Add a repository" card with one button (opens the Add project dialog);
+   a project with no threads → "New thread"; a search with no results.
+
+Merge back from the rail sends `thread.merge` with no strategy, so the server applies Settings › Git;
+when `confirmMergeBack` is on, a dialog asks first.
 
 ## Views
 
@@ -228,7 +266,7 @@ Line height `--lh-body: 1.45` for text, `--lh-tight: 1.2` for titles and single-
 
 ## Component inventory (apps/web/src/components)
 
-`shell/` TopBar, Rail, NeedsYouGroup, StatusBar, SplitPane, FocusModeSwitch · `mission/` MissionControl, Inbox, ProjectCard, ProjectLinks ·
+`shell/` TopBar, Strip, Rail (RailHeader, ProjectChips, RailGroups, RailThreadRow, RailSearch, RailEmpty), StatusBar, SplitPane, FocusModeSwitch · `mission/` MissionControl, Inbox, ProjectCard, ProjectLinks ·
 `thread/` ThreadHeader, ThreadLinkChips, Stream, MessageItem, ActivityRow, ActivityGroup, ApprovalCard,
 UserInputCard, PlanCard, PlanProgress, Composer, MentionPicker · `workbench/` Workbench,
 ChangesTab, DiffView, FileTab (Monaco), FileTree, TerminalDrawer · `experts/` Board, ExpertCard,
@@ -243,7 +281,7 @@ It grows a filter box when `searchable` or past eight options, and takes `descri
 `group`, `icon`, `disabled` + `title` per option. `Checkbox`/`Radio` replace bare
 `<input type=checkbox|radio>` everywhere.
 
-`shell/ThemeToggle` sits next to `FocusModeSwitch`; the top row carries
+`shell/ThemeToggle` sits in the top bar's right cluster, `FocusModeSwitch` beside the bar; the top row carries
 `data-tauri-drag-region` and `<html data-desktop="mac|win|linux">` reserves the
 traffic-light inset.
 
@@ -255,3 +293,9 @@ traffic-light inset.
 `/` at the start of a line: slash commands + skills of the thread's harness · `@` mention a worktree file ·
 `⌘P` open file in worktree · `⌘S` save · `⌘⇧D` toggle unified/split diff · `[` `]` prev/next turn ·
 `⌘⇧L` toggle light/dark.
+
+Rail keys (single keys, never while a text field has focus; rebindable through
+`UserSettings.keybindings`, ids in `lib/keybindings.ts` `RAIL_BINDINGS`): `/` search (`rail.search`) ·
+`j`/`k` next/previous row (`rail.next`, `rail.prev`) · `↵` open (`rail.open`) · `e` settle / unsettle
+(`rail.settle`) · `s` snooze menu (`rail.snooze`) · `m` merge back (`rail.merge`) · `x` toggle selection
+(`rail.select`) · `Esc` clears the search, then the selection.

@@ -39,11 +39,13 @@ function model() {
 }
 
 describe("Rail experts group", () => {
-  it("lists the session with its phase and expert count, above the loose threads", () => {
+  it("lists the session with its phase and expert count inside its lead's group, above the loose threads", () => {
     attachFakeStore(model());
     render(<Rail />);
-    const group = within(screen.getByText("Experts").closest("div") as HTMLElement);
+    const group = within(screen.getByRole("region", { name: "Inbox" }));
     expect(group.getByText("Shard the index")).toBeDefined();
+    const follows = (a: Node, b: Node): boolean => (a.compareDocumentPosition(b) & Node.DOCUMENT_POSITION_FOLLOWING) !== 0;
+    expect(follows(group.getByText("Shard the index"), group.getByText("Refactor router"))).toBe(true);
     expect(group.getByText("Exploring")).toBeDefined();
     expect(group.getByText("1 expert")).toBeDefined();
   });
@@ -78,14 +80,14 @@ describe("Rail experts group", () => {
     expect(screen.getByLabelText("needs you")).toBeDefined();
   });
 
-  it("selects the session and opens the create dialog from + Experts", () => {
+  it("selects the session, and the strip's Experts button opens the create dialog", () => {
     attachFakeStore(model());
     render(<Rail />);
     fireEvent.click(screen.getByText("Shard the index"));
     expect(useUi.getState().view).toBe("experts");
     expect(useUi.getState().selectedExpertsSessionId).toBe("x1");
 
-    fireEvent.click(screen.getByText("+ Experts"));
+    fireEvent.click(screen.getByRole("button", { name: "Experts" }));
     expect(useUi.getState().newExpertsProjectId).toBe("p1");
   });
 });

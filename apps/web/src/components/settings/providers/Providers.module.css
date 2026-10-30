@@ -31,3 +31,17 @@
 .agentDescription { color: var(--text-2); font-size: var(--fs-sm); line-height: 16px; }
 .agentAction { display: flex; flex-direction: column; align-items: flex-end; gap: 2px; }
 .agentWhy { color: var(--muted); font-size: var(--fs-sm); }
+.input {
+  min-width: 0;
+  height: var(--row-h);
+  padding: 0 var(--sp-2);
+  background: var(--bg);
+  border: 1px solid var(--border);
+  border-radius: var(--radius-sm);
+  color: var(--text);
+  font: inherit;
+  font-family: var(--font-mono);
+}
+.input:focus { outline: none; border-color: var(--accent); }
+.value { font-family: var(--font-mono); overflow-wrap: anywhere; }
+.note { margin: 0; color: var(--muted); font-size: var(--fs-sm); }

@@ -80,3 +80,45 @@ export function findConflicts(entry: BindingEntry, all: BindingEntry[]): Binding
       !(entry.isDefault && other.isDefault),
   );
 }
+
+/**
+ * Single-key rail bindings (R12): live only while focus is outside a text field.
+ * Stored like the chorded ones (`UserSettings.keybindings[id]`), so a user can move
+ * `j`/`k` without touching the rest of the map.
+ */
+export interface RailBinding {
+  id: RailBindingId;
+  label: string;
+  binding: string;
+}
+
+export type RailBindingId =
+  | "rail.search"
+  | "rail.next"
+  | "rail.prev"
+  | "rail.open"
+  | "rail.settle"
+  | "rail.snooze"
+  | "rail.merge"
+  | "rail.select";
+
+export const RAIL_BINDINGS: RailBinding[] = [
+  { id: "rail.search", label: "Search threads", binding: "/" },
+  { id: "rail.next", label: "Rail: next thread", binding: "j" },
+  { id: "rail.prev", label: "Rail: previous thread", binding: "k" },
+  { id: "rail.open", label: "Rail: open focused thread", binding: "enter" },
+  { id: "rail.settle", label: "Rail: settle / unsettle", binding: "e" },
+  { id: "rail.snooze", label: "Rail: snooze…", binding: "s" },
+  { id: "rail.merge", label: "Rail: merge back", binding: "m" },
+  { id: "rail.select", label: "Rail: toggle selection", binding: "x" },
+];
+
+/** The rail action a key event triggers, honouring the user's overrides; undefined when none. */
+export function matchRailBinding(
+  event: Pick<KeyboardEvent, "key" | "code" | "metaKey" | "ctrlKey" | "shiftKey" | "altKey">,
+  overrides: Record<string, string> = {},
+): RailBindingId | undefined {
+  const chord = normalizeEvent(event);
+  if (chord === null) return undefined;
+  return RAIL_BINDINGS.find((entry) => (overrides[entry.id] || entry.binding) === chord)?.id;
+}

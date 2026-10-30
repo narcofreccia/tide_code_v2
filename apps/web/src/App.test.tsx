@@ -13,7 +13,7 @@ describe("App shell", () => {
   it("lands on Mission Control and shows the status bar", () => {
     attachFakeStore(modelWith({}));
     render(<App />);
-    expect(screen.getByLabelText("Mission Control")).toBeDefined();
+    expect(screen.getAllByLabelText("Mission Control").length).toBeGreaterThan(0);
     expect(screen.getByText("connected")).toBeDefined();
     expect(screen.getAllByText("Mission Control").length).toBeGreaterThan(0);
   });

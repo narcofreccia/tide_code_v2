@@ -1,0 +1,195 @@
+/* R12 rail row: glyph slot (settle box on hover) · title · meta column · hover actions; tags on a second line. */
+.row {
+  position: relative;
+  display: flex;
+  align-items: flex-start;
+  min-width: 0;
+  min-height: var(--row-h);
+  border-left: 2px solid transparent;
+  transition: background var(--dur-fast) var(--ease);
+}
+.row:hover { background: var(--surface-hover); }
+.active,
+.active:hover { background: var(--selection); border-left-color: var(--selection-bar); }
+.picked,
+.picked:hover { background: var(--selection); border-left-color: var(--selection-bar); }
+.needsRow { background: var(--st-needs-soft); }
+
+.main {
+  flex: 1;
+  min-width: 0;
+  display: flex;
+  flex-direction: column;
+  justify-content: center;
+  min-height: var(--row-h);
+  padding: 0 var(--sp-2) 0 0;
+  border: 0;
+  background: transparent;
+  color: inherit;
+  text-align: left;
+  font-size: var(--fs-base);
+}
+.line {
+  display: flex;
+  align-items: center;
+  gap: var(--sp-1);
+  min-width: 0;
+  height: var(--row-h);
+}
+/* 20px status slot: the glyph, swapped for the settle box while the row is hovered */
+.glyph {
+  flex: none;
+  width: 20px;
+  display: inline-flex;
+  align-items: center;
+  justify-content: center;
+  margin-left: var(--sp-1);
+}
+.row:hover .glyph,
+.row:focus-within .glyph,
+.settled .glyph { visibility: hidden; }
+.archived:hover .glyph,
+.archived:focus-within .glyph { visibility: visible; }
+
+.title {
+  flex: 0 1 auto;
+  min-width: 0;
+  overflow: hidden;
+  text-overflow: ellipsis;
+  white-space: nowrap;
+  color: var(--text-2);
+}
+.loud { color: var(--text); font-weight: var(--fw-medium); }
+.active .title { color: var(--text); font-weight: var(--fw-medium); }
+.archived .title { color: var(--muted); }
+.roleGlyph { flex: none; color: var(--muted); font-size: var(--fs-sm); }
+.pinMark { flex: none; color: var(--muted); }
+.unread { flex: none; width: 6px; height: 6px; border-radius: 50%; background: var(--accent); }
+
+.meta {
+  flex: none;
+  margin-left: auto;
+  padding-left: var(--sp-2);
+  display: inline-flex;
+  align-items: center;
+  gap: var(--sp-1);
+  color: var(--muted);
+  font-size: var(--fs-sm);
+  font-variant-numeric: tabular-nums;
+}
+.row:hover .meta,
+.row:focus-within .meta { visibility: hidden; }
+.monogram { font-family: var(--font-mono); font-size: var(--fs-xs); }
+.projectPill {
+  min-width: 14px;
+  height: 14px;
+  padding: 0 var(--sp-1);
+  border-radius: var(--radius-sm);
+  background: var(--surface-2);
+  font-size: var(--fs-xs);
+  line-height: 14px;
+  text-align: center;
+}
+.time { font-size: var(--fs-sm); }
+
+.tags {
+  display: flex;
+  align-items: center;
+  gap: var(--sp-1);
+  min-width: 0;
+  padding: 0 0 var(--sp-1) calc(20px + var(--sp-2));
+  color: var(--muted);
+  font-size: var(--fs-sm);
+}
+.tag,
+.settleTag,
+.roleTag {
+  flex: none;
+  display: inline-flex;
+  align-items: center;
+  gap: 2px;
+  max-width: 120px;
+  overflow: hidden;
+  text-overflow: ellipsis;
+  white-space: nowrap;
+  padding: 0 var(--sp-1);
+  border-radius: var(--radius-sm);
+  background: var(--surface-2);
+  color: var(--muted);
+  font-size: var(--fs-xs);
+  line-height: 16px;
+}
+.roleTag { background: var(--st-idle-soft); color: var(--st-idle); }
+.badTag { background: var(--st-error-soft); color: var(--st-error); }
+.snippet { display: flex; align-items: center; gap: var(--sp-1); min-width: 0; }
+.snippetText { min-width: 0; overflow: hidden; text-overflow: ellipsis; white-space: nowrap; }
+
+/* the settle box sits in the glyph slot */
+.settle {
+  position: absolute;
+  left: calc(var(--sp-1) + 3px);
+  top: 7px;
+  width: 14px;
+  height: 14px;
+  display: inline-flex;
+  align-items: center;
+  justify-content: center;
+  padding: 0;
+  border: 1px solid var(--border-strong);
+  border-radius: var(--radius-sm);
+  background: var(--surface);
+  color: var(--accent);
+  opacity: 0;
+  cursor: pointer;
+}
+.row:hover .settle,
+.row:focus-within .settle,
+.settle:focus-visible,
+.settleOn { opacity: 1; }
+.settle:hover,
+.settleOn { border-color: var(--accent); }
+
+.actions {
+  position: absolute;
+  right: var(--sp-1);
+  top: 4px;
+  display: inline-flex;
+  gap: 2px;
+  opacity: 0;
+}
+.row:hover .actions,
+.row:focus-within .actions { opacity: 1; }
+.action {
+  width: 22px;
+  height: 20px;
+  display: inline-flex;
+  align-items: center;
+  justify-content: center;
+  padding: 0;
+  border: 0;
+  border-radius: var(--radius-sm);
+  background: transparent;
+  color: var(--muted);
+  cursor: pointer;
+}
+.action:hover { color: var(--text); background: var(--surface-hover); }
+
+.rename {
+  flex: 1;
+  min-width: 0;
+  height: 22px;
+  margin: 3px var(--sp-2) 0 calc(20px + var(--sp-2));
+  padding: 0 var(--sp-1);
+  border: 1px solid var(--accent);
+  border-radius: var(--radius-sm);
+  background: var(--surface-raised);
+  color: var(--text);
+  font: inherit;
+}
+
+.children {
+  list-style: none;
+  margin: 0 0 0 13px;
+  padding: 0 0 0 var(--sp-1);
+  border-left: 1px solid var(--border);
+}

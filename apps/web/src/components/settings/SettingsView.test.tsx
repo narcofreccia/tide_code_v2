@@ -1,5 +1,5 @@
 import { afterEach, describe, expect, it } from "vitest";
-import { cleanup, fireEvent, render, screen } from "@testing-library/react";
+import { cleanup, fireEvent, render, screen, within } from "@testing-library/react";
 import { App } from "../../App.tsx";
 import { SettingsView } from "./SettingsView.tsx";
 import { attachFakeStore, makeThread, modelWith, resetUi } from "../../testHarness.ts";
@@ -55,7 +55,7 @@ describe("Settings view", () => {
     expect(screen.getByRole("table")).toBeDefined();
 
     fireEvent.click(screen.getByText("Appearance"));
-    expect(screen.getByLabelText("Theme")).toBeDefined();
+    expect(screen.getByRole("combobox", { name: "Theme" })).toBeDefined();
     expect(useUi.getState().settingsSection).toBe("appearance");
   });
 
@@ -71,5 +71,23 @@ describe("Settings view", () => {
 
     fireEvent.click(screen.getByText("Environments"));
     expect(screen.getByText(/tide-server --host 0.0.0.0/)).toBeDefined();
+  });
+
+  it("search filters the nav and jumps to a row in another section", () => {
+    setProvidersForTest(PROVIDER_FIXTURE);
+    attachFakeStore(modelWith({}));
+    render(<SettingsView />);
+    fireEvent.change(screen.getByLabelText("Search settings"), { target: { value: "merge back" } });
+    const nav = screen.getByLabelText("Settings sections");
+    expect([...nav.querySelectorAll("li")].map((li) => li.textContent)).toEqual(["Inbox", "Git"]);
+    const results = screen.getByLabelText("Matching settings");
+    fireEvent.click(within(results).getByText(/Merge back strategy/));
+    expect(useUi.getState().settingsSection).toBe("git");
+    const row = document.getElementById("setting-merge-back-strategy");
+    expect(row?.hasAttribute("data-flash")).toBe(true);
+
+    fireEvent.keyDown(screen.getByLabelText("Search settings"), { key: "Escape" });
+    expect((screen.getByLabelText("Search settings") as HTMLInputElement).value).toBe("");
+    expect(useUi.getState().view).not.toBe("thread");
   });
 });

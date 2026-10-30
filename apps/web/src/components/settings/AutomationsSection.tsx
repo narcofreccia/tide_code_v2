@@ -8,13 +8,16 @@ import { createTask, deleteTask, runTaskNow, updateTask, type TaskFields } from 
 import { useModel } from "../../state/model.ts";
 import { useUi } from "../../state/ui.ts";
 import { Button } from "../ui/Button.tsx";
-import { Checkbox } from "../ui/Choice.tsx";
 import { ConfirmDialog } from "../ui/Dialog.tsx";
 import { TaskDialog } from "./TaskDialog.tsx";
 import { WebhookUrls } from "../fleet/WebhookUrls.tsx";
-import styles from "./Automations.module.css";
-import section from "./Section.module.css";
 import { plural } from "../../lib/format.ts";
+import type { SectionMeta } from "./search.ts";
+import { SettingNote, SettingsGroup } from "./ui/SettingsGroup.tsx";
+import { SettingsPage } from "./ui/SettingsPage.tsx";
+import { SettingRow } from "./ui/SettingRow.tsx";
+import { SettingToggle } from "./ui/SettingToggle.tsx";
+import styles from "./Rows.module.css";
 
 type Editing = { task?: ScheduledTask; projectId: string } | null;
 
@@ -32,35 +35,45 @@ function TaskRow({
   const target = task.threadId === undefined ? `new thread on ${task.provider ?? "default harness"}` : (model.threads[task.threadId]?.title ?? "thread (gone)");
   const last = task.lastRunAt === undefined ? "never run" : `last ${relativeTime(task.lastRunAt)} ago`;
   return (
-    <li className={`${section.row} ${styles.item}`}>
-      <div className={styles.top}>
-        <span className={styles.name}>{task.title}</span>
-        <Checkbox
-          aria-label={`Enable ${task.title}`}
-          checked={task.enabled}
-          onChange={(e) => dispatchOrToast("Updating the automation", { type: "task.update", taskId: task.id, enabled: e.target.checked })}
-        />
-        <div className={styles.actions}>
+    <SettingRow
+      id={`setting-task-${task.id}`}
+      label={<span className={styles.name}>{task.title}</span>}
+      help={
+        <span className={styles.meta}>
+          <span>{describeSchedule(task.schedule)}</span>
+          <span>{target}</span>
+          <span>{task.enabled ? (task.nextRunAt === undefined ? "no next run" : `next ${relativeUntil(task.nextRunAt)}`) : "paused"}</span>
+          {task.lastRunThreadId !== undefined ? (
+            <Button variant="link" onClick={() => selectThread(task.lastRunThreadId ?? null)}>{last}</Button>
+          ) : (
+            <span>{last}</span>
+          )}
+          <span>{plural(task.runs, "run")}</span>
+        </span>
+      }
+      control={
+        <>
           <Button onClick={() => runOrToast("Running the automation", () => runTaskNow(task.id))}>Run now</Button>
           <Button onClick={onEdit}>Edit</Button>
-          <Button variant="quiet" onClick={onDelete}>Delete</Button>
-        </div>
-      </div>
-      <div className={styles.meta}>
-        <span>{describeSchedule(task.schedule)}</span>
-        <span>{target}</span>
-        <span>{task.enabled ? (task.nextRunAt === undefined ? "no next run" : `next ${relativeUntil(task.nextRunAt)}`) : "paused"}</span>
-        {task.lastRunThreadId !== undefined ? (
-          <Button variant="link" onClick={() => selectThread(task.lastRunThreadId ?? null)}>{last}</Button>
-        ) : (
-          <span>{last}</span>
-        )}
-        <span>{plural(task.runs, "run")}</span>
-      </div>
-      {task.schedule.kind === "webhook" ? <WebhookUrls hookId={task.schedule.hookId} projectId={task.projectId} compact /> : null}
-    </li>
+          <Button variant="quietDanger" onClick={onDelete}>Delete</Button>
+          <SettingToggle
+            label={`Enable ${task.title}`}
+            checked={task.enabled}
+            onChange={(enabled) => dispatchOrToast("Updating the automation", { type: "task.update", taskId: task.id, enabled })}
+          />
+        </>
+      }
+      extra={task.schedule.kind === "webhook" ? <WebhookUrls hookId={task.schedule.hookId} projectId={task.projectId} compact /> : undefined}
+    />
   );
 }
+
+export const META: SectionMeta = {
+  title: "Automations",
+  blurb:
+    "Send a prompt on a schedule, into a thread or as a new one. The server must be running at the time; missed fixed times are skipped.",
+  keywords: ["New automation", "schedule", "webhook", "cron", "interval"],
+};
 
 /** Empty-state wording that matches the scope the top bar's switcher set. */
 function emptyText(scoped: boolean, grouped: boolean, title: string): string {
@@ -86,37 +99,33 @@ export function AutomationsSection() {
   };
 
   return (
-    <div className={section.section}>
-      <div className={section.head}>
-        <h3 className={section.title}>Automations</h3>
-        {projects.length === 1 ? (
-          <Button variant="primary" onClick={() => setEditing({ projectId: projects[0]?.id ?? "" })}>New automation</Button>
-        ) : null}
-      </div>
-      <p className={section.note}>
-        Send a prompt on a schedule, into a thread or as a new one. The server must be running at the time; missed fixed times are skipped.
-      </p>
-      {projects.length === 0 ? <p className={section.note}>No projects yet.</p> : null}
+    <SettingsPage title={META.title} blurb={META.blurb}>
+      {projects.length === 0 ? (
+        <SettingsGroup title="Automations">
+          <SettingNote>No projects yet.</SettingNote>
+        </SettingsGroup>
+      ) : null}
       {projects.map((project) => {
         const tasks = selectScheduledTasks(model, project.id);
         return (
-          <div key={project.id} className={styles.group} aria-label={`Automations for ${project.title}`}>
-            {grouped ? (
-              <div className={section.head}>
-                <h4 className={styles.groupTitle}>{project.title}</h4>
-                <Button variant="link" onClick={() => setEditing({ projectId: project.id })}>New automation</Button>
-              </div>
-            ) : null}
+          <SettingsGroup
+            key={project.id}
+            title={grouped ? project.title : "Scheduled prompts"}
+            label={`Automations for ${project.title}`}
+            actions={
+              <Button variant={grouped ? "ghost" : "primary"} onClick={() => setEditing({ projectId: project.id })}>
+                New automation
+              </Button>
+            }
+          >
             {tasks.length === 0 ? (
-              <p className={section.note}>{emptyText(selectedProjectId !== null, grouped, project.title)}</p>
+              <SettingNote>{emptyText(selectedProjectId !== null, grouped, project.title)}</SettingNote>
             ) : (
-              <ul className={section.rows}>
-                {tasks.map((task) => (
-                  <TaskRow key={task.id} task={task} onEdit={() => setEditing({ task, projectId: project.id })} onDelete={() => setDeleting(task)} />
-                ))}
-              </ul>
+              tasks.map((task) => (
+                <TaskRow key={task.id} task={task} onEdit={() => setEditing({ task, projectId: project.id })} onDelete={() => setDeleting(task)} />
+              ))
             )}
-          </div>
+          </SettingsGroup>
         );
       })}
       {editing ? (
@@ -140,6 +149,6 @@ export function AutomationsSection() {
           }}
         />
       ) : null}
-    </div>
+    </SettingsPage>
   );
 }

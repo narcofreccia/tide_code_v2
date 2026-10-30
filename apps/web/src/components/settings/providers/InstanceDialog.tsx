@@ -3,7 +3,6 @@ import type { ProviderInstanceConfig, ProviderKind } from "@tide/contracts";
 import { PROVIDER_LABELS } from "../../../lib/vocab.ts";
 import { Dialog } from "../../ui/Dialog.tsx";
 import { DialogFrame, FrameField, PrimaryField } from "../../ui/DialogFrame.tsx";
-import section from "../Section.module.css";
 import styles from "./Providers.module.css";
 import { configFromDraft, draftOf, draftProblem, instanceId, type InstanceDraft } from "./instances.ts";
 
@@ -81,20 +80,20 @@ export function InstanceFields({
         manual || instance?.command !== undefined ? (
           <>
             <FrameField label="Command" caption="The executable that speaks ACP over stdio">
-              <input className={section.input} aria-label="Command" placeholder="npx" value={draft.command} onChange={(e) => set({ command: e.target.value })} />
+              <input className={styles.input} aria-label="Command" placeholder="npx" value={draft.command} onChange={(e) => set({ command: e.target.value })} />
             </FrameField>
             <FrameField label="Arguments" caption="Separated by spaces; quote one that contains spaces">
-              <input className={section.input} aria-label="Arguments" placeholder="-y @google/gemini-cli --experimental-acp" value={draft.args} onChange={(e) => set({ args: e.target.value })} />
+              <input className={styles.input} aria-label="Arguments" placeholder="-y @google/gemini-cli --experimental-acp" value={draft.args} onChange={(e) => set({ args: e.target.value })} />
             </FrameField>
           </>
         ) : null
       ) : (
         <>
           <FrameField label="Home" caption={`Its own config directory (${HOME_VARIABLE[kind]}); log in there once with ${harness}'s own command`}>
-            <input className={section.input} aria-label="Home directory" placeholder={`~/.${kind}-work`} value={draft.home} onChange={(e) => set({ home: e.target.value })} />
+            <input className={styles.input} aria-label="Home directory" placeholder={`~/.${kind}-work`} value={draft.home} onChange={(e) => set({ home: e.target.value })} />
           </FrameField>
           <FrameField label="Binary" caption="Optional. A different install of the CLI">
-            <input className={section.input} aria-label="Binary path" placeholder={`/usr/local/bin/${kind}`} value={draft.binaryPath} onChange={(e) => set({ binaryPath: e.target.value })} />
+            <input className={styles.input} aria-label="Binary path" placeholder={`/usr/local/bin/${kind}`} value={draft.binaryPath} onChange={(e) => set({ binaryPath: e.target.value })} />
           </FrameField>
         </>
       )}

@@ -17,6 +17,7 @@ import { dispatchOrToast, errorText } from "./dispatchOrToast.ts";
 import { showToast } from "../state/toast.ts";
 import { useUi } from "../state/ui.ts";
 import { ensureStatus, invalidateThread } from "../state/vcs.ts";
+import { useServerSettings } from "../state/serverSettings.ts";
 
 export interface ThreadPatch {
   title?: string;
@@ -375,5 +376,29 @@ export async function mergeThread(threadId: string, options: MergeOptions = {}):
     });
   } catch (error) {
     showToast(`Merge failed: ${error instanceof Error ? error.message : String(error)}`);
+  }
+}
+
+/** The rail's merge-back applies: a branch of its own, not merged yet, not mid-turn. */
+export function canMergeBack(thread: Pick<Thread, "branch" | "mergedAt" | "status">): boolean {
+  return thread.branch !== undefined && thread.mergedAt === undefined && thread.status !== "running";
+}
+
+/**
+ * R12 solo merge-back from the rail (`m`, hover action, menu): `thread.merge` with no
+ * strategy, so the server applies `settings.git`. When `confirmMergeBack` is on, the
+ * first call only raises the confirmation (`confirmed` is the dialog's answer).
+ */
+export async function mergeBackThread(threadId: string, opts: { confirmed?: boolean } = {}): Promise<void> {
+  if (opts.confirmed !== true && useServerSettings.getState().settings.git.confirmMergeBack) {
+    useUi.getState().setMergeConfirm(threadId);
+    return;
+  }
+  const title = titleOf(threadId);
+  try {
+    await dispatch({ type: "thread.merge", threadId });
+    showToast(`Merging “${title}” back…`);
+  } catch (error) {
+    showToast(`Merge failed: ${errorText(error)}`);
   }
 }

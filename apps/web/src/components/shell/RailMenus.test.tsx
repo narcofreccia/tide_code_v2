@@ -1,7 +1,7 @@
 import { afterEach, describe, expect, it, vi } from "vitest";
 import { act, cleanup, fireEvent, render, screen, within } from "@testing-library/react";
 import type { Thread } from "@tide/contracts";
-import { ProjectTree } from "./ProjectTree.tsx";
+import { Rail } from "./Rail.tsx";
 import { ProjectDialogHost } from "./ProjectDialogs.tsx";
 import { ToastHost } from "../ui/Toast.tsx";
 import { attachFakeStore, makeThread, makeTurn, modelWith, resetUi } from "../../testHarness.ts";
@@ -23,7 +23,7 @@ function mount(threads: Thread[], turns = [makeTurn("u1", { status: "completed" 
   const fake = attachFakeStore(model);
   render(
     <>
-      <ProjectTree />
+      <Rail />
       <ProjectDialogHost />
       <ToastHost />
     </>,
@@ -153,37 +153,30 @@ describe("rail thread menu", () => {
 });
 
 describe("rail groups", () => {
-  it("lists pinned threads first under Pinned", () => {
+  it("lists pinned threads first in the inbox", () => {
     mount([makeThread("t1", { title: "Plain", updatedAt: 9 }), makeThread("t2", { title: "Star", pinned: true })]);
-    expect(within(screen.getByLabelText("Pinned threads")).getByText("Star")).toBeDefined();
+    const rows = within(screen.getByRole("list", { name: "Inbox threads" })).getAllByRole("listitem").map((n) => n.textContent ?? "");
+    expect(rows[0]).toContain("Star");
+    expect(rows[1]).toContain("Plain");
   });
 
-  it("labels the remaining threads only when a Pinned group exists", () => {
-    mount([makeThread("t1", { title: "Plain", updatedAt: 9 }), makeThread("t2", { title: "Star", pinned: true })]);
-    expect(screen.getByText("Threads")).toBeDefined();
-    expect(within(screen.getByLabelText("Other threads")).getByText("Plain")).toBeDefined();
-    cleanup();
-    mount([makeThread("t1", { title: "Plain" })]);
-    expect(screen.queryByText("Threads")).toBeNull();
-  });
-
-  it("collapses snoozed and archived threads behind counted toggles", () => {
+  it("folds archived threads behind a counted toggle; snoozed stay open", () => {
     mount([
       makeThread("t1", { title: "Live" }),
       makeThread("t2", { title: "Later", snoozedUntil: Date.now() + 3_600_000 }),
       makeThread("t3", { title: "Old", archivedAt: 5 }),
     ]);
-    expect(screen.queryByText("Later")).toBeNull();
-    expect(screen.queryByText("Old")).toBeNull();
-    fireEvent.click(screen.getByRole("button", { name: /Snoozed · 1/ }));
     expect(screen.getByText("Later")).toBeDefined();
-    fireEvent.click(screen.getByRole("button", { name: /Archived · 1/ }));
+    expect(screen.queryByText("Old")).toBeNull();
+    fireEvent.click(screen.getByRole("button", { name: /Snoozed 1/ }));
+    expect(screen.queryByText("Later")).toBeNull();
+    fireEvent.click(screen.getByRole("button", { name: /Archived 1/ }));
     expect(screen.getByText("Old")).toBeDefined();
   });
 
   it("opens an archived thread and restores it from its menu", () => {
     const fake = mount([makeThread("t3", { title: "Old", archivedAt: 5 })]);
-    fireEvent.click(screen.getByRole("button", { name: /Archived · 1/ }));
+    fireEvent.click(screen.getByRole("button", { name: /Archived 1/ }));
     fireEvent.click(screen.getByText("Old"));
     expect(useUi.getState().selectedThreadId).toBe("t3");
     choose(openMenu("Old"), "Restore");
@@ -191,9 +184,24 @@ describe("rail groups", () => {
   });
 });
 
+const atlas = { id: "p2", title: "Atlas", rootPath: "/src/atlas", createdAt: 1, updatedAt: 1 };
+
+/** the chip row only exists with more than one project */
+function mountProjects() {
+  const fake = attachFakeStore(modelWith({ projects: { p1: project, p2: atlas } }));
+  render(
+    <>
+      <Rail />
+      <ProjectDialogHost />
+      <ToastHost />
+    </>,
+  );
+  return fake;
+}
+
 describe("rail project menu", () => {
-  it("offers the project actions", () => {
-    mount([]);
+  it("offers the project actions on right-click of its chip; archive is not painted as danger", () => {
+    mountProjects();
     fireEvent.contextMenu(screen.getByText("Tide"));
     const menu = screen.getByRole("menu", { name: "Project actions" });
     expect(within(menu).getAllByRole("menuitem").map((n) => n.textContent)).toEqual([
@@ -203,22 +211,27 @@ describe("rail project menu", () => {
       "Project icon…",
       "Linked repositories…",
       "Copy path",
+      "Project settings…",
       "Archive project…",
     ]);
+    expect(within(menu).getByRole("menuitem", { name: "Archive project…" }).className).not.toMatch(/danger/);
   });
 
-  it("opens the new-thread, experts and links dialogs", () => {
-    mount([]);
+  it("opens the new-thread, experts, links and settings surfaces", () => {
+    mountProjects();
     choose(openMenu("Tide"), "New thread…");
     expect(useUi.getState().newThreadProjectId).toBe("p1");
     choose(openMenu("Tide"), "New Experts session…");
     expect(useUi.getState().newExpertsProjectId).toBe("p1");
     choose(openMenu("Tide"), "Linked repositories…");
     expect(useUi.getState().linksProjectId).toBe("p1");
+    choose(openMenu("Tide"), "Project settings…");
+    expect(useUi.getState().view).toBe("settings");
+    expect(useUi.getState().settingsSection).toBe("projects");
   });
 
   it("renames the project through its dialog", () => {
-    const fake = mount([]);
+    const fake = mountProjects();
     choose(openMenu("Tide"), "Rename…");
     fireEvent.change(screen.getByLabelText("Project name"), { target: { value: "Tide 2" } });
     fireEvent.click(screen.getByRole("button", { name: "Rename" }));
@@ -226,7 +239,7 @@ describe("rail project menu", () => {
   });
 
   it("archives the project after confirming", () => {
-    const fake = mount([]);
+    const fake = mountProjects();
     choose(openMenu("Tide"), "Archive project…");
     fireEvent.click(within(screen.getByRole("dialog")).getByRole("button", { name: "Archive" }));
     expect(fake.dispatch).toHaveBeenCalledWith({ type: "project.archive", projectId: "p1" });
@@ -235,7 +248,7 @@ describe("rail project menu", () => {
   it("copies the project path", async () => {
     const writeText = vi.fn(async () => undefined);
     Object.assign(navigator, { clipboard: { writeText } });
-    mount([]);
+    mountProjects();
     const menu = openMenu("Tide");
     await act(async () => {
       choose(menu, "Copy path");
@@ -244,15 +257,21 @@ describe("rail project menu", () => {
   });
 });
 
-describe("rail Experts explainer", () => {
-  it("sits below the threads and the + thread / + Experts links", () => {
-    mount([makeThread("t1", { title: "Router" })]);
-    const explainer = screen.getByLabelText("About Experts");
-    const row = screen.getByText("Router");
-    const links = screen.getByRole("button", { name: "+ Experts" });
-    const follows = (a: Node, b: Node): boolean => (a.compareDocumentPosition(b) & Node.DOCUMENT_POSITION_FOLLOWING) !== 0;
-    expect(follows(row, explainer)).toBe(true);
-    expect(follows(links, explainer)).toBe(true);
+describe("rail merge back", () => {
+  it("offers Merge back only for an unmerged branch that is not running", () => {
+    mount([
+      makeThread("t1", { title: "Branchy", branch: "tide/branchy" }),
+      makeThread("t2", { title: "Plain" }),
+      makeThread("t3", { title: "Busy", branch: "tide/busy", status: "running" }),
+    ]);
+    expect(within(openMenu("Branchy")).getByRole("menuitem", { name: "Merge back" })).toBeDefined();
+    fireEvent.keyDown(document, { key: "Escape" });
+    expect(within(openMenu("Plain")).queryByRole("menuitem", { name: "Merge back" })).toBeNull();
+    fireEvent.keyDown(document, { key: "Escape" });
+    expect(within(openMenu("Busy")).queryByRole("menuitem", { name: "Merge back" })).toBeNull();
+    fireEvent.keyDown(document, { key: "Escape" });
+    expect(screen.getByRole("button", { name: "Merge back Branchy" })).toBeDefined();
+    expect(screen.queryByRole("button", { name: "Merge back Plain" })).toBeNull();
   });
 });
 
@@ -262,7 +281,6 @@ describe("rail row marks", () => {
     const title = screen.getByText("Star");
     const pin = screen.getByRole("img", { name: "pinned" });
     expect(title.compareDocumentPosition(pin) & Node.DOCUMENT_POSITION_FOLLOWING).toBeTruthy();
-    expect(pin.textContent).not.toContain("⊙");
     expect(title.closest("button")?.getAttribute("title")).toMatch(/^X · Codex/);
   });
 
@@ -332,7 +350,7 @@ describe("rail row marks", () => {
     // a1 has messages (mount default); make a2 empty
     const { useModel } = await import("../../state/model.ts");
     useModel.getState().model.threadMessages["a2"] = [];
-    fireEvent.click(screen.getByRole("button", { name: /Archived · 2/ }));
+    fireEvent.click(screen.getByRole("button", { name: /Archived 2/ }));
     expect(within(openMenu("Old")).getByRole("menuitem", { name: "Delete…" })).toBeDefined();
     fireEvent.keyDown(document, { key: "Escape" });
     await act(async () => {

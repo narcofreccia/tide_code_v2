@@ -2,8 +2,10 @@ import type { ProviderKind } from "@tide/contracts";
 import { patchServerSettings, useServerSettings } from "../../state/serverSettings.ts";
 import { modelChoiceValue, modelChoices, providerStatus, useProviderRoster } from "../../state/providers.ts";
 import { PROVIDER_LABELS } from "../../lib/vocab.ts";
-import { Select, type SelectOption } from "../ui/Select.tsx";
-import css from "./Decisions.module.css";
+import type { SelectOption } from "../ui/Select.tsx";
+import { SettingsGroup } from "./ui/SettingsGroup.tsx";
+import { SettingRow } from "./ui/SettingRow.tsx";
+import { SettingSelect } from "./ui/SettingSelect.tsx";
 
 const NONE = "none";
 
@@ -23,49 +25,41 @@ export function DecisionsFallback() {
   const modelValue = modelChoiceValue(models, fallback?.model);
   const modelLabel = models.find((m) => m.id === modelValue)?.label;
 
-  const pick = (value: string): void => {
-    if (value === NONE) {
-      void patchServerSettings({ decisions: { fallback: null } });
-      return;
-    }
+  const pick = (value: string): Promise<void> => {
+    if (value === NONE) return patchServerSettings({ decisions: { fallback: null } });
     const provider = value as ProviderKind;
     const next = providerStatus(providers, provider)?.models ?? [];
     const model = next.find((m) => m.default)?.id ?? next[0]?.id;
-    void patchServerSettings({ decisions: { fallback: { provider, ...(model === undefined ? {} : { model }) } } });
+    return patchServerSettings({ decisions: { fallback: { provider, ...(model === undefined ? {} : { model }) } } });
   };
 
   return (
-    <div className={css.card}>
-      <h4 className={css.cardTitle}>Fallback judge</h4>
-      <div className={css.pickRow}>
-        <Select
-          label="Fallback agent"
-          value={kind ?? NONE}
-          options={options}
-          onSelect={pick}
-          variant="field"
-          size="md"
-          disabled={loading}
-        />
-        {kind === undefined ? null : (
-          <Select
-            label="Fallback model"
-            value={modelValue}
-            options={modelChoices(models, kind)}
-            onSelect={(model) => void patchServerSettings({ decisions: { fallback: { provider: kind, model } } })}
-            variant="field"
-            size="md"
-            align="end"
-          />
-        )}
-      </div>
-      <p className={css.note}>
-        {kind === undefined
-          ? "No fallback: low-confidence answers from Jev are left unmarked."
-          : `Asked as ${PROVIDER_LABELS[kind]}${modelLabel ? ` · ${modelLabel}` : ""}.`}{" "}
-        Asked only when Jev is unsure (confidence below the high threshold). One-shot, tools off, on your own
-        subscription.
-      </p>
-    </div>
+    <SettingsGroup
+      title="Fallback judge"
+      help="Asked only when Jev is unsure (confidence below the high threshold). One-shot, tools off, on your own subscription."
+    >
+      <SettingRow
+        label="Fallback judge"
+        help={
+          kind === undefined
+            ? "No fallback: low-confidence answers from Jev are left unmarked."
+            : `Asked as ${PROVIDER_LABELS[kind]}${modelLabel ? ` · ${modelLabel}` : ""}.`
+        }
+        control={
+          <>
+            <SettingSelect label="Fallback agent" value={kind ?? NONE} options={options} onSelect={pick} disabled={loading} />
+            {kind === undefined ? null : (
+              <SettingSelect
+                label="Fallback model"
+                value={modelValue}
+                options={modelChoices(models, kind)}
+                onSelect={(model) => patchServerSettings({ decisions: { fallback: { provider: kind, model } } })}
+                align="end"
+              />
+            )}
+          </>
+        }
+      />
+    </SettingsGroup>
   );
 }

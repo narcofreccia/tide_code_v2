@@ -1,5 +1,6 @@
 import { useState } from "react";
-import { call, dispatch } from "../../state/model.ts";
+import { call } from "../../state/model.ts";
+import { addProject } from "../../lib/projectActions.ts";
 import { useUi } from "../../state/ui.ts";
 import { useEnvironments } from "../../state/environments.ts";
 import { EnvSelect } from "../fleet/EnvSelect.tsx";
@@ -18,7 +19,7 @@ const NAME_RE = /^[A-Za-z0-9][A-Za-z0-9._-]{0,127}$/;
  * server to create `<parent>/<name>`, `git init -b main` with an empty first commit and register
  * the project, so the very first thread already gets a worktree and checkpoints.
  */
-export function AddProjectForm({ onDone }: { onDone: () => void }) {
+export function AddProjectForm({ onDone, variant = "inline" }: { onDone: () => void; variant?: "inline" | "dialog" }) {
   const [mode, setMode] = useState<Mode>("existing");
   const [title, setTitle] = useState("");
   const [rootPath, setRootPath] = useState("");
@@ -54,7 +55,8 @@ export function AddProjectForm({ onDone }: { onDone: () => void }) {
     if (!p.startsWith("/")) return setError("Root path must be absolute");
     setBusy(true);
     setError(null);
-    dispatch({ type: "project.create", title: t, rootPath: p }, envOpt(target)).then(finish).catch(fail).finally(() => setBusy(false));
+    // a path that belongs to an archived project restores it instead of registering a duplicate
+    addProject(t, p, envOpt(target)).then(finish).catch(fail).finally(() => setBusy(false));
   };
 
   const submitNew = (): void => {
@@ -94,8 +96,10 @@ export function AddProjectForm({ onDone }: { onDone: () => void }) {
   };
 
   return (
-    <form className={styles.form} onSubmit={submit}>
-      <span className={styles.heading}>{mode === "existing" ? "Add a repository" : "New project"}</span>
+    <form className={`${styles.form} ${variant === "dialog" ? styles.inDialog : ""}`} onSubmit={submit}>
+      {variant === "inline" ? (
+        <span className={styles.heading}>{mode === "existing" ? "Add a repository" : "New project"}</span>
+      ) : null}
       <div className={styles.modes} role="radiogroup" aria-label="Project source">
         <Radio name="project-mode" checked={mode === "existing"} onChange={() => { setMode("existing"); setError(null); }}>
           Existing repository
@@ -106,9 +110,7 @@ export function AddProjectForm({ onDone }: { onDone: () => void }) {
       </div>
       <EnvSelect value={target} onSelect={(next) => { setEnvId(next); setError(null); }} label="Run on" />
       <p className={styles.hint}>
-        {mode === "existing"
-          ? "A project is a local git repository; threads and worktrees live under it. You can link related repositories later from the project card."
-          : "Tide creates the folder, runs git init on a main branch with an empty first commit, and opens it. The first thread then gets its own worktree, checkpoints and merge-back from the start."}
+        {mode === "existing" ? "A local git repository; threads and worktrees live under it." : "Tide creates the folder as a fresh git repository."}
       </p>
       <input
         className={styles.input}
@@ -128,7 +130,7 @@ export function AddProjectForm({ onDone }: { onDone: () => void }) {
             onChange={(e) => setRootPath(e.target.value)}
             onBlur={deriveTitle}
           />
-          <Button onClick={() => setPicking(true)}>Browse…</Button>
+          <Button className={styles.browse ?? ""} onClick={() => setPicking(true)}>Browse…</Button>
         </div>
       ) : (
         <>
@@ -140,7 +142,7 @@ export function AddProjectForm({ onDone }: { onDone: () => void }) {
               value={parentPath}
               onChange={(e) => setParentPath(e.target.value)}
             />
-            <Button onClick={() => setPicking(true)}>Browse…</Button>
+            <Button className={styles.browse ?? ""} onClick={() => setPicking(true)}>Browse…</Button>
           </div>
           <input
             className={`${styles.input} ${styles.mono}`}
@@ -151,6 +153,11 @@ export function AddProjectForm({ onDone }: { onDone: () => void }) {
           />
         </>
       )}
+      <p className={styles.help}>
+        {mode === "existing"
+          ? "Link related repositories later from the project card."
+          : "It runs git init on a main branch with an empty first commit, so the first thread gets its own worktree, checkpoints and merge-back."}
+      </p>
       {error ? <p className={styles.error}>{error}</p> : null}
       <div className={styles.actions}>
         <Button type="submit" variant="primary" disabled={busy}>

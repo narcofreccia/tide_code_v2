@@ -3,8 +3,13 @@ import { DENSITIES, THEMES, useSettings, type Density, type Theme } from "../../
 import { FONT_SIZES, readBaseTokens, type FontSize } from "../../lib/theme.ts";
 import { importVscodeTheme, type ImportedTheme } from "../../lib/vscodeTheme.ts";
 import { Button } from "../ui/Button.tsx";
-import { Select } from "../ui/Select.tsx";
-import section from "./Section.module.css";
+import type { SectionMeta } from "./search.ts";
+import { SettingNote, SettingsGroup } from "./ui/SettingsGroup.tsx";
+import { SettingsPage } from "./ui/SettingsPage.tsx";
+import { SettingRow } from "./ui/SettingRow.tsx";
+import { SettingSelect } from "./ui/SettingSelect.tsx";
+import { rowId } from "./ui/saved.ts";
+import ui from "./ui/settings.module.css";
 import styles from "./AppearanceSection.module.css";
 
 const THEME_LABELS: Record<Theme, string> = { system: "System", dark: "Dark", light: "Light" };
@@ -28,6 +33,12 @@ const MONO_STACKS: Array<{ value: string; label: string }> = [
   { value: CUSTOM, label: "Custom…" },
 ];
 
+export const META: SectionMeta = {
+  title: "Appearance",
+  blurb: "Colours and fonts apply to this device only.",
+  keywords: ["Theme", "Density", "VS Code colour theme", "UI font", "Mono font", "Base size", "dark", "light"],
+};
+
 /** A family picker: a short list of safe stacks plus a free-text "Custom…". */
 function FamilyRow({
   label,
@@ -44,32 +55,32 @@ function FamilyRow({
   const [custom, setCustom] = useState(!known);
   const selected = custom ? CUSTOM : (value ?? SYSTEM);
   return (
-    <li className={`${section.row} ${styles.wrapRow}`}>
-      <span className={section.label}>{label}</span>
-      <span className={styles.controls}>
-        <Select
-          label={label}
-          value={selected}
-          options={stacks}
-          onSelect={(next) => {
-            if (next === CUSTOM) return setCustom(true);
-            setCustom(false);
-            onChange(next === SYSTEM ? undefined : next);
-          }}
-          variant="field"
-          size="md"
-        />
-        {custom ? (
-          <input
-            className={section.input}
-            aria-label={`${label} custom family`}
-            placeholder='e.g. "Fira Code", monospace'
-            value={value ?? ""}
-            onChange={(e) => onChange(e.target.value === "" ? undefined : e.target.value)}
+    <SettingRow
+      label={label}
+      control={
+        <>
+          <SettingSelect
+            label={label}
+            value={selected}
+            options={stacks}
+            onSelect={(next) => {
+              if (next === CUSTOM) return setCustom(true);
+              setCustom(false);
+              onChange(next === SYSTEM ? undefined : next);
+            }}
           />
-        ) : null}
-      </span>
-    </li>
+          {custom ? (
+            <input
+              className={`${ui.input} ${ui.wide}`}
+              aria-label={`${label} custom family`}
+              placeholder='e.g. "Fira Code", monospace'
+              value={value ?? ""}
+              onChange={(e) => onChange(e.target.value === "" ? undefined : e.target.value)}
+            />
+          ) : null}
+        </>
+      }
+    />
   );
 }
 
@@ -103,14 +114,12 @@ function CustomTheme() {
 
   const shown = preview ?? (customTheme ? { scheme: customTheme.scheme ?? "dark", ...customTheme } : null);
   return (
-    <>
-      <div className={section.head}>
-        <h3 className={section.title}>Custom theme</h3>
-      </div>
-      <ul className={section.rows}>
-        <li className={`${section.row} ${styles.wrapRow}`}>
-          <span className={section.label}>{customTheme ? `Active: ${customTheme.name}` : "VS Code colour theme"}</span>
-          <span className={styles.controls}>
+    <SettingsGroup title="Custom theme" help="Import a VS Code colour theme; it replaces the palette on this device.">
+      <SettingRow
+        label={customTheme ? `Active: ${customTheme.name}` : "VS Code colour theme"}
+        id={rowId("VS Code colour theme")}
+        control={
+          <>
             <input
               ref={file}
               type="file"
@@ -134,18 +143,22 @@ function CustomTheme() {
                 Clear
               </Button>
             ) : null}
-          </span>
-        </li>
-        {shown ? (
-          <li className={`${section.row} ${styles.wrapRow}`}>
+          </>
+        }
+      />
+      {shown ? (
+        <SettingRow
+          label={
             <svg className={styles.swatches} role="img" aria-label={`Preview of ${shown.name}`} viewBox="0 0 180 20" width="180" height="20">
               {SWATCH_TOKENS.map((t, i) => (
                 <rect key={t} data-token={t} x={i * 20} y="0" width="18" height="18" rx="3" fill={shown.tokens[t] ?? "none"} />
               ))}
             </svg>
-            {preview ? (
-              <span className={styles.controls}>
-                <span className={section.label}>{preview.name} · {preview.scheme}</span>
+          }
+          help={preview ? `${preview.name} · ${preview.scheme}` : undefined}
+          control={
+            preview ? (
+              <>
                 <Button
                   variant="primary"
                   onClick={() => {
@@ -158,13 +171,13 @@ function CustomTheme() {
                 <Button variant="quiet" onClick={() => setPreview(null)}>
                   Discard
                 </Button>
-              </span>
-            ) : null}
-          </li>
-        ) : null}
-      </ul>
-      {error ? <p className={styles.error} role="alert">{error}</p> : null}
-    </>
+              </>
+            ) : undefined
+          }
+        />
+      ) : null}
+      {error ? <SettingNote role="alert">{error}</SettingNote> : null}
+    </SettingsGroup>
   );
 }
 
@@ -178,57 +191,49 @@ export function AppearanceSection() {
   const setFonts = useSettings((s) => s.setFonts);
 
   return (
-    <div className={section.section}>
-      <div className={section.head}>
-        <h3 className={section.title}>Appearance</h3>
-      </div>
-      <ul className={section.rows}>
-        <li className={section.row}>
-          <span className={section.label}>Theme</span>
-          <Select
-            label="Theme"
-            value={theme}
-            options={THEMES.map((value) => ({ value, label: THEME_LABELS[value] }))}
-            onSelect={setTheme}
-            variant="field"
-            size="md"
-          />
-        </li>
-        <li className={section.row}>
-          <span className={section.label}>Density</span>
-          <Select
-            label="Density"
-            value={density}
-            options={DENSITIES.map((value) => ({ value, label: DENSITY_LABELS[value] }))}
-            onSelect={setDensity}
-            variant="field"
-            size="md"
-          />
-        </li>
-      </ul>
-      <p className={section.note}>
-        System follows your OS colour scheme. Density switches list rows between 28px and 24px.
-      </p>
+    <SettingsPage title={META.title} blurb={META.blurb}>
+      <SettingsGroup title="Theme">
+        <SettingRow
+          label="Theme"
+          help="System follows your OS colour scheme."
+          control={
+            <SettingSelect
+              label="Theme"
+              value={theme}
+              options={THEMES.map((value) => ({ value, label: THEME_LABELS[value] }))}
+              onSelect={setTheme}
+            />
+          }
+        />
+        <SettingRow
+          label="Density"
+          help="Switches list rows between 28px and 24px."
+          control={
+            <SettingSelect
+              label="Density"
+              value={density}
+              options={DENSITIES.map((value) => ({ value, label: DENSITY_LABELS[value] }))}
+              onSelect={setDensity}
+            />
+          }
+        />
+      </SettingsGroup>
       <CustomTheme />
-      <div className={section.head}>
-        <h3 className={section.title}>Fonts</h3>
-      </div>
-      <ul className={section.rows}>
+      <SettingsGroup title="Fonts" help="Fonts must be installed locally.">
         <FamilyRow label="UI font" value={fonts.ui} stacks={UI_STACKS} onChange={(ui) => setFonts({ ui })} />
         <FamilyRow label="Mono font" value={fonts.mono} stacks={MONO_STACKS} onChange={(mono) => setFonts({ mono })} />
-        <li className={section.row}>
-          <span className={section.label}>Base size</span>
-          <Select
-            label="Base size"
-            value={String(fonts.size)}
-            options={FONT_SIZES.map((n) => ({ value: String(n), label: `${n}px` }))}
-            onSelect={(n) => setFonts({ size: Number(n) as FontSize })}
-            variant="field"
-            size="md"
-          />
-        </li>
-      </ul>
-      <p className={section.note}>Colours and fonts apply to this device only. Fonts must be installed locally.</p>
-    </div>
+        <SettingRow
+          label="Base size"
+          control={
+            <SettingSelect
+              label="Base size"
+              value={String(fonts.size)}
+              options={FONT_SIZES.map((n) => ({ value: String(n), label: `${n}px` }))}
+              onSelect={(n) => setFonts({ size: Number(n) as FontSize })}
+            />
+          }
+        />
+      </SettingsGroup>
+    </SettingsPage>
   );
 }

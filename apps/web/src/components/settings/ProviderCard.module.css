@@ -1,26 +1,27 @@
+/* one harness instance, drawn as a full-width block inside the Providers group */
 .card {
   display: flex;
   flex-direction: column;
   gap: var(--sp-2);
-  padding: var(--sp-3);
-  border: 1px solid var(--border);
-  border-radius: var(--radius);
-  background: var(--surface);
+  padding: var(--sp-3) var(--sp-4);
 }
 
 .head {
   display: flex;
   align-items: center;
   justify-content: space-between;
+  gap: var(--sp-2);
 }
 
 .name {
   margin: 0;
   font-size: var(--fs-base);
+  font-weight: var(--fw-medium);
 }
 
 .status {
   margin: 0;
+  font-size: var(--fs-sm);
   color: var(--muted);
 }
 
@@ -36,9 +37,16 @@
   color: var(--muted);
 }
 
+.note {
+  margin: 0;
+  font-size: var(--fs-sm);
+  color: var(--muted);
+}
+
 .command {
   margin-left: var(--sp-2);
   font-family: var(--font-mono);
+  font-size: var(--fs-xs);
   color: var(--muted);
 }
 
@@ -57,6 +65,15 @@
 
 .models > summary {
   cursor: pointer;
+  font-size: var(--fs-sm);
+  color: var(--muted);
+}
+
+.family {
+  font-size: var(--fs-xs);
+  font-weight: var(--fw-semibold);
+  letter-spacing: var(--ls-label);
+  text-transform: uppercase;
   color: var(--muted);
 }
 
@@ -73,6 +90,11 @@
   height: var(--activity-h);
 }
 
+.model {
+  font-family: var(--font-mono);
+  font-size: var(--fs-xs);
+}
+
 .defaults {
   display: flex;
   flex-wrap: wrap;
@@ -83,4 +105,9 @@
   display: flex;
   align-items: center;
   gap: var(--sp-2);
+}
+
+.fieldLabel {
+  font-size: var(--fs-sm);
+  color: var(--muted);
 }

@@ -3,7 +3,8 @@ import { StatusBar } from "./components/shell/StatusBar.tsx";
 import { SplitPane } from "./components/shell/SplitPane.tsx";
 import { TopBar } from "./components/shell/TopBar.tsx";
 import { FocusModeSwitch } from "./components/shell/FocusModeSwitch.tsx";
-import { ThemeToggle } from "./components/shell/ThemeToggle.tsx";
+import { MergeConfirmHost } from "./components/shell/MergeConfirmHost.tsx";
+import { AddProjectDialogHost } from "./components/shell/AddProjectDialog.tsx";
 import { MissionControl } from "./components/mission/MissionControl.tsx";
 import { AllThreads } from "./components/mission/AllThreads.tsx";
 import { ThreadView } from "./components/thread/ThreadView.tsx";
@@ -85,7 +86,6 @@ export function App() {
   useMergeOutcomeToasts();
   useDocumentTitle();
   useNotificationEvents();
-  const railCollapsed = useUi((s) => s.railCollapsed);
   const { phone } = useViewport();
   // the tab bar stays out of the way of a conversation: threads and boards have a back button instead
   // PRs and Usage are reached from the palette on a phone; they are lists, so the tabs stay
@@ -98,12 +98,11 @@ export function App() {
         <TopBar />
         {phone ? null : (
           <div className={styles.focus} data-tauri-drag-region>
-            <ThemeToggle />
             <FocusModeSwitch />
           </div>
         )}
       </div>
-      <main className={`${styles.body} ${railCollapsed ? styles.railCollapsed : ""}`}>
+      <main className={styles.body}>
         {phone ? null : <Rail />}
         <div className={styles.content}>
           <Content />
@@ -121,6 +120,8 @@ export function App() {
       <ProjectLinksDialogHost />
       <NewThreadDialogHost />
       <LinkPrDialogHost />
+      <MergeConfirmHost />
+      <AddProjectDialogHost />
     </div>
   );
 }

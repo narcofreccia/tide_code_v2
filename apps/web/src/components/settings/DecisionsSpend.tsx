@@ -2,6 +2,8 @@ import { useEffect, useState } from "react";
 import type { DecisionsStats } from "@tide/contracts";
 import { call } from "../../state/model.ts";
 import { Button } from "../ui/Button.tsx";
+import { SettingBlock, SettingNote, SettingsGroup } from "./ui/SettingsGroup.tsx";
+import ui from "./ui/settings.module.css";
 import css from "./Decisions.module.css";
 
 const POLL_MS = 30_000;
@@ -30,13 +32,12 @@ export function DecisionsSpend() {
   const empty = stats === null || (stats.today.jev.calls === 0 && stats.today.fallback.calls === 0 && recent.length === 0);
 
   return (
-    <div className={css.card}>
-      <h4 className={css.cardTitle}>Spend</h4>
+    <SettingsGroup title="Spend">
       {empty ? (
-        <p className={css.note}>No verdicts yet.</p>
+        <SettingNote>No verdicts yet.</SettingNote>
       ) : (
-        <>
-          <table className={css.stats} aria-label="Today">
+        <SettingBlock flush>
+          <table className={`${ui.table} ${css.stats}`} aria-label="Today">
             <thead>
               <tr><th>Today</th><th className={css.n}>Calls</th><th className={css.n}>Tokens</th><th className={css.n}>Cost</th></tr>
             </thead>
@@ -46,7 +47,7 @@ export function DecisionsSpend() {
             </tbody>
           </table>
           {sites.length > 0 ? (
-            <table className={css.stats} aria-label="By site">
+            <table className={`${ui.table} ${css.stats}`} aria-label="By site">
               <thead>
                 <tr><th>Site</th><th className={css.n}>Calls</th><th className={css.n}>Tokens</th><th className={css.n}>Cost</th></tr>
               </thead>
@@ -57,11 +58,13 @@ export function DecisionsSpend() {
               </tbody>
             </table>
           ) : null}
-          <Button className={css.toggle} onClick={() => setOpen((v) => !v)} aria-expanded={open}>
-            {open ? "Hide recent verdicts" : `Recent verdicts (${recent.length})`}
-          </Button>
+          <div className={css.toggle}>
+            <Button onClick={() => setOpen((v) => !v)} aria-expanded={open}>
+              {open ? "Hide recent verdicts" : `Recent verdicts (${recent.length})`}
+            </Button>
+          </div>
           {open ? (
-            <table className={css.stats} aria-label="Recent verdicts">
+            <table className={`${ui.table} ${css.stats}`} aria-label="Recent verdicts">
               <thead>
                 <tr><th>Time</th><th>Site</th><th>Verdict</th><th className={css.n}>Confidence</th><th>Source</th><th className={css.n}>Cost</th><th className={css.n}>ms</th></tr>
               </thead>
@@ -80,8 +83,8 @@ export function DecisionsSpend() {
               </tbody>
             </table>
           ) : null}
-        </>
+        </SettingBlock>
       )}
-    </div>
+    </SettingsGroup>
   );
 }

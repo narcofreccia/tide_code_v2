@@ -6,10 +6,10 @@ import { HarnessFields } from "../thread/ProviderPicker.tsx";
 import { Button } from "../ui/Button.tsx";
 import { Checkbox, Radio } from "../ui/Choice.tsx";
 import { Dialog } from "../ui/Dialog.tsx";
+import { Icon } from "../ui/Icon.tsx";
 import { Select } from "../ui/Select.tsx";
 import { WebhookUrls } from "../fleet/WebhookUrls.tsx";
 import styles from "./Automations.module.css";
-import section from "./Section.module.css";
 
 type Unit = "minutes" | "hours";
 const UNITS = [
@@ -155,7 +155,7 @@ export function TaskDialog({
           ) : d.kind === "webhook" ? (
             <>
               <WebhookUrls hookId={d.hookId} projectId={projectId} />
-              <p className={section.note}>
+              <p className={styles.note}>
                 The request body is appended to the prompt. With a secret, requests must carry{" "}
                 <code>X-Tide-Signature: sha256=&lt;HMAC of the body&gt;</code>.
               </p>
@@ -174,7 +174,7 @@ export function TaskDialog({
                 {d.times.map((t) => (
                   <span key={t} className={styles.chip}>
                     {t}
-                    <Button variant="quiet" aria-label={`Remove ${t}`} onClick={() => set({ times: d.times.filter((x) => x !== t) })}>×</Button>
+                    <Button variant="quiet" aria-label={`Remove ${t}`} onClick={() => set({ times: d.times.filter((x) => x !== t) })}><Icon name="close" size={12} /></Button>
                   </span>
                 ))}
                 <input className={`${styles.input} ${styles.num}`} aria-label="Time" value={d.timeInput} onChange={(e) => set({ timeInput: e.target.value })} />

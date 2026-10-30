@@ -21,10 +21,10 @@
 :root[data-desktop] .focus button { -webkit-app-region: no-drag; }
 .body {
   display: grid;
-  grid-template-columns: 240px minmax(0, 1fr);
+  /* the sidebar (44px strip + resizable rail panel) sizes itself */
+  grid-template-columns: auto minmax(0, 1fr);
   min-height: 0;
 }
-.railCollapsed { grid-template-columns: 48px minmax(0, 1fr); }
 .content { display: flex; flex-direction: column; min-width: 0; min-height: 0; }
 
 /* Safe areas: the standalone PWA draws under the notch and home indicator. */
@@ -43,6 +43,5 @@
     display: block;
     padding: 0;
   }
-  .phone .body,
-  .phone .railCollapsed { grid-template-columns: minmax(0, 1fr); }
+  .phone .body { grid-template-columns: minmax(0, 1fr); }
 }

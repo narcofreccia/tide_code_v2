@@ -1,7 +1,9 @@
 import { selectThreadTurns } from "@tide/client";
 import type { Project, ReadModel, Thread } from "@tide/contracts";
 import {
+  canMergeBack,
   copyText,
+  mergeBackThread,
   createChild,
   deleteNeedsConfirm,
   isEmptyThread,
@@ -68,6 +70,14 @@ export function archivedThreadMenu(thread: Thread): MenuItem[] {
   ];
 }
 
+/** The snooze choices, shared by the row menu's submenu and the rail's `s` key. */
+export function snoozeItems(threadId: string, now: number = Date.now()): MenuItem[] {
+  return [
+    { label: "1 hour", onSelect: () => snoozeThread(threadId, now + HOUR) },
+    { label: "Until tomorrow 09:00", onSelect: () => snoozeThread(threadId, tomorrowMorning(now)) },
+  ];
+}
+
 /** Right-click / ⋯ on a live thread in the rail. */
 export function threadMenu(
   model: ReadModel,
@@ -100,13 +110,8 @@ export function threadMenu(
         if (forkTurn) ui.setThreadDialog({ kind: "fork", threadId: thread.id, turnId: forkTurn });
       },
     },
-    {
-      label: "Snooze",
-      submenu: [
-        { label: "1 hour", onSelect: () => snoozeThread(thread.id, now + HOUR) },
-        { label: "Until tomorrow 09:00", onSelect: () => snoozeThread(thread.id, tomorrowMorning(now)) },
-      ],
-    },
+    { label: "Snooze", submenu: snoozeItems(thread.id, now) },
+    ...(canMergeBack(thread) ? [{ label: "Merge back", onSelect: () => void mergeBackThread(thread.id) }] : []),
     ...copyItems(thread),
     {
       label: "Remove worktree…",
@@ -130,10 +135,10 @@ export function projectMenu(project: Project): MenuItem[] {
     { label: "Project icon…", onSelect: () => ui.setProjectDialog({ kind: "icon", projectId: project.id }) },
     { label: "Linked repositories…", onSelect: () => ui.setLinksProject(project.id) },
     { label: "Copy path", onSelect: () => void copyText(project.rootPath, "path") },
+    { label: "Project settings…", onSelect: () => ui.openSettings("projects") },
     {
       label: "Archive project…",
       separatorBefore: true,
-      danger: true,
       onSelect: () => ui.setProjectDialog({ kind: "archive", projectId: project.id }),
     },
   ];

@@ -1,12 +1,14 @@
 .toggle {
-  width: 22px;
-  height: 20px;
+  display: inline-flex;
+  align-items: center;
+  justify-content: center;
+  width: 28px;
+  height: 28px;
   padding: 0;
-  border: 1px solid var(--border);
-  border-radius: var(--radius-sm);
-  background: var(--surface-2);
+  border: 0;
+  border-radius: var(--radius);
+  background: transparent;
   color: var(--muted);
-  font-size: var(--fs-sm);
-  line-height: 1;
+  cursor: pointer;
 }
-.toggle:hover { color: var(--text); border-color: var(--accent); }
+.toggle:hover { background: var(--surface-hover); color: var(--text); }

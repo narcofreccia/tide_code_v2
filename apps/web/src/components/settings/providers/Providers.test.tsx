@@ -110,7 +110,7 @@ describe("Settings › Providers instances", () => {
     setProvidersForTest([...PROVIDER_FIXTURE, CODEX_WORK]);
     const card = within(await screen.findByRole("article", { name: "Codex · work" }));
     expect(card.queryByText("Add account")).toBeNull();
-    fireEvent.click(card.getByRole("button", { name: "⋯" }));
+    fireEvent.click(card.getByRole("button", { name: /More actions for/ }));
     fireEvent.click(screen.getByText("Remove…"));
     fireEvent.click(screen.getByRole("button", { name: "Remove" }));
     await waitFor(() => expect(patches).toEqual([{ providerInstances: [] }]));

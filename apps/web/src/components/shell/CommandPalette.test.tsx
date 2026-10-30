@@ -46,7 +46,7 @@ describe("CommandPalette", () => {
     fireEvent.keyDown(screen.getByLabelText("Command"), { key: "Escape" });
     expect(useUi.getState().paletteOpen).toBe(false);
 
-    fireEvent.click(screen.getByTitle("Command palette"));
+    fireEvent.click(screen.getByTitle("Command palette (⌘K)"));
     expect(useUi.getState().paletteOpen).toBe(true);
   });
 

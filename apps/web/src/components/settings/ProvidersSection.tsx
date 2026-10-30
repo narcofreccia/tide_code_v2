@@ -9,8 +9,9 @@ import { ConfirmDialog } from "../ui/Dialog.tsx";
 import { ProviderCard } from "./ProviderCard.tsx";
 import { AcpRegistryDialog } from "./providers/AcpRegistryDialog.tsx";
 import { InstanceDialog } from "./providers/InstanceDialog.tsx";
-import section from "./Section.module.css";
-import styles from "./ProvidersSection.module.css";
+import type { SectionMeta } from "./search.ts";
+import { SettingNote, SettingsGroup } from "./ui/SettingsGroup.tsx";
+import { SettingsPage } from "./ui/SettingsPage.tsx";
 
 type Sheet =
   | { type: "account"; kind: ProviderKind; instance?: ProviderInstanceConfig }
@@ -30,6 +31,13 @@ function cardsOf(providers: readonly ProviderStatusDto[], configured: readonly P
     .map((c) => ({ ...placeholderStatus(c.kind, c.id, c.label), hint: "Not probed yet — Refresh" }));
   return orderedInstances([...known, ...missing]);
 }
+
+export const META: SectionMeta = {
+  title: "Providers",
+  blurb:
+    "Tide drives the CLIs you already pay for. Log in with each tool’s own command; Tide never stores provider credentials.",
+  keywords: ["Add ACP agent", "Add account", "default model", "default mode", "login", "Claude Code", "Codex", "OpenCode", "Pi"],
+};
 
 export function ProvidersSection() {
   const providers = useProviders();
@@ -59,23 +67,20 @@ export function ProvidersSection() {
   };
 
   return (
-    <div className={section.section}>
-      <div className={section.head}>
-        <h3 className={section.title}>Providers</h3>
-        <span className={styles.actions}>
-          <Button onClick={() => setSheet({ type: "acp" })}>Add ACP agent…</Button>
-          <Button onClick={() => loadProviders(true)} disabled={loading}>
-            {loading ? "Refreshing…" : "Refresh all"}
-          </Button>
-        </span>
-      </div>
-      <p className={section.note}>
-        Tide drives the CLIs you already pay for. Log in with each tool&rsquo;s own command; Tide
-        never stores provider credentials. Add a second account of a harness, or any agent that
-        speaks the Agent Client Protocol.
-      </p>
-      {error ? <p className={section.note}>Could not read harness status: {error}</p> : null}
-      <div className={styles.cards}>
+    <SettingsPage title={META.title} blurb={META.blurb}>
+      <SettingsGroup
+        title="Harnesses"
+        help="Add a second account of a harness, or any agent that speaks the Agent Client Protocol."
+        actions={
+          <>
+            <Button onClick={() => setSheet({ type: "acp" })}>Add ACP agent…</Button>
+            <Button onClick={() => loadProviders(true)} disabled={loading}>
+              {loading ? "Refreshing…" : "Refresh all"}
+            </Button>
+          </>
+        }
+      >
+        {error ? <SettingNote role="alert">Could not read harness status: {error}</SettingNote> : null}
         {cardsOf(providers, configured).map((status) => {
           const instance = configured.find((c) => c.id === status.id);
           const bundled = status.id === status.kind && BUNDLED_PROVIDERS.includes(status.kind);
@@ -90,7 +95,7 @@ export function ProvidersSection() {
             />
           );
         })}
-      </div>
+      </SettingsGroup>
       {sheet?.type === "account" ? (
         <InstanceDialog
           kind={sheet.kind}
@@ -114,6 +119,6 @@ export function ProvidersSection() {
           onCancel={() => setSheet(null)}
         />
       ) : null}
-    </div>
+    </SettingsPage>
   );
 }

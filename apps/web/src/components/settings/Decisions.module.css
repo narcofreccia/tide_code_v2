@@ -1,28 +1,12 @@
-.card {
-  display: flex;
-  flex-direction: column;
-  gap: var(--sp-2);
-  padding: var(--sp-3);
-  border: 1px solid var(--border);
-  border-radius: var(--radius);
-  background: var(--surface);
-}
-.cardTitle { margin: 0; font-size: var(--fs-base); font-weight: 600; }
-.facts { display: flex; flex-wrap: wrap; gap: var(--sp-1) var(--sp-3); color: var(--muted); }
-.fact { font-variant-numeric: tabular-nums; }
-.mono { font-family: var(--font-mono); color: var(--text); }
-.field { display: flex; flex-direction: column; gap: var(--sp-1); }
-.pickRow { display: flex; align-items: center; gap: var(--sp-2); flex-wrap: wrap; }
-.range { display: flex; align-items: center; gap: var(--sp-2); }
-.range label { width: 40px; color: var(--muted); }
-.range input[type="range"] { flex: 1; accent-color: var(--accent); }
-.num { width: 40px; text-align: right; font-variant-numeric: tabular-nums; font-family: var(--font-mono); }
-.site { display: flex; flex-direction: column; gap: 2px; }
-.caption { margin: 0 0 0 22px; color: var(--muted); }
-.stats { width: 100%; border-collapse: collapse; text-align: left; font-variant-numeric: tabular-nums; }
-.stats th { color: var(--muted); font-weight: 500; padding: var(--sp-1) var(--sp-2); border-bottom: 1px solid var(--border); }
-.stats td { padding: var(--sp-1) var(--sp-2); border-bottom: 1px solid var(--border); }
+/* Settings › Decisions: the facts line, the key form, the gray-zone sliders and the spend tables */
+.facts { display: flex; flex-wrap: wrap; gap: var(--sp-1) var(--sp-3); font-variant-numeric: tabular-nums; }
+.mono { font-family: var(--font-mono); font-size: var(--fs-xs); color: var(--text-2); }
+.keyForm { display: flex; align-items: center; gap: var(--sp-2); }
+.keyInput { width: 200px; }
+.range { display: inline-flex; align-items: center; gap: var(--sp-2); }
+.range input[type="range"] { width: 180px; accent-color: var(--accent); }
+.num { width: 40px; text-align: right; font-variant-numeric: tabular-nums; font-family: var(--font-mono); font-size: var(--fs-xs); }
 .stats .n { text-align: right; }
-.error { color: var(--danger, var(--muted)); }
-.toggle { align-self: flex-start; }
-.note { margin: 0; color: var(--muted); }
+.stats + .stats { border-top: 1px solid var(--border); }
+.error { color: var(--danger); }
+.toggle { padding: var(--sp-2) var(--sp-4); border-top: 1px solid var(--border); }

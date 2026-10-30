@@ -1,91 +1,118 @@
 import { useState } from "react";
 import { patchServerSettings, useServerSettings } from "../../state/serverSettings.ts";
 import { Button } from "../ui/Button.tsx";
-import { Checkbox } from "../ui/Choice.tsx";
 import { DecisionsFallback } from "./DecisionsFallback.tsx";
 import { DecisionsSpend } from "./DecisionsSpend.tsx";
 import { DecisionsTuning } from "./DecisionsTuning.tsx";
+import type { SectionMeta } from "./search.ts";
+import { SettingsGroup } from "./ui/SettingsGroup.tsx";
+import { SettingsPage } from "./ui/SettingsPage.tsx";
+import { SettingRow } from "./ui/SettingRow.tsx";
+import { SettingToggle } from "./ui/SettingToggle.tsx";
+import { useTrackSave } from "./ui/saved.ts";
+import ui from "./ui/settings.module.css";
 import css from "./Decisions.module.css";
-import section from "./Section.module.css";
 
-/**
- * TypeSafe's Jev: the optional decision model behind Tide's small yes/no and label questions. The key goes to the server
- * once and is never read back: the client only learns `hasKey`.
- */
-export function DecisionsSection() {
-  const decisions = useServerSettings((s) => s.settings.decisions);
+export const META: SectionMeta = {
+  title: "Decisions",
+  blurb:
+    "Jev is TypeSafe's calibrated decision model (System One). Tide asks it small yes/no and label questions and shows the answers; it never acts on its own.",
+  keywords: [
+    "Use Jev for decisions",
+    "API key",
+    "Fallback judge",
+    "Gray zone",
+    "Handoff",
+    "Delegates",
+    "Approvals",
+    "Experts",
+    "Stuck",
+    "Advance experts automatically when converged",
+    "Spend",
+    "TypeSafe",
+  ],
+};
+
+/** The key goes to the server once and is never read back: the client only learns `hasKey`. */
+function KeyForm({ hasKey }: { hasKey: boolean }) {
   const [key, setKey] = useState("");
-
+  const track = useTrackSave();
   const saveKey = (): void => {
     const apiKey = key.trim();
     if (apiKey === "") return;
     setKey("");
-    void patchServerSettings({ decisions: { apiKey } });
+    track(() => patchServerSettings({ decisions: { apiKey } }));
   };
+  return (
+    <form
+      className={css.keyForm}
+      onSubmit={(event) => {
+        event.preventDefault();
+        saveKey();
+      }}
+    >
+      <input
+        className={`${ui.input} ${ui.mono} ${css.keyInput}`}
+        type="password"
+        autoComplete="off"
+        aria-label="Decisions API key"
+        placeholder={hasKey ? "replace the stored key" : "paste an API key"}
+        value={key}
+        onChange={(event) => setKey(event.target.value)}
+      />
+      <Button type="submit" variant="primary" disabled={key.trim() === ""}>
+        Save key
+      </Button>
+    </form>
+  );
+}
+
+/** TypeSafe's Jev: the optional decision model behind Tide's small yes/no and label questions. */
+export function DecisionsSection() {
+  const decisions = useServerSettings((s) => s.settings.decisions);
 
   return (
-    <div className={section.section}>
-      <div className={section.head}>
-        <h3 className={section.title}>Decisions · TypeSafe Jev</h3>
-      </div>
-      <div className={css.card}>
-        <p className={section.note}>
-          Jev is TypeSafe&apos;s calibrated decision model (System One). Tide asks it small yes/no and label
-          questions and shows the answers; it never acts on its own. When Jev is not confident, the fallback
-          judge below is asked instead.
-        </p>
-        <div className={css.facts}>
-          <span className={css.fact}>Model <span className={css.mono}>{decisions.model}</span></span>
-          <span className={css.fact}>Endpoint <span className={css.mono}>{decisions.endpoint}</span></span>
-          <span className={css.fact}>${decisions.usdPerMillionInput} per M input tokens</span>
-          <span className={css.fact}>
-            {decisions.contextTokens / 1000}K-token context (Tide keeps every call under ~8K)
+    <SettingsPage title={META.title} blurb={META.blurb}>
+      <SettingsGroup
+        title="TypeSafe Jev"
+        help={
+          <span className={css.facts}>
+            <span>
+              Model <span className={css.mono}>{decisions.model}</span>
+            </span>
+            <span>
+              Endpoint <span className={css.mono}>{decisions.endpoint}</span>
+            </span>
+            <span>${decisions.usdPerMillionInput} per M input tokens</span>
+            <span>{decisions.contextTokens / 1000}K-token context (Tide keeps every call under ~8K)</span>
           </span>
-        </div>
-      </div>
-      <ul className={section.rows}>
-        <li className={section.row}>
-          <Checkbox
-            className={section.check}
-            checked={decisions.enabled}
-            onChange={(event) => void patchServerSettings({ decisions: { enabled: event.target.checked } })}
-          >
-            Use Jev for decisions
-          </Checkbox>
-        </li>
-        <li className={section.row}>
-          <span className={section.label}>API key</span>
-          <span className={`${section.value} ${decisions.hasKey ? section.ok : ""}`}>
-            {decisions.hasKey ? "key set" : "no key"}
-          </span>
-        </li>
-      </ul>
-      <form
-        className={section.form}
-        onSubmit={(event) => {
-          event.preventDefault();
-          saveKey();
-        }}
+        }
       >
-        <div className={section.formRow}>
-          <input
-            className={section.input}
-            type="password"
-            autoComplete="off"
-            aria-label="Decisions API key"
-            placeholder={decisions.hasKey ? "replace the stored key" : "paste an API key"}
-            value={key}
-            onChange={(event) => setKey(event.target.value)}
-          />
-          <Button type="submit" variant="primary" disabled={key.trim() === ""}>
-            Save key
-          </Button>
-        </div>
-        <p className={section.note}>Stored on the server only; it is never shown again.</p>
-      </form>
+        <SettingRow
+          label="Use Jev for decisions"
+          help="When Jev is not confident, the fallback judge below is asked instead."
+          control={(id) => (
+            <SettingToggle
+              id={id}
+              checked={decisions.enabled}
+              onChange={(enabled) => patchServerSettings({ decisions: { enabled } })}
+            />
+          )}
+        />
+        <SettingRow
+          label="API key"
+          help="Stored on the server only; it is never shown again."
+          control={
+            <>
+              <span className={`${ui.value} ${decisions.hasKey ? ui.ok : ""}`}>{decisions.hasKey ? "key set" : "no key"}</span>
+              <KeyForm hasKey={decisions.hasKey} />
+            </>
+          }
+        />
+      </SettingsGroup>
       <DecisionsFallback />
       <DecisionsTuning />
       <DecisionsSpend />
-    </div>
+    </SettingsPage>
   );
 }

@@ -1,1 +1,42 @@
 .emptyHint { margin: 0; padding: 0 var(--sp-2); color: var(--muted); font-size: var(--fs-sm); }
+.experts { display: flex; flex-direction: column; }
+.groupHeading {
+  display: flex;
+  align-items: center;
+  height: 20px;
+  padding: 0 var(--sp-2);
+  color: var(--text-2);
+  font-size: var(--fs-xs);
+  font-weight: var(--fw-semibold);
+  letter-spacing: var(--ls-label);
+  text-transform: uppercase;
+}
+.threads { list-style: none; margin: 0; padding: 0; }
+.nested {
+  list-style: none;
+  margin: 0 0 0 13px;
+  padding: 0 0 0 var(--sp-1);
+  border-left: 1px solid var(--border);
+}
+.thread {
+  display: flex;
+  align-items: center;
+  gap: var(--sp-2);
+  width: 100%;
+  height: var(--row-h);
+  padding: 0 var(--sp-2) 0 var(--sp-2);
+  border: 0;
+  border-left: 2px solid transparent;
+  background: transparent;
+  color: inherit;
+  text-align: left;
+  font-size: var(--fs-base);
+  transition: background var(--dur-fast) var(--ease);
+}
+.thread:hover { background: var(--surface-hover); }
+.active,
+.active:hover { background: var(--selection); border-left-color: var(--selection-bar); }
+.roleGlyph { flex: none; color: var(--muted); }
+.threadTitle { flex: 1; min-width: 0; overflow: hidden; text-overflow: ellipsis; white-space: nowrap; color: var(--text); }
+.needsYou { flex: none; width: 6px; height: 6px; border-radius: 50%; background: var(--st-needs); }
+.provider { flex: none; color: var(--muted); font-size: var(--fs-sm); }

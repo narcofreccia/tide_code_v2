@@ -1,0 +1,3 @@
+/* list rows inside settings groups (automations, teams): a bold name over a line of muted meta */
+.name { font-weight: var(--fw-medium); overflow: hidden; text-overflow: ellipsis; white-space: nowrap; display: block; }
+.meta { display: flex; flex-wrap: wrap; gap: var(--sp-1) var(--sp-3); }

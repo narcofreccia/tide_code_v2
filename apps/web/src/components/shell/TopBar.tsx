@@ -1,32 +1,34 @@
-import { selectProjects } from "@tide/client";
 import { openPalette } from "../../lib/commands.ts";
 import { useModel } from "../../state/model.ts";
 import { useUi } from "../../state/ui.ts";
 import { useViewHeading } from "../../state/hooks.ts";
+import { envOfThread, useEnvironments } from "../../state/environments.ts";
 import { Button } from "../ui/Button.tsx";
-import { Kbd } from "../ui/Kbd.tsx";
-import { Select, type SelectOption } from "../ui/Select.tsx";
+import { ConnectionDot } from "../ui/ConnectionDot.tsx";
+import { Icon } from "../ui/Icon.tsx";
 import { useViewport } from "../../lib/useViewport.ts";
 import { PhoneTopBar } from "../mobile/PhoneTopBar.tsx";
+import { EnvTag } from "../fleet/FleetBits.tsx";
+import { useMultiEnv } from "../fleet/envView.ts";
 import { Logo } from "./Logo.tsx";
+import { ThemeToggle } from "./ThemeToggle.tsx";
 import styles from "./TopBar.module.css";
 
+/**
+ * Logo · `Project › Thread` breadcrumb or the page heading · (env chip) connection,
+ * theme, palette. Projects are picked in the rail, not here.
+ */
 export function TopBar() {
-  const model = useModel((s) => s.model);
-  const projects = selectProjects(model);
-  const selectedProjectId = useUi((s) => s.selectedProjectId);
-  const selectProject = useUi((s) => s.selectProject);
   const showMission = useUi((s) => s.showMission);
   const selectThread = useUi((s) => s.selectThread);
   const heading = useViewHeading();
+  const status = useModel((s) => s.status);
+  const multiEnv = useMultiEnv();
+  const primaryId = useEnvironments((s) => s.primaryId);
   const { phone } = useViewport();
 
-  const projectOptions: SelectOption<string>[] = [
-    { value: "", label: "All projects" },
-    ...projects.map((p) => ({ value: p.id, label: p.title, description: p.rootPath })),
-  ];
-
   if (phone) return <PhoneTopBar />;
+  const envId = heading.kind === "thread" ? envOfThread(heading.thread.id) : primaryId;
 
   return (
     // Tauri v2 drags from this attribute (not `-webkit-app-region`), and only when
@@ -45,24 +47,6 @@ export function TopBar() {
         <Logo size={18} />
       </Button>
 
-      <Button className={styles.palette} title="Command palette" aria-label="Command palette" onClick={openPalette}>
-        <Kbd>⌘K</Kbd>
-      </Button>
-
-      {heading.kind === "thread" ? null : (
-        <Select
-          className={styles.switcher}
-          label="Project switcher"
-          align="start"
-          value={selectedProjectId ?? ""}
-          options={projectOptions}
-          onSelect={(id) => {
-            selectProject(id || null);
-            showMission();
-          }}
-        />
-      )}
-
       {heading.kind === "thread" ? (
         <nav className={styles.crumb} aria-label="Breadcrumb">
           <span className={styles.crumbProject}>{heading.projectTitle}</span>
@@ -70,9 +54,17 @@ export function TopBar() {
           <span className={styles.crumbThread}>{heading.thread.title}</span>
         </nav>
       ) : (
-        <span className={styles.idle}>{heading.label}</span>
+        <span className={styles.heading}>{heading.label}</span>
       )}
 
+      <div className={styles.end}>
+        {multiEnv ? <EnvTag envId={envId} /> : null}
+        <ConnectionDot status={status} />
+        <ThemeToggle />
+        <button type="button" className={styles.icon} title="Command palette (⌘K)" aria-label="Command palette" onClick={openPalette}>
+          <Icon name="search" size={16} />
+        </button>
+      </div>
     </header>
   );
 }

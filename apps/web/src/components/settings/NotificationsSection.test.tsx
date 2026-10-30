@@ -32,10 +32,10 @@ describe("Notifications settings", () => {
   it("requests permission and enables", async () => {
     render(<NotificationsSection />);
     await act(async () => undefined);
-    fireEvent.click(screen.getByRole("checkbox", { name: /Notify me/ }));
+    fireEvent.click(screen.getByRole("switch", { name: /Notify me/ }));
     await act(async () => undefined);
     expect(useNotifications.getState().enabled).toBe(true);
-    fireEvent.click(screen.getByRole("checkbox", { name: /sound/ }));
+    fireEvent.click(screen.getByRole("switch", { name: /sound/ }));
     expect(useNotifications.getState().sound).toBe(true);
   });
 
@@ -44,7 +44,7 @@ describe("Notifications settings", () => {
     render(<NotificationsSection />);
     await act(async () => undefined);
     expect(screen.getByRole("status").textContent).toMatch(/blocked/);
-    expect((screen.getByRole("checkbox", { name: /Notify me/ }) as HTMLInputElement).disabled).toBe(true);
+    expect((screen.getByRole("switch", { name: /Notify me/ }) as HTMLInputElement).disabled).toBe(true);
   });
 
   it("mutes a project", async () => {
@@ -52,7 +52,7 @@ describe("Notifications settings", () => {
     attachFakeStore(modelWith({ projects: { p1: project }, threads: { t: makeThread("t") } }));
     render(<NotificationsSection />);
     await act(async () => undefined);
-    fireEvent.click(screen.getByRole("checkbox", { name: "Alpha" }));
+    fireEvent.click(screen.getByRole("switch", { name: "Alpha" }));
     expect(useNotifications.getState().mutedProjectIds).toEqual(["p1"]);
   });
 });

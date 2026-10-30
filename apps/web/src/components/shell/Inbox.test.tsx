@@ -1,9 +1,7 @@
 import { afterEach, beforeEach, describe, expect, it } from "vitest";
 import { act, cleanup, fireEvent, render, screen, waitFor, within } from "@testing-library/react";
 import type { Thread } from "@tide/contracts";
-import { ProjectTree } from "./ProjectTree.tsx";
-import { RailSelectionBar } from "./RailSelectionBar.tsx";
-import { useInboxKeys } from "./useInboxKeys.ts";
+import { Rail } from "./Rail.tsx";
 import { ToastHost } from "../ui/Toast.tsx";
 import { attachFakeStore, makeThread, mockRpc, modelWith, resetUi } from "../../testHarness.ts";
 import { resetSettleUndo } from "../../lib/inboxActions.ts";
@@ -24,22 +22,15 @@ afterEach(() => {
 
 const project = { id: "p1", title: "Tide", rootPath: "/src/tide", createdAt: 1, updatedAt: 1 };
 
-function Keys() {
-  useInboxKeys();
-  return null;
-}
-
 function mount(threads: Thread[]) {
   const model = modelWith({ projects: { p1: project }, threads: Object.fromEntries(threads.map((t) => [t.id, t])) });
   for (const t of threads) model.threadMessages[t.id] = ["m1"];
   const fake = attachFakeStore(model);
   render(
-    <nav aria-label="Navigation">
-      <Keys />
-      <RailSelectionBar />
-      <ProjectTree />
+    <>
+      <Rail />
       <ToastHost />
-    </nav>,
+    </>,
   );
   return fake;
 }
@@ -82,7 +73,7 @@ describe("settle from the rail", () => {
       makeThread("t3", { title: "Old one", settledAt: 4, settleReason: "inactive" }),
     ]);
     expect(screen.queryByText("Merged one")).toBeNull();
-    fireEvent.click(screen.getByRole("button", { name: /Settled · 2/ }));
+    fireEvent.click(screen.getByRole("button", { name: /Settled 2/ }));
     const list = screen.getByRole("list", { name: "Settled threads" });
     expect(within(list).getByText("merged")).toBeDefined();
     expect(within(list).getByText("inactive")).toBeDefined();
@@ -93,15 +84,16 @@ describe("settle from the rail", () => {
   it("collects running threads under Working only when the setting is on", () => {
     const threads = [makeThread("t1", { title: "Busy", status: "running" }), makeThread("t2", { title: "Calm" })];
     mount(threads);
-    expect(screen.queryByRole("button", { name: /Working · / })).toBeNull();
+    expect(screen.queryByRole("button", { name: /Working/ })).toBeNull();
     cleanup();
     useServerSettings.setState({
       settings: { ...defaultUserSettings(), inbox: { ...defaultUserSettings().inbox, workingSection: true } },
     });
     mount(threads);
-    expect(screen.queryByText("Busy")).toBeNull();
-    fireEvent.click(screen.getByRole("button", { name: /Working · 1/ }));
+    expect(within(screen.getByRole("list", { name: "Inbox threads" })).queryByText("Busy")).toBeNull();
     expect(within(screen.getByRole("list", { name: "Working threads" })).getByText("Busy")).toBeDefined();
+    fireEvent.click(screen.getByRole("button", { name: /Working 1/ }));
+    expect(screen.queryByText("Busy")).toBeNull();
   });
 
   it("the rail menu toggles auto-settle for the thread", () => {
@@ -189,7 +181,7 @@ describe("unread dot", () => {
     model.threadMessages.t2 = ["m3"];
     attachFakeStore(model);
     useUi.setState({ view: "thread", selectedThreadId: "t2" });
-    render(<ProjectTree />);
+    render(<Rail />);
     expect(screen.getAllByRole("img", { name: "unread" })).toHaveLength(1);
     expect(within(screen.getByText("Quiet").closest("li") as HTMLElement).getByRole("img", { name: "unread" })).toBeDefined();
   });

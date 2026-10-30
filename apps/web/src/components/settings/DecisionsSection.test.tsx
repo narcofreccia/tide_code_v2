@@ -49,7 +49,7 @@ describe("Settings › Decisions", () => {
   it("names Jev and shows model, endpoint and price", () => {
     mockRpc({ "decisions.stats": EMPTY, "providers.list": () => [] });
     render(<DecisionsSection />);
-    expect(screen.getByText("Decisions · TypeSafe Jev")).toBeDefined();
+    expect(screen.getByText("TypeSafe Jev")).toBeDefined();
     expect(screen.getByText("jev-latest")).toBeDefined();
     expect(screen.getByText("https://api.typesafe.ai")).toBeDefined();
     expect(screen.getByText(/\$0\.042 per M input tokens/)).toBeDefined();

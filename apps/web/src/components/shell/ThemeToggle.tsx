@@ -1,5 +1,6 @@
 import { useEffect, useState } from "react";
 import { effectiveTheme, toggleTheme, THEME_EVENT } from "../../state/settings.ts";
+import { Icon } from "../ui/Icon.tsx";
 import styles from "./ThemeToggle.module.css";
 
 /**
@@ -32,7 +33,7 @@ export function ThemeToggle() {
       aria-pressed={current === "light"}
       onClick={() => setCurrent(toggleTheme())}
     >
-      {current === "dark" ? "☾" : "☀"}
+      <Icon name={current === "dark" ? "moon" : "sun"} size={16} />
     </button>
   );
 }

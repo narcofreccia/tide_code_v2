@@ -80,6 +80,10 @@ interface UiState {
   threadDialog: ThreadDialog | null;
   focusMode: FocusMode;
   railCollapsed: boolean;
+  /** R12: rail panel width in px (beside the 44px strip), 240–360 */
+  railWidth: number;
+  /** R12: thread whose rail merge-back waits on a confirmation, null when none */
+  mergeConfirmThreadId: string | null;
   /** thread column share of the split, 0.2–0.8 */
   splitRatio: number;
   /** Changes tab: side-by-side diff when true, unified when false (⌘⇧D) */
@@ -102,6 +106,8 @@ interface UiState {
   showUsage: () => void;
   setLinkPrThread: (threadId: string | null) => void;
   showSettings: () => void;
+  /** opens Settings on one section */
+  openSettings: (section: SettingsSection) => void;
   toggleSettings: () => void;
   closeSettings: () => void;
   setSettingsSection: (section: SettingsSection) => void;
@@ -115,12 +121,21 @@ interface UiState {
   setThreadDialog: (dialog: ThreadDialog | null) => void;
   setFocusMode: (mode: FocusMode) => void;
   toggleRail: () => void;
+  setRailWidth: (width: number) => void;
+  setMergeConfirm: (threadId: string | null) => void;
   setSplitRatio: (ratio: number) => void;
   toggleDiffSideBySide: () => void;
   toggleFileList: () => void;
 }
 
 export const UI_STORAGE_KEY = "tide.ui";
+
+/** The rail panel's drag range (the strip beside it is a fixed 44px). */
+export const RAIL_WIDTH = { min: 240, max: 360, initial: 280 } as const;
+
+export function clampRailWidth(width: number): number {
+  return Math.round(Math.min(RAIL_WIDTH.max, Math.max(RAIL_WIDTH.min, width)));
+}
 
 /** Only layout preferences persist; selection is per-session. */
 export const useUi = create<UiState>()(
@@ -145,6 +160,8 @@ export const useUi = create<UiState>()(
       threadDialog: null,
       focusMode: "split",
       railCollapsed: false,
+      railWidth: RAIL_WIDTH.initial,
+      mergeConfirmThreadId: null,
       splitRatio: 0.45,
       diffSideBySide: true,
       fileListCollapsed: false,
@@ -173,6 +190,8 @@ export const useUi = create<UiState>()(
       setLinkPrThread: (linkPrThreadId) => set({ linkPrThreadId }),
       showSettings: () =>
         set((s) => (s.view === "settings" ? s : { view: "settings", settingsReturnTo: s.view })),
+      openSettings: (settingsSection) =>
+        set((s) => (s.view === "settings" ? { settingsSection } : { view: "settings", settingsSection, settingsReturnTo: s.view })),
       toggleSettings: () =>
         set((s) =>
           s.view === "settings" ? { view: s.settingsReturnTo } : { view: "settings", settingsReturnTo: s.view },
@@ -193,6 +212,8 @@ export const useUi = create<UiState>()(
       setThreadDialog: (threadDialog) => set({ threadDialog }),
       setFocusMode: (focusMode) => set({ focusMode }),
       toggleRail: () => set((s) => ({ railCollapsed: !s.railCollapsed })),
+      setRailWidth: (width) => set({ railWidth: clampRailWidth(width) }),
+      setMergeConfirm: (mergeConfirmThreadId) => set({ mergeConfirmThreadId }),
       setSplitRatio: (ratio) => set({ splitRatio: Math.min(0.8, Math.max(0.2, ratio)) }),
       toggleDiffSideBySide: () => set((s) => ({ diffSideBySide: !s.diffSideBySide })),
       toggleFileList: () => set((s) => ({ fileListCollapsed: !s.fileListCollapsed })),
@@ -202,6 +223,7 @@ export const useUi = create<UiState>()(
       partialize: (s) => ({
         focusMode: s.focusMode,
         railCollapsed: s.railCollapsed,
+        railWidth: s.railWidth,
         splitRatio: s.splitRatio,
         diffSideBySide: s.diffSideBySide,
         fileListCollapsed: s.fileListCollapsed,

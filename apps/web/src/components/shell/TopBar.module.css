@@ -37,9 +37,22 @@
 }
 .logo:hover { color: var(--text); }
 
-.palette { padding: 0 6px; }
-.switcher { max-width: 180px; }
-.idle { color: var(--muted); }
+.heading { color: var(--text); font-size: var(--fs-md); font-weight: var(--fw-medium); }
+.end { display: flex; align-items: center; gap: var(--sp-2); margin-left: auto; }
+.icon {
+  display: inline-flex;
+  align-items: center;
+  justify-content: center;
+  width: 28px;
+  height: 28px;
+  padding: 0;
+  border: 0;
+  border-radius: var(--radius);
+  background: transparent;
+  color: var(--muted);
+  cursor: pointer;
+}
+.icon:hover { background: var(--surface-hover); color: var(--text); }
 
 .crumb {
   display: flex;
@@ -47,6 +60,7 @@
   gap: var(--sp-2);
   min-width: 0;
   color: var(--muted);
+  font-size: var(--fs-md);
 }
 .crumbProject { flex: none; max-width: 200px; overflow: hidden; text-overflow: ellipsis; white-space: nowrap; }
-.crumbThread { min-width: 0; overflow: hidden; text-overflow: ellipsis; white-space: nowrap; color: var(--text-2); }
+.crumbThread { min-width: 0; overflow: hidden; text-overflow: ellipsis; white-space: nowrap; color: var(--text); font-weight: var(--fw-medium); }

@@ -1,4 +1,6 @@
 .form {
+  box-sizing: border-box;
+  min-width: 0;
   display: flex;
   flex-direction: column;
   gap: var(--sp-2);
@@ -7,19 +9,27 @@
   border: 1px solid var(--border);
   border-radius: var(--radius);
 }
-.heading { font-weight: 600; }
+/* inside a Dialog the panel is the frame */
+.inDialog { margin: 0; padding: 0; border: 0; }
+.heading { font-weight: var(--fw-semibold); }
 .hint { margin: 0; color: var(--muted); }
-.pathRow { display: flex; align-items: center; gap: var(--sp-2); }
+.help { margin: 0; color: var(--muted); font-size: var(--fs-sm); line-height: var(--lh-body); }
+.pathRow { display: flex; align-items: center; gap: var(--sp-2); min-width: 0; }
 .grow { flex: 1; min-width: 0; }
+.browse { flex: none; }
 .input {
-  height: 24px;
+  box-sizing: border-box;
+  min-width: 0;
+  max-width: 100%;
+  height: var(--row-h);
   background: var(--bg);
   border: 1px solid var(--border);
   border-radius: var(--radius-sm);
-  padding: 0 6px;
+  padding: 0 var(--sp-2);
 }
 .mono { font-family: var(--font-mono); font-size: var(--fs-xs); }
 .input::placeholder { color: var(--muted); }
 .actions { display: flex; gap: var(--sp-2); }
 .error { margin: 0; color: var(--danger); }
-.modes { display: flex; gap: var(--sp-3); }
+/* one short line per choice, stacked */
+.modes { display: flex; flex-direction: column; gap: var(--sp-1); }

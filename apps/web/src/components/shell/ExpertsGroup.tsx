@@ -4,9 +4,9 @@ import { PHASE_LABELS } from "../../lib/expertsActions.ts";
 import { useModel } from "../../state/model.ts";
 import { useUi } from "../../state/ui.ts";
 import { Button } from "../ui/Button.tsx";
+import { Icon } from "../ui/Icon.tsx";
 import { Pill } from "../ui/Pill.tsx";
-import styles from "./ProjectTree.module.css";
-import own from "./ExpertsGroup.module.css";
+import styles from "./ExpertsGroup.module.css";
 import { plural } from "../../lib/format.ts";
 
 /** The session's own threads: the lead first, then the panel in roster order. */
@@ -34,7 +34,7 @@ export function ExpertsExplainer({ projectId }: { projectId: string }) {
   return (
     <div className={styles.experts} aria-label="About Experts">
       <span className={styles.groupHeading}>Experts</span>
-      <p className={own.emptyHint}>
+      <p className={styles.emptyHint}>
         Several agents explore a question, discuss, and propose one plan.{" "}
         <Button variant="link" onClick={() => setNewExpertsProject(projectId)}>
           Start an Experts session
@@ -45,20 +45,25 @@ export function ExpertsExplainer({ projectId }: { projectId: string }) {
 }
 
 /**
- * The project's Experts sessions, above its loose threads. Expert and lead threads
- * hang off their session instead of crowding the project's top level.
+ * Experts sessions with their expert and lead threads hanging off them, instead of
+ * crowding the list. The rail passes the sessions whose lead sits in a group;
+ * without `sessions` every session of `projectId` is listed.
  */
 export function ExpertsGroup({
   projectId,
+  sessions: given,
   threads,
   renderThread,
+  heading = true,
 }: {
-  projectId: string;
+  projectId?: string;
+  sessions?: ExpertsSession[];
   threads: Thread[];
   renderThread: (thread: Thread) => React.ReactNode;
+  heading?: boolean;
 }) {
   const model = useModel((s) => s.model);
-  const sessions = selectExpertsSessions(model, projectId);
+  const sessions = given ?? (projectId === undefined ? [] : selectExpertsSessions(model, projectId));
   const selectedExpertsSessionId = useUi((s) => s.selectedExpertsSessionId);
   const view = useUi((s) => s.view);
   const selectExpertsSession = useUi((s) => s.selectExpertsSession);
@@ -67,7 +72,7 @@ export function ExpertsGroup({
 
   return (
     <div className={styles.experts}>
-      <span className={styles.groupHeading}>Experts</span>
+      {heading ? <span className={styles.groupHeading}>Experts</span> : null}
       <ul className={styles.threads}>
         {sessions.map((session) => (
           <li key={session.id}>
@@ -78,21 +83,17 @@ export function ExpertsGroup({
               }`}
               onClick={() => selectExpertsSession(session.id)}
             >
-              <span className={styles.roleGlyph} title="experts session" aria-hidden="true">
-                ◆
-              </span>
+              <Icon name="experts" size={14} className={styles.roleGlyph ?? ""} />
               <span className={styles.threadTitle} title={session.topic}>
                 {session.topic}
               </span>
               {needsYou(session, byId) ? (
-                <span className={styles.needsYou} title="needs you: plan ready" aria-label="needs you">
-                  ◐
-                </span>
+                <span className={styles.needsYou} title="needs you: plan ready" aria-label="needs you" role="img" />
               ) : null}
               <Pill>{PHASE_LABELS[session.phase]}</Pill>
               <span className={styles.provider}>{plural(session.experts.length, "expert")}</span>
             </button>
-            <ul className={styles.threads}>
+            <ul className={styles.nested}>
               {sessionThreadIds(session)
                 .map((id) => byId.get(id))
                 .filter((t): t is Thread => t !== undefined)

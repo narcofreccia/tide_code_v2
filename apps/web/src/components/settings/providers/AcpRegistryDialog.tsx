@@ -6,7 +6,6 @@ import { Button } from "../../ui/Button.tsx";
 import { Dialog } from "../../ui/Dialog.tsx";
 import { DialogFrame } from "../../ui/DialogFrame.tsx";
 import { Pill } from "../../ui/Pill.tsx";
-import section from "../Section.module.css";
 import styles from "./Providers.module.css";
 import { InstanceFields } from "./InstanceDialog.tsx";
 import { instanceId } from "./instances.ts";
@@ -44,7 +43,7 @@ function AgentRow({ agent, onAdd }: { agent: AcpRegistryAgent; onAdd: () => void
     <li className={styles.agent} aria-label={agent.name}>
       <div className={styles.agentText}>
         <span className={styles.agentName}>
-          <span className={section.value}>{agent.name}</span>
+          <span className={styles.value}>{agent.name}</span>
           <Pill tone={ok ? "accent" : "muted"}>{DISTRIBUTION_LABELS[agent.distribution]}</Pill>
           {meta === "" ? null : <span className={styles.agentMeta}>{meta}</span>}
         </span>
@@ -114,7 +113,7 @@ export function AcpRegistryDialog({
         primaryLabel="Done"
         onPrimary={onCancel}
       >
-        {registry.error ? <p className={section.note}>Could not read the registry: {registry.error}</p> : null}
+        {registry.error ? <p className={styles.note}>Could not read the registry: {registry.error}</p> : null}
         <ul className={styles.agents} aria-label="ACP registry">
           {registry.agents.map((agent) => (
             <AgentRow

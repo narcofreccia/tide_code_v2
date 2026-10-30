@@ -1,0 +1,26 @@
+.head { display: flex; align-items: center; gap: var(--sp-2); padding: var(--sp-2); }
+.split {
+  flex: none;
+  display: flex;
+  height: var(--row-h);
+  border: 1px solid var(--border);
+  border-radius: var(--radius);
+  overflow: hidden;
+}
+.primary,
+.chevron {
+  display: inline-flex;
+  align-items: center;
+  gap: var(--sp-1);
+  border: 0;
+  background: transparent;
+  color: var(--text-2);
+  font-size: var(--fs-sm);
+  cursor: pointer;
+  transition: background var(--dur-fast) var(--ease);
+}
+.primary { padding: 0 var(--sp-2); }
+.chevron { padding: 0 var(--sp-1); border-left: 1px solid var(--border); }
+.primary:hover,
+.chevron:hover { background: var(--surface-hover); color: var(--text); }
+.primary:disabled { opacity: 0.5; cursor: default; }

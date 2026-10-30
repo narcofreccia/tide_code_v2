@@ -28,20 +28,20 @@ describe("theme", () => {
     expect(document.documentElement.dataset.theme).toBe("light");
   });
 
-  it("the button flips the theme and shows the matching glyph", () => {
+  it("the button flips the theme and shows the matching icon", () => {
     render(<ThemeToggle />);
     const button = screen.getByRole("button", { name: /Toggle light\/dark/ });
-    expect(button.textContent).toBe("☾");
+    expect(button.getAttribute("aria-pressed")).toBe("false");
+    expect(button.querySelector("svg")).not.toBeNull();
     fireEvent.click(button);
     expect(document.documentElement.dataset.theme).toBe("light");
-    expect(button.textContent).toBe("☀");
     expect(button.getAttribute("aria-pressed")).toBe("true");
   });
 
   it("follows a theme change made elsewhere", () => {
     render(<ThemeToggle />);
     act(() => useSettings.getState().setTheme("light"));
-    expect(screen.getByRole("button", { name: /Toggle light\/dark/ }).textContent).toBe("☀");
+    expect(screen.getByRole("button", { name: /Toggle light\/dark/ }).getAttribute("aria-pressed")).toBe("true");
   });
 
   it("is bound to ⌘⇧L in the shortcut registry", () => {

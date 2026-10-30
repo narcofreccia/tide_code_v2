@@ -39,7 +39,7 @@ describe("General settings", () => {
   it("binds Continue threads after a restart", async () => {
     const rpc = serve();
     render(<GeneralSection />);
-    const box = screen.getByRole("checkbox", { name: "Continue threads after a restart" }) as HTMLInputElement;
+    const box = screen.getByRole("switch", { name: "Continue threads after a restart" }) as HTMLInputElement;
     expect(box.checked).toBe(false);
     await act(async () => fireEvent.click(box));
     expect(rpc).toHaveBeenCalledWith("settings.set", { patch: { continueAfterRestart: true } });

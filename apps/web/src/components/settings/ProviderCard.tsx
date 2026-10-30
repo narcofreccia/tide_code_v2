@@ -8,8 +8,8 @@ import { Button } from "../ui/Button.tsx";
 import { Pill } from "../ui/Pill.tsx";
 import { Select, type SelectOption } from "../ui/Select.tsx";
 import { Popover } from "../ui/Popover.tsx";
+import { Icon } from "../ui/Icon.tsx";
 import providers from "./providers/Providers.module.css";
-import section from "./Section.module.css";
 import styles from "./ProviderCard.module.css";
 import { plural } from "../../lib/format.ts";
 
@@ -39,17 +39,17 @@ function ModelList({ status }: { status: ProviderStatusDto }) {
     const family = model.family ?? "models";
     families.set(family, [...(families.get(family) ?? []), model]);
   }
-  if (status.models.length === 0) return <p className={section.note}>No models reported.</p>;
+  if (status.models.length === 0) return <p className={styles.note}>No models reported.</p>;
   return (
     <details className={styles.models}>
       <summary>{plural(status.models.length, "model")}</summary>
       {[...families].map(([family, models]) => (
         <div key={family}>
-          <span className={section.group}>{family}</span>
+          <span className={styles.family}>{family}</span>
           <ul className={styles.modelList}>
             {models.map((model) => (
               <li key={model.id}>
-                <span className={section.value}>{model.label}</span>
+                <span className={styles.model}>{model.label}</span>
                 {model.default ? <Pill tone="accent">default</Pill> : null}
               </li>
             ))}
@@ -63,7 +63,7 @@ function ModelList({ status }: { status: ProviderStatusDto }) {
 /** `⋯` on a user-added instance: edit or remove it. */
 function InstanceMenu({ name, onEdit, onRemove }: { name: string; onEdit: () => void; onRemove: () => void }) {
   return (
-    <Popover label="⋯" title={`More actions for ${name}`} variant="quiet" align="end">
+    <Popover label={<Icon name="more" label={`More actions for ${name}`} />} title={`More actions for ${name}`} variant="quiet" align="end">
       {(close) => (
         <div className={providers.menu}>
           <Button variant="quiet" onClick={() => (close(), onEdit())}>
@@ -133,7 +133,7 @@ export function ProviderCard({
       <p className={`${styles.status} ${styles[tone] ?? ""}`} data-tone={tone}>
         <span aria-hidden="true">{glyph}</span> {text}
       </p>
-      {status.hint ? <p className={section.note}>{status.hint}</p> : null}
+      {status.hint ? <p className={styles.note}>{status.hint}</p> : null}
       {command ? (
         <div>
           <Button onClick={() => void runOrCopy(command)}>
@@ -160,7 +160,7 @@ export function ProviderCard({
 
       <div className={styles.defaults}>
         <div className={styles.field}>
-          <span className={section.label}>default model</span>
+          <span className={styles.fieldLabel}>default model</span>
           <Select
             label={`${name} default model`}
             value={modelChoiceValue(status.models, defaults.model)}
@@ -171,7 +171,7 @@ export function ProviderCard({
           />
         </div>
         <div className={styles.field}>
-          <span className={section.label}>default mode</span>
+          <span className={styles.fieldLabel}>default mode</span>
           <Select
             label={`${name} default mode`}
             value={defaults.mode ?? "approval-required"}

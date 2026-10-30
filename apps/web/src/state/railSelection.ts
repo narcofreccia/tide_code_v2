@@ -44,3 +44,13 @@ export function setRailAnchor(id: string): void {
 export function clearRailSelection(): void {
   useRailSelection.setState({ ids: [], anchor: null });
 }
+
+/**
+ * R12 keyboard: `s` on a focused rail row asks that row to open its snooze menu.
+ * The row owns the menu (it knows where it is on screen); this only carries the ask.
+ */
+export const useRailMenuRequest = create<{ snoozeFor: string | null }>(() => ({ snoozeFor: null }));
+
+export function requestRailSnooze(threadId: string | null): void {
+  useRailMenuRequest.setState({ snoozeFor: threadId });
+}

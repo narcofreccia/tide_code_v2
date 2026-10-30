@@ -118,7 +118,7 @@ describe("Add a repository", () => {
     mockBrowse();
     render(<AddProjectForm onDone={() => undefined} />);
     expect(screen.getByText("Add a repository")).toBeDefined();
-    expect(screen.getByText(/A project is a local git repository/)).toBeDefined();
+    expect(screen.getByText(/A local git repository/)).toBeDefined();
 
     fireEvent.click(screen.getByText("Browse…"));
     fireEvent.click(await screen.findByRole("option", { name: /tide/ }));
