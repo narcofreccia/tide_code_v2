@@ -9,7 +9,7 @@ import styles from "./RailSearch.module.css";
 export function RailSearchInput({ projectId }: { projectId: string | null }) {
   const query = useRailSearch((s) => s.query);
   return (
-    <label className={styles.field}>
+    <label className={styles.field} data-field="">
       <Icon name="search" size={14} className={styles.icon ?? ""} />
       <input
         className={styles.input}

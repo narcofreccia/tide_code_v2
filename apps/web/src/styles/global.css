@@ -49,3 +49,19 @@ button {
 :where(button, [role="button"], a, input, select, textarea, [tabindex]):where(:focus-visible) {
   border-radius: var(--radius-sm);
 }
+/*
+ * Text fields are bordered boxes already: focus turns the border accent instead of adding
+ * the halo (a halo on the inner input of an icon+input wrapper draws a second box). Wrappers
+ * marked data-field do the same on focus-within, so icon + input light up as one control.
+ */
+:is(input:not([type="checkbox"], [type="radio"], [type="range"], [type="file"]), textarea, [contenteditable="true"]):focus-visible {
+  outline: none;
+  box-shadow: none;
+  border-color: var(--accent);
+}
+[data-field]:focus-within {
+  border-color: var(--accent);
+}
+[data-field] > :is(input, textarea):focus-visible {
+  border-color: transparent;
+}
