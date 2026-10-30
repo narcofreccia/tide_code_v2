@@ -125,6 +125,8 @@ describe("ThreadHeader", () => {
       "Snooze▸",
       "Copy thread ID",
       "Copy branch",
+      "Open in VS Code",
+      "Open in Cursor",
       "Remove worktree…",
       "Archive thread…",
       "Delete thread",

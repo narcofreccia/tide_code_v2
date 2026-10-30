@@ -24,10 +24,10 @@ describe("useHashRoute", () => {
   });
 
   it("restores settings sections, experts boards and the all-threads list", () => {
-    window.history.replaceState(null, "", "#/settings/remote");
+    window.history.replaceState(null, "", "#/settings/environments");
     render(<Router />);
     expect(useUi.getState().view).toBe("settings");
-    expect(useUi.getState().settingsSection).toBe("remote");
+    expect(useUi.getState().settingsSection).toBe("environments");
     cleanup();
 
     window.history.replaceState(null, "", "#/experts/x1");

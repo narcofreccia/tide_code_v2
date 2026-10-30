@@ -1,22 +1,31 @@
 import { useEffect, useState } from "react";
 import type { RpcOutput } from "@tide/contracts";
+import { useEnvironments } from "../state/envStore.ts";
 import { call } from "../state/model.ts";
 
 export type ServerInfo = RpcOutput<"server.info">;
 
-/** One `server.info` read per mount; Settings › Remote and About are the only callers. */
-export function useServerInfo(): ServerInfo | undefined {
-  const [info, setInfo] = useState<ServerInfo>();
+/**
+ * `server.info` of an environment (default: the primary). R9: the connection manager
+ * refreshes it every 30 s into `useEnvironments().statuses[id].info`; this hook reads that
+ * and only asks the server itself when nothing is cached yet (single-server mode, tests).
+ */
+export function useServerInfo(envId?: string): ServerInfo | undefined {
+  const id = useEnvironments((s) => envId ?? s.primaryId);
+  const live = useEnvironments((s) => (id === undefined ? undefined : s.statuses[id]?.info));
+  const [fetched, setFetched] = useState<ServerInfo>();
+  const missing = live === undefined;
   useEffect(() => {
-    let live = true;
-    call("server.info", {})
+    if (!missing) return;
+    let alive = true;
+    (envId === undefined ? call("server.info", {}) : call("server.info", {}, { envId }))
       .then((result) => {
-        if (live) setInfo(result);
+        if (alive) setFetched(result);
       })
       .catch(() => undefined);
     return () => {
-      live = false;
+      alive = false;
     };
-  }, []);
-  return info;
+  }, [envId, missing]);
+  return live ?? fetched;
 }

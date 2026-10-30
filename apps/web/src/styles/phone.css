@@ -1,0 +1,30 @@
+/*
+ * Phone (≤ 720px) global adjustments for pieces whose CSS lives in files other
+ * code owns. Attribute hooks only: `data-composer-pills`, `data-thread-column`.
+ */
+@media (max-width: 720px) {
+  html, body { overscroll-behavior: none; }
+  body { font-size: 15px; }
+
+  /* 16px inputs stop iOS from zooming the page on focus */
+  input, textarea, select { font-size: 16px; }
+
+  /* the composer sticks to the bottom of the thread column and clears the home indicator */
+  [data-thread-column] > :last-child {
+    position: sticky;
+    bottom: 0;
+    padding-bottom: calc(var(--sp-2) + env(safe-area-inset-bottom));
+    padding-left: max(var(--sp-2), env(safe-area-inset-left));
+    padding-right: max(var(--sp-2), env(safe-area-inset-right));
+  }
+  /* pills collapse into the top bar's ⚙ sheet */
+  [data-composer-pills] { display: none; }
+
+  /* toasts sit above the tab bar, full width */
+  div[role="status"][aria-live="polite"] {
+    left: var(--sp-3);
+    right: var(--sp-3);
+    bottom: calc(60px + env(safe-area-inset-bottom));
+  }
+  div[role="status"][aria-live="polite"] > * { max-width: none; }
+}

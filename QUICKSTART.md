@@ -20,7 +20,7 @@ What Tide does to your repository is in [`docs/TRIAL.md`](docs/TRIAL.md).
 - `git` on PATH; `gh` if you want PRs from the Changes tab.
 - Desktop app only: Rust toolchain and the Tauri v2 prerequisites for macOS.
 
-## 2. Three ways to launch
+## 2. Four ways to launch
 
 ### A. Browser (fastest, what the daily dev loop uses)
 
@@ -58,6 +58,18 @@ shows a Retry splash after a few backoff attempts.
 
 Download the latest `Tide.dmg` from the release endpoint (see `docs/RELEASING.md`), drag to
 Applications, open. Same behaviour as B. Updates are checked at launch and every 6 hours.
+
+### D. Headless on another machine (a Mac mini, a Linux box)
+
+```sh
+tide serve --name studio            # all interfaces, port 3777; prints the URLs and a pairing code
+tide pair                           # a fresh 6-digit code (5 min, single use) and a QR, any time
+tide service install                # start at login (launchd / systemd --user), logs in ~/.tide/logs
+tide doctor                         # node, git/gh/rg, harness CLIs, TIDE_HOME, port, server.json
+```
+
+From source, `tide` is `node --experimental-strip-types apps/server/src/bin.ts`. In a client,
+Environments → Add takes one of the printed URLs and the code. Details: `docs/internals/remote.md`.
 
 ## 3. First ten minutes
 

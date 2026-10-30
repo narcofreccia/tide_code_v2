@@ -12,7 +12,7 @@ import { AutomationsSection } from "./AutomationsSection.tsx";
 import { TeamsSection } from "./TeamsSection.tsx";
 import { AppearanceSection } from "./AppearanceSection.tsx";
 import { KeyboardSection } from "./KeyboardSection.tsx";
-import { RemoteSection } from "./RemoteSection.tsx";
+import { EnvironmentsSection } from "./EnvironmentsSection.tsx";
 import { AboutSection } from "./AboutSection.tsx";
 import styles from "./SettingsView.module.css";
 
@@ -27,7 +27,7 @@ const LABELS: Record<SettingsSection, string> = {
   teams: "Teams",
   appearance: "Appearance",
   keyboard: "Keyboard",
-  remote: "Remote",
+  environments: "Environments",
   about: "About",
 };
 
@@ -53,8 +53,8 @@ function Body({ section }: { section: SettingsSection }) {
       return <AppearanceSection />;
     case "keyboard":
       return <KeyboardSection />;
-    case "remote":
-      return <RemoteSection />;
+    case "environments":
+      return <EnvironmentsSection />;
     default:
       return <AboutSection />;
   }

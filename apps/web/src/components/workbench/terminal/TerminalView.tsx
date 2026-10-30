@@ -3,7 +3,7 @@ import { Terminal } from "@xterm/xterm";
 import { FitAddon } from "@xterm/addon-fit";
 import { WebLinksAddon } from "@xterm/addon-web-links";
 import "@xterm/xterm/css/xterm.css";
-import { stream, type StreamControl } from "../../../state/model.ts";
+import { stream, useModel, type StreamControl } from "../../../state/model.ts";
 import { onReconnect } from "../../../state/reconnect.ts";
 import { markExited, resizePty, writePty } from "../../../state/terminals.ts";
 import { subscribeTheme } from "../monaco/themes.ts";
@@ -69,7 +69,8 @@ export function TerminalView({ threadId, ptyId }: { threadId: string; ptyId: str
     // the attach dies with the socket; on reconnect the pty is still alive on the
     // server, so re-attaching replays its scrollback into the same terminal
     let control = attach();
-    const offReconnect = onReconnect(() => {
+    const offReconnect = onReconnect((envId) => {
+      if (envId !== undefined && useModel.getState().ownership.threads[threadId] !== envId) return; // R9: another env came back
       control.cancel();
       control = attach();
     });

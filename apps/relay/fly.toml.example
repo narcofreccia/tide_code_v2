@@ -1,0 +1,36 @@
+# cp fly.toml.example fly.toml && fly launch --no-deploy --copy-config
+# fly volumes create relay_data --size 1
+# fly secrets set RELAY_KEY=$(openssl rand -hex 32)
+# fly deploy
+app = "my-tide-relay"
+primary_region = "fra"
+
+[build]
+  dockerfile = "Dockerfile"
+
+[env]
+  PORT = "8787"
+  RELAY_DB = "/data/relay.db"
+
+[mounts]
+  source = "relay_data"
+  destination = "/data"
+
+[http_service]
+  internal_port = 8787
+  force_https = true
+  # environments hold a long-lived uplink: keep exactly one machine running
+  auto_stop_machines = "off"
+  auto_start_machines = true
+  min_machines_running = 1
+
+  [http_service.concurrency]
+    type = "connections"
+    soft_limit = 500
+    hard_limit = 1000
+
+  [[http_service.checks]]
+    interval = "30s"
+    timeout = "5s"
+    method = "GET"
+    path = "/health"

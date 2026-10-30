@@ -3,6 +3,7 @@ import { existsSync, mkdirSync, readFileSync, writeFileSync } from "node:fs";
 import { homedir } from "node:os";
 import { dirname, join, resolve } from "node:path";
 import { newId, type ProviderKind } from "@tide/contracts";
+import { VERSION } from "./version.ts";
 
 export interface CliFlags {
   port?: number;
@@ -10,6 +11,12 @@ export interface CliFlags {
   dev?: boolean;
   data?: string;
   printToken?: boolean;
+  /** R9: machine name shown to other clients (persisted to settings.environment.name) */
+  name?: string;
+  /** R9: directory of built web assets to serve at `/` */
+  web?: string;
+  /** R9: tee console output to this file (rotated) */
+  log?: string;
 }
 
 export interface ServerConfig {
@@ -27,6 +34,8 @@ export interface ServerConfig {
   printToken: boolean;
   corsOrigins: string[];
   version: string;
+  /** R9: built web client served at `/` (SPA); undefined = an explainer page only */
+  webDir?: string;
   /** per-driver config from `<TIDE_HOME>/server.json` → `providers: { claude: {...} }` */
   providers: ProviderConfigs;
 }
@@ -58,6 +67,15 @@ export function parseArgs(argv: string[]): CliFlags {
       case "--print-token":
         flags.printToken = true;
         break;
+      case "--name":
+        flags.name = next();
+        break;
+      case "--web":
+        flags.web = next();
+        break;
+      case "--log":
+        flags.log = next();
+        break;
       default:
         if (arg !== undefined && arg.startsWith("--")) throw new Error(`unknown flag ${arg}`);
     }
@@ -65,15 +83,16 @@ export function parseArgs(argv: string[]): CliFlags {
   return flags;
 }
 
-function readVersion(): string {
-  try {
-    const pkg = JSON.parse(readFileSync(join(dirname(import.meta.dirname), "package.json"), "utf8")) as {
-      version?: string;
-    };
-    return pkg.version ?? "0.0.0";
-  } catch {
-    return "0.0.0";
-  }
+/**
+ * Where the built web client lives when `--web` is not given: next to the compiled binary
+ * (`<binaryDir>/web`), else the workspace's `apps/web/dist` in a source checkout.
+ */
+export function defaultWebDir(): string | undefined {
+  const candidates = [
+    ...("Bun" in globalThis ? [join(dirname(process.execPath), "web")] : []),
+    resolve(import.meta.dirname, "..", "..", "web", "dist"),
+  ];
+  return candidates.find((dir) => existsSync(join(dir, "index.html")));
 }
 
 interface ServerIdentity {
@@ -126,7 +145,14 @@ function loadIdentity(tideHome: string): ServerIdentity {
   return identity;
 }
 
-export function resolveConfig(argv: string[] = [], env: NodeJS.ProcessEnv = process.env): ServerConfig {
+export interface ResolveOptions {
+  /** `tide serve` binds every interface by default; the legacy form stays on loopback */
+  defaultHost?: string;
+  /** tests turn off the `apps/web/dist` probe */
+  probeWeb?: boolean;
+}
+
+export function resolveConfig(argv: string[] = [], env: NodeJS.ProcessEnv = process.env, options: ResolveOptions = {}): ServerConfig {
   const flags = parseArgs(argv);
   const tideHome = resolve(env["TIDE_HOME"] ?? join(homedir(), ".tide"));
   mkdirSync(tideHome, { recursive: true, mode: 0o700 });
@@ -138,6 +164,8 @@ export function resolveConfig(argv: string[] = [], env: NodeJS.ProcessEnv = proc
 
   const identity = loadIdentity(tideHome);
   const dev = flags.dev ?? false;
+  const webDir = flags.web !== undefined ? resolve(flags.web) : options.probeWeb === false ? undefined : defaultWebDir();
+  if (flags.web !== undefined && !existsSync(join(webDir as string, "index.html"))) throw new ConfigError(`--web ${flags.web}: no index.html there`);
   const extraOrigins = (env["TIDE_CORS_ORIGINS"] ?? "").split(",").map((s) => s.trim()).filter(Boolean);
 
   return {
@@ -147,12 +175,13 @@ export function resolveConfig(argv: string[] = [], env: NodeJS.ProcessEnv = proc
     dbPath: isMemory ? ":memory:" : join(dataDir, "events.sqlite"),
     environmentId: identity.environmentId,
     token: identity.token,
-    host: flags.host ?? "127.0.0.1",
+    host: flags.host ?? options.defaultHost ?? "127.0.0.1",
     port: flags.port ?? 3777,
     dev,
     printToken: flags.printToken ?? false,
     corsOrigins: [...(dev ? ["http://localhost:5173"] : []), ...extraOrigins],
-    version: readVersion(),
+    version: VERSION,
+    ...(webDir !== undefined ? { webDir } : {}),
     providers: identity.providers,
   };
 }

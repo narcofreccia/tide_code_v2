@@ -26,6 +26,12 @@ import { useHashRoute } from "./lib/useHashRoute.ts";
 import { useMergeOutcomeToasts } from "./lib/mergeToasts.ts";
 import { useDocumentTitle } from "./lib/useDocumentTitle.ts";
 import { useNotificationEvents } from "./lib/useNotificationEvents.ts";
+import { useViewport } from "./lib/useViewport.ts";
+import { InboxScreen } from "./components/mobile/InboxScreen.tsx";
+import { PhoneEffects } from "./components/mobile/PhoneEffects.tsx";
+import { TabBar } from "./components/mobile/TabBar.tsx";
+import { ThreadSheet } from "./components/mobile/ThreadSheet.tsx";
+import { useMobileNav } from "./components/mobile/mobileNav.ts";
 import styles from "./App.module.css";
 
 function Content() {
@@ -34,16 +40,21 @@ function Content() {
   const expertsSessionId = useUi((s) => s.selectedExpertsSessionId);
   const allThreadsProjectId = useUi((s) => s.allThreadsProjectId);
   const thread = useSelectedThread();
+  const { phone } = useViewport();
+  const inboxOpen = useMobileNav((s) => s.inboxOpen);
+  const codeOpen = useMobileNav((s) => s.codeOpen);
 
   if (view === "settings") return <SettingsView />;
   if (view === "threads" && allThreadsProjectId) return <AllThreads projectId={allThreadsProjectId} />;
   if (view === "experts" && expertsSessionId) {
     const board = <ExpertsView sessionId={expertsSessionId} />;
+    if (phone) return codeOpen && thread ? <Workbench /> : board;
     if (focusMode === "thread" || !thread) return board;
     if (focusMode === "workbench") return <Workbench />;
     return <SplitPane primary={board} secondary={<Workbench />} />;
   }
-  if (view !== "thread" || !thread) return <MissionControl />;
+  if (view !== "thread" || !thread) return phone && inboxOpen ? <InboxScreen /> : <MissionControl />;
+  if (phone) return codeOpen ? <Workbench /> : <ThreadView thread={thread} />;
   if (focusMode === "thread") return <ThreadView thread={thread} />;
   if (focusMode === "workbench") return <Workbench />;
   return <SplitPane primary={<ThreadView thread={thread} />} secondary={<Workbench />} />;
@@ -70,22 +81,29 @@ export function App() {
   useDocumentTitle();
   useNotificationEvents();
   const railCollapsed = useUi((s) => s.railCollapsed);
+  const { phone } = useViewport();
+  // the tab bar stays out of the way of a conversation: threads and boards have a back button instead
+  const tabs = useUi((s) => s.view === "mission" || s.view === "settings" || s.view === "threads");
   return (
-    <div className={styles.app}>
+    <div className={`${styles.app} ${phone ? styles.phone : ""}`}>
       <div className={styles.topRow}>
         <TopBar />
-        <div className={styles.focus} data-tauri-drag-region>
-          <ThemeToggle />
-          <FocusModeSwitch />
-        </div>
+        {phone ? null : (
+          <div className={styles.focus} data-tauri-drag-region>
+            <ThemeToggle />
+            <FocusModeSwitch />
+          </div>
+        )}
       </div>
       <main className={`${styles.body} ${railCollapsed ? styles.railCollapsed : ""}`}>
-        <Rail />
+        {phone ? null : <Rail />}
         <div className={styles.content}>
           <Content />
         </div>
       </main>
-      <StatusBar />
+      {phone ? tabs ? <TabBar /> : null : <StatusBar />}
+      {phone ? <PhoneEffects /> : null}
+      {phone ? <ThreadSheet /> : null}
       <ToastHost />
       <QuickOpenHost />
       <CommandPaletteHost />

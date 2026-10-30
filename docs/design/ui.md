@@ -99,7 +99,7 @@ repo's under a `label — path` header, opened at their absolute path, with
 
 **Settings** (route `/settings`): Providers (installed/logged-in/version, default model,
 default mode, login hint that opens the terminal), Git (worktree root, PR via gh), Appearance,
-Keyboard, Remote (bind host, pairing token).
+Keyboard, Environments (this machine, pairing, other machines, relay).
 
 ## States per thread (status glyph)
 

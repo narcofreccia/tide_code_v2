@@ -234,8 +234,12 @@ export const TaskUpdate = Type.Object({ type: Type.Literal("task.update"), comma
 export const TaskDelete = Type.Object({ type: Type.Literal("task.delete"), commandId: CommandId, taskId: Type.String() });
 /** fire now, outside the schedule (does not move nextRunAt) */
 export const TaskRunNow = Type.Object({ type: Type.Literal("task.run-now"), commandId: CommandId, taskId: Type.String() });
-/** scheduler → engine: the tick fired this task; commandId is `scheduled:<taskId>:<epoch>` so a duplicate tick is a no-op */
-export const TaskFire = Type.Object({ type: Type.Literal("task.fire"), commandId: CommandId, taskId: Type.String(), nextRunAt: Type.Optional(Type.Number()), useWorktreeDefault: Type.Optional(Type.Boolean()) });
+/**
+ * scheduler → engine: the tick fired this task; commandId is `scheduled:<taskId>:<epoch>` so a duplicate tick is a no-op.
+ * R9: `POST /hook/<hookId>` fires it too (commandId `hook:<hookId>:<sha256(body)[:16]>`); `promptSuffix` is appended to the
+ * task prompt (the request body as a fenced block) so the turn carries the payload.
+ */
+export const TaskFire = Type.Object({ type: Type.Literal("task.fire"), commandId: CommandId, taskId: Type.String(), nextRunAt: Type.Optional(Type.Number()), useWorktreeDefault: Type.Optional(Type.Boolean()), promptSuffix: Type.Optional(Type.String({ maxLength: 16_384 })) });
 
 /**
  * R5: start a team run — creates the lead thread (stage 1) on the project and sends it a brief

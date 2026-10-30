@@ -21,6 +21,19 @@ importers:
         specifier: ^2.9.0
         version: 2.11.4
 
+  apps/relay:
+    dependencies:
+      ws:
+        specifier: ^8.21.0
+        version: 8.22.0
+    devDependencies:
+      '@types/node':
+        specifier: ^22.0.0
+        version: 22.20.1
+      '@types/ws':
+        specifier: ^8.18.0
+        version: 8.18.1
+
   apps/server:
     dependencies:
       '@tide/contracts':
@@ -5544,7 +5557,7 @@ snapshots:
       google-auth-library: 10.9.1
       p-retry: 4.6.2
       protobufjs: 7.6.6
-      ws: 8.21.3
+      ws: 8.22.0
     optionalDependencies:
       '@modelcontextprotocol/sdk': 1.30.0(zod@4.5.4)
     transitivePeerDependencies:
@@ -7937,7 +7950,7 @@ snapshots:
       whatwg-encoding: 3.1.1
       whatwg-mimetype: 4.0.0
       whatwg-url: 14.2.0
-      ws: 8.21.3
+      ws: 8.22.0
       xml-name-validator: 5.0.0
     transitivePeerDependencies:
       - bufferutil

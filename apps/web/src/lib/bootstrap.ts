@@ -1,18 +1,13 @@
-import { TideConnection, createModelStore } from "@tide/client";
-import { attachModelStore, setEnvironmentId, setRpcCaller, setRpcStreamer } from "../state/model.ts";
-import { loadProviders, resetProviders } from "../state/providers.ts";
-import { loadServerSettings, resetServerSettings } from "../state/serverSettings.ts";
+import { httpOriginFor, routeFor, ticketGetter, wsUrlFor } from "@tide/client";
+import { addEnvironment, setPrimaryEnvironment } from "../state/environments.ts";
+import { startEnvironments } from "../state/envManager.ts";
+import { loadProviders } from "../state/providers.ts";
+
+export { httpOriginFor, wsUrlFor };
 
 export const TOKEN_KEY = "tide.devToken";
 export const URL_KEY = "tide.serverUrl";
 const DEFAULT_URL = "ws://127.0.0.1:3777/ws";
-
-/** `http://host:port` → `ws://host:port/ws`; `https:` → `wss:`. */
-export function wsUrlFor(httpUrl: string): string {
-  const url = new URL(httpUrl);
-  const protocol = url.protocol === "https:" ? "wss:" : "ws:";
-  return `${protocol}//${url.host}/ws`;
-}
 
 /**
  * Where to connect when nothing names a server: the build env, else — when the
@@ -28,7 +23,11 @@ export function defaultServerUrl(
   return DEFAULT_URL;
 }
 
-/** `?server=` (the desktop shell's supervised server, or a pairing link) > localStorage > derived default. */
+/**
+ * The LOCAL environment's socket URL: `?server=` (the desktop shell's supervised server,
+ * or a pairing link) > localStorage > derived default. R9: it only ever names the local
+ * environment; the user's other environments live in `tide.environments.v1`.
+ */
 export function resolveServerUrl(): string {
   const fromQuery = new URL(window.location.href).searchParams.get("server");
   const fallback = defaultServerUrl(window.location, import.meta.env);
@@ -68,30 +67,12 @@ export function resolveDevToken(): string {
   return import.meta.env.VITE_TIDE_TOKEN ?? "";
 }
 
-/** `ws://host:port/ws` → `http://host:port`; `wss:` → `https:`. */
-export function httpOriginFor(wsUrl: string): string {
-  const url = new URL(wsUrl);
-  const protocol = url.protocol === "wss:" ? "https:" : "http:";
-  return `${protocol}//${url.host}`;
-}
-
 /**
  * Production auth: the raw token never travels on the WebSocket URL. It buys a
  * single-use ticket over HTTPS, which is what the socket presents.
  */
 export function makeTicketGetter(wsUrl: string, token: string): () => Promise<string> {
-  const origin = httpOriginFor(wsUrl);
-  return async () => {
-    const response = await fetch(`${origin}/api/auth/ws-ticket`, {
-      method: "POST",
-      headers: { authorization: `Bearer ${token}`, "content-type": "application/json" },
-      body: "{}",
-    });
-    if (!response.ok) throw new Error(`ws-ticket failed: ${response.status}`);
-    const body = (await response.json()) as { ticket?: string };
-    if (!body.ticket) throw new Error("ws-ticket response had no ticket");
-    return body.ticket;
-  };
+  return ticketGetter(httpOriginFor(wsUrl), token);
 }
 
 /**
@@ -106,65 +87,29 @@ export function pairingPageUrl(lanUrl: string): string {
   return page.toString();
 }
 
-let stopClient: (() => void) | undefined;
-
 /**
- * Points this client at another server: persists the URL and token, drops the
- * `?server=` / `?token=` hand-off (it would win over storage) and reconnects in place.
+ * R9: "connect to another server" adds it as an environment and makes it the primary;
+ * the local environment and every other one stay connected. Drops a `?server=` /
+ * `?token=` hand-off from the address bar so a reload does not re-apply it.
  */
-export function connectTo(serverUrl: string, token: string): void {
-  try {
-    window.localStorage.setItem(URL_KEY, serverUrl);
-    window.localStorage.setItem(TOKEN_KEY, token);
-  } catch {
-    /* storage may be unavailable; nothing would survive a reload anyway */
-  }
+export async function connectTo(serverUrl: string, token: string): Promise<string> {
   const url = new URL(window.location.href);
   url.searchParams.delete("server");
   url.searchParams.delete("token");
   window.history.replaceState(null, "", url.pathname + url.search + url.hash);
-  stopClient?.();
-  resetProviders();
-  resetServerSettings();
-  startClient();
-  loadProviders();
+  const id = await addEnvironment({ routes: [routeFor(serverUrl)], token });
+  setPrimaryEnvironment(id);
+  loadProviders(true);
+  return id;
 }
 
+/**
+ * Boots the environment manager: the legacy `?server=` / `?token=` / VITE_TIDE_URL /
+ * stored URL resolve to the LOCAL environment's route and token; user-added
+ * environments and the primary choice come from `tide.environments.v1` untouched.
+ */
 export function startClient(): () => void {
-  const url = resolveServerUrl();
-  const token = resolveDevToken();
-  // the server only accepts raw tokens on the socket in --dev
-  const auth = import.meta.env.DEV
-    ? ({ kind: "token", token } as const)
-    : ({ kind: "ticket", getTicket: makeTicketGetter(url, token) } as const);
-  const conn = new TideConnection({ url, auth });
-  const store = createModelStore(conn);
-  const detach = attachModelStore(store);
-  setRpcCaller((method, params) => conn.call(method, params));
-  setRpcStreamer((method, params, onChunk) => conn.stream(method, params, onChunk));
-
-  conn.on("status", (status) => {
-    if (status !== "open") return;
-    conn
-      .call("server.info", {})
-      .then((info) => setEnvironmentId(info.environmentId))
-      .catch(() => setEnvironmentId(null));
-    // a server without settings.get keeps the defaults; nothing to tell the user
-    loadServerSettings().catch(() => undefined);
-  });
-
-  void conn.connect().catch(() => undefined);
-
-  const stop = (): void => {
-    setRpcCaller(undefined);
-    setRpcStreamer(undefined);
-    detach();
-    store.dispose();
-    conn.close();
-    if (stopClient === stop) stopClient = undefined;
-  };
-  stopClient = stop;
-  return stop;
+  return startEnvironments({ url: resolveServerUrl(), token: resolveDevToken() });
 }
 
 // ---- desktop shell detection ----

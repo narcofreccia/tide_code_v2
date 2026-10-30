@@ -60,7 +60,7 @@
         <h1>Tide v2 — Project Journal</h1>
         <div class="sub">Focused agentic code editor &amp; orchestrator over Claude Code · Codex · OpenCode · Pi. Started 2026-08-30.</div>
         <div class="kpi">
-          <div class="box"><b>R8</b><span>reach landed (2026-10-30): ACP driver, accounts, effort, slash commands · next R9 environments</span></div>
+          <div class="box"><b>R9</b><span>environments round in progress: serve/pair, multi-env client, relay, PWA</span></div>
           <div class="box"><b>127</b><span>commits (incl. this one)</span></div>
           <div class="box"><b>2,100</b><span>tests passing</span></div>
         </div>
@@ -96,6 +96,20 @@
 
       <h2>Phase board</h2>
       <details class="phase" open>
+        <summary><span class="title"><h3>R9 — Environments, self-hosted relay, PWA (2026-10-30)</h3><small>every machine runs tide-server · client holds one connection per environment and merges read models · <code>tide serve / pair / doctor / service</code> · routes LAN / Tailscale / SSH / relay with preflight · pairing codes · webhook-triggered automations · <code>apps/relay</code> you host · fleet view · installable phone layout</small></span><span class="badge status wip">wip</span></summary>
+        <div class="body">
+           <p class="note">2026-10-30 — T3 Code's second pillar is "remote as the default way to work": pick the machine per thread, one command on any box, tunnel for phones. Survey found headless serve existing in all but name, one-server-at-a-time clients, no environment concept past <code>environmentId</code>, 404 for the web root, MCP URL built from the bind host, version always 0.0.0. Andrea chose own-network environments plus a relay they host (no hosted identity) and PWA before native.</p>
+           <ul class="tasks">
+             <li><span class="badge status done">done</span><span class="t"><b>Contracts</b> (<code>99059fc</code>): <code>Schedule.webhook</code>, <code>EnvRoute</code> / <code>KnownEnvironment</code> (client-side), <code>ServerInfo.name/host/harnesses/sshHost/relay</code>, <code>UserSettings.environment/relay</code>, RPCs <code>env.pairingCode</code> / <code>env.updateHarnesses</code>, HTTP <code>GET /api/env</code>, <code>POST /api/auth/pair</code>, <code>POST /hook/&lt;id&gt;</code>; environments store skeleton fixing the UI ↔ connection-manager API.</span></li>
+             <li><span class="badge status wip">wip</span><span class="t"><b>Server</b> (Opus): <code>tide serve/pair/doctor/service</code>, log file, route table, pairing codes, webhook handler with HMAC, static web serving, loopback MCP URL, real version, server.info host facts, harness updates.</span></li>
+             <li><span class="badge status wip">wip</span><span class="t"><b>Client</b> (Opus): one connection per environment with route preflight and 4401 handling, merged read model with ownership, routed <code>call/dispatch</code>, env-namespaced local state.</span></li>
+             <li><span class="badge status wip">wip</span><span class="t"><b>Web</b> (Opus): Settings › Environments (this machine, pair another device, other machines with routes, relay), Machines strip, Run on &lt;env&gt;, Open in VS Code over SSH, webhook task URLs.</span></li>
+             <li><span class="badge status wip">wip</span><span class="t"><b>Relay</b> (Opus): <code>apps/relay</code> (uplink per environment, channel tunnel, http forward, webhook hold/replay 24 h) + the server-side relay client.</span></li>
+             <li><span class="badge status wip">wip</span><span class="t"><b>PWA</b> (Sonnet): manifest, service worker, phone layout with bottom tabs, swipe settle/snooze, sticky composer.</span></li>
+           </ul>
+        </div>
+      </details>
+      <details class="phase">
         <summary><span class="title"><h3>R8 — Reach: ACP driver, accounts per harness, effort, slash commands (2026-10-30)</h3><small>driver-acp over the Agent Client Protocol (43-agent registry) · several instances per harness (home/env) · reasoning-effort picker on all harnesses · composer <code>/</code> picker fed by each harness · Settings › Providers instances</small></span><span class="badge status done">done</span></summary>
         <div class="body">
            <p class="note">2026-10-30 — T3 Code's headline is "all your subs": ~10 providers plus the ACP registry, and several accounts per provider. Research (SDK 2.1.0 schema, registry JSON, live <code>opencode acp</code> probe) fixed the protocol facts; an exploration mapped every place keyed by <code>ProviderKind</code>. Design: the kind stays the family (now with <code>acp</code>), instances get an id (<code>Thread.providerId</code>, default = kind); the registry owns ids and labels, drivers only receive <code>DriverEnv.instance</code> (home/env). Effort rides on the thread like model; slash commands come from each harness (Claude <code>supportedCommands</code>, Codex <code>skills/list</code>, OpenCode <code>/command</code>, Pi <code>get_commands</code>, ACP <code>available_commands_update</code>).</p>

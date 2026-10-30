@@ -1,0 +1,10 @@
+.option {
+  min-height: 44px;
+  padding: 0 var(--sp-3);
+  border: 1px solid var(--border);
+  border-radius: var(--radius);
+  background: var(--surface-2);
+  color: var(--text);
+  text-align: left;
+  font-size: 15px;
+}

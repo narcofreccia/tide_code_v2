@@ -33,7 +33,15 @@ export interface TideConnectionOptions {
   setTimeoutImpl?: (fn: () => void, ms: number) => unknown;
   clearTimeoutImpl?: (handle: unknown) => void;
   random?: () => number;
+  /**
+   * false: a drop (or a failed open) ends in `closed` instead of a backoff retry, and a
+   * pending `connect()` rejects. EnvironmentConnection owns retries so it can re-walk routes.
+   */
+  reconnect?: boolean;
 }
+
+/** Close code the server uses for a bad token / ticket; never retried with the same credentials. */
+export const UNAUTHORIZED_CLOSE = 4401;
 
 export class RpcCallError extends Error {
   readonly code: string;
@@ -99,6 +107,7 @@ export class TideConnection {
   private retryHandle: unknown;
   private closedByUser = false;
   private openWaiters: Array<{ resolve: () => void; reject: (e: unknown) => void }> = [];
+  private lastCloseCodeValue: number | undefined;
 
   constructor(opts: TideConnectionOptions) {
     this.opts = opts;
@@ -118,6 +127,11 @@ export class TideConnection {
 
   get status(): ConnectionStatus {
     return this.statusValue;
+  }
+
+  /** close code of the last socket close (4401 = unauthorized), undefined before any close */
+  get lastCloseCode(): number | undefined {
+    return this.lastCloseCodeValue;
   }
 
   on(event: "status", cb: (status: ConnectionStatus) => void): () => void {
@@ -274,11 +288,19 @@ export class TideConnection {
     sock.onerror = () => {
       /* close always follows; nothing to do here */
     };
-    sock.onclose = () => {
+    // structural: the server package compiles this file without the DOM lib
+    sock.onclose = (ev?: { code?: number }) => {
       if (this.socket !== sock) return;
       this.socket = undefined;
+      this.lastCloseCodeValue = typeof ev?.code === "number" ? ev.code : undefined;
       this.failInFlight(DISCONNECTED);
       if (this.closedByUser) {
+        this.setStatus("closed");
+        return;
+      }
+      if (this.lastCloseCodeValue === UNAUTHORIZED_CLOSE) {
+        // retrying with the same credentials cannot succeed
+        this.rejectOpenWaiters(new RpcCallError({ code: "unauthorized", message: "unauthorized" }));
         this.setStatus("closed");
         return;
       }
@@ -289,6 +311,11 @@ export class TideConnection {
 
   private scheduleRetry(): void {
     if (this.closedByUser) return;
+    if (this.opts.reconnect === false) {
+      this.rejectOpenWaiters(new RpcCallError(DISCONNECTED));
+      this.setStatus("closed");
+      return;
+    }
     this.setStatus("reconnecting");
     const exp = Math.min(this.backoff.maxMs, this.backoff.minMs * 2 ** this.attempt);
     this.attempt += 1;

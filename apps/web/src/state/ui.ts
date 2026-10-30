@@ -5,7 +5,7 @@ import { useModel } from "./model.ts";
 export type FocusMode = "thread" | "split" | "workbench";
 /** `threads` is the per-project "All threads" list opened from Mission Control. */
 export type View = "mission" | "thread" | "settings" | "experts" | "threads";
-export type SettingsSection = "general" | "inbox" | "notifications" | "providers" | "git" | "decisions" | "automations" | "teams" | "appearance" | "keyboard" | "remote" | "about";
+export type SettingsSection = "general" | "inbox" | "notifications" | "providers" | "git" | "decisions" | "automations" | "teams" | "appearance" | "keyboard" | "environments" | "about";
 
 export const SETTINGS_SECTIONS: SettingsSection[] = [
   "general",
@@ -18,7 +18,7 @@ export const SETTINGS_SECTIONS: SettingsSection[] = [
   "teams",
   "appearance",
   "keyboard",
-  "remote",
+  "environments",
   "about",
 ];
 
@@ -191,6 +191,19 @@ export const useUi = create<UiState>()(
         fileListCollapsed: s.fileListCollapsed,
         settingsSection: s.settingsSection,
       }),
+      // a section saved by an older build ("remote") falls back to its successor
+      merge: (persisted, current) => {
+        const saved = (persisted ?? {}) as Partial<UiState>;
+        const section = saved.settingsSection;
+        return {
+          ...current,
+          ...saved,
+          settingsSection:
+            section === undefined ? current.settingsSection
+            : (SETTINGS_SECTIONS as string[]).includes(section) ? section
+            : "environments",
+        };
+      },
     },
   ),
 );

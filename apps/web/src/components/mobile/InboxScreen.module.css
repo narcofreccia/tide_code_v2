@@ -1,0 +1,42 @@
+.screen { display: flex; flex-direction: column; flex: 1 1 auto; min-height: 0; background: var(--surface); }
+.head {
+  display: flex;
+  align-items: center;
+  justify-content: flex-end;
+  padding: 0 var(--sp-2);
+  border-bottom: 1px solid var(--border);
+}
+.new {
+  min-height: 44px;
+  padding: 0 var(--sp-3);
+  border: 0;
+  background: transparent;
+  color: var(--accent);
+  font-size: 15px;
+}
+.scroll { flex: 1 1 auto; min-height: 0; overflow-y: auto; overscroll-behavior: contain; padding-bottom: var(--sp-4); }
+.group { padding-top: var(--sp-2); }
+.heading, .toggle {
+  display: flex;
+  align-items: center;
+  min-height: 32px;
+  margin: 0;
+  padding: 0 var(--sp-4);
+  border: 0;
+  background: transparent;
+  color: var(--text-2);
+  font-size: 11px;
+  font-weight: var(--fw-section);
+  letter-spacing: var(--ls-section);
+  text-transform: uppercase;
+}
+.toggle { width: 100%; min-height: 44px; text-align: left; }
+.count { margin-left: var(--sp-1); font-weight: 400; }
+.list { margin: 0; padding: 0; list-style: none; }
+/* 44px touch rows: the rail's row markup is reused, so size it by structure */
+.list [data-rail-thread] { min-height: 44px; height: auto; }
+.list [data-rail-thread] button { min-height: 44px; font-size: 15px; }
+.list [data-rail-thread] button[aria-label^="Settle"],
+.list [data-rail-thread] button[aria-label^="Unsettle"],
+.list [data-rail-thread] button[aria-label^="Actions"] { min-width: 44px; }
+.empty { margin: var(--sp-5) var(--sp-4); color: var(--muted); }

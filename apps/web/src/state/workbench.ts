@@ -1,5 +1,6 @@
 import { create } from "zustand";
-import { persist } from "zustand/middleware";
+import { createJSONStorage, persist } from "zustand/middleware";
+import { scopedStateStorage } from "./envStorage.ts";
 
 /** Changes is always the first tab of a thread; Search and files follow it. */
 export type WorkbenchTab =
@@ -55,6 +56,8 @@ export const useWorkbench = create<WorkbenchState>()(
     }),
     {
       name: WORKBENCH_STORAGE_KEY,
+      // R9: per-thread tabs live under the owning environment's key (`tide.workbench@<envId>`)
+      storage: createJSONStorage(() => scopedStateStorage),
       // paths only — no file contents, no scroll state
       partialize: (s) => ({ tabs: s.tabs, active: s.active, treeVisible: s.treeVisible }),
     },

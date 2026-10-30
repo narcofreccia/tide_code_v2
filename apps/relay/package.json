@@ -1,0 +1,20 @@
+{
+  "name": "@tide/relay",
+  "version": "0.0.0",
+  "private": true,
+  "type": "module",
+  "bin": { "tide-relay": "./src/bin.ts" },
+  "scripts": {
+    "start": "node --experimental-strip-types src/bin.ts",
+    "typecheck": "tsc --noEmit -p tsconfig.json",
+    "test": "vitest run",
+    "build": "echo skip"
+  },
+  "dependencies": {
+    "ws": "^8.21.0"
+  },
+  "devDependencies": {
+    "@types/node": "^22.0.0",
+    "@types/ws": "^8.18.0"
+  }
+}

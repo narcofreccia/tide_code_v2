@@ -311,3 +311,14 @@ describe("createApp — continue after restart", () => {
     expect(logs.some((l) => l.includes("archived"))).toBe(true);
   });
 });
+
+describe("createApp: MCP url (R9)", () => {
+  it("hands provider sessions a loopback URL even when bound to 0.0.0.0", async () => {
+    const app = await createApp({ config: { ...config, host: "0.0.0.0" }, log: () => undefined, registerDrivers: () => undefined });
+    try {
+      expect(app.mcp.url).toBe(`ws://127.0.0.1:${app.server?.port}/ws`);
+    } finally {
+      await app.close();
+    }
+  });
+});

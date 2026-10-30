@@ -1,0 +1,56 @@
+/* shared bits of the fleet surfaces: status dot, host meters, env tag */
+.dot {
+  display: inline-block;
+  width: 7px;
+  height: 7px;
+  border-radius: 50%;
+  background: var(--muted);
+  flex: none;
+}
+.ok { background: var(--ok); }
+.pending { background: var(--warn); }
+.bad { background: var(--danger); }
+.off { background: var(--st-idle); opacity: 0.6; }
+
+.bars {
+  display: inline-flex;
+  align-items: center;
+  gap: var(--sp-2);
+  color: var(--muted);
+  font-size: 11px;
+}
+.bar {
+  display: inline-flex;
+  align-items: center;
+  gap: var(--sp-1);
+}
+.meter {
+  width: 44px;
+  height: 4px;
+  appearance: none;
+  border: 0;
+  border-radius: 2px;
+  background: var(--surface-raised);
+  overflow: hidden;
+}
+.meter::-webkit-meter-bar { background: var(--surface-raised); border: 0; border-radius: 2px; height: 4px; }
+.meter::-webkit-meter-optimum-value { background: var(--ok); }
+.meter::-webkit-meter-suboptimum-value { background: var(--warn); }
+.meter::-webkit-meter-even-less-good-value { background: var(--danger); }
+.meter::-moz-meter-bar { background: var(--ok); }
+.busy { font-variant-numeric: tabular-nums; }
+
+.tag {
+  flex: none;
+  max-width: 96px;
+  overflow: hidden;
+  text-overflow: ellipsis;
+  white-space: nowrap;
+  padding: 0 var(--sp-1);
+  border: 1px solid var(--border);
+  border-radius: var(--radius-sm);
+  color: var(--muted);
+  font-size: 10px;
+  line-height: 14px;
+}
+.tagOffline { opacity: 0.6; text-decoration: line-through; }

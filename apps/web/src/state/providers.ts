@@ -2,6 +2,7 @@ import { useEffect } from "react";
 import { create } from "zustand";
 import type { ProviderKind, ProviderStatusDto } from "@tide/contracts";
 import { call } from "./model.ts";
+import { connectedEnvIds, useEnvironments } from "./envStore.ts";
 import {
   BUNDLED_PROVIDERS,
   DEFAULT_MODEL_LABEL,
@@ -13,8 +14,14 @@ import {
   threadHarnessLabel,
 } from "../lib/vocab.ts";
 
+/** R9: a roster entry tagged with the environment that reported it (untagged = single-server mode). */
+export type EnvProviderStatus = ProviderStatusDto & { envId?: string };
+
 interface ProvidersState {
-  providers: ProviderStatusDto[];
+  /** the union over connected environments, primary first */
+  providers: EnvProviderStatus[];
+  /** R9: each environment's own roster */
+  byEnv: Record<string, EnvProviderStatus[]>;
   loading: boolean;
   error: string | null;
   /** set once a `providers.list` call started, so the hook only fetches once */
@@ -44,14 +51,34 @@ function unknownRoster(hint: string): ProviderStatusDto[] {
 
 export const useProvidersStore = create<ProvidersState>(() => ({
   providers: [],
+  byEnv: {},
   loading: false,
   error: null,
   requested: false,
 }));
 
-/** Fetches the harness roster once per session; `refresh` forces a re-probe. */
+/** Primary first, then the others in list order. */
+function flatten(byEnv: Record<string, EnvProviderStatus[]>): EnvProviderStatus[] {
+  const { environments, primaryId } = useEnvironments.getState();
+  const order = environments.map((e) => e.id).sort((a, b) => (a === primaryId ? -1 : b === primaryId ? 1 : 0));
+  for (const id of Object.keys(byEnv)) if (!order.includes(id)) order.push(id);
+  return order.flatMap((id) => byEnv[id] ?? []);
+}
+
+const inflight = new Set<string>();
+
+/**
+ * Fetches the harness roster once per session; `refresh` forces a re-probe. With
+ * environments (R9) every connected one is asked and the roster is their union.
+ */
 export function loadProviders(refresh = false): void {
   const state = useProvidersStore.getState();
+  if (useEnvironments.getState().environments.length > 0) {
+    if (state.requested && !refresh) return;
+    useProvidersStore.setState({ requested: true });
+    for (const id of connectedEnvIds()) loadProvidersFor(id, refresh);
+    return;
+  }
   if (state.loading || (state.requested && !refresh)) return;
   useProvidersStore.setState({ loading: true, requested: true, error: null });
   call("providers.list", refresh ? { refresh: true } : {})
@@ -60,6 +87,54 @@ export function loadProviders(refresh = false): void {
       const error = err instanceof Error ? err.message : String(err);
       useProvidersStore.setState({ loading: false, error, providers: unknownRoster(error) });
     });
+}
+
+function setEnvRoster(envId: string, roster: EnvProviderStatus[] | undefined, error?: string | null): void {
+  useProvidersStore.setState((s) => {
+    const { [envId]: _old, ...rest } = s.byEnv;
+    const byEnv = roster === undefined ? rest : { ...s.byEnv, [envId]: roster };
+    return {
+      byEnv,
+      providers: flatten(byEnv),
+      loading: inflight.size > 0,
+      ...(error === undefined ? {} : { error }),
+    };
+  });
+}
+
+/** R9: (re)loads one environment's roster; called whenever it connects. */
+export function loadProvidersFor(envId: string, refresh = false): void {
+  if (inflight.has(envId) && !refresh) return;
+  inflight.add(envId);
+  useProvidersStore.setState({ loading: true, requested: true });
+  call("providers.list", refresh ? { refresh: true } : {}, { envId })
+    .then((providers) => {
+      inflight.delete(envId);
+      setEnvRoster(envId, providers.map((p) => ({ ...p, envId })), null);
+    })
+    .catch((err: unknown) => {
+      inflight.delete(envId);
+      const error = err instanceof Error ? err.message : String(err);
+      const isPrimary = envId === useEnvironments.getState().primaryId;
+      setEnvRoster(envId, unknownRoster(error).map((p) => ({ ...p, envId })), isPrimary ? error : undefined);
+    });
+}
+
+/** R9: forgets a removed / renamed environment's roster. */
+export function dropProvidersFor(envId: string): void {
+  inflight.delete(envId);
+  if (!(envId in useProvidersStore.getState().byEnv)) return;
+  setEnvRoster(envId, undefined);
+}
+
+/** R9: the primary changed; its roster goes first. */
+export function reorderProviders(): void {
+  useProvidersStore.setState((s) => (Object.keys(s.byEnv).length === 0 ? s : { providers: flatten(s.byEnv) }));
+}
+
+/** R9: one environment's roster out of the union (untagged entries belong to every one). */
+export function providersOf<T extends EnvProviderStatus>(providers: readonly T[], envId: string | undefined): T[] {
+  return envId === undefined ? [...providers] : providers.filter((p) => p.envId === undefined || p.envId === envId);
 }
 
 export interface ProviderRoster {
@@ -91,14 +166,16 @@ export function useProviders(): ProviderStatusDto[] {
  * The status of an instance: by `id` first, then the default instance of a bare
  * kind (`"codex"` → the bundled Codex). An ACP kind has no default instance.
  */
-export function providerStatus(
-  providers: readonly ProviderStatusDto[],
+export function providerStatus<T extends EnvProviderStatus>(
+  providers: readonly T[],
   idOrKind: string,
-): ProviderStatusDto | undefined {
+  envId?: string,
+): T | undefined {
+  const pool = envId === undefined ? providers : providersOf(providers, envId);
   return (
-    providers.find((p) => p.id === idOrKind) ??
+    pool.find((p) => p.id === idOrKind) ??
     // a server that predates instances sends no id: its single entry per kind is the default
-    providers.find((p) => p.kind === idOrKind && (p.id === undefined || p.id === "" || p.id === p.kind))
+    pool.find((p) => p.kind === idOrKind && (p.id === undefined || p.id === "" || p.id === p.kind))
   );
 }
 
@@ -219,10 +296,11 @@ export function unavailableReason(p: ProviderStatusDto): string | undefined {
 }
 
 /** Test seam: replaces the roster without touching the connection. */
-export function setProvidersForTest(providers: ProviderStatusDto[]): void {
-  useProvidersStore.setState({ providers, loading: false, error: null, requested: true });
+export function setProvidersForTest(providers: EnvProviderStatus[]): void {
+  useProvidersStore.setState({ providers, byEnv: {}, loading: false, error: null, requested: true });
 }
 
 export function resetProviders(): void {
-  useProvidersStore.setState({ providers: [], loading: false, error: null, requested: false });
+  inflight.clear();
+  useProvidersStore.setState({ providers: [], byEnv: {}, loading: false, error: null, requested: false });
 }

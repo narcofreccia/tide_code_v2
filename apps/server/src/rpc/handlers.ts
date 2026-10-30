@@ -1,7 +1,7 @@
 import { mkdir, readdir, realpath, stat } from "node:fs/promises";
 import { isAbsolute, join } from "node:path";
 import { Git } from "../vcs/git.ts";
-import { isInternalCommand, type ClientCommand, type EventRecord } from "@tide/contracts";
+import { isInternalCommand, type ClientCommand, type EventRecord, type RpcOutput } from "@tide/contracts";
 import { CommandError, type Engine } from "../orchestration/engine.ts";
 import type { EventStore } from "../orchestration/store.ts";
 import type { DriverRegistry } from "../provider/registry.ts";
@@ -31,6 +31,8 @@ export interface HandlerDeps {
   judgeLedger?: JudgeLedger;
   /** tests inject a Git bound to a sandboxed env (no global identity, no hooks) */
   git?: (cwd: string) => Git;
+  /** R9: host load, harness versions, ssh host and relay state for `server.info` */
+  envInfo?: () => Promise<Pick<RpcOutput<"server.info">, "host" | "harnesses" | "sshHost" | "relay">>;
 }
 
 const PROJECT_NAME = /^[A-Za-z0-9][A-Za-z0-9._-]{0,127}$/;
@@ -91,7 +93,9 @@ export function registerHandlers(router: RpcRouter, deps: HandlerDeps): void {
   router.register("server.info", async (_input, ctx) => {
     // the pairing URL carries the bearer token: user-facing client sockets only
     const remote = deps.remote?.({ includePairing: ctx.agentThreadId === undefined });
+    const env = (await deps.envInfo?.()) ?? {};
     return {
+      ...env,
       environmentId: deps.environmentId,
       name: deps.settings?.get().environment.name ?? hostname(),
       version: deps.version,

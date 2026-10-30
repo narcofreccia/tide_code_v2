@@ -1,6 +1,6 @@
 import { create } from "zustand";
 import { persist } from "zustand/middleware";
-import { call } from "./model.ts";
+import { call, useModel } from "./model.ts";
 import { onReconnect } from "./reconnect.ts";
 import { showToast } from "./toast.ts";
 
@@ -122,8 +122,12 @@ export function resizePty(ptyId: string, cols: number, rows: number): void {
 
 // ptys outlive the socket on the server, so a reconnect re-lists them instead of
 // leaving `loaded` blocking a fresh read.
-onReconnect(() => {
-  for (const threadId of Object.keys(useTerminals.getState().loaded)) void ensurePtys(threadId, true);
+onReconnect((envId) => {
+  for (const threadId of Object.keys(useTerminals.getState().loaded)) {
+    // R9: only the environment that came back lost its attachments
+    if (envId !== undefined && useModel.getState().ownership.threads[threadId] !== envId) continue;
+    void ensurePtys(threadId, true);
+  }
 });
 
 export function resetTerminals(): void {

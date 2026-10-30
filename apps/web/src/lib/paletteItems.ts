@@ -17,6 +17,8 @@ import {
   unsettleThread,
 } from "./threadActions.ts";
 import { canUndoSettle, undoLastSettle } from "./inboxActions.ts";
+import { environmentName, setPrimaryEnvironment, useEnvironments } from "../state/environments.ts";
+import { openAddMachine } from "../components/fleet/fleetUi.ts";
 
 export type PaletteGroup = "Actions" | "Go to" | "Thread";
 
@@ -184,6 +186,40 @@ function projectItems(model: ReadModel, projectId: string): PaletteItem[] {
   ];
 }
 
+/** Settings › Environments, optionally with the "Add machine" sheet open. */
+function showEnvironments(): void {
+  const ui = useUi.getState();
+  ui.setSettingsSection("environments");
+  ui.showSettings();
+}
+
+/** R9: one "Switch primary environment" per other connected machine, and "Pair a machine…". */
+function environmentItems(): PaletteItem[] {
+  const { environments, statuses, primaryId } = useEnvironments.getState();
+  const switches = environments
+    .filter((env) => env.id !== primaryId && statuses[env.id]?.connection === "connected")
+    .map((env) => ({
+      id: `env:primary:${env.id}`,
+      label: `Switch primary environment: ${environmentName(env.id)}`,
+      group: "Actions" as const,
+      detail: `Settings and new projects go to ${environmentName(env.id)}`,
+      run: () => setPrimaryEnvironment(env.id),
+    }));
+  return [
+    ...switches,
+    {
+      id: "env:pair",
+      label: "Pair a machine…",
+      group: "Actions" as const,
+      detail: "Connect to Tide running on another computer",
+      run: () => {
+        showEnvironments();
+        openAddMachine();
+      },
+    },
+  ];
+}
+
 export interface PaletteInput {
   model: ReadModel;
   selectedThreadId: string | null;
@@ -212,6 +248,7 @@ export function buildPaletteItems({ model, selectedThreadId, selectedProjectId }
         showHowTideWorks();
       },
     },
+    ...environmentItems(),
     ...navigationItems(model),
   ];
 }

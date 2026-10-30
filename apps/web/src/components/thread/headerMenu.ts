@@ -3,11 +3,28 @@ import { useServerSettings } from "../../state/serverSettings.ts";
 import { createChild, deleteNeedsConfirm, isEmptyThread, requestArchive, requestDelete, updateThread } from "../../lib/threadActions.ts";
 import { snoozeThread, tomorrowMorning } from "../../lib/turnActions.ts";
 import { runInThreadTerminal } from "../../lib/openInTerminal.ts";
+import { EDITOR_LABELS, editorBlockedReason, editorUrl, launchEditorUrl, threadEditorTarget, type EditorApp } from "../../lib/openInEditor.ts";
 import { useUi } from "../../state/ui.ts";
 import type { MenuItem } from "../ui/Menu.tsx";
 import { copyItems, latestSettledTurnId, settleItems } from "../shell/railMenus.ts";
 
 const HOUR = 3_600_000;
+
+/** "Open in VS Code" / "Open in Cursor": local folders directly, remote ones over Remote-SSH. */
+export function editorItems(model: ReadModel, thread: Thread): MenuItem[] {
+  const target = threadEditorTarget(model, thread);
+  const blocked = editorBlockedReason(target);
+  return (["vscode", "cursor"] as EditorApp[]).map((app, index) => ({
+    label: `Open in ${EDITOR_LABELS[app]}`,
+    ...(index === 0 ? { separatorBefore: true } : {}),
+    disabled: blocked !== undefined,
+    ...(blocked === undefined ? {} : { hint: blocked }),
+    onSelect: () => {
+      const url = target === undefined ? undefined : editorUrl(app, target);
+      if (url) launchEditorUrl(url);
+    },
+  }));
+}
 
 /** The thread header's `⋯`: everything that is not Terminal / Fork (those fold in when narrow). */
 export function headerMenu(
@@ -68,6 +85,7 @@ export function headerMenu(
       onSelect: () => updateThread(thread.id, { autoAllowRoutine: thread.autoAllowRoutine !== true }),
     },
     ...copyItems(thread),
+    ...editorItems(model, thread),
     {
       label: "Remove worktree…",
       separatorBefore: true,

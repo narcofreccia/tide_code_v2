@@ -6,9 +6,11 @@ import { applyDesktopFlag, startClient } from "./lib/bootstrap.ts";
 // on <html> before the first React paint (index.html has already done a rough pass)
 import "./state/settings.ts";
 import "./styles/global.css";
+import { registerServiceWorker } from "./lib/registerSw.ts";
 
 applyDesktopFlag();
 startClient();
+if (import.meta.env.PROD) registerServiceWorker();
 
 const container = document.getElementById("root");
 if (!container) throw new Error("#root missing");

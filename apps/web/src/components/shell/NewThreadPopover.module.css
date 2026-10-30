@@ -36,3 +36,4 @@
 }
 .input::placeholder { color: var(--muted); }
 .input:focus { outline: none; border-color: var(--accent); }
+.machine { font-family: var(--font-mono); font-size: 12px; line-height: 28px; }

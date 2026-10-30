@@ -1,0 +1,26 @@
+.strip { margin-top: var(--sp-4); }
+.label {
+  margin: 0 0 var(--sp-2);
+  font-size: 11px;
+  letter-spacing: var(--ls-section);
+  text-transform: uppercase;
+  color: var(--text-2);
+  font-weight: var(--fw-section);
+}
+.chips { display: flex; flex-wrap: wrap; gap: var(--sp-2); list-style: none; margin: 0; padding: 0; }
+.chip {
+  display: flex;
+  align-items: center;
+  gap: var(--sp-2);
+  height: 28px;
+  padding: 0 var(--sp-2);
+  border: 1px solid var(--border-strong);
+  border-radius: var(--radius-sm);
+  background: var(--surface);
+  color: inherit;
+  font: inherit;
+  cursor: pointer;
+}
+.chip:hover { border-color: var(--accent); }
+.name { font-weight: 500; }
+.hint { color: var(--muted); font-size: 11px; }

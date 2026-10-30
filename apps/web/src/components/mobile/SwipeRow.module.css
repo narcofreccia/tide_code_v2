@@ -1,0 +1,25 @@
+.item { position: relative; overflow: hidden; list-style: none; }
+.under {
+  position: absolute;
+  inset: 0;
+  display: flex;
+  align-items: center;
+  padding: 0 var(--sp-4);
+  font-weight: 600;
+  color: var(--text-2);
+  opacity: 0;
+}
+.right { justify-content: flex-start; background: var(--st-ok-soft); color: var(--st-ok); opacity: 1; }
+.left { justify-content: flex-end; background: var(--st-needs-soft); color: var(--st-needs); opacity: 1; }
+.armed { filter: saturate(1.6); }
+.surface {
+  --dx: 0px;
+  position: relative;
+  background: var(--surface);
+  transform: translateX(var(--dx));
+  /* vertical scroll stays with the browser; horizontal drags are ours */
+  touch-action: pan-y;
+}
+.dragging { transition: none; }
+.surface:not(.dragging) { transition: transform 0.15s ease-out; }
+.rows { margin: 0; padding: 0; list-style: none; }

@@ -73,7 +73,8 @@ export class Scheduler {
     const fired: string[] = [];
     const due = Object.values(this.#engine.getModel().scheduledTasks).filter(
       (t): t is ScheduledTask & { nextRunAt: number } =>
-        t.enabled && t.archivedAt === undefined && t.nextRunAt !== undefined && t.nextRunAt <= now,
+        // a task switched to a webhook may keep a stale clock slot: webhooks never fire on the clock
+        t.enabled && t.archivedAt === undefined && t.schedule.kind !== "webhook" && t.nextRunAt !== undefined && t.nextRunAt <= now,
     );
     for (const task of due) {
       const commandId = `scheduled:${task.id}:${task.nextRunAt}`;

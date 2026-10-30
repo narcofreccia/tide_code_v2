@@ -1,0 +1,132 @@
+/* Settings › Environments and its sheet; layout on top of settings/Section.module.css */
+.field { flex: 1; display: flex; justify-content: flex-end; max-width: 320px; }
+.subTitle { font-weight: 500; }
+.error { margin: 0; color: var(--danger); font-size: 12px; }
+.muted { color: var(--muted); }
+.good { color: var(--ok); }
+.bad { color: var(--danger); }
+
+/* pairing */
+.pair,
+.update {
+  display: flex;
+  flex-direction: column;
+  gap: var(--sp-2);
+  padding: var(--sp-3);
+  border: 1px solid var(--border);
+  border-radius: var(--radius);
+  background: var(--surface);
+}
+.pairBody { display: flex; flex-direction: column; gap: var(--sp-2); }
+.code {
+  font-family: var(--font-mono);
+  font-size: 28px;
+  letter-spacing: 0.3em;
+  color: var(--text);
+}
+.expired { color: var(--muted); text-decoration: line-through; }
+.urls { list-style: none; margin: 0; padding: 0; display: flex; flex-direction: column; gap: var(--sp-1); }
+.urlRow { display: flex; align-items: center; justify-content: space-between; gap: var(--sp-2); }
+
+/* harness updates */
+.updateHead { display: flex; align-items: center; justify-content: space-between; gap: var(--sp-2); }
+.log { border: 1px solid var(--border); border-radius: var(--radius-sm); overflow: hidden; }
+.logHead {
+  display: flex;
+  justify-content: space-between;
+  padding: var(--sp-1) var(--sp-2);
+  background: var(--surface-raised);
+  font-size: 12px;
+}
+.logBody {
+  margin: 0;
+  max-height: 180px;
+  overflow: auto;
+  padding: var(--sp-2);
+  background: var(--bg);
+  font-family: var(--font-mono);
+  font-size: 11px;
+  white-space: pre-wrap;
+}
+
+/* other machines */
+.cards { list-style: none; margin: 0; padding: 0; display: flex; flex-direction: column; gap: var(--sp-2); }
+.card {
+  display: flex;
+  flex-direction: column;
+  gap: var(--sp-2);
+  padding: var(--sp-3);
+  border: 1px solid var(--border);
+  border-radius: var(--radius);
+  background: var(--surface);
+}
+.cardHead { display: flex; align-items: center; gap: var(--sp-2); flex-wrap: wrap; }
+.cardName { font-weight: 600; }
+.cardStatus { flex: 1; color: var(--muted); font-size: 12px; }
+.facts {
+  display: grid;
+  grid-template-columns: max-content 1fr;
+  gap: 2px var(--sp-3);
+  margin: 0;
+  font-size: 12px;
+}
+.facts dt { color: var(--muted); }
+.facts dd { margin: 0; font-family: var(--font-mono); overflow-wrap: anywhere; }
+.cardActions { display: flex; flex-wrap: wrap; align-items: center; gap: var(--sp-2); }
+.linkButton {
+  display: inline-flex;
+  align-items: center;
+  height: 24px;
+  padding: 0 8px;
+  border: 1px solid var(--border-strong);
+  border-radius: var(--radius-sm);
+  background: var(--surface-2);
+  color: var(--text);
+  text-decoration: none;
+  font-size: 12px;
+}
+.linkButton:hover { border-color: var(--accent); }
+
+.routes { display: flex; flex-direction: column; gap: var(--sp-1); }
+.routeList { list-style: none; margin: 0; padding: 0; display: flex; flex-direction: column; gap: var(--sp-1); }
+.route { display: flex; align-items: center; gap: var(--sp-1); }
+
+/* relay fold */
+.fold {
+  display: inline-flex;
+  align-items: baseline;
+  gap: var(--sp-2);
+  padding: 0;
+  border: 0;
+  background: transparent;
+  color: var(--text);
+  font: inherit;
+  font-size: 14px;
+  font-weight: 600;
+  cursor: pointer;
+}
+.foldSummary { color: var(--muted); font-weight: 400; font-size: 12px; }
+
+/* add-machine sheet */
+.segmented {
+  display: inline-flex;
+  height: 28px;
+  border: 1px solid var(--border-strong);
+  border-radius: var(--radius-sm);
+  overflow: hidden;
+}
+.segment {
+  min-width: 96px;
+  padding: 0 var(--sp-3);
+  border: none;
+  background: var(--surface-2);
+  color: var(--text-2);
+  font: inherit;
+  font-size: 12px;
+  cursor: pointer;
+}
+.segment + .segment { border-left: 1px solid var(--border-strong); }
+.segmentOn { background: var(--accent-soft); color: var(--accent); font-weight: 500; }
+.sheetRows { display: flex; flex-direction: column; gap: var(--sp-2); }
+.codeInput { letter-spacing: 0.3em; max-width: 140px; }
+.hints { display: flex; flex-direction: column; gap: var(--sp-1); margin-top: var(--sp-3); font-size: 12px; }

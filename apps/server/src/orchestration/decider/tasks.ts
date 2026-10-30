@@ -11,7 +11,22 @@ type TaskCommand =
 
 type TaskPatch = EventOf<"task.updated">["patch"];
 
-function scheduleProblem(schedule: Schedule): string | undefined {
+const HOOK_ID = /^[A-Za-z0-9_-]{8,64}$/;
+
+/**
+ * R9: a webhook's id is its URL (`POST /hook/<hookId>`), which carries no project, so it is unique
+ * across every live task on this server (stricter than per project, and routing stays unambiguous).
+ */
+function scheduleProblem(model: ReadModel, schedule: Schedule, selfId?: string): string | undefined {
+  if (schedule.kind === "webhook") {
+    if (!HOOK_ID.test(schedule.hookId)) return "webhook hookId must be 8-64 characters of A-Z a-z 0-9 _ -";
+    const taken = Object.values(model.scheduledTasks).some(
+      (t) => t.id !== selfId && t.archivedAt === undefined && t.schedule.kind === "webhook" && t.schedule.hookId === schedule.hookId,
+    );
+    if (taken) return `webhook hookId ${schedule.hookId} is already used by another task`;
+    if (schedule.secret !== undefined && schedule.secret.length === 0) return "webhook secret must not be empty (omit it instead)";
+    return undefined;
+  }
   if (schedule.kind === "fixed" && new Set(schedule.times).size !== schedule.times.length) return "fixed schedule times must be unique";
   if (schedule.kind === "fixed" && new Set(schedule.weekdays).size !== schedule.weekdays.length) return "fixed schedule weekdays must be unique";
   return undefined;
@@ -36,7 +51,7 @@ export function decideTask(model: ReadModel, command: TaskCommand, ctx: DecideCo
         const checked = checkThread(model, project.id, command.threadId);
         if ("ok" in checked) return checked;
       }
-      const problem = scheduleProblem(command.schedule);
+      const problem = scheduleProblem(model, command.schedule);
       if (problem !== undefined) return fail("invalid-command", problem);
       const nextRunAt = nextFireAt(command.schedule, ctx.now);
       const task: ScheduledTask = {
@@ -69,7 +84,7 @@ export function decideTask(model: ReadModel, command: TaskCommand, ctx: DecideCo
         if ("ok" in checked) return checked;
       }
       if (command.schedule !== undefined) {
-        const problem = scheduleProblem(command.schedule);
+        const problem = scheduleProblem(model, command.schedule, task.id);
         if (problem !== undefined) return fail("invalid-command", problem);
       }
       const patch: TaskPatch = {
@@ -103,7 +118,7 @@ export function decideTask(model: ReadModel, command: TaskCommand, ctx: DecideCo
       const task = model.scheduledTasks[command.taskId];
       if (!task) return fail("not-found", `unknown task ${command.taskId}`);
       if (isArchived(task)) return fail("conflict", `task ${task.id} is deleted`);
-      return fire(model, task, ctx, undefined, undefined);
+      return fire(model, task, ctx, undefined, undefined, undefined);
     }
 
     case "task.fire": {
@@ -112,7 +127,7 @@ export function decideTask(model: ReadModel, command: TaskCommand, ctx: DecideCo
       if (isArchived(task)) return fail("conflict", `task ${task.id} is deleted`);
       // the scheduler may race an update that paused the task
       if (!task.enabled) return ok();
-      return fire(model, task, ctx, command.nextRunAt, command.useWorktreeDefault);
+      return fire(model, task, ctx, command.nextRunAt, command.useWorktreeDefault, command.promptSuffix);
     }
   }
 }
@@ -123,8 +138,9 @@ function fire(
   ctx: DecideContext,
   nextRunAt: number | undefined,
   useWorktreeDefault: boolean | undefined,
+  promptSuffix: string | undefined,
 ): DecideResult {
-  const notification = { source: "schedule" as const, summary: `scheduled: ${task.title}` };
+  const notification = { source: "schedule" as const, summary: `${task.schedule.kind === "webhook" ? "webhook" : "scheduled"}: ${task.title}` };
   const events: DomainEvent[] = [];
   let thread: Thread | undefined;
   if (task.threadId !== undefined) {
@@ -162,7 +178,8 @@ function fire(
     threadId = created.id;
     events.push({ type: "thread.created", thread: created, useWorktree: task.useWorktree ?? useWorktreeDefault ?? true });
   }
-  const requested = turnRequested(threadId, task.prompt, ctx, notification);
+  const prompt = promptSuffix !== undefined && promptSuffix.length > 0 ? `${task.prompt}\n\n${promptSuffix}` : task.prompt;
+  const requested = turnRequested(threadId, prompt, ctx, notification);
   const turn = {
     ...requested.turn,
     ...(queued ? { status: "queued" as const } : {}),

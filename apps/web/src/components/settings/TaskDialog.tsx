@@ -7,6 +7,7 @@ import { Button } from "../ui/Button.tsx";
 import { Checkbox, Radio } from "../ui/Choice.tsx";
 import { Dialog } from "../ui/Dialog.tsx";
 import { Select } from "../ui/Select.tsx";
+import { WebhookUrls } from "../fleet/WebhookUrls.tsx";
 import styles from "./Automations.module.css";
 import section from "./Section.module.css";
 
@@ -23,6 +24,8 @@ interface Draft {
   kind: "interval" | "fixed" | "webhook";
   /** webhook: the id in POST /hook/<hookId>; generated once per draft */
   hookId: string;
+  /** webhook: optional HMAC secret; "" sends none */
+  secret: string;
   amount: string;
   unit: Unit;
   times: string[];
@@ -51,6 +54,7 @@ function initial(task: ScheduledTask | undefined): Draft {
     prompt: task?.prompt ?? "",
     kind: s?.kind ?? "interval",
     hookId: s?.kind === "webhook" ? s.hookId : randomHookId(),
+    secret: s?.kind === "webhook" ? (s.secret ?? "") : "",
     amount: String(hours ? everyMin / 60 : everyMin),
     unit: hours ? "hours" : "minutes",
     times: s?.kind === "fixed" ? [...s.times] : [],
@@ -81,7 +85,7 @@ export function validateDraft(d: Draft): { error: string } | { fields: TaskField
       prompt: d.prompt.trim(),
       schedule:
         d.kind === "interval" ? { kind: "interval", everyMs: Math.round(everyMs) }
-        : d.kind === "webhook" ? { kind: "webhook", hookId: d.hookId }
+        : d.kind === "webhook" ? { kind: "webhook", hookId: d.hookId, ...(d.secret.trim() === "" ? {} : { secret: d.secret.trim() }) }
         : { kind: "fixed", times: [...d.times].sort(), weekdays: d.weekdays },
       enabled: d.enabled,
       ...(d.target === "thread"
@@ -95,11 +99,14 @@ export function validateDraft(d: Draft): { error: string } | { fields: TaskField
 export function TaskDialog({
   task,
   threads,
+  projectId,
   onSubmit,
   onCancel,
 }: {
   task?: ScheduledTask;
   threads: Thread[];
+  /** R9: whose machine the webhook URL points at */
+  projectId?: string;
   onSubmit: (fields: TaskFields) => void;
   onCancel: () => void;
 }) {
@@ -146,10 +153,21 @@ export function TaskDialog({
               <Select label="Interval unit" value={d.unit} options={UNITS} onSelect={(unit) => set({ unit })} variant="field" size="md" />
             </div>
           ) : d.kind === "webhook" ? (
-            <p className={section.note}>
-              Fires on <code>POST /hook/{d.hookId}</code> on this environment (or through the relay). The request body is
-              appended to the prompt. Sign requests with <code>X-Tide-Signature</code> if you set a secret in Automations.
-            </p>
+            <>
+              <WebhookUrls hookId={d.hookId} projectId={projectId} />
+              <p className={section.note}>
+                The request body is appended to the prompt. With a secret, requests must carry{" "}
+                <code>X-Tide-Signature: sha256=&lt;HMAC of the body&gt;</code>.
+              </p>
+              <input
+                className={styles.input}
+                aria-label="Webhook secret"
+                placeholder="Secret (optional)"
+                autoComplete="off"
+                value={d.secret}
+                onChange={(e) => set({ secret: e.target.value })}
+              />
+            </>
           ) : (
             <>
               <div className={styles.row}>

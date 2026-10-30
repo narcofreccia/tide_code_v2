@@ -1,6 +1,7 @@
 import { create } from "zustand";
 import type { ProviderInstanceConfig, RuntimeMode, UserSettings, UserSettingsPatch } from "@tide/contracts";
 import { errorText } from "../lib/dispatchOrToast.ts";
+import { useEnvironments } from "./envStore.ts";
 import { call } from "./model.ts";
 import { showToast } from "./toast.ts";
 
@@ -60,9 +61,14 @@ export const useServerSettings = create<ServerSettingsState>(() => ({
   loaded: false,
 }));
 
-/** Read on every connect; a server without the method keeps the defaults. */
-export async function loadServerSettings(): Promise<void> {
-  const settings = await call("settings.get", {});
+/**
+ * Read on every connect; a server without the method keeps the defaults. R9: the settings
+ * shown are the primary environment's; an answer from an environment that is no longer
+ * the primary is dropped.
+ */
+export async function loadServerSettings(envId?: string): Promise<void> {
+  const settings = await (envId === undefined ? call("settings.get", {}) : call("settings.get", {}, { envId }));
+  if (envId !== undefined && envId !== useEnvironments.getState().primaryId) return;
   useServerSettings.setState({ settings, loaded: true });
 }
 
@@ -104,9 +110,18 @@ function applyPatch(settings: UserSettings, patch: UserSettingsPatch): UserSetti
 
 /**
  * Optimistic: the change shows at once, the server's answer replaces it, and a
- * refusal puts the previous settings back with a toast.
+ * refusal puts the previous settings back with a toast. R9: with an `envId` other than
+ * the primary the patch goes to that environment only and the shown settings stay put.
  */
-export async function patchServerSettings(patch: UserSettingsPatch): Promise<void> {
+export async function patchServerSettings(patch: UserSettingsPatch, envId?: string): Promise<void> {
+  if (envId !== undefined && envId !== useEnvironments.getState().primaryId) {
+    try {
+      await call("settings.set", { patch }, { envId });
+    } catch (error) {
+      showToast(`Saving settings failed: ${errorText(error)}`);
+    }
+    return;
+  }
   const previous = useServerSettings.getState().settings;
   useServerSettings.setState({ settings: applyPatch(previous, patch) });
   try {

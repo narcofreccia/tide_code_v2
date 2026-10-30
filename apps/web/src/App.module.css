@@ -26,3 +26,23 @@
 }
 .railCollapsed { grid-template-columns: 48px minmax(0, 1fr); }
 .content { display: flex; flex-direction: column; min-width: 0; min-height: 0; }
+
+/* Safe areas: the standalone PWA draws under the notch and home indicator. */
+.topRow { padding-top: env(safe-area-inset-top); padding-left: env(safe-area-inset-left); padding-right: env(safe-area-inset-right); }
+
+/* Phone shell (≤ 720px): one column; screens swap instead of sharing the grid. */
+@media (max-width: 720px) {
+  .app.phone {
+    /* --app-h follows the visual viewport (set by PhoneEffects) so the composer rides above the keyboard */
+    height: var(--app-h, 100dvh);
+    overflow: clip;
+    grid-template-columns: minmax(0, 1fr);
+    grid-template-rows: auto minmax(0, 1fr) auto;
+  }
+  .phone .topRow {
+    display: block;
+    padding: 0;
+  }
+  .phone .body,
+  .phone .railCollapsed { grid-template-columns: minmax(0, 1fr); }
+}

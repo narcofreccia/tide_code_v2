@@ -27,8 +27,11 @@ import { ProviderReactor } from "./provider/reactor.ts";
 import { DriverRegistry, type InstanceFactory } from "./provider/registry.ts";
 import { instanceIdOf, SessionDirectory, threadCwd } from "./provider/sessions.ts";
 import { Scheduler } from "./scheduling/scheduler.ts";
+import { startRelayClient, type RelayClient } from "./relay/client.ts";
 import { SettingsStore } from "./settings.ts";
 import { startServer, type ServerHandle } from "./rpc/server.ts";
+import { PairingCodes } from "./rpc/pairing.ts";
+import { localHostFor } from "./rpc/remote.ts";
 import { createWorkspaceServices, type WorkspaceServices } from "./rpc/workspace.ts";
 import { CheckpointService } from "./vcs/checkpoints.ts";
 import { Gh, type GhLike } from "./vcs/gh.ts";
@@ -89,9 +92,13 @@ export interface App {
   delegation: DelegationReactor;
   delegateWaits: DelegateWaits;
   scheduler: Scheduler;
+  /** R9: one-time pairing codes (`env.pairingCode`, `tide serve`'s banner) */
+  pairing: PairingCodes;
   prWatch: PrWatcher;
   workspace: WorkspaceServices;
   server: ServerHandle | undefined;
+  /** R9: outbound uplink to the self-hosted relay (settings.relay), when listening */
+  relay: RelayClient | undefined;
   close(): Promise<void>;
 }
 
@@ -216,6 +223,7 @@ export async function createApp(options: AppOptions): Promise<App> {
   const scheduler = new Scheduler({ engine, settings, log });
   scheduler.start();
 
+  const pairing = new PairingCodes();
   const server =
     options.listen === false
       ? undefined
@@ -231,10 +239,14 @@ export async function createApp(options: AppOptions): Promise<App> {
           delegateWaits,
           commands,
           acp,
+          pairing,
+          relayState: () => relay?.state(),
           ...(options.gh !== undefined ? { gh: options.gh } : {}),
           config: { ...config, environmentId },
         });
-  if (server) mcp.setUrl(`ws://${config.host}:${server.port}/ws`);
+  // provider sessions on this machine reach the server over loopback, whatever the bind address
+  if (server) mcp.setUrl(`ws://${localHostFor(config.host)}:${server.port}/ws`);
+  const relay: RelayClient | undefined = server ? startRelayClient(settings, { environmentId, port: server.port, host: localHostFor(config.host), log }) : undefined;
 
   return {
     config,
@@ -262,9 +274,11 @@ export async function createApp(options: AppOptions): Promise<App> {
     delegation,
     delegateWaits,
     scheduler,
+    pairing,
     prWatch,
     workspace,
     server,
+    relay,
     async close() {
       // 1. no new turn can be picked up: the reactors stop listening and the socket goes away
       reactor.stop();
@@ -278,6 +292,7 @@ export async function createApp(options: AppOptions): Promise<App> {
       delegation.stop();
       for (const site of decisionSites) site.stop();
       scheduler.stop();
+      relay?.stop();
       prWatch.stop();
       await server?.close();
 

@@ -1,4 +1,5 @@
 import { useCallback, useEffect, useRef } from "react";
+import { useViewport } from "../../lib/useViewport.ts";
 import { useUi } from "../../state/ui.ts";
 import styles from "./SplitPane.module.css";
 
@@ -10,6 +11,7 @@ export function SplitPane({ primary, secondary }: { primary: React.ReactNode; se
   const ratio = useUi((s) => s.splitRatio);
   const setSplitRatio = useUi((s) => s.setSplitRatio);
   const root = useRef<HTMLDivElement>(null);
+  const { phone } = useViewport();
 
   useEffect(() => {
     root.current?.style.setProperty("--split", `${ratio * 100}%`);
@@ -30,6 +32,9 @@ export function SplitPane({ primary, secondary }: { primary: React.ReactNode; se
     },
     [setSplitRatio],
   );
+
+  // phone: one column; the workbench opens full-screen from the top bar's Code button
+  if (phone) return <div className={styles.pane}>{primary}</div>;
 
   return (
     <div className={styles.split} ref={root}>

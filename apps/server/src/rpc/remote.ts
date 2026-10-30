@@ -17,6 +17,14 @@ export function isLoopbackHost(host: string): boolean {
   return LOOPBACK.has(host);
 }
 
+/** The address a local process dials: loopback for a wildcard or loopback bind, else the bound address. */
+export function localHostFor(bindHost: string): string {
+  // "::" is dual-stack on every platform node supports, so IPv4 loopback reaches it too
+  if (bindHost === "0.0.0.0" || bindHost === "::" || bindHost === "localhost" || bindHost === "" || bindHost.startsWith("127.")) return "127.0.0.1";
+  if (bindHost === "::1" || bindHost === "0:0:0:0:0:0:0:1") return "[::1]";
+  return bindHost.includes(":") ? `[${bindHost}]` : bindHost;
+}
+
 /** Routable IPv4 addresses of this host, in interface order. */
 export function lanIps(interfaces: Interfaces = osNetworkInterfaces()): string[] {
   const out: string[] = [];
@@ -88,5 +96,40 @@ ol{margin:0;padding-left:18px;color:var(--dim)}li{margin:4px 0}
 </main><script>
 var t=new URLSearchParams(location.hash.slice(1)).get("token");
 if(t)document.getElementById("tok").textContent=t;
+</script></body></html>`;
+}
+
+function escapeHtml(text: string): string {
+  return text.replace(/[&<>"']/g, (c) => `&#${c.charCodeAt(0)};`);
+}
+
+/**
+ * `/` when this server has no built web client to serve. A pairing link (`/#pair=<code>`, what
+ * `tide pair` encodes in its QR) shows the code so the user can type it into a Tide client.
+ */
+export function landingPage(info: { name: string; version: string; port: number }): string {
+  return `<!doctype html><html lang="en"><head><meta charset="utf-8">
+<meta name="viewport" content="width=device-width,initial-scale=1"><title>Tide server</title>
+<style>
+:root{color-scheme:dark;--bg:#0d0f12;--fg:#e6e8eb;--dim:#8b939e;--line:#232830;--accent:#7aa2f7}
+@media (prefers-color-scheme:light){:root{color-scheme:light;--bg:#fafafa;--fg:#16181c;--dim:#5b636e;--line:#dde1e6;--accent:#2f5bd3}}
+body{margin:0;background:var(--bg);color:var(--fg);font:13px/1.6 ui-monospace,SFMono-Regular,Menlo,monospace;padding:40px 16px}
+main{max-width:640px;margin:0 auto}h1{font-size:18px;margin:0 0 4px}p{color:var(--dim);margin:0 0 20px}
+section{border:1px solid var(--line);border-radius:8px;padding:14px 16px;margin:0 0 12px}
+h2{font-size:11px;text-transform:uppercase;letter-spacing:.08em;color:var(--dim);margin:0 0 8px}
+code{color:var(--accent);word-break:break-all}#code{font-size:28px;letter-spacing:.2em}
+ol{margin:0;padding-left:18px;color:var(--dim)}li{margin:4px 0}[hidden]{display:none}
+</style></head><body><main>
+<h1>${escapeHtml(info.name)}</h1>
+<p>Tide server ${escapeHtml(info.version)}. This server has no web client bundled; connect from the Tide desktop app or a Tide web client.</p>
+<section id="pair" hidden><h2>Pairing code</h2><code id="code"></code></section>
+<section><h2>Add this machine to a Tide client</h2><ol>
+<li>On this machine, run <code>tide pair</code>. It prints a 6-digit code (valid 5 minutes, single use) and this server's URLs.</li>
+<li>In the client: Environments → Add → enter <code>${"http://&lt;this-host&gt;:" + String(info.port)}</code> and the code.</li>
+<li>The client exchanges the code for this server's token (<code>POST /api/auth/pair</code>) and keeps it.</li>
+</ol></section>
+</main><script>
+var c=new URLSearchParams(location.hash.slice(1)).get("pair");
+if(c&&/^\\d{6}$/.test(c)){document.getElementById("code").textContent=c;document.getElementById("pair").hidden=false}
 </script></body></html>`;
 }

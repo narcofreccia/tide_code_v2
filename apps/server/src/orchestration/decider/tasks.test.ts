@@ -124,3 +124,33 @@ describe("decide: task.fire / task.run-now", () => {
     expect(tryRun(deleted, { type: "task.run-now", taskId: t.taskId })).toMatchObject({ ok: false, error: { code: "not-found" } });
   });
 });
+
+describe("decide: webhook schedules (R9)", () => {
+  const hook = (hookId: string, secret?: string) => ({ kind: "webhook" as const, hookId, ...(secret !== undefined ? { secret } : {}) });
+
+  it("creates a webhook task with no clock slot", () => {
+    const f = base();
+    const { model, taskId } = created(f, { schedule: hook("deploy-hook-1") });
+    expect(model.scheduledTasks[taskId]?.nextRunAt).toBeUndefined();
+  });
+
+  it("rejects malformed and duplicate hook ids; an update may keep its own id", () => {
+    const f = base();
+    expect(tryRun(f.model, { type: "task.create", projectId: f.projectId, title: "x", prompt: "p", schedule: hook("bad id!!") })).toMatchObject({ ok: false, error: { code: "invalid-command" } });
+    expect(tryRun(f.model, { type: "task.create", projectId: f.projectId, title: "x", prompt: "p", schedule: hook("deploy-hook-1", "") })).toMatchObject({ ok: false, error: { code: "invalid-command" } });
+    const t = created(f, { schedule: hook("deploy-hook-1") });
+    expect(tryRun(t.model, { type: "task.create", projectId: f.projectId, title: "y", prompt: "p", schedule: hook("deploy-hook-1") })).toMatchObject({ ok: false, error: { code: "invalid-command" } });
+    expect(tryRun(t.model, { type: "task.update", taskId: t.taskId, schedule: hook("deploy-hook-1", "s3cret") })).toMatchObject({ ok: true });
+    const del = run(t.model, { type: "task.delete", taskId: t.taskId });
+    expect(tryRun(del.model, { type: "task.create", projectId: f.projectId, title: "y", prompt: "p", schedule: hook("deploy-hook-1") })).toMatchObject({ ok: true });
+  });
+
+  it("task.fire appends the promptSuffix to the prompt", () => {
+    const f = base();
+    const t = created(f, { schedule: hook("deploy-hook-1") });
+    const fired = run(t.model, { type: "task.fire", commandId: "hook:deploy-hook-1:abc", taskId: t.taskId, promptSuffix: "```\n{}\n```" });
+    const requested = eventOf(fired.events, "turn.requested");
+    expect(requested.userMessage.text).toBe("check CI\n\n```\n{}\n```");
+    expect(requested.userMessage.notification?.summary).toBe("webhook: Nightly");
+  });
+});

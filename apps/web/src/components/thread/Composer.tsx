@@ -297,7 +297,7 @@ export function Composer({ thread }: { thread: Thread }) {
           Unknown command for {harness}; it will be sent as text
         </p>
       )}
-      <div className={styles.settings}>
+      <div className={styles.settings} data-composer-pills>
         <ThreadPills thread={thread} />
         <ThreadLinkChips threadId={thread.id} />
       </div>

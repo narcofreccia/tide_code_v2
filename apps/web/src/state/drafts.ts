@@ -1,5 +1,6 @@
 import { create } from "zustand";
 import { newId } from "@tide/contracts";
+import { readScoped, writeScoped } from "./envStorage.ts";
 
 /** An image as held in a draft: the same base64 the composer sends. */
 export interface SerializedImage {
@@ -79,7 +80,7 @@ interface Stored {
 
 function readStored(): Stored | undefined {
   try {
-    const raw = window.localStorage.getItem(DRAFTS_STORAGE_KEY);
+    const raw = readScoped(DRAFTS_STORAGE_KEY);
     if (!raw) return undefined;
     const parsed = JSON.parse(raw) as Stored;
     return parsed && typeof parsed === "object" ? parsed : undefined;
@@ -103,7 +104,7 @@ export function flushDrafts(): void {
     stash: stash.map((d) => ({ id: d.id, text: d.text, updatedAt: d.updatedAt, images: d.images.length })),
   };
   try {
-    window.localStorage.setItem(DRAFTS_STORAGE_KEY, JSON.stringify(stored));
+    writeScoped(DRAFTS_STORAGE_KEY, JSON.stringify(stored));
   } catch {
     /* quota or blocked storage: the in-memory drafts still work */
   }

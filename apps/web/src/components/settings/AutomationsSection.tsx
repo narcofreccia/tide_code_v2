@@ -11,6 +11,7 @@ import { Button } from "../ui/Button.tsx";
 import { Checkbox } from "../ui/Choice.tsx";
 import { ConfirmDialog } from "../ui/Dialog.tsx";
 import { TaskDialog } from "./TaskDialog.tsx";
+import { WebhookUrls } from "../fleet/WebhookUrls.tsx";
 import styles from "./Automations.module.css";
 import section from "./Section.module.css";
 import { plural } from "../../lib/format.ts";
@@ -56,6 +57,7 @@ function TaskRow({
         )}
         <span>{plural(task.runs, "run")}</span>
       </div>
+      {task.schedule.kind === "webhook" ? <WebhookUrls hookId={task.schedule.hookId} projectId={task.projectId} compact /> : null}
     </li>
   );
 }
@@ -121,6 +123,7 @@ export function AutomationsSection() {
         <TaskDialog
           {...(editing.task ? { task: editing.task } : {})}
           threads={selectThreadsByProject(model, editing.projectId)}
+          projectId={editing.projectId}
           onSubmit={save}
           onCancel={() => setEditing(null)}
         />

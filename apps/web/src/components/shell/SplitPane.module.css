@@ -21,3 +21,9 @@
   inset: 0 -3px;
 }
 .handle:hover { background: var(--accent); }
+
+/* Touch: the divider is draggable by finger without the page scrolling under it. */
+@media (pointer: coarse) {
+  .handle { touch-action: none; }
+  .handle::after { inset: 0 -12px; }
+}

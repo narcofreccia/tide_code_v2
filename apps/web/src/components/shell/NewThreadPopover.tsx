@@ -20,6 +20,8 @@ import { HarnessFields, useThreadDraft } from "../thread/ProviderPicker.tsx";
 import { useModel } from "../../state/model.ts";
 import { useUi, type NewThreadTab } from "../../state/ui.ts";
 import { NewTeamFields } from "./NewTeamFields.tsx";
+import { envOfProject, environmentName } from "../../state/environments.ts";
+import { useMultiEnv } from "../fleet/envView.ts";
 import { Checkbox } from "../ui/Choice.tsx";
 import { Dialog } from "../ui/Dialog.tsx";
 import { DialogFrame, FrameField, PrimaryField } from "../ui/DialogFrame.tsx";
@@ -104,6 +106,8 @@ function ThreadFields({
   const providers = useProviders();
   const harness = instanceLabel(providers, draft.providerId);
   const efforts = effortsOf(providerStatus(providers, draft.providerId)?.models ?? [], draft.model);
+  const multiEnv = useMultiEnv();
+  const envId = projectId === undefined ? undefined : envOfProject(projectId);
   const create = (): void => {
     onDone();
     if (!projectId) return;
@@ -147,6 +151,11 @@ function ThreadFields({
         onEnter={create}
       />
       <div className={styles.rows}>
+        {multiEnv && envId !== undefined ? (
+          <FrameField label="Runs on" caption="A thread runs on the machine that holds its project">
+            <span className={styles.machine}>{environmentName(envId)}</span>
+          </FrameField>
+        ) : null}
         <FrameField
           label="Agent"
           caption={draft.model === "" ? `Model: ${defaultModelHint(harness).toLowerCase()}` : undefined}

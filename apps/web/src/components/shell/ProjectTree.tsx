@@ -12,6 +12,9 @@ import { ExpertsExplainer, ExpertsGroup, sessionThreadIds } from "./ExpertsGroup
 import { RailThreadRow, parentOf } from "./RailThreadRow.tsx";
 import { projectMenu } from "./railMenus.ts";
 import { clearEmptyArchived } from "../../lib/threadActions.ts";
+import { envOfProject } from "../../state/environments.ts";
+import { EnvTag } from "../fleet/FleetBits.tsx";
+import { useMultiEnv } from "../fleet/envView.ts";
 import styles from "./ProjectTree.module.css";
 
 /** "Working · n" / "Snoozed · n" / "Settled · n" / "Archived · n": collapsed until opened; flat, no nesting. */
@@ -53,6 +56,7 @@ function ProjectNode({ project }: { project: Project }) {
   const selectProject = useUi((s) => s.selectProject);
   const setNewExpertsProject = useUi((s) => s.setNewExpertsProject);
   const [menu, setMenu] = useState<MenuPosition | undefined>(undefined);
+  const multiEnv = useMultiEnv();
   const workingSection = useServerSettings((s) => s.settings.inbox.workingSection);
   const groups = selectRailGroups(model, project.id, now, { workingSection });
   // threads shown under a session are not listed again at the top
@@ -100,6 +104,7 @@ function ProjectNode({ project }: { project: Project }) {
           onClick={() => selectProject(selectedProjectId === project.id ? null : project.id)}
         >
           <span className={styles.projectTitle}>{project.title}</span>
+          {multiEnv ? <EnvTag envId={envOfProject(project.id)} /> : null}
           {totals.needsYou > 0 ? (
             <span className={`${styles.badge} ${styles.badgeNeeds}`} title={`${totals.needsYou} need you`}>
               ◐ {totals.needsYou}

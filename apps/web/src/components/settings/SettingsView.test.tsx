@@ -43,7 +43,7 @@ describe("Settings view", () => {
       "Teams",
       "Appearance",
       "Keyboard",
-      "Remote",
+      "Environments",
       "About",
     ]);
     expect(screen.getByText("Refresh all")).toBeDefined();
@@ -57,7 +57,7 @@ describe("Settings view", () => {
     expect(useUi.getState().settingsSection).toBe("appearance");
   });
 
-  it("shows the read-only Git and Remote panels", () => {
+  it("shows the read-only Git and the Environments panels", () => {
     setProvidersForTest(PROVIDER_FIXTURE);
     attachFakeStore(modelWith({}));
     render(<SettingsView />);
@@ -67,7 +67,7 @@ describe("Settings view", () => {
       "Create a worktree for new threads by default",
     );
 
-    fireEvent.click(screen.getByText("Remote"));
+    fireEvent.click(screen.getByText("Environments"));
     expect(screen.getByText(/tide-server --host 0.0.0.0/)).toBeDefined();
   });
 });

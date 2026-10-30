@@ -1,6 +1,7 @@
 import { useCallback, useEffect, useRef, useState } from "react";
 import type { RpcOutput } from "@tide/contracts";
 import { call } from "../../state/model.ts";
+import { envOpt } from "../fleet/envView.ts";
 import { Button } from "../ui/Button.tsx";
 import { Checkbox } from "../ui/Choice.tsx";
 import { Dialog } from "../ui/Dialog.tsx";
@@ -33,12 +34,15 @@ export function FolderPicker({
   onPick,
   onClose,
   purpose = "repo",
+  envId,
 }: {
   initialPath?: string;
   onPick: (path: string) => void;
   onClose: () => void;
   /** `repo`: pick an existing repository; `parent`: pick where a new project folder will be created */
   purpose?: "repo" | "parent";
+  /** R9: browse that machine's disk; the primary environment when omitted */
+  envId?: string | undefined;
 }) {
   const [listing, setListing] = useState<Listing | null>(null);
   const [error, setError] = useState<string | null>(null);
@@ -49,7 +53,7 @@ export function FolderPicker({
   const browse = useCallback(
     (path: string | undefined, hidden: boolean): void => {
       setError(null);
-      call("fs.browse", { ...(path === undefined ? {} : { path }), showHidden: hidden })
+      call("fs.browse", { ...(path === undefined ? {} : { path }), showHidden: hidden }, envOpt(envId))
         .then((result) => {
           setListing(result);
           setActive(0);
@@ -60,7 +64,7 @@ export function FolderPicker({
           setError(/unknown method/i.test(message) ? "This Tide server can't browse folders yet (update the app). Close this and type the path instead." : message);
         });
     },
-    [],
+    [envId],
   );
 
   useEffect(() => {

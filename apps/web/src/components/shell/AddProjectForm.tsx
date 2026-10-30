@@ -1,6 +1,9 @@
 import { useState } from "react";
 import { call, dispatch } from "../../state/model.ts";
 import { useUi } from "../../state/ui.ts";
+import { useEnvironments } from "../../state/environments.ts";
+import { EnvSelect } from "../fleet/EnvSelect.tsx";
+import { envOpt } from "../fleet/envView.ts";
 import { Button } from "../ui/Button.tsx";
 import { Radio } from "../ui/Choice.tsx";
 import { basename, FolderPicker } from "./FolderPicker.tsx";
@@ -25,6 +28,10 @@ export function AddProjectForm({ onDone }: { onDone: () => void }) {
   const [busy, setBusy] = useState(false);
   const [picking, setPicking] = useState(false);
   const selectProject = useUi((s) => s.selectProject);
+  // R9: which machine the project lives on; the primary unless the user picks another
+  const primaryId = useEnvironments((s) => s.primaryId);
+  const [envId, setEnvId] = useState<string | undefined>(undefined);
+  const target = envId ?? primaryId;
 
   const finish = (): void => {
     setTitle("");
@@ -47,7 +54,7 @@ export function AddProjectForm({ onDone }: { onDone: () => void }) {
     if (!p.startsWith("/")) return setError("Root path must be absolute");
     setBusy(true);
     setError(null);
-    dispatch({ type: "project.create", title: t, rootPath: p }).then(finish).catch(fail).finally(() => setBusy(false));
+    dispatch({ type: "project.create", title: t, rootPath: p }, envOpt(target)).then(finish).catch(fail).finally(() => setBusy(false));
   };
 
   const submitNew = (): void => {
@@ -59,7 +66,7 @@ export function AddProjectForm({ onDone }: { onDone: () => void }) {
     setBusy(true);
     setError(null);
     const t = title.trim();
-    call("project.init", { parentPath: parent, name: n, ...(t ? { title: t } : {}) })
+    call("project.init", { parentPath: parent, name: n, ...(t ? { title: t } : {}) }, envOpt(target))
       .then((res) => {
         selectProject(res.projectId);
         finish();
@@ -97,6 +104,7 @@ export function AddProjectForm({ onDone }: { onDone: () => void }) {
           New project
         </Radio>
       </div>
+      <EnvSelect value={target} onSelect={(next) => { setEnvId(next); setError(null); }} label="Run on" />
       <p className={styles.hint}>
         {mode === "existing"
           ? "A project is a local git repository; threads and worktrees live under it. You can link related repositories later from the project card."
@@ -156,6 +164,7 @@ export function AddProjectForm({ onDone }: { onDone: () => void }) {
         <FolderPicker
           initialPath={(mode === "existing" ? rootPath : parentPath).trim()}
           purpose={mode === "existing" ? "repo" : "parent"}
+          envId={target}
           onPick={pick}
           onClose={() => setPicking(false)}
         />

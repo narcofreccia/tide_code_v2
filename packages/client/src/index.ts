@@ -1,6 +1,7 @@
 export {
   TideConnection,
   RpcCallError,
+  UNAUTHORIZED_CLOSE,
   type BackoffOptions,
   type ConnectionStatus,
   type StreamHandle,
@@ -13,6 +14,24 @@ export {
   type ModelStoreConnection,
   type ModelStoreState,
 } from "./modelStore.ts";
+export {
+  EnvironmentConnection,
+  type EnvConnectionSnapshot,
+  type EnvConnectionState,
+  type EnvironmentConnectionOptions,
+  type SocketLike,
+} from "./environmentConnection.ts";
+export { MergedModel, emptyOwnership, type ModelMapKey, type Ownership } from "./mergedModel.ts";
+export {
+  UnauthorizedError,
+  preflight,
+  ticketGetter,
+  type FetchLike,
+  type FetchResponseLike,
+  type PreflightResult,
+  type Timers,
+} from "./preflight.ts";
+export { ROUTE_PRIORITY, httpOriginFor, routeFor, routeKindFor, sortRoutes, wsUrlFor } from "./urls.ts";
 export {
   compareByAttention,
   groupActivities,

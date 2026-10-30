@@ -6,6 +6,8 @@ import { useViewHeading } from "../../state/hooks.ts";
 import { Button } from "../ui/Button.tsx";
 import { Kbd } from "../ui/Kbd.tsx";
 import { Select, type SelectOption } from "../ui/Select.tsx";
+import { useViewport } from "../../lib/useViewport.ts";
+import { PhoneTopBar } from "../mobile/PhoneTopBar.tsx";
 import { Logo } from "./Logo.tsx";
 import styles from "./TopBar.module.css";
 
@@ -17,11 +19,14 @@ export function TopBar() {
   const showMission = useUi((s) => s.showMission);
   const selectThread = useUi((s) => s.selectThread);
   const heading = useViewHeading();
+  const { phone } = useViewport();
 
   const projectOptions: SelectOption<string>[] = [
     { value: "", label: "All projects" },
     ...projects.map((p) => ({ value: p.id, label: p.title, description: p.rootPath })),
   ];
+
+  if (phone) return <PhoneTopBar />;
 
   return (
     // Tauri v2 drags from this attribute (not `-webkit-app-region`), and only when

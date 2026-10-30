@@ -1,7 +1,7 @@
 import { useEffect } from "react";
 import { create } from "zustand";
 import type { FsChange, FsEntry } from "@tide/contracts";
-import { call, stream, type StreamControl } from "./model.ts";
+import { call, stream, useModel, type StreamControl } from "./model.ts";
 import { onReconnect } from "./reconnect.ts";
 import { showToast } from "./toast.ts";
 
@@ -165,8 +165,10 @@ function openWatch(threadId: string): StreamControl {
 // The connection layer does not resume streams, so a reconnect re-opens every
 // watch that still has subscribers; otherwise the editor never sees another
 // external change.
-onReconnect(() => {
+onReconnect((envId) => {
   for (const [threadId, watcher] of watchers) {
+    // R9: only the watches of the environment that came back died
+    if (envId !== undefined && useModel.getState().ownership.threads[threadId] !== envId) continue;
     watcher.control?.cancel();
     watcher.control = openWatch(threadId);
   }

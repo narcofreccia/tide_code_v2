@@ -1,5 +1,6 @@
 import { create } from "zustand";
 import type { ReadModel, Thread } from "@tide/contracts";
+import { readScoped, writeScoped } from "./envStorage.ts";
 
 /**
  * Unread dots. Per thread, how many timeline entries (messages, activities, plans)
@@ -19,7 +20,7 @@ const MAX_ENTRIES = 500;
 
 function load(): LastSeenState {
   try {
-    const raw = window.localStorage.getItem(LAST_SEEN_KEY);
+    const raw = readScoped(LAST_SEEN_KEY);
     if (raw) {
       const parsed = JSON.parse(raw) as Partial<LastSeenState>;
       if (typeof parsed.since === "number" && parsed.seen && typeof parsed.seen === "object") {
@@ -34,7 +35,7 @@ function load(): LastSeenState {
 
 function save(state: LastSeenState): void {
   try {
-    window.localStorage.setItem(LAST_SEEN_KEY, JSON.stringify(state));
+    writeScoped(LAST_SEEN_KEY, JSON.stringify(state));
   } catch {
     /* private window: dots still work for this session */
   }

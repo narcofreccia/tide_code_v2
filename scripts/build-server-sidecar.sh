@@ -7,6 +7,7 @@
 #   ./scripts/build-server-sidecar.sh --all                  # every cross target
 #   ./scripts/build-server-sidecar.sh --target windows-x64   # one named target
 #   ./scripts/build-server-sidecar.sh x86_64-apple-darwin    # one rust triple
+#   ./scripts/build-server-sidecar.sh --with-web [target…]   # also copy apps/web/dist to binaries/web
 #
 # --target accepts the short names darwin-arm64 | darwin-x64 | linux-x64 |
 # linux-arm64 | windows-x64; the output is always named for the matching Rust
@@ -15,6 +16,10 @@
 #
 # Notes
 # -----
+# * Version: the root package.json version is embedded with `--define TIDE_BUILD_VERSION=…`
+#   (apps/server/src/version.ts); the compiled binary cannot read package.json at run time.
+# * --with-web: `tide serve` serves `<binaryDir>/web` (SPA) when present, so a headless
+#   install is the binary plus that folder. Build the web app first (`pnpm --filter @tide/web build`).
 # * SQLite: apps/server/src/db/sqlite.ts picks `bun:sqlite` when `globalThis.Bun` exists,
 #   so the compiled binary uses Bun's built-in driver and needs no native module. The
 #   `node:sqlite` branch is marked external below so the bundler does not try to resolve it.
@@ -35,6 +40,10 @@ REPO_ROOT="$(cd "$(dirname "${BASH_SOURCE[0]}")/.." && pwd)"
 ENTRY="$REPO_ROOT/apps/server/src/bin.ts"
 OUT_DIR="$REPO_ROOT/apps/desktop/src-tauri/binaries"
 
+
+VERSION="$(node -p "require('$REPO_ROOT/package.json').version")"
+WITH_WEB=0
+if [ "${1:-}" = "--with-web" ]; then WITH_WEB=1; shift; fi
 
 HOST_TRIPLE="$(rustc -vV | awk '/^host: /{print $2}')"
 # rust-target-triple : bun --target ; short --target names map onto the same rows.
@@ -79,6 +88,7 @@ build_one() {
   bun build --compile --target="$bun_target" \
     --external node-pty \
     --external "node:sqlite" \
+    --define "TIDE_BUILD_VERSION=\"$VERSION\"" \
     --outfile "$outfile" \
     "$ENTRY"
   chmod +x "$outfile" 2>/dev/null || true
@@ -86,6 +96,11 @@ build_one() {
 }
 
 mkdir -p "$OUT_DIR"
+if [ "$WITH_WEB" = 1 ]; then
+  [ -f "$REPO_ROOT/apps/web/dist/index.html" ] || { echo "apps/web/dist is missing: run pnpm --filter @tide/web build" >&2; exit 1; }
+  rm -rf "$OUT_DIR/web" && cp -R "$REPO_ROOT/apps/web/dist" "$OUT_DIR/web"
+  echo "==> web client copied to $OUT_DIR/web"
+fi
 command -v bun >/dev/null || { echo "bun is required (https://bun.sh)" >&2; exit 1; }
 
 case "${1:-}" in
@@ -97,7 +112,7 @@ case "${1:-}" in
     build_one "$(triple_for "$2")"
     ;;
   -h|--help)
-    sed -n '2,31p' "${BASH_SOURCE[0]}"
+    sed -n '2,36p' "${BASH_SOURCE[0]}"
     ;;
   "")
     build_one "$HOST_TRIPLE"

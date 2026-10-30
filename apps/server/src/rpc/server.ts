@@ -1,6 +1,6 @@
 import { accessSync, constants } from "node:fs";
 import { delimiter, join } from "node:path";
-import { createServer, type IncomingMessage, type Server, type ServerResponse } from "node:http";
+import { createServer, type IncomingMessage, type Server } from "node:http";
 import type { Duplex } from "node:stream";
 import { WebSocketServer, type WebSocket } from "ws";
 import { newId } from "@tide/contracts";
@@ -21,7 +21,10 @@ import { registerHandlers } from "./handlers.ts";
 import { registerProviderHandlers } from "./providers.ts";
 import { SettingsStore } from "../settings.ts";
 import type { JudgeLedger } from "../decisions/ledger.ts";
-import { buildRemoteInfo, pairPage, type Interfaces } from "./remote.ts";
+import { buildRemoteInfo, type Interfaces } from "./remote.ts";
+import { envInfo, registerEnvHandlers, type EnvDeps, type RelayState } from "./env.ts";
+import { createHttpHandler } from "./http.ts";
+import { PairingCodes, safeEqual } from "./pairing.ts";
 import { registerVcsHandlers } from "./vcs.ts";
 import { createWorkspaceServices, registerWorkspaceHandlers, type WorkspaceServices } from "./workspace.ts";
 import { RpcRouter } from "./router.ts";
@@ -69,12 +72,19 @@ export interface ServerDeps {
   commands?: CommandsCache;
   /** R8: the ACP agent registry the instance factory resolves against */
   acp?: AcpRegistry;
+  /** R9: pairing codes; the app shares them with `tide serve`'s boot banner */
+  pairing?: PairingCodes;
+  /** R9: the relay client's state, when this server dials out to one */
+  relayState?: () => RelayState | undefined;
+  /** R9: tests replace the harness updaters */
+  runUpdate?: EnvDeps["runUpdate"];
 }
 
 export interface ServerHandle {
   port: number;
   host: string;
   url: string;
+  pairing: PairingCodes;
   close(): Promise<void>;
 }
 
@@ -83,6 +93,7 @@ export async function startServer(deps: ServerDeps): Promise<ServerHandle> {
   const startedAt = Date.now();
   const tickets = new TicketIssuer();
   const agentTokens = deps.agentTokens ?? new AgentTokenStore();
+  const pairing = deps.pairing ?? new PairingCodes();
 
   const registry =
     deps.registry ?? new DriverRegistry({ env: { dataDir: config.dataDir, log: (msg, data) => (data === undefined ? console.error(msg) : console.error(msg, data)) } });
@@ -100,7 +111,18 @@ export async function startServer(deps: ServerDeps): Promise<ServerHandle> {
 
   const router = new RpcRouter();
   const settings = deps.settings ?? new SettingsStore(config.dataDir === ":memory:" ? {} : { path: SettingsStore.pathFor(config.tideHome) });
+  const envDeps: EnvDeps = {
+    engine,
+    registry,
+    settings,
+    pairing,
+    remote,
+    ...(deps.relayState !== undefined ? { relayState: deps.relayState } : {}),
+    ...(deps.runUpdate !== undefined ? { runUpdate: deps.runUpdate } : {}),
+  };
+  registerEnvHandlers(router, envDeps);
   registerHandlers(router, {
+    envInfo: () => envInfo(envDeps),
     engine,
     store,
     registry,
@@ -139,49 +161,16 @@ export async function startServer(deps: ServerDeps): Promise<ServerHandle> {
   const ownsWorkspace = deps.workspace === undefined;
   registerWorkspaceHandlers(router, workspace);
 
-  const applyCors = (req: IncomingMessage, res: ServerResponse): void => {
-    const origin = req.headers.origin;
-    if (origin && config.corsOrigins.includes(origin)) {
-      res.setHeader("Access-Control-Allow-Origin", origin);
-      res.setHeader("Vary", "Origin");
-      res.setHeader("Access-Control-Allow-Headers", "authorization, content-type");
-      res.setHeader("Access-Control-Allow-Methods", "GET, POST, OPTIONS");
-    }
-  };
-  const json = (res: ServerResponse, status: number, body: unknown): void => {
-    const payload = JSON.stringify(body);
-    res.writeHead(status, { "content-type": "application/json" });
-    res.end(payload);
-  };
-
-  const http: Server = createServer((req, res) => {
-    applyCors(req, res);
-    const url = new URL(req.url ?? "/", "http://localhost");
-    if (req.method === "OPTIONS") {
-      res.writeHead(204);
-      res.end();
-      return;
-    }
-    if (req.method === "GET" && url.pathname === "/health") {
-      json(res, 200, { ok: true, environmentId: config.environmentId, version: config.version });
-      return;
-    }
-    if (req.method === "GET" && url.pathname === "/pair") {
-      res.writeHead(200, { "content-type": "text/html; charset=utf-8" });
-      res.end(pairPage(remote({ includePairing: false })));
-      return;
-    }
-    if (req.method === "POST" && url.pathname === "/api/auth/ws-ticket") {
-      const auth = req.headers.authorization ?? "";
-      if (auth !== `Bearer ${config.token}`) {
-        json(res, 401, { error: "unauthorized" });
-        return;
-      }
-      json(res, 200, tickets.issue("websocket"));
-      return;
-    }
-    json(res, 404, { error: "not-found" });
-  });
+  const http: Server = createServer(
+    createHttpHandler({
+      config,
+      tickets,
+      pairing,
+      remote,
+      envName: () => settings.get().environment.name,
+      webhook: { engine, settings },
+    }),
+  );
 
   const wss = new WebSocketServer({ noServer: true });
   const alive = new WeakMap<WebSocket, boolean>();
@@ -196,7 +185,7 @@ export async function startServer(deps: ServerDeps): Promise<ServerHandle> {
     const ticket = url.searchParams.get("wsTicket");
     if (ticket && tickets.consume(ticket)) return {};
     const token = url.searchParams.get("token");
-    return config.dev && token !== null && token === config.token ? {} : null;
+    return config.dev && token !== null && safeEqual(token, config.token) ? {} : null;
   };
 
   http.on("upgrade", (req: IncomingMessage, socket: Duplex, head: Buffer) => {
@@ -261,6 +250,7 @@ export async function startServer(deps: ServerDeps): Promise<ServerHandle> {
     port,
     host: config.host,
     url: `ws://${config.host}:${port}/ws`,
+    pairing,
     async close() {
       clearInterval(keepalive);
       if (ownsWorkspace) workspace.close();
