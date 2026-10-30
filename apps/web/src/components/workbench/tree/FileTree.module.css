@@ -16,7 +16,7 @@
   padding: 0 var(--sp-2);
   border-bottom: 1px solid var(--border);
 }
-.heading { color: var(--muted); font-size: 11px; text-transform: uppercase; font-weight: var(--fw-section); letter-spacing: var(--ls-section); }
+.heading { color: var(--muted); font-size: var(--fs-xs); text-transform: uppercase; font-weight: var(--fw-section); letter-spacing: var(--ls-section); }
 .action { margin-left: auto; }
 .list {
   flex: 1;
@@ -44,8 +44,8 @@
 .row:hover { background: var(--surface-2); }
 .selected { background: var(--accent-soft); }
 .ignored { opacity: 0.45; }
-.twisty { width: 10px; color: var(--muted); font-size: 11px; }
-.glyph { width: 14px; color: var(--muted); font-family: var(--font-mono); font-size: 11px; }
+.twisty { width: 10px; color: var(--muted); font-size: var(--fs-sm); }
+.glyph { width: 14px; color: var(--muted); font-family: var(--font-mono); font-size: var(--fs-xs); }
 .name { overflow: hidden; text-overflow: ellipsis; white-space: nowrap; }
 .note { margin: 0; padding: var(--sp-2); color: var(--muted); }
 

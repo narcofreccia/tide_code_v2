@@ -1,1 +1,1 @@
-.emptyHint { margin: 0; padding: 0 var(--sp-2); color: var(--muted); font-size: 11px; }
+.emptyHint { margin: 0; padding: 0 var(--sp-2); color: var(--muted); font-size: var(--fs-sm); }

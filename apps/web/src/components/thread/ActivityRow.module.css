@@ -22,11 +22,13 @@
   text-overflow: ellipsis;
   white-space: nowrap;
   font-family: var(--font-mono);
-  font-size: 11px;
+  font-size: var(--fs-xs);
 }
-.mark { flex: none; font-size: 11px; }
-.duration { flex: none; font-variant-numeric: tabular-nums; font-size: 11px; }
-.running { color: var(--accent); animation: rowPulse 1.4s ease-in-out infinite; }
+.mark { flex: none; font-size: var(--fs-sm); }
+.duration { flex: none; font-variant-numeric: tabular-nums; font-size: var(--fs-sm); }
+.running { color: var(--accent); }
+/* a running call's name carries the live shimmer (LiveLabel) instead of a pulse */
+.liveName { flex: none; }
 .ok { color: var(--ok); }
 .error { color: var(--danger); }
 .summary { color: var(--muted); flex: 1; min-width: 0; }
@@ -39,7 +41,7 @@
   gap: var(--sp-2);
 }
 .label {
-  font-size: 11px;
+  font-size: var(--fs-xs);
   letter-spacing: var(--ls-section);
   text-transform: uppercase; font-weight: var(--fw-section);
   color: var(--muted);
@@ -51,17 +53,14 @@
   white-space: pre-wrap;
   word-break: break-word;
   font-family: var(--font-mono);
-  font-size: 11px;
+  font-size: var(--fs-xs);
   color: var(--text);
 }
 .nested { margin-left: var(--sp-4); }
 .child { border-left: 1px solid var(--border); margin-left: var(--sp-2); }
 .childRows { list-style: none; margin: 0; padding: 0; }
 .info { color: var(--muted); }
-.childLink { flex: none; font-size: 11px; }
-@keyframes rowPulse {
-  50% { opacity: 0.45; }
-}
+.childLink { flex: none; font-size: var(--fs-sm); }
 .rowBare {
   display: flex;
   align-items: center;

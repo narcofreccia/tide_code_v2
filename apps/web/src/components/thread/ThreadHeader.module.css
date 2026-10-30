@@ -30,14 +30,14 @@
   background: var(--surface-2);
   color: var(--text-2);
   font-family: var(--font-mono);
-  font-size: 11px;
+  font-size: var(--fs-xs);
   line-height: 18px;
   overflow: hidden;
   text-overflow: ellipsis;
   white-space: nowrap;
 }
 .actions { display: flex; flex: 0 0 auto; gap: var(--sp-1); margin-left: auto; }
-.stat { color: var(--muted); font-variant-numeric: tabular-nums; font-size: 11px; }
+.stat { color: var(--muted); font-variant-numeric: tabular-nums; font-size: var(--fs-sm); }
 
 .delegates { list-style: none; margin: 0; padding: 0; min-width: 200px; }
 .delegateRow { display: flex; align-items: center; gap: var(--sp-2); width: 100%; text-align: left; }
@@ -59,7 +59,7 @@
   text-overflow: ellipsis;
   white-space: nowrap;
   color: var(--accent);
-  font-size: 11px;
+  font-size: var(--fs-sm);
   cursor: pointer;
 }
 .lineage:disabled { color: var(--muted); cursor: default; }
@@ -69,7 +69,7 @@
   text-overflow: ellipsis;
   white-space: nowrap;
   color: var(--danger);
-  font-size: 11px;
+  font-size: var(--fs-sm);
 }
 .spinner {
   display: inline-block;
@@ -92,7 +92,7 @@
   border-radius: 999px;
   background: var(--st-idle-soft);
   color: var(--st-idle);
-  font-size: 12px;
+  font-size: var(--fs-sm);
   font-weight: 600;
   white-space: nowrap;
 }

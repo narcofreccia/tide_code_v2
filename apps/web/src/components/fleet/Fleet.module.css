@@ -17,7 +17,7 @@
   align-items: center;
   gap: var(--sp-2);
   color: var(--muted);
-  font-size: 11px;
+  font-size: var(--fs-sm);
 }
 .bar {
   display: inline-flex;
@@ -50,7 +50,7 @@
   border: 1px solid var(--border);
   border-radius: var(--radius-sm);
   color: var(--muted);
-  font-size: 10px;
+  font-size: var(--fs-xs);
   line-height: 14px;
 }
 .tagOffline { opacity: 0.6; text-decoration: line-through; }

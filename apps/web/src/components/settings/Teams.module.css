@@ -2,4 +2,4 @@
 .top { display: flex; align-items: center; gap: var(--sp-2); }
 .name { font-weight: 600; flex: 1; min-width: 0; overflow: hidden; text-overflow: ellipsis; white-space: nowrap; }
 .actions { display: flex; gap: var(--sp-1); }
-.stages { display: flex; flex-wrap: wrap; gap: var(--sp-1) var(--sp-2); color: var(--muted); font-size: 12px; }
+.stages { display: flex; flex-wrap: wrap; gap: var(--sp-1) var(--sp-2); color: var(--muted); font-size: var(--fs-sm); }

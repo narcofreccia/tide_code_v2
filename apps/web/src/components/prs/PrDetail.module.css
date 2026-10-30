@@ -16,16 +16,16 @@
   flex: 1;
   min-width: 0;
   margin: 0;
-  font-size: 14px;
+  font-size: var(--fs-md);
   font-weight: 600;
   overflow: hidden;
   text-overflow: ellipsis;
   white-space: nowrap;
 }
 .number { color: var(--muted); font-weight: 400; }
-.sub { margin: var(--sp-1) var(--sp-3) 0; color: var(--muted); font-size: 11px; }
+.sub { margin: var(--sp-1) var(--sp-3) 0; color: var(--muted); font-size: var(--fs-sm); }
 .links { display: flex; flex-wrap: wrap; align-items: center; gap: var(--sp-2); padding: var(--sp-2) var(--sp-3); }
-.external { color: var(--accent); font-size: 12px; }
+.external { color: var(--accent); font-size: var(--fs-sm); }
 
 .tabs { display: flex; gap: var(--sp-1); padding: 0 var(--sp-3); border-bottom: 1px solid var(--border); }
 .tab {
@@ -51,14 +51,14 @@
 }
 .note { margin: 0; color: var(--muted); }
 .error { margin: 0; color: var(--danger); }
-.blocked { margin: 0; color: var(--warn); font-size: 11px; }
+.blocked { margin: 0; color: var(--warn); font-size: var(--fs-sm); }
 
 .markdown { composes: markdown from "../thread/MessageItem.module.css"; display: block; }
 
 .runs { list-style: none; margin: 0; padding: 0; display: flex; flex-direction: column; gap: 2px; }
 .run { display: flex; align-items: center; gap: var(--sp-2); height: var(--activity-h); }
 .run a { color: var(--text); }
-.runStatus { margin-left: auto; color: var(--muted); font-size: 11px; }
+.runStatus { margin-left: auto; color: var(--muted); font-size: var(--fs-sm); }
 .success > span:first-child { color: var(--ok); }
 .failure > span:first-child { color: var(--danger); }
 .pending > span:first-child { color: var(--warn); }
@@ -79,15 +79,15 @@
 
 .files { display: flex; flex: 1; min-height: 360px; border: 1px solid var(--border); border-radius: var(--radius); overflow: hidden; }
 .diff { flex: 1; min-width: 0; display: flex; flex-direction: column; }
-.path { padding: var(--sp-1) var(--sp-2); border-bottom: 1px solid var(--border); font-family: var(--font-mono); font-size: 11px; color: var(--muted); }
+.path { padding: var(--sp-1) var(--sp-2); border-bottom: 1px solid var(--border); font-family: var(--font-mono); font-size: var(--fs-xs); color: var(--muted); }
 .editor { flex: 1; min-height: 320px; }
 
 .comments { display: flex; flex-direction: column; gap: var(--sp-3); }
 .group { border: 1px solid var(--border); border-radius: var(--radius); }
-.groupHead { margin: 0; padding: var(--sp-1) var(--sp-2); border-bottom: 1px solid var(--border); font-family: var(--font-mono); font-size: 11px; font-weight: 400; color: var(--muted); }
+.groupHead { margin: 0; padding: var(--sp-1) var(--sp-2); border-bottom: 1px solid var(--border); font-family: var(--font-mono); font-size: var(--fs-xs); font-weight: 400; color: var(--muted); }
 .commentList { list-style: none; margin: 0; padding: 0; }
 .comment { padding: var(--sp-2); border-bottom: 1px solid var(--border); }
 .comment:last-child { border-bottom: none; }
 .commentHead { display: flex; align-items: center; gap: var(--sp-2); margin-bottom: var(--sp-1); }
 .author { font-weight: 600; }
-.when { margin-left: auto; color: var(--muted); font-size: 11px; }
+.when { margin-left: auto; color: var(--muted); font-size: var(--fs-sm); }

@@ -1,7 +1,7 @@
 .strip { margin-top: var(--sp-4); }
 .label {
   margin: 0 0 var(--sp-2);
-  font-size: 11px;
+  font-size: var(--fs-xs);
   letter-spacing: var(--ls-section);
   text-transform: uppercase;
   color: var(--text-2);
@@ -23,4 +23,4 @@
 }
 .chip:hover { border-color: var(--accent); }
 .name { font-weight: 500; }
-.hint { color: var(--muted); font-size: 11px; }
+.hint { color: var(--muted); font-size: var(--fs-sm); }

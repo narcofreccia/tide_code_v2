@@ -2,7 +2,7 @@
   display: inline-block;
   width: 12px;
   text-align: center;
-  font-size: 12px;
+  font-size: var(--fs-sm);
   line-height: 1;
   flex: none;
   color: var(--st-idle);

@@ -21,23 +21,23 @@
   max-width: 100%;
 }
 .actions > * { min-width: 0; max-width: 100%; }
-.stats { font-size: 11px; font-variant-numeric: tabular-nums; white-space: nowrap; }
+.stats { font-size: var(--fs-sm); font-variant-numeric: tabular-nums; white-space: nowrap; }
 .add { color: var(--ok); }
 .del { color: var(--danger); }
 .hint {
   color: var(--muted);
-  font-size: 11px;
+  font-size: var(--fs-sm);
   min-width: 0;
   overflow: hidden;
   text-overflow: ellipsis;
   white-space: nowrap;
 }
 .confirm { display: flex; flex-direction: column; gap: var(--sp-2); width: 280px; }
-.confirmText { margin: 0; font-size: 12px; color: var(--text); }
+.confirmText { margin: 0; font-size: var(--fs-sm); color: var(--text); }
 .confirmRow { display: flex; justify-content: flex-end; gap: var(--sp-2); }
 .publish { display: flex; flex-direction: column; gap: var(--sp-2); width: 340px; }
 .field { display: flex; flex-direction: column; gap: 2px; }
-.label { font-size: 11px; letter-spacing: var(--ls-section); text-transform: uppercase; font-weight: var(--fw-section); color: var(--muted); }
+.label { font-size: var(--fs-xs); letter-spacing: var(--ls-section); text-transform: uppercase; font-weight: var(--fw-section); color: var(--muted); }
 .input,
 .textarea {
   width: 100%;
@@ -47,7 +47,7 @@
   border-radius: var(--radius-sm);
   color: var(--text);
   font: inherit;
-  font-size: 12px;
+  font-size: var(--fs-sm);
   resize: vertical;
 }
 .choices { display: flex; flex-wrap: wrap; gap: var(--sp-1) var(--sp-3); }

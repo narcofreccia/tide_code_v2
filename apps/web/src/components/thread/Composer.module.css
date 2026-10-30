@@ -33,7 +33,7 @@
 .hint {
   min-width: 0;
   color: var(--muted);
-  font-size: 11px;
+  font-size: var(--fs-sm);
   white-space: nowrap;
   overflow: hidden;
 }
@@ -44,18 +44,18 @@
 
 .queued {
   color: var(--accent);
-  font-size: 11px;
+  font-size: var(--fs-xs);
   letter-spacing: var(--ls-section);
   text-transform: uppercase; font-weight: var(--fw-section);
 }
 
-.switchHint { margin: 0; padding-top: var(--sp-1); color: var(--muted); font-size: 11px; }
+.switchHint { margin: 0; padding-top: var(--sp-1); color: var(--muted); font-size: var(--fs-sm); }
 
 .drafts { position: relative; display: inline-flex; align-items: center; gap: var(--sp-2); flex-shrink: 0; }
 .drafts :global(kbd) { margin-left: var(--sp-1); }
 .draftHint {
   color: var(--muted);
-  font-size: 11px;
+  font-size: var(--fs-xs);
   letter-spacing: var(--ls-section);
   text-transform: uppercase;
 }
@@ -83,7 +83,7 @@
   border: 0;
   color: var(--text);
   font: inherit;
-  font-size: 12px;
+  font-size: var(--fs-sm);
   text-align: left;
   text-overflow: ellipsis;
   white-space: nowrap;

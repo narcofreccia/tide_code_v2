@@ -34,6 +34,7 @@ describe("Settings view", () => {
     const nav = screen.getByLabelText("Settings sections");
     expect([...nav.querySelectorAll("li")].map((li) => li.textContent)).toEqual([
       "General",
+      "Projects",
       "Inbox",
       "Notifications",
       "Providers",

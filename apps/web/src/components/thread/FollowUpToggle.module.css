@@ -10,7 +10,7 @@
   background: none;
   padding: 0 var(--sp-2);
   color: var(--muted);
-  font-size: 11px;
+  font-size: var(--fs-sm);
   cursor: pointer;
 }
 .option + .option { border-left: 1px solid var(--border-strong); }

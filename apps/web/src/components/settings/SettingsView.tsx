@@ -19,6 +19,7 @@ import styles from "./SettingsView.module.css";
 
 const LABELS: Record<SettingsSection, string> = {
   general: "General",
+  projects: "Projects",
   inbox: "Inbox",
   notifications: "Notifications",
   providers: "Providers",
@@ -37,6 +38,8 @@ function Body({ section }: { section: SettingsSection }) {
   switch (section) {
     case "general":
       return <GeneralSection />;
+    case "projects":
+      return <GeneralSection />; // R12 B': replaced by ProjectsSection
     case "inbox":
       return <InboxSection />;
     case "notifications":

@@ -1,7 +1,7 @@
 /* Settings › Environments and its sheet; layout on top of settings/Section.module.css */
 .field { flex: 1; display: flex; justify-content: flex-end; max-width: 320px; }
 .subTitle { font-weight: 500; }
-.error { margin: 0; color: var(--danger); font-size: 12px; }
+.error { margin: 0; color: var(--danger); font-size: var(--fs-sm); }
 .muted { color: var(--muted); }
 .good { color: var(--ok); }
 .bad { color: var(--danger); }
@@ -20,7 +20,7 @@
 .pairBody { display: flex; flex-direction: column; gap: var(--sp-2); }
 .code {
   font-family: var(--font-mono);
-  font-size: 28px;
+  font-size: var(--fs-display);
   letter-spacing: 0.3em;
   color: var(--text);
 }
@@ -36,7 +36,7 @@
   justify-content: space-between;
   padding: var(--sp-1) var(--sp-2);
   background: var(--surface-raised);
-  font-size: 12px;
+  font-size: var(--fs-sm);
 }
 .logBody {
   margin: 0;
@@ -45,7 +45,7 @@
   padding: var(--sp-2);
   background: var(--bg);
   font-family: var(--font-mono);
-  font-size: 11px;
+  font-size: var(--fs-xs);
   white-space: pre-wrap;
 }
 
@@ -62,13 +62,13 @@
 }
 .cardHead { display: flex; align-items: center; gap: var(--sp-2); flex-wrap: wrap; }
 .cardName { font-weight: 600; }
-.cardStatus { flex: 1; color: var(--muted); font-size: 12px; }
+.cardStatus { flex: 1; color: var(--muted); font-size: var(--fs-sm); }
 .facts {
   display: grid;
   grid-template-columns: max-content 1fr;
   gap: 2px var(--sp-3);
   margin: 0;
-  font-size: 12px;
+  font-size: var(--fs-sm);
 }
 .facts dt { color: var(--muted); }
 .facts dd { margin: 0; font-family: var(--font-mono); overflow-wrap: anywhere; }
@@ -83,7 +83,7 @@
   background: var(--surface-2);
   color: var(--text);
   text-decoration: none;
-  font-size: 12px;
+  font-size: var(--fs-sm);
 }
 .linkButton:hover { border-color: var(--accent); }
 
@@ -101,11 +101,11 @@
   background: transparent;
   color: var(--text);
   font: inherit;
-  font-size: 14px;
+  font-size: var(--fs-md);
   font-weight: 600;
   cursor: pointer;
 }
-.foldSummary { color: var(--muted); font-weight: 400; font-size: 12px; }
+.foldSummary { color: var(--muted); font-weight: 400; font-size: var(--fs-sm); }
 
 /* add-machine sheet */
 .segmented {
@@ -122,11 +122,11 @@
   background: var(--surface-2);
   color: var(--text-2);
   font: inherit;
-  font-size: 12px;
+  font-size: var(--fs-sm);
   cursor: pointer;
 }
 .segment + .segment { border-left: 1px solid var(--border-strong); }
 .segmentOn { background: var(--accent-soft); color: var(--accent); font-weight: 500; }
 .sheetRows { display: flex; flex-direction: column; gap: var(--sp-2); }
 .codeInput { letter-spacing: 0.3em; max-width: 140px; }
-.hints { display: flex; flex-direction: column; gap: var(--sp-1); margin-top: var(--sp-3); font-size: 12px; }
+.hints { display: flex; flex-direction: column; gap: var(--sp-1); margin-top: var(--sp-3); font-size: var(--fs-sm); }

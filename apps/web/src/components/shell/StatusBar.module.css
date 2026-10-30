@@ -7,7 +7,7 @@
   border-top: 1px solid var(--border);
   background: var(--surface);
   color: var(--muted);
-  font-size: 11px;
+  font-size: var(--fs-sm);
 }
 .item { display: inline-flex; align-items: center; gap: var(--sp-2); }
 .mono { font-family: var(--font-mono); }

@@ -1,4 +1,4 @@
-.table { border-collapse: collapse; font-size: 12px; }
+.table { border-collapse: collapse; font-size: var(--fs-sm); }
 .table td, .table th { padding: 3px var(--sp-2); text-align: left; font-weight: 400; }
 .glyph { width: 20px; }
 .word { font-weight: 600; white-space: nowrap; }

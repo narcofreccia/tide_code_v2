@@ -1,13 +1,13 @@
 .group { display: flex; flex-direction: column; gap: var(--sp-1); }
-.groupTitle { margin: 0; color: var(--muted); font-size: 11px; text-transform: uppercase; font-weight: var(--fw-section); letter-spacing: var(--ls-section); }
+.groupTitle { margin: 0; color: var(--muted); font-size: var(--fs-xs); text-transform: uppercase; font-weight: var(--fw-section); letter-spacing: var(--ls-section); }
 .item { flex-direction: column; align-items: stretch; gap: var(--sp-1); }
 .top { display: flex; align-items: center; gap: var(--sp-2); }
 .name { font-weight: 600; flex: 1; min-width: 0; overflow: hidden; text-overflow: ellipsis; white-space: nowrap; }
-.meta { display: flex; flex-wrap: wrap; gap: var(--sp-1) var(--sp-3); color: var(--muted); font-size: 12px; }
+.meta { display: flex; flex-wrap: wrap; gap: var(--sp-1) var(--sp-3); color: var(--muted); font-size: var(--fs-sm); }
 .actions { display: flex; gap: var(--sp-1); }
 .dialog { display: flex; flex-direction: column; gap: var(--sp-3); max-height: 62vh; overflow-y: auto; }
 .field { display: flex; flex-direction: column; gap: var(--sp-1); }
-.label { color: var(--muted); font-size: 11px; }
+.label { color: var(--muted); font-size: var(--fs-sm); }
 .text { padding: var(--sp-2); background: var(--surface); border: 1px solid var(--border); border-radius: var(--radius-sm); color: var(--text); font: inherit; resize: vertical; min-height: 72px; }
 .input { height: 26px; padding: 0 var(--sp-2); background: var(--surface); border: 1px solid var(--border); border-radius: var(--radius-sm); color: var(--text); font: inherit; font-family: var(--font-mono); }
 .num { width: 72px; }
@@ -15,5 +15,5 @@
 .row { display: flex; align-items: center; gap: var(--sp-2); flex-wrap: wrap; }
 .chip { display: inline-flex; align-items: center; gap: var(--sp-1); padding: 0 var(--sp-2); height: 22px; border: 1px solid var(--border); border-radius: var(--radius-sm); font-family: var(--font-mono); }
 .dayOn { border-color: var(--accent); color: var(--accent); }
-.error { margin: 0; color: var(--danger, #e5484d); font-size: 12px; }
+.error { margin: 0; color: var(--danger, #e5484d); font-size: var(--fs-sm); }
 .footer { display: flex; justify-content: flex-end; gap: var(--sp-2); }

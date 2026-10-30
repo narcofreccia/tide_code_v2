@@ -4,10 +4,10 @@
  */
 @media (max-width: 720px) {
   html, body { overscroll-behavior: none; }
-  body { font-size: 15px; }
+  body { font-size: var(--fs-md); }
 
   /* 16px inputs stop iOS from zooming the page on focus */
-  input, textarea, select { font-size: 16px; }
+  input, textarea, select { font-size: var(--fs-touch-input); }
 
   /* the composer sticks to the bottom of the thread column and clears the home indicator */
   [data-thread-column] > :last-child {

@@ -8,9 +8,9 @@
   overflow-x: auto;
   white-space: nowrap;
 }
-.name { color: var(--muted); font-size: 11px; text-transform: uppercase; letter-spacing: var(--ls-section); font-weight: var(--fw-section); }
+.name { color: var(--muted); font-size: var(--fs-xs); text-transform: uppercase; letter-spacing: var(--ls-section); font-weight: var(--fw-section); }
 .item { display: inline-flex; align-items: center; gap: var(--sp-2); }
-.arrow { color: var(--muted); font-size: 11px; }
+.arrow { color: var(--muted); font-size: var(--fs-sm); }
 .chip {
   display: inline-flex;
   align-items: center;
@@ -20,7 +20,7 @@
   border: 0;
   border-radius: var(--radius-sm);
   font: inherit;
-  font-size: 11px;
+  font-size: var(--fs-sm);
   cursor: pointer;
   background: var(--st-idle-soft);
   color: var(--st-idle);

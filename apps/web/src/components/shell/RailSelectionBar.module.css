@@ -13,7 +13,7 @@
   flex: 1;
   min-width: 0;
   color: var(--text);
-  font-size: 12px;
+  font-size: var(--fs-sm);
   font-variant-numeric: tabular-nums;
   white-space: nowrap;
 }

@@ -4,7 +4,7 @@
   gap: var(--sp-2);
   min-height: var(--activity-h);
   color: var(--muted);
-  font-size: 12px;
+  font-size: var(--fs-sm);
 }
 .icon {
   width: 16px;

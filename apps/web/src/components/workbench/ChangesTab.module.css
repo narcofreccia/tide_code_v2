@@ -9,5 +9,5 @@
   padding: var(--sp-2) var(--sp-3);
   background: color-mix(in srgb, var(--danger) 12%, transparent);
   color: var(--danger);
-  font-size: 12px;
+  font-size: var(--fs-sm);
 }

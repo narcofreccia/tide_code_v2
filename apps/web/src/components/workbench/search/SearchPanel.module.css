@@ -16,7 +16,7 @@
   font: inherit;
 }
 .input { flex: 1; min-width: 0; }
-.glob { width: 180px; font-family: var(--font-mono); font-size: 11px; }
+.glob { width: 180px; font-family: var(--font-mono); font-size: var(--fs-xs); }
 .toggle {
   height: 24px;
   min-width: 26px;
@@ -25,7 +25,7 @@
   border-radius: var(--radius-sm);
   color: var(--muted);
   font-family: var(--font-mono);
-  font-size: 11px;
+  font-size: var(--fs-xs);
   cursor: pointer;
 }
 .on { background: var(--accent-soft); color: var(--text); border-color: var(--accent); }
@@ -41,7 +41,7 @@
   padding: 0 var(--sp-2);
   background: var(--surface-2);
   color: var(--text);
-  font-size: 11px;
+  font-size: var(--fs-sm);
   font-weight: 600;
   position: sticky;
   top: 0;
@@ -60,7 +60,7 @@
   border: 0;
   color: var(--text);
   font-family: var(--font-mono);
-  font-size: 11px;
+  font-size: var(--fs-xs);
   text-align: left;
   cursor: pointer;
 }

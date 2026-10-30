@@ -17,13 +17,13 @@
   background: var(--surface-2);
   color: var(--text-2);
   font: inherit;
-  font-size: 12px;
+  font-size: var(--fs-sm);
   cursor: pointer;
 }
 .segment + .segment { border-left: 1px solid var(--border-strong); }
 .segment:hover:not(.active) { color: var(--text); }
 .active { background: var(--accent-soft); color: var(--accent); font-weight: 500; }
-.empty { margin: 0; color: var(--muted); font-size: 12px; }
+.empty { margin: 0; color: var(--muted); font-size: var(--fs-sm); }
 .runRow { display: flex; flex-direction: column; gap: var(--sp-3); }
 .input {
   height: 28px;
@@ -36,4 +36,4 @@
 }
 .input::placeholder { color: var(--muted); }
 .input:focus { outline: none; border-color: var(--accent); }
-.machine { font-family: var(--font-mono); font-size: 12px; line-height: 28px; }
+.machine { font-family: var(--font-mono); font-size: var(--fs-sm); line-height: 28px; }

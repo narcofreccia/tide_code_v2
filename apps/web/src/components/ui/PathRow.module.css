@@ -1,10 +1,10 @@
 /* A file path as a picker row: glyph · basename · muted dir (⌘P, `@` mentions). */
-.glyph { color: var(--muted); font-family: var(--font-mono); font-size: 11px; }
+.glyph { color: var(--muted); font-family: var(--font-mono); font-size: var(--fs-xs); }
 .name { white-space: nowrap; }
 .dir {
   color: var(--muted);
   font-family: var(--font-mono);
-  font-size: 11px;
+  font-size: var(--fs-xs);
   overflow: hidden;
   text-overflow: ellipsis;
   white-space: nowrap;

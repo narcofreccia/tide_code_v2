@@ -7,9 +7,9 @@
   margin: auto;
   padding: var(--sp-4);
   color: var(--muted);
-  font-size: 13px;
+  font-size: var(--fs-base);
 }
-.title { margin: 0; color: var(--text); font-size: 15px; font-weight: 600; }
+.title { margin: 0; color: var(--text); font-size: var(--fs-md); font-weight: 600; }
 .line { margin: 0; }
 .line code { font-family: var(--font-mono); color: var(--text); }
 .list { margin: var(--sp-2) 0; display: grid; gap: var(--sp-1); }

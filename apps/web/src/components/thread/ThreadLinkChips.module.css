@@ -10,8 +10,8 @@
   border-radius: var(--radius-sm);
   background: var(--surface);
   color: var(--muted);
-  font-size: 11px;
+  font-size: var(--fs-sm);
   max-width: 180px;
 }
 .label { min-width: 0; overflow: hidden; text-overflow: ellipsis; white-space: nowrap; color: var(--text); }
-.access { font-family: var(--font-mono); font-size: 11px; }
+.access { font-family: var(--font-mono); font-size: var(--fs-xs); }

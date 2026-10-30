@@ -33,5 +33,5 @@
 .danger { color: var(--danger); }
 .separated { margin-top: var(--sp-1); border-top: 1px solid var(--border); padding-top: var(--sp-1); }
 .label { flex: 1; white-space: nowrap; }
-.hint { color: var(--muted); font-size: 11px; white-space: nowrap; }
+.hint { color: var(--muted); font-size: var(--fs-sm); white-space: nowrap; }
 .chevron { color: var(--muted); }

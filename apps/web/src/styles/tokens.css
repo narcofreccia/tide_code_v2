@@ -19,6 +19,8 @@
   --ok: #4ec9a0;
   --warn: #e2b341;
   --shadow-pop: 0 8px 24px rgb(0 0 0 / 0.35);
+  --surface-hover: rgba(255, 255, 255, 0.04);
+  --selection: rgba(91, 157, 255, 0.1);
 
   /* thread status: one colour + one soft tint per state */
   --st-running: #5b9dff;
@@ -36,9 +38,25 @@
   --st-interrupted: #e0794f;
   --st-interrupted-soft: rgba(224, 121, 79, 0.16);
 
-  --fs-section: 11px;
-  --fw-section: 600;
-  --ls-section: 0.06em;
+  /* type scale (docs/design/ui.md § Visual system) */
+  --fs-xs: 11px; /* group/section labels (uppercase, semibold, tracked); monospace inline content */
+  --fs-sm: 12px; /* meta: times, pills, help text, status bar */
+  --fs-base: 13px; /* body, rows, inputs */
+  --fs-md: 14px; /* page section titles */
+  --fs-lg: 18px; /* page titles */
+  --fs-display: 28px; /* one-off display glyphs and codes */
+  --fs-touch-input: 16px; /* phone inputs: iOS zooms the page below 16px */
+  --lh-body: 1.45;
+  --lh-tight: 1.2;
+  --fw-regular: 400;
+  --fw-medium: 500;
+  --fw-semibold: 600;
+  --ls-label: 0.06em;
+
+  /* legacy aliases */
+  --fs-section: var(--fs-xs);
+  --fw-section: var(--fw-semibold);
+  --ls-section: var(--ls-label);
 
   --radius-sm: 4px;
   --radius: 6px;
@@ -49,15 +67,34 @@
   --sp-3: 12px;
   --sp-4: 16px;
   --sp-5: 24px;
+  --sp-6: 32px;
+  --sp-7: 48px;
+  --measure: 720px; /* content max width for settings/prose pages */
 
   --font: ui-sans-serif, -apple-system, BlinkMacSystemFont, "Segoe UI", Roboto, Helvetica, Arial,
     sans-serif;
   --font-mono: ui-monospace, SFMono-Regular, "SF Mono", Menlo, Consolas, monospace;
-  --font-size-base: 13px;
+  --font-size-base: var(--fs-base);
 
   /* density: rows in rails/lists, activity lines in the stream */
   --row-h: 28px;
+  --row-h-nav: 32px; /* settings nav, icon strip rows */
   --activity-h: 24px;
+
+  --selection-bar: var(--accent);
+  --focus-ring: 0 0 0 2px var(--bg), 0 0 0 4px var(--accent);
+
+  /* motion (docs/design/ui.md § Motion) */
+  --dur-fast: 120ms;
+  --dur: 200ms;
+  --ease: cubic-bezier(0.2, 0, 0, 1);
+}
+
+@media (prefers-reduced-motion: reduce) {
+  :root {
+    --dur-fast: 0ms;
+    --dur: 0ms;
+  }
 }
 
 :root[data-density="compact"] {
@@ -91,6 +128,8 @@
     --ok: #1d8a68;
     --warn: #a97a11;
     --shadow-pop: 0 8px 24px rgb(15 23 42 / 0.12);
+    --surface-hover: rgba(15, 23, 42, 0.04);
+    --selection: rgba(47, 111, 224, 0.1);
 
     --st-running: #2f6fe0;
     --st-running-soft: rgba(47, 111, 224, 0.12);
@@ -129,6 +168,8 @@
   --ok: #1d8a68;
   --warn: #a97a11;
   --shadow-pop: 0 8px 24px rgb(15 23 42 / 0.12);
+  --surface-hover: rgba(15, 23, 42, 0.04);
+  --selection: rgba(47, 111, 224, 0.1);
 
   --st-running: #2f6fe0;
   --st-running-soft: rgba(47, 111, 224, 0.12);
@@ -167,6 +208,8 @@
   --ok: #4ec9a0;
   --warn: #e2b341;
   --shadow-pop: 0 8px 24px rgb(0 0 0 / 0.35);
+  --surface-hover: rgba(255, 255, 255, 0.04);
+  --selection: rgba(91, 157, 255, 0.1);
 
   /* thread status: one colour + one soft tint per state */
   --st-running: #5b9dff;

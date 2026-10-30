@@ -12,7 +12,7 @@
   padding-bottom: var(--sp-3);
   border-bottom: 1px solid var(--border);
 }
-.pageTitle { margin: 0; font-size: 15px; font-weight: 600; }
+.pageTitle { margin: 0; font-size: var(--fs-md); font-weight: 600; }
 .toggle { margin-left: auto; }
 .list { list-style: none; margin: 0; padding: 0; }
 .row {
@@ -33,15 +33,15 @@
 button.row:hover { background: var(--surface-2); }
 .header {
   color: var(--muted);
-  font-size: 11px;
+  font-size: var(--fs-xs);
   letter-spacing: var(--ls-section);
   text-transform: uppercase; font-weight: var(--fw-section);
 }
 .title, .mono, .muted { min-width: 0; overflow: hidden; text-overflow: ellipsis; white-space: nowrap; }
-.muted { color: var(--muted); font-size: 11px; }
-.mono { font-family: var(--font-mono); font-size: 11px; color: var(--muted); }
+.muted { color: var(--muted); font-size: var(--fs-sm); }
+.mono { font-family: var(--font-mono); font-size: var(--fs-xs); color: var(--muted); }
 .vcs { display: flex; align-items: center; gap: var(--sp-2); min-width: 0; }
-.num { text-align: right; color: var(--muted); font-size: 11px; font-variant-numeric: tabular-nums; }
+.num { text-align: right; color: var(--muted); font-size: var(--fs-sm); font-variant-numeric: tabular-nums; }
 .empty { margin: var(--sp-3) 0; color: var(--muted); }
 .archivedItem { display: flex; align-items: center; border-bottom: 1px solid var(--border); }
 .archivedItem > .row { flex: 1; min-width: 0; border-bottom: none; }

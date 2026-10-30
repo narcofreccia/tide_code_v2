@@ -9,7 +9,7 @@
   gap: var(--sp-4);
 }
 .head { display: flex; flex-wrap: wrap; align-items: center; gap: var(--sp-3); }
-.pageTitle { margin: 0; font-size: 15px; font-weight: 600; }
+.pageTitle { margin: 0; font-size: var(--fs-md); font-weight: 600; }
 .windowPicker { display: flex; gap: var(--sp-1); }
 .chip {
   height: 22px;
@@ -19,7 +19,7 @@
   background: transparent;
   color: var(--text-2);
   font: inherit;
-  font-size: 11px;
+  font-size: var(--fs-sm);
   cursor: pointer;
 }
 .chip:hover { background: var(--surface-2); }
@@ -33,7 +33,7 @@
   border-radius: var(--radius-sm);
   color: var(--text);
   font: inherit;
-  font-size: 11px;
+  font-size: var(--fs-sm);
 }
 .toggle { margin-left: auto; }
 
@@ -48,8 +48,8 @@
 }
 .note { margin: 0; color: var(--muted); }
 .error { margin: 0; color: var(--danger); }
-.legend { margin: 0; color: var(--muted); font-size: 11px; }
-.notes { margin: 0; padding-left: var(--sp-4); color: var(--text-2); font-size: 12px; }
+.legend { margin: 0; color: var(--muted); font-size: var(--fs-sm); }
+.notes { margin: 0; padding-left: var(--sp-4); color: var(--text-2); font-size: var(--fs-sm); }
 
 /* tokens per day: CSS columns, the height is a class from a 5 % step scale */
 .bars {
@@ -66,7 +66,7 @@
 .barCol { flex: 1 0 10px; display: flex; flex-direction: column; align-items: center; justify-content: flex-end; height: 100%; min-width: 10px; }
 .bar { width: 100%; max-width: 24px; background: var(--accent); border-radius: 2px 2px 0 0; }
 .barCol:hover .bar { background: var(--st-running); opacity: 0.8; }
-.barLabel { margin-top: 2px; color: var(--muted); font-size: 9px; white-space: nowrap; overflow: hidden; max-width: 100%; }
+.barLabel { margin-top: 2px; color: var(--muted); font-size: var(--fs-xs); white-space: nowrap; overflow: hidden; max-width: 100%; }
 .h0 { height: calc((0 / 20) * (100% - 14px)); }
 .h1 { height: calc((1 / 20) * (100% - 14px)); }
 .h2 { height: calc((2 / 20) * (100% - 14px)); }
@@ -90,12 +90,12 @@
 .h20 { height: calc((20 / 20) * (100% - 14px)); }
 
 .tableWrap { overflow-x: auto; }
-.table { width: 100%; border-collapse: collapse; font-size: 12px; }
+.table { width: 100%; border-collapse: collapse; font-size: var(--fs-sm); }
 .table th, .table td { padding: 0 var(--sp-2); height: var(--row-h); border-bottom: 1px solid var(--border); text-align: left; white-space: nowrap; }
-.table thead th { color: var(--muted); font-size: 11px; font-weight: var(--fw-section); }
+.table thead th { color: var(--muted); font-size: var(--fs-sm); font-weight: var(--fw-section); }
 .table .num { text-align: right; font-variant-numeric: tabular-nums; }
 .groupRow th, .groupRow td { font-weight: 600; background: var(--surface); }
-.model { padding-left: var(--sp-5) !important; font-family: var(--font-mono); font-size: 11px; }
+.model { padding-left: var(--sp-5) !important; font-family: var(--font-mono); font-size: var(--fs-xs); }
 .estimate { color: var(--text-2); font-style: italic; }
 .totalRow th, .totalRow td { font-weight: 600; border-top: 1px solid var(--border-strong); }
 
@@ -106,7 +106,7 @@
 .window { display: flex; align-items: center; gap: var(--sp-2); height: var(--activity-h); }
 .windowName { width: 110px; color: var(--text-2); }
 .meter { width: 160px; height: 8px; }
-.windowText { color: var(--muted); font-size: 11px; }
+.windowText { color: var(--muted); font-size: var(--fs-sm); }
 
 @media (max-width: 720px) {
   .view { padding: var(--sp-3); }

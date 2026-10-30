@@ -18,7 +18,7 @@
 }
 .head:hover { color: var(--text); }
 .title { color: var(--text); font-weight: 600; }
-.meta { font-size: 11px; }
+.meta { font-size: var(--fs-sm); }
 .text {
   margin: 0;
   padding: var(--sp-2);
@@ -28,6 +28,6 @@
   white-space: pre-wrap;
   word-break: break-word;
   font-family: var(--font-mono);
-  font-size: 11px;
+  font-size: var(--fs-xs);
   color: var(--muted);
 }

@@ -7,7 +7,7 @@
   flex-direction: column;
   flex: 1 1 auto;
   min-height: 0;
-  font-size: 13px;
+  font-size: var(--fs-base);
 }
 
 .header {
@@ -20,7 +20,7 @@
 }
 .heading {
   margin: 0;
-  font-size: 15px;
+  font-size: var(--fs-md);
   font-weight: 600;
   line-height: 20px;
   color: var(--text);
@@ -29,7 +29,7 @@
 .context {
   margin: 0;
   color: var(--muted);
-  font-size: 12px;
+  font-size: var(--fs-sm);
   overflow: hidden;
   text-overflow: ellipsis;
   white-space: nowrap;
@@ -55,9 +55,9 @@
   border-top: 1px solid var(--border);
   background: var(--surface);
 }
-.outcome { margin: 0; color: var(--text-2); font-size: 12px; line-height: 17px; }
+.outcome { margin: 0; color: var(--text-2); font-size: var(--fs-sm); line-height: 17px; }
 .actions { display: flex; align-items: center; justify-content: flex-end; gap: var(--sp-2); }
-.blocked { margin-right: auto; color: var(--muted); font-size: 12px; }
+.blocked { margin-right: auto; color: var(--muted); font-size: var(--fs-sm); }
 .chord { margin-right: auto; display: inline-flex; }
 .primary { height: 28px; padding: 0 var(--sp-3); font-weight: 500; }
 
@@ -70,16 +70,16 @@
 }
 .label {
   color: var(--text-2);
-  font-size: 12px;
+  font-size: var(--fs-sm);
   line-height: 28px;
 }
 .control { display: flex; flex-direction: column; gap: var(--sp-1); min-width: 0; }
-.caption { color: var(--muted); font-size: 12px; line-height: 16px; }
+.caption { color: var(--muted); font-size: var(--fs-sm); line-height: 16px; }
 
 .section { display: flex; flex-direction: column; gap: var(--sp-2); }
 .sectionHead { display: flex; align-items: baseline; gap: var(--sp-2); }
-.sectionTitle { margin: 0; color: var(--text-2); font-size: 12px; font-weight: 500; }
-.sectionAside { margin-left: auto; color: var(--muted); font-size: 12px; }
+.sectionTitle { margin: 0; color: var(--text-2); font-size: var(--fs-sm); font-weight: 500; }
+.sectionAside { margin-left: auto; color: var(--muted); font-size: var(--fs-sm); }
 
 .primaryField { display: flex; flex-direction: column; gap: var(--sp-1); }
 .primaryField .label { line-height: 16px; }
@@ -92,7 +92,7 @@
   background: var(--bg);
   color: var(--text);
   font: inherit;
-  font-size: 15px;
+  font-size: var(--fs-md);
   line-height: 22px;
 }
 .primaryInput::placeholder { color: var(--muted); }

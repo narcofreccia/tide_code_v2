@@ -1,0 +1,55 @@
+/*
+ * Live shimmer (docs/design/ui.md § Motion). A 4.5rem window, masked soft at both
+ * edges, steps across the label in 2.2s; the copy inside it counter-translates by
+ * the same amount so the bright glyphs sit exactly on the muted ones. The window
+ * moves with `left` (percent of the label) and the copy with `transform` (percent
+ * of itself, which is the label's width since both hold the same nowrap text).
+ */
+.live {
+  position: relative;
+  display: inline-block;
+  max-width: 100%;
+  white-space: nowrap;
+  color: var(--muted);
+  /* clips the window without moving the baseline the way overflow would */
+  clip-path: inset(0);
+}
+
+.sweep {
+  --live-window: 4.5rem;
+  position: absolute;
+  top: 0;
+  bottom: 0;
+  left: calc(-1 * var(--live-window));
+  width: var(--live-window);
+  overflow: hidden;
+  color: var(--text);
+  pointer-events: none;
+  -webkit-mask-image: linear-gradient(90deg, transparent, #000, transparent);
+  mask-image: linear-gradient(90deg, transparent, #000, transparent);
+  animation: liveWindow 2.2s steps(30) infinite;
+  animation-play-state: var(--visible-animation-state, paused);
+}
+
+.copy {
+  display: block;
+  width: max-content;
+  transform: translateX(var(--live-window));
+  animation: liveCopy 2.2s steps(30) infinite;
+  animation-play-state: var(--visible-animation-state, paused);
+}
+.copy::before { content: attr(data-label); }
+
+@keyframes liveWindow {
+  from { left: calc(-1 * var(--live-window)); }
+  to { left: 100%; }
+}
+@keyframes liveCopy {
+  from { transform: translateX(var(--live-window)); }
+  to { transform: translateX(-100%); }
+}
+
+/* still: the muted label alone; the row's own status mark says it is running */
+@media (prefers-reduced-motion: reduce), (forced-colors: active) {
+  .sweep { display: none; }
+}

@@ -17,7 +17,7 @@
 }
 .pageTitle {
   margin: 0;
-  font-size: 15px;
+  font-size: var(--fs-md);
   font-weight: 600;
 }
 .scope { color: var(--muted); }
@@ -27,7 +27,7 @@
 .section { display: block; margin-top: var(--sp-4); outline: none; }
 .label {
   margin: 0 0 var(--sp-2);
-  font-size: 11px;
+  font-size: var(--fs-xs);
   letter-spacing: var(--ls-section);
   text-transform: uppercase;
   color: var(--text-2);
@@ -80,7 +80,7 @@
 .meta {
   flex: none;
   color: var(--muted);
-  font-size: 11px;
+  font-size: var(--fs-sm);
   overflow: hidden;
   text-overflow: ellipsis;
   white-space: nowrap;
@@ -89,7 +89,7 @@
   flex: 1;
   min-width: 0;
   color: var(--muted);
-  font-size: 11px;
+  font-size: var(--fs-sm);
   overflow: hidden;
   text-overflow: ellipsis;
   white-space: nowrap;
@@ -99,7 +99,7 @@
   color: var(--muted);
   font-variant-numeric: tabular-nums;
   font-family: var(--font-mono);
-  font-size: 11px;
+  font-size: var(--fs-xs);
 }
 
 /* ---- Inbox ---- */
@@ -131,7 +131,7 @@
   margin-left: auto;
   flex: none;
   color: var(--muted);
-  font-size: 11px;
+  font-size: var(--fs-sm);
   font-variant-numeric: tabular-nums;
   white-space: nowrap;
 }
@@ -142,7 +142,7 @@
   border-radius: 999px;
   background: var(--st-needs-soft);
   color: var(--st-needs);
-  font-size: 11px;
+  font-size: var(--fs-sm);
   line-height: 18px;
   white-space: nowrap;
 }
@@ -156,13 +156,13 @@
   padding: var(--sp-3);
 }
 .cardHead { display: flex; align-items: baseline; gap: var(--sp-2); }
-.cardTitle { margin: 0; font-size: 13px; font-weight: 600; }
+.cardTitle { margin: 0; font-size: var(--fs-base); font-weight: 600; }
 .path {
   flex: 1;
   min-width: 0;
   color: var(--muted);
   font-family: var(--font-mono);
-  font-size: 11px;
+  font-size: var(--fs-xs);
   overflow: hidden;
   text-overflow: ellipsis;
   white-space: nowrap;
@@ -176,7 +176,7 @@
   gap: var(--sp-3);
   margin: var(--sp-2) 0;
   color: var(--muted);
-  font-size: 11px;
+  font-size: var(--fs-sm);
   font-variant-numeric: tabular-nums;
 }
 .recent { list-style: none; margin: var(--sp-2) 0 0; padding: 0; }
@@ -194,13 +194,13 @@
   text-align: left;
 }
 .recentRow:hover { color: var(--accent); }
-.interrupting { flex: none; color: var(--warn); font-size: 11px; }
+.interrupting { flex: none; color: var(--warn); font-size: var(--fs-sm); }
 .time {
   margin-left: auto;
   flex: none;
   color: var(--muted);
   font-variant-numeric: tabular-nums;
-  font-size: 11px;
+  font-size: var(--fs-sm);
 }
 .actions { display: flex; align-items: center; gap: var(--sp-2); margin-top: var(--sp-3); }
 .pushRight { margin-left: auto; }
@@ -213,7 +213,7 @@
   border: 0;
   background: transparent;
   color: var(--muted);
-  font-size: 11px;
+  font-size: var(--fs-sm);
 }
 .details:hover { color: var(--text); }
 .detailsBody { margin-top: var(--sp-1); }
@@ -230,7 +230,7 @@
   text-transform: inherit;
 }
 .foldSummary { color: var(--muted); font-weight: 400; letter-spacing: 0; text-transform: none; }
-.costRow { margin: 0 0 var(--sp-2); color: var(--muted); font-size: 11px; }
+.costRow { margin: 0 0 var(--sp-2); color: var(--muted); font-size: var(--fs-sm); }
 .menu { display: flex; flex-direction: column; align-items: stretch; min-width: 160px; }
 .experts { margin-top: var(--sp-3); border-top: 1px solid var(--border); padding-top: var(--sp-2); }
 .expertsRow {
@@ -269,11 +269,11 @@
   color: inherit;
   font: inherit;
 }
-.chipGlyph { font-size: 11px; }
+.chipGlyph { font-size: var(--fs-sm); }
 .ok { color: var(--ok); }
 .warn { color: var(--warn); }
 .off { color: var(--muted); }
-.chipHint { color: var(--muted); font-size: 11px; }
+.chipHint { color: var(--muted); font-size: var(--fs-sm); }
 
 /* ---- empty state ---- */
 .emptyState {
@@ -285,7 +285,7 @@
   margin: 12vh auto 0;
   text-align: center;
 }
-.wordmark { margin: 0; font-size: 20px; font-weight: 600; letter-spacing: 0.02em; }
+.wordmark { margin: 0; font-size: var(--fs-lg); font-weight: 600; letter-spacing: 0.02em; }
 .tagline { margin: 0; color: var(--muted); }
 .checklist {
   list-style: none;
@@ -308,7 +308,7 @@
 .checkMark { flex: none; width: 14px; color: var(--muted); }
 .checkRow[data-done="true"] .checkMark { color: var(--ok); }
 .checkBody { display: flex; flex-direction: column; gap: 2px; min-width: 0; flex: 1; }
-.checkHint { color: var(--muted); font-size: 11px; }
+.checkHint { color: var(--muted); font-size: var(--fs-sm); }
 .checkAction { flex: none; margin-left: auto; }
 
 /* ---- totals strip ---- */
@@ -317,7 +317,7 @@
   align-items: center;
   gap: var(--sp-3);
   color: var(--muted);
-  font-size: 11px;
+  font-size: var(--fs-sm);
 }
 .totalsProject { color: var(--text); }
 .totalsValue { font-variant-numeric: tabular-nums; }

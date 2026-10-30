@@ -30,4 +30,4 @@
 .row:hover { background: var(--surface-raised); }
 .active { background: var(--surface-raised); }
 .title { flex: 1; min-width: 0; overflow: hidden; text-overflow: ellipsis; white-space: nowrap; font-weight: 500; }
-.project { flex: none; max-width: 80px; overflow: hidden; text-overflow: ellipsis; white-space: nowrap; color: var(--muted); font-size: 11px; }
+.project { flex: none; max-width: 80px; overflow: hidden; text-overflow: ellipsis; white-space: nowrap; color: var(--muted); font-size: var(--fs-sm); }

@@ -125,8 +125,8 @@ only in the collapsed Snoozed section, no glyph). Rail sorts needs-you first wit
 
 Light separates surfaces with borders (raised is white plus `--border-strong`), dark with tone steps.
 Radii 4/6/10; spacing 4-grid. `--shadow-pop` is the only shadow, and only on popovers.
-`--fs-section: 11px` + weight 600 + `letter-spacing: .06em` (uppercase, `--text-2`) is the section header;
-**no text is smaller than 11px**.
+`--fs-xs` + `--fw-semibold` + `letter-spacing: .06em` (uppercase, `--text-2`) is the section header
+(`--fs-section/--fw-section/--ls-section` are aliases); **no text is smaller than 11px**.
 
 ### Shape rules: state, setting and action never share a capsule
 
@@ -145,11 +145,86 @@ Radii 4/6/10; spacing 4-grid. `--shadow-pop` is the only shadow, and only on pop
 
 - Dark default (settings default is `dark`, stamped pre-paint by an inline script in `index.html`), light via
   `prefers-color-scheme` when the user picks System, or an explicit toggle.
-- Type: system UI stack 13px base; monospace for paths, commands, diffs. Titles and selected states use weight
-  500-600; metadata is 11px `--muted`.
+- Type: system UI stack, `--fs-base` (13px); monospace for paths, commands, diffs. Titles and selected states use
+  weight 500-600; metadata is `--fs-sm` `--muted`. Full scale under "Visual system".
 - Flat surfaces, hairline borders, no nested cards, no shadows except popovers.
-- Motion only for state: streaming caret, running pulse, drawer slide (120ms).
+- Motion only for state: streaming caret and fade, live shimmer, drawer slide. Rules under "Motion".
 - Density: rows 28px in rail/lists, 24px activity lines, 32px thread header.
+
+## Visual system
+
+### Type scale
+
+Every `font-size` is a token; `styles/tokens.test.ts` fails on a `px` literal anywhere but `tokens.css`.
+
+| Token | Size | Role |
+|---|---|---|
+| `--fs-xs` | 11px | group/section labels (uppercase, `--fw-semibold`, `letter-spacing: .06em`); monospace inline content (paths, diffs, code, branch names), which reads a size larger than sans |
+| `--fs-sm` | 12px | meta: times, durations, pills, help text, status bar, small buttons |
+| `--fs-base` | 13px | body, rows, inputs, card titles (`--font-size-base` is an alias) |
+| `--fs-md` | 14px | page section titles; phone body text |
+| `--fs-lg` | 18px | page titles, the wordmark |
+| `--fs-display` | 28px | one-off display: a pairing code, the phone back chevron |
+| `--fs-touch-input` | 16px | phone inputs only (iOS zooms the page below 16px) |
+
+Line height `--lh-body: 1.45` for text, `--lh-tight: 1.2` for titles and single-line chips. Weights
+`--fw-regular: 400`, `--fw-medium: 500` (titles, selected rows), `--fw-semibold: 600` (section labels, page titles).
+
+### Spacing and measure
+
+4-grid: `--sp-1..7` = 4, 8, 12, 16, 24, 32, 48. Rows: `--row-h: 28px` (rail, lists), `--row-h-nav: 32px`
+(settings nav, icon strip), `--activity-h: 24px` (stream lines). Settings and prose pages cap content at
+`--measure: 720px`.
+
+### Surfaces and elevation
+
+`--bg < --surface < --surface-2 < --surface-raised` (table above). Hover on a row or quiet control is
+`--surface-hover` (4% white in dark, 4% slate in light), laid over whatever surface the row sits on.
+`--shadow-pop` stays reserved for popovers, menus and dialogs.
+
+### Selection and focus
+
+- Selected row: `--selection` background (accent at 10%) plus a 2px `--selection-bar` (accent) on the
+  leading edge. Never a filled accent row.
+- Keyboard focus: `--focus-ring` (2px `--bg` gap, then 2px accent) as a `box-shadow` on every interactive
+  element (`button`, `[role=button]`, `a`, `input`, `select`, `textarea`, `[tabindex]`) via `:focus-visible`
+  in `global.css`. A control keeps its own radius; bare ones get `--radius-sm`. No focus ring on mouse click.
+
+### Icons
+
+- `components/ui/Icon.tsx`: `<Icon name="inbox" />`, inline SVG, 24×24 viewBox drawn at 16px (12px inside
+  dense text), `currentColor` stroke 1.75, round caps and joins, no fill. Path data lives in `icons.ts`.
+- Decorative by default (`aria-hidden`); pass `label` when the icon is the only content of a control
+  (`role="img"` + `aria-label`), or label the button itself.
+- UI chrome (toggles, menus, close, nav, attachment chips) uses icons, never Unicode glyphs (`▸ ▾ ⋯ ✕ ⚙`).
+  Status marks in the stream's tool lines and the turn footer's token arrows are data and stay text.
+
+## Motion
+
+- Durations `--dur-fast: 120ms` (hover, small fades, tail words) and `--dur: 200ms` (drawers, popovers,
+  panels), easing `--ease: cubic-bezier(0.2, 0, 0, 1)`. Under `prefers-reduced-motion: reduce` both are 0ms.
+- Motion only reports state; nothing loops unless work is in progress.
+- **Live shimmer** (`thread/LiveLabel`): a label for work that is happening (a running tool call's name,
+  "Thinking…" before the first answer text) is drawn `--muted`, and a 4.5rem window of the same text in
+  `--text`, masked soft at both edges, sweeps left to right in 2.2s with `steps(30)`, forever. The window
+  moves with `left`; the copy inside counter-translates by the same amount so its glyphs sit on the muted
+  ones. The bright copy comes from a CSS `attr()`, so the text exists once in the DOM. It replaces the old
+  opacity pulse.
+- **Pause off screen:** every loop reads `animation-play-state: var(--visible-animation-state)`.
+  `lib/visibleAnimation.ts` sets it to `running` only while the element intersects the viewport, the tab is
+  visible, and neither reduced motion nor forced colours is on: one shared IntersectionObserver plus one
+  `visibilitychange` listener, attached by ref callback (`ref={observeVisibleAnimation}`).
+- **Streaming fade** (assistant replies, `MessageItem`): while a reply streams, its markdown carries
+  `data-streaming` and each newly rendered block fades in once (opacity, 600ms ease-out, via
+  `@starting-style`). The last 12 words of a plain paragraph line are held out of the markdown as spans keyed
+  by their offset in the reply, so each new word fades in over `--dur-fast` and the text flows rather than
+  popping per paragraph. The split is skipped (block fade only) inside an open code fence, when the last
+  block is a list, quote, heading, table or indented, when the line has fewer than 4 words, and when the
+  tail holds any markdown syntax. Words already on screen never fade again. A settled reply renders exactly
+  as plain markdown: no attributes, no held-out tail, nothing replays.
+- **Caret:** a 2px `--accent` bar that breathes (opacity 0.35 to 1, 1.2s ease-in-out); static under
+  reduced motion.
+- Reduced motion / forced colours: no shimmer window (the muted label alone), no fades, static caret.
 
 ## Component inventory (apps/web/src/components)
 

@@ -6,10 +6,11 @@ export type FocusMode = "thread" | "split" | "workbench";
 /** `threads` is the per-project "All threads" list opened from Mission Control. */
 /** `prs` is the PR tab (R10), `usage` the usage glass-box page. */
 export type View = "mission" | "thread" | "settings" | "experts" | "threads" | "prs" | "usage";
-export type SettingsSection = "general" | "inbox" | "notifications" | "providers" | "git" | "decisions" | "automations" | "teams" | "appearance" | "keyboard" | "environments" | "glassBox" | "about";
+export type SettingsSection = "general" | "projects" | "inbox" | "notifications" | "providers" | "git" | "decisions" | "automations" | "teams" | "appearance" | "keyboard" | "environments" | "glassBox" | "about";
 
 export const SETTINGS_SECTIONS: SettingsSection[] = [
   "general",
+  "projects",
   "inbox",
   "notifications",
   "providers",

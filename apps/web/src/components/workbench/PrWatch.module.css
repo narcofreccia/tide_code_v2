@@ -1,4 +1,4 @@
-.watch { display: inline-flex; align-items: center; gap: var(--sp-2); font-size: 11px; }
+.watch { display: inline-flex; align-items: center; gap: var(--sp-2); font-size: var(--fs-sm); }
 .success { color: var(--ok); }
 .failure { color: var(--danger); }
 .pending { color: var(--warn); }

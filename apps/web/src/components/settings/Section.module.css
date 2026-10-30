@@ -14,7 +14,7 @@
 
 .title {
   margin: 0;
-  font-size: 14px;
+  font-size: var(--fs-md);
 }
 
 .note {
@@ -89,7 +89,7 @@
   color: var(--muted);
   text-transform: uppercase; font-weight: var(--fw-section);
   letter-spacing: var(--ls-section);
-  font-size: 11px;
+  font-size: var(--fs-xs);
 }
 
 /* inline forms: Decisions API key, Remote › Connect to another server */
@@ -122,7 +122,7 @@
 .input:focus { outline: none; border-color: var(--accent); }
 .ok { color: var(--ok); }
 .stack { display: flex; flex-direction: column; gap: 2px; min-width: 0; }
-.secondary { color: var(--muted); font-family: var(--font-mono); font-size: 11px; overflow-wrap: anywhere; }
+.secondary { color: var(--muted); font-family: var(--font-mono); font-size: var(--fs-xs); overflow-wrap: anywhere; }
 
 @media (max-width: 720px) {
   .table { display: block; overflow-x: auto; }

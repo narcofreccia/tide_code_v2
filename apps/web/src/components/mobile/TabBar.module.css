@@ -18,9 +18,9 @@
   border: 0;
   background: transparent;
   color: var(--muted);
-  font-size: 11px;
+  font-size: var(--fs-sm);
 }
-.glyph { font-size: 17px; line-height: 1; }
+.glyph { font-size: var(--fs-lg); line-height: 1; }
 .active { color: var(--accent); }
 .badge {
   position: absolute;
@@ -31,7 +31,7 @@
   border-radius: 8px;
   background: var(--st-needs);
   color: #000;
-  font-size: 10px;
+  font-size: var(--fs-xs);
   font-weight: 600;
   line-height: 16px;
   text-align: center;

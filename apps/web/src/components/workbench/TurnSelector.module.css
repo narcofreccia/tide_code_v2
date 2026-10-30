@@ -15,8 +15,8 @@
 }
 .item:hover { background: var(--surface-2); }
 .active { background: var(--accent-soft); }
-.index { color: var(--muted); font-size: 11px; flex: 0 0 auto; }
-.text { flex: 1; overflow: hidden; text-overflow: ellipsis; white-space: nowrap; font-size: 12px; }
-.stats { font-size: 11px; font-variant-numeric: tabular-nums; white-space: nowrap; }
+.index { color: var(--muted); font-size: var(--fs-sm); flex: 0 0 auto; }
+.text { flex: 1; overflow: hidden; text-overflow: ellipsis; white-space: nowrap; font-size: var(--fs-sm); }
+.stats { font-size: var(--fs-sm); font-variant-numeric: tabular-nums; white-space: nowrap; }
 .add { color: var(--ok); }
 .del { color: var(--danger); }

@@ -15,7 +15,7 @@
   padding-top: var(--sp-1);
   border-right: 1px solid var(--border);
 }
-.count { color: var(--muted); font-size: 11px; }
+.count { color: var(--muted); font-size: var(--fs-sm); }
 .head {
   display: flex;
   align-items: center;
@@ -23,7 +23,7 @@
   height: 24px;
   padding: 0 var(--sp-1) 0 var(--sp-2);
 }
-.heading { font-size: 11px; letter-spacing: var(--ls-section); text-transform: uppercase; font-weight: var(--fw-section); color: var(--muted); }
+.heading { font-size: var(--fs-xs); letter-spacing: var(--ls-section); text-transform: uppercase; font-weight: var(--fw-section); color: var(--muted); }
 .list { list-style: none; margin: 0; padding: 0; flex: 1; min-height: 0; overflow-y: auto; }
 .list:focus-visible { outline: 1px solid var(--accent); outline-offset: -1px; }
 .row {
@@ -41,15 +41,15 @@
 }
 .row:hover { background: var(--surface-2); }
 .active { background: var(--accent-soft); }
-.glyph { flex: 0 0 10px; font-family: var(--font-mono); font-size: 11px; font-weight: 600; }
+.glyph { flex: 0 0 10px; font-family: var(--font-mono); font-size: var(--fs-xs); font-weight: 600; }
 .added { color: var(--ok); }
 .modified { color: var(--warn); }
 .deleted { color: var(--danger); }
 .renamed { color: var(--accent); }
-.path { flex: 1; min-width: 0; overflow: hidden; text-overflow: ellipsis; white-space: nowrap; font-size: 12px; }
+.path { flex: 1; min-width: 0; overflow: hidden; text-overflow: ellipsis; white-space: nowrap; font-size: var(--fs-sm); }
 .dir { color: var(--muted); }
 .base { font-weight: 600; }
-.stats { flex: 0 0 auto; font-size: 11px; font-variant-numeric: tabular-nums; }
+.stats { flex: 0 0 auto; font-size: var(--fs-sm); font-variant-numeric: tabular-nums; }
 .add { color: var(--ok); }
 .del { color: var(--danger); }
 
@@ -68,9 +68,9 @@
   overflow: hidden;
   text-overflow: ellipsis;
   white-space: nowrap;
-  font-size: 11px;
+  font-size: var(--fs-sm);
   font-weight: 600;
 }
 .groupPath { color: var(--muted); font-family: var(--font-mono); font-weight: 400; }
-.revert { font-size: 11px; }
+.revert { font-size: var(--fs-sm); }
 .groupList { list-style: none; margin: 0; padding: 0; }

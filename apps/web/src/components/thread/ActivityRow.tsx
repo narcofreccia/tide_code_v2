@@ -9,6 +9,7 @@ import { openFileTab } from "../../state/workbench.ts";
 import { normalizePastedPath } from "../../lib/mentions.ts";
 import { Button } from "../ui/Button.tsx";
 import { useTurnSettled } from "./activities/turnSettled.ts";
+import { LiveLabel } from "./LiveLabel.tsx";
 import styles from "./ActivityRow.module.css";
 
 const MARK: Record<string, string> = { ok: "✓", error: "✕", running: "…" };
@@ -97,6 +98,7 @@ export function ActivityRow({ activity }: { activity: Activity }) {
   const target = toolTarget(activity.input);
   // a call still "running" after its turn settled will never report back: no spinner
   const stale = activity.status === "running" && turnSettled;
+  const live = activity.status === "running" && !stale;
   const tone = stale ? "" : (styles[activity.status] ?? "");
   const output = activity.output ?? "";
   const input = formatPayload(activity.input);
@@ -112,7 +114,11 @@ export function ActivityRow({ activity }: { activity: Activity }) {
           onClick={() => setOpen((v) => !v)}
         >
           <span className={`${styles.glyph} ${tone}`}>{toolGlyph(activity.toolName)}</span>
-          <span className={styles.name}>{activity.toolName}</span>
+          {live ? (
+            <LiveLabel className={styles.liveName} text={activity.toolName} />
+          ) : (
+            <span className={styles.name}>{activity.toolName}</span>
+          )}
           {filePath === undefined ? <span className={styles.target}>{target}</span> : null}
         </button>
         {filePath === undefined ? null : (

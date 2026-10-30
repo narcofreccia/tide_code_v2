@@ -6,5 +6,5 @@
   background: var(--surface-2);
   color: var(--text);
   text-align: left;
-  font-size: 15px;
+  font-size: var(--fs-md);
 }

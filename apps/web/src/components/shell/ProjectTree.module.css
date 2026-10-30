@@ -22,8 +22,8 @@
 .projectRow:hover,
 .thread:hover { background: var(--surface-2); }
 .active { background: var(--surface-raised); }
-.projectTitle { font-size: 13px; font-weight: 600; color: var(--text); min-width: 0; overflow: hidden; text-overflow: ellipsis; white-space: nowrap; }
-.badge { flex: none; font-size: 11px; font-variant-numeric: tabular-nums; font-weight: 500; }
+.projectTitle { font-size: var(--fs-base); font-weight: 600; color: var(--text); min-width: 0; overflow: hidden; text-overflow: ellipsis; white-space: nowrap; }
+.badge { flex: none; font-size: var(--fs-sm); font-variant-numeric: tabular-nums; font-weight: 500; }
 .badgeNeeds { color: var(--st-needs); }
 .badgeRunning { color: var(--st-running); }
 .chevron {
@@ -36,11 +36,11 @@
   border-radius: var(--radius-sm);
   background: transparent;
   color: var(--muted);
-  font-size: 11px;
+  font-size: var(--fs-sm);
 }
 .chevron:hover { color: var(--text); background: var(--surface-2); }
 .threadTitle { color: var(--text); flex: 1; min-width: 0; overflow: hidden; text-overflow: ellipsis; white-space: nowrap; }
-.time { color: var(--muted); font-size: 11px; font-variant-numeric: tabular-nums; }
+.time { color: var(--muted); font-size: var(--fs-sm); font-variant-numeric: tabular-nums; }
 /* the one trailing slot: time or PR/merge state, swapped for ⋯ while the row is hovered */
 .meta { flex: none; display: inline-flex; align-items: center; gap: var(--sp-1); }
 .threadRow .meta { padding-right: var(--sp-1); margin-left: auto; }
@@ -59,7 +59,7 @@
   border-radius: var(--radius-sm);
   background: var(--surface-2);
   color: var(--muted);
-  font-size: 11px;
+  font-size: var(--fs-sm);
 }
 .empty { color: var(--muted); margin: 0; padding: 0 var(--sp-3) var(--sp-2); }
 .experts { display: flex; flex-direction: column; }
@@ -68,14 +68,14 @@
   height: 20px;
   display: flex;
   align-items: center;
-  font-size: 11px;
+  font-size: var(--fs-xs);
   letter-spacing: var(--ls-section);
   text-transform: uppercase; font-weight: var(--fw-section);
   color: var(--text-2);
 }
-.roleGlyph { color: var(--muted); font-size: 11px; }
+.roleGlyph { color: var(--muted); font-size: var(--fs-sm); }
 /* after the title, so the status slot before it stays a status */
-.pinMark { flex: none; font-size: 9px; opacity: 0.7; }
+.pinMark { flex: none; font-size: var(--fs-xs); opacity: 0.7; }
 .needsYou { color: var(--st-needs); }
 /* a row holds the main button and the hover ⋯ */
 .row { position: relative; display: flex; align-items: center; min-width: 0; border-left: 2px solid transparent; }
@@ -124,14 +124,14 @@
   border: 0;
   background: transparent;
   color: var(--text-2);
-  font-size: 11px;
+  font-size: var(--fs-xs);
   letter-spacing: var(--ls-section);
   text-transform: uppercase; font-weight: var(--fw-section);
   text-align: left;
   cursor: pointer;
 }
 .groupToggle:hover { color: var(--text); }
-.roleTag { flex: none; max-width: 90px; overflow: hidden; text-overflow: ellipsis; white-space: nowrap; padding: 0 var(--sp-1); border-radius: var(--radius-sm); background: var(--st-idle-soft); color: var(--st-idle); font-size: 10px; line-height: 14px; }
+.roleTag { flex: none; max-width: 90px; overflow: hidden; text-overflow: ellipsis; white-space: nowrap; padding: 0 var(--sp-1); border-radius: var(--radius-sm); background: var(--st-idle-soft); color: var(--st-idle); font-size: var(--fs-xs); line-height: 14px; }
 .badTag { background: var(--st-error-soft); color: var(--st-error); }
 .groupHead { display: flex; align-items: center; justify-content: space-between; }
 .groupClear {
@@ -140,7 +140,7 @@
   border: 0;
   background: transparent;
   color: var(--muted);
-  font-size: 11px;
+  font-size: var(--fs-sm);
   cursor: pointer;
 }
 .groupClear:hover { color: var(--danger); }
@@ -157,7 +157,7 @@
   border-radius: var(--radius-sm);
   background: var(--surface);
   color: var(--accent);
-  font-size: 10px;
+  font-size: var(--fs-xs);
   line-height: 12px;
   text-align: center;
   opacity: 0;
@@ -180,7 +180,7 @@
   border-radius: var(--radius-sm);
   background: var(--surface-2);
   color: var(--muted);
-  font-size: 10px;
+  font-size: var(--fs-xs);
   line-height: 14px;
 }
 .picked { border-left-color: var(--accent); background: var(--accent-soft); }

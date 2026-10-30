@@ -33,7 +33,7 @@
   background: var(--surface-2);
   color: var(--text-2);
   font-family: var(--font-mono);
-  font-size: 11px;
+  font-size: var(--fs-xs);
   font-variant-numeric: tabular-nums;
 }
 .lead .marker { color: var(--accent); border-color: var(--accent); background: var(--accent-soft); }
@@ -66,7 +66,7 @@
   font: inherit;
 }
 .titleInput { height: 24px; font-weight: 600; }
-.subtitleInput { height: 20px; font-size: 12px; color: var(--text-2); }
+.subtitleInput { height: 20px; font-size: var(--fs-sm); color: var(--text-2); }
 .titleInput::placeholder,
 .subtitleInput::placeholder { color: var(--muted); font-weight: 400; }
 .titleInput:hover,
@@ -74,7 +74,7 @@
 .titleInput:focus,
 .subtitleInput:focus { outline: none; border-color: var(--accent); background: var(--bg); }
 .titleText { font-weight: 600; line-height: 22px; overflow: hidden; text-overflow: ellipsis; white-space: nowrap; }
-.subtitleText { color: var(--muted); font-size: 12px; line-height: 16px; overflow: hidden; text-overflow: ellipsis; white-space: nowrap; }
+.subtitleText { color: var(--muted); font-size: var(--fs-sm); line-height: 16px; overflow: hidden; text-overflow: ellipsis; white-space: nowrap; }
 
 /* reorder / remove: a small toolbar on the card's top edge, shown on hover or focus */
 .tools {
@@ -97,7 +97,7 @@
   background: transparent;
   color: var(--muted);
   font: inherit;
-  font-size: 12px;
+  font-size: var(--fs-sm);
 }
 .tool + .tool { border-left: 1px solid var(--border); }
 .tool:hover:not(:disabled) { color: var(--text); background: var(--surface-2); }
@@ -116,17 +116,17 @@
   background: var(--surface-2);
   color: var(--text-2);
   font-family: var(--font-mono);
-  font-size: 11px;
+  font-size: var(--fs-xs);
   font-weight: 600;
 }
-.tag { display: inline-flex; align-items: center; gap: var(--sp-2); font-size: 12px; color: var(--text-2); }
+.tag { display: inline-flex; align-items: center; gap: var(--sp-2); font-size: var(--fs-sm); color: var(--text-2); }
 .tagText { white-space: nowrap; }
-.tagModel { color: var(--muted); font-family: var(--font-mono); font-size: 11px; }
+.tagModel { color: var(--muted); font-family: var(--font-mono); font-size: var(--fs-xs); }
 
 /* settings strip inside an editable card */
 .settings { display: flex; flex-wrap: wrap; gap: var(--sp-2) var(--sp-3); padding-top: var(--sp-1); }
 .setting { display: flex; flex-direction: column; gap: 2px; min-width: 132px; flex: 1 1 132px; }
-.settingLabel { color: var(--text-2); font-size: 12px; }
+.settingLabel { color: var(--text-2); font-size: var(--fs-sm); }
 
 /* ghost add card */
 .ghostItem { display: flex; }
@@ -149,7 +149,7 @@
 .ghost:hover:not(:disabled) { border-color: var(--accent); color: var(--accent); }
 .ghost:disabled { opacity: 0.5; cursor: default; }
 .ghostGlyph { justify-self: center; font-family: var(--font-mono); }
-.ghostHint { color: var(--muted); font-size: 12px; overflow: hidden; text-overflow: ellipsis; white-space: nowrap; }
+.ghostHint { color: var(--muted); font-size: var(--fs-sm); overflow: hidden; text-overflow: ellipsis; white-space: nowrap; }
 
 /* persona / instructions editor */
 .note { display: flex; flex-direction: column; gap: var(--sp-1); }
@@ -166,11 +166,11 @@
   background: transparent;
   color: var(--text-2);
   font: inherit;
-  font-size: 12px;
+  font-size: var(--fs-sm);
   text-align: left;
 }
 .noteToggle:hover { border-color: var(--border); }
-.noteChevron { flex: none; width: 10px; color: var(--muted); font-size: 11px; }
+.noteChevron { flex: none; width: 10px; color: var(--muted); font-size: var(--fs-sm); }
 .noteLabel { flex: none; }
 .noteSummary { min-width: 0; color: var(--muted); overflow: hidden; text-overflow: ellipsis; white-space: nowrap; }
 .noteEditor { display: flex; flex-direction: column; gap: var(--sp-1); animation: note-in 120ms ease-out; transform-origin: top; }
@@ -188,7 +188,7 @@
 .noteText::placeholder { color: var(--muted); font-style: italic; }
 .noteText:focus { outline: none; border-color: var(--accent); }
 .noteFoot { display: flex; align-items: flex-start; gap: var(--sp-3); }
-.noteHint { flex: 1; color: var(--muted); font-size: 12px; line-height: 16px; }
+.noteHint { flex: 1; color: var(--muted); font-size: var(--fs-sm); line-height: 16px; }
 .noteAction {
   flex: none;
   height: 20px;
@@ -197,7 +197,7 @@
   background: transparent;
   color: var(--accent);
   font: inherit;
-  font-size: 12px;
+  font-size: var(--fs-sm);
 }
 .noteAction:hover { text-decoration: underline; }
 @keyframes note-in {
@@ -221,10 +221,10 @@
   background: transparent;
   color: var(--text-2);
   font: inherit;
-  font-size: 12px;
+  font-size: var(--fs-sm);
 }
 .chip:hover { border-color: var(--border-strong); color: var(--text); }
 .chip[aria-pressed="true"] { border-color: var(--accent); background: var(--accent-soft); color: var(--text); }
-.chipTick { width: 10px; color: var(--muted); font-size: 11px; text-align: center; }
+.chipTick { width: 10px; color: var(--muted); font-size: var(--fs-sm); text-align: center; }
 .chip[aria-pressed="true"] .chipTick { color: var(--accent); }
-.settingText { line-height: 28px; color: var(--muted); font-size: 12px; }
+.settingText { line-height: 28px; color: var(--muted); font-size: var(--fs-sm); }

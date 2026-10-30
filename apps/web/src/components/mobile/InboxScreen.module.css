@@ -12,7 +12,7 @@
   border: 0;
   background: transparent;
   color: var(--accent);
-  font-size: 15px;
+  font-size: var(--fs-md);
 }
 .scroll { flex: 1 1 auto; min-height: 0; overflow-y: auto; overscroll-behavior: contain; padding-bottom: var(--sp-4); }
 .group { padding-top: var(--sp-2); }
@@ -25,7 +25,7 @@
   border: 0;
   background: transparent;
   color: var(--text-2);
-  font-size: 11px;
+  font-size: var(--fs-xs);
   font-weight: var(--fw-section);
   letter-spacing: var(--ls-section);
   text-transform: uppercase;
@@ -35,7 +35,7 @@
 .list { margin: 0; padding: 0; list-style: none; }
 /* 44px touch rows: the rail's row markup is reused, so size it by structure */
 .list [data-rail-thread] { min-height: 44px; height: auto; }
-.list [data-rail-thread] button { min-height: 44px; font-size: 15px; }
+.list [data-rail-thread] button { min-height: 44px; font-size: var(--fs-md); }
 .list [data-rail-thread] button[aria-label^="Settle"],
 .list [data-rail-thread] button[aria-label^="Unsettle"],
 .list [data-rail-thread] button[aria-label^="Actions"] { min-width: 44px; }

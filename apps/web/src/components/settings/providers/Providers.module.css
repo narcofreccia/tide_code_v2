@@ -13,7 +13,7 @@
 .area:focus { outline: none; border-color: var(--accent); }
 .menu { display: flex; flex-direction: column; align-items: stretch; min-width: 140px; }
 .headActions { display: inline-flex; align-items: center; gap: var(--sp-1); }
-.kind { color: var(--muted); font-size: 11px; font-weight: normal; margin-left: var(--sp-2); }
+.kind { color: var(--muted); font-size: var(--fs-sm); font-weight: normal; margin-left: var(--sp-2); }
 
 .agents { list-style: none; margin: 0; padding: 0; display: flex; flex-direction: column; }
 .agent {
@@ -27,7 +27,7 @@
 .agent:last-child { border-bottom: 0; }
 .agentText { display: flex; flex-direction: column; gap: 2px; min-width: 0; }
 .agentName { display: flex; align-items: center; gap: var(--sp-2); flex-wrap: wrap; }
-.agentMeta { color: var(--muted); font-size: 11px; font-family: var(--font-mono); }
-.agentDescription { color: var(--text-2); font-size: 12px; line-height: 16px; }
+.agentMeta { color: var(--muted); font-size: var(--fs-xs); font-family: var(--font-mono); }
+.agentDescription { color: var(--text-2); font-size: var(--fs-sm); line-height: 16px; }
 .agentAction { display: flex; flex-direction: column; align-items: flex-end; gap: 2px; }
-.agentWhy { color: var(--muted); font-size: 11px; }
+.agentWhy { color: var(--muted); font-size: var(--fs-sm); }

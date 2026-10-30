@@ -32,15 +32,15 @@
   cursor: pointer;
 }
 .active { color: var(--text); background: var(--surface-2); border-color: var(--border); }
-.glyph { color: var(--muted); font-family: var(--font-mono); font-size: 11px; }
-.pin { font-size: 11px; }
+.glyph { color: var(--muted); font-family: var(--font-mono); font-size: var(--fs-xs); }
+.pin { font-size: var(--fs-sm); }
 .dot {
   width: 6px;
   height: 6px;
   border-radius: 50%;
   background: var(--warn);
 }
-.running { color: var(--warn); font-size: 11px; margin-left: var(--sp-2); }
+.running { color: var(--warn); font-size: var(--fs-sm); margin-left: var(--sp-2); }
 .spacer { flex: 1; }
 .iconToggle {
   flex: 0 0 auto;

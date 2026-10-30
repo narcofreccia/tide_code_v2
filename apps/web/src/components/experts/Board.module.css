@@ -58,9 +58,9 @@
 .selected { border-color: var(--accent); background: var(--accent-soft); }
 .expertHead { display: flex; align-items: center; gap: var(--sp-1); min-width: 0; }
 .expertName { font-weight: 600; overflow: hidden; text-overflow: ellipsis; white-space: nowrap; }
-.expertRole { color: var(--muted); font-size: 11px; }
+.expertRole { color: var(--muted); font-size: var(--fs-sm); }
 .expertMeta { display: flex; align-items: center; gap: var(--sp-1); }
-.model { color: var(--muted); font-size: 11px; font-family: var(--font-mono); }
+.model { color: var(--muted); font-size: var(--fs-xs); font-family: var(--font-mono); }
 
 .glyph { line-height: 1; }
 .pending { color: var(--muted); }
@@ -73,7 +73,7 @@
 .lane { display: flex; flex-direction: column; gap: var(--sp-2); min-width: 0; }
 .laneTitle {
   margin: 0;
-  font-size: 11px;
+  font-size: var(--fs-xs);
   letter-spacing: var(--ls-section);
   text-transform: uppercase;
   color: var(--muted);
@@ -95,7 +95,7 @@
 .cardHead { display: flex; align-items: center; gap: var(--sp-1); min-width: 0; }
 .author { font-weight: 600; }
 .arrow, .recipient { color: var(--muted); }
-.time { margin-left: auto; color: var(--muted); font-size: 11px; font-variant-numeric: tabular-nums; }
+.time { margin-left: auto; color: var(--muted); font-size: var(--fs-sm); font-variant-numeric: tabular-nums; }
 .messageText { margin: 0; white-space: pre-wrap; overflow-wrap: anywhere; }
 .empty { color: var(--muted); margin: 0; }
 
@@ -131,4 +131,4 @@
 }
 .composerBar { display: flex; align-items: center; gap: var(--sp-2); }
 
-.converged { display: flex; align-items: center; gap: var(--sp-2); padding: 0 var(--sp-2); border-radius: var(--radius-sm); background: var(--st-ok-soft); color: var(--st-ok); font-size: 12px; }
+.converged { display: flex; align-items: center; gap: var(--sp-2); padding: 0 var(--sp-2); border-radius: var(--radius-sm); background: var(--st-ok-soft); color: var(--st-ok); font-size: var(--fs-sm); }

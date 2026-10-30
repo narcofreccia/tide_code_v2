@@ -17,7 +17,7 @@
   height: 22px;
   padding: 0 var(--sp-2);
   border-radius: var(--radius-sm);
-  font-size: 11px;
+  font-size: var(--fs-sm);
 }
 /* the value reads as content, the caption beside it as label */
 .pill .value { color: var(--text); }
@@ -29,8 +29,8 @@
   border-radius: var(--radius-sm);
   color: var(--text);
 }
-.sm { font-size: 11px; }
-.md { font-size: 13px; }
+.sm { font-size: var(--fs-sm); }
+.md { font-size: var(--fs-base); }
 
 .value {
   flex: 1;
@@ -39,7 +39,7 @@
   text-overflow: ellipsis;
   white-space: nowrap;
 }
-.chevron { flex: none; font-size: 11px; opacity: 0.7; }
+.chevron { flex: none; font-size: var(--fs-sm); opacity: 0.7; }
 
 .panel {
   z-index: 80; /* above Dialog (70), below the palette (90) */
@@ -100,15 +100,15 @@
 
 .optionText { display: flex; flex-direction: column; min-width: 0; flex: 1; }
 .optionLabel { overflow: hidden; text-overflow: ellipsis; white-space: nowrap; }
-.description { color: var(--muted); font-size: 11px; }
+.description { color: var(--muted); font-size: var(--fs-sm); }
 .icon { flex: none; color: var(--muted); }
-.check { flex: none; width: 10px; color: var(--accent); font-size: 11px; }
+.check { flex: none; width: 10px; color: var(--accent); font-size: var(--fs-sm); }
 
 .group {
   padding: var(--sp-1) var(--sp-2) 2px;
   color: var(--muted);
   text-transform: uppercase; font-weight: var(--fw-section);
   letter-spacing: var(--ls-section);
-  font-size: 11px;
+  font-size: var(--fs-xs);
 }
 .empty { padding: var(--sp-2); color: var(--muted); }
