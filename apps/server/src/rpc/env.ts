@@ -1,10 +1,11 @@
 import { spawn } from "node:child_process";
-import { arch, cpus, freemem, hostname, loadavg, platform, totalmem } from "node:os";
+import { arch, cpus, freemem, hostname, platform, totalmem } from "node:os";
 import type { ProviderKind, RpcOutput } from "@tide/contracts";
 import type { Engine } from "../orchestration/engine.ts";
 import { BUNDLED_KINDS, type DriverRegistry } from "../provider/registry.ts";
 import { instanceIdOf } from "../provider/sessions.ts";
 import type { SettingsStore } from "../settings.ts";
+import { cpuUsage, memAvailable } from "./hostLoad.ts";
 import type { PairingCodes } from "./pairing.ts";
 import type { RemoteInfo } from "./remote.ts";
 import { RpcException, type RpcRouter } from "./router.ts";
@@ -60,17 +61,16 @@ export function runningByKind(engine: Engine, registry: DriverRegistry): Map<Pro
   return out;
 }
 
-export function hostFacts(busyThreads: number): HostFacts {
-  const cores = Math.max(1, cpus().length);
-  const load = (loadavg()[0] ?? 0) / cores;
+/** `memFree` is memory the OS can hand out (see hostLoad.ts); `cpuLoad` is a rolling CPU-time sample. */
+export function hostFacts(busyThreads: number, memFree: number = freemem()): HostFacts {
   return {
     hostname: hostname(),
     os: platform(),
     arch: arch(),
-    cpus: cores,
-    cpuLoad: Math.min(1, Math.max(0, Number.isFinite(load) ? load : 0)),
+    cpus: Math.max(1, cpus().length),
+    cpuLoad: cpuUsage(),
     memTotal: totalmem(),
-    memFree: freemem(),
+    memFree,
     busyThreads,
   };
 }
@@ -104,7 +104,7 @@ export async function envInfo(deps: EnvDeps): Promise<Pick<ServerInfo, "host" | 
   const sshHost = deps.settings?.get().environment.sshHost;
   const relay = deps.relayState?.();
   return {
-    host: hostFacts(busy),
+    host: hostFacts(busy, await memAvailable()),
     harnesses,
     ...(sshHost !== undefined && sshHost.length > 0 ? { sshHost } : {}),
     ...(relay !== undefined ? { relay } : {}),

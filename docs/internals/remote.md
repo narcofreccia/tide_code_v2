@@ -100,6 +100,13 @@ memTotal, memFree, busyThreads (threads with a turn running)}`, `harnesses [{kin
 installed}]` for the four bundled harnesses, `sshHost` (settings), and `relay {url, connected,
 clientUrl?}` when the relay client reports state.
 
+The two load numbers come from `apps/server/src/rpc/hostLoad.ts`. `memFree` is memory the OS can
+reclaim, not `os.freemem()` (which on macOS ignores inactive, speculative and purgeable pages):
+`vm_stat` (free + inactive + speculative + purgeable pages) on darwin, `MemAvailable` from
+`/proc/meminfo` on Linux, `freemem()` elsewhere or on any failure, cached for 2 s. `cpuLoad` is
+the busy share of `os.cpus()` times between two samples at least 1 s apart, taken lazily when
+asked (no timer); the first call has no earlier sample and uses 1-min load average / cpus.
+
 `env.updateHarnesses {kinds?}` runs each harness's own updater (`claude update`,
 `npm i -g @openai/codex@latest`, `opencode upgrade`,
 `npm i -g @earendil-works/pi-coding-agent@latest`), streams the output lines, re-reads the
