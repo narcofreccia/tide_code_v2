@@ -1,4 +1,4 @@
-import type { Activity, AttentionKind, ExpertsSession, Handoff, Message, ReadModel, Thread, TimelineEntry, Turn, TurnUsage } from "./domain.ts";
+import type { Activity, AttentionKind, ExpertsSession, Handoff, Message, Project, ReadModel, Thread, TimelineEntry, Turn, TurnUsage } from "./domain.ts";
 import type { DomainEvent, EventRecord } from "./events.ts";
 
 // Pure projector shared by server and clients. Returns a new model; never
@@ -161,7 +161,9 @@ export function applyEvent(model: ReadModel, event: DomainEvent): ReadModel {
     case "project.updated": {
       const p = model.projects[event.projectId];
       if (!p) return model;
-      return { ...model, projects: { ...model.projects, [p.id]: { ...p, ...(event.title !== undefined ? { title: event.title } : {}), updatedAt: event.updatedAt } } };
+      const next: Project = { ...p, ...(event.title !== undefined ? { title: event.title } : {}), ...(event.icon !== undefined ? { icon: event.icon } : {}), updatedAt: event.updatedAt };
+      if (event.clearIcon) delete next.icon;
+      return { ...model, projects: { ...model.projects, [p.id]: next } };
     }
     case "project.link.added":
     case "project.link.updated": {

@@ -31,6 +31,8 @@ interface StoredSettings {
   relay?: { url: string; key?: string };
   /** R10 */
   glassBox?: Partial<UserSettings["glassBox"]>;
+  /** R11 */
+  keybindings?: Record<string, string>;
 }
 
 const DEFAULT_GLASS_BOX: UserSettings["glassBox"] = { limitsInStatusBar: true, readHarnessLogs: true };
@@ -174,9 +176,10 @@ export class SettingsStore {
   }
 
   get(): UserSettings {
-    const { decisions, continueAfterRestart, followUpMode, limitPolicy, teams, inbox, textModel, providerInstances, environment, relay, glassBox, ...rest } = this.#state;
+    const { decisions, continueAfterRestart, followUpMode, limitPolicy, teams, inbox, textModel, providerInstances, environment, relay, glassBox, keybindings, ...rest } = this.#state;
     return {
       ...rest,
+      keybindings: { ...(keybindings ?? {}) },
       glassBox: { ...DEFAULT_GLASS_BOX, ...glassBox },
       environment: { name: environment?.name ?? hostname(), ...(environment?.sshHost !== undefined ? { sshHost: environment.sshHost } : {}) },
       ...(relay !== undefined ? { relay: { url: relay.url, hasKey: typeof relay.key === "string" && relay.key.length > 0 } } : {}),
@@ -221,6 +224,7 @@ export class SettingsStore {
       providerInstances: patch.providerInstances !== undefined ? structuredClone(patch.providerInstances) : (this.#state.providerInstances ?? []),
       ...(this.#state.environment !== undefined ? { environment: { ...this.#state.environment } } : {}),
       ...(this.#state.relay !== undefined ? { relay: { ...this.#state.relay } } : {}),
+      keybindings: patch.keybindings !== undefined ? Object.fromEntries(Object.entries(patch.keybindings).filter(([, v]) => v !== "")) : { ...(this.#state.keybindings ?? {}) },
       glassBox: { ...this.#state.glassBox, ...(patch.glassBox?.limitsInStatusBar !== undefined ? { limitsInStatusBar: patch.glassBox.limitsInStatusBar } : {}), ...(patch.glassBox?.readHarnessLogs !== undefined ? { readHarnessLogs: patch.glassBox.readHarnessLogs } : {}) },
       ...(this.#state.textModel !== undefined ? { textModel: this.#state.textModel } : {}),
     };
@@ -286,6 +290,7 @@ export class SettingsStore {
         ...(typeof r.environment.sshHost === "string" ? { sshHost: r.environment.sshHost } : {}),
       } } : {}),
       ...(typeof r.relay === "object" && r.relay !== null && typeof r.relay.url === "string" ? { relay: { url: r.relay.url, ...(typeof r.relay.key === "string" ? { key: r.relay.key } : {}) } } : {}),
+      ...(typeof r.keybindings === "object" && r.keybindings !== null ? { keybindings: Object.fromEntries(Object.entries(r.keybindings).filter(([, v]) => typeof v === "string" && v !== "")) as Record<string, string> } : {}),
       glassBox: {
         ...(typeof r.glassBox?.limitsInStatusBar === "boolean" ? { limitsInStatusBar: r.glassBox.limitsInStatusBar } : {}),
         ...(typeof r.glassBox?.readHarnessLogs === "boolean" ? { readHarnessLogs: r.glassBox.readHarnessLogs } : {}),

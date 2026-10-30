@@ -1,5 +1,5 @@
 import { Type, type Static } from "typebox";
-import { Activity, ApprovalDecision, CheckpointStats, ExpertSpec, ExpertsPhase, ImageInput, InteractionMode, Limited, LinkAccess, MergeStrategy, ProviderKind, PullRequest, RateLimit, RuntimeMode, Schedule, SettleReason, Team, Triage, TurnUsage, HandoffJudge, Verdict } from "./domain.ts";
+import { Activity, ApprovalDecision, CheckpointStats, ExpertSpec, ExpertsPhase, ImageInput, InteractionMode, Limited, LinkAccess, MergeStrategy, ProviderKind, PullRequest, RateLimit, RuntimeMode, Schedule, SettleReason, Team, Triage, TurnUsage, HandoffJudge, Verdict, AttachmentRef, ProjectIcon } from "./domain.ts";
 
 // Commands = validated intents. ClientCommand may arrive over RPC; InternalCommand is
 // issued only by server reactors (driver ingestion) and is rejected at the RPC boundary.
@@ -21,6 +21,8 @@ export const ProjectUpdate = Type.Object({
   type: Type.Literal("project.update"), commandId: CommandId,
   projectId: Type.String(),
   title: Type.Optional(Type.String({ minLength: 1 })),
+  /** R11: null clears the icon */
+  icon: Type.Optional(Type.Union([ProjectIcon, Type.Null()])),
 });
 export const ProjectLinkAdd = Type.Object({
   type: Type.Literal("project.link.add"), commandId: CommandId,
@@ -113,6 +115,8 @@ export const TurnRequest = Type.Object({
   threadId: Type.String(),
   text: Type.String({ minLength: 1 }),
   images: Type.Optional(Type.Array(ImageInput, { maxItems: 8 })),
+  /** R11: files already uploaded with `attachments.upload`; the provider reactor lists their paths under the prompt */
+  attachments: Type.Optional(Type.Array(AttachmentRef, { maxItems: 10 })),
   commandId: CommandId,
   /** idempotency key: a retry with the same id on the same thread is rejected with `conflict` */
   requestId: Type.Optional(Type.String({ minLength: 1 })),
@@ -175,6 +179,8 @@ export const TurnSteer = Type.Object({
   threadId: Type.String(),
   text: Type.String({ minLength: 1 }),
   images: Type.Optional(Type.Array(ImageInput, { maxItems: 8 })),
+  /** R11: files already uploaded with `attachments.upload`; the provider reactor lists their paths under the prompt */
+  attachments: Type.Optional(Type.Array(AttachmentRef, { maxItems: 10 })),
 });
 /** Rewrite a turn that is still queued. */
 export const TurnEdit = Type.Object({ type: Type.Literal("turn.edit"), commandId: CommandId, turnId: Type.String(), text: Type.String({ minLength: 1 }) });

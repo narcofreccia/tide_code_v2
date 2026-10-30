@@ -1,5 +1,5 @@
 import { Type, type Static } from "typebox";
-import { Activity, ApprovalDecision, CheckpointStats, ExpertsFinding, ExpertsMessage, ExpertsPhase, ExpertsSession, Handoff, ImageInput, Limited, MergeStrategy, Message, Project, ProjectLink, ProposedPlan, ProviderKind, PullRequest, RateLimit, ScheduledTask, SettleReason, Thread, Triage, Turn, TurnUsage, HandoffJudge, Verdict } from "./domain.ts";
+import { Activity, ApprovalDecision, CheckpointStats, ExpertsFinding, ExpertsMessage, ExpertsPhase, ExpertsSession, Handoff, ImageInput, Limited, MergeStrategy, Message, Project, ProjectLink, ProposedPlan, ProviderKind, PullRequest, RateLimit, ScheduledTask, SettleReason, Thread, Triage, Turn, TurnUsage, HandoffJudge, Verdict, ProjectIcon } from "./domain.ts";
 
 // Events = persisted facts. Payloads are self-contained so the projector
 // never needs to look anything up outside the event.
@@ -11,6 +11,9 @@ export const ProjectCreated = evt("project.created", { project: Project });
 export const ProjectUpdated = evt("project.updated", {
   projectId: Type.String(),
   title: Type.Optional(Type.String()),
+  /** R11 */
+  icon: Type.Optional(ProjectIcon),
+  clearIcon: Type.Optional(Type.Boolean()),
   updatedAt: Type.Number(),
 });
 export const ProjectArchived = evt("project.archived", { projectId: Type.String(), archivedAt: Type.Number() });

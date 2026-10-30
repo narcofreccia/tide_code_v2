@@ -31,6 +31,7 @@ const SERVER: UserSettings = {
   providerInstances: [],
   environment: { name: "mainbook" },
   glassBox: { limitsInStatusBar: true, readHarnessLogs: true },
+  keybindings: {},
 };
 
 describe("server settings", () => {

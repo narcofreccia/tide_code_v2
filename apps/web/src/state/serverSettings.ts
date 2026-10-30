@@ -54,6 +54,7 @@ export function defaultUserSettings(): UserSettings {
     providerInstances: [],
     environment: { name: "" },
     glassBox: { limitsInStatusBar: true, readHarnessLogs: true },
+    keybindings: {},
   };
 }
 
@@ -101,6 +102,7 @@ function applyPatch(settings: UserSettings, patch: UserSettingsPatch): UserSetti
     inbox: { ...settings.inbox, ...(patch.inbox ?? {}) },
     providerInstances: patch.providerInstances ?? settings.providerInstances,
     glassBox: { ...settings.glassBox, ...(patch.glassBox ?? {}) },
+    keybindings: patch.keybindings !== undefined ? Object.fromEntries(Object.entries(patch.keybindings).filter(([, v]) => v !== "")) : settings.keybindings,
     environment: {
       name: patch.environment?.name ?? settings.environment.name,
       ...(patch.environment?.sshHost === null ? {} : patch.environment?.sshHost !== undefined ? { sshHost: patch.environment.sshHost } : settings.environment.sshHost !== undefined ? { sshHost: settings.environment.sshHost } : {}),

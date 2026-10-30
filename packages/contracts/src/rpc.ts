@@ -1,7 +1,7 @@
 import { Type, type Static, type TSchema } from "typebox";
 import { AgentCommand, ClientCommand } from "./commands.ts";
 import { EventRecord } from "./events.ts";
-import { JudgeSite, JudgeSource, MergeStrategy, ProviderInstanceConfig, ProviderKind, PullRequest, ReadModel, RuntimeMode, ScheduledTask, SlashCommandInfo, Team } from "./domain.ts";
+import { AttachmentRef, JudgeSite, JudgeSource, MergeStrategy, ProjectIcon, ProviderInstanceConfig, ProviderKind, PullRequest, ReadModel, RuntimeMode, ScheduledTask, SlashCommandInfo, Team } from "./domain.ts";
 
 // ---- wire envelope ----
 // client -> server
@@ -322,6 +322,8 @@ export const UserSettings = Type.Object({
   inbox: InboxSettings,
   /** R9: this machine as seen by other clients */
   environment: Type.Object({ name: Type.String(), sshHost: Type.Optional(Type.String()) }),
+  /** R11: user keybindings by shortcut id (display string like "⌘⇧E" normalised to `mod+shift+e`); absent = default. Synced across this server's clients. */
+  keybindings: Type.Record(Type.String(), Type.String()),
   /** R10: glass-box toggles */
   glassBox: Type.Object({
     /** status bar shows the tightest harness limit (5 h / weekly) at all times */
@@ -365,6 +367,8 @@ export const UserSettingsPatch = Type.Object({
   providerInstances: Type.Optional(Type.Array(ProviderInstanceConfig)),
   environment: Type.Optional(Type.Object({ name: Type.Optional(Type.String({ minLength: 1, maxLength: 64 })), sshHost: Type.Optional(Type.Union([Type.String(), Type.Null()])) })),
   glassBox: Type.Optional(Type.Object({ limitsInStatusBar: Type.Optional(Type.Boolean()), readHarnessLogs: Type.Optional(Type.Boolean()) })),
+  /** replaces the whole map; an empty string value resets that id to its default */
+  keybindings: Type.Optional(Type.Record(Type.String(), Type.String())),
   /** null disconnects and forgets the relay */
   relay: Type.Optional(Type.Union([Type.Object({ url: Type.String(), key: Type.Optional(Type.String()) }), Type.Null()])),
   /** null clears it (back to "first harness with oneShot") */
@@ -460,6 +464,16 @@ export const rpcMethods = {
   "pr.merge": unary(Type.Object({ projectId: Type.String(), number: Type.Number(), method: MergeStrategy, deleteBranch: Type.Optional(Type.Boolean()) }), Type.Object({ merged: Type.Boolean(), error: Type.Optional(Type.String()) })),
   /** attach an existing PR (number or URL) to a thread so watch / settle / tags apply; the server resolves it on the forge */
   "pr.link": unary(Type.Object({ threadId: Type.String(), pr: Type.String({ minLength: 1 }) }), Type.Object({ pr: PullRequest })),
+  // ---- R11: surface parity ----
+  /** write user files into `<thread cwd>/.tide/attachments/<id>/` (excluded from git) and return refs for `turn.request.attachments`; ≤ 10 files, ≤ 20 MB total */
+  "attachments.upload": unary(
+    Type.Object({ threadId: Type.String(), files: Type.Array(Type.Object({ name: Type.String({ minLength: 1, maxLength: 255 }), mediaType: Type.String(), data: Type.String() }), { minItems: 1, maxItems: 10 }) }),
+    Type.Object({ attachments: Type.Array(AttachmentRef) }),
+  ),
+  /** listening TCP ports owned by processes under this thread's terminals and harness, for the Preview tab */
+  "ports.list": unary(Type.Object({ threadId: Type.String() }), Type.Object({ ports: Type.Array(Type.Object({ port: Type.Number(), pid: Type.Number(), command: Type.String(), url: Type.String() })) })),
+  /** look for a favicon in the usual places of the project root; `icon` is a data: URL ≤ 32 KB or absent */
+  "project.detectIcon": unary(Type.Object({ projectId: Type.String() }), Type.Object({ icon: Type.Optional(ProjectIcon), source: Type.Optional(Type.String()) })),
   // ---- R10: usage ----
   /** tokens and cost by harness / model / day, Tide's own turns plus what the harnesses' local logs show (labelled) */
   "usage.summary": unary(Type.Object({ since: Type.Optional(Type.Number()), until: Type.Optional(Type.Number()), includeExternal: Type.Optional(Type.Boolean()) }), UsageSummary),

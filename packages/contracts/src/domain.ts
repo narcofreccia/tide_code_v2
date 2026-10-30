@@ -103,10 +103,15 @@ export const ProjectLink = Type.Object({
 });
 export type ProjectLink = Static<typeof ProjectLink>;
 
+/** R11: how a project row is drawn. `data` = a small data: URL (favicon, ≤ 32 KB); `emoji` = one glyph; absent = first letter. */
+export const ProjectIcon = Type.Object({ kind: Type.Union([Type.Literal("data"), Type.Literal("emoji")]), value: Type.String({ maxLength: 48_000 }) });
+export type ProjectIcon = Static<typeof ProjectIcon>;
+
 export const Project = Type.Object({
   id: Type.String(),
   title: Type.String(),
   rootPath: Type.String(),
+  icon: Type.Optional(ProjectIcon),
   links: Type.Optional(Type.Array(ProjectLink)),
   createdAt: Type.Number(),
   updatedAt: Type.Number(),
@@ -331,6 +336,16 @@ export const KnownEnvironment = Type.Object({
 });
 export type KnownEnvironment = Static<typeof KnownEnvironment>;
 
+/** R11: a file the user attached, already written to the thread cwd by `attachments.upload`. */
+export const AttachmentRef = Type.Object({
+  name: Type.String({ minLength: 1, maxLength: 255 }),
+  /** relative to the thread cwd, e.g. `.tide/attachments/01M…/spec.pdf` */
+  path: Type.String({ minLength: 1 }),
+  mediaType: Type.String(),
+  bytes: Type.Number(),
+});
+export type AttachmentRef = Static<typeof AttachmentRef>;
+
 export const SettleReason = Type.Union([Type.Literal("user"), Type.Literal("pr-merged"), Type.Literal("merged-back"), Type.Literal("inactive")]);
 export type SettleReason = Static<typeof SettleReason>;
 
@@ -469,8 +484,12 @@ export const Message = Type.Object({
   text: Type.String(),
   /** extended-thinking / reasoning that preceded `text` (assistant only) */
   reasoning: Type.Optional(Type.String()),
-  /** image attachments (user only). Metadata only — the bytes ride on the turn.requested event. */
-  attachments: Type.Optional(Type.Array(Type.Object({ mediaType: Type.String(), bytes: Type.Number() }))),
+  /**
+   * user attachments. Images: metadata only (bytes ride on the turn.requested event). R11 files:
+   * `name` + `path` (relative to the thread cwd, under `.tide/attachments/`), written by `attachments.upload`
+   * so the agent can read the real bytes; the prompt gets an "Attached files" footer.
+   */
+  attachments: Type.Optional(Type.Array(Type.Object({ mediaType: Type.String(), bytes: Type.Number(), name: Type.Optional(Type.String()), path: Type.Optional(Type.String()) }))),
   createdAt: Type.Number(),
   /** true while the assistant is still streaming into this message */
   streaming: Type.Optional(Type.Boolean()),
