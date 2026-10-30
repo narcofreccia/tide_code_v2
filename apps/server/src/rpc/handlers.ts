@@ -147,6 +147,11 @@ export function registerHandlers(router: RpcRouter, deps: HandlerDeps): void {
     }
     let command: ClientCommand = input.command;
     if (command.type === "project.link.add") command = { ...command, path: await resolveDir(command.path) };
+    // R12: merge-back defaults live in settings; the decider stays settings-free, so fill them in here
+    if (command.type === "thread.merge" && deps.settings) {
+      const git = deps.settings.get().git;
+      command = { ...command, strategy: command.strategy ?? git.mergeStrategy, deleteBranch: command.deleteBranch ?? git.deleteBranchOnMerge };
+    }
     try {
       return await deps.engine.dispatch(command);
     } catch (err) {

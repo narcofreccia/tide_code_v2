@@ -24,6 +24,7 @@ import { registerAgentThreadHandlers } from "./agentThreads.ts";
 import type { DelegateWaits } from "../orchestration/delegation.ts";
 import { registerHandlers } from "./handlers.ts";
 import { registerProviderHandlers } from "./providers.ts";
+import { registerSearchHandlers } from "./search.ts";
 import { registerUsageHandlers } from "./usage.ts";
 import { SettingsStore } from "../settings.ts";
 import type { JudgeLedger } from "../decisions/ledger.ts";
@@ -153,6 +154,7 @@ export async function startServer(deps: ServerDeps): Promise<ServerHandle> {
     ...(deps.commands !== undefined ? { commands: deps.commands } : {}),
     ...(deps.acp !== undefined ? { acp: deps.acp } : {}),
   });
+  registerSearchHandlers(router, { engine });
   registerUsageHandlers(router, { engine, settings, tideHome: config.tideHome, dataDir: config.dataDir });
   registerPrHandlers(router, { engine, forges });
   registerAgentHandlers(router, { engine });
