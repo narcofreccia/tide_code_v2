@@ -29,6 +29,7 @@ const SERVER: UserSettings = {
   teams: [],
   inbox: { autoSettleAfterDays: 3, autoSettleOnMerge: true, workingSection: false },
   providerInstances: [],
+  environment: { name: "mainbook" },
 };
 
 describe("server settings", () => {

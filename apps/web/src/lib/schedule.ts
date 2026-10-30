@@ -15,6 +15,7 @@ function days(weekdays: readonly number[]): string {
 
 /** "every 30 min", "every 2 h", "Mon–Fri at 09:00", "every day at 09:00, 17:30". */
 export function describeSchedule(schedule: Schedule): string {
+  if (schedule.kind === "webhook") return `on webhook /hook/${schedule.hookId}`;
   if (schedule.kind === "interval") {
     const mins = Math.round(schedule.everyMs / 60_000);
     if (mins >= 60 && mins % 60 === 0) return `every ${mins / 60 === 1 ? "hour" : `${mins / 60} h`}`;

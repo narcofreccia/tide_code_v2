@@ -7,6 +7,7 @@ import type { EventStore } from "../orchestration/store.ts";
 import type { DriverRegistry } from "../provider/registry.ts";
 import { instanceIdOf, resumableSessionId, threadCwd } from "../provider/sessions.ts";
 import type { RemoteInfo } from "./remote.ts";
+import { hostname } from "node:os";
 import { SettingsError, type SettingsStore } from "../settings.ts";
 import { JudgeLedger } from "../decisions/ledger.ts";
 import { RpcException, type RpcRouter } from "./router.ts";
@@ -92,6 +93,7 @@ export function registerHandlers(router: RpcRouter, deps: HandlerDeps): void {
     const remote = deps.remote?.({ includePairing: ctx.agentThreadId === undefined });
     return {
       environmentId: deps.environmentId,
+      name: deps.settings?.get().environment.name ?? hostname(),
       version: deps.version,
       startedAt: deps.startedAt,
       ...(deps.tideHome !== undefined ? { tideHome: deps.tideHome, worktreeRoot: `${deps.tideHome}/worktrees` } : {}),

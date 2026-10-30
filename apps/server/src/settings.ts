@@ -1,4 +1,5 @@
 import { mkdirSync, readFileSync, renameSync, writeFileSync } from "node:fs";
+import { hostname } from "node:os";
 import { dirname, join } from "node:path";
 import { ProviderInstanceConfig, ProviderKind, Team, type DecisionSites, type DecisionsSettings, type InboxSettings, type UserSettings, type UserSettingsPatch } from "@tide/contracts";
 import { Check } from "typebox/value";
@@ -24,6 +25,10 @@ interface StoredSettings {
   textModel?: NonNullable<UserSettings["textModel"]>;
   /** R8: user-added harness instances; the bundled defaults are implicit */
   providerInstances?: ProviderInstanceConfig[];
+  /** R9: this machine's name / ssh host as other clients see it */
+  environment?: { name?: string; sshHost?: string };
+  /** R9: self-hosted relay this server dials out to; the key stays here, never on the wire */
+  relay?: { url: string; key?: string };
 }
 
 const BUNDLED_KINDS: readonly string[] = ["claude", "codex", "opencode", "pi"];
@@ -165,9 +170,11 @@ export class SettingsStore {
   }
 
   get(): UserSettings {
-    const { decisions, continueAfterRestart, followUpMode, limitPolicy, teams, inbox, textModel, providerInstances, ...rest } = this.#state;
+    const { decisions, continueAfterRestart, followUpMode, limitPolicy, teams, inbox, textModel, providerInstances, environment, relay, ...rest } = this.#state;
     return {
       ...rest,
+      environment: { name: environment?.name ?? hostname(), ...(environment?.sshHost !== undefined ? { sshHost: environment.sshHost } : {}) },
+      ...(relay !== undefined ? { relay: { url: relay.url, hasKey: typeof relay.key === "string" && relay.key.length > 0 } } : {}),
       inbox: { ...DEFAULT_INBOX, ...inbox },
       providerInstances: structuredClone(providerInstances ?? []),
       ...(textModel !== undefined ? { textModel: { ...textModel } } : {}),
@@ -178,6 +185,11 @@ export class SettingsStore {
       // the presets stand in until the user saves a team of their own
       teams: teams !== undefined && teams.length > 0 ? structuredClone(teams) : presetTeams(),
     };
+  }
+
+  /** R9: relay url + key for the server-side relay client only. */
+  relayConfig(): { url: string; key?: string } | undefined {
+    return this.#state.relay === undefined ? undefined : { ...this.#state.relay };
   }
 
   /** The stored key, for the server-side decisions client only. */
@@ -202,8 +214,22 @@ export class SettingsStore {
       teams: patch.teams !== undefined ? structuredClone(patch.teams) : (this.#state.teams ?? []),
       inbox: { ...this.#state.inbox, ...loadInbox(patch.inbox) },
       providerInstances: patch.providerInstances !== undefined ? structuredClone(patch.providerInstances) : (this.#state.providerInstances ?? []),
+      ...(this.#state.environment !== undefined ? { environment: { ...this.#state.environment } } : {}),
+      ...(this.#state.relay !== undefined ? { relay: { ...this.#state.relay } } : {}),
       ...(this.#state.textModel !== undefined ? { textModel: this.#state.textModel } : {}),
     };
+    if (patch.environment !== undefined) {
+      const env = { ...(next.environment ?? {}) };
+      if (patch.environment.name !== undefined) env.name = patch.environment.name.trim();
+      if (patch.environment.sshHost === null) delete env.sshHost;
+      else if (patch.environment.sshHost !== undefined) env.sshHost = patch.environment.sshHost.trim();
+      next.environment = env;
+    }
+    if (patch.relay === null) delete next.relay;
+    else if (patch.relay !== undefined) {
+      const key = patch.relay.key ?? (next.relay?.url === patch.relay.url ? next.relay?.key : undefined);
+      next.relay = { url: patch.relay.url.trim(), ...(key !== undefined && key.length > 0 ? { key } : {}) };
+    }
     if (patch.textModel === null) delete next.textModel;
     else if (patch.textModel !== undefined) next.textModel = { provider: patch.textModel.provider, ...(patch.textModel.model !== undefined ? { model: patch.textModel.model } : {}) };
     if (patch.decisions?.enabled !== undefined) next.decisions.enabled = patch.decisions.enabled;
@@ -249,6 +275,11 @@ export class SettingsStore {
       inbox: loadInbox(r.inbox),
       ...(textModel !== undefined ? { textModel } : {}),
       providerInstances: Array.isArray(r.providerInstances) ? r.providerInstances.filter((p): p is ProviderInstanceConfig => Check(ProviderInstanceConfig, p)) : [],
+      ...(typeof r.environment === "object" && r.environment !== null ? { environment: {
+        ...(typeof r.environment.name === "string" ? { name: r.environment.name } : {}),
+        ...(typeof r.environment.sshHost === "string" ? { sshHost: r.environment.sshHost } : {}),
+      } } : {}),
+      ...(typeof r.relay === "object" && r.relay !== null && typeof r.relay.url === "string" ? { relay: { url: r.relay.url, ...(typeof r.relay.key === "string" ? { key: r.relay.key } : {}) } } : {}),
     };
   }
 

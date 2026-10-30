@@ -9,9 +9,9 @@ describe("SettingsStore", () => {
   it("defaults, persists a patch, never returns the api key", () => {
     const path = join(mkdtempSync(join(tmpdir(), "tide-settings-")), "settings.json");
     const store = new SettingsStore({ path });
-    expect(store.get()).toEqual({ providerDefaults: {}, worktreeByDefault: true, decisions: expect.objectContaining({ enabled: false, hasKey: false }), continueAfterRestart: false, followUpMode: "steer", limitPolicy: "manual", teams: PRESET_TEAMS, inbox: expect.any(Object), providerInstances: [] });
+    expect(store.get()).toEqual({ providerDefaults: {}, worktreeByDefault: true, decisions: expect.objectContaining({ enabled: false, hasKey: false }), continueAfterRestart: false, followUpMode: "steer", limitPolicy: "manual", teams: PRESET_TEAMS, inbox: expect.any(Object), providerInstances: [], environment: expect.objectContaining({ name: expect.any(String) }) });
     const next = store.set({ providerDefaults: { claude: { model: "opus", mode: "auto" } }, decisions: { enabled: true, apiKey: "sk-secret" } });
-    expect(next).toEqual({ providerDefaults: { claude: { model: "opus", mode: "auto" } }, worktreeByDefault: true, decisions: expect.objectContaining({ enabled: true, hasKey: true }), continueAfterRestart: false, followUpMode: "steer", limitPolicy: "manual", teams: PRESET_TEAMS, inbox: expect.any(Object), providerInstances: [] });
+    expect(next).toEqual({ providerDefaults: { claude: { model: "opus", mode: "auto" } }, worktreeByDefault: true, decisions: expect.objectContaining({ enabled: true, hasKey: true }), continueAfterRestart: false, followUpMode: "steer", limitPolicy: "manual", teams: PRESET_TEAMS, inbox: expect.any(Object), providerInstances: [], environment: expect.objectContaining({ name: expect.any(String) }) });
     expect(JSON.stringify(next)).not.toContain("sk-secret");
     expect(store.decisionsApiKey()).toBe("sk-secret");
     expect(statSync(path).mode & 0o777).toBe(0o600);

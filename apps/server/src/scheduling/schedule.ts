@@ -8,6 +8,7 @@ const DAY_LOOKAHEAD = 8;
  * candidate is built from local calendar fields). Returns undefined only for an empty schedule.
  */
 export function nextFireAt(schedule: Schedule, now: number): number | undefined {
+  if (schedule.kind === "webhook") return undefined; // fired by POST /hook/<id>, never by the clock
   if (schedule.kind === "interval") return now + schedule.everyMs;
   const times = [...new Set(schedule.times)].sort().map((t) => {
     const [h, m] = t.split(":");

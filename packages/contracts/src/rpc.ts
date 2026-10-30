@@ -71,6 +71,16 @@ export const ProviderStatusDto = Type.Object({
   }),
 });
 
+/**
+ * R9 HTTP (not RPC): `GET /api/env` (no auth) → EnvProbe, used by clients to preflight routes;
+ * `POST /api/auth/pair {code}` → PairResponse (single-use code from `env.pairingCode` / `tide pair`);
+ * `POST /hook/<hookId>` fires a webhook scheduled task (optionally `X-Tide-Signature: sha256=<hmac>`).
+ */
+export const EnvProbe = Type.Object({ environmentId: Type.String(), name: Type.String(), version: Type.String(), protocol: Type.Number() });
+export type EnvProbe = Static<typeof EnvProbe>;
+export const PairResponse = Type.Object({ environmentId: Type.String(), name: Type.String(), token: Type.String() });
+export type PairResponse = Static<typeof PairResponse>;
+
 /** R8: an entry of the public ACP registry, plus whether this machine can launch it. */
 export const AcpRegistryAgent = Type.Object({
   id: Type.String(),
@@ -165,8 +175,29 @@ export type PtyChunk = Static<typeof PtyChunk>;
 
 export const ServerInfo = Type.Object({
   environmentId: Type.String(),
+  /** R9: user-given machine name (settings.environment.name), default = hostname */
+  name: Type.String(),
   version: Type.String(),
   startedAt: Type.Number(),
+  /** R9: host facts for the fleet view */
+  host: Type.Optional(Type.Object({
+    hostname: Type.String(),
+    os: Type.String(),
+    arch: Type.String(),
+    cpus: Type.Number(),
+    /** 0..1 over the last minute */
+    cpuLoad: Type.Number(),
+    memTotal: Type.Number(),
+    memFree: Type.Number(),
+    /** running provider sessions right now */
+    busyThreads: Type.Number(),
+  })),
+  /** R9: installed harness CLIs and their versions, for "update all" */
+  harnesses: Type.Optional(Type.Array(Type.Object({ kind: ProviderKind, version: Type.Optional(Type.String()), installed: Type.Boolean() }))),
+  /** R9: `user@host` the user configured for SSH-based editor opening */
+  sshHost: Type.Optional(Type.String()),
+  /** R9: this server dials out to a relay (settings.relay) and is reachable through it */
+  relay: Type.Optional(Type.Object({ url: Type.String(), connected: Type.Boolean(), clientUrl: Type.Optional(Type.String()) })),
   tideHome: Type.Optional(Type.String()),
   worktreeRoot: Type.Optional(Type.String()),
   /** tools detected on the server host */
@@ -174,6 +205,7 @@ export const ServerInfo = Type.Object({
   /** how clients reach this server; pairingUrl embeds the token — show only to the local user */
   remote: Type.Optional(Type.Object({ host: Type.String(), port: Type.Number(), lanUrls: Type.Array(Type.String()), pairingUrl: Type.Optional(Type.String()) })),
 });
+export type ServerInfo = Static<typeof ServerInfo>;
 
 export const DecisionSites = Type.Object({ handoff: Type.Boolean(), experts: Type.Boolean(), delegates: Type.Boolean(), approvals: Type.Boolean(), stuck: Type.Boolean() });
 export type DecisionSites = Static<typeof DecisionSites>;
@@ -225,6 +257,10 @@ export const UserSettings = Type.Object({
   teams: Type.Array(Team),
   /** R7: the inbox rules (T3-style "every open thread should get closed") */
   inbox: InboxSettings,
+  /** R9: this machine as seen by other clients */
+  environment: Type.Object({ name: Type.String(), sshHost: Type.Optional(Type.String()) }),
+  /** R9: optional self-hosted relay this server dials out to (apps/relay); the key is never returned, `hasKey` says whether one is stored */
+  relay: Type.Optional(Type.Object({ url: Type.String(), hasKey: Type.Boolean() })),
   /**
    * R8: configured harness instances (accounts, ACP agents). The four bundled defaults are implicit
    * and never stored; this list holds only what the user added.
@@ -257,6 +293,9 @@ export const UserSettingsPatch = Type.Object({
   inbox: Type.Optional(Type.Partial(InboxSettings)),
   /** replaces the whole list; ids must be unique and must not shadow a bundled kind */
   providerInstances: Type.Optional(Type.Array(ProviderInstanceConfig)),
+  environment: Type.Optional(Type.Object({ name: Type.Optional(Type.String({ minLength: 1, maxLength: 64 })), sshHost: Type.Optional(Type.Union([Type.String(), Type.Null()])) })),
+  /** null disconnects and forgets the relay */
+  relay: Type.Optional(Type.Union([Type.Object({ url: Type.String(), key: Type.Optional(Type.String()) }), Type.Null()])),
   /** null clears it (back to "first harness with oneShot") */
   textModel: Type.Optional(Type.Union([Type.Object({ provider: ProviderKind, model: Type.Optional(Type.String()) }), Type.Null()])),
 });
@@ -331,6 +370,13 @@ export const rpcMethods = {
   "providers.list": unary(Type.Object({ refresh: Type.Optional(Type.Boolean()) }), Type.Array(ProviderStatusDto)),
   /** R8: slash commands + skills the thread's harness accepts in its worktree (for the composer's `/` picker) */
   "providers.commands": unary(Type.Object({ threadId: Type.String() }), Type.Object({ commands: Type.Array(SlashCommandInfo) })),
+  /**
+   * R9: a one-time pairing code (6 digits, 5 min, single use) that `POST /api/auth/pair {code}` on this
+   * server exchanges for the token — what `tide pair` prints and what the Environments UI shows.
+   */
+  "env.pairingCode": unary(Type.Object({}), Type.Object({ code: Type.String(), expiresAt: Type.Number(), urls: Type.Array(Type.String()) })),
+  /** R9: run the harness CLIs' own update commands on this machine (streamed log lines) */
+  "env.updateHarnesses": stream(Type.Object({ kinds: Type.Optional(Type.Array(ProviderKind)) }), Type.Object({ kind: Type.Optional(ProviderKind), line: Type.String(), done: Type.Optional(Type.Boolean()), ok: Type.Optional(Type.Boolean()) })),
   /** R8: the public ACP agent registry (cached; bundled snapshot when offline) */
   "providers.acpRegistry": unary(Type.Object({ refresh: Type.Optional(Type.Boolean()) }), Type.Object({ agents: Type.Array(AcpRegistryAgent), fetchedAt: Type.Optional(Type.Number()) })),
   /** R7: a fresh title from the thread's first prompt + latest reply, generated one-shot on `settings.textModel`; applied via thread.update */

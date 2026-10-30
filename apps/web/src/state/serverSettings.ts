@@ -51,6 +51,7 @@ export function defaultUserSettings(): UserSettings {
     teams: [],
     inbox: defaultInboxSettings(),
     providerInstances: [],
+    environment: { name: "" },
   };
 }
 
@@ -92,6 +93,11 @@ function applyPatch(settings: UserSettings, patch: UserSettingsPatch): UserSetti
     teams: patch.teams ?? settings.teams,
     inbox: { ...settings.inbox, ...(patch.inbox ?? {}) },
     providerInstances: patch.providerInstances ?? settings.providerInstances,
+    environment: {
+      name: patch.environment?.name ?? settings.environment.name,
+      ...(patch.environment?.sshHost === null ? {} : patch.environment?.sshHost !== undefined ? { sshHost: patch.environment.sshHost } : settings.environment.sshHost !== undefined ? { sshHost: settings.environment.sshHost } : {}),
+    },
+    ...(patch.relay === null ? {} : patch.relay !== undefined ? { relay: { url: patch.relay.url, hasKey: patch.relay.key !== undefined || settings.relay?.hasKey === true } } : settings.relay !== undefined ? { relay: settings.relay } : {}),
     ...(patch.textModel === null ? {} : patch.textModel !== undefined ? { textModel: patch.textModel } : settings.textModel !== undefined ? { textModel: settings.textModel } : {}),
   };
 }

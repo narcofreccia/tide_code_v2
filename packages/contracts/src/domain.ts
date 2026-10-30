@@ -287,6 +287,31 @@ export type PullRequest = Static<typeof PullRequest>;
 
 /** The harness refused to continue because the subscription window is exhausted (R4). */
 /** R7: why a thread left the inbox. `user` = the checkbox; the rest are the settlement reactor's. */
+/**
+ * R9: how a client reaches one Tide server ("environment" = one machine running tide-server).
+ * Client-side state (persisted by the client, never by a server); shared here so web and mobile agree.
+ */
+export const EnvRoute = Type.Object({
+  kind: Type.Union([Type.Literal("local"), Type.Literal("lan"), Type.Literal("tailscale"), Type.Literal("ssh"), Type.Literal("relay"), Type.Literal("custom")]),
+  /** ws:// or wss:// URL of the RPC endpoint */
+  url: Type.String(),
+  /** lower tries first */
+  priority: Type.Number(),
+});
+export type EnvRoute = Static<typeof EnvRoute>;
+export const KnownEnvironment = Type.Object({
+  id: Type.String(),
+  name: Type.String(),
+  routes: Type.Array(EnvRoute),
+  /** the environment's token, obtained by pairing; kept by the client only */
+  token: Type.Optional(Type.String()),
+  /** `user@host` for "Open in VS Code" over SSH when the client is elsewhere */
+  sshHost: Type.Optional(Type.String()),
+  addedAt: Type.Number(),
+  lastConnectedAt: Type.Optional(Type.Number()),
+});
+export type KnownEnvironment = Static<typeof KnownEnvironment>;
+
 export const SettleReason = Type.Union([Type.Literal("user"), Type.Literal("pr-merged"), Type.Literal("merged-back"), Type.Literal("inactive")]);
 export type SettleReason = Static<typeof SettleReason>;
 
@@ -584,6 +609,12 @@ export type TimelineEntry = Static<typeof TimelineEntry>;
 /** When a scheduled task fires: a fixed interval, or given clock times on given weekdays (server time zone). */
 export const Schedule = Type.Union([
   Type.Object({ kind: Type.Literal("interval"), everyMs: Type.Number({ minimum: 60_000 }) }),
+  /**
+   * R9: fired by `POST /hook/<hookId>` on this server (or forwarded by the relay). Never fires on the
+   * clock. `secret` (optional) must match an `X-Tide-Signature` HMAC-SHA256 of the raw body; the
+   * request body is appended to the prompt as a fenced block (≤ 8 KB) so the agent sees the payload.
+   */
+  Type.Object({ kind: Type.Literal("webhook"), hookId: Type.String({ minLength: 8, maxLength: 64 }), secret: Type.Optional(Type.String()) }),
   Type.Object({ kind: Type.Literal("fixed"), times: Type.Array(Type.String({ pattern: "^([01][0-9]|2[0-3]):[0-5][0-9]$" }), { minItems: 1, maxItems: 24 }), weekdays: Type.Array(Type.Number({ minimum: 0, maximum: 6 }), { minItems: 1, maxItems: 7 }) }),
 ]);
 export type Schedule = Static<typeof Schedule>;

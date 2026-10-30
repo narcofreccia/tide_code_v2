@@ -393,9 +393,9 @@ describe("settings rpc", () => {
   it("get/set round-trip", async () => {
     const client = await TestClient.open(`ws://${base}/ws?token=${TOKEN}`);
     try {
-      expect(await client.call("settings.get", {})).toEqual({ providerDefaults: {}, worktreeByDefault: true, decisions: expect.objectContaining({ enabled: false, hasKey: false }), continueAfterRestart: false, followUpMode: "steer", limitPolicy: "manual", teams: PRESET_TEAMS, inbox: expect.any(Object), providerInstances: [] });
+      expect(await client.call("settings.get", {})).toEqual({ providerDefaults: {}, worktreeByDefault: true, decisions: expect.objectContaining({ enabled: false, hasKey: false }), continueAfterRestart: false, followUpMode: "steer", limitPolicy: "manual", teams: PRESET_TEAMS, inbox: expect.any(Object), providerInstances: [], environment: expect.objectContaining({ name: expect.any(String) }) });
       const next = await client.call("settings.set", { patch: { worktreeByDefault: false, providerDefaults: { pi: { model: "x" } }, decisions: { apiKey: "k" } } });
-      expect(next).toEqual({ worktreeByDefault: false, providerDefaults: { pi: { model: "x" } }, decisions: expect.objectContaining({ enabled: false, hasKey: true }), continueAfterRestart: false, followUpMode: "steer", limitPolicy: "manual", teams: PRESET_TEAMS, inbox: expect.any(Object), providerInstances: [] });
+      expect(next).toEqual({ worktreeByDefault: false, providerDefaults: { pi: { model: "x" } }, decisions: expect.objectContaining({ enabled: false, hasKey: true }), continueAfterRestart: false, followUpMode: "steer", limitPolicy: "manual", teams: PRESET_TEAMS, inbox: expect.any(Object), providerInstances: [], environment: expect.objectContaining({ name: expect.any(String) }) });
       const team = { id: "a", name: "Solo", stages: [{ key: "lead", role: "implementer", provider: "claude", worktree: "own" }] };
       expect(((await client.call("settings.set", { patch: { teams: [team] } })) as { teams: unknown[] }).teams).toEqual([team]);
       await expect(client.call("settings.set", { patch: { teams: [team, team] } })).rejects.toMatchObject({ code: "invalid-params" });
