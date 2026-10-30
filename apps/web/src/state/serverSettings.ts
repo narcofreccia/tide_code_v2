@@ -53,6 +53,7 @@ export function defaultUserSettings(): UserSettings {
     inbox: defaultInboxSettings(),
     providerInstances: [],
     environment: { name: "" },
+    glassBox: { limitsInStatusBar: true, readHarnessLogs: true },
   };
 }
 
@@ -99,6 +100,7 @@ function applyPatch(settings: UserSettings, patch: UserSettingsPatch): UserSetti
     teams: patch.teams ?? settings.teams,
     inbox: { ...settings.inbox, ...(patch.inbox ?? {}) },
     providerInstances: patch.providerInstances ?? settings.providerInstances,
+    glassBox: { ...settings.glassBox, ...(patch.glassBox ?? {}) },
     environment: {
       name: patch.environment?.name ?? settings.environment.name,
       ...(patch.environment?.sshHost === null ? {} : patch.environment?.sshHost !== undefined ? { sshHost: patch.environment.sshHost } : settings.environment.sshHost !== undefined ? { sshHost: settings.environment.sshHost } : {}),

@@ -282,6 +282,25 @@ export const PullRequest = Type.Object({
   mergeable: Type.Optional(Type.Boolean()),
   /** review + issue comments seen so far; a rise wakes a watched thread */
   comments: Type.Optional(Type.Number()),
+  // ---- R10: what the PR tab shows (all from the forge, never derived) ----
+  title: Type.Optional(Type.String()),
+  author: Type.Optional(Type.String()),
+  base: Type.Optional(Type.String()),
+  head: Type.Optional(Type.String()),
+  draft: Type.Optional(Type.Boolean()),
+  reviewDecision: Type.Optional(Type.Union([Type.Literal("approved"), Type.Literal("changes_requested"), Type.Literal("review_required"), Type.Literal("none")])),
+  checkRuns: Type.Optional(Type.Array(Type.Object({
+    name: Type.String(),
+    status: Type.Union([Type.Literal("pending"), Type.Literal("success"), Type.Literal("failure"), Type.Literal("skipped")]),
+    url: Type.Optional(Type.String()),
+  }))),
+  additions: Type.Optional(Type.Number()),
+  deletions: Type.Optional(Type.Number()),
+  changedFiles: Type.Optional(Type.Number()),
+  /** the forge's own merge time (ms); `Thread.mergedAt` prefers it over the poll time */
+  mergedAt: Type.Optional(Type.Number()),
+  /** `owner/name` */
+  repo: Type.Optional(Type.String()),
 });
 export type PullRequest = Static<typeof PullRequest>;
 
@@ -459,7 +478,7 @@ export const Message = Type.Object({
   steer: Type.Optional(Type.Boolean()),
   /** server-authored wake-up (delegate finished, child asked a question, PR changed, restart) */
   notification: Type.Optional(Type.Object({
-    source: Type.Union([Type.Literal("delegate"), Type.Literal("child-question"), Type.Literal("pr"), Type.Literal("restart"), Type.Literal("system"), Type.Literal("schedule")]),
+    source: Type.Union([Type.Literal("delegate"), Type.Literal("child-question"), Type.Literal("pr"), Type.Literal("restart"), Type.Literal("system"), Type.Literal("schedule"), Type.Literal("webhook")]),
     summary: Type.String(),
   })),
 });

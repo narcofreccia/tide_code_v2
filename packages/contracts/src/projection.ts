@@ -281,7 +281,8 @@ export function applyEvent(model: ReadModel, event: DomainEvent): ReadModel {
     case "pr.updated": {
       const t = model.threads[event.threadId];
       const patch: Partial<Thread> = { pr: event.pr, updatedAt: event.pr.updatedAt };
-      if (event.pr.state === "merged" && t?.mergedAt === undefined) patch.mergedAt = event.pr.updatedAt;
+      // R10: the forge's merge time when it reports one, else the poll time
+      if (event.pr.state === "merged" && t?.mergedAt === undefined) patch.mergedAt = event.pr.mergedAt ?? event.pr.updatedAt;
       if (t?.prWatch) patch.prWatch = { ...t.prWatch, lastCheckedAt: event.pr.updatedAt };
       return withThread(model, event.threadId, patch);
     }

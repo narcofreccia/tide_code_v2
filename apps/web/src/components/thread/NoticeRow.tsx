@@ -10,6 +10,7 @@ const ICON: Record<Source, string> = {
   restart: "↻",
   system: "ⓘ",
   schedule: "⏱",
+  webhook: "⚡",
 };
 
 /** A server-authored wake-up (delegate done, child asked, PR changed, restart) — not something the user typed. */

@@ -30,6 +30,7 @@ const SERVER: UserSettings = {
   inbox: { autoSettleAfterDays: 3, autoSettleOnMerge: true, workingSection: false },
   providerInstances: [],
   environment: { name: "mainbook" },
+  glassBox: { limitsInStatusBar: true, readHarnessLogs: true },
 };
 
 describe("server settings", () => {

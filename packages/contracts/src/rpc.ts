@@ -1,7 +1,7 @@
 import { Type, type Static, type TSchema } from "typebox";
 import { AgentCommand, ClientCommand } from "./commands.ts";
 import { EventRecord } from "./events.ts";
-import { JudgeSite, JudgeSource, ProviderInstanceConfig, ProviderKind, ReadModel, RuntimeMode, ScheduledTask, SlashCommandInfo, Team } from "./domain.ts";
+import { JudgeSite, JudgeSource, MergeStrategy, ProviderInstanceConfig, ProviderKind, PullRequest, ReadModel, RuntimeMode, ScheduledTask, SlashCommandInfo, Team } from "./domain.ts";
 
 // ---- wire envelope ----
 // client -> server
@@ -70,6 +70,69 @@ export const ProviderStatusDto = Type.Object({
     commands: Type.Optional(Type.Boolean()),
   }),
 });
+
+// ---- R10: pull requests (forge-backed; GitHub first) ----
+/** a PR as the PR tab lists it: the thread that owns it, if any, and the project whose repo it lives in */
+export const PrListItem = Type.Object({
+  projectId: Type.String(),
+  threadId: Type.Optional(Type.String()),
+  pr: PullRequest,
+  /** client-side readiness is a selector; the server only reports facts */
+});
+export type PrListItem = Static<typeof PrListItem>;
+export const PrComment = Type.Object({
+  id: Type.String(),
+  author: Type.String(),
+  body: Type.String(),
+  createdAt: Type.Number(),
+  /** review comment anchored to a file/line */
+  path: Type.Optional(Type.String()),
+  line: Type.Optional(Type.Number()),
+  /** "comment" | "review" | "review-comment" */
+  kind: Type.Union([Type.Literal("comment"), Type.Literal("review"), Type.Literal("review-comment")]),
+  /** for kind "review": approved | changes_requested | commented | dismissed */
+  reviewState: Type.Optional(Type.String()),
+});
+export type PrComment = Static<typeof PrComment>;
+export const PrDetail = Type.Object({
+  pr: PullRequest,
+  body: Type.Optional(Type.String()),
+  files: Type.Array(Type.Object({ path: Type.String(), additions: Type.Number(), deletions: Type.Number(), status: Type.Optional(Type.String()) })),
+  comments: Type.Array(PrComment),
+  /** the forge user viewing (for "yours" filters and review eligibility) */
+  viewer: Type.Optional(Type.String()),
+});
+export type PrDetail = Static<typeof PrDetail>;
+
+// ---- R10: usage glass-box ----
+/** one row of the usage page; `costUsd` is what the harness reported, `estimatedUsd` is Tide's labelled estimate from a price table */
+export const UsageRow = Type.Object({
+  provider: ProviderKind,
+  providerId: Type.Optional(Type.String()),
+  model: Type.Optional(Type.String()),
+  /** tide = turns run through Tide; external = read from the harness's own local logs */
+  source: Type.Union([Type.Literal("tide"), Type.Literal("external")]),
+  inputTokens: Type.Number(),
+  outputTokens: Type.Number(),
+  cacheReadTokens: Type.Number(),
+  cacheWriteTokens: Type.Number(),
+  costUsd: Type.Optional(Type.Number()),
+  estimatedUsd: Type.Optional(Type.Number()),
+  turns: Type.Number(),
+});
+export type UsageRow = Static<typeof UsageRow>;
+export const UsageSummary = Type.Object({
+  since: Type.Number(),
+  until: Type.Number(),
+  rows: Type.Array(UsageRow),
+  /** per local day (YYYY-MM-DD in the server's zone) */
+  days: Type.Array(Type.Object({ day: Type.String(), tokens: Type.Number(), costUsd: Type.Optional(Type.Number()), estimatedUsd: Type.Optional(Type.Number()) })),
+  /** what the ingesters could and could not read, in plain words ("Codex reports no cost; shown as an estimate") */
+  notes: Type.Array(Type.String()),
+  /** price table version the estimates came from */
+  pricingVersion: Type.String(),
+});
+export type UsageSummary = Static<typeof UsageSummary>;
 
 /**
  * R9 HTTP (not RPC): `GET /api/env` (no auth) → EnvProbe, used by clients to preflight routes;
@@ -259,6 +322,13 @@ export const UserSettings = Type.Object({
   inbox: InboxSettings,
   /** R9: this machine as seen by other clients */
   environment: Type.Object({ name: Type.String(), sshHost: Type.Optional(Type.String()) }),
+  /** R10: glass-box toggles */
+  glassBox: Type.Object({
+    /** status bar shows the tightest harness limit (5 h / weekly) at all times */
+    limitsInStatusBar: Type.Boolean(),
+    /** the usage page may read the harnesses' own local logs for spend made outside Tide */
+    readHarnessLogs: Type.Boolean(),
+  }),
   /** R9: optional self-hosted relay this server dials out to (apps/relay); the key is never returned, `hasKey` says whether one is stored */
   relay: Type.Optional(Type.Object({ url: Type.String(), hasKey: Type.Boolean() })),
   /**
@@ -294,6 +364,7 @@ export const UserSettingsPatch = Type.Object({
   /** replaces the whole list; ids must be unique and must not shadow a bundled kind */
   providerInstances: Type.Optional(Type.Array(ProviderInstanceConfig)),
   environment: Type.Optional(Type.Object({ name: Type.Optional(Type.String({ minLength: 1, maxLength: 64 })), sshHost: Type.Optional(Type.Union([Type.String(), Type.Null()])) })),
+  glassBox: Type.Optional(Type.Object({ limitsInStatusBar: Type.Optional(Type.Boolean()), readHarnessLogs: Type.Optional(Type.Boolean()) })),
   /** null disconnects and forgets the relay */
   relay: Type.Optional(Type.Union([Type.Object({ url: Type.String(), key: Type.Optional(Type.String()) }), Type.Null()])),
   /** null clears it (back to "first harness with oneShot") */
@@ -377,6 +448,21 @@ export const rpcMethods = {
   "env.pairingCode": unary(Type.Object({}), Type.Object({ code: Type.String(), expiresAt: Type.Number(), urls: Type.Array(Type.String()) })),
   /** R9: run the harness CLIs' own update commands on this machine (streamed log lines) */
   "env.updateHarnesses": stream(Type.Object({ kinds: Type.Optional(Type.Array(ProviderKind)) }), Type.Object({ kind: Type.Optional(ProviderKind), line: Type.String(), done: Type.Optional(Type.Boolean()), ok: Type.Optional(Type.Boolean()) })),
+  // ---- R10: PR tab ----
+  /** open (and recently merged/closed) PRs across the server's projects: thread-linked ones plus the viewer's own */
+  "pr.list": unary(Type.Object({ projectId: Type.Optional(Type.String()), state: Type.Optional(Type.Union([Type.Literal("open"), Type.Literal("all")])), refresh: Type.Optional(Type.Boolean()) }), Type.Object({ items: Type.Array(PrListItem), fetchedAt: Type.Number(), viewer: Type.Optional(Type.String()) })),
+  "pr.detail": unary(Type.Object({ projectId: Type.String(), number: Type.Number() }), PrDetail),
+  /** the PR's diff against its base, in the same shape as thread diffs (reuses the diff viewer) */
+  "pr.diff": unary(Type.Object({ projectId: Type.String(), number: Type.Number() }), DiffResult),
+  "pr.comment": unary(Type.Object({ projectId: Type.String(), number: Type.Number(), body: Type.String({ minLength: 1 }) }), Type.Object({ ok: Type.Boolean() })),
+  "pr.review": unary(Type.Object({ projectId: Type.String(), number: Type.Number(), event: Type.Union([Type.Literal("approve"), Type.Literal("request_changes"), Type.Literal("comment")]), body: Type.Optional(Type.String()) }), Type.Object({ ok: Type.Boolean() })),
+  /** merge any PR of a project repo (thread PRs may also use thread.merge); `deleteBranch` default true */
+  "pr.merge": unary(Type.Object({ projectId: Type.String(), number: Type.Number(), method: MergeStrategy, deleteBranch: Type.Optional(Type.Boolean()) }), Type.Object({ merged: Type.Boolean(), error: Type.Optional(Type.String()) })),
+  /** attach an existing PR (number or URL) to a thread so watch / settle / tags apply; the server resolves it on the forge */
+  "pr.link": unary(Type.Object({ threadId: Type.String(), pr: Type.String({ minLength: 1 }) }), Type.Object({ pr: PullRequest })),
+  // ---- R10: usage ----
+  /** tokens and cost by harness / model / day, Tide's own turns plus what the harnesses' local logs show (labelled) */
+  "usage.summary": unary(Type.Object({ since: Type.Optional(Type.Number()), until: Type.Optional(Type.Number()), includeExternal: Type.Optional(Type.Boolean()) }), UsageSummary),
   /** R8: the public ACP agent registry (cached; bundled snapshot when offline) */
   "providers.acpRegistry": unary(Type.Object({ refresh: Type.Optional(Type.Boolean()) }), Type.Object({ agents: Type.Array(AcpRegistryAgent), fetchedAt: Type.Optional(Type.Number()) })),
   /** R7: a fresh title from the thread's first prompt + latest reply, generated one-shot on `settings.textModel`; applied via thread.update */

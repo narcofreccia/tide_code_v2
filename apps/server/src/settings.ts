@@ -29,7 +29,11 @@ interface StoredSettings {
   environment?: { name?: string; sshHost?: string };
   /** R9: self-hosted relay this server dials out to; the key stays here, never on the wire */
   relay?: { url: string; key?: string };
+  /** R10 */
+  glassBox?: Partial<UserSettings["glassBox"]>;
 }
+
+const DEFAULT_GLASS_BOX: UserSettings["glassBox"] = { limitsInStatusBar: true, readHarnessLogs: true };
 
 const BUNDLED_KINDS: readonly string[] = ["claude", "codex", "opencode", "pi"];
 
@@ -170,9 +174,10 @@ export class SettingsStore {
   }
 
   get(): UserSettings {
-    const { decisions, continueAfterRestart, followUpMode, limitPolicy, teams, inbox, textModel, providerInstances, environment, relay, ...rest } = this.#state;
+    const { decisions, continueAfterRestart, followUpMode, limitPolicy, teams, inbox, textModel, providerInstances, environment, relay, glassBox, ...rest } = this.#state;
     return {
       ...rest,
+      glassBox: { ...DEFAULT_GLASS_BOX, ...glassBox },
       environment: { name: environment?.name ?? hostname(), ...(environment?.sshHost !== undefined ? { sshHost: environment.sshHost } : {}) },
       ...(relay !== undefined ? { relay: { url: relay.url, hasKey: typeof relay.key === "string" && relay.key.length > 0 } } : {}),
       inbox: { ...DEFAULT_INBOX, ...inbox },
@@ -216,6 +221,7 @@ export class SettingsStore {
       providerInstances: patch.providerInstances !== undefined ? structuredClone(patch.providerInstances) : (this.#state.providerInstances ?? []),
       ...(this.#state.environment !== undefined ? { environment: { ...this.#state.environment } } : {}),
       ...(this.#state.relay !== undefined ? { relay: { ...this.#state.relay } } : {}),
+      glassBox: { ...this.#state.glassBox, ...(patch.glassBox?.limitsInStatusBar !== undefined ? { limitsInStatusBar: patch.glassBox.limitsInStatusBar } : {}), ...(patch.glassBox?.readHarnessLogs !== undefined ? { readHarnessLogs: patch.glassBox.readHarnessLogs } : {}) },
       ...(this.#state.textModel !== undefined ? { textModel: this.#state.textModel } : {}),
     };
     if (patch.environment !== undefined) {
@@ -280,6 +286,10 @@ export class SettingsStore {
         ...(typeof r.environment.sshHost === "string" ? { sshHost: r.environment.sshHost } : {}),
       } } : {}),
       ...(typeof r.relay === "object" && r.relay !== null && typeof r.relay.url === "string" ? { relay: { url: r.relay.url, ...(typeof r.relay.key === "string" ? { key: r.relay.key } : {}) } } : {}),
+      glassBox: {
+        ...(typeof r.glassBox?.limitsInStatusBar === "boolean" ? { limitsInStatusBar: r.glassBox.limitsInStatusBar } : {}),
+        ...(typeof r.glassBox?.readHarnessLogs === "boolean" ? { readHarnessLogs: r.glassBox.readHarnessLogs } : {}),
+      },
     };
   }
 
