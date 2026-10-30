@@ -299,6 +299,16 @@ export const InboxSettings = Type.Object({
 });
 export type InboxSettings = Static<typeof InboxSettings>;
 
+/** R12: merge-back defaults for the solo flow — `thread.merge` without an explicit strategy uses these. */
+export const GitSettings = Type.Object({
+  mergeStrategy: MergeStrategy,
+  /** remove the tide/<slug> branch and worktree after a successful merge back */
+  deleteBranchOnMerge: Type.Boolean(),
+  /** ask before merging back from the rail (`m`, hover action, bulk); the thread header button always confirms */
+  confirmMergeBack: Type.Boolean(),
+});
+export type GitSettings = Static<typeof GitSettings>;
+
 /** User settings that must be visible to every client and to server-created threads (delegates, experts, plan.implement). */
 export const UserSettings = Type.Object({
   providerDefaults: Type.Record(Type.String(), Type.Object({ model: Type.Optional(Type.String()), mode: Type.Optional(RuntimeMode) })),
@@ -320,6 +330,8 @@ export const UserSettings = Type.Object({
   teams: Type.Array(Team),
   /** R7: the inbox rules (T3-style "every open thread should get closed") */
   inbox: InboxSettings,
+  /** R12: merge-back defaults */
+  git: GitSettings,
   /** R9: this machine as seen by other clients */
   environment: Type.Object({ name: Type.String(), sshHost: Type.Optional(Type.String()) }),
   /** R11: user keybindings by shortcut id (display string like "⌘⇧E" normalised to `mod+shift+e`); absent = default. Synced across this server's clients. */
@@ -363,6 +375,7 @@ export const UserSettingsPatch = Type.Object({
   /** replaces the whole list */
   teams: Type.Optional(Type.Array(Team)),
   inbox: Type.Optional(Type.Partial(InboxSettings)),
+  git: Type.Optional(Type.Partial(GitSettings)),
   /** replaces the whole list; ids must be unique and must not shadow a bundled kind */
   providerInstances: Type.Optional(Type.Array(ProviderInstanceConfig)),
   environment: Type.Optional(Type.Object({ name: Type.Optional(Type.String({ minLength: 1, maxLength: 64 })), sshHost: Type.Optional(Type.Union([Type.String(), Type.Null()])) })),
@@ -375,6 +388,19 @@ export const UserSettingsPatch = Type.Object({
   textModel: Type.Optional(Type.Union([Type.Object({ provider: ProviderKind, model: Type.Optional(Type.String()) }), Type.Null()])),
 });
 export type UserSettingsPatch = Static<typeof UserSettingsPatch>;
+
+/** R12: one thread matched by `threads.search`; `snippet` is the matching line (title when only the title matched). */
+export const SearchHit = Type.Object({
+  threadId: Type.String(),
+  projectId: Type.String(),
+  title: Type.String(),
+  snippet: Type.String(),
+  /** where the snippet came from */
+  field: Type.Union([Type.Literal("title"), Type.Literal("message")]),
+  /** ms of the matched message, else the thread's last activity */
+  at: Type.Number(),
+});
+export type SearchHit = Static<typeof SearchHit>;
 
 const SpendBucket = Type.Object({ calls: Type.Number(), tokens: Type.Number(), usd: Type.Number() });
 export const DecisionsStats = Type.Object({
@@ -480,6 +506,11 @@ export const rpcMethods = {
   /** R8: the public ACP agent registry (cached; bundled snapshot when offline) */
   "providers.acpRegistry": unary(Type.Object({ refresh: Type.Optional(Type.Boolean()) }), Type.Object({ agents: Type.Array(AcpRegistryAgent), fetchedAt: Type.Optional(Type.Number()) })),
   /** R7: a fresh title from the thread's first prompt + latest reply, generated one-shot on `settings.textModel`; applied via thread.update */
+  /** R12: rail search over thread titles and message text (server-side, case-insensitive, newest first). */
+  "threads.search": unary(
+    Type.Object({ q: Type.String({ minLength: 1, maxLength: 200 }), projectId: Type.Optional(Type.String()), limit: Type.Optional(Type.Number({ minimum: 1, maximum: 100 })) }),
+    Type.Object({ hits: Type.Array(SearchHit) }),
+  ),
   "thread.regenerateTitle": unary(Type.Object({ threadId: Type.String() }), Type.Object({ title: Type.String(), provider: ProviderKind, model: Type.Optional(Type.String()) })),
   /** escape hatch: shell command that reopens the thread's harness session in a terminal */
   "thread.terminalCommand": unary(Type.Object({ threadId: Type.String() }), Type.Object({ cwd: Type.String(), command: Type.Optional(Type.String()) })),

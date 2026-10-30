@@ -1,7 +1,7 @@
 import { mkdirSync, readFileSync, renameSync, writeFileSync } from "node:fs";
 import { hostname } from "node:os";
 import { dirname, join } from "node:path";
-import { ProviderInstanceConfig, ProviderKind, Team, type DecisionSites, type DecisionsSettings, type InboxSettings, type UserSettings, type UserSettingsPatch } from "@tide/contracts";
+import { ProviderInstanceConfig, ProviderKind, Team, type DecisionSites, type DecisionsSettings, type GitSettings, InboxSettings, type UserSettings, type UserSettingsPatch } from "@tide/contracts";
 import { Check } from "typebox/value";
 import { JEV_CONTEXT_TOKENS, USD_PER_MILLION_INPUT_TOKENS } from "./decisions/client.ts";
 import { DEFAULT_BASE_URL, DEFAULT_MODEL } from "./decisions/wire.ts";
@@ -22,6 +22,8 @@ interface StoredSettings {
   /** the user's saved teams; empty = show the presets */
   teams?: Team[];
   inbox?: Partial<InboxSettings>;
+  /** R12 */
+  git?: Partial<GitSettings>;
   textModel?: NonNullable<UserSettings["textModel"]>;
   /** R8: user-added harness instances; the bundled defaults are implicit */
   providerInstances?: ProviderInstanceConfig[];
@@ -33,6 +35,18 @@ interface StoredSettings {
   glassBox?: Partial<UserSettings["glassBox"]>;
   /** R11 */
   keybindings?: Record<string, string>;
+}
+
+const DEFAULT_GIT: GitSettings = { mergeStrategy: "squash", deleteBranchOnMerge: true, confirmMergeBack: true };
+
+function loadGit(raw: unknown): Partial<GitSettings> {
+  if (typeof raw !== "object" || raw === null) return {};
+  const r = raw as Record<string, unknown>;
+  return {
+    ...(r.mergeStrategy === "merge" || r.mergeStrategy === "squash" || r.mergeStrategy === "rebase" ? { mergeStrategy: r.mergeStrategy } : {}),
+    ...(typeof r.deleteBranchOnMerge === "boolean" ? { deleteBranchOnMerge: r.deleteBranchOnMerge } : {}),
+    ...(typeof r.confirmMergeBack === "boolean" ? { confirmMergeBack: r.confirmMergeBack } : {}),
+  };
 }
 
 const DEFAULT_GLASS_BOX: UserSettings["glassBox"] = { limitsInStatusBar: true, readHarnessLogs: true };
@@ -176,7 +190,7 @@ export class SettingsStore {
   }
 
   get(): UserSettings {
-    const { decisions, continueAfterRestart, followUpMode, limitPolicy, teams, inbox, textModel, providerInstances, environment, relay, glassBox, keybindings, ...rest } = this.#state;
+    const { decisions, continueAfterRestart, followUpMode, limitPolicy, teams, inbox, git, textModel, providerInstances, environment, relay, glassBox, keybindings, ...rest } = this.#state;
     return {
       ...rest,
       keybindings: { ...(keybindings ?? {}) },
@@ -184,6 +198,7 @@ export class SettingsStore {
       environment: { name: environment?.name ?? hostname(), ...(environment?.sshHost !== undefined ? { sshHost: environment.sshHost } : {}) },
       ...(relay !== undefined ? { relay: { url: relay.url, hasKey: typeof relay.key === "string" && relay.key.length > 0 } } : {}),
       inbox: { ...DEFAULT_INBOX, ...inbox },
+      git: { ...DEFAULT_GIT, ...git },
       providerInstances: structuredClone(providerInstances ?? []),
       ...(textModel !== undefined ? { textModel: { ...textModel } } : {}),
       decisions: decisionsDto(decisions),
@@ -221,6 +236,7 @@ export class SettingsStore {
       limitPolicy: patch.limitPolicy ?? this.#state.limitPolicy ?? "manual",
       teams: patch.teams !== undefined ? structuredClone(patch.teams) : (this.#state.teams ?? []),
       inbox: { ...this.#state.inbox, ...loadInbox(patch.inbox) },
+      git: { ...this.#state.git, ...loadGit(patch.git) },
       providerInstances: patch.providerInstances !== undefined ? structuredClone(patch.providerInstances) : (this.#state.providerInstances ?? []),
       ...(this.#state.environment !== undefined ? { environment: { ...this.#state.environment } } : {}),
       ...(this.#state.relay !== undefined ? { relay: { ...this.#state.relay } } : {}),
@@ -283,6 +299,7 @@ export class SettingsStore {
       limitPolicy: r.limitPolicy === "reset" ? "reset" : "manual",
       teams: Array.isArray(r.teams) ? r.teams.filter((t): t is Team => Check(Team, t)) : [],
       inbox: loadInbox(r.inbox),
+      git: loadGit(r.git),
       ...(textModel !== undefined ? { textModel } : {}),
       providerInstances: Array.isArray(r.providerInstances) ? r.providerInstances.filter((p): p is ProviderInstanceConfig => Check(ProviderInstanceConfig, p)) : [],
       ...(typeof r.environment === "object" && r.environment !== null ? { environment: {

@@ -41,6 +41,10 @@ export function defaultInboxSettings(): UserSettings["inbox"] {
   return { autoSettleAfterDays: 3, autoSettleOnMerge: true, workingSection: false };
 }
 
+export function defaultGitSettings(): UserSettings["git"] {
+  return { mergeStrategy: "squash", deleteBranchOnMerge: true, confirmMergeBack: true };
+}
+
 export function defaultUserSettings(): UserSettings {
   return {
     providerDefaults: {},
@@ -51,6 +55,7 @@ export function defaultUserSettings(): UserSettings {
     limitPolicy: "manual",
     teams: [],
     inbox: defaultInboxSettings(),
+    git: defaultGitSettings(),
     providerInstances: [],
     environment: { name: "" },
     glassBox: { limitsInStatusBar: true, readHarnessLogs: true },
@@ -100,6 +105,7 @@ function applyPatch(settings: UserSettings, patch: UserSettingsPatch): UserSetti
     limitPolicy: patch.limitPolicy ?? settings.limitPolicy,
     teams: patch.teams ?? settings.teams,
     inbox: { ...settings.inbox, ...(patch.inbox ?? {}) },
+    git: { ...settings.git, ...(patch.git ?? {}) },
     providerInstances: patch.providerInstances ?? settings.providerInstances,
     glassBox: { ...settings.glassBox, ...(patch.glassBox ?? {}) },
     keybindings: patch.keybindings !== undefined ? Object.fromEntries(Object.entries(patch.keybindings).filter(([, v]) => v !== "")) : settings.keybindings,

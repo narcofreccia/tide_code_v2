@@ -9,9 +9,9 @@ describe("SettingsStore", () => {
   it("defaults, persists a patch, never returns the api key", () => {
     const path = join(mkdtempSync(join(tmpdir(), "tide-settings-")), "settings.json");
     const store = new SettingsStore({ path });
-    expect(store.get()).toEqual({ providerDefaults: {}, worktreeByDefault: true, decisions: expect.objectContaining({ enabled: false, hasKey: false }), continueAfterRestart: false, followUpMode: "steer", limitPolicy: "manual", teams: PRESET_TEAMS, inbox: expect.any(Object), providerInstances: [], environment: expect.objectContaining({ name: expect.any(String) }), glassBox: expect.any(Object), keybindings: {} });
+    expect(store.get()).toEqual({ providerDefaults: {}, worktreeByDefault: true, decisions: expect.objectContaining({ enabled: false, hasKey: false }), continueAfterRestart: false, followUpMode: "steer", limitPolicy: "manual", teams: PRESET_TEAMS, inbox: expect.any(Object), git: { mergeStrategy: "squash", deleteBranchOnMerge: true, confirmMergeBack: true }, providerInstances: [], environment: expect.objectContaining({ name: expect.any(String) }), glassBox: expect.any(Object), keybindings: {} });
     const next = store.set({ providerDefaults: { claude: { model: "opus", mode: "auto" } }, decisions: { enabled: true, apiKey: "sk-secret" } });
-    expect(next).toEqual({ providerDefaults: { claude: { model: "opus", mode: "auto" } }, worktreeByDefault: true, decisions: expect.objectContaining({ enabled: true, hasKey: true }), continueAfterRestart: false, followUpMode: "steer", limitPolicy: "manual", teams: PRESET_TEAMS, inbox: expect.any(Object), providerInstances: [], environment: expect.objectContaining({ name: expect.any(String) }), glassBox: expect.any(Object), keybindings: {} });
+    expect(next).toEqual({ providerDefaults: { claude: { model: "opus", mode: "auto" } }, worktreeByDefault: true, decisions: expect.objectContaining({ enabled: true, hasKey: true }), continueAfterRestart: false, followUpMode: "steer", limitPolicy: "manual", teams: PRESET_TEAMS, inbox: expect.any(Object), git: { mergeStrategy: "squash", deleteBranchOnMerge: true, confirmMergeBack: true }, providerInstances: [], environment: expect.objectContaining({ name: expect.any(String) }), glassBox: expect.any(Object), keybindings: {} });
     expect(JSON.stringify(next)).not.toContain("sk-secret");
     expect(store.decisionsApiKey()).toBe("sk-secret");
     expect(statSync(path).mode & 0o777).toBe(0o600);
@@ -98,5 +98,14 @@ describe("SettingsStore", () => {
     writeFileSync(path, JSON.stringify({ decisions: { enabled: true, fallback: { provider: "gpt" }, grayZone: { low: 0.9, high: 0.1 }, sites: { stuck: "no" } } }));
     expect(new SettingsStore({ path }).get().decisions).toMatchObject({ enabled: true, grayZone: { low: 0.6, high: 0.85 }, sites: { stuck: true } });
     expect(new SettingsStore({ path }).get().decisions.fallback).toBeUndefined();
+  });
+});
+
+describe("R12 git settings", () => {
+  it("defaults to squash + delete branch + confirm, patches partially and drops unknown strategies on load", () => {
+    const store = new SettingsStore({});
+    expect(store.get().git).toEqual({ mergeStrategy: "squash", deleteBranchOnMerge: true, confirmMergeBack: true });
+    expect(store.set({ git: { mergeStrategy: "rebase" } }).git).toEqual({ mergeStrategy: "rebase", deleteBranchOnMerge: true, confirmMergeBack: true });
+    expect(store.set({ git: { confirmMergeBack: false } }).git).toEqual({ mergeStrategy: "rebase", deleteBranchOnMerge: true, confirmMergeBack: false });
   });
 });
