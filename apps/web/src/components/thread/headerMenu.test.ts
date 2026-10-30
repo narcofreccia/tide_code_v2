@@ -41,3 +41,22 @@ describe("headerMenu: auto-allow routine approvals", () => {
     expect(headerMenu(model, thread).find((i) => i.label === LABEL)).toMatchObject({ disabled: true, hint: "approvals judge is off" });
   });
 });
+
+describe("headerMenu: settle", () => {
+  it("settles, unsettles and toggles auto-settle", () => {
+    const thread = makeThread("t1");
+    const fake = attachFakeStore(modelWith({ threads: { t1: thread } }));
+    const model = fake.store.getState().model;
+    headerMenu(model, thread).find((i) => i.label === "Settle")?.onSelect?.();
+    expect(fake.dispatch).toHaveBeenCalledWith({ type: "thread.settle", threadId: "t1" });
+    const settled = makeThread("t1", { settledAt: 2, settleReason: "user" });
+    headerMenu(model, settled).find((i) => i.label === "Unsettle")?.onSelect?.();
+    expect(fake.dispatch).toHaveBeenCalledWith({ type: "thread.unsettle", threadId: "t1" });
+    const auto = headerMenu(model, thread).find((i) => i.label === "Auto-settle this thread");
+    expect(auto?.checked).toBe(true);
+    auto?.onSelect?.();
+    expect(fake.dispatch).toHaveBeenLastCalledWith({ type: "thread.update", threadId: "t1", autoSettle: false });
+    const off = headerMenu(model, makeThread("t1", { autoSettle: false })).find((i) => i.label === "Auto-settle this thread");
+    expect(off?.checked).toBe(false);
+  });
+});

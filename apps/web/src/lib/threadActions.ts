@@ -25,6 +25,7 @@ export interface ThreadPatch {
   interaction?: InteractionMode;
   pinned?: boolean;
   autoAllowRoutine?: boolean;
+  autoSettle?: boolean;
 }
 
 export function updateThread(threadId: string, patch: ThreadPatch): void {
@@ -116,6 +117,20 @@ export function clearEmptyArchived(threads: { id: string }[]): void {
     showToast(`Deleted ${ok} empty ${ok === 1 ? "thread" : "threads"}`);
   });
 }
+
+/** R7: false = the settlement reactor never settles this thread on its own. */
+export function setAutoSettle(threadId: string, autoSettle: boolean): void {
+  updateThread(threadId, { autoSettle });
+}
+
+export {
+  regenerateTitles,
+  settleThread,
+  settleThreads,
+  snoozeThreads,
+  undoLastSettle,
+  unsettleThread,
+} from "./inboxActions.ts";
 
 export function setThreadPinned(threadId: string, pinned: boolean): void {
   updateThread(threadId, { pinned });

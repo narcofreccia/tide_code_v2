@@ -78,6 +78,9 @@ Reactors subscribe to events and issue further commands; they hold no business r
   Recovery reports a rollback left `rolling` by a dead process as failed.
 - `LimitsWorker` (`orchestration/limits.ts`) — every 60 s, a limited thread whose policy is
   `reset` and whose `resetsAt` has passed gets `thread.resume { continue: true }`.
+- `SettlementReactor` (`orchestration/settlement.ts`) — on the event that sets `mergedAt` (`pr.updated`
+  merged / `merge.completed`) and every 10 min for threads idle past `inbox.autoSettleAfterDays`, sends
+  `thread.settle { reason }`; the decider refuses it for running, waiting, pinned or opted-out threads.
 - `PrWatcher` (`vcs/prWatch.ts`) — refreshes a thread's PR through `gh pr view --json
   state,mergeable,statusCheckRollup,comments,reviews` when watching starts, after publish/merge and
   every 2 min while `thread.prWatch` is set; reports `pr.update` (checks, mergeable, comment count)

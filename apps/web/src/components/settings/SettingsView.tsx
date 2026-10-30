@@ -3,6 +3,8 @@ import { SETTINGS_SECTIONS, useUi, type SettingsSection } from "../../state/ui.t
 import { Button } from "../ui/Button.tsx";
 import { Kbd } from "../ui/Kbd.tsx";
 import { GeneralSection } from "./GeneralSection.tsx";
+import { InboxSection } from "./InboxSection.tsx";
+import { NotificationsSection } from "./NotificationsSection.tsx";
 import { ProvidersSection } from "./ProvidersSection.tsx";
 import { GitSection } from "./GitSection.tsx";
 import { DecisionsSection } from "./DecisionsSection.tsx";
@@ -16,6 +18,8 @@ import styles from "./SettingsView.module.css";
 
 const LABELS: Record<SettingsSection, string> = {
   general: "General",
+  inbox: "Inbox",
+  notifications: "Notifications",
   providers: "Providers",
   git: "Git",
   decisions: "Decisions",
@@ -31,6 +35,10 @@ function Body({ section }: { section: SettingsSection }) {
   switch (section) {
     case "general":
       return <GeneralSection />;
+    case "inbox":
+      return <InboxSection />;
+    case "notifications":
+      return <NotificationsSection />;
     case "providers":
       return <ProvidersSection />;
     case "git":

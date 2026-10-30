@@ -1,3 +1,4 @@
+import { applyStash, getDraft, stashDraft } from "../state/drafts.ts";
 import { useModel } from "../state/model.ts";
 import { useUi } from "../state/ui.ts";
 import { closeActiveTab, openSearchTab, setQuickOpen, toggleTree } from "../state/workbench.ts";
@@ -107,7 +108,19 @@ export const SHORTCUTS: Shortcut[] = [
     },
   },
   { id: "rail", keys: "⌘B", label: "Toggle rail", group: "View", key: "b", shift: false, when: "always", run: () => ui().toggleRail() },
-  { id: "send", keys: "⌘↵", label: "Send (while running: the other follow-up mode)", group: "Thread", when: "thread" },
+  { id: "send", keys: "⌘↵", label: "Send in background (while running: the selected follow-up mode)", group: "Thread", when: "thread" },
+  {
+    id: "stash", keys: "⌘S", label: "Stash prompt / apply stash (composer focused)", group: "Thread", key: "s", shift: false,
+    when: "thread",
+    run: () => {
+      const id = threadId();
+      const active = typeof document !== "undefined" ? document.activeElement : null;
+      // Monaco owns ⌘S everywhere but the composer
+      if (!id || !(active instanceof HTMLTextAreaElement) || active.getAttribute("aria-label") !== "Message") return false;
+      if (getDraft(id) !== undefined) return stashDraft(id) !== undefined;
+      return applyStash(id);
+    },
+  },
   { id: "stop", keys: "Esc", label: "Stop turn / close", group: "Thread", when: "thread" },
   { id: "approve", keys: "y", label: "Approve focused card", group: "Thread", when: "thread" },
   { id: "deny", keys: "n", label: "Deny focused card", group: "Thread", when: "thread" },

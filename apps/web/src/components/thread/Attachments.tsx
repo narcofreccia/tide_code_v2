@@ -1,4 +1,5 @@
 import { useCallback, useRef, useState } from "react";
+import type { SerializedImage } from "../../state/drafts.ts";
 import { errorText } from "../../lib/dispatchOrToast.ts";
 import { showToast } from "../../state/toast.ts";
 import {
@@ -17,6 +18,16 @@ export interface Attachments {
   add: (files: File[]) => Promise<void>;
   remove: (id: string) => void;
   clear: () => void;
+  /** swaps the whole list, e.g. when a draft is restored or a stash applied */
+  replace: (images: SerializedImage[]) => void;
+}
+
+export function serializeImages(images: PendingImage[]): SerializedImage[] {
+  return images.map(({ id, mediaType, data, bytes }) => ({ id, mediaType, data, bytes }));
+}
+
+export function deserializeImages(images: SerializedImage[]): PendingImage[] {
+  return images.map((i) => ({ ...i, url: `data:${i.mediaType};base64,${i.data}` }));
 }
 
 /** The composer's pending image list: reads files to base64 and caps the set. */
@@ -28,6 +39,12 @@ export function useAttachments(): Attachments {
   const commit = (next: PendingImage[]): void => {
     current.current = next;
     setImages(next);
+  };
+
+  const freshId = (): string => {
+    // restored drafts bring their own ids: never reuse one
+    while (current.current.some((image) => image.id === `img-${nextId.current}`)) nextId.current++;
+    return `img-${nextId.current++}`;
   };
 
   const add = useCallback(async (files: File[]): Promise<void> => {
@@ -45,7 +62,7 @@ export function useAttachments(): Attachments {
         commit([
           ...current.current,
           {
-            id: `img-${nextId.current++}`,
+            id: freshId(),
             mediaType: read.mediaType,
             data: read.data,
             bytes: read.bytes,
@@ -69,7 +86,12 @@ export function useAttachments(): Attachments {
     commit([]);
   }, []);
 
-  return { images, add, remove, clear };
+  const replace = useCallback((next: SerializedImage[]): void => {
+    for (const image of current.current) revokeThumbnail(image.url);
+    commit(deserializeImages(next));
+  }, []);
+
+  return { images, add, remove, clear, replace };
 }
 
 /** Thumbnails of the images that will ride along with the next prompt. */

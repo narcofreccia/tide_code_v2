@@ -142,3 +142,23 @@ describe("linked repositories item", () => {
     expect(useUi.getState().linksProjectId).toBe("p1");
   });
 });
+
+describe("settle items", () => {
+  it("offers Settle / Unsettle for the open thread and Undo settle after one", async () => {
+    const { resetSettleUndo, settleThreads } = await import("./inboxActions.ts");
+    const model = fixture();
+    const fake = attachFakeStore(model);
+    const ids = (threadId: string | null) => buildPaletteItems({ model, selectedThreadId: threadId }).map((i) => i.id);
+    expect(ids("t1")).toContain("thread:settle");
+    expect(ids(null)).not.toContain("action:undo-settle");
+    model.threads.t2 = { ...model.threads.t2!, settledAt: 3, settleReason: "user" };
+    expect(ids("t2")).toContain("thread:unsettle");
+    await settleThreads(["t1"]);
+    const undo = buildPaletteItems({ model, selectedThreadId: null }).find((i) => i.id === "action:undo-settle");
+    expect(undo?.kbd).toBe("⌘Z");
+    undo?.run();
+    expect(fake.dispatch).toHaveBeenLastCalledWith({ type: "thread.unsettle", threadId: "t1" });
+    expect(ids(null)).not.toContain("action:undo-settle");
+    resetSettleUndo();
+  });
+});

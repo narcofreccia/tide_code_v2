@@ -5,10 +5,12 @@ import { useModel } from "./model.ts";
 export type FocusMode = "thread" | "split" | "workbench";
 /** `threads` is the per-project "All threads" list opened from Mission Control. */
 export type View = "mission" | "thread" | "settings" | "experts" | "threads";
-export type SettingsSection = "general" | "providers" | "git" | "decisions" | "automations" | "teams" | "appearance" | "keyboard" | "remote" | "about";
+export type SettingsSection = "general" | "inbox" | "notifications" | "providers" | "git" | "decisions" | "automations" | "teams" | "appearance" | "keyboard" | "remote" | "about";
 
 export const SETTINGS_SECTIONS: SettingsSection[] = [
   "general",
+  "inbox",
+  "notifications",
   "providers",
   "git",
   "decisions",

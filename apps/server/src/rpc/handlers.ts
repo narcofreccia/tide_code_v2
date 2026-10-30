@@ -10,6 +10,7 @@ import type { RemoteInfo } from "./remote.ts";
 import { SettingsError, type SettingsStore } from "../settings.ts";
 import { JudgeLedger } from "../decisions/ledger.ts";
 import { RpcException, type RpcRouter } from "./router.ts";
+import { regenerateTitle } from "./titles.ts";
 
 export interface HandlerDeps {
   engine: Engine;
@@ -156,6 +157,11 @@ export function registerHandlers(router: RpcRouter, deps: HandlerDeps): void {
   });
 
   router.register("providers.list", async (input) => deps.registry.statusAll(input.refresh ?? false));
+
+  router.register("thread.regenerateTitle", async (input) => {
+    if (!deps.settings) throw new RpcException("internal", "settings store not configured");
+    return regenerateTitle({ engine: deps.engine, registry: deps.registry, settings: deps.settings, ...(deps.tideHome !== undefined ? { tideHome: deps.tideHome } : {}) }, input.threadId);
+  });
 
   router.register("thread.terminalCommand", async (input) => {
     const model = deps.engine.getModel();

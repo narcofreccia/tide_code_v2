@@ -25,6 +25,7 @@ import { useKeyboardMap } from "./lib/useKeyboardMap.ts";
 import { useHashRoute } from "./lib/useHashRoute.ts";
 import { useMergeOutcomeToasts } from "./lib/mergeToasts.ts";
 import { useDocumentTitle } from "./lib/useDocumentTitle.ts";
+import { useNotificationEvents } from "./lib/useNotificationEvents.ts";
 import styles from "./App.module.css";
 
 function Content() {
@@ -67,6 +68,7 @@ export function App() {
   useHashRoute();
   useMergeOutcomeToasts();
   useDocumentTitle();
+  useNotificationEvents();
   const railCollapsed = useUi((s) => s.railCollapsed);
   return (
     <div className={styles.app}>

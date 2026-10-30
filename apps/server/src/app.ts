@@ -16,6 +16,7 @@ import type { DecideDefaults } from "./orchestration/decider/index.ts";
 import { Engine } from "./orchestration/engine.ts";
 import { DelegateWaits, DelegationReactor, type CancelTimer } from "./orchestration/delegation.ts";
 import { LimitsWorker } from "./orchestration/limits.ts";
+import { SettlementReactor } from "./orchestration/settlement.ts";
 import { continueAfterRestart, recoverRollbacks, recoverUnsettledTurns, SHUTDOWN_ERROR, unsettledTurns } from "./orchestration/recovery.ts";
 import { RollbackService } from "./orchestration/rollback.ts";
 import { openEventStore, type EventStore } from "./orchestration/store.ts";
@@ -76,6 +77,7 @@ export interface App {
   vcs: VcsReactor;
   rollback: RollbackService;
   limits: LimitsWorker;
+  settlement: SettlementReactor;
   delegation: DelegationReactor;
   delegateWaits: DelegateWaits;
   scheduler: Scheduler;
@@ -150,6 +152,8 @@ export async function createApp(options: AppOptions): Promise<App> {
   rollback.start();
   const limits = new LimitsWorker({ engine, log });
   limits.start();
+  const settlement = new SettlementReactor({ engine, settings, log });
+  settlement.start();
   prWatch.start();
 
   const { judge, ledger: judgeLedger } = createJudgeService({
@@ -226,6 +230,7 @@ export async function createApp(options: AppOptions): Promise<App> {
     vcs,
     rollback,
     limits,
+    settlement,
     delegation,
     delegateWaits,
     scheduler,
@@ -241,6 +246,7 @@ export async function createApp(options: AppOptions): Promise<App> {
       vcs.stop();
       rollback.stop();
       limits.stop();
+      settlement.stop();
       delegation.stop();
       for (const site of decisionSites) site.stop();
       scheduler.stop();

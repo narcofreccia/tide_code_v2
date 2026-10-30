@@ -50,6 +50,7 @@ describe("rail thread menu", () => {
       "Open",
       "Rename…",
       "Pin",
+      "Settle",
       "Open in terminalno session yet",
       "New child thread",
       "Fork…",

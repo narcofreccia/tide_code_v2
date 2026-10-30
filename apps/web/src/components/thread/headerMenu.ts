@@ -5,7 +5,7 @@ import { snoozeThread, tomorrowMorning } from "../../lib/turnActions.ts";
 import { runInThreadTerminal } from "../../lib/openInTerminal.ts";
 import { useUi } from "../../state/ui.ts";
 import type { MenuItem } from "../ui/Menu.tsx";
-import { copyItems, latestSettledTurnId } from "../shell/railMenus.ts";
+import { copyItems, latestSettledTurnId, settleItems } from "../shell/railMenus.ts";
 
 const HOUR = 3_600_000;
 
@@ -52,6 +52,7 @@ export function headerMenu(
         if (lastTurn) ui.setThreadDialog({ kind: "rollback", threadId: thread.id, turnId: lastTurn });
       },
     },
+    ...settleItems(thread),
     {
       label: "Snooze",
       submenu: [

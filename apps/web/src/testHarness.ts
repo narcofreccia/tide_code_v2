@@ -1,3 +1,4 @@
+import { resetDrafts } from "./state/drafts.ts";
 import { vi } from "vitest";
 import { fireEvent, screen, within } from "@testing-library/react";
 import {
@@ -96,6 +97,7 @@ export function resetUi(): void {
   resetSearch();
   resetSettings();
   resetFollowUp();
+  resetDrafts();
   useToasts.setState({ toasts: [] });
   setRpcCaller(undefined);
   setRpcStreamer(undefined);

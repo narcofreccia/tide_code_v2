@@ -2,6 +2,7 @@ import { useEffect, useState } from "react";
 import { selectExpertsSessions, selectProjectTotals, selectProjects, selectRailGroups } from "@tide/client";
 import type { Project, Thread } from "@tide/contracts";
 import { useModel } from "../../state/model.ts";
+import { useServerSettings } from "../../state/serverSettings.ts";
 import { useUi } from "../../state/ui.ts";
 import { useTicker } from "../mission/useTicker.ts";
 import { Button } from "../ui/Button.tsx";
@@ -13,7 +14,7 @@ import { projectMenu } from "./railMenus.ts";
 import { clearEmptyArchived } from "../../lib/threadActions.ts";
 import styles from "./ProjectTree.module.css";
 
-/** "Snoozed · n" / "Archived · n": collapsed until opened; flat, no nesting. */
+/** "Working · n" / "Snoozed · n" / "Settled · n" / "Archived · n": collapsed until opened; flat, no nesting. */
 function CollapsedGroup({ name, threads, clearable }: { name: string; threads: Thread[]; clearable?: boolean }) {
   const [open, setOpen] = useState(false);
   if (threads.length === 0) return null;
@@ -52,10 +53,11 @@ function ProjectNode({ project }: { project: Project }) {
   const selectProject = useUi((s) => s.selectProject);
   const setNewExpertsProject = useUi((s) => s.setNewExpertsProject);
   const [menu, setMenu] = useState<MenuPosition | undefined>(undefined);
-  const groups = selectRailGroups(model, project.id, now);
+  const workingSection = useServerSettings((s) => s.settings.inbox.workingSection);
+  const groups = selectRailGroups(model, project.id, now, { workingSection });
   // threads shown under a session are not listed again at the top
   const claimed = new Set(selectExpertsSessions(model, project.id).flatMap(sessionThreadIds));
-  const live = [...groups.pinned, ...groups.threads, ...groups.snoozed];
+  const live = [...groups.pinned, ...groups.threads, ...groups.working, ...groups.snoozed];
   // a pinned parent keeps its children; anything nested under a listed parent is not a root
   const nestable = [...groups.pinned, ...groups.threads];
   const listed = new Set(nestable.map((t) => t.id));
@@ -148,7 +150,9 @@ function ProjectNode({ project }: { project: Project }) {
               <RailThreadRow key={t.id} thread={t} siblings={nestedUnder} />
             ))}
           </ul>
+          <CollapsedGroup name="Working" threads={groups.working.filter((t) => !claimed.has(t.id))} />
           <CollapsedGroup name="Snoozed" threads={groups.snoozed.filter((t) => !claimed.has(t.id))} />
+          <CollapsedGroup name="Settled" threads={groups.settled} />
           <CollapsedGroup name="Archived" threads={groups.archived} clearable />
           <div className={styles.newThread}>
             <NewThreadPopover projectId={project.id} label="+ thread" variant="quiet" />

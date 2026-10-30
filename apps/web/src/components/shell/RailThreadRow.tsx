@@ -1,12 +1,14 @@
 import { useState } from "react";
 import type { Thread } from "@tide/contracts";
-import { updateThread } from "../../lib/threadActions.ts";
+import { settleThread, unsettleThread, updateThread } from "../../lib/threadActions.ts";
 import { isThreadMerged } from "@tide/client";
 import { relativeTime } from "../../lib/relativeTime.ts";
 import { PROVIDER_LABELS, PROVIDER_MONOGRAMS, threadStateKey } from "../../lib/vocab.ts";
 import { useServerSettings } from "../../state/serverSettings.ts";
 import { useModel } from "../../state/model.ts";
 import { useUi } from "../../state/ui.ts";
+import { activityCount, isUnread, useLastSeen } from "../../state/lastSeen.ts";
+import { selectRailRange, setRailAnchor, toggleRailSelected, useRailSelection } from "../../state/railSelection.ts";
 import { ContextMenu, type MenuItem, type MenuPosition } from "../ui/Menu.tsx";
 import { ThreadGlyph } from "../ui/StatusGlyph.tsx";
 import { MergeGlyph, PrGlyph } from "../ui/VcsBadges.tsx";
@@ -30,6 +32,21 @@ export function truncateRole(role: string): string {
 /** Delegation wins over the ordinary parent link, so a delegate nests under its caller. */
 export function parentOf(thread: Thread): string | undefined {
   return thread.delegatedBy ?? thread.parentThreadId;
+}
+
+/** The muted tag a settled row carries: why it left the inbox. */
+export const SETTLE_TAGS: Record<NonNullable<Thread["settleReason"]>, string> = {
+  user: "settled",
+  "pr-merged": "merged",
+  "merged-back": "merged",
+  inactive: "inactive",
+};
+
+/** Thread ids of the rail's rows in visible order: what a shift-click range spans. */
+function visibleOrder(from: HTMLElement): string[] {
+  const root: ParentNode = from.closest("nav") ?? document;
+  const ids = Array.from(root.querySelectorAll<HTMLElement>("[data-rail-thread]")).map((n) => n.dataset.railThread ?? "");
+  return [...new Set(ids.filter((id) => id !== ""))];
 }
 
 /** Inline rename: Enter saves through `thread.update`, Esc (or leaving the field) cancels. */
@@ -65,6 +82,11 @@ function RenameField({ thread, onDone }: { thread: Thread; onDone: () => void })
 export function RailThreadRow({ thread, siblings }: { thread: Thread; siblings: readonly Thread[] }) {
   const active = useUi((s) => s.view === "thread" && s.selectedThreadId === thread.id);
   const selectThread = useUi((s) => s.selectThread);
+  const picked = useRailSelection((s) => s.ids.includes(thread.id));
+  const count = useModel((s) => activityCount(s.model, thread.id));
+  const selectedId = useUi((s) => (s.view === "thread" ? s.selectedThreadId : null));
+  const unread = useLastSeen((s) => isUnread(thread, count, s, selectedId));
+  const settled = thread.settledAt !== undefined;
   const [menu, setMenu] = useState<{ at: MenuPosition; items: MenuItem[] } | undefined>(undefined);
   const [renaming, setRenaming] = useState(false);
   const low = useServerSettings((s) => s.settings.decisions.grayZone.low);
@@ -92,11 +114,13 @@ export function RailThreadRow({ thread, siblings }: { thread: Thread; siblings: 
           styles.row,
           styles.threadRow,
           active ? styles.active : "",
+          picked ? styles.picked : "",
           archived ? styles.archived : "",
           state === "needs" ? styles.needsRow : "",
         ]
           .filter(Boolean)
           .join(" ")}
+        data-rail-thread={thread.id}
         onContextMenu={(e) => {
           e.preventDefault();
           openMenu({ x: e.clientX, y: e.clientY });
@@ -105,7 +129,24 @@ export function RailThreadRow({ thread, siblings }: { thread: Thread; siblings: 
         {renaming ? (
           <RenameField thread={thread} onDone={() => setRenaming(false)} />
         ) : (
-          <button type="button" className={styles.thread} title={tip} onClick={() => selectThread(thread.id)}>
+          <button
+            type="button"
+            className={styles.thread}
+            title={tip}
+            aria-pressed={picked ? true : undefined}
+            onClick={(e) => {
+              if (e.shiftKey) {
+                selectRailRange(thread.id, visibleOrder(e.currentTarget));
+                return;
+              }
+              if (e.metaKey || e.ctrlKey) {
+                toggleRailSelected(thread.id);
+                return;
+              }
+              setRailAnchor(thread.id);
+              selectThread(thread.id);
+            }}
+          >
             <ThreadGlyph thread={thread} />
             {thread.role ? (
               <span className={styles.roleGlyph} title={thread.role} aria-label={thread.role} role="img">
@@ -133,6 +174,12 @@ export function RailThreadRow({ thread, siblings }: { thread: Thread; siblings: 
                 {judge.label}
               </span>
             ) : null}
+            {settled && thread.settleReason ? (
+              <span className={styles.settleTag} title="Settled: out of the inbox, worktree kept">
+                {SETTLE_TAGS[thread.settleReason]}
+              </span>
+            ) : null}
+            {unread ? <span className={styles.unread} aria-label="unread" role="img" title="New activity" /> : null}
             <span className={styles.meta}>
               {hasVcs ? (
                 <>
@@ -143,6 +190,17 @@ export function RailThreadRow({ thread, siblings }: { thread: Thread; siblings: 
                 <span className={styles.time}>{relativeTime(thread.updatedAt)}</span>
               )}
             </span>
+          </button>
+        )}
+        {archived ? null : (
+          <button
+            type="button"
+            className={`${styles.settle} ${settled ? styles.settleOn : ""}`}
+            aria-label={settled ? `Unsettle ${thread.title}` : `Settle ${thread.title}`}
+            title={settled ? "Unsettle: back to the inbox" : "Settle: close from the inbox, worktree kept (⌘Z undoes)"}
+            onClick={() => (settled ? unsettleThread(thread.id) : settleThread(thread.id))}
+          >
+            {settled ? "✓" : ""}
           </button>
         )}
         <button

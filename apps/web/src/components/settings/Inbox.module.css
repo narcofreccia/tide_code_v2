@@ -1,0 +1,3 @@
+.days { display: inline-flex; align-items: center; gap: var(--sp-2); }
+.daysInput { flex: none; width: 64px; text-align: right; font-variant-numeric: tabular-nums; }
+.pick { display: inline-flex; align-items: center; gap: var(--sp-2); flex-wrap: wrap; justify-content: flex-end; }

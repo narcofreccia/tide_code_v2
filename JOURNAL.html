@@ -60,7 +60,7 @@
         <h1>Tide v2 — Project Journal</h1>
         <div class="sub">Focused agentic code editor &amp; orchestrator over Claude Code · Codex · OpenCode · Pi. Started 2026-08-30.</div>
         <div class="kpi">
-          <div class="box"><b>R6</b><span>decision layer · W0–W5 landed, live-checked with the Claude fallback</span></div>
+          <div class="box"><b>R7</b><span>T3 Code comparison (2026-10-30) → inbox discipline round in progress</span></div>
           <div class="box"><b>119</b><span>commits (incl. this one)</span></div>
           <div class="box"><b>1,859</b><span>tests passing</span></div>
         </div>
@@ -96,6 +96,19 @@
 
       <h2>Phase board</h2>
       <details class="phase" open>
+        <summary><span class="title"><h3>R7 — Inbox discipline &amp; composer state (T3 Code comparison, 2026-10-30)</h3><small>settle with undo · auto-settle on merge / inactivity · Working group · multi-select · drafts + stash · ⌘↵ background send · unread · OS notifications · title regeneration on a cheap model</small></span><span class="badge status wip">wip</span></summary>
+        <div class="body">
+           <p class="note">2026-10-30 — Andrea asked for an honest comparison with the full T3 Code (Theo's video + the live repo at v0.1.5: Orchestrator V2, ~10 providers + ACP registry, environments + T3 Connect, mobile apps, PR tab, usage page, webhooks). Verdict: our core (engine, drivers, checkpoints, merge-back, editor, Experts, handoff, Jev layer) is level or ahead; we are dwarfed on inbox discipline, harness reach, remote-as-default, PR flow, usage glass-box and a list of surface features. Five rounds planned (R7 inbox → R8 reach/ACP → R9 environments + self-hosted relay + PWA → R10 GitHub deep + usage → R11 surface parity). Decisions: own-network environments + a relay you host; PWA before native; ACP driver first; GitHub deep first. Plan: <code>~/.claude/plans/hey-please-audit-this-dapper-platypus.md</code>.</p>
+           <ul class="tasks">
+             <li><span class="badge status done">done</span><span class="t"><b>Contracts</b> (<code>f1e403c</code>): <code>thread.settle/unsettle</code>, <code>Thread.settledAt/settleReason/autoSettle</code> (cleared by a new turn or by attention), <code>UserSettings.inbox</code> (auto-settle days / on merge / Working group), <code>textModel</code>, RPC <code>thread.regenerateTitle</code>; decider refuses server-side settles on running / waiting / pinned / opted-out threads.</span></li>
+             <li><span class="badge status wip">wip</span><span class="t"><b>Server</b>: <code>SettlementReactor</code> (PR merged / merged back / inactive N days), title regeneration via one-shot <code>complete()</code> on the user's text model.</span></li>
+             <li><span class="badge status wip">wip</span><span class="t"><b>Web — rail as inbox</b>: settle checkbox + undo toast + ⌘Z, Working / Settled groups, multi-select bar (settle · snooze · regenerate titles), unread dots, Settings › Inbox.</span></li>
+             <li><span class="badge status wip">wip</span><span class="t"><b>Web — composer</b>: per-thread drafts (localStorage + IndexedDB images), stash/apply ⌘S, ⌘↵ send in background.</span></li>
+             <li><span class="badge status wip">wip</span><span class="t"><b>Notifications</b>: browser <code>Notification</code> + Tauri notification plugin, needs-you / finished / failed / limited, per-project mute, optional sound.</span></li>
+           </ul>
+        </div>
+      </details>
+      <details class="phase">
         <summary><span class="title"><h3>R6 — Decision layer, composition dialogs, brand (2026-10-16)</h3><small>Jev first filter · selectable fallback judge · budgeted ≤ 8K per call · five decision sites · Experts/New thread/Team dialogs rebuilt · Tide Code mark</small></span><span class="badge status done">done</span></summary>
         <div class="body">
            <p class="note">2026-10-16 — Andrea's goal: "leverage each harness and create something more powerful and/or cheaper to run per task". Rules: Jev (TypeSafe System One, $0.042/M, ~28K context) is the first filter, never the only judge; a gray zone of confidence falls back to a user-selected harness model; never overload Jev; "don't overuse Jev — only when effective and practical". Re-audit found Jev's confidence parsed and discarded, spend only logged, handoffs packed by recency with no relevance, no one-shot model call anywhere. Plan: <code>~/.claude/plans/hey-please-audit-this-dapper-platypus.md</code>.</p>
@@ -388,6 +401,8 @@
         <tr><td>R6</td><td>2026-10-16</td><td>feat(brand): Tide Code mark + "CODE" app icon from the Reel wave-puzzle mark</td><td class="sha">88231b7</td></tr>
         <tr><td>R6</td><td>2026-10-16</td><td>feat: R6 W1+W2 — decision layer core (Jev first, selectable fallback, budget, ledger) and one-shot complete() in all four drivers</td><td class="sha">8cf72ad</td></tr>
         <tr><td>R6</td><td>2026-10-16</td><td>feat: R6 W3+W4 — five decision sites, Decisions · TypeSafe Jev panel, scratch settings isolation</td><td class="sha">70fbcf1</td></tr>
+        <tr><td>R6</td><td>2026-10-16</td><td>docs: journal — R6 done (W3/W4 landed, live check, fixes), next steps for Andrea</td><td class="sha">6821956</td></tr>
+        <tr><td>R7</td><td>2026-10-30</td><td>feat(contracts): R7 inbox — thread.settle/unsettle, autoSettle, inbox + textModel settings, thread.regenerateTitle</td><td class="sha">f1e403c</td></tr>
         <tr><td>R5</td><td>2026-10-16</td><td>fix(server): archiving keeps checkpoint refs (unarchive needs them); missing ref → not-found</td><td class="sha">d30687f</td></tr>
         <tr><td>R5</td><td>2026-10-16</td><td>fix(web): walkthrough #2 round — popover keeps selects, composer toolbar, stream grouped by turn, stale breadcrumb, labels</td><td class="sha">6b2666e</td></tr>
         <tr><td>R5</td><td>2026-10-16</td><td>fix(vcs): live diffs compare against a snapshot tree of the working tree, not git&#39;s index</td><td class="sha">ff2b45c</td></tr>

@@ -6,6 +6,7 @@ import { PROVIDER_FIXTURE } from "../settings/fixtures.ts";
 import { setProvidersForTest } from "../../state/providers.ts";
 import { useToasts } from "../../state/toast.ts";
 import { useUi } from "../../state/ui.ts";
+import { getDraft, resetDrafts, setDraft, useDrafts } from "../../state/drafts.ts";
 
 /** A one-pixel PNG as a real `File`, so jsdom's FileReader does the base64. */
 function pngFile(name = "shot.png", type = "image/png"): File {
@@ -19,6 +20,7 @@ function pasteFiles(files: File[]): void {
 }
 
 afterEach(() => {
+  resetDrafts();
   cleanup();
   resetUi();
 });
@@ -66,7 +68,7 @@ describe("Composer", () => {
     render(<Composer thread={makeThread("t1")} />);
     expect(screen.queryByRole("button", { name: /Stop/ })).toBeNull();
     expect(screen.queryByRole("group", { name: "Follow-up mode" })).toBeNull();
-    expect(screen.getByText("send")).toBeDefined();
+    expect(screen.getByText("send in background")).toBeDefined();
   });
 
   it("interrupts on Esc while running", () => {
@@ -218,5 +220,81 @@ describe("Composer idempotent send", () => {
       fireEvent.keyDown(input, { key: "Enter", metaKey: true });
     });
     expect(input.value).toBe("");
+  });
+});
+
+describe("Composer drafts", () => {
+  it("restores the draft after a remount and shows the Draft hint", () => {
+    attachFakeStore(modelWith({}));
+    const first = render(<Composer thread={makeThread("t1")} />);
+    fireEvent.change(screen.getByLabelText("Message"), { target: { value: "half" } });
+    first.unmount();
+    render(<Composer thread={makeThread("t1")} />);
+    expect((screen.getByLabelText("Message") as HTMLTextAreaElement).value).toBe("half");
+    expect(screen.getByText("Draft")).toBeDefined();
+  });
+
+  it("keeps a separate draft per thread", () => {
+    attachFakeStore(modelWith({}));
+    const view = render(<Composer thread={makeThread("t1")} />);
+    fireEvent.change(screen.getByLabelText("Message"), { target: { value: "one" } });
+    view.rerender(<Composer thread={makeThread("t2")} />);
+    expect((screen.getByLabelText("Message") as HTMLTextAreaElement).value).toBe("");
+    view.rerender(<Composer thread={makeThread("t1")} />);
+    expect((screen.getByLabelText("Message") as HTMLTextAreaElement).value).toBe("one");
+  });
+
+  it("stashes then applies into another thread", () => {
+    attachFakeStore(modelWith({}));
+    const view = render(<Composer thread={makeThread("t1")} />);
+    fireEvent.change(screen.getByLabelText("Message"), { target: { value: "later" } });
+    fireEvent.click(screen.getByRole("button", { name: /Stash/ }));
+    expect((screen.getByLabelText("Message") as HTMLTextAreaElement).value).toBe("");
+    view.rerender(<Composer thread={makeThread("t2")} />);
+    fireEvent.click(screen.getByRole("button", { name: /Apply stash/ }));
+    fireEvent.click(screen.getByText("later"));
+    expect((screen.getByLabelText("Message") as HTMLTextAreaElement).value).toBe("later");
+    expect(useDrafts.getState().stash).toHaveLength(0);
+  });
+
+  it("⌘↵ while idle sends, clears the draft and returns to Mission Control", async () => {
+    const fake = attachFakeStore(modelWith({}));
+    useUi.getState().selectThread("t1");
+    render(<Composer thread={makeThread("t1")} />);
+    const input = screen.getByLabelText("Message");
+    fireEvent.change(input, { target: { value: "go" } });
+    fireEvent.keyDown(input, { key: "Enter", metaKey: true });
+    expect(fake.dispatch).toHaveBeenCalledWith(expect.objectContaining({ type: "turn.request", text: "go" }));
+    await waitFor(() => expect(useUi.getState().view).toBe("mission"));
+    expect(getDraft("t1")).toBeUndefined();
+  });
+
+  it("plain Enter-less send keeps the thread open and clears the draft", async () => {
+    attachFakeStore(modelWith({}));
+    useUi.getState().selectThread("t1");
+    render(<Composer thread={makeThread("t1")} />);
+    fireEvent.change(screen.getByLabelText("Message"), { target: { value: "go" } });
+    fireEvent.click(screen.getByText("Send"));
+    await waitFor(() => expect(getDraft("t1")).toBeUndefined());
+    expect(useUi.getState().view).toBe("thread");
+  });
+
+  it("⌘↵ while running keeps the follow-up behaviour and stays put", async () => {
+    const fake = attachFakeStore(modelWith({}));
+    useUi.getState().selectThread("t1");
+    render(<Composer thread={makeThread("t1", { status: "running" })} />);
+    const input = screen.getByLabelText("Message");
+    fireEvent.change(input, { target: { value: "more" } });
+    fireEvent.keyDown(input, { key: "Enter", metaKey: true });
+    expect(fake.dispatch).toHaveBeenCalled();
+    await waitFor(() => expect(getDraft("t1")).toBeUndefined());
+    expect(useUi.getState().view).toBe("thread");
+  });
+
+  it("seeds from a pre-existing store draft", () => {
+    attachFakeStore(modelWith({}));
+    setDraft("t1", { text: "from store" });
+    render(<Composer thread={makeThread("t1")} />);
+    expect((screen.getByLabelText("Message") as HTMLTextAreaElement).value).toBe("from store");
   });
 });

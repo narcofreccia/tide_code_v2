@@ -7,8 +7,11 @@ import {
   isEmptyThread,
   requestArchive,
   requestDelete,
+  setAutoSettle,
   setThreadPinned,
+  settleThread,
   unarchiveThread,
+  unsettleThread,
 } from "../../lib/threadActions.ts";
 import { openThreadTerminal } from "../../lib/openInTerminal.ts";
 import { snoozeThread, tomorrowMorning } from "../../lib/turnActions.ts";
@@ -24,6 +27,21 @@ export function latestSettledTurnId(model: ReadModel, threadId: string): string 
     (t) => t.status === "completed" || t.status === "interrupted" || t.status === "error",
   );
   return settled[settled.length - 1]?.id;
+}
+
+/** Settle / Unsettle and the per-thread auto-settle opt-out; shared by the rail and the thread header. */
+export function settleItems(thread: Thread): MenuItem[] {
+  const settled = thread.settledAt !== undefined;
+  return [
+    settled
+      ? { label: "Unsettle", onSelect: () => unsettleThread(thread.id) }
+      : { label: "Settle", onSelect: () => settleThread(thread.id) },
+    {
+      label: "Auto-settle this thread",
+      checked: thread.autoSettle !== false,
+      onSelect: () => setAutoSettle(thread.id, thread.autoSettle === false),
+    },
+  ];
 }
 
 export function copyItems(thread: Thread): MenuItem[] {
@@ -66,6 +84,7 @@ export function threadMenu(
     { label: "Open", onSelect: () => ui.selectThread(thread.id) },
     { label: "Rename…", onSelect: startRename },
     { label: thread.pinned ? "Unpin" : "Pin", onSelect: () => setThreadPinned(thread.id, !thread.pinned) },
+    ...settleItems(thread),
     {
       label: "Open in terminal",
       disabled: !hasSession,

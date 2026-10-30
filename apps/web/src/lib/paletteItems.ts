@@ -12,7 +12,10 @@ import {
   interruptTurn,
   requestArchive,
   requestDelete,
+  settleThread,
+  unsettleThread,
 } from "./threadActions.ts";
+import { canUndoSettle, undoLastSettle } from "./inboxActions.ts";
 
 export type PaletteGroup = "Actions" | "Go to" | "Thread";
 
@@ -50,6 +53,9 @@ function threadItems(model: ReadModel, thread: Thread): PaletteItem[] {
   const ui = useUi.getState();
   const items: PaletteItem[] = [
     { id: "thread:terminal", label: "Open in terminal", group: "Thread", run: () => void openThreadTerminal(thread.id) },
+    thread.settledAt === undefined
+      ? { id: "thread:settle", label: "Settle thread", group: "Thread", detail: "Close it from the inbox; the worktree stays", run: () => settleThread(thread.id) }
+      : { id: "thread:unsettle", label: "Unsettle thread", group: "Thread", detail: "Back to the inbox", run: () => unsettleThread(thread.id) },
     { id: "thread:archive", label: "Archive…", group: "Thread", run: () => requestArchive(thread) },
     {
       id: "thread:child",
@@ -188,6 +194,9 @@ export function buildPaletteItems({ model, selectedThreadId, selectedProjectId }
     ...(thread ? threadItems(model, thread) : []),
     ...(projectId !== undefined && model.projects[projectId] ? projectItems(model, projectId) : []),
     ...shortcutItems(),
+    ...(canUndoSettle()
+      ? [{ id: "action:undo-settle", label: "Undo settle", group: "Actions" as const, kbd: "⌘Z", run: () => void undoLastSettle() }]
+      : []),
     {
       id: "action:how-tide-works",
       label: "How Tide works",

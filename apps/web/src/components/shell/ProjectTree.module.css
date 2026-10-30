@@ -144,3 +144,43 @@
   cursor: pointer;
 }
 .groupClear:hover { color: var(--danger); }
+/* R7 inbox: hover settle box, unread dot, settle reason, multi-select */
+.settle {
+  flex: none;
+  position: absolute;
+  right: calc(var(--sp-1) + 26px);
+  top: 7px;
+  width: 14px;
+  height: 14px;
+  padding: 0;
+  border: 1px solid var(--border-strong);
+  border-radius: var(--radius-sm);
+  background: var(--surface);
+  color: var(--accent);
+  font-size: 10px;
+  line-height: 12px;
+  text-align: center;
+  opacity: 0;
+  cursor: pointer;
+}
+.row:hover .settle,
+.settle:focus-visible { opacity: 1; }
+.settle:hover { border-color: var(--accent); }
+.settleOn { border-color: var(--accent); }
+.unread {
+  flex: none;
+  width: 6px;
+  height: 6px;
+  border-radius: 50%;
+  background: var(--accent);
+}
+.settleTag {
+  flex: none;
+  padding: 0 var(--sp-1);
+  border-radius: var(--radius-sm);
+  background: var(--surface-2);
+  color: var(--muted);
+  font-size: 10px;
+  line-height: 14px;
+}
+.picked { border-left-color: var(--accent); background: var(--accent-soft); }

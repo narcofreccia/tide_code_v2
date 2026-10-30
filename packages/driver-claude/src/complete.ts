@@ -46,6 +46,9 @@ export function buildCompletionOptions(
     persistSession: false,
     // verified live (CLI 2.1.x): the StructuredOutput answer fits in one turn
     maxTurns: 1,
+    // a classifier / title call needs no reasoning; adaptive thinking spent 836 tokens on a
+    // 1-word title live (2026-10-30) and blew every output cap
+    thinking: { type: "disabled" },
     ...(model ? { model } : {}),
     ...(binaryPath ? { pathToClaudeCodeExecutable: binaryPath } : {}),
     ...(labels ? { outputFormat: { type: "json_schema", schema: labelSchema(labels) } } : {}),

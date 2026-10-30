@@ -139,32 +139,68 @@ export function compareByAttention(a: Thread, b: Thread): number {
 
 /** One project's threads as the rail groups them. */
 export interface RailGroups {
-  /** pinned, not snoozed: kept at the top */
+  /** pinned, not snoozed, not settled: kept at the top */
   pinned: Thread[];
-  /** everything else that is live */
+  /** everything else that is live: the inbox */
   threads: Thread[];
+  /** running and not pinned, only when the Working section is on; collapsed under "Working · n" */
+  working: Thread[];
   /** snoozed until later; collapsed under "Snoozed · n" */
   snoozed: Thread[];
+  /** settled (closed from the inbox, worktree kept), most recently settled first */
+  settled: Thread[];
   /** archived; collapsed under "Archived · n", open read-only */
   archived: Thread[];
 }
 
+export interface RailGroupOptions {
+  /** `settings.inbox.workingSection`: running, unpinned threads leave the inbox for "Working" */
+  workingSection?: boolean;
+}
+
+/** R7: closed from the inbox; the projector clears it on a new turn or when the thread needs the user. */
+export function isSettled(thread: Thread): boolean {
+  return thread.settledAt !== undefined;
+}
+
+function bySettledDesc(a: Thread, b: Thread): number {
+  return (b.settledAt ?? 0) - (a.settledAt ?? 0) || a.id.localeCompare(b.id);
+}
+
+/** Settled, non-archived threads, most recently settled first. */
+export function selectSettled(model: ReadModel, projectId?: string): Thread[] {
+  return Object.values(model.threads)
+    .filter((t) => t.archivedAt === undefined && isSettled(t))
+    .filter((t) => projectId === undefined || t.projectId === projectId)
+    .sort(bySettledDesc);
+}
+
 /**
  * The rail's groups for one project. Archived wins over snoozed, snoozed over
- * pinned; each group keeps `compareByAttention` order.
+ * settled, settled over pinned, pinned over working; each group keeps
+ * `compareByAttention` order except settled (newest settle first).
  */
-export function selectRailGroups(model: ReadModel, projectId: string, now: number = Date.now()): RailGroups {
-  const groups: RailGroups = { pinned: [], threads: [], snoozed: [], archived: [] };
+export function selectRailGroups(
+  model: ReadModel,
+  projectId: string,
+  now: number = Date.now(),
+  opts: RailGroupOptions = {},
+): RailGroups {
+  const groups: RailGroups = { pinned: [], threads: [], working: [], snoozed: [], settled: [], archived: [] };
   for (const thread of Object.values(model.threads)) {
     if (thread.projectId !== projectId) continue;
     if (thread.archivedAt !== undefined) groups.archived.push(thread);
     else if (isSnoozed(thread, now)) groups.snoozed.push(thread);
+    else if (isSettled(thread)) groups.settled.push(thread);
     else if (thread.pinned === true) groups.pinned.push(thread);
+    else if (opts.workingSection === true && thread.status === "running" && thread.attention === undefined) groups.working.push(thread);
     else groups.threads.push(thread);
   }
   groups.pinned.sort(compareByAttention);
   groups.threads.sort(compareByAttention);
+  groups.working.sort(compareByAttention);
   groups.snoozed.sort(compareByAttention);
+  groups.settled.sort(bySettledDesc);
   groups.archived.sort(compareByAttention);
   return groups;
 }
@@ -176,7 +212,7 @@ export function selectThreadsNeedingAttention(
   now: number = Date.now(),
 ): Thread[] {
   return Object.values(model.threads)
-    .filter((t) => t.archivedAt === undefined && t.attention !== undefined && !isSnoozed(t, now))
+    .filter((t) => t.archivedAt === undefined && t.attention !== undefined && !isSnoozed(t, now) && !isSettled(t))
     .filter((t) => projectId === undefined || t.projectId === projectId)
     .sort(compareByAttention);
 }

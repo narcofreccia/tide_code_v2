@@ -1,4 +1,6 @@
 import { useEffect, useRef, useState } from "react";
+import { useDrafts } from "../../state/drafts.ts";
+import { useComposerDraft } from "./useComposerDraft.ts";
 import type { Thread } from "@tide/contracts";
 import { newId } from "@tide/contracts";
 import { interruptTurn, sendTurn, turnRequestLanded } from "../../lib/threadActions.ts";
@@ -21,6 +23,7 @@ import { ThreadPills } from "./ThreadPills.tsx";
 import { FollowUpToggle } from "./FollowUpToggle.tsx";
 import { ProviderSwitchHint } from "./ProviderSwitchHint.tsx";
 import { COMPOSE_EVENT } from "./EmptyThread.tsx";
+import { DraftsBar } from "./DraftsBar.tsx";
 import { QueueList } from "./QueueList.tsx";
 import styles from "./Composer.module.css";
 
@@ -62,7 +65,6 @@ function threadColumnHasFocus(composer: HTMLElement | null): boolean {
 }
 
 export function Composer({ thread }: { thread: Thread }) {
-  const [text, setText] = useState("");
   const [busy, setBusy] = useState(false);
   const [mention, setMention] = useState<{ start: number; query: string; caret: number } | undefined>(undefined);
   const [cursor, setCursor] = useState(0);
@@ -71,6 +73,10 @@ export function Composer({ thread }: { thread: Thread }) {
   // idempotency key of the draft in flight: a retry of the same text reuses it
   const pending = useRef<{ text: string; requestId: string } | undefined>(undefined);
   const attachments = useAttachments();
+  const draft = useComposerDraft(thread.id, attachments);
+  const { text, setText } = draft;
+  const stash = useDrafts((s) => s.stash);
+  const [stashOpen, setStashOpen] = useState(false);
   const providers = useProviders();
   const status = providerStatus(providers, thread.provider);
   const acceptsImages = status === undefined || status.caps.images;
@@ -142,7 +148,7 @@ export function Composer({ thread }: { thread: Thread }) {
    * Sending while the thread runs is allowed: the server queues the turn behind
    * the live one, so a follow-up never has to wait for the agent to stop.
    */
-  const send = (how?: FollowUpMode): void => {
+  const send = (how?: FollowUpMode, background = false): void => {
     const value = text.trim();
     if ((!value && attachments.images.length === 0) || busy) return;
     const steer = running && (how ?? followUp.mode) === "steer" && followUp.canSteer;
@@ -152,8 +158,9 @@ export function Composer({ thread }: { thread: Thread }) {
     const { requestId } = pending.current;
     const sent = (): void => {
       pending.current = undefined;
-      setText("");
+      draft.clear();
       attachments.clear();
+      if (background) useUi.getState().showMission();
     };
     setBusy(true);
     const delivery = steer ? steerTurn(thread.id, prompt, images, requestId) : sendTurn(thread.id, prompt, images, requestId);
@@ -183,10 +190,11 @@ export function Composer({ thread }: { thread: Thread }) {
 
   const onDefaultKey = (e: React.KeyboardEvent<HTMLTextAreaElement>): void => {
     if (e.key !== "Enter") return;
-    // ⌘↵ always sends in the selected mode; ⌥↵ sends the other one
+    // running: ⌘↵ sends in the selected mode; idle: ⌘↵ sends in the background. ⌥↵ sends the other mode
     if (e.metaKey || e.ctrlKey) {
       e.preventDefault();
-      send(followUp.mode);
+      if (running) send(followUp.mode);
+      else send(undefined, true);
     } else if (e.altKey) {
       e.preventDefault();
       send(running ? followUp.alternate : undefined);
@@ -254,12 +262,20 @@ export function Composer({ thread }: { thread: Thread }) {
       </div>
       <div className={styles.actions}>
         {running ? <FollowUpToggle followUp={followUp} provider={thread.provider} /> : null}
+        <DraftsBar
+          threadId={thread.id}
+          restored={draft.hasDraft}
+          hasText={text.trim() !== ""}
+          stash={stash}
+          open={stashOpen}
+          onOpen={setStashOpen}
+        />
         <span className={styles.hint}>
           {interrupting ? (
             <span className={styles.interrupting}>interrupting…</span>
           ) : (
             <>
-              <Kbd>⌘↵</Kbd> {running ? followUp.mode : "send"}
+              <Kbd>⌘↵</Kbd> {running ? followUp.mode : "send in background"}
               {running && followUp.canSteer ? (
                 <>
                   {" · "}

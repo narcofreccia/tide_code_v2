@@ -22,6 +22,8 @@ import {
   selectRunningThreads,
   selectSnoozed,
   selectRailGroups,
+  selectSettled,
+  isSettled,
   selectActiveTurn,
   selectIdleMs,
   selectInbox,
@@ -454,6 +456,47 @@ describe("selectRailGroups", () => {
       thread("other", { projectId: "p2" }),
     ]);
     expect(ids(selectRailGroups(m, "p1", 0).threads)).toEqual(["asks", "new", "old"]);
+  });
+
+  it("moves settled threads to their own group, newest settle first", () => {
+    const m = rail([
+      thread("a", { settledAt: 10, settleReason: "user" }),
+      thread("b", { settledAt: 20, settleReason: "pr-merged", pinned: true }),
+      thread("c"),
+    ]);
+    const g = selectRailGroups(m, "p1", 0);
+    expect(ids(g.settled)).toEqual(["b", "a"]);
+    expect(g.pinned).toEqual([]);
+    expect(ids(g.threads)).toEqual(["c"]);
+    expect(ids(selectSettled(m))).toEqual(["b", "a"]);
+    expect(isSettled(m.threads.c!)).toBe(false);
+  });
+
+  it("snoozed and archived win over settled", () => {
+    const m = rail([thread("s", { settledAt: 1, snoozedUntil: 100 }), thread("x", { settledAt: 1, archivedAt: 2 })]);
+    const g = selectRailGroups(m, "p1", 50);
+    expect(ids(g.snoozed)).toEqual(["s"]);
+    expect(ids(g.archived)).toEqual(["x"]);
+    expect(g.settled).toEqual([]);
+    expect(ids(selectSettled(m))).toEqual(["s"]);
+  });
+
+  it("puts running, unpinned threads under Working only when the section is on", () => {
+    const m = rail([
+      thread("run", { status: "running" }),
+      thread("runPinned", { status: "running", pinned: true }),
+      thread("idle"),
+    ]);
+    expect(selectRailGroups(m, "p1", 0).working).toEqual([]);
+    const g = selectRailGroups(m, "p1", 0, { workingSection: true });
+    expect(ids(g.working)).toEqual(["run"]);
+    expect(ids(g.pinned)).toEqual(["runPinned"]);
+    expect(ids(g.threads)).toEqual(["idle"]);
+  });
+
+  it("never lists a settled thread as needing attention", () => {
+    const m = rail([thread("a", { attention: "approval", settledAt: 5 }), thread("b", { attention: "approval" })]);
+    expect(ids(selectThreadsNeedingAttention(m))).toEqual(["b"]);
   });
 });
 

@@ -1,0 +1,31 @@
+.bar {
+  display: flex;
+  align-items: center;
+  gap: var(--sp-1);
+  min-height: var(--row-h);
+  padding: 0 var(--sp-1) 0 var(--sp-3);
+  border-top: 1px solid var(--border);
+  border-bottom: 1px solid var(--border);
+  background: var(--accent-soft);
+  flex-wrap: wrap;
+}
+.count {
+  flex: 1;
+  min-width: 0;
+  color: var(--text);
+  font-size: 12px;
+  font-variant-numeric: tabular-nums;
+  white-space: nowrap;
+}
+.close {
+  flex: none;
+  width: 22px;
+  height: 20px;
+  padding: 0;
+  border: 0;
+  border-radius: var(--radius-sm);
+  background: transparent;
+  color: var(--muted);
+  cursor: pointer;
+}
+.close:hover { color: var(--text); background: var(--surface-2); }

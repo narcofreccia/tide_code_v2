@@ -121,6 +121,7 @@ describe("ThreadHeader", () => {
     expect(names).toEqual([
       "New child thread",
       "Roll back last turn…no finished turn",
+      "Settle",
       "Snooze▸",
       "Copy thread ID",
       "Copy branch",

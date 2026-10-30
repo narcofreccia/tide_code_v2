@@ -7,6 +7,9 @@ import { Pill } from "../ui/Pill.tsx";
 import { AddProjectForm } from "./AddProjectForm.tsx";
 import { NeedsYouGroup } from "./NeedsYouGroup.tsx";
 import { ProjectTree } from "./ProjectTree.tsx";
+import { RailSelectionBar } from "./RailSelectionBar.tsx";
+import { useInboxKeys } from "./useInboxKeys.ts";
+import { useMarkSeen } from "./useMarkSeen.ts";
 import { StatusLegend } from "./StatusLegend.tsx";
 import styles from "./Rail.module.css";
 
@@ -19,6 +22,8 @@ export function Rail() {
   const toggleSettings = useUi((s) => s.toggleSettings);
   const newProjectOpen = useUi((s) => s.newProjectOpen);
   const setNewProjectOpen = useUi((s) => s.setNewProjectOpen);
+  useInboxKeys();
+  useMarkSeen();
 
   if (collapsed) {
     return (
@@ -48,6 +53,7 @@ export function Rail() {
         </Button>
       </div>
 
+      <RailSelectionBar />
       <NeedsYouGroup />
 
       <div className={styles.section}>
