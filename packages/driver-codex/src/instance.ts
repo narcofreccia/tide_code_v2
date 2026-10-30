@@ -1,7 +1,10 @@
-import type { CompletionRequest, CompletionResult, DriverEnv, OpenSessionOptions, ProviderInstance, ProviderSession, ProviderStatus } from "@tide/contracts";
+import type { CompletionRequest, SlashCommandInfo, CompletionResult, DriverEnv, OpenSessionOptions, ProviderInstance, ProviderSession, ProviderStatus } from "@tide/contracts";
 import { CompletionService } from "./complete.ts";
 import { CodexSession } from "./session.ts";
 import { shellQuote } from "./shell.ts";
+import { withInstance } from "./instance-config.ts";
+import { fetchSkills } from "./skills.ts";
+import { AppServer, mergedEnv } from "./app-server.ts";
 import { buildStatus, detectBinary } from "./status.ts";
 import type { CodexConfig } from "./types.ts";
 
@@ -19,7 +22,7 @@ export class CodexInstance implements ProviderInstance {
   #completions: CompletionService | undefined;
 
   constructor(config: CodexConfig, env: DriverEnv) {
-    this.#config = config;
+    this.#config = withInstance(config, env);
     this.#env = env;
   }
 
@@ -43,6 +46,31 @@ export class CodexInstance implements ProviderInstance {
     const session = await CodexSession.open(this.#config, this.#env, options, this.#binaryPath);
     this.#sessions.add(session);
     return session;
+  }
+
+  /**
+   * R8: skills only — the app-server has `skills/list` but no custom-prompt listing. Runs on a
+   * short-lived app-server rooted at `cwd` (skills are per-cwd).
+   */
+  async listCommands({ cwd }: { cwd: string }): Promise<SlashCommandInfo[]> {
+    this.#binaryPath ??= await detectBinary(this.#config);
+    if (this.#binaryPath === undefined) return [];
+    let server: AppServer | undefined;
+    try {
+      server = await AppServer.start({
+        binaryPath: this.#binaryPath,
+        cwd,
+        env: mergedEnv(this.#config),
+        ...(this.#config.spawnImpl ? { spawn: this.#config.spawnImpl } : {}),
+        log: () => undefined,
+      });
+      return (await fetchSkills(server, cwd)).map((skill) => skill.info);
+    } catch (error) {
+      this.#env.log(`[codex] skills/list failed: ${error instanceof Error ? error.message : String(error)}`);
+      return [];
+    } finally {
+      server?.close();
+    }
   }
 
   /** R6: one-shot tools-off classifier call on a shared, idle-reaped app-server. */

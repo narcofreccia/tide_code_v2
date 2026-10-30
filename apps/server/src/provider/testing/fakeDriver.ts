@@ -11,6 +11,7 @@ import type {
   ProviderStatus,
   ReconfigureResult,
   SessionSettings,
+  SlashCommandInfo,
   TurnInput,
 } from "@tide/contracts";
 
@@ -180,6 +181,12 @@ export class FakeDriverControl {
   statusResult: ProviderStatus;
   statusError: Error | undefined;
   createError: Error | undefined;
+  /** R8: every create() call: the merged config and the env (with `instance`) it was handed */
+  readonly created: { config: Record<string, unknown>; env: DriverEnv; instance: ProviderInstance }[] = [];
+  readonly disposed: ProviderInstance[] = [];
+  /** R8: what listCommands answers; undefined = the instance has no listCommands */
+  commandsResult: SlashCommandInfo[] | undefined;
+  readonly listCommandsCalls: string[] = [];
   terminalCommandFor: (nativeSessionId: string, cwd: string) => string | undefined;
   #global: FakeStep[][] = [];
   #perThread = new Map<string, FakeStep[][]>();
@@ -241,30 +248,42 @@ export interface FakeDriverHandle {
 
 export function createFakeDriver(kind: ProviderKind = "claude"): FakeDriverHandle {
   const control = new FakeDriverControl(kind);
-  const instance: ProviderInstance = {
-    kind,
-    async status() {
-      if (control.statusError) throw control.statusError;
-      return control.statusResult;
-    },
-    async openSession(options: OpenSessionOptions) {
-      control.opened.push(options);
-      const session = new FakeSession(options, control);
-      control.sessions.push(session);
-      return session;
-    },
-    terminalCommand(nativeSessionId: string, cwd: string) {
-      return control.terminalCommandFor(nativeSessionId, cwd);
-    },
-    async dispose() {
-      /* nothing to release */
-    },
+  // one instance per create(): the registry keeps one per configured instance
+  const makeInstance = (): ProviderInstance => {
+    const instance: ProviderInstance = {
+      kind,
+      async status() {
+        if (control.statusError) throw control.statusError;
+        return control.statusResult;
+      },
+      async openSession(options: OpenSessionOptions) {
+        control.opened.push(options);
+        const session = new FakeSession(options, control);
+        control.sessions.push(session);
+        return session;
+      },
+      terminalCommand(nativeSessionId: string, cwd: string) {
+        return control.terminalCommandFor(nativeSessionId, cwd);
+      },
+      async dispose() {
+        control.disposed.push(instance);
+      },
+    };
+    if (control.commandsResult !== undefined) {
+      instance.listCommands = async ({ cwd }) => {
+        control.listCommandsCalls.push(cwd);
+        return control.commandsResult ?? [];
+      };
+    }
+    return instance;
   };
   const driver: ProviderDriver<Record<string, unknown>> = {
     kind,
     defaultConfig: () => ({}),
-    async create(_config: Record<string, unknown>, _env: DriverEnv) {
+    async create(config: Record<string, unknown>, env: DriverEnv) {
       if (control.createError) throw control.createError;
+      const instance = makeInstance();
+      control.created.push({ config, env, instance });
       return instance;
     },
   };

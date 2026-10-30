@@ -52,6 +52,9 @@ export const ThreadCreate = Type.Object({
   title: Type.Optional(Type.String()),
   provider: ProviderKind,
   model: Type.Optional(Type.String()),
+  /** R8: instance of `provider` (account / ACP agent); absent = default instance */
+  providerId: Type.Optional(Type.String()),
+  effort: Type.Optional(Type.String()),
   mode: Type.Optional(RuntimeMode),
   interaction: Type.Optional(InteractionMode),
   /** P2: create a git worktree for this thread */
@@ -72,6 +75,10 @@ export const ThreadUpdate = Type.Object({
   autoAllowRoutine: Type.Optional(Type.Boolean()),
   /** R7: false = the settlement reactor leaves this thread alone */
   autoSettle: Type.Optional(Type.Boolean()),
+  /** R8: switch account / ACP agent; a different instance cannot resume the old native session, so it hands off like a provider switch */
+  providerId: Type.Optional(Type.String()),
+  /** R8: "" clears it (harness default) */
+  effort: Type.Optional(Type.String()),
 });
 /** R5: bring an archived thread back (its worktree is not recreated; the branch is still there) */
 export const ThreadUnarchive = Type.Object({ type: Type.Literal("thread.unarchive"), commandId: CommandId, threadId: Type.String() });
@@ -278,6 +285,7 @@ export const TurnStart = Type.Object({
   turnId: Type.String(),
   nativeSessionId: Type.Optional(Type.String()),
   provider: ProviderKind,
+  providerId: Type.Optional(Type.String()),
   model: Type.Optional(Type.String()),
 });
 export const AssistantAppend = Type.Object({
@@ -389,6 +397,8 @@ export const ThreadDelegate = Type.Object({
   /** R4: shapes the child's preamble (review / research / implementation …); free text, shown in the rail */
   role: Type.Optional(Type.String({ minLength: 1, maxLength: 40 })),
   provider: ProviderKind,
+  /** R8: instance of `provider` (account / ACP agent) */
+  providerId: Type.Optional(Type.String()),
   model: Type.Optional(Type.String()),
   mode: Type.Optional(RuntimeMode),
   title: Type.Optional(Type.String()),

@@ -5,7 +5,7 @@ import { isInternalCommand, type ClientCommand, type EventRecord } from "@tide/c
 import { CommandError, type Engine } from "../orchestration/engine.ts";
 import type { EventStore } from "../orchestration/store.ts";
 import type { DriverRegistry } from "../provider/registry.ts";
-import { resumableSessionId, threadCwd } from "../provider/sessions.ts";
+import { instanceIdOf, resumableSessionId, threadCwd } from "../provider/sessions.ts";
 import type { RemoteInfo } from "./remote.ts";
 import { SettingsError, type SettingsStore } from "../settings.ts";
 import { JudgeLedger } from "../decisions/ledger.ts";
@@ -111,12 +111,16 @@ export function registerHandlers(router: RpcRouter, deps: HandlerDeps): void {
   router.register("settings.set", async (input, ctx) => {
     if (ctx.agentThreadId !== undefined) throw new RpcException("forbidden", "settings are not available to agent sockets");
     if (!deps.settings) throw new RpcException("internal", "settings store not configured");
+    let next;
     try {
-      return deps.settings.set(input.patch);
+      next = deps.settings.set(input.patch);
     } catch (err) {
       if (err instanceof SettingsError) throw new RpcException("invalid-params", err.message);
       throw err;
     }
+    // R8: added/changed/removed accounts and ACP agents take effect at once
+    if (input.patch.providerInstances !== undefined) await deps.registry.syncInstances(next.providerInstances);
+    return next;
   });
 
   let ledger = deps.judgeLedger;
@@ -156,8 +160,6 @@ export function registerHandlers(router: RpcRouter, deps: HandlerDeps): void {
     }
   });
 
-  router.register("providers.list", async (input) => deps.registry.statusAll(input.refresh ?? false));
-
   router.register("thread.regenerateTitle", async (input) => {
     if (!deps.settings) throw new RpcException("internal", "settings store not configured");
     return regenerateTitle({ engine: deps.engine, registry: deps.registry, settings: deps.settings, ...(deps.tideHome !== undefined ? { tideHome: deps.tideHome } : {}) }, input.threadId);
@@ -174,7 +176,7 @@ export function registerHandlers(router: RpcRouter, deps: HandlerDeps): void {
     const sessionId = resumableSessionId(thread, model);
     if (sessionId === undefined) return { cwd };
     try {
-      const instance = await deps.registry.get(thread.provider);
+      const instance = await deps.registry.get(instanceIdOf(thread));
       const command = instance.terminalCommand(sessionId, cwd);
       return command === undefined ? { cwd } : { cwd, command };
     } catch {

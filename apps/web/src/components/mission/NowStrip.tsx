@@ -1,6 +1,7 @@
 import { selectRunningThreads } from "@tide/client";
 import { interruptTurn } from "../../lib/threadActions.ts";
-import { PROVIDER_LABELS } from "../../lib/vocab.ts";
+import { threadHarnessLabel } from "../../lib/vocab.ts";
+import { useProvidersSnapshot } from "../../state/providers.ts";
 import { useModel } from "../../state/model.ts";
 import { useUi } from "../../state/ui.ts";
 import { Button } from "../ui/Button.tsx";
@@ -18,6 +19,7 @@ function currentStep(steps: { text: string; status: string }[] | undefined): str
  * nothing is running, so a quiet morning shows only the Needs-you line.
  */
 export function NowStrip({ projectId }: { projectId?: string }) {
+  const providers = useProvidersSnapshot();
   const model = useModel((s) => s.model);
   const selectThread = useUi((s) => s.selectThread);
   const running = selectRunningThreads(model, projectId);
@@ -40,7 +42,7 @@ export function NowStrip({ projectId }: { projectId?: string }) {
                 />
                 <span className={styles.title}>{thread.title}</span>
                 <span className={styles.meta}>
-                  {model.projects[thread.projectId]?.title ?? "—"} · {PROVIDER_LABELS[thread.provider]}
+                  {model.projects[thread.projectId]?.title ?? "—"} · {threadHarnessLabel(providers, thread)}
                   {thread.model ? ` · ${thread.model}` : ""}
                 </span>
               </button>

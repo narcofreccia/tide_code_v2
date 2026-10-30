@@ -106,6 +106,8 @@ export interface PiState {
 
 export interface PiCommandInfo {
   name: string;
+  description?: string;
+  /** "extension" | "prompt" | "skill" (docs/rpc-commands.md § get_commands) */
   source?: string;
 }
 
@@ -114,6 +116,8 @@ export interface PiModel {
   name?: string;
   provider?: string;
   contextWindow?: number;
+  /** `Model.reasoning`: whether the model has thinking levels at all */
+  reasoning?: boolean;
 }
 
 export type Emit = (event: NormalizedEvent) => void;

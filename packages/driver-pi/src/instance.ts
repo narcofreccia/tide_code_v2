@@ -1,6 +1,7 @@
-import type { CompletionRequest, CompletionResult, DriverEnv, OpenSessionOptions, ProviderInstance, ProviderSession, ProviderStatus } from "@tide/contracts";
+import type { CompletionRequest, SlashCommandInfo, CompletionResult, DriverEnv, OpenSessionOptions, ProviderInstance, ProviderSession, ProviderStatus } from "@tide/contracts";
 import { runComplete } from "./complete.ts";
 import { resolveBridgePath } from "./bridge-path.ts";
+import { listCommands } from "./commands.ts";
 import { PiSession } from "./session.ts";
 import { buildSpawn } from "./spawn.ts";
 import { shellQuote } from "./shell.ts";
@@ -21,7 +22,9 @@ export class PiInstance implements ProviderInstance {
   #sessions = new Set<PiSession>();
 
   constructor(config: PiConfig, env: DriverEnv, deps: PiDeps) {
-    this.#config = config;
+    // R8: a second pi account is another HOME (pi keeps ~/.pi/agent there); instance env wins over config env
+    const instance = env.instance;
+    this.#config = instance ? { ...config, env: { ...config.env, ...instance.env, ...(instance.home ? { HOME: instance.home } : {}) } } : config;
     this.#env = env;
     this.#deps = deps;
   }
@@ -53,6 +56,13 @@ export class PiInstance implements ProviderInstance {
     await session.prime();
     this.#sessions.add(session);
     return session;
+  }
+
+  /** R8: `get_commands` on a short-lived rpc process in `cwd` (prompt templates and skills are cwd-scoped). */
+  async listCommands({ cwd }: { cwd: string }): Promise<SlashCommandInfo[]> {
+    this.#binaryPath ??= (await detectBinary(this.#config, this.#deps.probe, this.#env.log))?.path;
+    if (!this.#binaryPath) return [];
+    return listCommands(this.#binaryPath, cwd, this.#config, this.#deps, this.#env);
   }
 
   /** One-shot, tools-off `pi -p` call (judge fallback); never a user thread. */

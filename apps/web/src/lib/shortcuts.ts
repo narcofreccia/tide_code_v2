@@ -4,6 +4,9 @@ import { useUi } from "../state/ui.ts";
 import { closeActiveTab, openSearchTab, setQuickOpen, toggleTree } from "../state/workbench.ts";
 import { toggleDrawer } from "../state/terminals.ts";
 import { toggleTheme } from "../state/settings.ts";
+import { effortsOf, nextEffort, threadProviderStatus, useProvidersStore } from "../state/providers.ts";
+import { showToast } from "../state/toast.ts";
+import { updateThread } from "./threadActions.ts";
 
 /**
  * When an entry applies. `thread` needs a selected thread, `workbench` needs one
@@ -41,6 +44,28 @@ export function isDesktopShell(): boolean {
 /** The label to show for a shortcut in this environment (`⌥N` in a browser tab). */
 export function shortcutKeys(shortcut: Shortcut): string {
   return shortcut.browserAlt && !isDesktopShell() ? shortcut.browserAlt.keys : shortcut.keys;
+}
+
+/**
+ * ⌘⇧E is shared with "Toggle file tree": effort owns it while the thread column
+ * has focus (or the workbench is hidden); anywhere else it falls through to the tree.
+ */
+function cycleEffort(): boolean {
+  const id = threadId();
+  if (!id) return false;
+  const active = typeof document !== "undefined" ? document.activeElement : null;
+  const inThread = active instanceof Element && active.closest("[data-thread-column]") !== null;
+  if (!inThread && ui().focusMode !== "thread") return false;
+  const thread = useModel.getState().model.threads[id];
+  if (!thread) return false;
+  const models = threadProviderStatus(useProvidersStore.getState().providers, thread)?.models ?? [];
+  const efforts = effortsOf(models, thread.model);
+  if (efforts.length === 0) return false;
+  const next = nextEffort(efforts, thread.effort);
+  updateThread(id, { effort: next });
+  const label = efforts.find((e) => e.id === next)?.label ?? "Default";
+  showToast(thread.status === "running" ? `Effort: ${label} · applies from the next turn` : `Effort: ${label}`);
+  return true;
 }
 
 /** Whether the current UI state satisfies a scope. */
@@ -124,6 +149,11 @@ export const SHORTCUTS: Shortcut[] = [
   { id: "stop", keys: "Esc", label: "Stop turn / close", group: "Thread", when: "thread" },
   { id: "approve", keys: "y", label: "Approve focused card", group: "Thread", when: "thread" },
   { id: "deny", keys: "n", label: "Deny focused card", group: "Thread", when: "thread" },
+  {
+    id: "effort", keys: "⌘⇧E", label: "Cycle reasoning effort (thread focused)", group: "Thread", key: "e", shift: true,
+    when: "thread",
+    run: () => cycleEffort(),
+  },
   { id: "terminal", keys: "⌘`", label: "Terminal drawer", group: "Workbench", key: "`", when: "workbench", run: () => (toggleDrawer(), true) },
   {
     id: "quick-open", keys: "⌘P", label: "Open file in worktree", group: "Workbench", key: "p", shift: false,
@@ -175,7 +205,8 @@ export function handleShortcut(event: KeyboardEvent): boolean {
     if (shortcut.shift !== undefined && shortcut.shift !== event.shiftKey) continue;
     // out of context: let the key through to the surface rather than swallowing it
     if (!scopeApplies(shortcut.when)) return false;
-    return shortcut.run() !== false;
+    // `false` = not right now: a later entry on the same key (⌘⇧E effort → file tree) may take it
+    if (shortcut.run() !== false) return true;
   }
   return false;
 }

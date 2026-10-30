@@ -1,0 +1,9 @@
+{"_header": {"synthetic": true, "note": "text, a permission request, client cancels: cancel notification, permission answered cancelled, prompt resolves cancelled", "schema": "ACP v1 (@agentclientprotocol/sdk 2.1.0 schema/v1)"}}
+{"_dir": "c2a", "jsonrpc": "2.0", "id": 2, "method": "session/prompt", "params": {"sessionId": "sess_1", "prompt": [{"type": "text", "text": "refactor everything"}]}}
+{"jsonrpc": "2.0", "method": "session/update", "params": {"sessionId": "sess_1", "update": {"sessionUpdate": "agent_message_chunk", "content": {"type": "text", "text": "Starting"}}}}
+{"jsonrpc": "2.0", "method": "session/update", "params": {"sessionId": "sess_1", "update": {"sessionUpdate": "tool_call", "toolCallId": "call_c", "title": "bash: make", "kind": "execute", "status": "pending", "rawInput": {"command": "make"}}}}
+{"jsonrpc": "2.0", "id": "perm-3", "method": "session/request_permission", "params": {"sessionId": "sess_1", "toolCall": {"toolCallId": "call_c"}, "options": [{"optionId": "allow", "name": "Allow", "kind": "allow_once"}, {"optionId": "always", "name": "Always allow", "kind": "allow_always"}, {"optionId": "reject", "name": "Reject", "kind": "reject_once"}]}}
+{"_dir": "c2a", "jsonrpc": "2.0", "method": "session/cancel", "params": {"sessionId": "sess_1"}}
+{"_dir": "c2a", "jsonrpc": "2.0", "id": "perm-3", "result": {"outcome": {"outcome": "cancelled"}}}
+{"jsonrpc": "2.0", "method": "session/update", "params": {"sessionId": "sess_1", "update": {"sessionUpdate": "tool_call_update", "toolCallId": "call_c", "status": "failed"}}}
+{"jsonrpc": "2.0", "id": 2, "result": {"stopReason": "cancelled"}}

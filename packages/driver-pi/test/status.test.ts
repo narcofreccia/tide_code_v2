@@ -119,8 +119,11 @@ describe("status()", () => {
         spawn: () =>
           fakePi((command, pi) => {
             baseScript()(command, pi);
+            if (command["type"] === "get_available_thinking_levels") {
+              pi.emitLine({ type: "response", id: command["id"], command: "get_available_thinking_levels", success: true, data: { levels: ["off", "low", "high"] } });
+            }
             if (command["type"] === "get_available_models") {
-              pi.emitLine({ type: "response", id: command["id"], command: "get_available_models", success: true, data: { models: [{ id: "gpt-5.5", name: "GPT-5.5", provider: "openai" }] } });
+              pi.emitLine({ type: "response", id: command["id"], command: "get_available_models", success: true, data: { models: [{ id: "gpt-5.5", name: "GPT-5.5", provider: "openai", reasoning: true }] } });
             }
           }),
         fetch: fakeFetch({ [OLLAMA_TAGS_URL]: { models: [{ name: "llama3.1:8b" }] } }),
@@ -133,6 +136,8 @@ describe("status()", () => {
     expect(status.loggedIn).toBe(true);
     expect(status.models.map((model) => model.id)).toEqual(["openai/gpt-5.5", "ollama/llama3.1:8b"]);
     expect(status.version).toBe("1.1.0");
+    expect(status.models[0]?.efforts?.map((effort) => effort.id)).toEqual(["off", "low", "high"]);
+    expect(status.models[1]?.efforts).toBeUndefined();
     expect(status.caps).toMatchObject({ planMode: true, subagents: false, mcp: true, resume: true, contextUsage: true });
     expect(await instance.status()).toBe(status);
     expect(instance.terminalCommand("/tmp/my sessions/a.jsonl", "/tmp/my repo")).toBe("cd '/tmp/my repo' && pi --session '/tmp/my sessions/a.jsonl'");

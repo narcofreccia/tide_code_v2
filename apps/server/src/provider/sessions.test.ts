@@ -1,5 +1,6 @@
 import { describe, expect, it } from "vitest";
 import { emptyReadModel, type Project, type ReadModel, type Thread, type Turn } from "@tide/contracts";
+import { createInstanceFactory } from "./instances.ts";
 import { DriverRegistry } from "./registry.ts";
 import { THREAD_TOOLS_HINT } from "@tide/tide-mcp";
 import { resumableSessionId, SessionDirectory } from "./sessions.ts";
@@ -26,6 +27,7 @@ interface Setup {
   clock: { t: number };
   /** the read model the directory consults; tests mutate it in place */
   state: { model: ReadModel };
+  registry: DriverRegistry;
 }
 
 function setup(): Setup {
@@ -36,8 +38,9 @@ function setup(): Setup {
   const codex = createFakeDriver("codex");
   registry.register(claude.driver);
   registry.register(codex.driver);
+  registry.setFactory(createInstanceFactory({ providers: {}, acp: { find: () => undefined }, drivers: { claude: claude.driver } }));
   const sessions = new SessionDirectory({ registry, now: () => clock.t, idleMs: 30 * 60_000, autoReap: false, log: () => undefined, model: () => state.model });
-  return { sessions, claude: claude.control, codex: codex.control, clock, state };
+  return { sessions, claude: claude.control, codex: codex.control, clock, state, registry };
 }
 
 /** A model where thread t1 has run one turn on `provider` and is in `status`. */
@@ -85,6 +88,27 @@ describe("SessionDirectory", () => {
     await sessions.getOrOpen(thread({ mode: "auto", model: "opus" }), project);
     expect(claude.reconfigures).toHaveLength(1);
     expect(claude.opened).toHaveLength(1);
+  });
+
+  it("R8: opens with the thread's effort and reconfigures when it changes", async () => {
+    const { sessions, claude } = setup();
+    claude.reconfigureResult = "applied";
+    await sessions.getOrOpen(thread({ effort: "low" }), project);
+    expect(claude.opened[0]?.effort).toBe("low");
+    await sessions.getOrOpen(thread({ effort: "high" }), project);
+    expect(claude.reconfigures).toEqual([{ threadId: "t1", settings: { mode: "approval-required", interaction: "default", effort: "high" } }]);
+  });
+
+  it("R8: a different instance of the same kind gets its own session", async () => {
+    const { sessions, claude, registry } = setup();
+    await registry.syncInstances([{ id: "claude:work", kind: "claude", label: "Work" }]);
+    await sessions.getOrOpen(thread(), project);
+    await sessions.getOrOpen(thread({ providerId: "claude:work" }), project);
+    expect(claude.closed).toEqual(["t1"]);
+    expect(claude.opened).toHaveLength(2);
+    expect(claude.created.map((c) => c.env.instance?.id)).toEqual(["claude", "claude:work"]);
+    const work = claude.created[1]?.instance;
+    expect(work && sessions.usesInstance(work)).toBe(true);
   });
 
   it("reopens with resume when the driver cannot switch live", async () => {

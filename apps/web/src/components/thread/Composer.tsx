@@ -8,7 +8,7 @@ import { steerTurn } from "../../lib/turnActions.ts";
 import { useFollowUp, type FollowUpMode } from "../../lib/followUp.ts";
 import { errorText } from "../../lib/dispatchOrToast.ts";
 import { showToast } from "../../state/toast.ts";
-import { providerStatus, useProviders } from "../../state/providers.ts";
+import { threadProviderStatus, useProviders, useThreadHarnessLabel } from "../../state/providers.ts";
 import { useUi } from "../../state/ui.ts";
 import { useWorkbench } from "../../state/workbench.ts";
 import { registerComposerFocus } from "../../lib/composerFocus.ts";
@@ -18,6 +18,8 @@ import { Kbd } from "../ui/Kbd.tsx";
 import { AttachmentStrip, useAttachments } from "./Attachments.tsx";
 import { imageFilesOf } from "../../lib/images.ts";
 import { MentionPicker, useMentionMatches } from "./MentionPicker.tsx";
+import { SlashPicker, useSlash } from "./SlashPicker.tsx";
+import type { SlashCommandInfo } from "@tide/contracts";
 import { ThreadLinkChips } from "./ThreadLinkChips.tsx";
 import { ThreadPills } from "./ThreadPills.tsx";
 import { FollowUpToggle } from "./FollowUpToggle.tsx";
@@ -78,12 +80,15 @@ export function Composer({ thread }: { thread: Thread }) {
   const stash = useDrafts((s) => s.stash);
   const [stashOpen, setStashOpen] = useState(false);
   const providers = useProviders();
-  const status = providerStatus(providers, thread.provider);
+  const status = threadProviderStatus(providers, thread);
   const acceptsImages = status === undefined || status.caps.images;
   const followUp = useFollowUp(thread.id, status?.caps.steer === true);
   const running = thread.status === "running";
   const interrupting = thread.interrupting === true;
   const matches = useMentionMatches(thread.id, mention?.query);
+  const listsCommands = status?.caps.commands === true;
+  const slash = useSlash(thread, text, listsCommands);
+  const harness = useThreadHarnessLabel(thread);
 
   useEffect(() => registerComposerFocus(() => input.current?.focus()), []);
 
@@ -94,6 +99,7 @@ export function Composer({ thread }: { thread: Thread }) {
       if (typeof detail !== "string") return;
       setText(detail);
       setMention(undefined);
+      slash.close();
       input.current?.focus();
     };
     window.addEventListener(COMPOSE_EVENT, onCompose);
@@ -128,7 +134,26 @@ export function Composer({ thread }: { thread: Thread }) {
     setText(value);
     const found = findMentionQuery(value, caret);
     setMention(found ? { ...found, caret } : undefined);
+    if (found) slash.close();
+    else slash.sync(value, caret);
     setCursor(0);
+  };
+
+  const placeCaret = (caret: number): void => {
+    requestAnimationFrame(() => {
+      const element = input.current;
+      if (!element) return;
+      element.focus();
+      element.setSelectionRange(caret, caret);
+    });
+  };
+
+  /** Inserts `/name `; the harness runs it (skills included) when the text is sent. */
+  const pickCommand = (command: SlashCommandInfo): void => {
+    const next = slash.apply(text, command);
+    if (!next) return;
+    setText(next.text);
+    placeCaret(next.caret);
   };
 
   const pick = (path: string): void => {
@@ -136,12 +161,7 @@ export function Composer({ thread }: { thread: Thread }) {
     const next = applyMention(text, mention, mention.caret, path);
     setText(next.text);
     setMention(undefined);
-    requestAnimationFrame(() => {
-      const element = input.current;
-      if (!element) return;
-      element.focus();
-      element.setSelectionRange(next.caret, next.caret);
-    });
+    placeCaret(next.caret);
   };
 
   /**
@@ -185,6 +205,18 @@ export function Composer({ thread }: { thread: Thread }) {
       e.preventDefault();
       return;
     }
+    if (slash.query && slash.matches.length > 0) {
+      const count = slash.matches.length;
+      if (e.key === "ArrowDown") setCursor((v) => Math.min(count - 1, v + 1));
+      else if (e.key === "ArrowUp") setCursor((v) => Math.max(0, v - 1));
+      else if ((e.key === "Enter" && !e.metaKey && !e.ctrlKey && !e.altKey) || e.key === "Tab") {
+        const command = slash.matches[Math.min(cursor, count - 1)];
+        if (command) pickCommand(command);
+      } else if (e.key === "Escape") slash.close();
+      else return onDefaultKey(e);
+      e.preventDefault();
+      return;
+    }
     onDefaultKey(e);
   };
 
@@ -222,20 +254,24 @@ export function Composer({ thread }: { thread: Thread }) {
       }}
     >
       {mention ? <MentionPicker matches={matches} cursor={cursor} onPick={pick} /> : null}
+      {!mention && slash.query ? <SlashPicker slash={slash} cursor={cursor} onPick={pickCommand} /> : null}
       <AttachmentStrip images={attachments.images} onRemove={attachments.remove} />
       <QueueList threadId={thread.id} running={running} canSteer={followUp.canSteer} />
       <textarea
         ref={input}
         className={styles.input}
         aria-label="Message"
-        placeholder="Ask the agent… (@ to mention a file)"
+        placeholder={listsCommands ? "Ask the agent… (@ to mention a file, / for commands)" : "Ask the agent… (@ to mention a file)"}
         rows={rows}
         value={text}
         onChange={(e) => sync(e.target.value, e.target.selectionStart ?? e.target.value.length)}
         onClick={(e) => {
           const element = e.currentTarget;
-          const found = findMentionQuery(element.value, element.selectionStart ?? 0);
-          setMention(found ? { ...found, caret: element.selectionStart ?? 0 } : undefined);
+          const caret = element.selectionStart ?? 0;
+          const found = findMentionQuery(element.value, caret);
+          setMention(found ? { ...found, caret } : undefined);
+          if (found) slash.close();
+          else slash.sync(element.value, caret);
         }}
         onPaste={(e) => {
           const files = imageFilesOf(e.clipboardData);
@@ -256,6 +292,11 @@ export function Composer({ thread }: { thread: Thread }) {
         }}
         onKeyDown={onKeyDown}
       />
+      {slash.unknown === undefined ? null : (
+        <p className={styles.switchHint} role="status">
+          Unknown command for {harness}; it will be sent as text
+        </p>
+      )}
       <div className={styles.settings}>
         <ThreadPills thread={thread} />
         <ThreadLinkChips threadId={thread.id} />

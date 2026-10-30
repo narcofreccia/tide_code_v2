@@ -6,10 +6,13 @@ import type {
   PermissionReply,
   PermissionRule,
   WireAgent,
+  SkillAttachment,
+  WireCommand,
   WireConfigEntry,
   WireMessage,
   WireModel,
   WireSession,
+  WireSkill,
 } from "./wire.ts";
 
 export interface Endpoint {
@@ -88,13 +91,30 @@ export class HttpOpencodeApi implements OpencodeApi {
     await this.#request("PUT", `/api/experimental/session/${encodeURIComponent(input.sessionId)}/instructions/entries/${encodeURIComponent(input.key)}`, { value: input.value });
   }
 
-  async prompt(input: { sessionId: string; text: string; files?: PromptFile[]; delivery?: "steer" | "queue" }): Promise<{ id?: string } | undefined> {
+  async prompt(input: { sessionId: string; text: string; files?: PromptFile[]; skills?: SkillAttachment[]; delivery?: "steer" | "queue" }): Promise<{ id?: string } | undefined> {
     const body = await this.#request<{ data?: { id?: string } } | undefined>("POST", `/api/session/${encodeURIComponent(input.sessionId)}/prompt`, {
       text: input.text,
       ...(input.files && input.files.length > 0 ? { files: input.files } : {}),
+      ...(input.skills && input.skills.length > 0 ? { skills: input.skills } : {}),
       ...(input.delivery !== undefined ? { delivery: input.delivery } : {}),
     });
     return body?.data;
+  }
+
+  async runCommand(input: { sessionId: string; name: string; text: string; files?: PromptFile[] }): Promise<void> {
+    await this.#request("POST", `/api/session/${encodeURIComponent(input.sessionId)}/command`, {
+      name: input.name,
+      text: input.text,
+      ...(input.files && input.files.length > 0 ? { files: input.files } : {}),
+    });
+  }
+
+  commands(input: { directory: string }): Promise<WireCommand[]> {
+    return this.#data("GET", `/api/command?${located(input.directory)}`);
+  }
+
+  skills(input: { directory: string }): Promise<WireSkill[]> {
+    return this.#data("GET", `/api/skill?${located(input.directory)}`);
   }
 
   /** The cursor already encodes the order (the server rejects both), so `order` only goes on page one. */

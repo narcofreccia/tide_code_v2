@@ -23,9 +23,9 @@ describe("PlanCard", () => {
   it("implements the plan in a new thread with the chosen provider and worktree", () => {
     const fake = attachFakeStore(modelWith({}));
     setProvidersForTest([
-      { kind: "claude", installed: true, loggedIn: true, models: [], caps },
+      { id: "claude", kind: "claude", label: "Claude Code", installed: true, loggedIn: true, models: [], caps },
       {
-        kind: "codex",
+        id: "codex", kind: "codex", label: "Codex",
         installed: true,
         loggedIn: true,
         models: [{ id: "gpt-5-codex", label: "GPT-5 Codex", default: true }],

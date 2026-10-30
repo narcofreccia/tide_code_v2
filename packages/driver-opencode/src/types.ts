@@ -5,10 +5,13 @@ import type {
   PermissionReply,
   PermissionRule,
   WireAgent,
+  SkillAttachment,
+  WireCommand,
   WireConfigEntry,
   WireMessage,
   WireModel,
   WireSession,
+  WireSkill,
 } from "./wire.ts";
 
 export interface OpencodeConfig {
@@ -71,7 +74,13 @@ export interface OpencodeApi {
    * server-side: promoted at the next step boundary of a running execution, or starts one.
    * The run itself is observed on the event stream.
    */
-  prompt(input: { sessionId: string; text: string; files?: PromptFile[]; delivery?: "steer" | "queue" }): Promise<{ id?: string } | undefined>;
+  prompt(input: { sessionId: string; text: string; files?: PromptFile[]; skills?: SkillAttachment[]; delivery?: "steer" | "queue" }): Promise<{ id?: string } | undefined>;
+  /** `POST /api/session/:id/command {name, text}` — runs a custom command (`text` = its arguments) */
+  runCommand(input: { sessionId: string; name: string; text: string; files?: PromptFile[] }): Promise<void>;
+  /** `GET /api/command?location[directory]=` */
+  commands(input: { directory: string }): Promise<WireCommand[]>;
+  /** `GET /api/skill?location[directory]=` */
+  skills(input: { directory: string }): Promise<WireSkill[]>;
   /** `GET /api/session/:id/message` — one page, newest first unless a cursor says otherwise */
   messages(input: { sessionId: string; limit: number; cursor?: string }): Promise<{ data: WireMessage[]; cursor?: { next?: string | null } }>;
   /** `POST /api/session/:id/fork` — a new session with the history before `before` (all of it when omitted) */

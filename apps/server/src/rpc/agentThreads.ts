@@ -3,6 +3,7 @@ import { clampMode } from "../orchestration/decider/agent.ts";
 import { CommandError, type Engine } from "../orchestration/engine.ts";
 import { lastAssistantText, type DelegateWaits } from "../orchestration/delegation.ts";
 import type { DriverRegistry } from "../provider/registry.ts";
+import { instanceIdOf } from "../provider/sessions.ts";
 import { RpcException, type RpcCallContext, type RpcRouter } from "./router.ts";
 
 export type CancelTimer = () => void;
@@ -228,7 +229,7 @@ export function registerAgentThreadHandlers(router: RpcRouter, deps: AgentThread
     const mode = input.mode ?? "auto";
     let steer = mode === "steer";
     if (mode === "auto" && target.status === "running" && deps.registry !== undefined) {
-      steer = (await deps.registry.status(target.provider)).caps.steer === true;
+      steer = (await deps.registry.status(instanceIdOf(target))).caps.steer === true;
     }
     const commandId = input.commandId !== undefined ? { commandId: input.commandId } : {};
     if (steer) {

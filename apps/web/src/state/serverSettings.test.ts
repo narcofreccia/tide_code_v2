@@ -28,6 +28,7 @@ const SERVER: UserSettings = {
   limitPolicy: "reset",
   teams: [],
   inbox: { autoSettleAfterDays: 3, autoSettleOnMerge: true, workingSection: false },
+  providerInstances: [],
 };
 
 describe("server settings", () => {

@@ -82,6 +82,6 @@ function narrowerApproval(ceiling: UserApprovalPolicy, user: UserApprovalPolicy 
  *
  * `developer_instructions: null` keeps Codex's built-in plan prompt (never our own).
  */
-export function collaborationModeFor(interaction: InteractionMode, model: string): CollaborationMode {
-  return { mode: interaction === "plan" ? "plan" : "default", settings: { model, reasoning_effort: null, developer_instructions: null } };
+export function collaborationModeFor(interaction: InteractionMode, model: string, effort?: string): CollaborationMode {
+  return { mode: interaction === "plan" ? "plan" : "default", settings: { model, reasoning_effort: effort ?? null, developer_instructions: null } };
 }

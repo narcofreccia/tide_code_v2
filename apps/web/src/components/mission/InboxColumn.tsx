@@ -2,7 +2,8 @@ import { useState } from "react";
 import { selectInbox, type InboxItem } from "@tide/client";
 import { describeAttention } from "../../lib/activity.ts";
 import { relativeTime } from "../../lib/relativeTime.ts";
-import { PROVIDER_LABELS } from "../../lib/vocab.ts";
+import { threadHarnessLabel } from "../../lib/vocab.ts";
+import { useProvidersSnapshot } from "../../state/providers.ts";
 import { useModel } from "../../state/model.ts";
 import { useUi } from "../../state/ui.ts";
 import { ApprovalCard } from "../thread/ApprovalCard.tsx";
@@ -44,6 +45,7 @@ function ItemCard({ item, active }: { item: InboxItem; active: boolean }) {
  * while focus is inside the inbox; the focused approval takes `y`/`n`.
  */
 export function InboxColumn({ projectId }: { projectId?: string }) {
+  const providers = useProvidersSnapshot();
   const model = useModel((s) => s.model);
   const selectThread = useUi((s) => s.selectThread);
   const items = selectInbox(model, projectId);
@@ -87,7 +89,7 @@ export function InboxColumn({ projectId }: { projectId?: string }) {
                   <StatusGlyph status={item.thread.status} attention={item.attention} />
                   <span className={styles.itemTitle}>{item.thread.title}</span>
                   <span className={styles.meta}>{model.projects[item.thread.projectId]?.title ?? "—"}</span>
-                  <Pill>{PROVIDER_LABELS[item.thread.provider]}</Pill>
+                  <Pill>{threadHarnessLabel(providers, item.thread)}</Pill>
                   {stuck === undefined ? null : (
                     <span
                       className={styles.stuck}

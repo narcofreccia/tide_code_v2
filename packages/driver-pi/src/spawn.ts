@@ -24,6 +24,8 @@ export function buildSpawn(
   else if (options.resume) args.push("--session", options.resume);
   const model = options.model ?? config.defaultModel;
   if (model) args.push("--model", model);
+  // R8: a thinking level; pi clamps it to what the model supports
+  if (options.effort) args.push("--thinking", options.effort);
   const mcpServers = options.mcpServers.map((server) => ({
     name: server.name,
     command: server.command,

@@ -38,6 +38,7 @@ import { resetSettings } from "./state/settings.ts";
 import { resetReconnect } from "./state/reconnect.ts";
 import { useToasts } from "./state/toast.ts";
 import { resetFollowUp } from "./lib/followUp.ts";
+import { resetSlashCommands } from "./state/slashCommands.ts";
 
 export interface FakeStore {
   store: ModelStore;
@@ -98,6 +99,7 @@ export function resetUi(): void {
   resetSettings();
   resetFollowUp();
   resetDrafts();
+  resetSlashCommands();
   useToasts.setState({ toasts: [] });
   setRpcCaller(undefined);
   setRpcStreamer(undefined);

@@ -67,6 +67,29 @@ export interface WireModel {
   enabled?: boolean;
   status?: string;
   limit?: { context?: number; output?: number };
+  /** reasoning-effort presets (`Model.Variant`); the id is what `ModelRef.variant` takes */
+  variants?: { id: string }[];
+}
+
+/** `GET /api/command` row (custom commands from config / `.opencode/commands`). */
+export interface WireCommand {
+  name: string;
+  description?: string;
+}
+
+/** `GET /api/skill` row (without the SKILL.md body, which Tide never reads). */
+export interface WireSkill {
+  id: string;
+  name: string;
+  description?: string;
+  autoinvoke?: boolean;
+  path?: string;
+}
+
+/** `PromptInput.SkillAttachment`: the skill is loaded for this prompt; `mention` marks its span in `text`. */
+export interface SkillAttachment {
+  id: string;
+  mention?: { start: number; end: number; text: string };
 }
 
 /** `Agent.Info` from `GET /api/agent`; `permissions` is the fully resolved ruleset. */

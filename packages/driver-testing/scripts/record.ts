@@ -3,7 +3,7 @@
  *
  *   pnpm --filter @tide/driver-testing record -- <provider> <scenario> [options]
  *
- *   <provider>        claude | codex | opencode | pi
+ *   <provider>        claude | codex | opencode | pi | acp (acp records OpenCode's `opencode acp`)
  *   <scenario>        file name: apps/server/test/fixtures/replay/<provider>/<scenario>.ndjson
  *   --prompt <text>   one turn per flag, run in order (default: a one-line hello)
  *   --approve         accept approval cards (default: decline them)
@@ -25,9 +25,9 @@ import { fileURLToPath } from "node:url";
 import type { ProviderDriver, ProviderKind, ReadModel } from "@tide/contracts";
 import { createApp } from "../../../apps/server/src/app.ts";
 import { Recorder } from "../src/recorder.ts";
-import { recordClaudeDriver, recordCodexDriver, recordOpencodeDriver, recordPiDriver } from "../src/drivers.ts";
+import { recordAcpDriver, recordClaudeDriver, recordCodexDriver, recordOpencodeDriver, recordPiDriver } from "../src/drivers.ts";
 
-const BINARIES: Record<string, string> = { claude: "claude", codex: "codex", opencode: "opencode", pi: "pi" };
+const BINARIES: Record<string, string> = { claude: "claude", codex: "codex", opencode: "opencode", pi: "pi", acp: "opencode" };
 
 function parseArgs(argv: string[]): { provider: ProviderKind; scenario: string; prompts: string[]; approve: boolean; steer?: string; rollback?: number; mode: "approval-required" | "auto-accept-edits" | "full-access"; out: string } {
   const positional: string[] = [];
@@ -46,7 +46,7 @@ function parseArgs(argv: string[]): { provider: ProviderKind; scenario: string; 
     else flags.set(name, argv[++i] ?? "");
   }
   const [provider, scenario] = positional;
-  if (!provider || !scenario || !(provider in BINARIES)) throw new Error("usage: record <claude|codex|opencode|pi> <scenario> [--prompt text]... [--approve] [--steer text] [--rollback n] [--mode m] [--out dir]");
+  if (!provider || !scenario || !(provider in BINARIES)) throw new Error("usage: record <claude|codex|opencode|pi|acp> <scenario> [--prompt text]... [--approve] [--steer text] [--rollback n] [--mode m] [--out dir]");
   const mode = (flags.get("mode") as string | undefined) ?? "approval-required";
   const root = resolve(dirname(fileURLToPath(import.meta.url)), "..", "..", "..");
   return {
@@ -77,6 +77,7 @@ const drivers: Record<string, () => ProviderDriver<never>> = {
   codex: () => recordCodexDriver(recorder) as unknown as ProviderDriver<never>,
   opencode: () => recordOpencodeDriver(recorder) as unknown as ProviderDriver<never>,
   pi: () => recordPiDriver(recorder) as unknown as ProviderDriver<never>,
+  acp: () => recordAcpDriver(recorder) as unknown as ProviderDriver<never>,
 };
 
 const tideHome = mkdtempSync(join(tmpdir(), "tide-record-home-"));

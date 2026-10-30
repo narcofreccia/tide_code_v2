@@ -24,6 +24,9 @@ export const CODEX_CAPS = {
   fork: true,
   rollback: true,
   oneShot: true,
+  // R8 — Model.supportedReasoningEfforts, turn/start `effort`; skills/list (skills only, no custom prompts)
+  effort: true,
+  commands: true,
 } as const;
 
 export const LOGIN_HINT = "Run `codex login` in a terminal";
@@ -61,12 +64,18 @@ export function toModelInfo(models: Model[], defaultModel: string | undefined): 
     .filter((model) => typeof model.id === "string" && model.id !== "" && model.hidden !== true)
     .map((model) => {
       const family = /^([a-z]+-[\d.]+)/i.exec(model.model ?? model.id)?.[1];
+      const efforts = (model.supportedReasoningEfforts ?? []).map((option) => ({
+        id: option.reasoningEffort,
+        label: option.reasoningEffort,
+        ...(option.reasoningEffort === model.defaultReasoningEffort ? { default: true } : {}),
+      }));
       const isDefault = defaultModel !== undefined ? model.id === defaultModel : model.isDefault === true;
       return {
         id: model.id,
         label: model.displayName ?? model.id,
         ...(family ? { family } : {}),
         default: isDefault,
+        ...(efforts.length > 0 ? { efforts } : {}),
       };
     });
 }

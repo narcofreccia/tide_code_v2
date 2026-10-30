@@ -20,6 +20,7 @@ Fixtures: `apps/server/test/fixtures/replay/<provider>/<scenario>.ndjson`.
 | Pi | stdio JSONL child | `createPiInstance(config, env, { spawn, probe, ... })` | `replaySpawn` / `recordSpawn` |
 | OpenCode | HTTP + SSE | `OpencodeConfig.fetchImpl` (added for this) with `serverUrl` set | `replayFetch` / `recordFetch` |
 | Claude | Agent SDK `query()` | `ClaudeConfig.queryImpl` | `replayQuery` / `recordQuery` |
+| ACP agents | stdio ndjson JSON-RPC child | `createAcpInstance(config, env, { spawn, timers })` (status probe spawns too) | `replaySpawn` / `recordSpawn` (`replayAcpDriver`, `recordAcpDriver`; record defaults to `opencode acp`) |
 
 `replayCodexDriver(replay)`, `replayPiDriver`, `replayOpencodeDriver`, `replayClaudeDriver` wrap
 the production driver with the seam filled in (and `binaryPath` pointing at node, so "is the CLI

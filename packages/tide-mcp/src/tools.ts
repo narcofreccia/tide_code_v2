@@ -57,11 +57,12 @@ export const BASE_TOOL_DEFINITIONS: ToolDefinition[] = [
   {
     name: "tide_delegate",
     description:
-      "Hand a self-contained task to another coding harness as a new Tide thread, and get back its threadId. Use it for work that is worth running in parallel or that another harness is better at. Any of claude, codex, opencode and pi can be delegated to. Pass `role` to label what the thread is for (review, research, implementation). Pass `inheritWorktreeFrom` with another thread's id to run in that thread's checkout (to review or test its branch). Pass `repo` with the label of one of this project's writable linked repositories to run the delegate inside that repository instead. By default it returns immediately (completion \"async\"): poll tide_delegate_status or call tide_thread_wait. With completion \"wait\" it blocks until the child settles and returns its last message; on timeout the child keeps running. With \"async\", Tide sends you a message when the delegate finishes or asks a question, so you need not poll.",
+      "Hand a self-contained task to another coding harness as a new Tide thread, and get back its threadId. Use it for work that is worth running in parallel or that another harness is better at. Any of claude, codex, opencode, pi and acp (an Agent Client Protocol agent such as Gemini CLI or Copilot) can be delegated to; pass `providerId` to pick a configured instance (a second account like codex:work, or an ACP agent like acp:gemini), with `provider` set to its kind. Pass `role` to label what the thread is for (review, research, implementation). Pass `inheritWorktreeFrom` with another thread's id to run in that thread's checkout (to review or test its branch). Pass `repo` with the label of one of this project's writable linked repositories to run the delegate inside that repository instead. By default it returns immediately (completion \"async\"): poll tide_delegate_status or call tide_thread_wait. With completion \"wait\" it blocks until the child settles and returns its last message; on timeout the child keeps running. With \"async\", Tide sends you a message when the delegate finishes or asks a question, so you need not poll.",
     inputSchema: {
       type: "object",
       properties: {
-        provider: { type: "string", enum: ["claude", "codex", "opencode", "pi"], description: "Which harness runs the task." },
+        provider: { type: "string", enum: ["claude", "codex", "opencode", "pi", "acp"], description: "Which harness runs the task (the kind of `providerId` when you pass one)." },
+        providerId: str("Optional configured instance of that harness: another account (e.g. codex:work) or an ACP agent (e.g. acp:gemini). Omit for the harness's default instance."),
         prompt: str("The complete task description; the new thread has none of your context."),
         model: str("Optional model id for that harness."),
         mode: {

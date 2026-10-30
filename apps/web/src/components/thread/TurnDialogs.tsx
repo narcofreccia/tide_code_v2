@@ -1,7 +1,7 @@
 import { useState } from "react";
 import type { ProviderKind, Thread, Turn } from "@tide/contracts";
 import { forkThread, rollbackThread } from "../../lib/turnActions.ts";
-import { providerStatus, useProviders } from "../../state/providers.ts";
+import { threadProviderStatus, useProviders } from "../../state/providers.ts";
 import { Checkbox } from "../ui/Choice.tsx";
 import { ConfirmDialog, Dialog } from "../ui/Dialog.tsx";
 import { Button } from "../ui/Button.tsx";
@@ -14,7 +14,7 @@ export function RollbackDialog({ thread, turn, onClose }: { thread: Thread; turn
   const providers = useProviders();
   const canRestore = thread.worktreePath !== undefined && turn.checkpoint?.before !== undefined;
   const [restoreFiles, setRestoreFiles] = useState(canRestore);
-  const forgets = providerStatus(providers, thread.provider)?.caps.rollback === true;
+  const forgets = threadProviderStatus(providers, thread)?.caps.rollback === true;
   return (
     <ConfirmDialog
       title="Roll back to before this turn?"

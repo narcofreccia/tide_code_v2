@@ -54,7 +54,7 @@ export function InboxSection() {
   const kind = textModel?.provider;
   // the chosen harness stays listed while the roster is still probing (or it logged out), so the
   // field never shows a blank for a value the server holds
-  const eligible = providers.filter((p) => (p.caps.oneShot === true && p.loggedIn) || p.kind === kind);
+  const eligible = providers.filter((p) => (p.id || p.kind) === p.kind && ((p.caps.oneShot === true && p.loggedIn) || p.kind === kind));
   const agentOptions: SelectOption<string>[] = [
     { value: AUTO, label: "Automatic" },
     ...(kind !== undefined && !eligible.some((p) => p.kind === kind) ? [{ value: kind, label: PROVIDER_LABELS[kind] }] : []),

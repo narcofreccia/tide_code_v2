@@ -2,7 +2,8 @@ import { useState } from "react";
 import { selectLimited, selectSnoozed } from "@tide/client";
 import { dispatchOrToast } from "../../lib/dispatchOrToast.ts";
 import { relativeUntil } from "../../lib/relativeTime.ts";
-import { PROVIDER_LABELS } from "../../lib/vocab.ts";
+import { threadHarnessLabel } from "../../lib/vocab.ts";
+import { useProvidersSnapshot } from "../../state/providers.ts";
 import { useModel } from "../../state/model.ts";
 import { useUi } from "../../state/ui.ts";
 import { Button } from "../ui/Button.tsx";
@@ -13,6 +14,7 @@ import styles from "./Limited.module.css";
 
 /** Threads parked on a usage limit. Hidden entirely when there are none. */
 export function LimitedSection() {
+  const providers = useProvidersSnapshot();
   const model = useModel((s) => s.model);
   const selectThread = useUi((s) => s.selectThread);
   const limited = selectLimited(model);
@@ -31,7 +33,7 @@ export function LimitedSection() {
               <button type="button" className={`${mc.rowButton}`} onClick={() => selectThread(thread.id)}>
                 <span className={styles.title}>{thread.title}</span>
               </button>
-              <Pill>{PROVIDER_LABELS[thread.provider]}</Pill>
+              <Pill>{threadHarnessLabel(providers, thread)}</Pill>
               <span className={styles.meta} title={lim.note}>
                 {lim.resetsAt === undefined ? "reset unknown" : `resets ${relativeUntil(lim.resetsAt, now)}`}
                 {lim.resume === "reset" ? " · auto" : ""}

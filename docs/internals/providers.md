@@ -5,16 +5,59 @@ runs the user's installed CLI/SDK and their subscription.
 
 ## Common mapping
 
-| Tide `RuntimeMode`     | Claude `permissionMode` | Codex `approvalPolicy` / `sandboxPolicy`     | OpenCode permission | Pi |
-|------------------------|-------------------------|----------------------------------------------|---------------------|----|
-| approval-required      | `default`               | `untrusted` / workspace-write                | ask                 | `tool_call` hook → ask |
-| auto-accept-edits      | `acceptEdits`           | `on-request` / workspace-write               | edits allow, bash ask | hook: writes allow |
-| auto                   | `auto` (classifier)     | `never` / workspace-write (sandboxed)        | allow               | hook: allow |
-| full-access            | `bypassPermissions` (+`allowDangerouslySkipPermissions`) | `never` / `dangerFullAccess` | allow | hook: allow |
+| Tide `RuntimeMode`     | Claude `permissionMode` | Codex `approvalPolicy` / `sandboxPolicy`     | OpenCode permission | Pi | ACP |
+|------------------------|-------------------------|----------------------------------------------|---------------------|----|-----|
+| approval-required      | `default`               | `untrusted` / workspace-write                | ask                 | `tool_call` hook → ask | per agent, see [ACP agents](#acp-agents) |
+| auto-accept-edits      | `acceptEdits`           | `on-request` / workspace-write               | edits allow, bash ask | hook: writes allow | per agent, see [ACP agents](#acp-agents) |
+| auto                   | `auto` (classifier)     | `never` / workspace-write (sandboxed)        | allow               | hook: allow | per agent, see [ACP agents](#acp-agents) |
+| full-access            | `bypassPermissions` (+`allowDangerouslySkipPermissions`) | `never` / `dangerFullAccess` | allow | hook: allow | per agent, see [ACP agents](#acp-agents) |
 
 `InteractionMode.plan` → Claude `permissionMode: "plan"`; Codex `collaborationMode`/plan;
 OpenCode `plan` agent; Pi = system-prompt + `tide_propose_plan` tool, and in plan mode shell
 commands go through a parsed read-only policy (`readonly-shell.ts`) instead of a regex allowlist.
+
+### Instances
+
+The registry (`apps/server/src/provider/registry.ts`) holds one entry per **instance**, keyed by
+instance id; threads point at one with `Thread.providerId` (absent = the kind's default).
+
+- **Bundled defaults** — `claude`, `codex`, `opencode`, `pi`: id = kind, labels "Claude Code",
+  "Codex", "OpenCode", "Pi", config from `server.json → providers.<kind>`. Always listed, never
+  stored in settings; a settings id equal to a kind is refused (`settings.ts`) and ignored by the registry.
+- **User instances** — `settings.providerInstances` (`ProviderInstanceConfig`), mapped by
+  `provider/instances.ts`. A bundled kind reuses its driver: `server.json` config, then
+  `binaryPath`, then `env`, with `home` (`~` expanded) mapped to the harness's own account location:
+
+  | kind | `home` becomes |
+  |---|---|
+  | claude | `CLAUDE_CONFIG_DIR` |
+  | codex | `CODEX_HOME` (and `codexHome` in the driver config) |
+  | opencode, pi | `HOME` |
+
+  The driver also gets `DriverEnv.instance {id, label, home?, env}`. Kind `acp` runs the ACP
+  driver with a manual `command`/`args`, or with the registry agent's launch
+  (`acpAgentId`, `provider/acpRegistry.ts`): npx → `npx -y <package> …args`, uvx →
+  `uvx <package> …args`. Binary-only agents are not downloaded; they are listed with
+  distribution `binary` and need a manual command. An agent Tide cannot launch is listed as
+  not installed with a hint instead of failing the list.
+- **Sync** — `settings.set` with `providerInstances` calls `registry.syncInstances`: new ids are
+  added, an instance whose config changed is replaced, a dropped one removed. A replaced or
+  removed instance that still serves a live session is not disposed; `SessionDirectory.close`
+  sweeps it once its last session is gone.
+- **Listing** — `providers.list` returns one DTO per instance (`id`, `kind`, `label`): the four
+  defaults first in that order, then user instances in settings order.
+- **Switching instance** (`thread.update {providerId}`, or `{provider}` = that kind's default)
+  behaves like a provider switch: refused while the thread runs, the native session is cleared
+  (another account cannot resume it), the model and effort are cleared unless the command names
+  new ones, and the history goes to the target as a handoff — `delta` with its own session
+  restored when the target already ran the thread, `full` otherwise. Between two instances of
+  the same kind it is always `full`, because the projector still keys `providerSessions` by kind.
+  An unknown `providerId` is refused (`invalid-command`).
+- **Effort** — `thread.create/update {effort}` sets the reasoning level (`""` clears it); it reaches
+  the driver as `OpenSessionOptions.effort` and, on a live session, through `reconfigure`.
+- **Commands** — `providers.commands {threadId}` asks the thread's instance `listCommands({cwd})`
+  (worktree, else project root), cached 30 s per instance + cwd; a `commands` event from a live
+  session replaces that entry and does not expire.
 
 ### Reconfigure between turns
 
@@ -41,6 +84,37 @@ text that follows**, so the thinking and the answer render as one message.
 | Codex | `item/reasoning/textDelta` + `summaryTextDelta` | `<turnId>#<slot>`: reasoning is written to the turn's open message slot, the next `agentMessage` claims that slot, and a completed message opens the next one. Codex reasoning and the message it precedes are separate *items*, so the item id cannot be the key; the slot keeps two agent messages of one turn apart while still merging each with its own reasoning. |
 | OpenCode | `reasoning` parts of the assistant message | `assistantMessageID` of the v2 event, so reasoning and text of one message share a key |
 | Pi | `thinking_delta` deltas | the per-message key (`pi-<n>`, bumped on `message_start`), with the `contentIndex` dropped so thinking and text merge |
+
+### Reasoning effort (R8)
+
+`ModelInfo.efforts` comes from the harness, per model; `OpenSessionOptions.effort` /
+`SessionSettings.effort` carry the pick. `caps.effort` says the driver honours it.
+
+| | levels from | applied at open | live change (`reconfigure`) |
+|---|---|---|---|
+| Claude | `supportedModels()[].supportedEffortLevels` (omitted when `supportsEffort === false`): `low medium high xhigh max` | `Options.effort` | `Query.applyFlagSettings({effortLevel})` (`null` clears to the model default); no such method on the query → `reopen` |
+| Codex | `model/list` → `supportedReasoningEfforts[].reasoningEffort`, `defaultReasoningEffort` flagged `default` | `turn/start.effort` and `collaborationMode.settings.reasoning_effort` on every turn (`null` when unset) | stored, next turn carries it (always `applied`) |
+| OpenCode | `GET /api/model` → `variants[].id` (`caps.effort` only when some model has variants) | `ModelRef.variant` on `POST /api/session` / `…/model` (variants live on the model ref; an effort on an unpinned thread pins the server's default model) | `POST /api/session/:id/model` with the same model + new `variant` (cleared effort re-sends it without) |
+| ACP | `configOptions` `category: "thought_level"` options, on every model | `session/set_config_option {configId, value}` after `session/new` | same call (`applied`) |
+| Pi | `get_available_thinking_levels` of the status process, applied to every model with `reasoning !== false` (pi clamps a level a model lacks): `off minimal low medium high …` | `--thinking <level>` at spawn | `set_thinking_level {level}`; clearing → `reopen` (a fresh process without `--thinking`) |
+
+Unverified without a live login: Pi (no login on the dev machine), so its levels are doc-verified
+only (`docs/rpc-commands.md` 1.1.0). Claude's effort list was probed live; OpenCode's variants were
+read from a live 2.0.29 server and a session was created with `variant: "low"`.
+
+### Slash commands & skills (R8)
+
+`ProviderInstance.listCommands({cwd})` feeds the composer's `/` picker (`caps.commands`).
+Executing is per harness; a leading `/name` that the harness does not list is **sent as-is**
+(pass-through), never swallowed.
+
+| | listed from | `source` | executes |
+|---|---|---|---|
+| Claude | `Query.supportedCommands()` on an idle control query in `cwd` (~1 s). One merged list: Claude's own `builtin: true` rows -> `builtin`; user/project/plugin/MCP commands **and skills** -> `custom` (the SDK does not mark skills in this list; the `system/init` `skills` array only exists after a turn starts) | `builtin` / `custom` | plain prompt text `/name args` — the CLI resolves it |
+| Codex | `skills/list {cwds:[cwd]}` on a short-lived app-server; enabled skills only. The 0.162 bindings have **no custom-prompt listing**, so `~/.codex/prompts` are not offered | `skill` | a leading `/<listed skill>` becomes `UserInput {type:"skill", name, path}` + the remaining text as a `text` part (skills are resolved once per session via `skills/list`); unlisted `/x` is plain text |
+| OpenCode | `GET /api/command` (custom commands) + `GET /api/skill` (incl. the built-in `opencode` skill), each `[]` on failure | `custom` / `skill` | a listed command -> `POST /api/session/:id/command {name, text: args}` (instead of a prompt; 204, no message id); a listed skill -> `POST …/prompt` with `skills: [{id, mention}]` and the text unchanged; anything else a normal prompt |
+| ACP | the latest `available_commands_update` of any session of the instance (none before the first session) | `custom` | plain prompt text `/name args` — the agent resolves it |
+| Pi | `get_commands` on a short-lived `pi --mode rpc --no-session` rooted at `cwd`; Tide's own `/tide-config` is hidden | extension/prompt -> `custom`, `skill:` names -> `skill` | `prompt {message: "/name args"}` — pi resolves it (`disposition: "handled"` for extension commands) |
 
 ### Unknown events pass through
 
@@ -301,6 +375,109 @@ against that real pi on every `pnpm test`.
 - Auth/models are pi's (`~/.pi/agent/{auth,models}.json`); local models via Ollama
   (`:11434/api/tags`) / LM Studio (`:1234/v1/models`). Escape hatch: `pi --session <file>`.
 
+## ACP agents
+
+Agent Client Protocol v1 (`packages/driver-acp`), verified 2026-10-30 against
+`@agentclientprotocol/sdk` 2.1.0 `schema/v1` and live OpenCode 2.0.29 / 1.1.36.
+
+One driver for every ACP agent (Gemini CLI, Copilot, Cline, Qwen Code, OpenCode, …), one
+`ProviderInstance` per configured agent. The server resolves registry ids to a launch command;
+the driver only runs `AcpConfig {command, args?, env?, home?, label?, defaultModel?}`. No SDK
+dependency: ndjson JSON-RPC 2.0 over the child's stdio is hand-rolled (`jsonrpc.ts`). stdout is
+the protocol (a non-JSON line is logged and skipped), stderr is logged.
+
+- **Process:** one agent process per session (ACP agents serve one client over stdio), spawned
+  in the session cwd, in its own process group so `close()` reaches `npx`'s grandchild
+  (`SIGTERM`, `SIGKILL` after 5 s). Env: server env → `DriverEnv.instance.env` → `config.env` →
+  session env; `home` (config, else instance) becomes `HOME` only when set.
+- **Handshake:** `initialize {protocolVersion: 1, clientCapabilities: {fs: {readTextFile, writeTextFile}, terminal: false}, clientInfo: {name: "tide"}}`,
+  90 s timeout (first `npx` start downloads the agent). Then `session/new {cwd, mcpServers}`
+  (Tide MCP in ACP's stdio shape: `args` always present, `env` as `[{name, value}]`;
+  `additionalDirectories` = linked repos when the agent advertises
+  `sessionCapabilities.additionalDirectories`), or `session/load {sessionId, cwd, mcpServers}`
+  when resuming and `agentCapabilities.loadSession`. `session/load` replays history as
+  `session/update`s before replying; the normalizer is muted for it (commands and mode still tracked).
+- **Turn:** `session/prompt {sessionId, prompt}` → `{stopReason}`. Text block; images as
+  `{type: "image", data, mimeType}` only with `promptCapabilities.image` (else dropped with an
+  info row). ACP has no system-prompt field, so `systemPromptAppend` leads the first prompt of a
+  new session as a `<tide-context>` text block. `end_turn` → `completed`; `max_tokens` /
+  `max_turn_requests` → `completed` + info row; `refusal` → `error`; `cancelled` → `interrupted`.
+- **Cancel:** `session/cancel` is a notification; pending `session/request_permission` calls are
+  then answered `{outcome: {outcome: "cancelled"}}`. OpenCode 1.1.36 answers the prompt with
+  `end_turn` (not `cancelled`) after a cancel (recorded), so the driver settles `interrupted`
+  whenever it sent the cancel, whatever the stop reason.
+- **Updates:** `agent_message_chunk` → `assistant.delta`, `agent_thought_chunk` →
+  `assistant.reasoning` (one key `acp-<turn>#<segment>`, bumped by a tool call after any text or
+  reasoning); `tool_call` / `tool_call_update` (merged by `toolCallId`, `content` replaces) →
+  `tool` activity (`toolName = name ?? title`, `input = rawInput ?? {title, kind, locations}`,
+  `pending|in_progress` → running, `completed` → ok, `failed` → error, output from content
+  blocks / diffs / `rawOutput`); `plan` → `plan.progress` (full replace);
+  `available_commands_update` → `commands` (`source: "custom"`, `argumentHint = input.hint`;
+  outside a turn it is held and delivered at the start of the next one); `current_mode_update`
+  → info row; `usage_update {used, size}` → `usage.contextUsage`, and the delta of its
+  cumulative `cost` (USD) → the turn's `costUsd`. `PromptResponse.usage` (unstable; OpenCode 2.x
+  reports the turn's own tokens there) → the turn's `usage`. `session_info_update`,
+  `config_option_update` (ingested as settings), `user_message_chunk` are silent; anything else →
+  info row `<sessionUpdate>` with the raw payload.
+- **Agent → client requests:** `session/request_permission` → approval card (`requestId` =
+  `toolCallId`, diff from the tool's `diff` content), reply held until `respondApproval`:
+  `accept` → `allow_once`, `acceptForSession`/`acceptAlways` → `allow_always` (fallback
+  `allow_once`), `decline` → `reject_once` (fallback `reject_always`), `cancel` → `cancelled`.
+  `fs/read_text_file {path, line?, limit?}` / `fs/write_text_file {path, content}` are served with
+  node fs inside the cwd and linked repos only (symlinks resolved first; writes need a `write`
+  link); anything else is a JSON-RPC `-32602`. `terminal/*` (Tide advertises `terminal: false`)
+  and unknown methods → `-32601`. OpenCode does not use the fs callbacks (it writes itself).
+
+| Tide `RuntimeMode` | permission requests | agent mode picked (best effort, matched on mode id **or** name; never a hardcoded id) |
+|---|---|---|
+| approval-required | every one → approval card | the agent's initial mode |
+| auto-accept-edits | `kind` edit/move/delete/read/search/think/fetch → `allow_once`; execute/other/none → card | `/accept.?edits\|auto.?edit/i` |
+| auto | `allow_once` + info row `auto-approved: <title>` | the agent's initial mode |
+| full-access | `allow_always` (else `allow_once`) + info row | `/yolo\|bypass\|full\|auto/i` |
+
+The mode selector is a `category: "mode"` config option (`session/set_config_option`) or the
+`modes` block (`session/set_mode`). **Plan:** when a mode matches `/plan/i`, `caps.planMode` is on,
+`interaction: "plan"` selects it (it wins over the runtime-mode match) and the turn's final
+assistant message becomes `plan.proposed`; leaving plan returns to the matched/initial mode.
+**Model / effort:** `configOptions` `category: "model"` → `ModelInfo[]` (grouped options
+flattened, `currentValue` → default unless `defaultModel` is set), `category: "thought_level"` →
+`efforts` on every model (`caps.effort`); both set with `session/set_config_option` after
+`session/new` and in `reconfigure` (`applied`; any failed knob → `reopen`). Agents that still
+send the pre-configOptions `models {currentModelId, availableModels}` block (OpenCode 1.1.36)
+get `session/set_model {sessionId, modelId}`. Nothing reported → `models: []`.
+
+**Status** spawns the agent in `<dataDir>/acp-probe`, runs `initialize` (version = `agentInfo.version`,
+caps from `agentCapabilities`), opens **one** throwaway `session/new` there per instance lifetime
+to learn models / plan / effort (live sessions refresh them), then kills it; cached 60 s.
+ENOENT → `installed: false` + "install it or pick another agent from the registry". An
+`auth_required` (`-32000`) answer → `loggedIn: false`, `hint` = the first `authMethods[].description`
+(no `authenticate` call in v1); a session that later opens clears it.
+
+`caps`: `{planMode: <plan mode found>, subagents: false, mcp: true, images: promptCapabilities.image, resume: loadSession, contextUsage: false, openInTerminal: false, steer: false, fork: false, rollback: false, oneShot: false, effort: <thought_level found>, commands: true}`.
+**Unsupported:** client terminals (`terminal/*`), steer, fork, rollback, sub-agent rows,
+one-shot completions, an "open in terminal" command (no portable resume CLI), `authenticate`,
+elicitation, and enforcing read-only links for agents that write files themselves.
+
+Live (2026-10-30): OpenCode 2.0.29 `initialize` → `loadSession: true`, `promptCapabilities {image, embeddedContext}`,
+`mcpCapabilities {http}`, `sessionCapabilities {additionalDirectories, close, delete, fork, list, resume}`;
+`session/new` → `configOptions` `model` (8 free models), `effort` (thought_level: low…max, default),
+`mode` (build/plan), no `modes`. A pong turn, a read+edit tool turn (no permission requests:
+OpenCode's default ruleset allows) and a plan-mode turn ran end to end. OpenCode 1.1.36 answers
+legacy `modes` + `models` instead and hangs `session/prompt` silently when the model call fails
+(quota), until cancelled.
+
+| registry id | launch |
+|---|---|
+| gemini | `npx -y @google/gemini-cli@0.66.0 --acp` |
+| copilot | `npx -y @github/copilot@1.0.105 --acp` |
+| cline | `npx -y cline@3.0.74 --acp` |
+| qwen | `npx -y @qwen-code/qwen-code@0.26.4 --acp` |
+| opencode | `opencode acp` |
+
+Fixtures: `packages/driver-acp/test/fixtures/{opencode-acp,opencode-acp-1.1}/` recorded with
+`node scripts/record.mjs --repo <scratch git repo> [--model id] [--cancel-after ms] -- <agent cmd>`
+(client lines carry `"_dir": "c2a"`); `synthetic/` is hand-written (header `synthetic: true`).
+
 ## W1 linked repos — how each harness scopes a secondary directory
 
 `OpenSessionOptions.linkedDirs` carries `{path, label, note?, access}`. The preamble reaches
@@ -313,6 +490,7 @@ read-only link is the part each driver has to add.
 | Codex | allowed | allowed | denied | `sandboxPolicy.writableRoots = [cwd, …write links]`; a `workspace-write` sandbox reads anywhere, so read-only links need no entry |
 | OpenCode | allowed | allowed | denied | per-session `permission` ruleset (see below) |
 | Pi | allowed | allowed | denied | `tide-bridge` `tool_call` → `{block, reason}`; pi has no sandbox, so write links work with no rule at all |
+| ACP | allowed | allowed | denied only through `fs/*` | `session/new.additionalDirectories` (when advertised) + the `fs/*` policy; an agent that writes files itself is not stopped |
 
 - **OpenCode**, verified against 1.1.36's `src/permission/next.ts`: `PermissionNext.evaluate`
   takes the **last** matching rule (`merged.findLast(...)`) and the ruleset is

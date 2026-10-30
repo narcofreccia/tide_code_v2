@@ -11,7 +11,8 @@ const NONE = "none";
 export function DecisionsFallback() {
   const fallback = useServerSettings((s) => s.settings.decisions.fallback);
   const { providers, loading } = useProviderRoster();
-  const eligible = providers.filter((p) => p.caps.oneShot === true && p.loggedIn);
+  // the fallback names a kind: only default instances (an account or ACP agent cannot be addressed)
+  const eligible = providers.filter((p) => p.caps.oneShot === true && p.loggedIn && (p.id || p.kind) === p.kind);
   const options: SelectOption<string>[] = [
     { value: NONE, label: "None (Jev only)" },
     ...eligible.map((p) => ({ value: p.kind, label: PROVIDER_LABELS[p.kind] })),

@@ -3,8 +3,9 @@ import { existsSync } from "node:fs";
 import { homedir } from "node:os";
 import { join } from "node:path";
 import { promisify } from "node:util";
-import type { DriverEnv, ModelInfo, ProviderStatus } from "@tide/contracts";
-import type { ClaudeConfig, QueryFn, SdkModelInfo } from "./types.ts";
+import type { DriverEnv, ModelInfo, ProviderStatus, SlashCommandInfo } from "@tide/contracts";
+import { instanceEnv } from "./env.ts";
+import type { ClaudeConfig, QueryFn, SdkModelInfo, SdkSlashCommand } from "./types.ts";
 
 const run = promisify(execFile);
 
@@ -23,6 +24,9 @@ export const CLAUDE_CAPS = {
   rollback: true,
   // R6 — tools-off one-shot via query() (complete.ts)
   oneShot: true,
+  // R8 — Options.effort / Query.applyFlagSettings({effortLevel}); Query.supportedCommands()
+  effort: true,
+  commands: true,
 } as const;
 
 export const LOGIN_HINT = "Run `claude auth login` in a terminal";
@@ -90,9 +94,11 @@ function toModelInfo(models: SdkModelInfo[], defaultModel: string | undefined): 
     .filter((model) => typeof model.value === "string" && model.value !== "")
     .map((model) => {
       const family = (model.resolvedModel ?? model.value).match(/opus|sonnet|haiku|fable/i)?.[0]?.toLowerCase();
+      const efforts = model.supportsEffort === false ? [] : (model.supportedEffortLevels ?? []);
       return {
         id: model.value,
         label: model.displayName ?? model.value,
+        ...(efforts.length > 0 ? { efforts: efforts.map((id) => ({ id, label: id })) } : {}),
         ...(family ? { family } : {}),
         ...(defaultModel !== undefined ? { default: model.value === defaultModel } : { default: model.value === "default" }),
       };
@@ -122,6 +128,36 @@ export async function listModels(queryFn: QueryFn, options: Record<string, unkno
   }
 }
 
+/** Maps `supportedCommands()` rows: Claude's own are "builtin", everything else (user/project/plugin/MCP, skills) "custom". */
+export function toSlashCommands(commands: SdkSlashCommand[]): SlashCommandInfo[] {
+  return commands
+    .filter((command) => typeof command.name === "string" && command.name !== "")
+    .map((command) => ({
+      name: command.name,
+      ...(command.description ? { description: command.description } : {}),
+      ...(command.argumentHint ? { argumentHint: command.argumentHint } : {}),
+      source: command.builtin ? ("builtin" as const) : ("custom" as const),
+    }));
+}
+
+/** Slash commands + skills for `cwd` over the same idle control-channel query `listModels` uses. */
+export async function listCommands(queryFn: QueryFn, options: Record<string, unknown>, env: DriverEnv): Promise<SlashCommandInfo[]> {
+  const abort = new AbortController();
+  try {
+    const idle = (async function* () {
+      await new Promise((resolve) => setTimeout(resolve, 30_000).unref?.());
+    })();
+    const query = queryFn({ prompt: idle, options: { ...options, abortController: abort } });
+    if (!query.supportedCommands) return [];
+    return toSlashCommands(await query.supportedCommands());
+  } catch (error) {
+    env.log(`[claude] supportedCommands failed: ${error instanceof Error ? error.message : String(error)}`);
+    return [];
+  } finally {
+    abort.abort();
+  }
+}
+
 export async function buildStatus(config: ClaudeConfig, env: DriverEnv, queryFn: QueryFn): Promise<ProviderStatus> {
   const binary = await detectBinary(config);
   if (!binary) {
@@ -138,7 +174,7 @@ export async function buildStatus(config: ClaudeConfig, env: DriverEnv, queryFn:
   const version = versionOutput ? parseVersion(versionOutput) : undefined;
   const loggedIn = await detectLogin(binary);
   const models = loggedIn
-    ? await listModels(queryFn, { cwd: process.cwd(), pathToClaudeCodeExecutable: binary, env: { ...process.env, ...config.env } }, config.defaultModel, env)
+    ? await listModels(queryFn, { cwd: process.cwd(), pathToClaudeCodeExecutable: binary, env: { ...process.env, ...instanceEnv(config, env) } }, config.defaultModel, env)
     : FALLBACK_MODELS;
 
   return {

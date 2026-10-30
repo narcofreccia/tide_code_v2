@@ -39,7 +39,7 @@ describe("error activities", () => {
   it("offers no login command when the harness is not installed", () => {
     setup();
     setProvidersForTest([
-      { kind: "claude", installed: false, loggedIn: false, hint: "install with `brew install claude`", models: [], caps: PROVIDER_FIXTURE[0]!.caps },
+      { id: "claude", kind: "claude", label: "Claude Code", installed: false, loggedIn: false, hint: "install with `brew install claude`", models: [], caps: PROVIDER_FIXTURE[0]!.caps },
       ...PROVIDER_FIXTURE.slice(1),
     ]);
     render(

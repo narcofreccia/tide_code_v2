@@ -2,15 +2,18 @@ import { useState } from "react";
 import type { ProviderKind, ProviderStatusDto, RuntimeMode } from "@tide/contracts";
 import {
   defaultModelOf,
+  instanceGroup,
   modelChoiceValue,
   modelChoices,
+  orderedInstances,
+  placeholderStatus,
   providerStatus,
   unavailableReason,
   useProviderRoster,
   useProviders,
 } from "../../state/providers.ts";
 import { providerDefault, worktreeByDefault } from "../../state/serverSettings.ts";
-import { PROVIDERS, PROVIDER_LABELS } from "../../lib/vocab.ts";
+import { BUNDLED_PROVIDERS, PROVIDER_LABELS, kindOfId } from "../../lib/vocab.ts";
 import { Checkbox } from "../ui/Choice.tsx";
 import { HarnessMark } from "../ui/StageList/StageCard.tsx";
 import { Select, type SelectOption } from "../ui/Select.tsx";
@@ -18,41 +21,80 @@ import styles from "./ProviderPicker.module.css";
 
 export interface ThreadDraft {
   provider: ProviderKind;
+  /** R8: the instance (account / ACP agent); equals `provider` for the bundled default */
+  providerId: string;
   /** empty string means "let the harness choose" */
   model: string;
+  /** R8: empty string means "the harness default effort" */
+  effort: string;
   /** absent means "the harness default mode" */
   mode?: RuntimeMode;
   useWorktree: boolean;
 }
 
 /**
- * The per-provider defaults from Settings › Providers (server-side, shared with
- * every client) win over the harness's own
- * default model; an explicit `model` argument wins over both.
+ * The per-instance defaults from Settings › Providers (server-side, shared with
+ * every client) win over the harness's own default model; an explicit `model`
+ * argument wins over both. `id` is an instance id or a bare kind.
  */
 export function draftForProvider(
-  provider: ProviderKind,
-  providers: ProviderStatusDto[],
+  id: string,
+  providers: readonly ProviderStatusDto[],
   model = "",
 ): Omit<ThreadDraft, "useWorktree"> {
-  const saved = providerDefault(provider);
-  const chosen = model || saved.model || defaultModelOf(providers, provider) || "";
-  return { provider, model: chosen, ...(saved.mode === undefined ? {} : { mode: saved.mode }) };
+  const status = providerStatus(providers, id);
+  const provider = status?.kind ?? kindOfId(id) ?? "claude";
+  const providerId = status?.id || id;
+  const saved = providerDefault(providerId);
+  const chosen = model || saved.model || defaultModelOf(providers, providerId) || "";
+  return { provider, providerId, model: chosen, effort: "", ...(saved.mode === undefined ? {} : { mode: saved.mode }) };
 }
 
 /** Draft state for the plan and new-thread pickers; switching harness re-picks its defaults. */
 export function useThreadDraft(
-  provider: ProviderKind,
+  id: string,
   model = "",
   mode?: RuntimeMode,
 ): [ThreadDraft, (patch: Partial<ThreadDraft>) => void] {
   const providers = useProviders();
   const [draft, setDraft] = useState<ThreadDraft>(() => ({
-    ...draftForProvider(provider, providers, model),
+    ...draftForProvider(id, providers, model),
     ...(mode === undefined ? {} : { mode }),
     useWorktree: worktreeByDefault(),
   }));
   return [draft, (patch) => setDraft((prev) => ({ ...prev, ...patch }))];
+}
+
+/**
+ * Which instances a picker offers. `bundled`: the four default harnesses only —
+ * for surfaces whose contract stores a bare kind (team stages, experts, automations,
+ * forks, plan implementation). `all`: every configured account and ACP agent.
+ */
+export type InstanceScope = "bundled" | "all";
+
+/** The Agent options: grouped, each disabled with its reason when not installed / logged in. */
+export function instanceOptions(
+  providers: readonly ProviderStatusDto[],
+  loading: boolean,
+  scope: InstanceScope,
+): SelectOption<string>[] {
+  const list =
+    scope === "all"
+      ? orderedInstances(providers)
+      : BUNDLED_PROVIDERS.map((kind) => providerStatus(providers, kind) ?? placeholderStatus(kind));
+  const grouped = new Set(list.map(instanceGroup)).size > 1;
+  return list.map((p) => {
+    const id = p.id || p.kind;
+    const known = providerStatus(providers, id);
+    const reason = loading ? "Checking harnesses…" : known ? unavailableReason(known) : "not installed";
+    const name = p.label || PROVIDER_LABELS[p.kind];
+    return {
+      value: id,
+      label: reason ? `${name} · ${loading ? "checking…" : reason}` : name,
+      ...(grouped ? { group: instanceGroup(p) } : {}),
+      ...(reason === undefined ? {} : { disabled: true, title: reason }),
+    };
+  });
 }
 
 /**
@@ -62,32 +104,30 @@ export function useThreadDraft(
 export function HarnessFields({
   name,
   provider,
+  providerId,
   model,
   onChange,
   layout = "fields",
+  instances = "bundled",
 }: {
   /** prefixes the accessible labels, e.g. "Thread" → "Thread provider" */
   name: string;
   provider: ProviderKind;
+  /** R8: the selected instance; absent = the kind's default */
+  providerId?: string;
   model: string;
   onChange: (patch: Partial<ThreadDraft>) => void;
   /** `inline`: monogram + one joined Agent · Model control (composition cards) */
   layout?: "fields" | "inline";
+  instances?: InstanceScope;
 }) {
   const { providers, loading } = useProviderRoster();
+  const id = providerId ?? provider;
   // nothing is known before `providers.list` answers, so nothing is offered
-  const providerOptions: SelectOption<ProviderKind>[] = PROVIDERS.map((kind) => {
-    const status = providerStatus(providers, kind);
-    const reason = loading ? "Checking harnesses…" : status ? unavailableReason(status) : "not installed";
-    const name = PROVIDER_LABELS[kind];
-    return {
-      value: kind,
-      label: reason ? `${name} · ${loading ? "checking…" : reason}` : name,
-      ...(reason === undefined ? {} : { disabled: true, title: reason }),
-    };
-  });
-  const models = providerStatus(providers, provider)?.models ?? [];
-  const modelOptions: SelectOption<string>[] = modelChoices(models, provider);
+  const providerOptions = instanceOptions(providers, loading, instances);
+  const models = providerStatus(providers, id)?.models ?? [];
+  const modelOptions: SelectOption<string>[] = modelChoices(models, id, providers);
+  const pick = (next: string): void => onChange(draftForProvider(next, providers));
 
   if (layout === "inline") {
     return (
@@ -96,9 +136,9 @@ export function HarnessFields({
         <div className={styles.joined}>
           <Select
             label={`${name} provider`}
-            value={provider}
+            value={id}
             options={providerOptions}
-            onSelect={(kind) => onChange(draftForProvider(kind, providers))}
+            onSelect={pick}
             variant="field"
             size="md"
             className={styles.agent}
@@ -107,7 +147,7 @@ export function HarnessFields({
             label={`${name} model`}
             value={modelChoiceValue(models, model)}
             options={modelOptions}
-            onSelect={(next) => onChange({ model: next })}
+            onSelect={(next) => onChange({ model: next, effort: "" })}
             variant="field"
             size="md"
             className={styles.model}
@@ -124,9 +164,9 @@ export function HarnessFields({
         <span className={styles.label}>Agent</span>
         <Select
           label={`${name} provider`}
-          value={provider}
+          value={id}
           options={providerOptions}
-          onSelect={(kind) => onChange(draftForProvider(kind, providers))}
+          onSelect={pick}
           variant="field"
           size="md"
         />
@@ -137,7 +177,7 @@ export function HarnessFields({
           label={`${name} model`}
           value={modelChoiceValue(models, model)}
           options={modelOptions}
-          onSelect={(next) => onChange({ model: next })}
+          onSelect={(next) => onChange({ model: next, effort: "" })}
           variant="field"
           size="md"
         />

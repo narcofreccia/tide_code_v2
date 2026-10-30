@@ -1,4 +1,4 @@
-import type { DriverCaps, McpServerSpec, Project, ProviderKind, ProviderSession, ReadModel, SessionSettings, Thread } from "@tide/contracts";
+import type { DriverCaps, McpServerSpec, Project, ProviderInstance, ProviderKind, ProviderSession, ReadModel, SessionSettings, Thread } from "@tide/contracts";
 import { THREAD_TOOLS_HINT } from "@tide/tide-mcp";
 import { composeSystemPromptAppend, linkedRepoPreamble, resolveLinkedDirs } from "./links.ts";
 import type { DriverRegistry } from "./registry.ts";
@@ -8,7 +8,9 @@ const REAP_INTERVAL_MS = 60_000;
 
 interface Entry {
   threadId: string;
-  kind: ProviderKind;
+  /** the instance id the session was opened on (R8: accounts / ACP agents) */
+  providerId: string;
+  instance: ProviderInstance;
   cwd: string;
   session: ProviderSession;
   /** what the harness is currently running with; compared against the thread on every turn */
@@ -16,12 +18,22 @@ interface Entry {
   lastUsedAt: number;
 }
 
+/** R8: the registry key of the instance running `thread` (the kind for its default instance). */
+export function instanceIdOf(thread: Pick<Thread, "provider" | "providerId">): string {
+  return thread.providerId ?? thread.provider;
+}
+
 export function settingsOf(thread: Thread): SessionSettings {
-  return { ...(thread.model !== undefined ? { model: thread.model } : {}), mode: thread.mode, interaction: thread.interaction };
+  return {
+    ...(thread.model !== undefined ? { model: thread.model } : {}),
+    ...(thread.effort !== undefined ? { effort: thread.effort } : {}),
+    mode: thread.mode,
+    interaction: thread.interaction,
+  };
 }
 
 function sameSettings(a: SessionSettings, b: SessionSettings): boolean {
-  return a.model === b.model && a.mode === b.mode && a.interaction === b.interaction;
+  return a.model === b.model && a.effort === b.effort && a.mode === b.mode && a.interaction === b.interaction;
 }
 
 /** How a session is opened when the directory has none for the thread. */
@@ -69,7 +81,7 @@ export function resumableSessionId(thread: Thread, model?: ReadModel): string | 
   if (model === undefined) return thread.nativeSessionId;
   // switching back to a harness that already ran this thread: its own session is current again
   // (the turns it missed reach it as a delta handoff)
-  if (thread.providerSessions?.[thread.provider]?.nativeSessionId === thread.nativeSessionId) return thread.nativeSessionId;
+  if (thread.providerSessions?.[instanceIdOf(thread)]?.nativeSessionId === thread.nativeSessionId) return thread.nativeSessionId;
   const owner = nativeSessionOwner(model, thread.id);
   return owner === undefined || owner === thread.provider ? thread.nativeSessionId : undefined;
 }
@@ -126,9 +138,15 @@ export class SessionDirectory {
     return this.#entries.get(threadId)?.session;
   }
 
-  /** What the thread's harness can do (cached driver status). */
-  async caps(kind: ProviderKind): Promise<Partial<DriverCaps>> {
-    return (await this.#registry.status(kind)).caps;
+  /** What the thread's harness instance can do (cached driver status); a bundled kind is its default instance. */
+  async caps(providerId: string): Promise<Partial<DriverCaps>> {
+    return (await this.#registry.status(providerId)).caps;
+  }
+
+  /** R8: a session still runs on this instance object (the registry defers its disposal). */
+  usesInstance(instance: ProviderInstance): boolean {
+    for (const entry of this.#entries.values()) if (entry.instance === instance) return true;
+    return false;
   }
 
   /** `hints` only apply when a session has to be opened; a live one is returned as is. */
@@ -136,7 +154,7 @@ export class SessionDirectory {
     const cwd = threadCwd(thread, project);
     const existing = this.#entries.get(thread.id);
     if (existing) {
-      if (existing.kind === thread.provider && existing.cwd === cwd) {
+      if (existing.providerId === instanceIdOf(thread) && existing.cwd === cwd) {
         const wanted = settingsOf(thread);
         if (sameSettings(existing.settings, wanted)) {
           existing.lastUsedAt = this.#now();
@@ -164,7 +182,8 @@ export class SessionDirectory {
   }
 
   async #open(thread: Thread, cwd: string, project: Project, hints: OpenHints): Promise<ProviderSession> {
-    const instance = await this.#registry.get(thread.provider);
+    const providerId = instanceIdOf(thread);
+    const instance = await this.#registry.get(providerId);
     const linkedDirs = resolveLinkedDirs(thread, project);
     // every session that carries Tide's MCP server learns about the thread tools it exposes
     const tideTools = this.#mcp !== undefined || this.#mcpServers.length > 0 ? THREAD_TOOLS_HINT : undefined;
@@ -176,13 +195,14 @@ export class SessionDirectory {
       ...(resume !== undefined ? { resume } : {}),
       ...(hints.forkFrom !== undefined ? { forkFrom: hints.forkFrom } : {}),
       ...(thread.model !== undefined ? { model: thread.model } : {}),
+      ...(thread.effort !== undefined ? { effort: thread.effort } : {}),
       mode: thread.mode,
       interaction: thread.interaction,
       mcpServers: [...this.#mcpServers, ...(this.#mcp?.serversFor(thread.id) ?? [])],
       ...(linkedDirs.length > 0 ? { linkedDirs } : {}),
       ...(systemPromptAppend !== undefined ? { systemPromptAppend } : {}),
     });
-    this.#entries.set(thread.id, { threadId: thread.id, kind: thread.provider, cwd, session, settings: settingsOf(thread), lastUsedAt: this.#now() });
+    this.#entries.set(thread.id, { threadId: thread.id, providerId, instance, cwd, session, settings: settingsOf(thread), lastUsedAt: this.#now() });
     return session;
   }
 
@@ -211,6 +231,8 @@ export class SessionDirectory {
     } catch (err) {
       this.#log("[provider] session close failed", err);
     }
+    // an instance replaced in settings while this session ran can go now
+    await this.#registry.sweepRetired();
   }
 
   /**

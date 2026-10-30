@@ -1,0 +1,8 @@
+{"_header": {"synthetic": true, "note": "execute tool call, permission rejected (reject_once), tool fails", "schema": "ACP v1 (@agentclientprotocol/sdk 2.1.0 schema/v1)"}}
+{"_dir": "c2a", "jsonrpc": "2.0", "id": 2, "method": "session/prompt", "params": {"sessionId": "sess_1", "prompt": [{"type": "text", "text": "run rm -rf build"}]}}
+{"jsonrpc": "2.0", "method": "session/update", "params": {"sessionId": "sess_1", "update": {"sessionUpdate": "tool_call", "toolCallId": "call_x", "title": "rm -rf build", "kind": "execute", "status": "pending", "rawInput": {"command": "rm -rf build"}}}}
+{"jsonrpc": "2.0", "id": "perm-2", "method": "session/request_permission", "params": {"sessionId": "sess_1", "toolCall": {"toolCallId": "call_x"}, "options": [{"optionId": "allow", "name": "Allow", "kind": "allow_once"}, {"optionId": "always", "name": "Always allow", "kind": "allow_always"}, {"optionId": "reject", "name": "Reject", "kind": "reject_once"}]}}
+{"_dir": "c2a", "jsonrpc": "2.0", "id": "perm-2", "result": {"outcome": {"outcome": "selected", "optionId": "reject"}}}
+{"jsonrpc": "2.0", "method": "session/update", "params": {"sessionId": "sess_1", "update": {"sessionUpdate": "tool_call_update", "toolCallId": "call_x", "status": "failed", "content": [{"type": "content", "content": {"type": "text", "text": "User rejected"}}]}}}
+{"jsonrpc": "2.0", "method": "session/update", "params": {"sessionId": "sess_1", "update": {"sessionUpdate": "agent_message_chunk", "content": {"type": "text", "text": "OK, I will not run it."}}}}
+{"jsonrpc": "2.0", "id": 2, "result": {"stopReason": "end_turn"}}

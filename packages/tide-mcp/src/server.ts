@@ -117,6 +117,7 @@ export async function callTool(
       const provider = requireString(rawArgs, "provider") as ProviderKind;
       const mode = optionalString(rawArgs, "mode") as RuntimeMode | undefined;
       const model = optionalString(rawArgs, "model");
+      const providerId = optionalString(rawArgs, "providerId");
       const title = optionalString(rawArgs, "title");
       const repo = optionalString(rawArgs, "repo");
       const role = optionalString(rawArgs, "role");
@@ -134,6 +135,8 @@ export async function callTool(
         provider,
         prompt: requireString(rawArgs, "prompt"),
         ...(model !== undefined ? { model } : {}),
+        // R8: not in the contracts' thread.delegate yet; the server reads it structurally
+        ...(providerId !== undefined ? { providerId } : {}),
         ...(mode !== undefined ? { mode } : {}),
         ...(title !== undefined ? { title } : {}),
         ...(repo !== undefined ? { repo } : {}),

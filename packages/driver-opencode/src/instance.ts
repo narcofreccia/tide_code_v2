@@ -1,10 +1,11 @@
-import type { CompletionRequest, CompletionResult, DriverEnv, OpenSessionOptions, ProviderInstance, ProviderSession, ProviderStatus } from "@tide/contracts";
+import type { CompletionRequest, SlashCommandInfo, CompletionResult, DriverEnv, OpenSessionOptions, ProviderInstance, ProviderSession, ProviderStatus } from "@tide/contracts";
 import { complete } from "./complete.ts";
 import { HttpOpencodeApi } from "./client.ts";
 import { EventHub } from "./hub.ts";
 import { OpencodeServer, type ServerSeams } from "./server.ts";
 import { agentFor, OpencodeSession, type AgentChoice } from "./session.ts";
 import { shellQuote } from "./shell.ts";
+import { toSlashCommands, type SlashCatalog } from "./slash.ts";
 import { buildStatus, primaryAgents } from "./status.ts";
 import type { OpencodeApi, OpencodeConfig } from "./types.ts";
 import { sessionRuleset, userRules } from "./permissions.ts";
@@ -56,6 +57,7 @@ export class OpencodeInstance implements ProviderInstance {
   #status: { at: number; value: ProviderStatus } | undefined;
   #statusInFlight: Promise<ProviderStatus> | undefined;
   #catalog = new Map<string, { at: number; value: WireModel[] }>();
+  #slashCache = new Map<string, { at: number; value: SlashCatalog }>();
   #sessions = new Set<OpencodeSession>();
 
   constructor(config: OpencodeConfig, env: DriverEnv, seams: ServerSeams = {}) {
@@ -103,7 +105,7 @@ export class OpencodeInstance implements ProviderInstance {
   }
 
   /** No pinned model → the session uses OpenCode's own default (agent model / `model` config). */
-  async #resolveModel(directory: string, requested: string | undefined): Promise<{ model?: ModelRef; contextWindow?: number }> {
+  async #resolveModel(directory: string, requested: string | undefined, effort?: string): Promise<{ model?: ModelRef; contextWindow?: number }> {
     const id = requested ?? this.#config.defaultModel;
     let catalog: WireModel[] = [];
     try {
@@ -116,10 +118,34 @@ export class OpencodeInstance implements ProviderInstance {
       const fallback = await (await this.api()).defaultModel({ directory }).catch(() => undefined);
       if (fallback === undefined) return {};
       const window = fallback.limit?.context;
-      return typeof window === "number" && window > 0 ? { contextWindow: window } : {};
+      // a variant lives on the model ref, so an effort pins the server's default model explicitly
+      const pinned: ModelRef | undefined = effort !== undefined ? { providerID: fallback.providerID, id: fallback.id, variant: effort } : undefined;
+      return { ...(pinned ? { model: pinned } : {}), ...(typeof window === "number" && window > 0 ? { contextWindow: window } : {}) };
     }
+    if (effort !== undefined) model.variant = effort;
     const window = catalog.find((entry) => entry.providerID === model.providerID && entry.id === model.id)?.limit?.context;
     return { model, ...(typeof window === "number" && window > 0 ? { contextWindow: window } : {}) };
+  }
+
+  /**
+   * R8: `GET /api/command` (custom) + `GET /api/skill`. Either route may be missing on an older
+   * 2.x build, so each degrades to []; cached briefly per directory like the model catalog.
+   */
+  async #slash(directory: string): Promise<SlashCatalog> {
+    const cached = this.#slashCache.get(directory);
+    if (cached && Date.now() - cached.at < CATALOG_TTL_MS) return cached.value;
+    const api = await this.api();
+    const [commands, skills] = await Promise.all([
+      api.commands({ directory }).catch(() => []),
+      api.skills({ directory }).catch(() => []),
+    ]);
+    const value = { commands, skills };
+    this.#slashCache.set(directory, { at: Date.now(), value });
+    return value;
+  }
+
+  async listCommands({ cwd }: { cwd: string }): Promise<SlashCommandInfo[]> {
+    return toSlashCommands(await this.#slash(cwd));
   }
 
   /** Best-effort reads: an unreadable config or agent list must never stop a thread from opening. */
@@ -137,7 +163,7 @@ export class OpencodeInstance implements ProviderInstance {
   async openSession(options: OpenSessionOptions): Promise<ProviderSession> {
     const api = await this.api();
     const { config, agents } = await this.#directoryContext(api, options.cwd);
-    const { model, contextWindow } = await this.#resolveModel(options.cwd, options.model);
+    const { model, contextWindow } = await this.#resolveModel(options.cwd, options.model, options.effort);
     const agent = agentFor(agents, options.interaction);
     if (options.interaction === "plan" && agents.plan === undefined) this.#env.log("[opencode] no `plan` agent on this server; plan turns run on the default agent");
 
@@ -160,7 +186,7 @@ export class OpencodeInstance implements ProviderInstance {
       baseline = { cost: existing.cost, tokens: existing.tokens };
       await api.setPermissions({ sessionId, permissions });
       if (existing.agent !== agent) await api.switchAgent({ sessionId, agent });
-      if (model && (existing.model?.id !== model.id || existing.model.providerID !== model.providerID)) await api.switchModel({ sessionId, model });
+      if (model && (existing.model?.id !== model.id || existing.model.providerID !== model.providerID || existing.model.variant !== model.variant)) await api.switchModel({ sessionId, model });
     }
 
     if (options.systemPromptAppend !== undefined) {
@@ -192,7 +218,8 @@ export class OpencodeInstance implements ProviderInstance {
         ...(contextWindow !== undefined ? { contextWindow } : {}),
         ...(baseline ? { baseline } : {}),
         ...(mcpNames.length > 0 ? { mcpNames } : {}),
-        resolveModel: (id) => this.#resolveModel(options.cwd, id),
+        resolveModel: (id, effort) => this.#resolveModel(options.cwd, id, effort),
+        slash: () => this.#slash(options.cwd),
         onClosed: (closed) => this.#sessions.delete(closed),
       },
       sessionId,

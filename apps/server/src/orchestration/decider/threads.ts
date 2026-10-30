@@ -3,7 +3,7 @@ import { handoffTurns } from "../handoff/select.ts";
 import { DEFAULT_THREAD_TITLE } from "./autoTitle.ts";
 import { descendantsOf } from "./descendants.ts";
 import { recordHandoff } from "./handoff.ts";
-import { fail, isArchived, ok, turnRequested, type DecideContext, type DecideResult } from "./types.ts";
+import { fail, instanceKey, isArchived, ok, resolveInstance, turnRequested, type DecideContext, type DecideResult } from "./types.ts";
 
 type ThreadLink = { linkId: string; access: LinkAccess };
 
@@ -52,13 +52,24 @@ export function decideThread(model: ReadModel, command: ThreadCommand, ctx: Deci
       }
       const resolved = resolveLinks(project, command.links);
       if ("error" in resolved) return fail("not-found", `unknown link ${resolved.error} on project ${project.id}`);
+      if (command.providerId !== undefined) {
+        const inst = resolveInstance(ctx, command.providerId);
+        if ("error" in inst) return fail("invalid-command", inst.error);
+        if (inst.kind !== undefined && inst.kind !== command.provider) {
+          return fail("invalid-command", `provider instance ${command.providerId} is ${inst.kind}, not ${command.provider}`);
+        }
+      }
+      // the default instance is implicit: a thread only carries an id that differs from its kind
+      const providerId = command.providerId !== undefined && command.providerId !== command.provider ? command.providerId : undefined;
       const thread: Thread = {
         id: ctx.newId(),
         projectId: project.id,
         ...(command.parentThreadId !== undefined ? { parentThreadId: command.parentThreadId } : {}),
         title: command.title ?? DEFAULT_THREAD_TITLE,
         provider: command.provider,
+        ...(providerId !== undefined ? { providerId } : {}),
         ...(command.model !== undefined ? { model: command.model } : {}),
+        ...(command.effort !== undefined && command.effort !== "" ? { effort: command.effort } : {}),
         mode: command.mode ?? "approval-required",
         interaction: command.interaction ?? "default",
         status: "idle",
@@ -69,44 +80,8 @@ export function decideThread(model: ReadModel, command: ThreadCommand, ctx: Deci
       return ok({ type: "thread.created", thread, ...(command.useWorktree !== undefined ? { useWorktree: command.useWorktree } : {}) });
     }
 
-    case "thread.update": {
-      const thread = model.threads[command.threadId];
-      if (!thread) return fail("not-found", `unknown thread ${command.threadId}`);
-      const patch: Partial<Pick<Thread, "title" | "provider" | "model" | "mode" | "interaction" | "pinned" | "autoAllowRoutine" | "autoSettle">> = {
-        ...(command.title !== undefined ? { title: command.title } : {}),
-        ...(command.provider !== undefined ? { provider: command.provider } : {}),
-        ...(command.model !== undefined ? { model: command.model } : {}),
-        ...(command.mode !== undefined ? { mode: command.mode } : {}),
-        ...(command.interaction !== undefined ? { interaction: command.interaction } : {}),
-        ...(command.pinned !== undefined ? { pinned: command.pinned } : {}),
-        ...(command.autoAllowRoutine !== undefined ? { autoAllowRoutine: command.autoAllowRoutine } : {}),
-        ...(command.autoSettle !== undefined ? { autoSettle: command.autoSettle } : {}),
-      };
-      const toProvider = command.provider;
-      if (toProvider === undefined || toProvider === thread.provider) {
-        return ok({ type: "thread.updated", threadId: thread.id, patch, updatedAt: ctx.now });
-      }
-      if (thread.status === "running") return fail("busy", `thread ${thread.id} is running; switch provider once it settles`);
-      if (thread.rollback?.status === "rolling") return fail("busy", `thread ${thread.id} is rolling back`);
-      // a harness that already ran this thread resumes its own session and only needs what
-      // happened since; any other starts fresh and gets the whole (budgeted) history
-      const known = thread.providerSessions?.[toProvider];
-      const strategy = known !== undefined ? "delta" : "full";
-      const turns = handoffTurns(model, thread.id, { sinceTurnId: known?.lastTurnId });
-      const events: DomainEvent[] = [{
-        type: "thread.updated",
-        threadId: thread.id,
-        patch,
-        ...(known !== undefined ? { nativeSessionId: known.nativeSessionId } : { clearNativeSession: true }),
-        // a model id belongs to one harness: without a new one the target runs on its default
-        ...(command.model === undefined && thread.model !== undefined ? { clearModel: true } : {}),
-        updatedAt: ctx.now,
-      }];
-      if (turns.length > 0) {
-        events.push(recordHandoff(model, { threadId: thread.id, source: thread, fromProvider: thread.provider, toProvider, strategy, turns }, ctx));
-      }
-      return ok(...events);
-    }
+    case "thread.update":
+      return decideUpdate(model, command, ctx);
 
     case "thread.triage": {
       const thread = model.threads[command.threadId];
@@ -273,4 +248,70 @@ function deleteRefusal(model: ReadModel, thread: Thread, deleting: Set<string>):
     }
   }
   return undefined;
+}
+
+type ThreadPatch = Partial<Pick<Thread, "title" | "provider" | "model" | "mode" | "interaction" | "pinned" | "autoAllowRoutine" | "autoSettle" | "providerId" | "effort">>;
+
+/**
+ * A change of instance (R8: another account or ACP agent, or another harness) is a switch: the
+ * old native session cannot be resumed there, so it is cleared (or the target's own earlier
+ * session restored) and the history is recorded as a handoff, exactly like a provider switch.
+ */
+function decideUpdate(model: ReadModel, command: CommandOf<"thread.update">, ctx: DecideContext): DecideResult {
+  const thread = model.threads[command.threadId];
+  if (!thread) return fail("not-found", `unknown thread ${command.threadId}`);
+  const fromKey = instanceKey(thread);
+  let toKind = command.provider ?? thread.provider;
+  if (command.providerId !== undefined) {
+    const inst = resolveInstance(ctx, command.providerId);
+    if ("error" in inst) return fail("invalid-command", inst.error);
+    if (inst.kind !== undefined) {
+      if (command.provider !== undefined && command.provider !== inst.kind) {
+        return fail("invalid-command", `provider instance ${command.providerId} is ${inst.kind}, not ${command.provider}`);
+      }
+      toKind = inst.kind;
+    }
+  }
+  // naming only another kind means that kind's default instance
+  const toKey = command.providerId ?? (toKind !== thread.provider ? toKind : fromKey);
+  const patch: ThreadPatch = {
+    ...(command.title !== undefined ? { title: command.title } : {}),
+    ...(command.model !== undefined ? { model: command.model } : {}),
+    ...(command.effort !== undefined && command.effort !== "" ? { effort: command.effort } : {}),
+    ...(command.mode !== undefined ? { mode: command.mode } : {}),
+    ...(command.interaction !== undefined ? { interaction: command.interaction } : {}),
+    ...(command.pinned !== undefined ? { pinned: command.pinned } : {}),
+    ...(command.autoAllowRoutine !== undefined ? { autoAllowRoutine: command.autoAllowRoutine } : {}),
+    ...(command.autoSettle !== undefined ? { autoSettle: command.autoSettle } : {}),
+  };
+  const clearEffort = command.effort === "" && thread.effort !== undefined;
+  if (toKey === fromKey) {
+    return ok({ type: "thread.updated", threadId: thread.id, patch, ...(clearEffort ? { clearEffort: true } : {}), updatedAt: ctx.now });
+  }
+  if (thread.status === "running") return fail("busy", `thread ${thread.id} is running; switch provider once it settles`);
+  if (thread.rollback?.status === "rolling") return fail("busy", `thread ${thread.id} is rolling back`);
+  patch.provider = toKind;
+  patch.providerId = toKey;
+  // A harness that already ran this thread resumes its own session and only needs what happened
+  // since; any other starts fresh and gets the whole (budgeted) history. `providerSessions` is
+  // filled per kind by the projector, so between two instances of one kind it cannot tell whose
+  // session it holds: such a switch always starts fresh.
+  const known = toKind === thread.provider ? undefined : thread.providerSessions?.[toKey];
+  const strategy = known !== undefined ? "delta" : "full";
+  const turns = handoffTurns(model, thread.id, { sinceTurnId: known?.lastTurnId });
+  const events: DomainEvent[] = [{
+    type: "thread.updated",
+    threadId: thread.id,
+    patch,
+    ...(known !== undefined ? { nativeSessionId: known.nativeSessionId } : { clearNativeSession: true }),
+    // a model id belongs to one harness: without a new one the target runs on its default
+    ...(command.model === undefined && thread.model !== undefined ? { clearModel: true } : {}),
+    // so does an effort level (it is one of the old model's)
+    ...(clearEffort || (command.effort === undefined && thread.effort !== undefined) ? { clearEffort: true } : {}),
+    updatedAt: ctx.now,
+  }];
+  if (turns.length > 0) {
+    events.push(recordHandoff(model, { threadId: thread.id, source: thread, fromProvider: thread.provider, toProvider: toKind, strategy, turns }, ctx));
+  }
+  return ok(...events);
 }

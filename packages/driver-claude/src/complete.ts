@@ -1,4 +1,5 @@
 import type { CompletionRequest, CompletionResult, DriverEnv, TurnUsage } from "@tide/contracts";
+import { instanceEnv } from "./env.ts";
 import type { ClaudeMessage, ResultMessage } from "./sdk-shapes.ts";
 import type { ClaudeConfig, QueryFn } from "./types.ts";
 
@@ -23,21 +24,21 @@ export function buildCompletionOptions(
   config: ClaudeConfig,
   binaryPath: string | undefined,
   abortController: AbortController,
-  log: DriverEnv["log"],
+  driverEnv: DriverEnv,
 ): Record<string, unknown> {
   const model = request.model ?? config.defaultModel;
   const labels = request.labels && request.labels.length > 0 ? request.labels : undefined;
   // No SDK option caps output tokens; the CLI honours this env var.
   const env: Record<string, string | undefined> = {
     ...process.env,
-    ...config.env,
+    ...instanceEnv(config, driverEnv),
     ...(request.maxOutputTokens ? { CLAUDE_CODE_MAX_OUTPUT_TOKENS: String(request.maxOutputTokens) } : {}),
   };
   return {
     cwd: request.cwd,
     abortController,
     env,
-    stderr: (data: string) => log(`[claude:complete:stderr] ${data.trimEnd()}`),
+    stderr: (data: string) => driverEnv.log(`[claude:complete:stderr] ${data.trimEnd()}`),
     systemPrompt: request.system,
     tools: [],
     mcpServers: {},
@@ -99,7 +100,7 @@ export async function complete(
   });
 
   const run = async (): Promise<CompletionResult> => {
-    const query = queryFn({ prompt: request.prompt, options: buildCompletionOptions(request, config, binaryPath, abort, env.log) });
+    const query = queryFn({ prompt: request.prompt, options: buildCompletionOptions(request, config, binaryPath, abort, env) });
     let model: string | undefined;
     for await (const message of query as AsyncIterable<ClaudeMessage>) {
       if (message.type === "system" && message.subtype === "init") {

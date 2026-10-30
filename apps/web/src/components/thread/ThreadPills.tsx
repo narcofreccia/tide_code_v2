@@ -1,23 +1,25 @@
-import type { InteractionMode, ProviderKind, Thread } from "@tide/contracts";
+import type { InteractionMode, Thread } from "@tide/contracts";
 import {
   INTERACTION_HINTS,
   INTERACTION_LABELS,
   INTERACTION_MODES,
-  PROVIDERS,
-  PROVIDER_LABELS,
   RUNTIME_MODES,
   RUNTIME_MODE_HINTS,
   RUNTIME_MODE_LABELS,
+  instanceLabel,
+  providerIdOf,
 } from "../../lib/vocab.ts";
 import { updateThread, type ThreadPatch } from "../../lib/threadActions.ts";
 import {
   defaultModelOf,
+  effortsOf,
   modelChoiceValue,
   modelChoices,
   providerStatus,
-  unavailableReason,
   useProviders,
 } from "../../state/providers.ts";
+import { EffortSelect } from "./EffortSelect.tsx";
+import { instanceOptions } from "./ProviderPicker.tsx";
 import { showToast } from "../../state/toast.ts";
 import { Select, type SelectOption } from "../ui/Select.tsx";
 import styles from "./ThreadPills.module.css";
@@ -67,18 +69,15 @@ export function ThreadPills({ thread }: { thread: Thread }) {
   const providers = useProviders();
   const running = thread.status === "running";
 
-  const providerOptions: SelectOption<ProviderKind>[] = PROVIDERS.map((kind) => {
-    const status = providerStatus(providers, kind);
-    const reason = status ? unavailableReason(status) : undefined;
-    const name = PROVIDER_LABELS[kind];
-    return {
-      value: kind,
-      label: reason ? `${name} · ${reason}` : name,
-      ...(reason === undefined ? {} : { disabled: true, title: reason }),
-    };
-  });
-  const models = providerStatus(providers, thread.provider)?.models ?? [];
-  const modelOptions: SelectOption<string>[] = modelChoices(models, thread.provider);
+  const id = providerIdOf(thread);
+  const listed = instanceOptions(providers, false, "all");
+  // an instance removed from Settings still shows as the thread's current agent
+  const providerOptions: SelectOption<string>[] = listed.some((o) => o.value === id)
+    ? listed
+    : [...listed, { value: id, label: `${instanceLabel(providers, id)} · not configured`, disabled: true }];
+  const models = providerStatus(providers, id)?.models ?? [];
+  const modelOptions: SelectOption<string>[] = modelChoices(models, id, providers);
+  const efforts = effortsOf(models, thread.model);
   const modeOptions: SelectOption<Thread["mode"]>[] = RUNTIME_MODES.map((mode) => ({
     value: mode,
     label: RUNTIME_MODE_LABELS[mode],
@@ -102,12 +101,14 @@ export function ThreadPills({ thread }: { thread: Thread }) {
         <Select
           label="Provider"
           className={styles.control}
-          value={thread.provider}
+          value={id}
           options={providerOptions}
           disabled={running}
-          onSelect={(provider) => {
-            const model = defaultModelOf(providers, provider);
-            apply({ provider, ...(model === undefined ? {} : { model }) });
+          onSelect={(next) => {
+            const status = providerStatus(providers, next);
+            if (status === undefined) return;
+            const model = defaultModelOf(providers, next);
+            apply({ provider: status.kind, providerId: next, ...(model === undefined ? {} : { model }) });
           }}
         />
       </Slot>
@@ -117,9 +118,24 @@ export function ThreadPills({ thread }: { thread: Thread }) {
           className={styles.control}
           value={modelChoiceValue(models, thread.model)}
           options={modelOptions}
-          onSelect={(model) => applyNextTurn({ model })}
+          onSelect={(model) => {
+            // effort ids are per model: keep the level only when the new model has it too
+            const keeps = thread.effort === undefined || effortsOf(models, model).some((e) => e.id === thread.effort);
+            applyNextTurn({ model, ...(keeps ? {} : { effort: "" }) });
+          }}
         />
       </Slot>
+      {efforts.length === 0 ? null : (
+        <Slot caption="Effort" hint="How hard the model thinks (⌘⇧E cycles)">
+          <EffortSelect
+            label="Effort"
+            className={styles.control}
+            efforts={efforts}
+            value={thread.effort}
+            onSelect={(effort) => applyNextTurn({ effort })}
+          />
+        </Slot>
+      )}
       <Slot caption="Permissions" hint={RUNTIME_MODE_HINTS[thread.mode]}>
         <Select
           label="Permissions"

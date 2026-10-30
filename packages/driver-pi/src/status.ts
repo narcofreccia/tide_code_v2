@@ -6,6 +6,7 @@ import { fileURLToPath } from "node:url";
 import { promisify } from "node:util";
 import type { DriverEnv, ModelInfo, ProviderStatus } from "@tide/contracts";
 import { detectLocalModels, readModelsJson } from "./local-models.ts";
+import { withEfforts } from "./commands.ts";
 import { PiRpc } from "./rpc.ts";
 import type { PiConfig, PiDeps, PiModel } from "./types.ts";
 
@@ -34,6 +35,9 @@ export const PI_CAPS = {
   rollback: true,
   // `pi -p --no-tools …` one-shot completion (complete.ts)
   oneShot: true,
+  // R8 — `set_thinking_level` / `--thinking`; `get_commands` (extension, prompt-template and skill commands)
+  effort: true,
+  commands: true,
 } as const;
 
 /**
@@ -71,6 +75,18 @@ export function workspaceBinary(from = fileURLToPath(import.meta.url)): string |
     if (parent === dir) return undefined;
     dir = parent;
   }
+}
+
+/** A pi that never answers an optional probe must not stall the status call. */
+function withTimeout<T>(promise: Promise<T>, ms: number): Promise<T> {
+  return new Promise<T>((resolve, reject) => {
+    const timer = setTimeout(() => reject(new Error(`no answer within ${ms}ms`)), ms);
+    timer.unref?.();
+    promise.then(
+      (value) => (clearTimeout(timer), resolve(value)),
+      (error: unknown) => (clearTimeout(timer), reject(error instanceof Error ? error : new Error(String(error)))),
+    );
+  });
 }
 
 /** Answers the version a binary reports, or undefined when `--version` fails or crashes. */
@@ -180,7 +196,13 @@ export async function listModels(binary: string, config: PiConfig, deps: PiDeps,
   try {
     const data = await rpc.data<{ models?: PiModel[] }>({ type: "get_available_models" });
     const models = toModelInfo(data?.models ?? [], config.defaultModel);
-    if (models.length > 0) return models;
+    if (models.length > 0) {
+      // Levels are asked for the process's current model and applied to every model that
+      // reasons (`Model.reasoning !== false`); pi clamps a level a model lacks.
+      const levels = await withTimeout(rpc.data<{ levels?: string[] }>({ type: "get_available_thinking_levels" }), 3_000).catch(() => undefined);
+      const reasoning = new Set((data?.models ?? []).filter((model) => model.reasoning !== false).map((model) => (model.provider ? `${model.provider}/${model.id}` : model.id)));
+      return withEfforts(models, reasoning, levels?.levels ?? []);
+    }
   } catch (error) {
     env.log(`[pi] get_available_models failed: ${error instanceof Error ? error.message : String(error)}`);
   } finally {
@@ -214,7 +236,7 @@ export async function buildStatus(config: PiConfig, env: DriverEnv, deps: PiDeps
     return { kind: "pi", installed: false, loggedIn: false, hint: INSTALL_HINT, models: local, caps: { ...PI_CAPS } };
   }
   const { path: binary, version } = detected;
-  const loggedIn = detectLogin(process.env) || local.length > 0;
+  const loggedIn = detectLogin({ ...process.env, ...config.env }, config.env?.["HOME"] ?? homedir()) || local.length > 0;
   const fromPi = loggedIn ? await listModels(binary, config, deps, env) : [];
 
   return {

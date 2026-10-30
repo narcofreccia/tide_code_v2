@@ -3,8 +3,8 @@ import { selectProviderRateLimits } from "@tide/client";
 import type { ProviderStatusDto } from "@tide/contracts";
 import { useModel } from "../../state/model.ts";
 import { RateLimitBadge } from "../ui/RateLimitBadge.tsx";
-import { PROVIDERS, PROVIDER_LABELS } from "../../lib/vocab.ts";
-import { providerStatus, useProviderRoster } from "../../state/providers.ts";
+import { PROVIDER_LABELS } from "../../lib/vocab.ts";
+import { orderedInstances, providerStatus, useProviderRoster } from "../../state/providers.ts";
 import { useUi } from "../../state/ui.ts";
 import { resolveLoginCommand, runOrCopy } from "../../lib/providerLogin.ts";
 import { Button } from "../ui/Button.tsx";
@@ -25,7 +25,7 @@ export function providerChipState(
 /** "4 agents ready · 1 needs login · 1 not installed"; only the non-zero parts. */
 export function rosterSummary(providers: ProviderStatusDto[], loading: boolean): string {
   if (loading) return "Checking agents…";
-  const states = PROVIDERS.map((kind) => providerStatus(providers, kind));
+  const states = orderedInstances(providers).map((p) => providerStatus(providers, p.id));
   const ready = states.filter((s) => s?.installed === true && s.loggedIn).length;
   const needsLogin = states.filter((s) => s?.installed === true && !s.loggedIn).length;
   const missing = states.length - ready - needsLogin;
@@ -64,26 +64,29 @@ export function ProvidersStrip() {
       </h2>
       {expanded ? (
         <ul className={styles.chips}>
-          {PROVIDERS.map((kind) => {
-            const status = providerStatus(providers, kind);
+          {orderedInstances(providers).map((instance) => {
+            const id = instance.id;
+            const name = instance.label || PROVIDER_LABELS[instance.kind];
+            const status = providerStatus(providers, id);
             const { glyph, text, tone } = providerChipState(status, loading);
             const command = loading ? undefined : resolveLoginCommand(status);
             return (
-              <li key={kind} className={styles.chip}>
+              <li key={id} className={styles.chip}>
                 <button
                   type="button"
                   className={styles.chipMain}
                   onClick={open}
-                  aria-label={`${PROVIDER_LABELS[kind]}: ${text}`}
-                  title={`${PROVIDER_LABELS[kind]} — ${text}. Open Settings › Providers`}
+                  aria-label={`${name}: ${text}`}
+                  title={`${name} — ${text}. Open Settings › Providers`}
                 >
                   <span className={`${styles.chipGlyph} ${styles[tone] ?? ""}`} aria-hidden="true">
                     {glyph}
                   </span>
-                  <span>{PROVIDER_LABELS[kind]}</span>
+                  <span>{name}</span>
                   <span className={styles.chipHint}>{text}</span>
                 </button>
-                <RateLimitBadge limit={limits[kind]} />
+                {/* limits are reported per kind; only the default instance can claim them */}
+                <RateLimitBadge limit={id === instance.kind ? limits[instance.kind] : undefined} />
                 {command ? (
                   <Button variant="quiet" onClick={() => void runOrCopy(command)}>
                     Run {command}

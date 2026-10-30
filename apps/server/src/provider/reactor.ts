@@ -7,6 +7,7 @@ import {
   type NormalizedEvent,
   type Project,
   type ProviderSession,
+  type SlashCommandInfo,
   type Thread,
   type TurnInput,
 } from "@tide/contracts";
@@ -14,7 +15,7 @@ import type { Engine } from "../orchestration/engine.ts";
 import { isUsageLimitError } from "../orchestration/limits.ts";
 import { activityKey, mergeActivity } from "./activities.ts";
 import { inlinePrompt, planHandoffDelivery, type DeliveryPlan } from "./handoffDelivery.ts";
-import type { SessionDirectory } from "./sessions.ts";
+import { instanceIdOf, type SessionDirectory } from "./sessions.ts";
 
 interface ThreadState {
   /** one turn at a time per thread; different threads run concurrently */
@@ -63,6 +64,8 @@ export interface ReactorOptions {
    * promoted after a restart). The read model keeps only attachment metadata.
    */
   imagesFor?: (turnId: string) => ImageInput[] | undefined;
+  /** R8: a session announced its slash commands / skills (feeds the `providers.commands` cache) */
+  onCommands?: (threadId: string, commands: SlashCommandInfo[]) => void;
   /** resolves when the handoff judge is done with `handoffId` (undefined: nothing running) */
   handoffReady?: (handoffId: string) => Promise<void> | undefined;
   /** grace period a driver gets to honour an interrupt before the turn is force-settled */
@@ -85,6 +88,7 @@ export class ProviderReactor {
   #beforeTurn: ((threadId: string, turnId: string) => Promise<void>) | undefined;
   #imagesFor: ((turnId: string) => ImageInput[] | undefined) | undefined;
   #handoffReady: ((handoffId: string) => Promise<void> | undefined) | undefined;
+  #onCommands: ((threadId: string, commands: SlashCommandInfo[]) => void) | undefined;
   /** turns already handed to a thread's chain (from `turn.requested` or a promotion) */
   #known = new Set<string>();
   #now: () => number;
@@ -106,6 +110,7 @@ export class ProviderReactor {
     this.#beforeTurn = options.beforeTurn;
     this.#imagesFor = options.imagesFor;
     this.#handoffReady = options.handoffReady;
+    this.#onCommands = options.onCommands;
     this.#interruptTimeoutMs = options.interruptTimeoutMs ?? DEFAULT_INTERRUPT_TIMEOUT_MS;
     this.#schedule = options.schedule ?? realTimer;
     this.#now = options.now ?? (() => Date.now());
@@ -207,7 +212,7 @@ export class ProviderReactor {
     if (!session || !thread || this.#live.get(threadId) !== turnId) return fallback("no turn is running on the harness");
     let steerable = false;
     try {
-      steerable = (await this.#sessions.caps(thread.provider)).steer === true && session.steer !== undefined;
+      steerable = (await this.#sessions.caps(instanceIdOf(thread))).steer === true && session.steer !== undefined;
     } catch (err) {
       this.#log("[reactor] could not read driver caps", err);
     }
@@ -371,6 +376,7 @@ export class ProviderReactor {
         type: "turn.start",
         turnId,
         provider: thread.provider,
+        ...(thread.providerId !== undefined ? { providerId: thread.providerId } : {}),
         ...((modelId ?? thread.model) !== undefined ? { model: modelId ?? thread.model } : {}),
         ...(nativeSessionId !== undefined ? { nativeSessionId } : {}),
       });
@@ -435,7 +441,7 @@ export class ProviderReactor {
     if (hasHandoff) {
       let caps = {};
       try {
-        caps = await this.#sessions.caps(thread.provider);
+        caps = await this.#sessions.caps(instanceIdOf(thread));
       } catch (err) {
         this.#log("[reactor] could not read driver caps", err);
       }
@@ -549,6 +555,9 @@ export class ProviderReactor {
           ...(event.contextUsage !== undefined ? { contextUsage: event.contextUsage } : {}),
           ...(event.rateLimit !== undefined ? { rateLimit: event.rateLimit } : {}),
         });
+        return false;
+      case "commands":
+        this.#onCommands?.(threadId, event.commands);
         return false;
       case "settled":
         if (event.status === "error" && isUsageLimitError(event.error)) run.limited ??= { note: event.error as string };

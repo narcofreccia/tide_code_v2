@@ -3,6 +3,7 @@ import { mkdtempSync } from "node:fs";
 import { tmpdir } from "node:os";
 import { join } from "node:path";
 import type { DriverEnv, ProviderDriver } from "@tide/contracts";
+import { createAcpInstance, nodeSpawn as acpNodeSpawn, type AcpConfig, type SpawnLike as AcpSpawnLike } from "@tide/driver-acp";
 import { claudeDriver, type ClaudeConfig, type QueryFn } from "@tide/driver-claude";
 import { codexDriver, type CodexConfig } from "@tide/driver-codex";
 import { opencodeDriver, type OpencodeConfig } from "@tide/driver-opencode";
@@ -73,6 +74,19 @@ export function replayClaudeDriver(replay: Replay, config: Partial<ClaudeConfig>
   return { driver, replay, transport: query };
 }
 
+/**
+ * ACP: `command`/`args` default to OpenCode's ACP mode (the agent fixtures are recorded with).
+ * The driver's status probe spawns a process of its own, so a transcript that calls `status()`
+ * needs a `proc` for it before the session's.
+ */
+const ACP_DEFAULT: AcpConfig = { command: "opencode", args: ["acp"], label: "OpenCode (ACP)" };
+
+export function replayAcpDriver(replay: Replay, config: Partial<AcpConfig> = {}): ReplayDriver<AcpConfig, ReplaySpawn> {
+  const spawn = replaySpawn(replay);
+  const driver = wrap<AcpConfig>("acp", async (base, env) => createAcpInstance({ ...ACP_DEFAULT, ...(base.command ? base : {}), ...config }, env, { spawn: spawn as unknown as AcpSpawnLike }));
+  return { driver, replay, transport: spawn };
+}
+
 // ---- recording variants: the same real drivers over their real transport, tapped ----
 
 export function recordCodexDriver(recorder: Recorder, config: Partial<CodexConfig> = {}): ProviderDriver<CodexConfig> {
@@ -86,6 +100,12 @@ function tappedSpawn(recorder: Recorder) {
 export function recordPiDriver(recorder: Recorder, config: Partial<PiConfig> = {}): ProviderDriver<PiConfig> {
   return wrap<PiConfig>("pi", async (base, env) =>
     createPiInstance({ ...base, ...config }, env, { spawn: tappedSpawn(recorder) as unknown as PiSpawnLike }),
+  );
+}
+
+export function recordAcpDriver(recorder: Recorder, config: Partial<AcpConfig> = {}): ProviderDriver<AcpConfig> {
+  return wrap<AcpConfig>("acp", async (base, env) =>
+    createAcpInstance({ ...ACP_DEFAULT, ...(base.command ? base : {}), ...config }, env, { spawn: recordSpawn(acpNodeSpawn, recorder) as unknown as AcpSpawnLike }),
   );
 }
 

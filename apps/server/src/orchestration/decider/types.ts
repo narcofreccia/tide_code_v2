@@ -8,6 +8,11 @@ export interface DecideDefaults {
   worktreeByDefault?: boolean;
   /** model/mode per harness for threads the server builds without an explicit one */
   providerDefaults?: UserSettings["providerDefaults"];
+  /**
+   * R8: the user-added harness instances (the bundled defaults, id = kind, are implicit). When
+   * present, a command naming any other `providerId` is refused; absent (tests) = not checked.
+   */
+  providerInstances?: { id: string; kind: ProviderKind }[];
 }
 
 export interface DecideContext extends DecideDefaults {
@@ -17,9 +22,27 @@ export interface DecideContext extends DecideDefaults {
   handoffCap?: number | string | undefined;
 }
 
-/** The settings default for `provider`, only where the command named nothing itself. */
-export function providerDefault(ctx: DecideContext, provider: ProviderKind): { model?: string; mode?: RuntimeMode } {
-  return ctx.providerDefaults?.[provider] ?? {};
+/** The settings default for the instance (`providerId`) first, then its kind; only where the command named nothing itself. */
+export function providerDefault(ctx: DecideContext, provider: ProviderKind, providerId?: string): { model?: string; mode?: RuntimeMode } {
+  return (providerId !== undefined ? ctx.providerDefaults?.[providerId] : undefined) ?? ctx.providerDefaults?.[provider] ?? {};
+}
+
+const BUNDLED_KINDS: readonly string[] = ["claude", "codex", "opencode", "pi"];
+
+/** R8: the registry key of the instance running a thread (the kind for its default instance). */
+export function instanceKey(thread: { provider: ProviderKind; providerId?: string }): string {
+  return thread.providerId ?? thread.provider;
+}
+
+/**
+ * R8: the kind of instance `providerId`. A bundled kind is its own default instance; anything
+ * else must be a configured instance. undefined kind = not checkable (no instance list given).
+ */
+export function resolveInstance(ctx: DecideContext, providerId: string): { kind?: ProviderKind } | { error: string } {
+  if (BUNDLED_KINDS.includes(providerId)) return { kind: providerId as ProviderKind };
+  if (ctx.providerInstances === undefined) return {};
+  const found = ctx.providerInstances.find((p) => p.id === providerId);
+  return found ? { kind: found.kind } : { error: `unknown provider instance ${providerId}` };
 }
 
 export interface DecideError {

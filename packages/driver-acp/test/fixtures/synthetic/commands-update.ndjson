@@ -1,0 +1,5 @@
+{"_header": {"synthetic": true, "note": "available_commands_update with and without input hints, then a mode change", "schema": "ACP v1 (@agentclientprotocol/sdk 2.1.0 schema/v1)"}}
+{"_dir": "c2a", "jsonrpc": "2.0", "id": 2, "method": "session/prompt", "params": {"sessionId": "sess_1", "prompt": [{"type": "text", "text": "/help"}]}}
+{"jsonrpc": "2.0", "method": "session/update", "params": {"sessionId": "sess_1", "update": {"sessionUpdate": "available_commands_update", "availableCommands": [{"name": "web", "description": "Search the web", "input": {"hint": "query to search for"}}, {"name": "init", "description": "create AGENTS.md"}, {"name": ""}]}}}
+{"jsonrpc": "2.0", "method": "session/update", "params": {"sessionId": "sess_1", "update": {"sessionUpdate": "current_mode_update", "currentModeId": "plan"}}}
+{"jsonrpc": "2.0", "id": 2, "result": {"stopReason": "end_turn"}}

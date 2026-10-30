@@ -1,0 +1,5 @@
+{"_header": {"synthetic": true, "note": "initialize with nothing optional: no loadSession, no image, no modes/configOptions", "schema": "ACP v1 (@agentclientprotocol/sdk 2.1.0 schema/v1)"}}
+{"_dir": "c2a", "jsonrpc": "2.0", "id": 0, "method": "initialize", "params": {"protocolVersion": 1}}
+{"jsonrpc": "2.0", "id": 0, "result": {"protocolVersion": 1, "agentCapabilities": {}, "authMethods": []}}
+{"_dir": "c2a", "jsonrpc": "2.0", "id": 1, "method": "session/new", "params": {"cwd": "/repo", "mcpServers": []}}
+{"jsonrpc": "2.0", "id": 1, "result": {"sessionId": "sess_1"}}

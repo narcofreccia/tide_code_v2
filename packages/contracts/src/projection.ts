@@ -194,6 +194,7 @@ export function applyEvent(model: ReadModel, event: DomainEvent): ReadModel {
       if (event.clearNativeSession) delete next.nativeSessionId;
       if (event.nativeSessionId !== undefined) next.nativeSessionId = event.nativeSessionId;
       if (event.clearModel) delete next.model;
+      if (event.clearEffort) delete next.effort;
       return { ...model, threads: { ...model.threads, [t.id]: next } };
     }
     case "thread.archived":
@@ -241,11 +242,12 @@ export function applyEvent(model: ReadModel, event: DomainEvent): ReadModel {
       if (!turn) return model;
       const next: ReadModel = {
         ...model,
-        turns: { ...model.turns, [turn.id]: { ...turn, status: "running", startedAt: event.startedAt, provider: event.provider, ...(event.model !== undefined ? { model: event.model } : {}) } },
+        turns: { ...model.turns, [turn.id]: { ...turn, status: "running", startedAt: event.startedAt, provider: event.provider, ...(event.providerId !== undefined ? { providerId: event.providerId } : {}), ...(event.model !== undefined ? { model: event.model } : {}) } },
       };
       if (event.nativeSessionId === undefined) return next;
       const t = next.threads[event.threadId];
-      const sessions = { ...(t?.providerSessions ?? {}), [event.provider]: { ...(t?.providerSessions?.[event.provider] ?? {}), nativeSessionId: event.nativeSessionId } };
+      const sessionKey = event.providerId ?? event.provider;
+      const sessions = { ...(t?.providerSessions ?? {}), [sessionKey]: { ...(t?.providerSessions?.[sessionKey] ?? {}), nativeSessionId: event.nativeSessionId } };
       return withThread(next, event.threadId, { nativeSessionId: event.nativeSessionId, providerSessions: sessions, updatedAt: event.startedAt });
     }
     case "turn.interrupt-requested":
@@ -431,7 +433,7 @@ export function applyEvent(model: ReadModel, event: DomainEvent): ReadModel {
         delete patched.planProgress;
         delete patched.interrupting;
         // the harness that ran this turn has now seen it: a later switch back needs only the delta after it
-        const provider = turn?.provider;
+        const provider = turn?.providerId ?? turn?.provider;
         const known = provider === undefined ? undefined : t.providerSessions?.[provider];
         if (provider !== undefined && known !== undefined) patched.providerSessions = { ...t.providerSessions, [provider]: { ...known, lastTurnId: event.turnId } };
         // the oldest queued turn becomes the live one; the thread never goes idle in between

@@ -1,7 +1,7 @@
 import { Type, type Static, type TSchema } from "typebox";
 import { AgentCommand, ClientCommand } from "./commands.ts";
 import { EventRecord } from "./events.ts";
-import { JudgeSite, JudgeSource, ProviderKind, ReadModel, RuntimeMode, ScheduledTask, Team } from "./domain.ts";
+import { JudgeSite, JudgeSource, ProviderInstanceConfig, ProviderKind, ReadModel, RuntimeMode, ScheduledTask, SlashCommandInfo, Team } from "./domain.ts";
 
 // ---- wire envelope ----
 // client -> server
@@ -47,21 +47,45 @@ export const ModelChunk = Type.Union([
 export type ModelChunk = Static<typeof ModelChunk>;
 
 export const ProviderStatusDto = Type.Object({
+  /** R8: instance id (= kind for the default instance) */
+  id: Type.String(),
   kind: ProviderKind,
+  label: Type.String(),
   installed: Type.Boolean(),
   loggedIn: Type.Boolean(),
   version: Type.Optional(Type.String()),
   hint: Type.Optional(Type.String()),
   loginCommand: Type.Optional(Type.String()),
-  models: Type.Array(Type.Object({ id: Type.String(), label: Type.String(), family: Type.Optional(Type.String()), default: Type.Optional(Type.Boolean()) })),
+  models: Type.Array(Type.Object({
+    id: Type.String(), label: Type.String(), family: Type.Optional(Type.String()), default: Type.Optional(Type.Boolean()),
+    efforts: Type.Optional(Type.Array(Type.Object({ id: Type.String(), label: Type.String(), default: Type.Optional(Type.Boolean()) }))),
+  })),
   caps: Type.Object({
     planMode: Type.Boolean(), subagents: Type.Boolean(), mcp: Type.Boolean(), images: Type.Boolean(),
     resume: Type.Boolean(), contextUsage: Type.Boolean(), openInTerminal: Type.Boolean(),
     steer: Type.Optional(Type.Boolean()), fork: Type.Optional(Type.Boolean()), rollback: Type.Optional(Type.Boolean()),
     /** R6: the harness can answer a tool-less one-shot (judge fallback) */
     oneShot: Type.Optional(Type.Boolean()),
+    effort: Type.Optional(Type.Boolean()),
+    commands: Type.Optional(Type.Boolean()),
   }),
 });
+
+/** R8: an entry of the public ACP registry, plus whether this machine can launch it. */
+export const AcpRegistryAgent = Type.Object({
+  id: Type.String(),
+  name: Type.String(),
+  description: Type.Optional(Type.String()),
+  version: Type.Optional(Type.String()),
+  license: Type.Optional(Type.String()),
+  website: Type.Optional(Type.String()),
+  icon: Type.Optional(Type.String()),
+  /** how Tide would launch it on this machine; "none" = no distribution for this OS/arch */
+  distribution: Type.Union([Type.Literal("npx"), Type.Literal("uvx"), Type.Literal("binary"), Type.Literal("none")]),
+  /** a configured instance already uses it */
+  configured: Type.Optional(Type.Boolean()),
+});
+export type AcpRegistryAgent = Static<typeof AcpRegistryAgent>;
 export type ProviderStatusDto = Static<typeof ProviderStatusDto>;
 
 export const DiffFile = Type.Object({
@@ -202,6 +226,11 @@ export const UserSettings = Type.Object({
   /** R7: the inbox rules (T3-style "every open thread should get closed") */
   inbox: InboxSettings,
   /**
+   * R8: configured harness instances (accounts, ACP agents). The four bundled defaults are implicit
+   * and never stored; this list holds only what the user added.
+   */
+  providerInstances: Type.Array(ProviderInstanceConfig),
+  /**
    * R7: harness model used for short text generation on the user's own subscription (thread titles,
    * later commit messages / PR bodies) via the one-shot `complete()`. Absent = the first harness with `oneShot`.
    */
@@ -226,6 +255,8 @@ export const UserSettingsPatch = Type.Object({
   /** replaces the whole list */
   teams: Type.Optional(Type.Array(Team)),
   inbox: Type.Optional(Type.Partial(InboxSettings)),
+  /** replaces the whole list; ids must be unique and must not shadow a bundled kind */
+  providerInstances: Type.Optional(Type.Array(ProviderInstanceConfig)),
   /** null clears it (back to "first harness with oneShot") */
   textModel: Type.Optional(Type.Union([Type.Object({ provider: ProviderKind, model: Type.Optional(Type.String()) }), Type.Null()])),
 });
@@ -296,8 +327,12 @@ export const rpcMethods = {
     Type.Object({ parentPath: Type.String({ minLength: 1 }), name: Type.String({ minLength: 1, maxLength: 128 }), title: Type.Optional(Type.String({ minLength: 1 })) }),
     Type.Object({ projectId: Type.String(), rootPath: Type.String() }),
   ),
-  /** installed/logged-in state + models per harness (cached server-side) */
+  /** installed/logged-in state + models per harness instance (cached server-side) */
   "providers.list": unary(Type.Object({ refresh: Type.Optional(Type.Boolean()) }), Type.Array(ProviderStatusDto)),
+  /** R8: slash commands + skills the thread's harness accepts in its worktree (for the composer's `/` picker) */
+  "providers.commands": unary(Type.Object({ threadId: Type.String() }), Type.Object({ commands: Type.Array(SlashCommandInfo) })),
+  /** R8: the public ACP agent registry (cached; bundled snapshot when offline) */
+  "providers.acpRegistry": unary(Type.Object({ refresh: Type.Optional(Type.Boolean()) }), Type.Object({ agents: Type.Array(AcpRegistryAgent), fetchedAt: Type.Optional(Type.Number()) })),
   /** R7: a fresh title from the thread's first prompt + latest reply, generated one-shot on `settings.textModel`; applied via thread.update */
   "thread.regenerateTitle": unary(Type.Object({ threadId: Type.String() }), Type.Object({ title: Type.String(), provider: ProviderKind, model: Type.Optional(Type.String()) })),
   /** escape hatch: shell command that reopens the thread's harness session in a terminal */

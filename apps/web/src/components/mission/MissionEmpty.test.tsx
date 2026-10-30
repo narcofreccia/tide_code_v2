@@ -22,10 +22,10 @@ const caps = {
 
 function providers(loggedIn: boolean) {
   setProvidersForTest([
-    { kind: "claude", installed: true, loggedIn, models: [], caps },
-    { kind: "codex", installed: false, loggedIn: false, models: [], caps },
-    { kind: "opencode", installed: false, loggedIn: false, models: [], caps },
-    { kind: "pi", installed: true, loggedIn: false, models: [], caps },
+    { id: "claude", kind: "claude", label: "Claude Code", installed: true, loggedIn, models: [], caps },
+    { id: "codex", kind: "codex", label: "Codex", installed: false, loggedIn: false, models: [], caps },
+    { id: "opencode", kind: "opencode", label: "OpenCode", installed: false, loggedIn: false, models: [], caps },
+    { id: "pi", kind: "pi", label: "Pi", installed: true, loggedIn: false, models: [], caps },
   ]);
 }
 

@@ -132,7 +132,8 @@ export class OpencodeServer {
       };
       return this.#endpoint;
     }
-    if (this.#config.attach !== "standalone") {
+    // a second account (own HOME) must not attach to the default shared service
+    if (this.#config.attach !== "standalone" && this.#env.instance?.home === undefined) {
       const found = await this.#discover(serviceFile(this.#config));
       if (found && (majorOf(found.version) ?? 0) >= 2) {
         this.#env.log(`[opencode] attached to the shared service at ${found.url} (v${found.version})`);
@@ -152,7 +153,13 @@ export class OpencodeServer {
     const password = randomBytes(24).toString("base64url");
     const child = this.#spawn(binary, ["serve", "--port", "0", "--hostname", "127.0.0.1"], {
       cwd: process.cwd(),
-      env: { ...process.env, ...this.#config.env, OPENCODE_SERVER_PASSWORD: password },
+      env: {
+        ...process.env,
+        ...this.#config.env,
+        ...this.#env.instance?.env,
+        ...(this.#env.instance?.home ? { HOME: this.#env.instance.home } : {}),
+        OPENCODE_SERVER_PASSWORD: password,
+      },
     });
     this.#child = child;
 

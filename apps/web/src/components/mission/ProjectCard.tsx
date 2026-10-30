@@ -1,7 +1,8 @@
 import { useState } from "react";
 import { selectPrCounts, selectProjectLinks, selectProjectTotals, selectRecentThreads } from "@tide/client";
 import type { Project } from "@tide/contracts";
-import { PROVIDER_LABELS } from "../../lib/vocab.ts";
+import { threadHarnessLabel } from "../../lib/vocab.ts";
+import { useProvidersSnapshot } from "../../state/providers.ts";
 import { relativeTime } from "../../lib/relativeTime.ts";
 import { archiveProject, renameProject } from "../../lib/projectActions.ts";
 import { useModel } from "../../state/model.ts";
@@ -57,6 +58,7 @@ function ProjectMenu({ project, onOpen }: { project: Project; onOpen: (dialog: P
  * Details. Flat — a hairline box on `--surface`, never a card inside a card.
  */
 export function ProjectCard({ project }: { project: Project }) {
+  const providers = useProvidersSnapshot();
   const model = useModel((s) => s.model);
   const selectThread = useUi((s) => s.selectThread);
   const showAllThreads = useUi((s) => s.showAllThreads);
@@ -133,7 +135,7 @@ export function ProjectCard({ project }: { project: Project }) {
                 <span className={styles.title}>{thread.title}</span>
                 <ThreadTags thread={thread} />
                 {thread.interrupting === true ? <span className={styles.interrupting}>interrupting…</span> : null}
-                <span className={styles.meta}>{PROVIDER_LABELS[thread.provider]}</span>
+                <span className={styles.meta}>{threadHarnessLabel(providers, thread)}</span>
                 <span className={styles.time}>{relativeTime(thread.updatedAt)}</span>
               </button>
             </li>

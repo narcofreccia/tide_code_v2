@@ -170,6 +170,21 @@ describe("thread.delegate", () => {
     expect(app.engine.getModel().threads[childId]?.delegatedBy).toBe(threads.perf);
   });
 
+  it("R8: carries providerId from tide_delegate onto the child (and refuses an unknown one)", async () => {
+    await app.settings.set({ providerInstances: [{ id: "claude:work", kind: "claude", label: "Work" }] });
+    control.script(emit({ type: "settled", status: "completed" }));
+    const result = await agent.call<{ events: { event: { type: string; thread?: { id: string; providerId?: string } } }[] }>("agent.dispatch", {
+      command: { type: "thread.delegate", fromThreadId: "ignored", provider: "claude", providerId: "claude:work", prompt: "on the work account" },
+    });
+    expect(result.events.find((r) => r.event.type === "thread.created")?.event.thread?.providerId).toBe("claude:work");
+    await app.reactor.drain();
+    const err = await agent.expectError("agent.dispatch", {
+      command: { type: "thread.delegate", fromThreadId: "ignored", provider: "claude", providerId: "claude:ghost", prompt: "x" },
+    });
+    expect(err).toMatchObject({ code: "invalid-command" });
+    await app.settings.set({ providerInstances: [] });
+  });
+
   it("refuses status for an unrelated thread", async () => {
     const stranger = (
       await app.engine.dispatch({

@@ -8,6 +8,8 @@ import type { ServerConfig } from "../config.ts";
 import type { Engine } from "../orchestration/engine.ts";
 import type { EventStore } from "../orchestration/store.ts";
 import { DriverRegistry } from "../provider/registry.ts";
+import type { AcpRegistry } from "../provider/acpRegistry.ts";
+import type { CommandsCache } from "../provider/commands.ts";
 import { CheckpointService } from "../vcs/checkpoints.ts";
 import type { GhLike } from "../vcs/gh.ts";
 import { AgentTokenStore } from "./agentTickets.ts";
@@ -16,6 +18,7 @@ import { registerAgentDiffHandler } from "./agentDiff.ts";
 import { registerAgentThreadHandlers } from "./agentThreads.ts";
 import type { DelegateWaits } from "../orchestration/delegation.ts";
 import { registerHandlers } from "./handlers.ts";
+import { registerProviderHandlers } from "./providers.ts";
 import { SettingsStore } from "../settings.ts";
 import type { JudgeLedger } from "../decisions/ledger.ts";
 import { buildRemoteInfo, pairPage, type Interfaces } from "./remote.ts";
@@ -62,6 +65,10 @@ export interface ServerDeps {
   judgeLedger?: JudgeLedger;
   /** shared with the delegation reactor: a parent blocked in agent.thread.wait gets no wake-up */
   delegateWaits?: DelegateWaits;
+  /** R8: the `/` picker cache, fed by the provider reactor */
+  commands?: CommandsCache;
+  /** R8: the ACP agent registry the instance factory resolves against */
+  acp?: AcpRegistry;
 }
 
 export interface ServerHandle {
@@ -92,6 +99,7 @@ export async function startServer(deps: ServerDeps): Promise<ServerHandle> {
     });
 
   const router = new RpcRouter();
+  const settings = deps.settings ?? new SettingsStore(config.dataDir === ":memory:" ? {} : { path: SettingsStore.pathFor(config.tideHome) });
   registerHandlers(router, {
     engine,
     store,
@@ -102,8 +110,16 @@ export async function startServer(deps: ServerDeps): Promise<ServerHandle> {
     tideHome: config.tideHome,
     tools: detectTools(),
     remote,
-    settings: deps.settings ?? new SettingsStore(config.dataDir === ":memory:" ? {} : { path: SettingsStore.pathFor(config.tideHome) }),
+    settings,
     ...(deps.judgeLedger !== undefined ? { judgeLedger: deps.judgeLedger } : {}),
+  });
+  registerProviderHandlers(router, {
+    engine,
+    registry,
+    settings,
+    dataDir: config.dataDir,
+    ...(deps.commands !== undefined ? { commands: deps.commands } : {}),
+    ...(deps.acp !== undefined ? { acp: deps.acp } : {}),
   });
   registerAgentHandlers(router, { engine });
   registerAgentThreadHandlers(router, {

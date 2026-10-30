@@ -70,6 +70,7 @@ export class PiSession implements ProviderSession {
   #closed = false;
   #interruptRequested = false;
   #announcedSession = false;
+  #effort: string | undefined;
   #mode: OpenSessionOptions["mode"];
   #interaction: OpenSessionOptions["interaction"];
   /** tide-bridge's `/tide-config` is loaded, so mode / plan mode can change in place */
@@ -80,6 +81,7 @@ export class PiSession implements ProviderSession {
     this.#child = child;
     this.#env = env;
     this.#options = options;
+    this.#effort = options.effort;
     this.#mode = options.mode;
     this.#interaction = options.interaction;
     this.#normalizer = new PiNormalizer({
@@ -240,6 +242,7 @@ export class PiSession implements ProviderSession {
   async reconfigure(settings: SessionSettings): Promise<ReconfigureResult> {
     if (this.#closed || this.#turnActive) return "reopen";
     try {
+      const modelChanged = settings.model !== undefined && settings.model !== this.#model;
       if (settings.model !== undefined && settings.model !== this.#model) {
         const target = splitModelId(settings.model);
         if (!target) return "reopen";
@@ -249,6 +252,16 @@ export class PiSession implements ProviderSession {
           return "reopen";
         }
         this.#model = modelId({ model: (response.data as PiState["model"]) ?? null }) ?? settings.model;
+      }
+      if (settings.effort !== this.#effort || (settings.effort !== undefined && modelChanged)) {
+        // cleared effort = the model's own default, which only a fresh process (no --thinking) restores
+        if (settings.effort === undefined) return "reopen";
+        const response = await this.#rpc.request({ type: "set_thinking_level", level: settings.effort });
+        if (!response.success) {
+          this.#env.log(`[pi] set_thinking_level ${settings.effort} failed: ${response.error ?? "unknown"}`);
+          return "reopen";
+        }
+        this.#effort = settings.effort;
       }
       if (settings.mode !== this.#mode || settings.interaction !== this.#interaction) {
         if (!this.#liveConfig) return "reopen";

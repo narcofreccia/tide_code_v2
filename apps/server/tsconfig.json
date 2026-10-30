@@ -1,1 +1,1 @@
-{ "extends": "../../tsconfig.base.json", "compilerOptions": { "noEmit": true, "rootDir": "src", "types": ["node"] }, "include": ["src"] }
+{ "extends": "../../tsconfig.base.json", "compilerOptions": { "noEmit": true, "rootDir": "src", "types": ["node"], "resolveJsonModule": true }, "include": ["src"] }

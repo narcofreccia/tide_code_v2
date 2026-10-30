@@ -211,6 +211,14 @@ describe("tide-mcp server", () => {
     await client.close();
   });
 
+  it("passes an ACP / second-account instance through as providerId", async () => {
+    const backend = new FakeBackend();
+    const client = await connect(backend);
+    await client.callTool({ name: "tide_delegate", arguments: { provider: "acp", providerId: "acp:gemini", prompt: "summarise" } });
+    expect(backend.commands[0]).toMatchObject({ type: "thread.delegate", provider: "acp", providerId: "acp:gemini" });
+    await client.close();
+  });
+
   it("passes `repo` through so the delegate runs in a linked repository", async () => {
     const backend = new FakeBackend();
     const client = await connect(backend);

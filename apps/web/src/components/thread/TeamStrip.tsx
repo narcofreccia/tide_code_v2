@@ -1,7 +1,8 @@
 import { selectTeamStages, type TeamStageStatus } from "@tide/client";
 import type { Thread } from "@tide/contracts";
 import { worktreeNote } from "../../lib/teamActions.ts";
-import { PROVIDER_LABELS } from "../../lib/vocab.ts";
+import { PROVIDER_LABELS, threadHarnessLabel } from "../../lib/vocab.ts";
+import { useProvidersSnapshot } from "../../state/providers.ts";
 import { useModel } from "../../state/model.ts";
 import { useUi } from "../../state/ui.ts";
 import styles from "./TeamStrip.module.css";
@@ -27,12 +28,16 @@ export function TeamStrip({ thread }: { thread: Thread }) {
   const model = useModel((s) => s.model);
   const stages = selectTeamStages(model, thread.id);
   const selectThread = useUi((s) => s.selectThread);
+  const providers = useProvidersSnapshot();
   if (thread.team === undefined || stages.length === 0) return null;
   const all = thread.team.stages;
   return (
     <nav className={styles.strip} aria-label={`Team ${thread.team.name}`}>
       <span className={styles.name}>{thread.team.name}</span>
-      {stages.map(({ stage, thread: stageThread, status }, i) => (
+      {stages.map(({ stage, thread: stageThread, status }, i) => {
+        // the stage names a kind; the thread it ran in knows the account
+        const harness = stageThread?.providerId === undefined ? PROVIDER_LABELS[stage.provider] : threadHarnessLabel(providers, stageThread);
+        return (
         <span key={stage.key} className={styles.item}>
           {i > 0 ? <span className={styles.arrow} aria-hidden="true">→</span> : null}
           <button
@@ -41,14 +46,15 @@ export function TeamStrip({ thread }: { thread: Thread }) {
             data-status={status}
             disabled={stageThread === undefined}
             title={`${stage.role} · ${STATUS_WORDS[status]} · ${worktreeNote(all, i)}`}
-            aria-label={`${stage.role}, ${PROVIDER_LABELS[stage.provider]}, ${STATUS_WORDS[status]}`}
+            aria-label={`${stage.role}, ${harness}, ${STATUS_WORDS[status]}`}
             onClick={() => stageThread && selectThread(stageThread.id)}
           >
             <span aria-hidden="true">{STATUS_GLYPHS[status]}</span>
-            {stage.role} · {PROVIDER_LABELS[stage.provider]}
+            {stage.role} · {harness}
           </button>
         </span>
-      ))}
+        );
+      })}
     </nav>
   );
 }

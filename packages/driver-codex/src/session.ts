@@ -15,7 +15,9 @@ import { AsyncQueue, deferred, type Deferred } from "./async-queue.ts";
 import type { RequestId } from "./jsonrpc.ts";
 import { collaborationModeFor, policyFor, writableRoots } from "./modes.ts";
 import { CodexNormalizer } from "./normalize.ts";
+import { withInstance } from "./instance-config.ts";
 import { rateLimitFromSnapshot } from "./rate-limits.ts";
+import { fetchSkills, matchSkill, type CodexSkill } from "./skills.ts";
 import type { CodexConfig } from "./types.ts";
 import type { ThreadForkResponse } from "./generated/v2/ThreadForkResponse.ts";
 import type { ThreadResumeResponse } from "./generated/v2/ThreadResumeResponse.ts";
@@ -50,6 +52,10 @@ export class CodexSession implements ProviderSession {
   #normalizer: CodexNormalizer;
   #mailbox: AsyncQueue<NormalizedEvent> | undefined;
   #model: string;
+  /** R8: reasoning effort for the next turns; undefined = the model's default */
+  #effort: string | undefined;
+  /** R8: this cwd's skills, fetched lazily the first time a turn starts with `/` */
+  #skills: Promise<CodexSkill[]> | undefined;
   /** the user's own sandbox/approval stance from config.toml, resolved once per session; modes only narrow it */
   #userConfig: UserSandboxConfig;
   #turnActive = false;
@@ -67,6 +73,7 @@ export class CodexSession implements ProviderSession {
     this.#options = options;
     this.#server = server;
     this.#model = model;
+    this.#effort = options.effort;
     this.#userConfig = userConfig;
     this.#normalizer = new CodexNormalizer({
       onUnknown: (method) => {
@@ -80,7 +87,8 @@ export class CodexSession implements ProviderSession {
     );
   }
 
-  static async open(config: CodexConfig, env: DriverEnv, options: OpenSessionOptions, binaryPath: string): Promise<CodexSession> {
+  static async open(rawConfig: CodexConfig, env: DriverEnv, options: OpenSessionOptions, binaryPath: string): Promise<CodexSession> {
+    const config = withInstance(rawConfig, env);
     const notifications: { method: string; params: unknown }[] = [];
     const requests: { method: string; params: unknown; id: RequestId }[] = [];
     let session: CodexSession | undefined;
@@ -209,9 +217,11 @@ export class CodexSession implements ProviderSession {
   async #startTurn(input: TurnInput, mailbox: AsyncQueue<NormalizedEvent>, turnStart: Deferred<string | undefined>): Promise<void> {
     const policy = policyFor(this.#options.mode, writableRoots(this.#options), false, this.#userConfig);
     try {
+      const skills = input.text.trimStart().startsWith("/") ? await this.#loadSkills() : [];
       const response = await this.#server.request<TurnStartResponse>("turn/start", {
         threadId: this.nativeSessionId,
-        input: turnInput(input),
+        input: turnInput(input, skills),
+        ...(this.#effort !== undefined ? { effort: this.#effort } : {}),
         cwd: this.#options.cwd,
         approvalPolicy: policy.approvalPolicy,
         sandboxPolicy: policy.sandboxPolicy,
@@ -220,7 +230,7 @@ export class CodexSession implements ProviderSession {
         // Codex in plan mode, and gating it on a pinned model silently dropped plan mode for
         // every thread on the default model. `settings.model` is the thread's resolved model
         // (from `thread/start`), which is what Codex would have used anyway.
-        collaborationMode: collaborationModeFor(this.#options.interaction, this.#model),
+        collaborationMode: collaborationModeFor(this.#options.interaction, this.#model, this.#effort),
       });
       const turnId = response?.turn?.id;
       if (turnId !== undefined) this.#turnIds.push(turnId);
@@ -231,6 +241,15 @@ export class CodexSession implements ProviderSession {
       mailbox.push({ type: "settled", status: this.#interruptRequested ? "interrupted" : "error", error: error instanceof Error ? error.message : String(error) });
       mailbox.close();
     }
+  }
+
+  /** Never throws: a failed `skills/list` just means `/x` goes through as plain text. */
+  #loadSkills(): Promise<CodexSkill[]> {
+    this.#skills ??= fetchSkills(this.#server, this.#options.cwd).catch((error: unknown) => {
+      this.#env.log(`[codex] skills/list failed: ${error instanceof Error ? error.message : String(error)}`);
+      return [];
+    });
+    return this.#skills;
   }
 
   /**
@@ -256,6 +275,7 @@ export class CodexSession implements ProviderSession {
   async reconfigure(settings: SessionSettings): Promise<ReconfigureResult> {
     this.#options = { ...this.#options, mode: settings.mode, interaction: settings.interaction, ...(settings.model !== undefined ? { model: settings.model } : {}) };
     if (settings.model !== undefined && settings.model !== "") this.#model = settings.model;
+    this.#effort = settings.effort;
     return "applied";
   }
 
@@ -270,7 +290,7 @@ export class CodexSession implements ProviderSession {
     if (this.#closed || !this.#turnActive || turnStart === undefined || threadId === undefined) throw new Error("no turn is running on this codex session");
     const expectedTurnId = this.#normalizer.turnId ?? (await turnStart.promise);
     if (expectedTurnId === undefined || !this.#turnActive) throw new Error("no turn is running on this codex session");
-    const params: TurnSteerParams = { threadId, input: turnInput(input), expectedTurnId };
+    const params: TurnSteerParams = { threadId, input: turnInput(input, (await this.#skills) ?? []), expectedTurnId };
     await this.#server.request<TurnSteerResponse>("turn/steer", params);
   }
 
@@ -351,8 +371,16 @@ export class CodexSession implements ProviderSession {
 }
 
 /** Codex takes an array of typed input parts; images ride as data URLs. */
-export function turnInput(input: TurnInput): UserInput[] {
+export function turnInput(input: TurnInput, skills: CodexSkill[] = []): UserInput[] {
   const parts: UserInput[] = (input.images ?? []).map((image) => ({ type: "image", url: `data:${image.mediaType};base64,${image.data}` }));
+  // R8: a leading `/<listed skill>` becomes Codex's native skill input + the remaining text;
+  // an unmatched `/x` is sent verbatim (pass-through, the harness decides).
+  const hit = matchSkill(input.text, skills);
+  if (hit) {
+    parts.push({ type: "skill", name: hit.skill.name, path: hit.skill.path });
+    if (hit.rest !== "") parts.push({ type: "text", text: hit.rest, text_elements: [] });
+    return parts;
+  }
   parts.push({ type: "text", text: input.text, text_elements: [] });
   return parts;
 }

@@ -37,6 +37,8 @@ export class FakeAppServer implements ChildLike {
   failMethods = new Map<string, string>();
   /** the `account` answered by `account/read`; `null` is signed out */
   account: { type: string; [key: string]: unknown } | null = { type: "chatgpt", email: "dev@example.com", planType: "pro" };
+  /** `SkillMetadata[]` answered by `skills/list` */
+  skills: Record<string, unknown>[] = [];
   /** result of `account/rateLimits/read` (the default `{}` carries no snapshot) */
   rateLimits: unknown = {};
 
@@ -148,6 +150,8 @@ export class FakeAppServer implements ChildLike {
         return { account: this.account, requiresOpenaiAuth: false };
       case "account/rateLimits/read":
         return this.rateLimits;
+      case "skills/list":
+        return { data: [{ cwd: (message.params?.["cwds"] as string[] | undefined)?.[0] ?? "/tmp/repo", skills: this.skills, errors: [] }] };
       case "model/list":
         return { data: [{ id: this.model, model: this.model, displayName: "GPT-5.6-Sol", hidden: false, isDefault: true }], nextCursor: null };
       default:

@@ -1,6 +1,7 @@
 import { selectExpertsSessions, selectProjects, selectThreadsByProject } from "@tide/client";
 import type { ProposedPlan, ReadModel, Thread } from "@tide/contracts";
 import { fuzzyRank } from "./fuzzy.ts";
+import { providerIdOf } from "./vocab.ts";
 import { SHORTCUTS, scopeApplies, shortcutKeys } from "./shortcuts.ts";
 import { openThreadTerminal } from "./openInTerminal.ts";
 import { useUi } from "../state/ui.ts";
@@ -61,7 +62,11 @@ function threadItems(model: ReadModel, thread: Thread): PaletteItem[] {
       id: "thread:child",
       label: "New child thread",
       group: "Thread",
-      run: () => void createThread(thread.projectId, thread.provider, { parentThreadId: thread.id }),
+      run: () =>
+        void createThread(thread.projectId, thread.provider, {
+          parentThreadId: thread.id,
+          ...(thread.providerId === undefined ? {} : { providerId: thread.providerId }),
+        }),
     },
   ];
   const plan = latestPlan(model, thread.id);
@@ -120,7 +125,7 @@ function navigationItems(model: ReadModel): PaletteItem[] {
         id: `thread:${thread.id}`,
         label: `${threadGlyph(thread)} ${thread.title}`,
         group: "Go to",
-        detail: `${project.title} · ${thread.provider} · ${thread.interrupting === true ? "interrupting" : (thread.attention ?? thread.status)}`,
+        detail: `${project.title} · ${providerIdOf(thread)} · ${thread.interrupting === true ? "interrupting" : (thread.attention ?? thread.status)}`,
         run: () => ui.selectThread(thread.id),
       });
     }

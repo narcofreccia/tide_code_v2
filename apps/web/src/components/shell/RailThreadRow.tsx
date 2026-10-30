@@ -3,7 +3,8 @@ import type { Thread } from "@tide/contracts";
 import { settleThread, unsettleThread, updateThread } from "../../lib/threadActions.ts";
 import { isThreadMerged } from "@tide/client";
 import { relativeTime } from "../../lib/relativeTime.ts";
-import { PROVIDER_LABELS, PROVIDER_MONOGRAMS, threadStateKey } from "../../lib/vocab.ts";
+import { PROVIDER_MONOGRAMS, threadStateKey } from "../../lib/vocab.ts";
+import { useThreadHarnessLabel } from "../../state/providers.ts";
 import { useServerSettings } from "../../state/serverSettings.ts";
 import { useModel } from "../../state/model.ts";
 import { useUi } from "../../state/ui.ts";
@@ -97,8 +98,9 @@ export function RailThreadRow({ thread, siblings }: { thread: Thread; siblings: 
   const state = threadStateKey(thread);
   const loud = state === "needs" || state === "running";
   const hasVcs = thread.pr !== undefined || thread.merge !== undefined || isThreadMerged(thread);
+  const harness = useThreadHarnessLabel(thread);
   const tip = [
-    `${PROVIDER_MONOGRAMS[thread.provider]} · ${PROVIDER_LABELS[thread.provider]}`,
+    `${PROVIDER_MONOGRAMS[thread.provider]} · ${harness}`,
     thread.worktreePath === undefined ? undefined : `worktree ${thread.worktreePath}`,
   ]
     .filter(Boolean)

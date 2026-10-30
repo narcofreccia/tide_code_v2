@@ -60,7 +60,7 @@
         <h1>Tide v2 — Project Journal</h1>
         <div class="sub">Focused agentic code editor &amp; orchestrator over Claude Code · Codex · OpenCode · Pi. Started 2026-08-30.</div>
         <div class="kpi">
-          <div class="box"><b>R7</b><span>inbox discipline landed (2026-10-30) · next R8 reach/ACP</span></div>
+          <div class="box"><b>R8</b><span>reach round in progress: ACP driver, accounts, effort, slash commands</span></div>
           <div class="box"><b>125</b><span>commits (incl. this one)</span></div>
           <div class="box"><b>1,924</b><span>tests passing</span></div>
         </div>
@@ -96,6 +96,19 @@
 
       <h2>Phase board</h2>
       <details class="phase" open>
+        <summary><span class="title"><h3>R8 — Reach: ACP driver, accounts per harness, effort, slash commands (2026-10-30)</h3><small>driver-acp over the Agent Client Protocol (43-agent registry) · several instances per harness (home/env) · reasoning-effort picker on all harnesses · composer <code>/</code> picker fed by each harness · Settings › Providers instances</small></span><span class="badge status wip">wip</span></summary>
+        <div class="body">
+           <p class="note">2026-10-30 — T3 Code's headline is "all your subs": ~10 providers plus the ACP registry, and several accounts per provider. Research (SDK 2.1.0 schema, registry JSON, live <code>opencode acp</code> probe) fixed the protocol facts; an exploration mapped every place keyed by <code>ProviderKind</code>. Design: the kind stays the family (now with <code>acp</code>), instances get an id (<code>Thread.providerId</code>, default = kind); the registry owns ids and labels, drivers only receive <code>DriverEnv.instance</code> (home/env). Effort rides on the thread like model; slash commands come from each harness (Claude <code>supportedCommands</code>, Codex <code>skills/list</code>, OpenCode <code>/command</code>, Pi <code>get_commands</code>, ACP <code>available_commands_update</code>).</p>
+           <ul class="tasks">
+             <li><span class="badge status done">done</span><span class="t"><b>Contracts</b>: <code>ProviderKind.acp</code>, <code>ProviderInstanceConfig</code>, <code>UserSettings.providerInstances</code>, <code>Thread.providerId/effort</code> (+ create/update, <code>clearEffort</code>), <code>ProviderStatusDto.id/label/efforts/caps.effort/commands</code>, SPI <code>DriverEnv.instance</code>, <code>listCommands</code>, <code>commands</code> event, RPCs <code>providers.commands</code> / <code>providers.acpRegistry</code>.</span></li>
+             <li><span class="badge status wip">wip</span><span class="t"><b>driver-acp</b> (Opus): ndjson JSON-RPC over stdio, capabilities, approvals held on <code>request_permission</code>, fs served and worktree-confined, mode mapping by behaviour not by agent mode ids, fixtures from the live OpenCode ACP agent.</span></li>
+             <li><span class="badge status wip">wip</span><span class="t"><b>Server</b> (Opus): instance-keyed registry synced from settings, ACP registry fetch + snapshot + launch resolution (npx/uvx), decider instance switch = handoff, <code>providers.commands</code> cache, tide-mcp <code>providerId</code>.</span></li>
+             <li><span class="badge status wip">wip</span><span class="t"><b>Bundled drivers</b> (Sonnet): effort knobs (Claude <code>effort</code>, Codex <code>reasoning_effort</code>, OpenCode <code>variant</code>, Pi thinking level), command/skill listing and execution, per-instance home/env.</span></li>
+             <li><span class="badge status wip">wip</span><span class="t"><b>Web</b> (Opus): instance-aware pickers and labels, Effort pill + ⌘⇧E, composer <code>/</code> picker with source chips and unknown-command hint, Settings › Providers: instance cards, Add account, Add ACP agent from the registry.</span></li>
+           </ul>
+        </div>
+      </details>
+      <details class="phase">
         <summary><span class="title"><h3>R7 — Inbox discipline &amp; composer state (T3 Code comparison, 2026-10-30)</h3><small>settle with undo · auto-settle on merge / inactivity · Working group · multi-select · drafts + stash · ⌘↵ background send · unread · OS notifications · title regeneration on a cheap model</small></span><span class="badge status done">done</span></summary>
         <div class="body">
            <p class="note">2026-10-30 — Andrea asked for an honest comparison with the full T3 Code (Theo's video + the live repo at v0.1.5: Orchestrator V2, ~10 providers + ACP registry, environments + T3 Connect, mobile apps, PR tab, usage page, webhooks). Verdict: our core (engine, drivers, checkpoints, merge-back, editor, Experts, handoff, Jev layer) is level or ahead; we are dwarfed on inbox discipline, harness reach, remote-as-default, PR flow, usage glass-box and a list of surface features. Five rounds planned (R7 inbox → R8 reach/ACP → R9 environments + self-hosted relay + PWA → R10 GitHub deep + usage → R11 surface parity). Decisions: own-network environments + a relay you host; PWA before native; ACP driver first; GitHub deep first. Plan: <code>~/.claude/plans/hey-please-audit-this-dapper-platypus.md</code>.</p>

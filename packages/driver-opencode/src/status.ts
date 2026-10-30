@@ -31,6 +31,8 @@ export const OPENCODE_CAPS = {
   fork: true,
   rollback: true,
   oneShot: true,
+  // R8 — `commands`: GET /api/command + /api/skill; `effort` is added per catalog (Model.variants)
+  commands: true,
 } as const;
 
 export function toModelInfo(models: WireModel[], defaultId: string | undefined): ModelInfo[] {
@@ -38,7 +40,8 @@ export function toModelInfo(models: WireModel[], defaultId: string | undefined):
     .filter((model) => model.enabled !== false && model.status !== "deprecated")
     .map((model) => {
       const id = `${model.providerID}/${model.id}`;
-      return { id, label: model.name || model.id, family: model.providerID, ...(id === defaultId ? { default: true } : {}) };
+      const efforts = (model.variants ?? []).map((variant) => ({ id: variant.id, label: variant.id }));
+      return { id, label: model.name || model.id, family: model.providerID, ...(id === defaultId ? { default: true } : {}), ...(efforts.length > 0 ? { efforts } : {}) };
     });
 }
 
@@ -47,10 +50,12 @@ export function primaryAgents(agents: WireAgent[]): WireAgent[] {
   return agents.filter((agent) => agent.mode !== "subagent" && !agent.hidden);
 }
 
-export function capsFor(agents: WireAgent[]): ProviderStatus["caps"] {
-  if (agents.length === 0) return { ...OPENCODE_CAPS };
+export function capsFor(agents: WireAgent[], models: ModelInfo[] = []): ProviderStatus["caps"] {
+  const effort = models.some((model) => (model.efforts?.length ?? 0) > 0);
+  if (agents.length === 0) return { ...OPENCODE_CAPS, effort };
   return {
     ...OPENCODE_CAPS,
+    effort,
     planMode: agents.some((agent) => agent.id === "plan"),
     subagents: agents.some((agent) => agent.mode === "subagent" || agent.mode === "all"),
   };
@@ -93,7 +98,7 @@ export async function buildStatus(config: OpencodeConfig, env: DriverEnv, probe:
       ...(hint !== undefined ? { hint } : {}),
       ...(infos.length === 0 ? { loginCommand: LOGIN_COMMAND } : {}),
       models: infos,
-      caps: capsFor(agents),
+      caps: capsFor(agents, infos),
     };
   } catch (error) {
     const message = error instanceof Error ? error.message : String(error);

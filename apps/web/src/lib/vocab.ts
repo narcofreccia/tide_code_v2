@@ -1,8 +1,12 @@
 import { isThreadMerged } from "@tide/client";
-import type { InteractionMode, ProviderKind, RuntimeMode, Thread } from "@tide/contracts";
+import type { InteractionMode, ProviderKind, ProviderStatusDto, RuntimeMode, Thread } from "@tide/contracts";
 import { relativeUntil } from "./relativeTime.ts";
 
-export const PROVIDERS: ProviderKind[] = ["claude", "codex", "opencode", "pi"];
+/** The four harnesses Tide ships a driver for; each always has a default instance whose id is the kind. */
+export const BUNDLED_PROVIDERS: ProviderKind[] = ["claude", "codex", "opencode", "pi"];
+
+/** Every kind; `acp` has no default instance — each ACP agent is its own configured instance. */
+export const PROVIDERS: ProviderKind[] = [...BUNDLED_PROVIDERS, "acp"];
 
 /** Display names; the wire uses the lowercase kind. */
 export const PROVIDER_LABELS: Record<ProviderKind, string> = {
@@ -10,10 +14,46 @@ export const PROVIDER_LABELS: Record<ProviderKind, string> = {
   codex: "Codex",
   opencode: "OpenCode",
   pi: "Pi",
+  acp: "ACP agent",
 };
 
 /** One-letter harness mark, used where a full name does not fit (rail tooltips). */
-export const PROVIDER_MONOGRAMS: Record<ProviderKind, string> = { claude: "C", codex: "X", opencode: "O", pi: "P" };
+export const PROVIDER_MONOGRAMS: Record<ProviderKind, string> = { claude: "C", codex: "X", opencode: "O", pi: "P", acp: "A" };
+
+export function isProviderKind(value: string): value is ProviderKind {
+  return (PROVIDERS as string[]).includes(value);
+}
+
+/** The kind an instance id belongs to: `"codex:work"` → `codex`; undefined when it names none. */
+export function kindOfId(id: string): ProviderKind | undefined {
+  const head = id.split(":")[0] ?? "";
+  return isProviderKind(head) ? head : undefined;
+}
+
+/** The instance a thread runs on; absent `providerId` means the kind's default instance. */
+export function providerIdOf(thread: { provider: ProviderKind; providerId?: string }): string {
+  return thread.providerId ?? thread.provider;
+}
+
+/**
+ * Display name of an instance: the server's label (`Codex · work`, `Gemini CLI`),
+ * else the kind's name for a bare kind, else the id itself.
+ */
+export function instanceLabel(providers: readonly ProviderStatusDto[], id: string): string {
+  const exact = providers.find((p) => p.id === id);
+  if (exact?.label) return exact.label;
+  if (isProviderKind(id)) return PROVIDER_LABELS[id];
+  return id;
+}
+
+/** A thread's harness as the user reads it; the instance label when it is not the kind's default. */
+export function threadHarnessLabel(
+  providers: readonly ProviderStatusDto[],
+  thread: { provider: ProviderKind; providerId?: string },
+): string {
+  const id = providerIdOf(thread);
+  return id === thread.provider ? PROVIDER_LABELS[thread.provider] : instanceLabel(providers, id);
+}
 export const RUNTIME_MODES: RuntimeMode[] = [
   "approval-required",
   "auto-accept-edits",
@@ -42,9 +82,11 @@ export const INTERACTION_HINTS: Record<InteractionMode, string> = {
 };
 
 export const DEFAULT_MODEL_LABEL = "Default model";
-export const defaultModelHint = (provider: ProviderKind): string => `Whatever ${PROVIDER_LABELS[provider]} picks`;
+/** `name` is a kind or an instance label */
+const nameOf = (name: string): string => (isProviderKind(name) ? PROVIDER_LABELS[name] : name);
+export const defaultModelHint = (name: string): string => `Whatever ${nameOf(name)} picks`;
 /** The hint on the model the harness itself marks as its default. */
-export const harnessDefaultHint = (provider: ProviderKind): string => `${PROVIDER_LABELS[provider]}'s default`;
+export const harnessDefaultHint = (name: string): string => `${nameOf(name)}'s default`;
 
 /** One status language: every surface (header chip, status bar, rail glyph) derives from this. */
 export type ThreadStateKey =

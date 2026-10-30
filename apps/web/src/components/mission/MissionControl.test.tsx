@@ -237,17 +237,17 @@ describe("Mission Control — providers", () => {
   it("shows ready / not logged in / not installed and offers the login command", () => {
     attachFakeStore(fixture());
     setProvidersForTest([
-      { kind: "claude", installed: true, loggedIn: true, models: [], caps },
+      { id: "claude", kind: "claude", label: "Claude Code", installed: true, loggedIn: true, models: [], caps },
       {
-        kind: "codex",
+        id: "codex", kind: "codex", label: "Codex",
         installed: true,
         loggedIn: false,
         hint: "Run `codex login`",
         models: [],
         caps,
       },
-      { kind: "opencode", installed: false, loggedIn: false, models: [], caps },
-      { kind: "pi", installed: true, loggedIn: true, models: [], caps },
+      { id: "opencode", kind: "opencode", label: "OpenCode", installed: false, loggedIn: false, models: [], caps },
+      { id: "pi", kind: "pi", label: "Pi", installed: true, loggedIn: true, models: [], caps },
     ]);
     render(<MissionControl />);
     const strip = within(screen.getByLabelText("Providers"));
@@ -273,7 +273,7 @@ describe("Mission Control — providers", () => {
       rateLimit: { status: "limited", resetsAt: Date.now() + 90 * 60_000, note: "5-hour limit", at: 2 },
     };
     attachFakeStore(model);
-    setProvidersForTest([{ kind: "claude", installed: true, loggedIn: true, models: [], caps }]);
+    setProvidersForTest([{ id: "claude", kind: "claude", label: "Claude Code", installed: true, loggedIn: true, models: [], caps }]);
     render(<MissionControl />);
     const strip = within(screen.getByLabelText("Providers"));
     fireEvent.click(strip.getByRole("button", { name: /Harnesses/ }));

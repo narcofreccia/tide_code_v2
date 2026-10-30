@@ -14,6 +14,7 @@ import { OpencodeNormalizer, ZERO_TOKENS } from "./normalize.ts";
 import { grantCovers, replyFor, sessionRuleset, userRules, type SessionGrant } from "./permissions.ts";
 import { rollbackTarget } from "./turns.ts";
 import type { OpencodeApi, PromptFile } from "./types.ts";
+import { routeSlash, type SlashCatalog, type SlashRoute } from "./slash.ts";
 import type { EventOf, FormValue, ModelRef, OpencodeEvent, PermissionRule, WireConfigEntry, WireForm, WireTokens } from "./wire.ts";
 
 export interface AgentChoice {
@@ -32,9 +33,11 @@ export interface SessionDeps {
   model?: ModelRef;
   contextWindow?: number;
   /** resolves `provider/model` ids for `reconfigure` (catalog lookup lives in the instance) */
-  resolveModel?: (id: string | undefined) => Promise<{ model?: ModelRef; contextWindow?: number }>;
+  resolveModel?: (id: string | undefined, effort?: string) => Promise<{ model?: ModelRef; contextWindow?: number }>;
   /** cumulative usage of a resumed session, so the first turn reports a delta */
   baseline?: { cost: number; tokens: WireTokens };
+  /** this directory's slash commands + skills (lazy, cached by the instance); absent = no routing */
+  slash?: () => Promise<SlashCatalog>;
   /** thread-scoped MCP registrations to remove on close */
   mcpNames?: string[];
   onClosed?: (session: OpencodeSession) => void;
@@ -78,7 +81,7 @@ export class OpencodeSession implements ProviderSession {
     this.#env = env;
     this.#options = options;
     this.#deps = deps;
-    this.#settings = { ...(options.model !== undefined ? { model: options.model } : {}), mode: options.mode, interaction: options.interaction };
+    this.#settings = { ...(options.model !== undefined ? { model: options.model } : {}), ...(options.effort !== undefined ? { effort: options.effort } : {}), mode: options.mode, interaction: options.interaction };
     this.#agent = agentFor(deps.agents, options.interaction);
     this.#baseline = deps.baseline ?? { cost: 0, tokens: ZERO_TOKENS };
     this.nativeSessionId = sessionId;
@@ -134,7 +137,16 @@ export class OpencodeSession implements ProviderSession {
       // Subscribe before prompting: the stream is the only place a turn's events appear.
       await this.#deps.hub.ensure();
       const files = promptFiles(input);
-      const admitted = await this.#deps.api.prompt({ sessionId: this.nativeSessionId, text: input.text, ...(files.length > 0 ? { files } : {}) });
+      const route = await this.#route(input.text);
+      const admitted =
+        route.kind === "command"
+          ? await this.#deps.api.runCommand({ sessionId: this.nativeSessionId, name: route.name, text: route.text, ...(files.length > 0 ? { files } : {}) }).then(() => undefined)
+          : await this.#deps.api.prompt({
+              sessionId: this.nativeSessionId,
+              text: route.text,
+              ...(files.length > 0 ? { files } : {}),
+              ...(route.kind === "skill" ? { skills: [route.skill] } : {}),
+            });
       // without an id this process can't tell its turns apart; rollback then reads the session
       if (admitted?.id === undefined) this.#turns = [];
       else this.#turns.push(admitted.id);
@@ -142,6 +154,17 @@ export class OpencodeSession implements ProviderSession {
       this.#turns.push(undefined);
       this.#push(this.#normalizer?.abort(error instanceof Error ? error.message : String(error)) ?? []);
       mailbox.close();
+    }
+  }
+
+  /** `/name args` → custom command route or skill attachment; anything unmatched goes through verbatim. */
+  async #route(text: string): Promise<SlashRoute> {
+    if (!text.trimStart().startsWith("/") || !this.#deps.slash) return { kind: "prompt", text };
+    try {
+      return routeSlash(text, await this.#deps.slash());
+    } catch (error) {
+      this.#env.log(`[opencode] could not list commands/skills: ${error instanceof Error ? error.message : String(error)}`);
+      return { kind: "prompt", text };
     }
   }
 
@@ -221,8 +244,15 @@ export class OpencodeSession implements ProviderSession {
   async reconfigure(settings: SessionSettings): Promise<ReconfigureResult> {
     try {
       const api = this.#deps.api;
-      if (settings.model !== this.#settings.model && settings.model !== undefined && this.#deps.resolveModel) {
-        const resolved = await this.#deps.resolveModel(settings.model);
+      const effortChanged = settings.effort !== this.#settings.effort;
+      if ((settings.model !== this.#settings.model || effortChanged) && this.#deps.resolveModel) {
+        // the variant (effort) lives on the model ref, so an effort change re-sends the model
+        const resolved = await this.#deps.resolveModel(settings.model, settings.effort);
+        if (!resolved.model && effortChanged && this.#deps.model) {
+          // effort cleared on an unpinned thread: re-send the live model without a variant
+          const { variant: _dropped, ...bare } = this.#deps.model;
+          resolved.model = bare;
+        }
         if (resolved.model) {
           await api.switchModel({ sessionId: this.nativeSessionId, model: resolved.model });
           this.#deps.model = resolved.model;

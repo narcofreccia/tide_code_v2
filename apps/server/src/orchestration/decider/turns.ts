@@ -88,6 +88,8 @@ export function decideTurn(model: ReadModel, command: TurnCommand, ctx: DecideCo
         turnId: turn.id,
         threadId: thread.id,
         provider: command.provider,
+        // the instance that runs it, so a later switch back resumes the right account's session
+        ...(command.providerId !== undefined ? { providerId: command.providerId } : thread.providerId !== undefined ? { providerId: thread.providerId } : {}),
         ...(command.model !== undefined ? { model: command.model } : {}),
         ...(command.nativeSessionId !== undefined ? { nativeSessionId: command.nativeSessionId } : {}),
         startedAt: ctx.now,

@@ -1,5 +1,5 @@
 import { create } from "zustand";
-import type { ProviderKind, RuntimeMode, UserSettings, UserSettingsPatch } from "@tide/contracts";
+import type { ProviderInstanceConfig, RuntimeMode, UserSettings, UserSettingsPatch } from "@tide/contracts";
 import { errorText } from "../lib/dispatchOrToast.ts";
 import { call } from "./model.ts";
 import { showToast } from "./toast.ts";
@@ -50,6 +50,7 @@ export function defaultUserSettings(): UserSettings {
     limitPolicy: "manual",
     teams: [],
     inbox: defaultInboxSettings(),
+    providerInstances: [],
   };
 }
 
@@ -90,6 +91,7 @@ function applyPatch(settings: UserSettings, patch: UserSettingsPatch): UserSetti
     limitPolicy: patch.limitPolicy ?? settings.limitPolicy,
     teams: patch.teams ?? settings.teams,
     inbox: { ...settings.inbox, ...(patch.inbox ?? {}) },
+    providerInstances: patch.providerInstances ?? settings.providerInstances,
     ...(patch.textModel === null ? {} : patch.textModel !== undefined ? { textModel: patch.textModel } : settings.textModel !== undefined ? { textModel: settings.textModel } : {}),
   };
 }
@@ -110,14 +112,28 @@ export async function patchServerSettings(patch: UserSettingsPatch): Promise<voi
   }
 }
 
-export function providerDefault(kind: ProviderKind): ProviderDefault {
-  return useServerSettings.getState().settings.providerDefaults[kind] ?? {};
+/**
+ * R8: defaults are keyed by instance id (the bundled default's id is its kind, so
+ * older entries keep working). An extra account without its own entry inherits
+ * its kind's defaults.
+ */
+export function providerDefault(id: string): ProviderDefault {
+  const all = useServerSettings.getState().settings.providerDefaults;
+  const own = all[id];
+  if (own !== undefined) return own;
+  const kind = id.split(":")[0] ?? id;
+  return kind !== id ? (all[kind] ?? {}) : {};
 }
 
-/** Merges into the harness's entry; the whole map is sent so the server never has to merge. */
-export function setProviderDefault(kind: ProviderKind, patch: ProviderDefault): Promise<void> {
+/** Merges into the instance's entry; the whole map is sent so the server never has to merge. */
+export function setProviderDefault(id: string, patch: ProviderDefault): Promise<void> {
   const current = useServerSettings.getState().settings.providerDefaults;
-  return patchServerSettings({ providerDefaults: { ...current, [kind]: { ...current[kind], ...patch } } });
+  return patchServerSettings({ providerDefaults: { ...current, [id]: { ...current[id], ...patch } } });
+}
+
+/** R8: the user's extra accounts / ACP agents; the list is replaced wholesale. */
+export function setProviderInstances(providerInstances: ProviderInstanceConfig[]): Promise<void> {
+  return patchServerSettings({ providerInstances });
 }
 
 export function setWorktreeByDefault(worktreeByDefault: boolean): Promise<void> {

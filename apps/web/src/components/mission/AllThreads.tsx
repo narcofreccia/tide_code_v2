@@ -3,7 +3,8 @@ import { selectAllThreads } from "@tide/client";
 import type { Thread } from "@tide/contracts";
 import { formatUsd } from "../../lib/glassBox.ts";
 import { relativeTime } from "../../lib/relativeTime.ts";
-import { PROVIDER_LABELS } from "../../lib/vocab.ts";
+import { threadHarnessLabel } from "../../lib/vocab.ts";
+import { useProvidersSnapshot } from "../../state/providers.ts";
 import { useModel } from "../../state/model.ts";
 import { useUi } from "../../state/ui.ts";
 import { requestDelete, unarchiveThread } from "../../lib/threadActions.ts";
@@ -14,11 +15,12 @@ import { MergeGlyph, PrGlyph } from "../ui/VcsBadges.tsx";
 import styles from "./AllThreads.module.css";
 
 function Cells({ thread, archived }: { thread: Thread; archived: boolean }) {
+  const providers = useProvidersSnapshot();
   return (
     <>
       <ThreadGlyph thread={thread} />
       <span className={styles.title}>{thread.title}</span>
-      <span className={styles.muted}>{PROVIDER_LABELS[thread.provider]}</span>
+      <span className={styles.muted}>{threadHarnessLabel(providers, thread)}</span>
       <span className={styles.mono} title={thread.model ?? "harness default"}>
         {thread.model ?? "default"}
       </span>

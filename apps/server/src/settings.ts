@@ -1,6 +1,6 @@
 import { mkdirSync, readFileSync, renameSync, writeFileSync } from "node:fs";
 import { dirname, join } from "node:path";
-import { ProviderKind, Team, type DecisionSites, type DecisionsSettings, type InboxSettings, type UserSettings, type UserSettingsPatch } from "@tide/contracts";
+import { ProviderInstanceConfig, ProviderKind, Team, type DecisionSites, type DecisionsSettings, type InboxSettings, type UserSettings, type UserSettingsPatch } from "@tide/contracts";
 import { Check } from "typebox/value";
 import { JEV_CONTEXT_TOKENS, USD_PER_MILLION_INPUT_TOKENS } from "./decisions/client.ts";
 import { DEFAULT_BASE_URL, DEFAULT_MODEL } from "./decisions/wire.ts";
@@ -22,6 +22,23 @@ interface StoredSettings {
   teams?: Team[];
   inbox?: Partial<InboxSettings>;
   textModel?: NonNullable<UserSettings["textModel"]>;
+  /** R8: user-added harness instances; the bundled defaults are implicit */
+  providerInstances?: ProviderInstanceConfig[];
+}
+
+const BUNDLED_KINDS: readonly string[] = ["claude", "codex", "opencode", "pi"];
+
+/** ids unique, never a bundled kind's own id, kind-specific launch info present. */
+function assertProviderInstances(list: ProviderInstanceConfig[]): void {
+  const seen = new Set<string>();
+  for (const inst of list) {
+    if (seen.has(inst.id)) throw new SettingsError(`duplicate provider instance id ${inst.id}`);
+    if (BUNDLED_KINDS.includes(inst.id)) throw new SettingsError(`${inst.id} is a bundled harness; add a second account under another id`);
+    if (inst.kind === "acp" && inst.acpAgentId === undefined && inst.command === undefined) {
+      throw new SettingsError(`ACP instance ${inst.id} needs a registry agent or a command`);
+    }
+    seen.add(inst.id);
+  }
 }
 
 export const DEFAULT_INBOX: InboxSettings = { autoSettleAfterDays: 3, autoSettleOnMerge: true, workingSection: false };
@@ -148,10 +165,11 @@ export class SettingsStore {
   }
 
   get(): UserSettings {
-    const { decisions, continueAfterRestart, followUpMode, limitPolicy, teams, inbox, textModel, ...rest } = this.#state;
+    const { decisions, continueAfterRestart, followUpMode, limitPolicy, teams, inbox, textModel, providerInstances, ...rest } = this.#state;
     return {
       ...rest,
       inbox: { ...DEFAULT_INBOX, ...inbox },
+      providerInstances: structuredClone(providerInstances ?? []),
       ...(textModel !== undefined ? { textModel: { ...textModel } } : {}),
       decisions: decisionsDto(decisions),
       continueAfterRestart: continueAfterRestart ?? false,
@@ -170,6 +188,7 @@ export class SettingsStore {
   set(patch: UserSettingsPatch): UserSettings {
     if (patch.teams !== undefined) assertUniqueTeamIds(patch.teams);
     if (patch.decisions?.grayZone !== undefined) assertGrayZone(patch.decisions.grayZone);
+    if (patch.providerInstances !== undefined) assertProviderInstances(patch.providerInstances);
     if (patch.inbox?.autoSettleAfterDays !== undefined && !(Number.isFinite(patch.inbox.autoSettleAfterDays) && patch.inbox.autoSettleAfterDays >= 0)) {
       throw new SettingsError(`inbox.autoSettleAfterDays must be ≥ 0 (got ${patch.inbox.autoSettleAfterDays})`);
     }
@@ -182,6 +201,7 @@ export class SettingsStore {
       limitPolicy: patch.limitPolicy ?? this.#state.limitPolicy ?? "manual",
       teams: patch.teams !== undefined ? structuredClone(patch.teams) : (this.#state.teams ?? []),
       inbox: { ...this.#state.inbox, ...loadInbox(patch.inbox) },
+      providerInstances: patch.providerInstances !== undefined ? structuredClone(patch.providerInstances) : (this.#state.providerInstances ?? []),
       ...(this.#state.textModel !== undefined ? { textModel: this.#state.textModel } : {}),
     };
     if (patch.textModel === null) delete next.textModel;
@@ -228,6 +248,7 @@ export class SettingsStore {
       teams: Array.isArray(r.teams) ? r.teams.filter((t): t is Team => Check(Team, t)) : [],
       inbox: loadInbox(r.inbox),
       ...(textModel !== undefined ? { textModel } : {}),
+      providerInstances: Array.isArray(r.providerInstances) ? r.providerInstances.filter((p): p is ProviderInstanceConfig => Check(ProviderInstanceConfig, p)) : [],
     };
   }
 

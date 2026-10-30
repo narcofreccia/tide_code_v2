@@ -154,6 +154,12 @@ maps Tide's `RuntimeMode` onto the harness's own permission knobs (table in `pro
 Harnesses run with their full native configuration; Tide only adds its MCP server. Every
 thread exposes an escape hatch (`claude --resume`, `codex resume`, `opencode -s`, `pi --session`).
 
+The `DriverRegistry` is keyed by **instance**: the four bundled defaults (id = kind) plus the
+accounts and ACP agents in `settings.providerInstances`, re-synced on `settings.set`. A thread
+names its instance with `providerId`; switching instance hands off like a provider switch.
+ACP agents come from the public registry (`provider/acpRegistry.ts`, cached 24 h under the data
+dir, bundled snapshot offline). Details: `providers.md` → Instances.
+
 ## Agents' tools (tide-mcp)
 
 Every session gets a `tide` MCP server (stdio; `packages/tide-mcp`, or `tide-server --mcp`

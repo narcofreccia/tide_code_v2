@@ -26,6 +26,10 @@ export interface ThreadPatch {
   pinned?: boolean;
   autoAllowRoutine?: boolean;
   autoSettle?: boolean;
+  /** R8: switch account / ACP agent (sent with the instance's `provider`) */
+  providerId?: string;
+  /** R8: "" clears it back to the harness default */
+  effort?: string;
 }
 
 export function updateThread(threadId: string, patch: ThreadPatch): void {
@@ -188,6 +192,9 @@ export interface NewThreadOptions {
   parentThreadId?: string;
   title?: string;
   model?: string;
+  /** R8: instance of the provider; omitted for the kind's default instance */
+  providerId?: string;
+  effort?: string;
   mode?: RuntimeMode;
   interaction?: InteractionMode;
   useWorktree?: boolean;
@@ -208,6 +215,8 @@ export async function createThread(
     title: options.title ?? "New thread",
     ...(options.parentThreadId === undefined ? {} : { parentThreadId: options.parentThreadId }),
     ...(options.model === undefined ? {} : { model: options.model }),
+    ...(options.providerId === undefined ? {} : { providerId: options.providerId }),
+    ...(options.effort === undefined ? {} : { effort: options.effort }),
     ...(options.mode === undefined ? {} : { mode: options.mode }),
     ...(options.interaction === undefined ? {} : { interaction: options.interaction }),
     ...(options.useWorktree === undefined ? {} : { useWorktree: options.useWorktree }),

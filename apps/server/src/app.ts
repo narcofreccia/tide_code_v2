@@ -20,10 +20,12 @@ import { SettlementReactor } from "./orchestration/settlement.ts";
 import { continueAfterRestart, recoverRollbacks, recoverUnsettledTurns, SHUTDOWN_ERROR, unsettledTurns } from "./orchestration/recovery.ts";
 import { RollbackService } from "./orchestration/rollback.ts";
 import { openEventStore, type EventStore } from "./orchestration/store.ts";
-import { registerBundledDrivers } from "./provider/load.ts";
+import { AcpRegistry } from "./provider/acpRegistry.ts";
+import { CommandsCache } from "./provider/commands.ts";
+import { createBundledInstanceFactory, registerBundledDrivers } from "./provider/load.ts";
 import { ProviderReactor } from "./provider/reactor.ts";
-import { DriverRegistry } from "./provider/registry.ts";
-import { SessionDirectory } from "./provider/sessions.ts";
+import { DriverRegistry, type InstanceFactory } from "./provider/registry.ts";
+import { instanceIdOf, SessionDirectory, threadCwd } from "./provider/sessions.ts";
 import { Scheduler } from "./scheduling/scheduler.ts";
 import { SettingsStore } from "./settings.ts";
 import { startServer, type ServerHandle } from "./rpc/server.ts";
@@ -40,6 +42,10 @@ export interface AppOptions {
   store?: EventStore;
   /** tests register fakes here; production falls back to the bundled driver packages */
   registerDrivers?: (registry: DriverRegistry) => void | Promise<void>;
+  /** R8: tests build settings instances from fakes; production maps them onto the bundled + ACP drivers */
+  instanceFactory?: (acp: AcpRegistry) => InstanceFactory;
+  /** tests replace the ACP registry (no network) */
+  acp?: AcpRegistry;
   /** false keeps everything in-process without binding a socket */
   listen?: boolean;
   /** tests inject a fake GitHub CLI */
@@ -62,6 +68,8 @@ export interface App {
   store: EventStore;
   engine: Engine;
   registry: DriverRegistry;
+  acp: AcpRegistry;
+  commands: CommandsCache;
   sessions: SessionDirectory;
   reactor: ProviderReactor;
   experts: ExpertsReactor;
@@ -107,12 +115,22 @@ export async function createApp(options: AppOptions): Promise<App> {
   const registry = new DriverRegistry({ env: { dataDir: config.dataDir, log } });
   if (options.registerDrivers) await options.registerDrivers(registry);
   else await registerBundledDrivers(registry, config.providers, log);
+  // R8: user-added accounts and ACP agents (settings.providerInstances), re-synced on settings.set
+  const acp = options.acp ?? new AcpRegistry({ dataDir: config.dataDir, log });
+  registry.setFactory(options.instanceFactory?.(acp) ?? createBundledInstanceFactory({ providers: config.providers, acp }));
+  await registry.syncInstances(settings.get().providerInstances);
+  // an agent added since the cached registry was fetched resolves once the fresh list is in
+  if (settings.get().providerInstances.some((p) => p.kind === "acp" && p.command === undefined && p.acpAgentId !== undefined && acp.find(p.acpAgentId) === undefined)) {
+    void acp.load(true).then(() => registry.syncInstances(settings.get().providerInstances)).catch((err: unknown) => log("[acp] resync failed", err));
+  }
+  const commands = new CommandsCache();
 
   // Every provider session gets the Tide MCP server, parameterised by a per-thread
   // agent token that is revoked when the session closes.
   const agentTokens = new AgentTokenStore();
   const mcp = new TideMcpProvisioner({ tokens: agentTokens });
   const sessions = new SessionDirectory({ registry, mcp, log, model: () => engine.getModel() });
+  registry.setInUse((instance) => sessions.usesInstance(instance));
 
   // The vcs reactor subscribes first on purpose: it must mark a turn's before-checkpoint
   // gate while `turn.requested` is delivered, before the provider reactor queues the turn.
@@ -141,6 +159,12 @@ export async function createApp(options: AppOptions): Promise<App> {
     handoffReady: (handoffId) => handoffSite?.pending(handoffId),
     beforeTurn: (_threadId, turnId) => checkpoints.beforeReady(turnId),
     imagesFor: (turnId) => imagesOf(store, turnId),
+    onCommands: (threadId, list) => {
+      const model = engine.getModel();
+      const thread = model.threads[threadId];
+      const project = thread ? model.projects[thread.projectId] : undefined;
+      if (thread && project) commands.put(instanceIdOf(thread), threadCwd(thread, project), list, true);
+    },
     log,
   });
   reactor.start();
@@ -205,6 +229,8 @@ export async function createApp(options: AppOptions): Promise<App> {
           settings,
           judgeLedger,
           delegateWaits,
+          commands,
+          acp,
           ...(options.gh !== undefined ? { gh: options.gh } : {}),
           config: { ...config, environmentId },
         });
@@ -216,6 +242,8 @@ export async function createApp(options: AppOptions): Promise<App> {
     store,
     engine,
     registry,
+    acp,
+    commands,
     sessions,
     reactor,
     experts,
@@ -286,7 +314,12 @@ const DEFAULT_SHUTDOWN_TIMEOUT_MS = 5_000;
 /** The slice of the user settings the decider applies to threads the server builds itself. */
 function deciderDefaults(settings: SettingsStore): DecideDefaults {
   const s = settings.get();
-  return { limitPolicy: s.limitPolicy, worktreeByDefault: s.worktreeByDefault, providerDefaults: s.providerDefaults };
+  return {
+    limitPolicy: s.limitPolicy,
+    worktreeByDefault: s.worktreeByDefault,
+    providerDefaults: s.providerDefaults,
+    providerInstances: s.providerInstances.map((p) => ({ id: p.id, kind: p.kind })),
+  };
 }
 
 /** Image bytes ride only on `turn.requested`; a turn promoted after a restart reads them back from the log. */

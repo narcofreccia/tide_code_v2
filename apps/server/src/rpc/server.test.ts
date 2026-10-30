@@ -294,6 +294,13 @@ describe("rpc: providers and the terminal escape hatch", () => {
     const before = (await client.call("providers.list", {})) as { kind: string; installed: boolean; models: { id: string }[] }[];
     // every known harness is listed; unregistered ones are marked unusable so the UI can grey them out
     expect(before.map((p) => p.kind)).toEqual(["claude", "codex", "opencode", "pi"]);
+    // R8: one DTO per instance; the defaults carry id = kind and the harness's name
+    expect(before.map((p) => [(p as { id?: string }).id, (p as { label?: string }).label])).toEqual([
+      ["claude", "Claude Code"],
+      ["codex", "Codex"],
+      ["opencode", "OpenCode"],
+      ["pi", "Pi"],
+    ]);
     expect(before[0]).toMatchObject({ kind: "claude", installed: true, loggedIn: true });
     expect(before[0]?.models[0]?.id).toBe("fake-model");
     expect(before[1]).toMatchObject({ kind: "codex", installed: false, loggedIn: false });
@@ -386,9 +393,9 @@ describe("settings rpc", () => {
   it("get/set round-trip", async () => {
     const client = await TestClient.open(`ws://${base}/ws?token=${TOKEN}`);
     try {
-      expect(await client.call("settings.get", {})).toEqual({ providerDefaults: {}, worktreeByDefault: true, decisions: expect.objectContaining({ enabled: false, hasKey: false }), continueAfterRestart: false, followUpMode: "steer", limitPolicy: "manual", teams: PRESET_TEAMS, inbox: expect.any(Object) });
+      expect(await client.call("settings.get", {})).toEqual({ providerDefaults: {}, worktreeByDefault: true, decisions: expect.objectContaining({ enabled: false, hasKey: false }), continueAfterRestart: false, followUpMode: "steer", limitPolicy: "manual", teams: PRESET_TEAMS, inbox: expect.any(Object), providerInstances: [] });
       const next = await client.call("settings.set", { patch: { worktreeByDefault: false, providerDefaults: { pi: { model: "x" } }, decisions: { apiKey: "k" } } });
-      expect(next).toEqual({ worktreeByDefault: false, providerDefaults: { pi: { model: "x" } }, decisions: expect.objectContaining({ enabled: false, hasKey: true }), continueAfterRestart: false, followUpMode: "steer", limitPolicy: "manual", teams: PRESET_TEAMS, inbox: expect.any(Object) });
+      expect(next).toEqual({ worktreeByDefault: false, providerDefaults: { pi: { model: "x" } }, decisions: expect.objectContaining({ enabled: false, hasKey: true }), continueAfterRestart: false, followUpMode: "steer", limitPolicy: "manual", teams: PRESET_TEAMS, inbox: expect.any(Object), providerInstances: [] });
       const team = { id: "a", name: "Solo", stages: [{ key: "lead", role: "implementer", provider: "claude", worktree: "own" }] };
       expect(((await client.call("settings.set", { patch: { teams: [team] } })) as { teams: unknown[] }).teams).toEqual([team]);
       await expect(client.call("settings.set", { patch: { teams: [team, team] } })).rejects.toMatchObject({ code: "invalid-params" });

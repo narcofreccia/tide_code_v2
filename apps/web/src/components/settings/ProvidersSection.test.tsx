@@ -80,7 +80,7 @@ describe("Settings › Providers", () => {
     render(<ProvidersSection />);
     const claude = within(screen.getByLabelText("Claude Code"));
     const pi = within(screen.getByLabelText("Pi"));
-    expect(claude.getByLabelText("Claude Code capabilities").children).toHaveLength(7);
+    expect(claude.getByLabelText("Claude Code capabilities").children).toHaveLength(9);
     for (const cap of ["planMode", "subagents", "mcp", "images", "resume", "contextUsage", "openInTerminal"]) {
       expect(claude.getByLabelText("Claude Code capabilities").querySelector(`[data-cap="${cap}"]`)?.getAttribute("data-on")).toBe("true");
       expect(pi.getByLabelText("Pi capabilities").querySelector(`[data-cap="${cap}"]`)?.getAttribute("data-on")).toBe("false");

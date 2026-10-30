@@ -68,7 +68,9 @@ describe("per-provider defaults", () => {
     // no saved default → the harness's own default model
     expect(JSON.parse(screen.getByRole("status").textContent ?? "{}")).toEqual({
       provider: "claude",
+      providerId: "claude",
       model: "sonnet-4-6",
+      effort: "",
       useWorktree: true,
     });
 
@@ -84,7 +86,9 @@ describe("per-provider defaults", () => {
     render(<Draft />);
     expect(JSON.parse(screen.getByRole("status").textContent ?? "{}")).toEqual({
       provider: "claude",
+      providerId: "claude",
       model: "opus-4-6",
+      effort: "",
       mode: "auto",
       useWorktree: false,
     });

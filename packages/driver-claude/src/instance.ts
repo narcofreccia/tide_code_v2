@@ -1,8 +1,9 @@
-import type { CompletionRequest, CompletionResult, DriverEnv, OpenSessionOptions, ProviderInstance, ProviderSession, ProviderStatus } from "@tide/contracts";
+import type { CompletionRequest, SlashCommandInfo, CompletionResult, DriverEnv, OpenSessionOptions, ProviderInstance, ProviderSession, ProviderStatus } from "@tide/contracts";
 import { complete } from "./complete.ts";
 import { ClaudeSession } from "./session.ts";
 import { shellQuote } from "./shell.ts";
-import { buildStatus, detectBinary } from "./status.ts";
+import { instanceEnv } from "./env.ts";
+import { buildStatus, detectBinary, listCommands } from "./status.ts";
 import type { ClaudeConfig, QueryFn } from "./types.ts";
 
 const STATUS_TTL_MS = 60_000;
@@ -36,6 +37,15 @@ export class ClaudeInstance implements ProviderInstance {
         this.#statusInFlight = undefined;
       });
     return this.#statusInFlight;
+  }
+
+  async listCommands({ cwd }: { cwd: string }): Promise<SlashCommandInfo[]> {
+    this.#binaryPath ??= await detectBinary(this.#config);
+    return listCommands(
+      this.#queryFn,
+      { cwd, ...(this.#binaryPath ? { pathToClaudeCodeExecutable: this.#binaryPath } : {}), env: { ...process.env, ...instanceEnv(this.#config, this.#env) } },
+      this.#env,
+    );
   }
 
   async openSession(options: OpenSessionOptions): Promise<ProviderSession> {

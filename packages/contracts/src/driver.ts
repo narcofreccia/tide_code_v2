@@ -1,4 +1,4 @@
-import type { Activity, ApprovalDecision, InteractionMode, ProviderKind, RateLimit, RuntimeMode, TurnUsage } from "./domain.ts";
+import type { Activity, ApprovalDecision, InteractionMode, ProviderKind, RateLimit, RuntimeMode, SlashCommandInfo, TurnUsage } from "./domain.ts";
 
 // Provider driver SPI (TypeScript-only; not on the wire). One implementation per
 // harness in packages/driver-*. Drivers translate native protocols into
@@ -10,6 +10,8 @@ export interface ModelInfo {
   /** e.g. "opus" | "sonnet"; free-form, from the harness */
   family?: string;
   default?: boolean;
+  /** R8: reasoning-effort levels this model accepts, from the harness (Codex supportedReasoningEfforts, Claude effort levels, OpenCode variants, Pi thinking levels) */
+  efforts?: { id: string; label: string; default?: boolean }[];
 }
 
 export interface DriverCaps {
@@ -30,6 +32,10 @@ export interface DriverCaps {
   rollback?: boolean;
   /** R6: `ProviderInstance.complete` answers a tool-less one-shot prompt (the judge fallback) */
   oneShot?: boolean;
+  /** R8: models carry `efforts` and `OpenSessionOptions.effort` / `SessionSettings.effort` are honoured */
+  effort?: boolean;
+  /** R8: the harness lists slash commands / skills (`ProviderInstance.listCommands` or a `commands` event) */
+  commands?: boolean;
 }
 
 /**
@@ -60,6 +66,7 @@ export interface CompletionResult {
   elapsedMs: number;
 }
 
+/** Instance id and label are the registry's (from `ProviderInstanceConfig`), not the driver's. */
 export interface ProviderStatus {
   kind: ProviderKind;
   installed: boolean;
@@ -100,6 +107,8 @@ export interface OpenSessionOptions {
    */
   forkFrom?: string;
   model?: string;
+  /** R8: effort id from `ModelInfo.efforts`; undefined = harness default */
+  effort?: string;
   mode: RuntimeMode;
   interaction: InteractionMode;
   mcpServers: McpServerSpec[];
@@ -118,6 +127,7 @@ export interface TurnInput {
 /** The thread settings a live session must honour from the next turn on. */
 export interface SessionSettings {
   model?: string;
+  effort?: string;
   mode: RuntimeMode;
   interaction: InteractionMode;
 }
@@ -146,6 +156,8 @@ export type NormalizedEvent =
    * Several reports per turn are fine (Codex emits one per model request).
    */
   | { type: "usage"; usage?: TurnUsage; contextUsage?: { used: number; window: number }; rateLimit?: RateLimit }
+  /** R8: the session's slash commands / skills changed (ACP available_commands_update, Codex skills changed) — full list */
+  | { type: "commands"; commands: SlashCommandInfo[] }
   | { type: "settled"; status: "completed" | "interrupted" | "error"; error?: string };
 
 export interface ProviderSession {
@@ -177,6 +189,8 @@ export interface ProviderSession {
 export interface ProviderInstance {
   readonly kind: ProviderKind;
   status(): Promise<ProviderStatus>;
+  /** R8: slash commands + skills available in `cwd` (project-level ones included); only when `caps.commands` */
+  listCommands?(options: { cwd: string }): Promise<SlashCommandInfo[]>;
   openSession(options: OpenSessionOptions): Promise<ProviderSession>;
   /** shell command that reopens a session in a terminal (escape hatch), if supported */
   terminalCommand(nativeSessionId: string, cwd: string): string | undefined;
@@ -189,6 +203,8 @@ export interface DriverEnv {
   /** where drivers may write logs/caches */
   dataDir: string;
   log: (msg: string, data?: unknown) => void;
+  /** R8: the instance this driver is created for (id = kind for the default instance) */
+  instance?: { id: string; label: string; home?: string; env?: Record<string, string> };
 }
 
 export interface ProviderDriver<Config = Record<string, unknown>> {

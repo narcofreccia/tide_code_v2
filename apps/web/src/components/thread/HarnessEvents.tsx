@@ -8,7 +8,7 @@ import { plural } from "../../lib/format.ts";
 type Note = Extract<Activity, { kind: "info" | "error" }>;
 
 /** `claude: system/task_notification`, `codex: mcpServer/startupStatus/updated`, … */
-const HARNESS_FRAME = /^(claude|codex|opencode|pi): /;
+const HARNESS_FRAME = /^(claude|codex|opencode|pi|acp): /;
 
 /**
  * Raw harness frames Tide does not model: info rows carrying the native payload

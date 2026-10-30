@@ -14,10 +14,12 @@ export { queryOptionsFrame, recordQuery, replayQuery } from "./sdk.ts";
 export type { ReplayQueryFn } from "./sdk.ts";
 export {
   isolatePiLogin,
+  recordAcpDriver,
   recordClaudeDriver,
   recordCodexDriver,
   recordOpencodeDriver,
   recordPiDriver,
+  replayAcpDriver,
   replayClaudeDriver,
   replayCodexDriver,
   replayOpencodeDriver,

@@ -6,12 +6,15 @@ import {
   INTERACTION_HINTS,
   INTERACTION_LABELS,
   INTERACTION_MODES,
-  PROVIDER_LABELS,
   RUNTIME_MODE_HINTS,
   RUNTIME_MODE_LABELS,
   RUNTIME_MODES,
   defaultModelHint,
+  instanceLabel,
+  providerIdOf,
 } from "../../lib/vocab.ts";
+import { EffortSelect } from "../thread/EffortSelect.tsx";
+import { effortsOf, providerStatus, useProviders } from "../../state/providers.ts";
 import { ThreadLinkPicker, useLinkChoices } from "./ThreadLinkPicker.tsx";
 import { HarnessFields, useThreadDraft } from "../thread/ProviderPicker.tsx";
 import { useModel } from "../../state/model.ts";
@@ -87,8 +90,9 @@ function ThreadFields({
   const last = useModel((s) =>
     parentThreadId === undefined || projectId === undefined ? lastCreated(s.model.threads, projectId) : undefined,
   );
+  const source = parent ?? last;
   const [draft, patch] = useThreadDraft(
-    parent?.provider ?? last?.provider ?? "claude",
+    source === undefined ? "claude" : providerIdOf(source),
     parent === undefined ? (last?.model ?? "") : "",
     parent === undefined ? last?.mode : undefined,
   );
@@ -97,7 +101,9 @@ function ThreadFields({
   const linkChoices = useLinkChoices(projectId);
   const project = useProjectTitle(projectId);
   const mode = draft.mode ?? FALLBACK_MODE;
-  const harness = PROVIDER_LABELS[draft.provider];
+  const providers = useProviders();
+  const harness = instanceLabel(providers, draft.providerId);
+  const efforts = effortsOf(providerStatus(providers, draft.providerId)?.models ?? [], draft.model);
   const create = (): void => {
     onDone();
     if (!projectId) return;
@@ -107,6 +113,8 @@ function ThreadFields({
         ...(parent === undefined ? {} : { parentThreadId: parent.id }),
         ...(trimmed === "" ? {} : { title: trimmed }),
         ...(draft.model === "" ? {} : { model: draft.model }),
+        ...(draft.providerId === draft.provider ? {} : { providerId: draft.providerId }),
+        ...(draft.effort === "" || !efforts.some((e) => e.id === draft.effort) ? {} : { effort: draft.effort }),
         ...(draft.mode === undefined ? {} : { mode: draft.mode }),
         ...(interaction === "default" ? {} : { interaction }),
         useWorktree: draft.useWorktree,
@@ -141,16 +149,30 @@ function ThreadFields({
       <div className={styles.rows}>
         <FrameField
           label="Agent"
-          caption={draft.model === "" ? `Model: ${defaultModelHint(draft.provider).toLowerCase()}` : undefined}
+          caption={draft.model === "" ? `Model: ${defaultModelHint(harness).toLowerCase()}` : undefined}
         >
           <HarnessFields
             layout="inline"
             name="Thread"
             provider={draft.provider}
+            providerId={draft.providerId}
             model={draft.model}
             onChange={patch}
+            instances="all"
           />
         </FrameField>
+        {efforts.length === 0 ? null : (
+          <FrameField label="Effort" caption="How hard the model thinks before answering">
+            <EffortSelect
+              label="Thread effort"
+              efforts={efforts}
+              value={draft.effort}
+              onSelect={(effort) => patch({ effort })}
+              variant="field"
+              className={styles.narrow}
+            />
+          </FrameField>
+        )}
         <FrameField label="Permissions" caption={RUNTIME_MODE_HINTS[mode]}>
           <Select
             label="Thread permissions"

@@ -11,6 +11,7 @@ import type {
 } from "@tide/contracts";
 import { ApprovalBroker, type CanUseToolContext, type PermissionResultShape } from "./approvals.ts";
 import { AsyncQueue } from "./async-queue.ts";
+import { instanceEnv } from "./env.ts";
 import { ClaudeNormalizer } from "./normalize.ts";
 import { rollbackPoint } from "./rollback.ts";
 import type { ClaudeMessage, ResultMessage, TranscriptEntry } from "./sdk-shapes.ts";
@@ -152,7 +153,7 @@ export class ClaudeSession implements ProviderSession {
       };
     }
     const model = options.model ?? this.#config.defaultModel;
-    const env = { ...process.env, ...this.#config.env, ...options.env };
+    const env = { ...process.env, ...instanceEnv(this.#config, this.#env), ...options.env };
 
     return {
       cwd: options.cwd,
@@ -164,6 +165,7 @@ export class ClaudeSession implements ProviderSession {
       canUseTool: (toolName: string, input: Record<string, unknown>, context: CanUseToolContext): Promise<PermissionResultShape> =>
         this.#broker.handle(toolName, input, context),
       ...(model ? { model } : {}),
+      ...(options.effort ? { effort: options.effort } : {}),
       ...(this.#forkFrom ? { resume: this.#forkFrom, forkSession: true } : this.nativeSessionId ? { resume: this.nativeSessionId } : {}),
       ...(this.#resumeAt ? { resumeSessionAt: this.#resumeAt } : {}),
       ...(Object.keys(mcpServers).length > 0 ? { mcpServers } : {}),
@@ -349,9 +351,13 @@ export class ClaudeSession implements ProviderSession {
     const model = settings.model;
     const modelChanged = model !== this.#options.model;
     const modeChanged = permissionMode !== this.#permissionMode;
+    const effort = settings.effort;
+    const effortChanged = effort !== this.#options.effort;
 
     this.#options = { ...this.#options, mode: settings.mode, interaction: settings.interaction, ...(model !== undefined ? { model } : {}) };
     if (model === undefined) delete (this.#options as { model?: string }).model;
+    this.#options = { ...this.#options, ...(effort !== undefined ? { effort } : {}) };
+    if (effort === undefined) delete (this.#options as { effort?: string }).effort;
     this.#permissionMode = permissionMode;
 
     const query = this.#query;
@@ -365,6 +371,11 @@ export class ClaudeSession implements ProviderSession {
       if (modelChanged) {
         if (!query.setModel) return "reopen";
         await query.setModel.call(query, model ?? this.#config.defaultModel);
+      }
+      if (effortChanged) {
+        // `null` clears the flag layer back to the model's default effort
+        if (!query.applyFlagSettings) return "reopen";
+        await query.applyFlagSettings.call(query, { effortLevel: effort ?? null });
       }
     } catch (error) {
       this.#env.log(`[claude] reconfigure failed, reopening: ${error instanceof Error ? error.message : String(error)}`);

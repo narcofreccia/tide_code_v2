@@ -13,6 +13,9 @@ import type {
   WireModel,
   WireSession,
   WireTokens,
+  SkillAttachment,
+  WireCommand,
+  WireSkill,
 } from "../src/wire.ts";
 
 const ZERO: WireTokens = { input: 0, output: 0, reasoning: 0, cache: { read: 0, write: 0 } };
@@ -23,7 +26,11 @@ export class FakeOpencodeApi implements OpencodeApi {
   #streamError: Error | undefined;
   #seq = 0;
   readonly created: Parameters<OpencodeApi["createSession"]>[0][] = [];
-  readonly prompts: { sessionId: string; text: string; files?: PromptFile[]; delivery?: "steer" | "queue" }[] = [];
+  readonly prompts: { sessionId: string; text: string; files?: PromptFile[]; skills?: SkillAttachment[]; delivery?: "steer" | "queue" }[] = [];
+  readonly commandRuns: { sessionId: string; name: string; text: string }[] = [];
+  commandList: WireCommand[] = [];
+  skillList: WireSkill[] = [];
+  commandsError: Error | undefined;
   /** the session's messages, oldest first; prompts append `user`, `succeeded()` appends `idle` */
   messageLog: WireMessage[] = [];
   /** answer prompts without the admitted message (an older server) */
@@ -101,12 +108,26 @@ export class FakeOpencodeApi implements OpencodeApi {
     this.instructions.push({ key: input.key, value: input.value });
   }
 
-  async prompt(input: { sessionId: string; text: string; files?: PromptFile[]; delivery?: "steer" | "queue" }): Promise<{ id?: string } | undefined> {
+  async prompt(input: { sessionId: string; text: string; files?: PromptFile[]; skills?: SkillAttachment[]; delivery?: "steer" | "queue" }): Promise<{ id?: string } | undefined> {
     if (this.promptError) throw this.promptError;
     this.prompts.push(input);
     const id = `msg_u${++this.#messageSeq}`;
     this.messageLog.push({ id, type: "user" });
     return this.promptWithoutId ? {} : { id };
+  }
+
+  async runCommand(input: { sessionId: string; name: string; text: string }): Promise<void> {
+    this.commandRuns.push({ sessionId: input.sessionId, name: input.name, text: input.text });
+    this.messageLog.push({ id: `msg_u${++this.#messageSeq}`, type: "user" });
+  }
+
+  async commands(): Promise<WireCommand[]> {
+    if (this.commandsError) throw this.commandsError;
+    return this.commandList;
+  }
+
+  async skills(): Promise<WireSkill[]> {
+    return this.skillList;
   }
 
   /** Newest first; the cursor is the index to continue from. */

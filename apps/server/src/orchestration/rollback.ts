@@ -1,5 +1,5 @@
 import { newId as defaultNewId, type Activity, type EventOf, type EventRecord, type InternalCommand } from "@tide/contracts";
-import { resumableSessionId, threadCwd, type SessionDirectory } from "../provider/sessions.ts";
+import { instanceIdOf, resumableSessionId, threadCwd, type SessionDirectory } from "../provider/sessions.ts";
 import type { CheckpointService } from "../vcs/checkpoints.ts";
 import { restoreBeforeTurn, sharedCheckoutReason } from "../vcs/restore.ts";
 import type { Engine } from "./engine.ts";
@@ -90,7 +90,7 @@ export class RollbackService {
       }).length;
       const hasSession = this.#sessions.peek(threadId) !== undefined || resumableSessionId(thread, model) !== undefined;
       if (harnessTurns > 0 && hasSession) {
-        const caps = await this.#sessions.caps(thread.provider);
+        const caps = await this.#sessions.caps(instanceIdOf(thread));
         if (caps.rollback === true) {
           const session = await this.#sessions.getOrOpen(thread, project);
           if (session.rollback === undefined) throw new Error(`${thread.provider} driver reports rollback but does not implement it`);

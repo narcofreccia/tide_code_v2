@@ -6,8 +6,42 @@ export const ProviderKind = Type.Union([
   Type.Literal("codex"),
   Type.Literal("opencode"),
   Type.Literal("pi"),
+  /** R8: any Agent Client Protocol agent (Gemini CLI, Copilot, Cline, Amp, Kimi, Goose…), one instance per agent */
+  Type.Literal("acp"),
 ]);
 export type ProviderKind = Static<typeof ProviderKind>;
+
+/**
+ * R8: one configured harness account / agent. `id` is what threads reference (`Thread.providerId`);
+ * the four bundled kinds always have a default instance whose id equals the kind. A second Codex
+ * account is `{ id: "codex:work", kind: "codex", home: "~/.codex-work" }`; an ACP agent is
+ * `{ id: "acp:gemini", kind: "acp", acpAgentId: "gemini" }` or a manual `command` + `args`.
+ */
+export const ProviderInstanceConfig = Type.Object({
+  id: Type.String({ minLength: 1, maxLength: 64 }),
+  kind: ProviderKind,
+  label: Type.String({ minLength: 1, maxLength: 80 }),
+  /** extra process environment for this instance (API keys, CODEX_HOME, GEMINI_MODEL…) */
+  env: Type.Optional(Type.Record(Type.String(), Type.String())),
+  /** config/home directory for this account (CLAUDE_CONFIG_DIR / CODEX_HOME / HOME for others) */
+  home: Type.Optional(Type.String()),
+  binaryPath: Type.Optional(Type.String()),
+  /** acp: registry agent id (resolved to its npx/uvx/binary distribution) */
+  acpAgentId: Type.Optional(Type.String()),
+  /** acp: manual launch when not from the registry */
+  command: Type.Optional(Type.String()),
+  args: Type.Optional(Type.Array(Type.String())),
+});
+export type ProviderInstanceConfig = Static<typeof ProviderInstanceConfig>;
+
+/** R8: a slash command or skill a harness session accepts, for the composer's `/` picker. */
+export const SlashCommandInfo = Type.Object({
+  name: Type.String(),
+  description: Type.Optional(Type.String()),
+  argumentHint: Type.Optional(Type.String()),
+  source: Type.Union([Type.Literal("builtin"), Type.Literal("custom"), Type.Literal("skill")]),
+});
+export type SlashCommandInfo = Static<typeof SlashCommandInfo>;
 
 /** Tide-level permission mode; each driver maps it to its native knobs. */
 export const RuntimeMode = Type.Union([
@@ -344,6 +378,10 @@ export const Thread = Type.Object({
   judge: Type.Optional(Verdict),
   /** R6: per-thread opt-in: approvals the judge calls routine (Jev, confidence ≥ high) are accepted automatically */
   autoAllowRoutine: Type.Optional(Type.Boolean()),
+  /** R8: which configured instance of `provider` runs this thread; absent = the kind's default instance */
+  providerId: Type.Optional(Type.String()),
+  /** R8: reasoning effort id from the model's `efforts` list; absent = the harness decides */
+  effort: Type.Optional(Type.String()),
   // ---- R4: orchestration parity ----
   /** this thread was forked from another thread at a settled turn */
   forkedFrom: Type.Optional(Type.Object({ threadId: Type.String(), turnId: Type.String() })),
@@ -434,6 +472,8 @@ export const Turn = Type.Object({
   requestId: Type.Optional(Type.String()),
   checkpoint: Type.Optional(Checkpoint),
   provider: Type.Optional(ProviderKind),
+  /** R8: the instance that ran it (absent = the kind's default instance) */
+  providerId: Type.Optional(Type.String()),
   model: Type.Optional(Type.String()),
   requestedAt: Type.Number(),
   startedAt: Type.Optional(Type.Number()),

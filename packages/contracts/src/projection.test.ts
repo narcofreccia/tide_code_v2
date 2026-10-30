@@ -179,6 +179,20 @@ describe("projection — R3 usage deltas, request ids, merge-back", () => {
     expect(m.threads["t1"]).toMatchObject({ provider: "codex" });
     expect(m.threads["t1"]?.nativeSessionId).toBeUndefined();
   });
+  it("R8: an instance switch and an effort patch land on the thread; clearEffort removes it", () => {
+    const withEffort = applyRecord(base, rec(5, { type: "thread.updated", threadId: "t1", patch: { providerId: "codex:work", effort: "high" }, updatedAt: 5 }));
+    expect(withEffort.threads["t1"]).toMatchObject({ providerId: "codex:work", effort: "high" });
+    const cleared = applyRecord(withEffort, rec(6, { type: "thread.updated", threadId: "t1", patch: {}, clearEffort: true, updatedAt: 6 }));
+    expect(cleared.threads["t1"]?.effort).toBeUndefined();
+    expect(cleared.threads["t1"]?.providerId).toBe("codex:work");
+  });
+  it("R7: settle leaves the inbox; a new turn or attention brings the thread back", () => {
+    const settled = applyRecord(base, rec(5, { type: "thread.settled", threadId: "t1", reason: "inactive", at: 5 }));
+    expect(settled.threads["t1"]).toMatchObject({ settledAt: 5, settleReason: "inactive" });
+    const back = applyRecord(settled, rec(6, { type: "thread.unsettled", threadId: "t1", at: 6 }));
+    expect(back.threads["t1"]?.settledAt).toBeUndefined();
+    expect(back.threads["t1"]?.settleReason).toBeUndefined();
+  });
   it("merge-back lifecycle: merging → conflicted → merging → merged; PR merged sets mergedAt", () => {
     const m = replay(base, [
       rec(5, { type: "merge.requested", threadId: "t1", strategy: "squash", at: 5 }),

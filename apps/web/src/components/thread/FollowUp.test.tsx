@@ -112,7 +112,7 @@ describe("Composer follow-up mode", () => {
     const thread = makeThread("t1", { provider: "codex" });
     attachFakeStore(modelWithTurns(thread, [makeTurn("u1", { provider: "claude" })], [makeMessage("m1")]));
     render(<Composer thread={thread} />);
-    expect(screen.getByText("History will be handed over to codex as text (lossy: no tool state)")).toBeDefined();
+    expect(screen.getByText("History will be handed over to Codex as text (lossy: no tool state)")).toBeDefined();
   });
 });
 

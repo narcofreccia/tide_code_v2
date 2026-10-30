@@ -1,7 +1,7 @@
 import type { CommandOf, DomainEvent, ExpertsFinding, ExpertsMessage, Project, ProposedPlan, ReadModel, RuntimeMode, Thread } from "@tide/contracts";
 import { delegatePrompt } from "../../experts/prompts.ts";
 import { recipientKeys } from "./experts.ts";
-import { fail, isArchived, ok, providerDefault, turnRequested, type DecideContext, type DecideResult } from "./types.ts";
+import { fail, isArchived, ok, providerDefault, resolveInstance, turnRequested, type DecideContext, type DecideResult } from "./types.ts";
 
 type AgentCommand =
   | CommandOf<"experts.finding.post">
@@ -97,6 +97,16 @@ export function decideAgent(model: ReadModel, command: AgentCommand, ctx: Decide
       const home = model.projects[from.projectId];
       if (!home) return fail("not-found", `unknown project ${from.projectId}`);
       if (isArchived(home)) return fail("conflict", `project ${home.id} is archived`);
+      // R8: which instance (account / ACP agent) runs the delegate
+      const requestedId = command.providerId;
+      const providerId = requestedId !== undefined && requestedId !== command.provider ? requestedId : undefined;
+      if (providerId !== undefined) {
+        const inst = resolveInstance(ctx, providerId);
+        if ("error" in inst) return fail("invalid-command", inst.error);
+        if (inst.kind !== undefined && inst.kind !== command.provider) {
+          return fail("invalid-command", `provider instance ${providerId} is ${inst.kind}, not ${command.provider}`);
+        }
+      }
 
       // R5: run in another thread's checkout (a reviewer reading the implementer's branch)
       let inherit: Thread | undefined;
@@ -133,7 +143,7 @@ export function decideAgent(model: ReadModel, command: AgentCommand, ctx: Decide
         }
       }
       // the user's per-harness defaults fill what the caller left out; the mode is still clamped
-      const defaults = providerDefault(ctx, command.provider);
+      const defaults = providerDefault(ctx, command.provider, providerId);
       const delegateModel = command.model ?? defaults.model;
       const thread: Thread = {
         id: ctx.newId(),
@@ -141,6 +151,7 @@ export function decideAgent(model: ReadModel, command: AgentCommand, ctx: Decide
         parentThreadId: from.id,
         title: command.title ?? `Delegated by ${from.title}`,
         provider: command.provider,
+        ...(providerId !== undefined ? { providerId } : {}),
         ...(delegateModel !== undefined ? { model: delegateModel } : {}),
         mode: clampMode(command.mode ?? defaults.mode, from.mode),
         interaction: "default",

@@ -1,0 +1,13 @@
+/* A `/` command row: name · argument hint · description · source chip. */
+.name { font-family: var(--font-mono); white-space: nowrap; }
+.args { color: var(--muted); font-family: var(--font-mono); font-size: 11px; white-space: nowrap; }
+.description {
+  flex: 1;
+  min-width: 0;
+  color: var(--muted);
+  font-size: 11px;
+  overflow: hidden;
+  text-overflow: ellipsis;
+  white-space: nowrap;
+}
+.source { flex-shrink: 0; align-self: center; }

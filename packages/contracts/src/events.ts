@@ -27,7 +27,7 @@ export const ThreadCreated = evt("thread.created", {
 });
 export const ThreadUpdated = evt("thread.updated", {
   threadId: Type.String(),
-  patch: Type.Partial(Type.Pick(Thread, ["title", "provider", "model", "mode", "interaction", "pinned", "autoAllowRoutine", "autoSettle"])),
+  patch: Type.Partial(Type.Pick(Thread, ["title", "provider", "model", "mode", "interaction", "pinned", "autoAllowRoutine", "autoSettle", "providerId", "effort"])),
   /** R5: the title was derived from the first prompt, not typed by the user */
   autoTitled: Type.Optional(Type.Boolean()),
   /** the provider changed: the old harness's session id must not be resumed on the new one */
@@ -36,6 +36,8 @@ export const ThreadUpdated = evt("thread.updated", {
   nativeSessionId: Type.Optional(Type.String()),
   /** the provider changed and no model was named: the old harness's model id must not be sent to the new one */
   clearModel: Type.Optional(Type.Boolean()),
+  /** R8: effort reset to the harness default */
+  clearEffort: Type.Optional(Type.Boolean()),
   updatedAt: Type.Number(),
 });
 export const ThreadArchived = evt("thread.archived", { threadId: Type.String(), archivedAt: Type.Number(), keepWorktree: Type.Optional(Type.Boolean()) });
@@ -58,6 +60,8 @@ export const TurnStarted = evt("turn.started", {
   turnId: Type.String(),
   threadId: Type.String(),
   provider: ProviderKind,
+  /** R8: instance id; `providerSessions` is keyed by `providerId ?? provider` */
+  providerId: Type.Optional(Type.String()),
   model: Type.Optional(Type.String()),
   nativeSessionId: Type.Optional(Type.String()),
   startedAt: Type.Number(),

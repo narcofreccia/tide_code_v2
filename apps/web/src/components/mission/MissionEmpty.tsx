@@ -1,8 +1,8 @@
 import { selectProjects } from "@tide/client";
 import type { ReadModel } from "@tide/contracts";
-import { PROVIDER_LABELS, PROVIDERS } from "../../lib/vocab.ts";
+import { PROVIDER_LABELS } from "../../lib/vocab.ts";
 import { useModel } from "../../state/model.ts";
-import { providerStatus, useProviderRoster } from "../../state/providers.ts";
+import { orderedInstances, providerStatus, useProviderRoster } from "../../state/providers.ts";
 import { useUi } from "../../state/ui.ts";
 import { Logo } from "../shell/Logo.tsx";
 import { NewThreadPopover } from "../shell/NewThreadPopover.tsx";
@@ -59,8 +59,8 @@ export function MissionEmpty() {
   const firstProject = projects[0];
   const ready = loading
     ? []
-    : PROVIDERS.filter((kind) => {
-        const status = providerStatus(providers, kind);
+    : orderedInstances(providers).filter((p) => {
+        const status = providerStatus(providers, p.id);
         return status?.installed === true && status.loggedIn === true;
       });
   const harnessHint = loading
@@ -68,7 +68,7 @@ export function MissionEmpty() {
     : error
       ? `Could not reach the server: ${error}`
       : ready.length > 0
-        ? `Ready: ${ready.map((kind) => PROVIDER_LABELS[kind]).join(", ")}`
+        ? `Ready: ${ready.map((p) => p.label || PROVIDER_LABELS[p.kind]).join(", ")}`
         : "None of the four are logged in yet.";
 
   const addRepository = (): void => {
