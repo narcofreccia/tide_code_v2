@@ -27,6 +27,7 @@ const SERVER: UserSettings = {
   followUpMode: "queue",
   limitPolicy: "reset",
   teams: [],
+  inbox: { autoSettleAfterDays: 3, autoSettleOnMerge: true, workingSection: false },
 };
 
 describe("server settings", () => {

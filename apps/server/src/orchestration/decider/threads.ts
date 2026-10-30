@@ -34,6 +34,8 @@ type ThreadCommand =
   | CommandOf<"thread.limited">
   | CommandOf<"thread.limit-policy">
   | CommandOf<"thread.snooze">
+  | CommandOf<"thread.settle">
+  | CommandOf<"thread.unsettle">
   | CommandOf<"thread.resume">
   | CommandOf<"pr.watch">;
 
@@ -70,7 +72,7 @@ export function decideThread(model: ReadModel, command: ThreadCommand, ctx: Deci
     case "thread.update": {
       const thread = model.threads[command.threadId];
       if (!thread) return fail("not-found", `unknown thread ${command.threadId}`);
-      const patch: Partial<Pick<Thread, "title" | "provider" | "model" | "mode" | "interaction" | "pinned" | "autoAllowRoutine">> = {
+      const patch: Partial<Pick<Thread, "title" | "provider" | "model" | "mode" | "interaction" | "pinned" | "autoAllowRoutine" | "autoSettle">> = {
         ...(command.title !== undefined ? { title: command.title } : {}),
         ...(command.provider !== undefined ? { provider: command.provider } : {}),
         ...(command.model !== undefined ? { model: command.model } : {}),
@@ -78,6 +80,7 @@ export function decideThread(model: ReadModel, command: ThreadCommand, ctx: Deci
         ...(command.interaction !== undefined ? { interaction: command.interaction } : {}),
         ...(command.pinned !== undefined ? { pinned: command.pinned } : {}),
         ...(command.autoAllowRoutine !== undefined ? { autoAllowRoutine: command.autoAllowRoutine } : {}),
+        ...(command.autoSettle !== undefined ? { autoSettle: command.autoSettle } : {}),
       };
       const toProvider = command.provider;
       if (toProvider === undefined || toProvider === thread.provider) {
@@ -185,6 +188,26 @@ export function decideThread(model: ReadModel, command: ThreadCommand, ctx: Deci
       const thread = model.threads[command.threadId];
       if (!thread) return fail("not-found", `unknown thread ${command.threadId}`);
       return ok({ type: "thread.limit-policy-changed", threadId: thread.id, resume: command.resume, at: ctx.now });
+    }
+
+    case "thread.settle": {
+      const thread = model.threads[command.threadId];
+      if (!thread) return fail("not-found", `unknown thread ${command.threadId}`);
+      if (isArchived(thread)) return fail("conflict", `thread ${thread.id} is archived`);
+      if (thread.settledAt !== undefined) return ok(); // idempotent
+      const reason = command.reason ?? "user";
+      // the server's own rules never close something that is working or waiting on the user
+      if (reason !== "user" && (thread.status === "running" || thread.attention !== undefined || thread.pinned === true || thread.autoSettle === false)) {
+        return fail("conflict", `thread ${thread.id} is not settleable automatically`);
+      }
+      return ok({ type: "thread.settled", threadId: thread.id, reason, at: ctx.now });
+    }
+
+    case "thread.unsettle": {
+      const thread = model.threads[command.threadId];
+      if (!thread) return fail("not-found", `unknown thread ${command.threadId}`);
+      if (thread.settledAt === undefined) return ok();
+      return ok({ type: "thread.unsettled", threadId: thread.id, at: ctx.now });
     }
 
     case "thread.snooze": {

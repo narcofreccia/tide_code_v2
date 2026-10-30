@@ -1,5 +1,5 @@
 import { Type, type Static } from "typebox";
-import { Activity, ApprovalDecision, CheckpointStats, ExpertSpec, ExpertsPhase, ImageInput, InteractionMode, Limited, LinkAccess, MergeStrategy, ProviderKind, PullRequest, RateLimit, RuntimeMode, Schedule, Team, Triage, TurnUsage, HandoffJudge, Verdict } from "./domain.ts";
+import { Activity, ApprovalDecision, CheckpointStats, ExpertSpec, ExpertsPhase, ImageInput, InteractionMode, Limited, LinkAccess, MergeStrategy, ProviderKind, PullRequest, RateLimit, RuntimeMode, Schedule, SettleReason, Team, Triage, TurnUsage, HandoffJudge, Verdict } from "./domain.ts";
 
 // Commands = validated intents. ClientCommand may arrive over RPC; InternalCommand is
 // issued only by server reactors (driver ingestion) and is rejected at the RPC boundary.
@@ -70,6 +70,8 @@ export const ThreadUpdate = Type.Object({
   pinned: Type.Optional(Type.Boolean()),
   /** R6: per-thread opt-in for auto-accepting routine approvals (judge-rated) */
   autoAllowRoutine: Type.Optional(Type.Boolean()),
+  /** R7: false = the settlement reactor leaves this thread alone */
+  autoSettle: Type.Optional(Type.Boolean()),
 });
 /** R5: bring an archived thread back (its worktree is not recreated; the branch is still there) */
 export const ThreadUnarchive = Type.Object({ type: Type.Literal("thread.unarchive"), commandId: CommandId, threadId: Type.String() });
@@ -195,6 +197,10 @@ export const ThreadRollback = Type.Object({
   turnId: Type.String(),
   restoreFiles: Type.Boolean(),
 });
+/** R7: close a thread from the inbox (worktree and branch untouched); `reason` is for the server's own settlements, clients send none. */
+export const ThreadSettle = Type.Object({ type: Type.Literal("thread.settle"), commandId: CommandId, threadId: Type.String(), reason: Type.Optional(SettleReason) });
+/** R7: undo a settle; also what the inbox's ⌘Z sends */
+export const ThreadUnsettle = Type.Object({ type: Type.Literal("thread.unsettle"), commandId: CommandId, threadId: Type.String() });
 /** Hide a thread from the Inbox / Now strip until `until` (or until it needs the user). */
 export const ThreadSnooze = Type.Object({ type: Type.Literal("thread.snooze"), commandId: CommandId, threadId: Type.String(), until: Type.Number() });
 /** Clear limited / snoozed state; with `continue` also asks the harness to pick up where it left off. */
@@ -260,7 +266,7 @@ export const ClientCommand = Type.Union([
   ApprovalRespond, UserInputRespond,
   PlanImplement, PlanDismiss,
   ThreadPublish, ThreadMerge, WorktreeDetach,
-  TurnSteer, TurnEdit, TurnReorder, TurnPromote, ThreadFork, ThreadRollback, ThreadSnooze, ThreadResume, ThreadLimitPolicy, PrWatch,
+  TurnSteer, TurnEdit, TurnReorder, TurnPromote, ThreadFork, ThreadRollback, ThreadSnooze, ThreadResume, ThreadLimitPolicy, PrWatch, ThreadSettle, ThreadUnsettle,
   TaskCreate, TaskUpdate, TaskDelete, TaskRunNow, TeamRun,
   ExpertsCreate, ExpertsStart, ExpertsPost, ExpertsSetPhase, ExpertsArchive,
 ]);

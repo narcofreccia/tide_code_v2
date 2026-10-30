@@ -1,6 +1,6 @@
 import { mkdirSync, readFileSync, renameSync, writeFileSync } from "node:fs";
 import { dirname, join } from "node:path";
-import { ProviderKind, Team, type DecisionSites, type DecisionsSettings, type UserSettings, type UserSettingsPatch } from "@tide/contracts";
+import { ProviderKind, Team, type DecisionSites, type DecisionsSettings, type InboxSettings, type UserSettings, type UserSettingsPatch } from "@tide/contracts";
 import { Check } from "typebox/value";
 import { JEV_CONTEXT_TOKENS, USD_PER_MILLION_INPUT_TOKENS } from "./decisions/client.ts";
 import { DEFAULT_BASE_URL, DEFAULT_MODEL } from "./decisions/wire.ts";
@@ -20,6 +20,25 @@ interface StoredSettings {
   limitPolicy?: UserSettings["limitPolicy"];
   /** the user's saved teams; empty = show the presets */
   teams?: Team[];
+  inbox?: Partial<InboxSettings>;
+  textModel?: NonNullable<UserSettings["textModel"]>;
+}
+
+export const DEFAULT_INBOX: InboxSettings = { autoSettleAfterDays: 3, autoSettleOnMerge: true, workingSection: false };
+
+function loadInbox(raw: unknown): Partial<InboxSettings> {
+  const r = (typeof raw === "object" && raw !== null ? raw : {}) as Record<string, unknown>;
+  const out: Partial<InboxSettings> = {};
+  if (typeof r["autoSettleAfterDays"] === "number" && r["autoSettleAfterDays"] >= 0) out.autoSettleAfterDays = r["autoSettleAfterDays"];
+  if (typeof r["autoSettleOnMerge"] === "boolean") out.autoSettleOnMerge = r["autoSettleOnMerge"];
+  if (typeof r["workingSection"] === "boolean") out.workingSection = r["workingSection"];
+  return out;
+}
+
+function loadTextModel(raw: unknown): NonNullable<UserSettings["textModel"]> | undefined {
+  const r = raw as { provider?: unknown; model?: unknown } | undefined;
+  if (typeof r !== "object" || r === null || !Check(ProviderKind, r.provider)) return undefined;
+  return { provider: r.provider, ...(typeof r.model === "string" ? { model: r.model } : {}) };
 }
 
 interface StoredDecisions {
@@ -129,9 +148,11 @@ export class SettingsStore {
   }
 
   get(): UserSettings {
-    const { decisions, continueAfterRestart, followUpMode, limitPolicy, teams, ...rest } = this.#state;
+    const { decisions, continueAfterRestart, followUpMode, limitPolicy, teams, inbox, textModel, ...rest } = this.#state;
     return {
       ...rest,
+      inbox: { ...DEFAULT_INBOX, ...inbox },
+      ...(textModel !== undefined ? { textModel: { ...textModel } } : {}),
       decisions: decisionsDto(decisions),
       continueAfterRestart: continueAfterRestart ?? false,
       followUpMode: followUpMode ?? "steer",
@@ -149,6 +170,9 @@ export class SettingsStore {
   set(patch: UserSettingsPatch): UserSettings {
     if (patch.teams !== undefined) assertUniqueTeamIds(patch.teams);
     if (patch.decisions?.grayZone !== undefined) assertGrayZone(patch.decisions.grayZone);
+    if (patch.inbox?.autoSettleAfterDays !== undefined && !(Number.isFinite(patch.inbox.autoSettleAfterDays) && patch.inbox.autoSettleAfterDays >= 0)) {
+      throw new SettingsError(`inbox.autoSettleAfterDays must be ≥ 0 (got ${patch.inbox.autoSettleAfterDays})`);
+    }
     const next: StoredSettings = {
       providerDefaults: patch.providerDefaults ?? this.#state.providerDefaults,
       worktreeByDefault: patch.worktreeByDefault ?? this.#state.worktreeByDefault,
@@ -157,7 +181,11 @@ export class SettingsStore {
       followUpMode: patch.followUpMode ?? this.#state.followUpMode ?? "steer",
       limitPolicy: patch.limitPolicy ?? this.#state.limitPolicy ?? "manual",
       teams: patch.teams !== undefined ? structuredClone(patch.teams) : (this.#state.teams ?? []),
+      inbox: { ...this.#state.inbox, ...loadInbox(patch.inbox) },
+      ...(this.#state.textModel !== undefined ? { textModel: this.#state.textModel } : {}),
     };
+    if (patch.textModel === null) delete next.textModel;
+    else if (patch.textModel !== undefined) next.textModel = { provider: patch.textModel.provider, ...(patch.textModel.model !== undefined ? { model: patch.textModel.model } : {}) };
     if (patch.decisions?.enabled !== undefined) next.decisions.enabled = patch.decisions.enabled;
     if (patch.decisions?.apiKey !== undefined) {
       // an empty string clears the key
@@ -189,6 +217,7 @@ export class SettingsStore {
       return structuredClone(DEFAULTS);
     }
     const r = (raw ?? {}) as Partial<StoredSettings>;
+    const textModel = loadTextModel(r.textModel);
     return {
       providerDefaults: typeof r.providerDefaults === "object" && r.providerDefaults !== null ? r.providerDefaults : {},
       worktreeByDefault: typeof r.worktreeByDefault === "boolean" ? r.worktreeByDefault : DEFAULTS.worktreeByDefault,
@@ -197,6 +226,8 @@ export class SettingsStore {
       followUpMode: r.followUpMode === "queue" ? "queue" : "steer",
       limitPolicy: r.limitPolicy === "reset" ? "reset" : "manual",
       teams: Array.isArray(r.teams) ? r.teams.filter((t): t is Team => Check(Team, t)) : [],
+      inbox: loadInbox(r.inbox),
+      ...(textModel !== undefined ? { textModel } : {}),
     };
   }
 

@@ -170,6 +170,16 @@ export const DecisionsSettings = Type.Object({
 });
 export type DecisionsSettings = Static<typeof DecisionsSettings>;
 
+export const InboxSettings = Type.Object({
+  /** settle an idle, unpinned thread with nothing pending after this many days; 0 = never */
+  autoSettleAfterDays: Type.Number(),
+  /** settle when the thread's PR is merged or its branch merged back */
+  autoSettleOnMerge: Type.Boolean(),
+  /** rail: hide running threads in a collapsed "Working" group unless pinned */
+  workingSection: Type.Boolean(),
+});
+export type InboxSettings = Static<typeof InboxSettings>;
+
 /** User settings that must be visible to every client and to server-created threads (delegates, experts, plan.implement). */
 export const UserSettings = Type.Object({
   providerDefaults: Type.Record(Type.String(), Type.Object({ model: Type.Optional(Type.String()), mode: Type.Optional(RuntimeMode) })),
@@ -189,6 +199,13 @@ export const UserSettings = Type.Object({
   limitPolicy: Type.Union([Type.Literal("manual"), Type.Literal("reset")]),
   /** R5: saved teams (lead + stages across harnesses) */
   teams: Type.Array(Team),
+  /** R7: the inbox rules (T3-style "every open thread should get closed") */
+  inbox: InboxSettings,
+  /**
+   * R7: harness model used for short text generation on the user's own subscription (thread titles,
+   * later commit messages / PR bodies) via the one-shot `complete()`. Absent = the first harness with `oneShot`.
+   */
+  textModel: Type.Optional(Type.Object({ provider: ProviderKind, model: Type.Optional(Type.String()) })),
 });
 export type UserSettings = Static<typeof UserSettings>;
 export const UserSettingsPatch = Type.Object({
@@ -208,6 +225,9 @@ export const UserSettingsPatch = Type.Object({
   limitPolicy: Type.Optional(Type.Union([Type.Literal("manual"), Type.Literal("reset")])),
   /** replaces the whole list */
   teams: Type.Optional(Type.Array(Team)),
+  inbox: Type.Optional(Type.Partial(InboxSettings)),
+  /** null clears it (back to "first harness with oneShot") */
+  textModel: Type.Optional(Type.Union([Type.Object({ provider: ProviderKind, model: Type.Optional(Type.String()) }), Type.Null()])),
 });
 export type UserSettingsPatch = Static<typeof UserSettingsPatch>;
 
@@ -278,6 +298,8 @@ export const rpcMethods = {
   ),
   /** installed/logged-in state + models per harness (cached server-side) */
   "providers.list": unary(Type.Object({ refresh: Type.Optional(Type.Boolean()) }), Type.Array(ProviderStatusDto)),
+  /** R7: a fresh title from the thread's first prompt + latest reply, generated one-shot on `settings.textModel`; applied via thread.update */
+  "thread.regenerateTitle": unary(Type.Object({ threadId: Type.String() }), Type.Object({ title: Type.String(), provider: ProviderKind, model: Type.Optional(Type.String()) })),
   /** escape hatch: shell command that reopens the thread's harness session in a terminal */
   "thread.terminalCommand": unary(Type.Object({ threadId: Type.String() }), Type.Object({ cwd: Type.String(), command: Type.Optional(Type.String()) })),
   /** full model snapshot then live events; `fromSeq` skips the snapshot when the client already has one */

@@ -41,6 +41,8 @@ export function decide(model: ReadModel, command: Command, ctx: DecideContext): 
     case "thread.limited":
     case "thread.limit-policy":
     case "thread.snooze":
+    case "thread.settle":
+    case "thread.unsettle":
     case "thread.resume":
     case "pr.watch":
       return decideThread(model, command, ctx);

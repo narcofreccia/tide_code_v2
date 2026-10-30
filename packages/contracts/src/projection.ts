@@ -47,6 +47,8 @@ function refreshAttention(model: ReadModel, threadId: string, at: number): ReadM
   if (attention) {
     next.attention = attention;
     delete next.snoozedUntil; // needing the user ends a snooze early
+    delete next.settledAt; // and brings a settled thread back
+    delete next.settleReason;
   } else delete next.attention;
   return { ...model, threads: { ...model.threads, [threadId]: next } };
 }
@@ -109,6 +111,14 @@ function requestTurn(model: ReadModel, turn: Turn, userMessage: Message): ReadMo
   }
   // a queued turn waits its turn: the running one keeps latestTurnId until it settles
   if (turn.status === "queued") return withThread(next, turn.threadId, { updatedAt: turn.requestedAt });
+  // a new turn reopens a settled thread: there is something to look at again
+  const started = next.threads[turn.threadId];
+  if (started?.settledAt !== undefined) {
+    const t: Thread = { ...started };
+    delete t.settledAt;
+    delete t.settleReason;
+    next = { ...next, threads: { ...next.threads, [t.id]: t } };
+  }
   return withThread(next, turn.threadId, { latestTurnId: turn.id, status: "running", updatedAt: turn.requestedAt });
 }
 
@@ -534,6 +544,16 @@ export function applyEvent(model: ReadModel, event: DomainEvent): ReadModel {
     }
     case "thread.snoozed":
       return withThread(model, event.threadId, { snoozedUntil: event.until, updatedAt: event.at });
+    case "thread.settled":
+      return withThread(model, event.threadId, { settledAt: event.at, settleReason: event.reason, updatedAt: event.at });
+    case "thread.unsettled": {
+      const t = model.threads[event.threadId];
+      if (!t) return model;
+      const next: Thread = { ...t, updatedAt: event.at };
+      delete next.settledAt;
+      delete next.settleReason;
+      return { ...model, threads: { ...model.threads, [t.id]: next } };
+    }
     case "thread.resumed": {
       const t = model.threads[event.threadId];
       if (!t) return model;

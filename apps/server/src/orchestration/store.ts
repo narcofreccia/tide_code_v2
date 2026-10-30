@@ -68,6 +68,8 @@ export function aggregateIdOf(event: DomainEvent): string | null {
     case "thread.limited":
     case "thread.limit-policy-changed":
     case "thread.snoozed":
+    case "thread.settled":
+    case "thread.unsettled":
     case "thread.resumed":
     case "pr.watch-changed":
     case "handoff.refined":

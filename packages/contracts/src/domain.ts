@@ -252,6 +252,10 @@ export const PullRequest = Type.Object({
 export type PullRequest = Static<typeof PullRequest>;
 
 /** The harness refused to continue because the subscription window is exhausted (R4). */
+/** R7: why a thread left the inbox. `user` = the checkbox; the rest are the settlement reactor's. */
+export const SettleReason = Type.Union([Type.Literal("user"), Type.Literal("pr-merged"), Type.Literal("merged-back"), Type.Literal("inactive")]);
+export type SettleReason = Static<typeof SettleReason>;
+
 export const Limited = Type.Object({
   resetsAt: Type.Optional(Type.Number()),
   /** `reset`: resume the thread automatically when the window reopens; `manual`: wait for the user */
@@ -353,6 +357,15 @@ export const Thread = Type.Object({
   snoozedUntil: Type.Optional(Type.Number()),
   /** R5: kept at the top of its project in the rail */
   pinned: Type.Optional(Type.Boolean()),
+  /**
+   * R7: settled = closed from the inbox without touching the worktree (archive does that).
+   * Cleared by a new turn or by anything that needs the user, so a settled thread that
+   * speaks up comes back on its own.
+   */
+  settledAt: Type.Optional(Type.Number()),
+  settleReason: Type.Optional(SettleReason),
+  /** R7: per-thread override of the inbox auto-settle rules; false = never settle this thread automatically */
+  autoSettle: Type.Optional(Type.Boolean()),
   /** R5: this thread leads a team run; later stages are its delegates (matched by `delegateRole` = stage role) */
   team: Type.Optional(Type.Object({ name: Type.String(), stages: Type.Array(TeamStage) })),
   /** the server polls the linked PR and wakes the thread on CI failure, comments or conflicts */

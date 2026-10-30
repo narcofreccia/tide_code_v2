@@ -36,6 +36,10 @@ export function defaultDecisionsSettings(): UserSettings["decisions"] {
   };
 }
 
+export function defaultInboxSettings(): UserSettings["inbox"] {
+  return { autoSettleAfterDays: 3, autoSettleOnMerge: true, workingSection: false };
+}
+
 export function defaultUserSettings(): UserSettings {
   return {
     providerDefaults: {},
@@ -45,6 +49,7 @@ export function defaultUserSettings(): UserSettings {
     followUpMode: "steer",
     limitPolicy: "manual",
     teams: [],
+    inbox: defaultInboxSettings(),
   };
 }
 
@@ -84,6 +89,8 @@ function applyPatch(settings: UserSettings, patch: UserSettingsPatch): UserSetti
     followUpMode: patch.followUpMode ?? settings.followUpMode,
     limitPolicy: patch.limitPolicy ?? settings.limitPolicy,
     teams: patch.teams ?? settings.teams,
+    inbox: { ...settings.inbox, ...(patch.inbox ?? {}) },
+    ...(patch.textModel === null ? {} : patch.textModel !== undefined ? { textModel: patch.textModel } : settings.textModel !== undefined ? { textModel: settings.textModel } : {}),
   };
 }
 

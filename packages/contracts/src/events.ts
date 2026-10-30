@@ -1,5 +1,5 @@
 import { Type, type Static } from "typebox";
-import { Activity, ApprovalDecision, CheckpointStats, ExpertsFinding, ExpertsMessage, ExpertsPhase, ExpertsSession, Handoff, ImageInput, Limited, MergeStrategy, Message, Project, ProjectLink, ProposedPlan, ProviderKind, PullRequest, RateLimit, ScheduledTask, Thread, Triage, Turn, TurnUsage, HandoffJudge, Verdict } from "./domain.ts";
+import { Activity, ApprovalDecision, CheckpointStats, ExpertsFinding, ExpertsMessage, ExpertsPhase, ExpertsSession, Handoff, ImageInput, Limited, MergeStrategy, Message, Project, ProjectLink, ProposedPlan, ProviderKind, PullRequest, RateLimit, ScheduledTask, SettleReason, Thread, Triage, Turn, TurnUsage, HandoffJudge, Verdict } from "./domain.ts";
 
 // Events = persisted facts. Payloads are self-contained so the projector
 // never needs to look anything up outside the event.
@@ -27,7 +27,7 @@ export const ThreadCreated = evt("thread.created", {
 });
 export const ThreadUpdated = evt("thread.updated", {
   threadId: Type.String(),
-  patch: Type.Partial(Type.Pick(Thread, ["title", "provider", "model", "mode", "interaction", "pinned", "autoAllowRoutine"])),
+  patch: Type.Partial(Type.Pick(Thread, ["title", "provider", "model", "mode", "interaction", "pinned", "autoAllowRoutine", "autoSettle"])),
   /** R5: the title was derived from the first prompt, not typed by the user */
   autoTitled: Type.Optional(Type.Boolean()),
   /** the provider changed: the old harness's session id must not be resumed on the new one */
@@ -202,6 +202,8 @@ export const RollbackCompleted = evt("rollback.completed", { threadId: Type.Stri
 export const RollbackFailed = evt("rollback.failed", { threadId: Type.String(), turnId: Type.String(), error: Type.String(), at: Type.Number() });
 export const ThreadLimitedEvt = evt("thread.limited", { threadId: Type.String(), limited: Limited });
 export const ThreadLimitPolicyChanged = evt("thread.limit-policy-changed", { threadId: Type.String(), resume: Limited.properties.resume, at: Type.Number() });
+export const ThreadSettled = evt("thread.settled", { threadId: Type.String(), reason: SettleReason, at: Type.Number() });
+export const ThreadUnsettled = evt("thread.unsettled", { threadId: Type.String(), at: Type.Number() });
 export const ThreadSnoozed = evt("thread.snoozed", { threadId: Type.String(), until: Type.Number(), at: Type.Number() });
 /** limited / snoozed cleared (a continuation turn, when asked, rides along as its own turn.requested) */
 export const ThreadResumed = evt("thread.resumed", { threadId: Type.String(), at: Type.Number() });
@@ -256,7 +258,7 @@ export const DomainEvent = Type.Union([
   TurnSteered, TurnSteerFellBack, TurnEdited, TurnsReordered,
   HandoffRecorded, HandoffDeliveredEvt, HandoffRefined, JudgeRecorded,
   RollbackRequested, RollbackCompleted, RollbackFailed,
-  ThreadLimitedEvt, ThreadLimitPolicyChanged, ThreadSnoozed, ThreadResumed, PrWatchChanged,
+  ThreadLimitedEvt, ThreadLimitPolicyChanged, ThreadSnoozed, ThreadResumed, PrWatchChanged, ThreadSettled, ThreadUnsettled,
   TaskCreated, TaskUpdated, TaskDeleted, TaskFired,
 ]);
 export type DomainEvent = Static<typeof DomainEvent>;
