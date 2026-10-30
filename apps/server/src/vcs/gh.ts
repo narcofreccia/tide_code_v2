@@ -22,47 +22,6 @@ export interface PrMergeInput {
   auto?: boolean;
 }
 
-/** What PR watch reads (`gh pr view --json state,mergeable,statusCheckRollup,comments,reviews`). */
-export interface PrStatus {
-  state: PrRef["state"];
-  checks?: "pending" | "success" | "failure";
-  /** MERGEABLE → true, CONFLICTING → false, anything else (UNKNOWN while GitHub computes) → undefined */
-  mergeable?: boolean;
-  /** issue comments + reviews */
-  comments: number;
-}
-
-const FAILED = new Set(["FAILURE", "ERROR", "CANCELLED", "TIMED_OUT", "ACTION_REQUIRED", "STARTUP_FAILURE"]);
-const PASSED = new Set(["SUCCESS", "NEUTRAL", "SKIPPED"]);
-
-/** CI rollup → one verdict: any failure wins, then anything unfinished, then success; none = undefined. */
-export function rollupChecks(rollup: unknown): PrStatus["checks"] {
-  if (!Array.isArray(rollup) || rollup.length === 0) return undefined;
-  let pending = false;
-  for (const item of rollup as Record<string, unknown>[]) {
-    const state = String(item.state ?? "").toUpperCase();
-    const status = String(item.status ?? "").toUpperCase();
-    const conclusion = String(item.conclusion ?? "").toUpperCase();
-    if (FAILED.has(conclusion) || FAILED.has(state)) return "failure";
-    const done = item.state !== undefined ? PASSED.has(state) : status === "COMPLETED" && (conclusion === "" || PASSED.has(conclusion));
-    if (!done) pending = true;
-  }
-  return pending ? "pending" : "success";
-}
-
-/** Parses `gh pr view --json state,mergeable,statusCheckRollup,comments,reviews`. */
-export function parsePrStatus(raw: string): PrStatus {
-  const parsed = JSON.parse(raw) as { state?: string; mergeable?: string; statusCheckRollup?: unknown; comments?: unknown[]; reviews?: unknown[] };
-  const checks = rollupChecks(parsed.statusCheckRollup);
-  const mergeable = parsed.mergeable === "MERGEABLE" ? true : parsed.mergeable === "CONFLICTING" ? false : undefined;
-  return {
-    state: toState(parsed.state),
-    ...(checks !== undefined ? { checks } : {}),
-    ...(mergeable !== undefined ? { mergeable } : {}),
-    comments: (parsed.comments?.length ?? 0) + (parsed.reviews?.length ?? 0),
-  };
-}
-
 /** The slice of the `gh` CLI the publish/merge flows need; injectable so tests never shell out. */
 export interface GhLike {
   hasGh(): Promise<boolean>;
@@ -71,8 +30,6 @@ export interface GhLike {
   prView(cwd: string, branch: string): Promise<PrRef | undefined>;
   /** optional so older fakes keep compiling; without it merges always run locally */
   prMerge?(cwd: string, number: number, input: PrMergeInput): Promise<void>;
-  /** R4 PR watch; optional so older fakes keep compiling (no watch without it). Throws on failure. */
-  prStatus?(cwd: string, number: number): Promise<PrStatus>;
 }
 
 export class GhError extends Error {
@@ -84,7 +41,8 @@ export class GhError extends Error {
   }
 }
 
-function run(args: string[], cwd?: string): Promise<{ code: number; stdout: string; stderr: string }> {
+/** Runs `gh` without prompts; never throws (the exit code and stderr say what happened). Shared with the GitHub forge. */
+export function runGh(args: string[], cwd?: string): Promise<{ code: number; stdout: string; stderr: string }> {
   return new Promise((resolve) => {
     execFile(
       "gh",
@@ -111,7 +69,7 @@ export class Gh implements GhLike {
 
   async hasGh(): Promise<boolean> {
     if (this.#available !== undefined) return this.#available;
-    const r = await run(["--version"]);
+    const r = await runGh(["--version"]);
     this.#available = r.code === 0;
     return this.#available;
   }
@@ -120,7 +78,7 @@ export class Gh implements GhLike {
     const args = ["pr", "create", "--title", input.title, "--body", input.body ?? ""];
     if (input.base !== undefined) args.push("--base", input.base);
     if (input.head !== undefined) args.push("--head", input.head);
-    const created = await run(args, cwd);
+    const created = await runGh(args, cwd);
     if (created.code !== 0) throw new GhError("gh pr create failed", created.stderr);
     const url = created.stdout.trim().split("\n").filter((l) => l.startsWith("http")).pop();
     if (url === undefined) throw new GhError("gh pr create returned no URL", created.stdout);
@@ -132,22 +90,12 @@ export class Gh implements GhLike {
     const args = ["pr", "merge", String(number), `--${input.strategy}`];
     if (input.deleteBranch === true) args.push("--delete-branch");
     if (input.auto === true) args.push("--auto");
-    const r = await run(args, cwd);
+    const r = await runGh(args, cwd);
     if (r.code !== 0) throw new GhError("gh pr merge failed", r.stderr);
   }
 
-  async prStatus(cwd: string, number: number): Promise<PrStatus> {
-    const r = await run(["pr", "view", String(number), "--json", "state,mergeable,statusCheckRollup,comments,reviews"], cwd);
-    if (r.code !== 0) throw new GhError("gh pr view failed", r.stderr);
-    try {
-      return parsePrStatus(r.stdout);
-    } catch {
-      throw new GhError("gh pr view returned unparseable JSON", r.stdout);
-    }
-  }
-
   async prView(cwd: string, branch: string): Promise<PrRef | undefined> {
-    const r = await run(["pr", "view", branch, "--json", "url,number,state"], cwd);
+    const r = await runGh(["pr", "view", branch, "--json", "url,number,state"], cwd);
     if (r.code !== 0) return undefined; // no PR for this branch is the normal case
     try {
       const parsed = JSON.parse(r.stdout) as { url?: string; number?: number; state?: string };

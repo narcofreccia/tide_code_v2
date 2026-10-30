@@ -22,6 +22,8 @@ export interface HandlerDeps {
   startedAt: number;
   tideHome?: string;
   tools?: { git: boolean; gh: boolean; rg: boolean };
+  /** R10: `gh auth status`, asked per `server.info` (the forge caches it for 5 min) */
+  ghAuth?: () => Promise<boolean | undefined>;
   /** how clients reach this server; resolved per call because the port is known only after listen */
   remote?: (options: { includePairing: boolean }) => RemoteInfo;
   /** W1: resolves + validates a linked-repo path; injectable so tests need no real directories */
@@ -93,7 +95,8 @@ export function registerHandlers(router: RpcRouter, deps: HandlerDeps): void {
   router.register("server.info", async (_input, ctx) => {
     // the pairing URL carries the bearer token: user-facing client sockets only
     const remote = deps.remote?.({ includePairing: ctx.agentThreadId === undefined });
-    const env = (await deps.envInfo?.()) ?? {};
+    const [envResult, ghAuth] = await Promise.all([deps.envInfo?.(), deps.tools !== undefined ? deps.ghAuth?.() : undefined]);
+    const env = envResult ?? {};
     return {
       ...env,
       environmentId: deps.environmentId,
@@ -101,7 +104,7 @@ export function registerHandlers(router: RpcRouter, deps: HandlerDeps): void {
       version: deps.version,
       startedAt: deps.startedAt,
       ...(deps.tideHome !== undefined ? { tideHome: deps.tideHome, worktreeRoot: `${deps.tideHome}/worktrees` } : {}),
-      ...(deps.tools !== undefined ? { tools: deps.tools } : {}),
+      ...(deps.tools !== undefined ? { tools: { ...deps.tools, ...(ghAuth !== undefined ? { ghAuth } : {}) } } : {}),
       ...(remote !== undefined ? { remote } : {}),
     };
   });

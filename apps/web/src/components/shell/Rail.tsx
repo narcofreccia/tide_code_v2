@@ -1,4 +1,5 @@
-import { selectInbox } from "@tide/client";
+import { selectInbox, selectOpenPrCount } from "@tide/client";
+import { usePrs } from "../prs/prData.ts";
 import { useModel } from "../../state/model.ts";
 import { useUi } from "../../state/ui.ts";
 import { Button } from "../ui/Button.tsx";
@@ -12,6 +13,40 @@ import { useInboxKeys } from "./useInboxKeys.ts";
 import { useMarkSeen } from "./useMarkSeen.ts";
 import { StatusLegend } from "./StatusLegend.tsx";
 import styles from "./Rail.module.css";
+
+/** Open PRs: the PR tab's list once it has loaded, else the thread-linked ones the read model knows. */
+function useOpenPrCount(): number {
+  const listed = usePrs((s) => (s.fetchedAt === undefined ? undefined : s.items.filter((i) => i.pr.state === "open").length));
+  const known = useModel((s) => selectOpenPrCount(s.model));
+  return listed ?? known;
+}
+
+/** The two R10 pages under Mission Control: "Pull requests · n open" and "Usage". */
+function RailPages({ view }: { view: string }) {
+  const open = useOpenPrCount();
+  const showPrs = useUi((s) => s.showPrs);
+  const showUsage = useUi((s) => s.showUsage);
+  return (
+    <div className={styles.pages}>
+      <Button
+        variant="quiet"
+        className={`${styles.page} ${view === "prs" ? styles.activePage : ""}`}
+        aria-current={view === "prs" ? "page" : undefined}
+        onClick={() => showPrs(null)}
+      >
+        Pull requests{open > 0 ? ` · ${open} open` : ""}
+      </Button>
+      <Button
+        variant="quiet"
+        className={`${styles.page} ${view === "usage" ? styles.activePage : ""}`}
+        aria-current={view === "usage" ? "page" : undefined}
+        onClick={() => showUsage()}
+      >
+        Usage
+      </Button>
+    </div>
+  );
+}
 
 export function Rail() {
   const inboxCount = useModel((s) => selectInbox(s.model).length);
@@ -34,6 +69,12 @@ export function Rail() {
         <Button variant="quiet" onClick={showMission} title="Mission Control (⌘0)" aria-label="Mission Control">
           ◫
         </Button>
+        <Button variant="quiet" onClick={() => useUi.getState().showPrs(null)} title="Pull requests" aria-label="Pull requests">
+          ⇡
+        </Button>
+        <Button variant="quiet" onClick={() => useUi.getState().showUsage()} title="Usage" aria-label="Usage">
+          ▥
+        </Button>
         {inboxCount > 0 ? <Pill tone="needs">{inboxCount}</Pill> : null}
         <Button variant="quiet" onClick={toggleSettings} title="Settings" aria-label="Settings">
           ⚙
@@ -52,6 +93,7 @@ export function Rail() {
           Mission Control
         </Button>
       </div>
+      <RailPages view={view} />
 
       <RailSelectionBar />
       <NeedsYouGroup />

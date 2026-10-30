@@ -7,6 +7,24 @@ import { EDITOR_LABELS, editorBlockedReason, editorUrl, launchEditorUrl, threadE
 import { useUi } from "../../state/ui.ts";
 import type { MenuItem } from "../ui/Menu.tsx";
 import { copyItems, latestSettledTurnId, settleItems } from "../shell/railMenus.ts";
+import { addressThreadPrComments } from "../prs/prActions.ts";
+
+/** "Link a PR…" always (relinking replaces it); "Address review comments" when the open PR has comments. */
+export function prItems(thread: Thread): MenuItem[] {
+  const pr = thread.pr;
+  const items: MenuItem[] = [
+    {
+      label: pr ? "Link a different PR…" : "Link a PR…",
+      separatorBefore: true,
+      onSelect: () => useUi.getState().setLinkPrThread(thread.id),
+    },
+  ];
+  if (pr && pr.state === "open" && (pr.comments ?? 0) > 0) {
+    items.push({ label: "Address review comments", onSelect: () => void addressThreadPrComments(thread) });
+  }
+  if (pr) items.push({ label: `Open PR #${pr.number} in Pull requests`, onSelect: () => useUi.getState().showPrs(thread.projectId) });
+  return items;
+}
 
 const HOUR = 3_600_000;
 
@@ -84,6 +102,7 @@ export function headerMenu(
       ...(autoAllowOff !== undefined ? { hint: autoAllowOff } : {}),
       onSelect: () => updateThread(thread.id, { autoAllowRoutine: thread.autoAllowRoutine !== true }),
     },
+    ...prItems(thread),
     ...copyItems(thread),
     ...editorItems(model, thread),
     {

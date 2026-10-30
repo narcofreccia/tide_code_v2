@@ -14,6 +14,7 @@ import { AppearanceSection } from "./AppearanceSection.tsx";
 import { KeyboardSection } from "./KeyboardSection.tsx";
 import { EnvironmentsSection } from "./EnvironmentsSection.tsx";
 import { AboutSection } from "./AboutSection.tsx";
+import { GlassBoxSection } from "./GlassBoxSection.tsx";
 import styles from "./SettingsView.module.css";
 
 const LABELS: Record<SettingsSection, string> = {
@@ -28,6 +29,7 @@ const LABELS: Record<SettingsSection, string> = {
   appearance: "Appearance",
   keyboard: "Keyboard",
   environments: "Environments",
+  glassBox: "Glass box",
   about: "About",
 };
 
@@ -55,6 +57,8 @@ function Body({ section }: { section: SettingsSection }) {
       return <KeyboardSection />;
     case "environments":
       return <EnvironmentsSection />;
+    case "glassBox":
+      return <GlassBoxSection />;
     default:
       return <AboutSection />;
   }

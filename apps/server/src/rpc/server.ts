@@ -12,6 +12,9 @@ import type { AcpRegistry } from "../provider/acpRegistry.ts";
 import type { CommandsCache } from "../provider/commands.ts";
 import { CheckpointService } from "../vcs/checkpoints.ts";
 import type { GhLike } from "../vcs/gh.ts";
+import { GitHubForge } from "../vcs/forge/github.ts";
+import { ForgeResolver } from "../vcs/forge/resolver.ts";
+import { registerPrHandlers } from "./pr.ts";
 import { AgentTokenStore } from "./agentTickets.ts";
 import { registerAgentHandlers } from "./agent.ts";
 import { registerAgentDiffHandler } from "./agentDiff.ts";
@@ -19,6 +22,7 @@ import { registerAgentThreadHandlers } from "./agentThreads.ts";
 import type { DelegateWaits } from "../orchestration/delegation.ts";
 import { registerHandlers } from "./handlers.ts";
 import { registerProviderHandlers } from "./providers.ts";
+import { registerUsageHandlers } from "./usage.ts";
 import { SettingsStore } from "../settings.ts";
 import type { JudgeLedger } from "../decisions/ledger.ts";
 import { buildRemoteInfo, type Interfaces } from "./remote.ts";
@@ -78,6 +82,8 @@ export interface ServerDeps {
   relayState?: () => RelayState | undefined;
   /** R9: tests replace the harness updaters */
   runUpdate?: EnvDeps["runUpdate"];
+  /** R10: forge detection shared with PR watch; a GitHub-only resolver when omitted */
+  forges?: ForgeResolver;
 }
 
 export interface ServerHandle {
@@ -121,6 +127,7 @@ export async function startServer(deps: ServerDeps): Promise<ServerHandle> {
     ...(deps.runUpdate !== undefined ? { runUpdate: deps.runUpdate } : {}),
   };
   registerEnvHandlers(router, envDeps);
+  const forges = deps.forges ?? new ForgeResolver({ forges: [new GitHubForge()] });
   registerHandlers(router, {
     envInfo: () => envInfo(envDeps),
     engine,
@@ -131,6 +138,7 @@ export async function startServer(deps: ServerDeps): Promise<ServerHandle> {
     startedAt,
     tideHome: config.tideHome,
     tools: detectTools(),
+    ghAuth: () => forges.ghAuth(),
     remote,
     settings,
     ...(deps.judgeLedger !== undefined ? { judgeLedger: deps.judgeLedger } : {}),
@@ -143,6 +151,8 @@ export async function startServer(deps: ServerDeps): Promise<ServerHandle> {
     ...(deps.commands !== undefined ? { commands: deps.commands } : {}),
     ...(deps.acp !== undefined ? { acp: deps.acp } : {}),
   });
+  registerUsageHandlers(router, { engine, settings, tideHome: config.tideHome, dataDir: config.dataDir });
+  registerPrHandlers(router, { engine, forges });
   registerAgentHandlers(router, { engine });
   registerAgentThreadHandlers(router, {
     engine,

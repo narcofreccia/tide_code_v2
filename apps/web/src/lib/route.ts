@@ -6,7 +6,9 @@ export type Route =
   | { view: "thread"; threadId: string }
   | { view: "experts"; sessionId: string }
   | { view: "settings"; section: SettingsSection }
-  | { view: "threads"; projectId: string };
+  | { view: "threads"; projectId: string }
+  | { view: "prs"; projectId?: string }
+  | { view: "usage" };
 
 const MISSION: Route = { view: "mission" };
 
@@ -32,6 +34,10 @@ export function parseRoute(hash: string): Route | undefined {
       return id === "" ? undefined : { view: "experts", sessionId: id };
     case "threads":
       return id === "" ? undefined : { view: "threads", projectId: id };
+    case "prs":
+      return id === "" ? { view: "prs" } : { view: "prs", projectId: id };
+    case "usage":
+      return { view: "usage" };
     case "settings":
       if (id === "") return { view: "settings", section: "providers" };
       return isSection(id) ? { view: "settings", section: id } : undefined;
@@ -50,6 +56,10 @@ export function formatRoute(route: Route): string {
       return `#/experts/${encodeURIComponent(route.sessionId)}`;
     case "threads":
       return `#/threads/${encodeURIComponent(route.projectId)}`;
+    case "prs":
+      return route.projectId === undefined ? "#/prs" : `#/prs/${encodeURIComponent(route.projectId)}`;
+    case "usage":
+      return "#/usage";
     case "settings":
       return `#/settings/${route.section}`;
   }
@@ -61,6 +71,7 @@ export interface RoutedUi {
   selectedThreadId: string | null;
   selectedExpertsSessionId: string | null;
   allThreadsProjectId: string | null;
+  prsProjectId: string | null;
   settingsSection: SettingsSection;
 }
 
@@ -73,6 +84,10 @@ export function routeOf(ui: RoutedUi): Route {
       return ui.selectedExpertsSessionId ? { view: "experts", sessionId: ui.selectedExpertsSessionId } : MISSION;
     case "threads":
       return ui.allThreadsProjectId ? { view: "threads", projectId: ui.allThreadsProjectId } : MISSION;
+    case "prs":
+      return ui.prsProjectId ? { view: "prs", projectId: ui.prsProjectId } : { view: "prs" };
+    case "usage":
+      return { view: "usage" };
     case "settings":
       return { view: "settings", section: ui.settingsSection };
     default:

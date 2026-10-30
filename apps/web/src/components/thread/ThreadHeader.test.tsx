@@ -123,6 +123,7 @@ describe("ThreadHeader", () => {
       "Roll back last turn…no finished turn",
       "Settle",
       "Snooze▸",
+      "Link a PR…",
       "Copy thread ID",
       "Copy branch",
       "Open in VS Code",

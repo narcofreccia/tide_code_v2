@@ -1,0 +1,6 @@
+{"type":"session","version":3,"id":"pi-1","timestamp":"2026-10-20T07:00:00.000Z","cwd":"/Users/me/proj"}
+{"type":"model_change","id":"a1","parentId":null,"timestamp":"2026-10-20T07:00:00.100Z","provider":"anthropic","modelId":"claude-sonnet-5-5"}
+{"type":"message","id":"m1","parentId":"a1","timestamp":"2026-10-20T07:00:10.000Z","message":{"role":"user","content":[],"timestamp":1792479610000}}
+{"type":"message","id":"m2","parentId":"m1","timestamp":"2026-10-20T07:00:15.000Z","message":{"role":"assistant","content":[],"provider":"anthropic","model":"claude-sonnet-5-5","usage":{"input":3000,"output":120,"cacheRead":500,"cacheWrite":200,"totalTokens":3820,"cost":{"input":0.006,"output":0.0012,"cacheRead":0.0001,"cacheWrite":0.0005,"total":0.0078}},"stopReason":"toolUse"}}
+{"type":"message","id":"m3","parentId":"m2","timestamp":"2026-10-20T07:00:16.000Z","message":{"role":"toolResult","toolCallId":"x","toolName":"ls","content":[],"isError":false}}
+{"type":"message","id":"m4","parentId":"m3","timestamp":"2026-10-20T07:00:20.000Z","message":{"role":"assistant","content":[],"provider":"anthropic","model":"claude-sonnet-5-5","usage":{"input":100,"output":30,"cacheRead":3500,"cacheWrite":0,"totalTokens":3630,"cost":{"total":0.0012}},"stopReason":"stop"}}

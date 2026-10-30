@@ -42,6 +42,28 @@ describe("useHashRoute", () => {
     expect(useUi.getState().allThreadsProjectId).toBe("p1");
   });
 
+  it("restores the PR tab (with its project filter) and the usage page", () => {
+    window.history.replaceState(null, "", "#/prs/p1");
+    render(<Router />);
+    expect(useUi.getState().view).toBe("prs");
+    expect(useUi.getState().prsProjectId).toBe("p1");
+    cleanup();
+
+    window.history.replaceState(null, "", "#/usage");
+    render(<Router />);
+    expect(useUi.getState().view).toBe("usage");
+  });
+
+  it("writes #/prs and #/usage when the store changes", () => {
+    render(<Router />);
+    act(() => useUi.getState().showPrs());
+    expect(window.location.hash).toBe("#/prs");
+    act(() => useUi.getState().showPrs("p2"));
+    expect(window.location.hash).toBe("#/prs/p2");
+    act(() => useUi.getState().showUsage());
+    expect(window.location.hash).toBe("#/usage");
+  });
+
   it("stamps the current view when the hash is empty", () => {
     render(<Router />);
     expect(window.location.hash).toBe("#/mission");

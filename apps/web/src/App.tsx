@@ -11,6 +11,9 @@ import { ExpertsView } from "./components/experts/ExpertsView.tsx";
 import { CreateExpertsDialog } from "./components/experts/CreateExpertsDialog.tsx";
 import { Workbench } from "./components/workbench/Workbench.tsx";
 import { SettingsView } from "./components/settings/SettingsView.tsx";
+import { PrsView } from "./components/prs/PrsView.tsx";
+import { LinkPrDialogHost } from "./components/prs/LinkPrDialog.tsx";
+import { UsageView } from "./components/usage/UsageView.tsx";
 import { useSelectedThread } from "./state/hooks.ts";
 import { useUi } from "./state/ui.ts";
 import { ToastHost } from "./components/ui/Toast.tsx";
@@ -45,6 +48,8 @@ function Content() {
   const codeOpen = useMobileNav((s) => s.codeOpen);
 
   if (view === "settings") return <SettingsView />;
+  if (view === "prs") return <PrsView />;
+  if (view === "usage") return <UsageView />;
   if (view === "threads" && allThreadsProjectId) return <AllThreads projectId={allThreadsProjectId} />;
   if (view === "experts" && expertsSessionId) {
     const board = <ExpertsView sessionId={expertsSessionId} />;
@@ -83,7 +88,10 @@ export function App() {
   const railCollapsed = useUi((s) => s.railCollapsed);
   const { phone } = useViewport();
   // the tab bar stays out of the way of a conversation: threads and boards have a back button instead
-  const tabs = useUi((s) => s.view === "mission" || s.view === "settings" || s.view === "threads");
+  // PRs and Usage are reached from the palette on a phone; they are lists, so the tabs stay
+  const tabs = useUi(
+    (s) => s.view === "mission" || s.view === "settings" || s.view === "threads" || s.view === "prs" || s.view === "usage",
+  );
   return (
     <div className={`${styles.app} ${phone ? styles.phone : ""}`}>
       <div className={styles.topRow}>
@@ -112,6 +120,7 @@ export function App() {
       <ExpertsDialogHost />
       <ProjectLinksDialogHost />
       <NewThreadDialogHost />
+      <LinkPrDialogHost />
     </div>
   );
 }

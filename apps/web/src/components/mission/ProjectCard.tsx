@@ -89,7 +89,17 @@ export function ProjectCard({ project }: { project: Project }) {
         ) : null}
         {totals.running > 0 ? <Pill tone="running">● {totals.running} running</Pill> : null}
         {totals.needsYou > 0 ? <Pill tone="needs">◐ {totals.needsYou} needs you</Pill> : null}
-        {prs.open > 0 ? <Pill tone="running">⇡ {prs.open} open</Pill> : null}
+        {prs.open > 0 ? (
+          <button
+            type="button"
+            className={styles.prLink}
+            onClick={() => useUi.getState().showPrs(project.id)}
+            title={`Pull requests in ${project.title}`}
+            aria-label={`${prs.open} open pull requests in ${project.title}`}
+          >
+            <Pill tone="running">⇡ {prs.open} open</Pill>
+          </button>
+        ) : null}
         {prs.landed > 0 ? <Pill tone="ok">✓ {prs.landed} merged</Pill> : null}
         <Button
           variant="link"

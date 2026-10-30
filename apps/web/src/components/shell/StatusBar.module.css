@@ -21,3 +21,15 @@
 
 .add { color: var(--ok); }
 .del { color: var(--danger); margin-left: var(--sp-1); }
+
+.limits {
+  margin-left: auto;
+  border: 0;
+  padding: 0;
+  background: none;
+  color: inherit;
+  font: inherit;
+  cursor: pointer;
+}
+.limits:hover { color: var(--text); }
+.limits + .error { margin-left: var(--sp-4); }

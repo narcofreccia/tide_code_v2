@@ -1,0 +1,329 @@
+diff --git a/apps/web/src/components/ChatMarkdown.tsx b/apps/web/src/components/ChatMarkdown.tsx
+index 6a8f80d6d107..99c2ebbc8f40 100644
+--- a/apps/web/src/components/ChatMarkdown.tsx
++++ b/apps/web/src/components/ChatMarkdown.tsx
+@@ -189,6 +189,7 @@ import {
+ import { resolveLinkTarget } from "../browser/browserLinkTarget";
+ import { PullRequestLinkPreview } from "./pullRequest/PullRequestLinkPreview";
+ import { MarkdownCodeBlock, SuspenseShikiCodeBlock } from "./chat/MarkdownCodeBlock";
++import { splitMarkdownBlocks } from "./chat/markdownStreamBlocks";
+ import { MarkdownMermaidCodeBlock } from "./chat/MarkdownMermaidCodeBlock";
+ import { MarkdownTable } from "./chat/MarkdownTable";
+ import { MarkdownDetails } from "./chat/MarkdownDetails";
+@@ -434,6 +435,44 @@ const markdownServerConfigFieldsAtom = Atom.family((environmentId: EnvironmentId
+   }).pipe(Atom.withLabel("markdown-server-config-fields")),
+ );
+ 
++function fileLinkSourcesKey(
++  text: string,
++  cwd: string | undefined,
++  imageBaseDir: string | undefined,
++): string {
++  const hrefs = extractMarkdownLinkHrefs(renderCodexInlineDirectivesAsMarkdown(text))
++    .filter((href) => !parseComposerContextHref(href))
++    .map(normalizeMarkdownLinkHrefKey)
++    .filter((href) => resolveMarkdownFileLinkMeta(href, cwd, imageBaseDir ?? cwd));
++  const spans = extractInlineCodeSpans(text).filter((span) =>
++    resolveInlineCodeFileLinkMeta(span, cwd, imageBaseDir ?? cwd),
++  );
++  return JSON.stringify([[...new Set(hrefs)], [...new Set(spans)]]);
++}
++
++function resolveFileLinkSources(
++  key: string,
++  cwd: string | undefined,
++  imageBaseDir: string | undefined,
++) {
++  const [hrefs, spans] = JSON.parse(key) as [string[], string[]];
++  const markdownFileLinkMetaByHref = new Map<string, MarkdownFileLinkMeta>();
++  for (const href of hrefs) {
++    const meta = resolveMarkdownFileLinkMeta(href, cwd, imageBaseDir ?? cwd);
++    if (meta) markdownFileLinkMetaByHref.set(href, meta);
++  }
++  const inlineCodeFileLinkMetaByText = new Map<string, MarkdownFileLinkMeta>();
++  for (const span of spans) {
++    const meta = resolveInlineCodeFileLinkMeta(span, cwd, imageBaseDir ?? cwd);
++    if (meta) inlineCodeFileLinkMetaByText.set(span, meta);
++  }
++  const fileLinkParentSuffixByPath = buildFileLinkParentSuffixByPath([
++    ...[...markdownFileLinkMetaByHref.values()].map((meta) => meta.filePath),
++    ...[...inlineCodeFileLinkMetaByText.values()].map((meta) => meta.filePath),
++  ]);
++  return { markdownFileLinkMetaByHref, inlineCodeFileLinkMetaByText, fileLinkParentSuffixByPath };
++}
++
+ function useChatMarkdownState({
+   text,
+   inline = false,
+@@ -605,40 +644,6 @@ function useChatMarkdownState({
+     });
+   };
+   const diffThemeName = resolveDiffThemeName(resolvedTheme);
+-  const markdownFileLinkMetaByHref = (() => {
+-    const metaByHref = new Map<
+-      string,
+-      NonNullable<ReturnType<typeof resolveMarkdownFileLinkMeta>>
+-    >();
+-    for (const href of extractMarkdownLinkHrefs(renderCodexInlineDirectivesAsMarkdown(text))) {
+-      if (parseComposerContextHref(href)) continue;
+-      const normalizedHref = normalizeMarkdownLinkHrefKey(href);
+-      if (metaByHref.has(normalizedHref)) continue;
+-      const meta = resolveMarkdownFileLinkMeta(normalizedHref, cwd, imageBaseDir ?? cwd);
+-      if (meta) {
+-        metaByHref.set(normalizedHref, meta);
+-      }
+-    }
+-    return metaByHref;
+-  })();
+-  const inlineCodeFileLinkMetaByText = (() => {
+-    const metaByText = new Map<string, MarkdownFileLinkMeta>();
+-    for (const span of extractInlineCodeSpans(text)) {
+-      if (metaByText.has(span)) continue;
+-      const meta = resolveInlineCodeFileLinkMeta(span, cwd, imageBaseDir ?? cwd);
+-      if (meta) {
+-        metaByText.set(span, meta);
+-      }
+-    }
+-    return metaByText;
+-  })();
+-  const fileLinkParentSuffixByPath = (() => {
+-    const filePaths = [
+-      ...[...markdownFileLinkMetaByHref.values()].map((meta) => meta.filePath),
+-      ...[...inlineCodeFileLinkMetaByText.values()].map((meta) => meta.filePath),
+-    ];
+-    return buildFileLinkParentSuffixByPath(filePaths);
+-  })();
+   const markdownUrlTransform = (href: string) => {
+     if (parseAssistantCitationHref(href)) return href;
+     if (parseComposerContextHref(href)) return href;
+@@ -666,6 +671,12 @@ function useChatMarkdownState({
+   // Subscribe so hydrated settings apply before the anchor synchronously decides whether to intercept _blank.
+   const linkTargetPreference = useClientSettings((settings) => settings.browserLinkTarget);
+   const mathEnabled = useClientSettings((settings) => settings.mathRenderingEnabled);
++  // Keyed by the file links found, not the text, so streamed text that adds none keeps the
++  // renderer context, and every block reading it, unchanged.
++  // A template literal marks the key as a string, so the compiler memoizes the maps on its value.
++  const fileLinksKey = `${fileLinkSourcesKey(text, cwd, imageBaseDir)}`;
++  const { markdownFileLinkMetaByHref, inlineCodeFileLinkMetaByText, fileLinkParentSuffixByPath } =
++    resolveFileLinkSources(fileLinksKey, cwd, imageBaseDir);
+   const resolveThreadPullRequest = (
+     href: string,
+   ): (ThreadPullRequestKey & { readonly url: string }) | null => {
+@@ -1622,6 +1633,32 @@ const CHAT_MARKDOWN_COMPONENTS = {
+   },
+ } satisfies Components;
+ 
++const MarkdownSource = memo(function MarkdownSource({
++  text,
++  remarkPlugins,
++  rehypePlugins,
++  urlTransform,
++}: {
++  text: string;
++  remarkPlugins: NonNullable<ReactMarkdownOptions["remarkPlugins"]>;
++  rehypePlugins: NonNullable<ReactMarkdownOptions["rehypePlugins"]>;
++  urlTransform: ReactMarkdownOptions["urlTransform"];
++}) {
++  return (
++    <ChatMarkdownTextContext value={text}>
++      <ReactMarkdown
++        remarkPlugins={remarkPlugins}
++        rehypePlugins={rehypePlugins}
++        skipHtml={false}
++        components={CHAT_MARKDOWN_COMPONENTS}
++        urlTransform={urlTransform}
++      >
++        {text}
++      </ReactMarkdown>
++    </ChatMarkdownTextContext>
++  );
++});
++
+ function ChatMarkdown({
+   text,
+   className,
+@@ -1639,8 +1676,17 @@ function ChatMarkdown({
+     localMediaPreview,
+     closeLocalMediaPreview,
+   } = useChatMarkdownState({ text, inline, ...props });
++  // Streaming re-renders only the last block; offsets for task edits need the whole text.
++  const streamingBlocks =
++    props.isStreaming === true &&
++    !inline &&
++    extraRemarkPlugins.length === 0 &&
++    !props.onTaskListChange
++      ? splitMarkdownBlocks(text)
++      : null;
+   const incrementalParsing =
+     props.isStreaming === true &&
++    streamingBlocks === null &&
+     extraRemarkPlugins.length === 0 &&
+     /(?:^|\n) {0,3}(?:`{3}|~{3})/.test(text);
+   const Root = inline ? "span" : "div";
+@@ -1668,21 +1714,20 @@ function ChatMarkdown({
+       onCopy={handleCopy}
+     >
+       <ChatMarkdownRendererContext value={componentState}>
+-        <ChatMarkdownTextContext value={text}>
+-          <ReactMarkdown
++        {(streamingBlocks ?? [text]).map((source, index) => (
++          <MarkdownSource
++            // oxlint-disable-next-line react/no-array-index-key -- streamed blocks only change at the end
++            key={index}
++            text={source}
+             remarkPlugins={remarkPlugins}
+             rehypePlugins={
+               parseRawHtml
+                 ? CHAT_MARKDOWN_RENDER_REHYPE_PLUGINS
+                 : CHAT_MARKDOWN_LITERAL_HTML_REHYPE_PLUGINS
+             }
+-            skipHtml={false}
+-            components={CHAT_MARKDOWN_COMPONENTS}
+             urlTransform={markdownUrlTransform}
+-          >
+-            {text}
+-          </ReactMarkdown>
+-        </ChatMarkdownTextContext>
++          />
++        ))}
+       </ChatMarkdownRendererContext>
+       {localMediaPreview ? (
+         <ExpandedImageDialog preview={localMediaPreview} onClose={closeLocalMediaPreview} />
+diff --git a/apps/web/src/components/chat/markdownStreamBlocks.test.tsx b/apps/web/src/components/chat/markdownStreamBlocks.test.tsx
+new file mode 100644
+index 000000000000..ae81316580bb
+--- /dev/null
++++ b/apps/web/src/components/chat/markdownStreamBlocks.test.tsx
+@@ -0,0 +1,61 @@
++import {
++  CHAT_MARKDOWN_REHYPE_PLUGINS,
++  CHAT_MARKDOWN_REMARK_PLUGINS,
++} from "@t3tools/shared/markdownPipeline";
++import { renderToStaticMarkup } from "react-dom/server";
++import ReactMarkdown from "react-markdown";
++import { describe, expect, it } from "vite-plus/test";
++
++import { splitMarkdownBlocks } from "./markdownStreamBlocks";
++
++// Whitespace between top-level blocks collapses in the rendered message.
++const html = (source: string) =>
++  renderToStaticMarkup(
++    <ReactMarkdown
++      remarkPlugins={CHAT_MARKDOWN_REMARK_PLUGINS}
++      rehypePlugins={CHAT_MARKDOWN_REHYPE_PLUGINS}
++    >
++      {source}
++    </ReactMarkdown>,
++  )
++    .replace(/>\s+</g, "><")
++    .trim();
++
++describe("splitMarkdownBlocks", () => {
++  it.each([
++    "# Title\n\nFirst paragraph with `code` and **bold**.\n\nSecond [link](https://example.com).",
++    "- one\n- two\n\n- loose three\n\n  continued\n\nAfter the list.",
++    "1. first\n\n2. second\n\nText\n\n3) restarted",
++    "```ts\nconst a = 1;\n\n\nconst b = 2;\n```\n\nafter\n\n~~~\nx\n\n~~~~\n\ny\n~~~\n\nend",
++    "> quote\n\n> another quote\n\n> [!NOTE]\n> alert",
++    "| a | b |\n| - | - |\n| 1 | 2 |\n\nAfter the table.",
++    "para\n\n    indented code\n\nnext",
++    "Setext\n===\n\nnext\n---\n\n- [ ] task\n- [x] done",
++  ])("renders each block as the whole text renders it, at every streamed prefix: %j", (text) => {
++    for (let end = 0; end <= text.length; end++) {
++      const source = text.slice(0, end);
++      const blocks = splitMarkdownBlocks(source);
++      expect(blocks?.join("")).toBe(source);
++      expect(blocks!.map(html).join("")).toBe(html(source));
++    }
++  });
++
++  it("splits only between closed blocks", () => {
++    expect(splitMarkdownBlocks("a\n\n```\nb\n\nc\n```\n\n- d\n\n- e\n\nf")).toEqual([
++      "a\n\n",
++      "```\nb\n\nc\n```\n\n- d\n\n- e\n\n",
++      "f",
++    ]);
++  });
++
++  it.each([
++    "[ref]\n\n[ref]: /later",
++    "a[^x]\n\n[^x]: note",
++    "<details>\n\nbody\n\n</details>",
++    ":::note\n\ncontent\n\n:::",
++    "$$\na\n\nb\n$$",
++    "a\r\n\r\nb",
++  ])("keeps text with document-wide syntax whole: %j", (text) => {
++    expect(splitMarkdownBlocks(text)).toBeNull();
++  });
++});
+diff --git a/apps/web/src/components/chat/markdownStreamBlocks.ts b/apps/web/src/components/chat/markdownStreamBlocks.ts
+new file mode 100644
+index 000000000000..52415ae71977
+--- /dev/null
++++ b/apps/web/src/components/chat/markdownStreamBlocks.ts
+@@ -0,0 +1,43 @@
++// Definitions, footnotes, raw HTML, container directives and display math can tie blocks together.
++const DOCUMENT_WIDE_SYNTAX = /^ {0,3}(?:\[[^\]\n]+\]:|<[A-Za-z!?/]|:::|\$\$)|\[\^/m;
++const FENCE_PATTERN = /^ {0,3}(`{3,}|~{3,})/;
++// After a blank line these still continue the previous block: a list item or indented content.
++const CONTINUATION_PATTERN = /^(?:[ \t]|(?:[-*+]|\d{1,9}[.)])(?:[ \t]|$))/;
++
++/**
++ * Cuts Markdown at blank lines that close every open block, so each piece renders exactly as it
++ * would inside the whole text. Returns null when the text uses syntax that spans blocks.
++ */
++export function splitMarkdownBlocks(text: string): string[] | null {
++  if (text.includes("\r") || DOCUMENT_WIDE_SYNTAX.test(text)) return null;
++  const blocks: string[] = [];
++  let blockStart = 0;
++  let lineStart = 0;
++  let fence: string | null = null;
++  let afterBlankLine = false;
++  for (const line of text.split("\n")) {
++    const opener = FENCE_PATTERN.exec(line)?.[1];
++    if (fence !== null) {
++      if (
++        opener &&
++        opener[0] === fence[0] &&
++        opener.length >= fence.length &&
++        line.trim() === opener
++      ) {
++        fence = null;
++      }
++    } else if (line.trim() === "") {
++      afterBlankLine = true;
++    } else {
++      if (afterBlankLine && lineStart > blockStart && !CONTINUATION_PATTERN.test(line)) {
++        blocks.push(text.slice(blockStart, lineStart));
++        blockStart = lineStart;
++      }
++      afterBlankLine = false;
++      fence = opener ?? null;
++    }
++    lineStart += line.length + 1;
++  }
++  blocks.push(text.slice(blockStart));
++  return blocks;
++}
+diff --git a/apps/web/test/appScenarios.renders.tsx b/apps/web/test/appScenarios.renders.tsx
+index cc7d67798ddd..5bb6836dd04a 100644
+--- a/apps/web/test/appScenarios.renders.tsx
++++ b/apps/web/test/appScenarios.renders.tsx
+@@ -182,7 +182,7 @@ it("app-stream-assistant-turn", async () => {
+   const counted = await measure(async () => {
+     let text = "";
+     for (let delta = 0; delta < STREAM_DELTAS; delta++) {
+-      text += `word${delta} `;
++      text += `word${delta}\n\n`;
+       await act(() =>
+         emitThreadEvent(LIVE, {
+           type: "turn-item.updated",
+@@ -204,6 +204,8 @@ it("app-stream-assistant-turn", async () => {
+   // Only the streaming row changes; history rows must not re-render with it.
+   expect(counted.components.UserTimelineRow).toBeUndefined();
+   expect(counted.components.AssistantTimelineRow).toBe(STREAM_DELTAS);
++  // Each delta adds a paragraph; finished blocks keep their render.
++  expect(counted.components.MarkdownParagraph).toBe(STREAM_DELTAS);
+   await report("app-stream-assistant-turn", [counted], { commits: false });
+ });
+ 

@@ -326,3 +326,5 @@
   padding: var(--sp-1) var(--sp-2);
   border-bottom: 1px solid var(--border);
 }
+.prLink { display: inline-flex; padding: 0; border: none; background: none; font: inherit; cursor: pointer; }
+.prLink:hover { filter: brightness(1.15); }

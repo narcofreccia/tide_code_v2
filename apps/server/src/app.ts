@@ -35,6 +35,8 @@ import { localHostFor } from "./rpc/remote.ts";
 import { createWorkspaceServices, type WorkspaceServices } from "./rpc/workspace.ts";
 import { CheckpointService } from "./vcs/checkpoints.ts";
 import { Gh, type GhLike } from "./vcs/gh.ts";
+import { GitHubForge } from "./vcs/forge/github.ts";
+import { ForgeResolver } from "./vcs/forge/resolver.ts";
 import { PrWatcher } from "./vcs/prWatch.ts";
 import { VcsReactor } from "./vcs/reactor.ts";
 import { WorktreeManager } from "./vcs/worktrees.ts";
@@ -53,6 +55,8 @@ export interface AppOptions {
   listen?: boolean;
   /** tests inject a fake GitHub CLI */
   gh?: GhLike;
+  /** R10: tests inject a resolver over a fake forge; production detects GitHub from each repo's origin */
+  forges?: ForgeResolver;
   /** tests replace the TypeSafe HTTP transport (and may pass a store with decisions enabled) */
   decisionsTransport?: Transport;
   settings?: SettingsStore;
@@ -95,6 +99,8 @@ export interface App {
   /** R9: one-time pairing codes (`env.pairingCode`, `tide serve`'s banner) */
   pairing: PairingCodes;
   prWatch: PrWatcher;
+  /** R10: which forge serves a checkout (PR tab, PR watch) */
+  forges: ForgeResolver;
   workspace: WorkspaceServices;
   server: ServerHandle | undefined;
   /** R9: outbound uplink to the self-hosted relay (settings.relay), when listening */
@@ -145,7 +151,8 @@ export async function createApp(options: AppOptions): Promise<App> {
   const worktrees = new WorktreeManager({ tideHome: config.tideHome, log });
   const checkpoints = new CheckpointService({ log });
   const gh = options.gh ?? new Gh();
-  const prWatch = new PrWatcher({ engine, gh, log });
+  const forges = options.forges ?? new ForgeResolver({ forges: [new GitHubForge()] });
+  const prWatch = new PrWatcher({ engine, forges, log });
   const vcs = new VcsReactor({
     engine,
     worktrees,
@@ -241,6 +248,7 @@ export async function createApp(options: AppOptions): Promise<App> {
           acp,
           pairing,
           relayState: () => relay?.state(),
+          forges,
           ...(options.gh !== undefined ? { gh: options.gh } : {}),
           config: { ...config, environmentId },
         });
@@ -276,6 +284,7 @@ export async function createApp(options: AppOptions): Promise<App> {
     scheduler,
     pairing,
     prWatch,
+    forges,
     workspace,
     server,
     relay,

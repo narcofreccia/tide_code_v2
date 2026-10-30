@@ -21,6 +21,12 @@ export function applyRoute(route: Route): void {
     case "threads":
       ui.showAllThreads(route.projectId);
       return;
+    case "prs":
+      ui.showPrs(route.projectId ?? null);
+      return;
+    case "usage":
+      ui.showUsage();
+      return;
     case "settings":
       ui.setSettingsSection(route.section);
       ui.showSettings();

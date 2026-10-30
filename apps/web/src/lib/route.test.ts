@@ -9,6 +9,10 @@ describe("parseRoute / formatRoute", () => {
       "#/experts/x1",
       "#/settings/decisions",
       "#/threads/p1",
+      "#/prs",
+      "#/prs/p1",
+      "#/usage",
+      "#/settings/glassBox",
     ]) {
       const route = parseRoute(hash);
       expect(route).toBeDefined();
@@ -41,6 +45,7 @@ describe("routeOf", () => {
     selectedThreadId: null,
     selectedExpertsSessionId: null,
     allThreadsProjectId: null,
+    prsProjectId: null,
     settingsSection: "git",
   };
 
@@ -53,6 +58,9 @@ describe("routeOf", () => {
       view: "experts",
       sessionId: "x1",
     });
+    expect(routeOf({ ...base, view: "prs" })).toEqual({ view: "prs" });
+    expect(routeOf({ ...base, view: "prs", prsProjectId: "p1" })).toEqual({ view: "prs", projectId: "p1" });
+    expect(routeOf({ ...base, view: "usage" })).toEqual({ view: "usage" });
   });
 
   it("falls back to Mission Control when the view has no id", () => {

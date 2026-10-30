@@ -60,7 +60,7 @@
         <h1>Tide v2 — Project Journal</h1>
         <div class="sub">Focused agentic code editor &amp; orchestrator over Claude Code · Codex · OpenCode · Pi. Started 2026-08-30.</div>
         <div class="kpi">
-          <div class="box"><b>R9</b><span>environments landed (2026-10-30): serve/pair, multi-env client, relay, PWA · next R10 GitHub deep + usage</span></div>
+          <div class="box"><b>R10</b><span>GitHub deep + usage round in progress</span></div>
           <div class="box"><b>130</b><span>commits (incl. this one)</span></div>
           <div class="box"><b>2,274</b><span>tests passing</span></div>
         </div>
@@ -96,6 +96,18 @@
 
       <h2>Phase board</h2>
       <details class="phase" open>
+        <summary><span class="title"><h3>R10 — GitHub deep &amp; usage glass-box (2026-10-30)</h3><small>forge interface (GitHub first) · PR tab sorted by readiness with files, comments, review, merge · PRs linked to threads · PR watch v2 with specific wake-ups · Usage page: Tide turns plus the harnesses' own logs, reported vs labelled estimates · limits always in the status bar</small></span><span class="badge status wip">wip</span></summary>
+        <div class="body">
+           <p class="note">2026-10-30 — T3 Code's PR tab and Usage page were gaps 4 and 5. Survey: <code>gh.ts</code> knew only create / merge / view with five fields, PR watch woke the agent with "look at it", two refresh paths, no auth check, no forge abstraction; cost existed only for turns run through Tide and Codex reports none; harness logs on this Mac hold the rest (Claude jsonl with repeated message ids, Codex rollouts + sqlite, OpenCode sqlite, Pi jsonl).</p>
+           <ul class="tasks">
+             <li><span class="badge status done">done</span><span class="t"><b>Contracts</b> (<code>a8fbb17</code>): <code>PullRequest</code> facts (title, author, branches, draft, reviewDecision, checkRuns, +/-, forge mergedAt, repo), RPCs <code>pr.list/detail/diff/comment/review/merge/link</code>, <code>usage.summary</code> (<code>costUsd</code> reported vs <code>estimatedUsd</code> labelled), <code>UserSettings.glassBox</code>; forge mergedAt sets <code>Thread.mergedAt</code>; schedule/webhook notification sources accepted on <code>turn.request</code>.</span></li>
+             <li><span class="badge status wip">wip</span><span class="t"><b>Server — forge + PR watch v2</b> (Opus): <code>vcs/forge/*</code> with GitHub over <code>gh</code> (list, view, api comments, diff, review, merge, auth status), <code>rpc/pr.ts</code>, specific wake-ups (failing check name + log tail, changes requested + review body, new review comments).</span></li>
+             <li><span class="badge status wip">wip</span><span class="t"><b>Server — usage</b> (Opus): price table (labelled estimates), ingesters for Claude / Codex / OpenCode / Pi local logs with dedupe and exclusion of Tide's own sessions, <code>usage.summary</code>, per-file index cache.</span></li>
+             <li><span class="badge status wip">wip</span><span class="t"><b>Web</b> (Opus): PR tab (readiness selector, filters, detail with files diff / comments / review / merge, link to thread, ask the thread to address comments), Usage page (day bars, harness → model table, reported vs estimated, limits panel), status-bar limits, Glass box settings.</span></li>
+           </ul>
+        </div>
+      </details>
+      <details class="phase">
         <summary><span class="title"><h3>R9 — Environments, self-hosted relay, PWA (2026-10-30)</h3><small>every machine runs tide-server · client holds one connection per environment and merges read models · <code>tide serve / pair / doctor / service</code> · routes LAN / Tailscale / SSH / relay with preflight · pairing codes · webhook-triggered automations · <code>apps/relay</code> you host · fleet view · installable phone layout</small></span><span class="badge status done">done</span></summary>
         <div class="body">
            <p class="note">2026-10-30 — T3 Code's second pillar is "remote as the default way to work": pick the machine per thread, one command on any box, tunnel for phones. Survey found headless serve existing in all but name, one-server-at-a-time clients, no environment concept past <code>environmentId</code>, 404 for the web root, MCP URL built from the bind host, version always 0.0.0. Andrea chose own-network environments plus a relay they host (no hosted identity) and PWA before native.</p>
@@ -441,6 +453,8 @@
         <tr><td>R8</td><td>2026-10-30</td><td>docs: journal — R8 done (ACP driver, instances, effort, slash commands), live check noted</td><td class="sha">42277c2</td></tr>
         <tr><td>R9</td><td>2026-10-30</td><td>feat(contracts): R9 environments — webhook schedule, EnvRoute/KnownEnvironment, ServerInfo host facts, environment + relay settings, pairing code and harness-update RPCs</td><td class="sha">99059fc</td></tr>
         <tr><td>R9</td><td>2026-10-30</td><td>feat: R9 environments — tide serve/pair/doctor/service, multi-environment client, fleet UI, self-hosted relay, webhook automations, PWA phone layout</td><td class="sha">99d2944</td></tr>
+        <tr><td>R9</td><td>2026-10-30</td><td>docs: journal — R9 done (environments, relay, PWA), live check noted</td><td class="sha">bab8bc0</td></tr>
+        <tr><td>R10</td><td>2026-10-30</td><td>feat(contracts): R10 — PullRequest facts for the PR tab, pr.* RPCs behind a forge, pr.link, usage.summary with labelled estimates, glassBox settings</td><td class="sha">a8fbb17</td></tr>
         <tr><td>R5</td><td>2026-10-16</td><td>fix(server): archiving keeps checkpoint refs (unarchive needs them); missing ref → not-found</td><td class="sha">d30687f</td></tr>
         <tr><td>R5</td><td>2026-10-16</td><td>fix(web): walkthrough #2 round — popover keeps selects, composer toolbar, stream grouped by turn, stale breadcrumb, labels</td><td class="sha">6b2666e</td></tr>
         <tr><td>R5</td><td>2026-10-16</td><td>fix(vcs): live diffs compare against a snapshot tree of the working tree, not git&#39;s index</td><td class="sha">ff2b45c</td></tr>

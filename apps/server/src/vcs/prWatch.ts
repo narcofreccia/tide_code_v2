@@ -1,18 +1,21 @@
-import { newId as defaultNewId, type Activity, type Command, type EventRecord, type PullRequest } from "@tide/contracts";
+import { newId as defaultNewId, type Activity, type Command, type EventRecord, type PrDetail, type PullRequest } from "@tide/contracts";
 import type { Engine } from "../orchestration/engine.ts";
 import { threadCwd } from "../provider/sessions.ts";
-import type { GhLike, PrStatus } from "./gh.ts";
+import type { ForgeResolver } from "./forge/resolver.ts";
+import type { Forge } from "./forge/types.ts";
+import { checksRecovered, LOG_LINES, newlyFailed, prWake } from "./prWake.ts";
 
 export type CancelTimer = () => void;
 
 export interface PrWatcherOptions {
   engine: Engine;
-  gh: GhLike;
+  /** which forge serves a thread's checkout */
+  forges: ForgeResolver;
   now?: () => number;
   /** one-shot timer; the watcher re-arms itself after every poll */
   schedule?: (fn: () => void, ms: number) => CancelTimer;
   intervalMs?: number;
-  /** consecutive gh failures after which a thread stops being watched */
+  /** consecutive forge (gh) failures after which a thread stops being watched */
   maxFailures?: number;
   newId?: () => string;
   log?: (msg: string, data?: unknown) => void;
@@ -27,27 +30,18 @@ const realTimer = (fn: () => void, ms: number): CancelTimer => {
   return () => clearTimeout(timer);
 };
 
-/** What changed on the PR that the agent should act on; empty = nothing worth waking it for. */
-export function prChanges(previous: PullRequest, next: PullRequest): string[] {
-  const changes: string[] = [];
-  if (next.checks === "failure" && previous.checks !== "failure") changes.push("CI checks failed");
-  if (previous.comments !== undefined && next.comments !== undefined && next.comments > previous.comments) {
-    const n = next.comments - previous.comments;
-    changes.push(`${n} new comment${n === 1 ? "" : "s"} or review${n === 1 ? "" : "s"}`);
-  }
-  if (next.mergeable === false && previous.mergeable !== false) changes.push("the branch now conflicts with its base");
-  return changes;
-}
-
 /**
- * Polls a thread's pull request through `gh` and reports it as `pr.update`. While the thread is
- * watched (`thread.prWatch`), a CI failure, new comments or a conflict wake it with a
- * `turn.request` (queued behind a running turn by the decider). Watching ends once the PR is
- * merged or closed, or after `maxFailures` consecutive gh failures.
+ * Polls a thread's pull request through its forge (`gh pr view` + line comments) and reports it
+ * as `pr.update`, so checks, review decision and the forge's `mergedAt` reach the model (a merge
+ * seen here settles the thread through the settlement reactor). While the thread is watched
+ * (`thread.prWatch`), a newly failed check, a changes-requested review, new comments or a
+ * conflict wake it with one specific `turn.request` per poll (queued behind a running turn by
+ * the decider); CI recovering only leaves an info note. Watching ends once the PR is merged or
+ * closed, or after `maxFailures` consecutive forge failures.
  */
 export class PrWatcher {
   #engine: Engine;
-  #gh: GhLike;
+  #forges: ForgeResolver;
   #now: () => number;
   #schedule: (fn: () => void, ms: number) => CancelTimer;
   #intervalMs: number;
@@ -62,7 +56,7 @@ export class PrWatcher {
 
   constructor(options: PrWatcherOptions) {
     this.#engine = options.engine;
-    this.#gh = options.gh;
+    this.#forges = options.forges;
     this.#now = options.now ?? (() => Date.now());
     this.#schedule = options.schedule ?? realTimer;
     this.#intervalMs = options.intervalMs ?? DEFAULT_INTERVAL_MS;
@@ -114,7 +108,7 @@ export class PrWatcher {
     else this.#failures.delete(event.threadId);
   }
 
-  /** One gh round-trip for the thread's PR; concurrent calls for the same thread share it. */
+  /** One forge round-trip for the thread's PR; concurrent calls for the same thread share it. */
   refresh(threadId: string): Promise<void> {
     const pending = this.#refreshing.get(threadId);
     if (pending) return pending;
@@ -132,16 +126,19 @@ export class PrWatcher {
     const thread = model.threads[threadId];
     const project = thread ? model.projects[thread.projectId] : undefined;
     const pr = thread?.pr;
-    if (!thread || !project || !pr || this.#gh.prStatus === undefined) return;
-    let status: PrStatus;
+    if (!thread || !project || !pr) return;
+    const cwd = threadCwd(thread, project);
+    let detail: PrDetail;
+    let forge: Forge | undefined;
     try {
-      if (!(await this.#gh.hasGh())) throw new Error("the GitHub CLI is not installed");
-      status = await this.#gh.prStatus(threadCwd(thread, project), pr.number);
+      forge = (await this.#forges.forDir(cwd))?.forge;
+      if (forge === undefined) throw new Error("no supported forge (GitHub) serves this repository's origin");
+      detail = await forge.prDetail(cwd, pr.number);
       this.#failures.delete(threadId);
     } catch (err) {
       const failures = (this.#failures.get(threadId) ?? 0) + 1;
       this.#failures.set(threadId, failures);
-      this.#log("[pr-watch] gh failed", { threadId, failures, err });
+      this.#log("[pr-watch] forge failed", { threadId, failures, err });
       if (failures >= this.#maxFailures && this.#engine.getModel().threads[threadId]?.prWatch !== undefined) {
         this.#failures.delete(threadId);
         await this.#send({ type: "pr.watch", threadId, enabled: false });
@@ -149,30 +146,20 @@ export class PrWatcher {
       }
       return;
     }
-    const next: PullRequest = {
-      url: pr.url,
-      number: pr.number,
-      state: status.state,
-      updatedAt: this.#now(),
-      ...(status.checks !== undefined ? { checks: status.checks } : {}),
-      ...(status.mergeable !== undefined ? { mergeable: status.mergeable } : {}),
-      comments: status.comments,
-    };
+    // the stored URL stays authoritative (a linked PR may live in another repo); everything else is fresh
+    const next: PullRequest = { ...detail.pr, url: pr.url, number: pr.number, updatedAt: this.#now() };
     await this.#send({ type: "pr.update", threadId, pr: next });
     if (thread.prWatch === undefined) return;
     if (next.state !== "open") {
       await this.#send({ type: "pr.watch", threadId, enabled: false });
       return;
     }
-    const changes = prChanges(pr, next);
-    if (changes.length === 0) return;
-    const summary = `PR #${pr.number}: ${changes.join(", ")}`;
-    await this.#send({
-      type: "turn.request",
-      threadId,
-      text: `Pull request #${pr.number} changed: ${changes.join("; ")}. Look at it (\`gh pr view ${pr.number} --comments\`, \`gh pr checks ${pr.number}\`) and address what needs addressing.`,
-      notification: { source: "pr", summary },
-    });
+    if (checksRecovered(pr, next)) await this.#note(threadId, `CI on pull request #${pr.number} passes again.`);
+    const firstFailed = newlyFailed(pr, next)[0];
+    const log = firstFailed !== undefined ? await forge?.failedLog?.(cwd, firstFailed, LOG_LINES)?.catch(() => undefined) : undefined;
+    const wake = prWake(pr, { ...detail, pr: next }, log);
+    if (wake === undefined) return;
+    await this.#send({ type: "turn.request", threadId, text: wake.text, notification: { source: "pr", summary: wake.summary } });
   }
 
   async #note(threadId: string, text: string): Promise<void> {

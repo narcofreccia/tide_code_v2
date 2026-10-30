@@ -5,7 +5,8 @@ import type { Activity, ReadModel, Thread } from "@tide/contracts";
 import { createApp, type App } from "../../app.ts";
 import type { ServerConfig } from "../../config.ts";
 import { createFakeDriver, type FakeDriverControl } from "../../provider/testing/fakeDriver.ts";
-import type { GhLike, PrCreateInput, PrMergeInput, PrRef, PrStatus } from "../gh.ts";
+import type { GhLike, PrCreateInput, PrMergeInput, PrRef } from "../gh.ts";
+import { FakeForge, fixedResolver } from "./fakeForge.ts";
 import { createTempRepo, type TempRepo } from "./tempRepo.ts";
 
 /** Scripted `gh`: records calls, answers from what the test set up. */
@@ -33,19 +34,6 @@ export class FakeGh implements GhLike {
   async prMerge(cwd: string, number: number, input: PrMergeInput): Promise<void> {
     this.merged.push({ cwd, number, input });
   }
-  /** what `prStatus` answers next (an Error is thrown); the last entry repeats. Empty = follow prView. */
-  statuses: (PrStatus | Error)[] = [];
-  statusCalls: number[] = [];
-  async prStatus(cwd: string, number: number): Promise<PrStatus> {
-    this.statusCalls.push(number);
-    const next = this.statuses.length > 1 ? this.statuses.shift() : this.statuses[0];
-    if (next instanceof Error) throw next;
-    if (next !== undefined) return next;
-    const viewed = this.viewed.length;
-    const pr = await this.prView(cwd, String(number));
-    this.viewed.length = viewed;
-    return { state: pr?.state ?? "open", comments: 0 };
-  }
 }
 
 export function baseConfig(tideHome: string): ServerConfig {
@@ -71,6 +59,8 @@ export interface Harness {
   tideHome: string;
   control: FakeDriverControl;
   gh: FakeGh;
+  /** R10: what PR watch and pr.* see */
+  forge: FakeForge;
   projectId: string;
   model(): ReadModel;
   settle(): Promise<void>;
@@ -82,11 +72,13 @@ export async function harness(cleanups: (() => Promise<void>)[], options: { log?
   const tideHome = await mkdtemp(join(tmpdir(), "tide-home-"));
   const { driver, control } = createFakeDriver("claude");
   const gh = new FakeGh();
+  const forge = new FakeForge();
   const app = await createApp({
     config: baseConfig(tideHome),
     listen: false,
     log: options.log ?? (() => undefined),
     gh,
+    forges: fixedResolver(forge),
     registerDrivers: (registry) => registry.register(driver),
   });
   cleanups.push(() => app.close(), () => repo.cleanup(), () => rm(tideHome, { recursive: true, force: true }));
@@ -103,7 +95,7 @@ export async function harness(cleanups: (() => Promise<void>)[], options: { log?
     await app.reactor.drain();
     await app.vcs.drain();
   };
-  return { app, repo, tideHome, control, gh, projectId: created.project.id, model: () => app.engine.getModel(), settle };
+  return { app, repo, tideHome, control, gh, forge, projectId: created.project.id, model: () => app.engine.getModel(), settle };
 }
 
 export async function newThread(h: Harness, options: { useWorktree?: boolean; title?: string } = {}): Promise<Thread> {

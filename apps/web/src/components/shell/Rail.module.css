@@ -40,3 +40,7 @@
   border-top: 1px solid var(--border);
 }
 .activeFoot { color: var(--accent); }
+.pages { display: flex; flex-direction: column; padding: 0 var(--sp-2); }
+.page { justify-content: flex-start; height: 24px; padding-left: var(--sp-5); color: var(--text-2); }
+.page:hover { color: var(--text); }
+.activePage { color: var(--accent); }

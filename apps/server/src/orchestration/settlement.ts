@@ -37,6 +37,8 @@ export class SettlementReactor {
   #cancel: CancelTimer | undefined;
   #unsubscribe: (() => void) | undefined;
   #running = false;
+  /** threads whose PR was already seen merged: later syncs of the same merged PR (which carry the same forge `mergedAt`) must not settle again */
+  #prMerged = new Set<string>();
 
   constructor(options: SettlementReactorOptions) {
     this.#engine = options.engine;
@@ -50,6 +52,7 @@ export class SettlementReactor {
   start(): void {
     if (this.#running) return;
     this.#running = true;
+    for (const t of Object.values(this.#engine.getModel().threads)) if (t.pr?.state === "merged") this.#prMerged.add(t.id);
     this.#unsubscribe = this.#engine.subscribe((record) => this.#onEvent(record));
     this.#arm();
   }
@@ -74,7 +77,8 @@ export class SettlementReactor {
     let threadId: string;
     let reason: SettleReason;
     if (event.type === "pr.updated") {
-      if (event.pr.state !== "merged") return;
+      if (event.pr.state !== "merged" || this.#prMerged.has(event.threadId)) return;
+      this.#prMerged.add(event.threadId);
       threadId = event.threadId;
       reason = "pr-merged";
     } else if (event.type === "merge.completed") {
@@ -84,7 +88,8 @@ export class SettlementReactor {
     if (!this.#settings.get().inbox.autoSettleOnMerge) return;
     // only the event that made the thread merged; later PR syncs must not undo a manual unsettle
     const thread = this.#engine.getModel().threads[threadId];
-    const mergedAt = event.type === "pr.updated" ? event.pr.updatedAt : event.at;
+    // the projector stamps the forge's merge time when the PR carries one (R10), else the poll time
+    const mergedAt = event.type === "pr.updated" ? (event.pr.mergedAt ?? event.pr.updatedAt) : event.at;
     if (thread === undefined || thread.mergedAt !== mergedAt) return;
     void this.#settle(threadId, reason);
   }

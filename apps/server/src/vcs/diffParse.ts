@@ -84,3 +84,56 @@ export function parseNameStatus(out: string): Map<string, DiffStatus> {
   }
   return map;
 }
+
+const unquote = (p: string): string => (p.startsWith('"') && p.endsWith('"') ? p.slice(1, -1) : p);
+const stripSide = (p: string): string => unquote(p.trim()).replace(/^[ab]\//, "");
+
+/**
+ * A whole unified diff (`git diff`, `gh pr diff`) split per file, in the shape thread diffs use:
+ * status from the extended headers, counts from the hunk bodies, the file's own text as `patch`.
+ * `cap` trims an oversized patch the way `Git.diff` does.
+ */
+export function parseUnifiedDiff(text: string, cap: (patch: string) => string = (p) => p): DiffFile[] {
+  const files: DiffFile[] = [];
+  const chunks = text.split(/^(?=diff --git )/m).filter((c) => c.startsWith("diff --git "));
+  for (const chunk of chunks) {
+    const lines = chunk.split("\n");
+    const header = lines[0] ?? "";
+    const split = header.slice("diff --git ".length).split(" b/");
+    let path = stripSide(split.slice(1).join(" b/") || split[0] || "");
+    let oldPath: string | undefined;
+    let status: DiffStatus = "modified";
+    let binary = false;
+    let additions = 0;
+    let deletions = 0;
+    let inHunk = false;
+    for (const line of lines.slice(1)) {
+      if (!inHunk) {
+        if (line.startsWith("new file mode")) status = "added";
+        else if (line.startsWith("deleted file mode")) status = "deleted";
+        else if (line.startsWith("rename from ")) {
+          status = "renamed";
+          oldPath = unquote(line.slice("rename from ".length));
+        } else if (line.startsWith("rename to ")) path = unquote(line.slice("rename to ".length));
+        else if (line.startsWith("Binary files ") || line === "GIT binary patch") binary = true;
+        else if (line.startsWith("+++ ") && !line.startsWith("+++ /dev/null")) path = stripSide(line.slice(4));
+        else if (line.startsWith("--- ") && line.startsWith("--- /dev/null") && status === "modified") status = "added";
+        else if (line.startsWith("+++ /dev/null") && status === "modified") status = "deleted";
+        else if (line.startsWith("@@")) inHunk = true;
+        continue;
+      }
+      if (line.startsWith("+")) additions++;
+      else if (line.startsWith("-")) deletions++;
+    }
+    const patch = chunk.endsWith("\n") ? chunk : `${chunk}\n`;
+    files.push({
+      path,
+      ...(oldPath !== undefined ? { oldPath } : {}),
+      status,
+      additions,
+      deletions,
+      ...(binary ? { binary: true } : { patch: cap(patch) }),
+    });
+  }
+  return files;
+}

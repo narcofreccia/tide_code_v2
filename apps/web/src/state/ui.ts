@@ -4,8 +4,9 @@ import { useModel } from "./model.ts";
 
 export type FocusMode = "thread" | "split" | "workbench";
 /** `threads` is the per-project "All threads" list opened from Mission Control. */
-export type View = "mission" | "thread" | "settings" | "experts" | "threads";
-export type SettingsSection = "general" | "inbox" | "notifications" | "providers" | "git" | "decisions" | "automations" | "teams" | "appearance" | "keyboard" | "environments" | "about";
+/** `prs` is the PR tab (R10), `usage` the usage glass-box page. */
+export type View = "mission" | "thread" | "settings" | "experts" | "threads" | "prs" | "usage";
+export type SettingsSection = "general" | "inbox" | "notifications" | "providers" | "git" | "decisions" | "automations" | "teams" | "appearance" | "keyboard" | "environments" | "glassBox" | "about";
 
 export const SETTINGS_SECTIONS: SettingsSection[] = [
   "general",
@@ -19,6 +20,7 @@ export const SETTINGS_SECTIONS: SettingsSection[] = [
   "appearance",
   "keyboard",
   "environments",
+  "glassBox",
   "about",
 ];
 
@@ -54,6 +56,10 @@ interface UiState {
   expertsReturnTo: View;
   /** project whose "All threads" list fills the content area (view === "threads") */
   allThreadsProjectId: string | null;
+  /** the PR tab's project filter; null is "All projects" */
+  prsProjectId: string | null;
+  /** thread whose "Link a PR…" dialog is open, null when closed */
+  linkPrThreadId: string | null;
   /** project the create-experts dialog is open for, null when closed */
   newExpertsProjectId: string | null;
   newProjectOpen: boolean;
@@ -90,6 +96,10 @@ interface UiState {
   showMission: () => void;
   /** opens the "All threads" list of a project; null goes back to Mission Control */
   showAllThreads: (projectId: string | null) => void;
+  /** opens the PR tab, filtered to a project when one is given */
+  showPrs: (projectId?: string | null) => void;
+  showUsage: () => void;
+  setLinkPrThread: (threadId: string | null) => void;
   showSettings: () => void;
   toggleSettings: () => void;
   closeSettings: () => void;
@@ -121,6 +131,8 @@ export const useUi = create<UiState>()(
       selectedExpertsSessionId: null,
       expertsReturnTo: "mission",
       allThreadsProjectId: null,
+      prsProjectId: null,
+      linkPrThreadId: null,
       newExpertsProjectId: null,
       newProjectOpen: false,
       newThreadProjectId: null,
@@ -155,6 +167,9 @@ export const useUi = create<UiState>()(
       showMission: () => set({ view: "mission" }),
       showAllThreads: (allThreadsProjectId) =>
         set(allThreadsProjectId === null ? { allThreadsProjectId, view: "mission" } : { allThreadsProjectId, view: "threads" }),
+      showPrs: (projectId = null) => set({ view: "prs", prsProjectId: projectId }),
+      showUsage: () => set({ view: "usage" }),
+      setLinkPrThread: (linkPrThreadId) => set({ linkPrThreadId }),
       showSettings: () =>
         set((s) => (s.view === "settings" ? s : { view: "settings", settingsReturnTo: s.view })),
       toggleSettings: () =>

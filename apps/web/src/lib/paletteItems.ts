@@ -107,6 +107,15 @@ function threadItems(model: ReadModel, thread: Thread): PaletteItem[] {
   return items;
 }
 
+/** R10 pages: the PR tab and the usage glass box (the only way in on a phone). */
+function pageItems(): PaletteItem[] {
+  const ui = useUi.getState();
+  return [
+    { id: "page:prs", label: "Pull requests", group: "Go to", detail: "Every open PR, ranked by readiness", run: () => ui.showPrs(null) },
+    { id: "page:usage", label: "Usage", group: "Go to", detail: "Tokens, cost and limits by harness", run: () => ui.showUsage() },
+  ];
+}
+
 /** Every "go to" target: projects, threads, experts sessions. */
 function navigationItems(model: ReadModel): PaletteItem[] {
   const ui = useUi.getState();
@@ -249,6 +258,7 @@ export function buildPaletteItems({ model, selectedThreadId, selectedProjectId }
       },
     },
     ...environmentItems(),
+    ...pageItems(),
     ...navigationItems(model),
   ];
 }

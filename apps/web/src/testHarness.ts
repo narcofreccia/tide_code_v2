@@ -113,6 +113,8 @@ export function resetUi(): void {
     selectedExpertsSessionId: null,
     expertsReturnTo: "mission",
     allThreadsProjectId: null,
+    prsProjectId: null,
+    linkPrThreadId: null,
     newExpertsProjectId: null,
     newProjectOpen: false,
     newThreadProjectId: null,

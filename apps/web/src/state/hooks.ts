@@ -18,6 +18,8 @@ const VIEW_LABELS: Record<View, string> = {
   settings: "Settings",
   experts: "Experts",
   threads: "All threads",
+  prs: "Pull requests",
+  usage: "Usage",
 };
 
 /** Derived from `ui.view`: a thread stays selected under Settings, but is not what is shown. */

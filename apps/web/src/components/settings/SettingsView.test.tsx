@@ -44,6 +44,7 @@ describe("Settings view", () => {
       "Appearance",
       "Keyboard",
       "Environments",
+      "Glass box",
       "About",
     ]);
     expect(screen.getByText("Refresh all")).toBeDefined();

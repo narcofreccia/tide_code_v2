@@ -1,0 +1,5 @@
+{"timestamp":"2026-10-20T09:00:00.000Z","type":"session_meta","payload":{"id":"cdx-old","cwd":"/Users/me/other","source":"vscode"}}
+{"timestamp":"2026-10-20T09:00:01.000Z","type":"turn_context","payload":{"cwd":"/Users/me/other","model":"gpt-6.1-sol"}}
+{"timestamp":"2026-10-20T09:00:04.000Z","type":"event_msg","payload":{"type":"token_count","info":{"total_token_usage":{"input_tokens":1000,"cached_input_tokens":400,"output_tokens":10,"total_tokens":1010}}}}
+{"timestamp":"2026-10-20T09:00:04.500Z","type":"event_msg","payload":{"type":"token_count","info":{"total_token_usage":{"input_tokens":1000,"cached_input_tokens":400,"output_tokens":10,"total_tokens":1010}}}}
+{"timestamp":"2026-10-20T09:00:08.000Z","type":"event_msg","payload":{"type":"token_count","info":{"total_token_usage":{"input_tokens":2500,"cached_input_tokens":1400,"output_tokens":30,"total_tokens":2530}}}}

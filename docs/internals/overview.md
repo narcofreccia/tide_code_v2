@@ -79,13 +79,20 @@ Reactors subscribe to events and issue further commands; they hold no business r
 - `LimitsWorker` (`orchestration/limits.ts`) — every 60 s, a limited thread whose policy is
   `reset` and whose `resetsAt` has passed gets `thread.resume { continue: true }`.
 - `SettlementReactor` (`orchestration/settlement.ts`) — on the event that sets `mergedAt` (`pr.updated`
-  merged / `merge.completed`) and every 10 min for threads idle past `inbox.autoSettleAfterDays`, sends
+  merged, once per thread even when later syncs repeat the forge's `mergedAt` / `merge.completed`) and every 10 min for threads idle past `inbox.autoSettleAfterDays`, sends
   `thread.settle { reason }`; the decider refuses it for running, waiting, pinned or opted-out threads.
-- `PrWatcher` (`vcs/prWatch.ts`) — refreshes a thread's PR through `gh pr view --json
-  state,mergeable,statusCheckRollup,comments,reviews` when watching starts, after publish/merge and
-  every 2 min while `thread.prWatch` is set; reports `pr.update` (checks, mergeable, comment count)
-  and wakes the thread with a `turn.request` (notification `pr`) on a CI failure, new comments or a
-  new conflict. Watching stops on merge/close or after 8 consecutive gh failures.
+- `PrWatcher` (`vcs/prWatch.ts`) — refreshes a thread's PR through its forge (`vcs/forge/`, GitHub
+  via `gh pr view` + `gh api …/pulls/N/comments`) when watching starts, after publish/merge and every
+  2 min while `thread.prWatch` is set; reports `pr.update` with checks, check runs, review decision,
+  mergeable and the forge's `mergedAt` (a merge seen here settles the thread). At most one
+  `turn.request` (notification `pr`) per poll, built by `vcs/prWake.ts`: a check run newly failed
+  (named, with the last 40 lines of `gh run view --job N --log-failed`, else its URL), the review
+  decision turned `changes_requested` (latest review body), new comments by someone other than the
+  viewer (author, `path:line`, body), or a new conflict. CI recovering only posts an info activity.
+  Watching stops on merge/close or after 8 consecutive forge failures. Details: `forge.md`.
+- PR tab RPCs (`rpc/pr.ts`) — `pr.list/detail/diff/comment/review/merge/link` over the
+  `ForgeResolver` (`vcs/forge/resolver.ts`, forge per checkout from `origin`, cached 10 min).
+  `server.info.tools.ghAuth` reports `gh auth status`. See `forge.md`.
 - `DelegationReactor` (`orchestration/delegation.ts`) — wakes the thread that ran `tide_delegate`.
   When a delegate's last turn settles (completed / interrupted / error) or it goes `limited`, the
   parent gets a `turn.request` (notification `delegate`) quoting the outcome and up to 1500 chars

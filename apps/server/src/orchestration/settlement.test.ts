@@ -124,6 +124,23 @@ describe("SettlementReactor merge", () => {
     reactor.stop();
   });
 
+  it("settles on a PR carrying the forge's mergedAt, once, even when later syncs repeat it", async () => {
+    const { engine, clock, mk, reactor } = await setup();
+    const id = await mk();
+    reactor.start();
+    clock.now = 3_000;
+    await engine.dispatch({ type: "pr.update", threadId: id, pr: { ...pr("merged", 3_000), mergedAt: 2_400 } });
+    await engine.drain();
+    await engine.drain();
+    expect(engine.getModel().threads[id]).toMatchObject({ settleReason: "pr-merged", mergedAt: 2_400 });
+    await engine.dispatch({ type: "thread.unsettle", threadId: id });
+    await engine.dispatch({ type: "pr.update", threadId: id, pr: { ...pr("merged", 3_500), mergedAt: 2_400 } });
+    await engine.drain();
+    await engine.drain();
+    expect(engine.getModel().threads[id]?.settledAt).toBeUndefined();
+    reactor.stop();
+  });
+
   it("settles on merge-back, and respects autoSettleOnMerge=false and pinned", async () => {
     const { engine, mk, reactor, settings } = await setup();
     const a = await mk();
