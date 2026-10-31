@@ -23,11 +23,39 @@
   min-width: 0;
   padding: 0 var(--sp-2);
   border-bottom: 1px solid var(--border);
-  overflow: hidden;
+}
+/* the shared hidden-scrollbar scroller for the tabs; Hide stays outside and never scrolls */
+.scroll {
+  composes: scrollX from global;
+  display: flex;
+  flex: 1;
+  align-items: center;
+  gap: var(--sp-1);
+  min-width: 0;
+  height: 100%;
+}
+/*
+ * Fades at the ends that hide tabs, CSS-only (the drawer has no JS overflow tracking):
+ * a scroll-driven animation moves the two fade widths with the scroll position. With no
+ * overflow the timeline is inactive and both widths stay 0.
+ */
+@property --fade-start { syntax: "<length>"; inherits: false; initial-value: 0px; }
+@property --fade-end { syntax: "<length>"; inherits: false; initial-value: 0px; }
+@keyframes tabsFade {
+  0% { --fade-start: 0px; --fade-end: 24px; }
+  8%, 92% { --fade-start: 24px; --fade-end: 24px; }
+  100% { --fade-start: 24px; --fade-end: 0px; }
+}
+@supports (animation-timeline: scroll()) {
+  .scroll {
+    mask-image: linear-gradient(to right, transparent, black var(--fade-start), black calc(100% - var(--fade-end)), transparent);
+    animation: tabsFade linear both;
+    animation-timeline: scroll(self inline);
+  }
 }
 .tabWrap {
   display: inline-flex;
-  flex: 0 1 auto;
+  flex: none; /* tabs keep their width and the row scrolls, rather than crushing to nothing */
   align-items: center;
   min-width: 0;
   max-width: 160px;
@@ -81,5 +109,5 @@
 .surface { flex: 1; min-height: 0; width: 100%; overflow: hidden; }
 .note { margin: 0; padding: var(--sp-2); color: var(--muted); font-size: var(--fs-sm); }
 /* R13: the project's run-stack tabs, after the thread's own */
-.group { display: inline-flex; flex: 0 1 auto; align-items: center; gap: var(--sp-1); min-width: 0; padding-left: var(--sp-2); border-left: 1px solid var(--border); }
+.group { display: inline-flex; flex: none; align-items: center; gap: var(--sp-1); min-width: 0; padding-left: var(--sp-2); border-left: 1px solid var(--border); }
 .groupLabel { flex: none; color: var(--muted); font-size: var(--fs-xs); font-weight: var(--fw-semibold); letter-spacing: var(--ls-label); text-transform: uppercase; }

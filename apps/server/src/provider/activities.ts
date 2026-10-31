@@ -91,6 +91,7 @@ export function mergeActivity(previous: Activity | undefined, activity: DriverAc
         ...opt("description", activity.description ?? prev?.description),
         ...opt("childThreadId", activity.childThreadId ?? prev?.childThreadId),
         ...opt("summary", activity.summary ?? prev?.summary),
+        ...opt("report", activity.report ?? prev?.report),
       };
     }
     default:

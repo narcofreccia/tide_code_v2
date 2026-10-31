@@ -49,7 +49,31 @@ export function collapsePassThrough(entries: TimelineItem[]): Collapsed {
   return { entries: out, groups };
 }
 
-/** One muted "n harness events" line per turn; open it to see each raw row. */
+/** `system/task_notification` -> "task notification", `session.updated` -> "session updated". */
+function humanize(raw: string): string {
+  const tail = raw.split("/").filter(Boolean).pop() ?? raw;
+  return tail
+    .replace(/([a-z])([A-Z])/g, "$1 $2")
+    .replace(/[_.-]+/g, " ")
+    .trim()
+    .toLowerCase();
+}
+
+/** A short name for one pass-through row: the native frame's subtype/type, else its text. */
+export function eventName(note: Note): string {
+  const payload = typeof note.payload === "object" && note.payload !== null ? (note.payload as Record<string, unknown>) : undefined;
+  const native = typeof payload?.["subtype"] === "string" ? payload["subtype"] : typeof payload?.["type"] === "string" ? payload["type"] : undefined;
+  const text = note.text.replace(HARNESS_FRAME, "").replace(/\s*\(.*\)\s*$/, "");
+  return humanize(native ?? text) || note.text;
+}
+
+/** Distinct event names, at most three, then "…". */
+export function eventNames(notes: Note[]): string {
+  const names = [...new Set(notes.map(eventName))];
+  return names.length <= 3 ? names.join(", ") : `${names.slice(0, 3).join(", ")}, …`;
+}
+
+/** One muted "n harness events · names" line per turn; open it to see each raw row. */
 export function HarnessEvents({ activities }: { activities: Note[] }) {
   const [open, setOpen] = useState(false);
   return (
@@ -58,9 +82,8 @@ export function HarnessEvents({ activities }: { activities: Note[] }) {
         <span className={styles.glyph}>
           <Chevron open={open} />
         </span>
-        <span className={`${styles.summary} ${styles.info}`}>
-          {plural(activities.length, "harness event")}
-        </span>
+        <span className={`${styles.groupLabel} ${styles.info}`}>{plural(activities.length, "harness event")}</span>
+        {open ? null : <span className={styles.groupNames}>· {eventNames(activities)}</span>}
       </button>
       {open ? (
         <ul className={`${styles.childRows} ${styles.nested}`}>

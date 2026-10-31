@@ -17,6 +17,10 @@ import type {
 const MAX_OUTPUT_CHARS = 4096;
 const MAX_PAYLOAD_CHARS = 4096;
 const SUBAGENT_TOOLS = new Set(["Task", "Agent"]);
+/** Cap for a sub-agent's final report carried on its child row. */
+export const MAX_REPORT_CHARS = 8192;
+/** The tool_result a backgrounded/async sub-agent returns at once; its real result arrives later. */
+const BACKGROUND_PLACEHOLDER = /running in the background|async agent launched|launched (successfully )?in the background/i;
 
 /**
  * The only frames dropped without a trace (CLAUDE.md §1a: unknown events are passed
@@ -40,6 +44,7 @@ const SILENT_MESSAGE_TYPES = new Set([
 
 const SILENT_SYSTEM_SUBTYPES = new Set([
   "status", // per-request spinner state (requesting/…)
+  "background_tasks_changed", // level signal duplicating the task_* bookends the child rows already show
   "thinking_tokens", // live thinking-token estimate for a progress pill
 ]);
 
@@ -98,6 +103,31 @@ function toolResultText(block: ToolResultBlock): string {
     .join("\n");
 }
 
+/** A sub-agent's final result, capped; truncation is marked with "…". */
+export function capReport(text: string): string {
+  const trimmed = text.trim();
+  return trimmed.length <= MAX_REPORT_CHARS ? trimmed : `${trimmed.slice(0, MAX_REPORT_CHARS).trimEnd()}…`;
+}
+
+function firstLine(text: string): string | undefined {
+  const line = text.split("\n").find((l) => l.trim() !== "");
+  if (line === undefined) return undefined;
+  return truncate(line.trim().replace(/^#+\s*/, ""), 1000);
+}
+
+/** One XML-ish field of a `<task-notification>` user message, as the model reads it. */
+function tagText(text: string, tag: string): string | undefined {
+  const match = new RegExp(`<${tag}>([\\s\\S]*?)</${tag}>`).exec(text);
+  return match?.[1]?.trim();
+}
+
+/** Text of a user message: a plain string or its text blocks. */
+function userText(content: string | ContentBlock[] | undefined): string {
+  if (typeof content === "string") return content;
+  if (!Array.isArray(content)) return "";
+  return content.map((block) => (block.type === "text" ? ((block as { text?: string }).text ?? "") : "")).join("\n");
+}
+
 function planSteps(input: unknown): { text: string; status: "pending" | "in_progress" | "completed" }[] | undefined {
   if (typeof input !== "object" || input === null) return undefined;
   const todos = (input as Record<string, unknown>)["todos"];
@@ -124,6 +154,12 @@ export class ClaudeNormalizer {
   #streamMessageId: string | undefined;
   #tools = new Map<string, TrackedTool>();
   #tasks = new Map<string, { name: string; childKey: string; description?: string }>();
+  /**
+   * Every child row this session opened, by childKey, plus task_id -> childKey. Kept past
+   * completion: a background sub-agent reports back via task_notification, often a turn later.
+   */
+  #children = new Map<string, { name: string; description?: string; backgrounded: boolean; summarised: boolean }>();
+  #taskChild = new Map<string, string>();
   #interrupted = false;
   #reported: Cumulative = { input: 0, output: 0, cacheRead: 0, cacheWrite: 0, cost: 0 };
   unknownCount = 0;
@@ -191,6 +227,7 @@ export class ClaudeNormalizer {
     if (other.subtype === "task_started" || other.subtype === "task_updated" || other.subtype === "task_progress") {
       return this.#task(other);
     }
+    if (other.subtype === "task_notification") return this.#taskNotification(other);
     if (SILENT_SYSTEM_SUBTYPES.has(other.subtype)) return [];
     return this.#unknown(other, "system", other.subtype);
   }
@@ -209,17 +246,28 @@ export class ClaudeNormalizer {
     if (message.subtype === "task_started") {
       const childKey = message.tool_use_id ?? taskId;
       const name = message.description ?? message.subagent_type ?? "Background task";
-      const entry = { name, childKey, ...(message.subagent_type ? { description: message.subagent_type } : {}) };
+      const known = this.#children.get(childKey);
+      const description = message.subagent_type ?? known?.description;
+      const entry = { name, childKey, ...(description ? { description } : {}) };
       this.#tasks.set(taskId, entry);
-      return [{ type: "activity", activity: { kind: "child", childKey, name, status: "running", ...(entry.description ? { description: entry.description } : {}) } }];
+      this.#taskChild.set(taskId, childKey);
+      this.#children.set(childKey, {
+        ...entry,
+        backgrounded: message.is_backgrounded === true || (known?.backgrounded ?? false),
+        summarised: known?.summarised ?? false,
+      });
+      return [{ type: "activity", activity: { kind: "child", childKey, name, status: "running", ...(description ? { description } : {}) } }];
     }
 
     const tracked = this.#tasks.get(taskId);
     // later frames carry no tool_use_id: the child row is the one task_started opened
     const childKey = tracked?.childKey ?? message.tool_use_id ?? taskId;
     const name = message.patch?.description ?? message.description ?? tracked?.name ?? "Background task";
+    const child = this.#children.get(childKey);
+    if (child && message.patch?.is_backgrounded === true) child.backgrounded = true;
     if (message.subtype === "task_progress") {
       const summary = message.summary ?? (message.last_tool_name ? `Running ${message.last_tool_name}` : undefined);
+      if (child && message.summary) child.summarised = true;
       return [
         {
           type: "activity",
@@ -236,6 +284,60 @@ export class ClaudeNormalizer {
         activity: { kind: "child", childKey, name, status, ...(tracked?.description ? { description: tracked.description } : {}), ...(summary ? { summary: truncate(summary, 1000) } : {}) },
       },
     ];
+  }
+
+  /**
+   * `SDKTaskNotificationMessage`: a background task settled. Its `summary` is the CLI's
+   * one-liner ("Agent … completed"), used only when the row has no summary yet.
+   */
+  #taskNotification(message: SystemOtherMessage): NormalizedEvent[] {
+    if (message.ambient === true || message.skip_transcript === true) return [];
+    const taskId = message.task_id;
+    if (taskId === undefined) return this.#unknown(message, "system", message.subtype);
+    const childKey = this.#taskChild.get(taskId) ?? message.tool_use_id ?? taskId;
+    this.#tasks.delete(taskId);
+    return this.#settleChild(childKey, message.status === "completed" ? "done" : "error", { summary: message.summary, weak: true });
+  }
+
+  /** The final child update: status, optional report, and a summary only when none was shown. */
+  #settleChild(childKey: string, status: "done" | "error", fields: { summary?: string; weak?: boolean; report?: string; parentToolUseId?: string | null; fallbackName?: string }): NormalizedEvent[] {
+    const child = this.#children.get(childKey);
+    const name = child?.name ?? fields.fallbackName ?? "Background task";
+    const summary = child?.summarised ? undefined : fields.summary !== undefined && fields.summary.trim() !== "" ? truncate(fields.summary.trim(), 1000) : undefined;
+    // the CLI's "Agent … completed" one-liner may still be replaced by the result's first line
+    if (child && summary !== undefined && fields.weak !== true) child.summarised = true;
+    return [
+      {
+        type: "activity",
+        activity: {
+          kind: "child",
+          childKey,
+          name,
+          status,
+          ...(child?.description ? { description: child.description } : {}),
+          ...(summary !== undefined ? { summary } : {}),
+          ...(fields.report ? { report: fields.report } : {}),
+          ...(fields.parentToolUseId ? { parentToolUseId: fields.parentToolUseId } : {}),
+        },
+      },
+    ];
+  }
+
+  /**
+   * The user message a background sub-agent's result is delivered in
+   * (`origin.kind: "task-notification"`): `<task-notification>` with `<tool-use-id>`,
+   * `<task-id>`, `<status>`, `<summary>` and `<result>` fields.
+   */
+  #notificationMessage(text: string): NormalizedEvent[] {
+    const toolUseId = tagText(text, "tool-use-id");
+    const taskId = tagText(text, "task-id");
+    const childKey = (taskId !== undefined ? this.#taskChild.get(taskId) : undefined) ?? toolUseId;
+    if (childKey === undefined || !this.#children.has(childKey)) return [];
+    const result = tagText(text, "result");
+    const report = result ? capReport(result) : undefined;
+    const statusText = tagText(text, "status");
+    const status = statusText === undefined || statusText === "completed" ? "done" : "error";
+    return this.#settleChild(childKey, status, { summary: report ? firstLine(report) : tagText(text, "summary"), ...(report ? { report } : {}) });
   }
 
   #rateLimit(message: RateLimitMessage): NormalizedEvent[] {
@@ -337,6 +439,13 @@ export class ClaudeNormalizer {
 
       if (tracked.childName !== undefined) {
         const subagentType = typeof input["subagent_type"] === "string" ? input["subagent_type"] : undefined;
+        const known = this.#children.get(tool.id);
+        this.#children.set(tool.id, {
+          name: tracked.childName,
+          ...(subagentType ? { description: subagentType } : {}),
+          backgrounded: input["run_in_background"] === true || (known?.backgrounded ?? false),
+          summarised: known?.summarised ?? false,
+        });
         events.push({
           type: "activity",
           activity: {
@@ -360,6 +469,8 @@ export class ClaudeNormalizer {
 
   #user(message: UserMessage): NormalizedEvent[] {
     const content = message.message.content;
+    const text = userText(content);
+    if (text.includes("<task-notification>")) return this.#notificationMessage(text);
     if (!Array.isArray(content)) return [];
     const events: NormalizedEvent[] = [];
     for (const block of content) {
@@ -380,22 +491,31 @@ export class ClaudeNormalizer {
           ...(tracked?.parentToolUseId ? { parentToolUseId: tracked.parentToolUseId } : {}),
         },
       });
-      if (tracked?.childName !== undefined) {
-        events.push({
-          type: "activity",
-          activity: {
-            kind: "child",
-            childKey: result.tool_use_id,
-            name: tracked.childName,
-            status: status === "error" ? "error" : "done",
-            ...(output !== "" ? { summary: truncate(output, 1000) } : {}),
-            ...(tracked.parentToolUseId ? { parentToolUseId: tracked.parentToolUseId } : {}),
-          },
-        });
-      }
+      if (tracked?.childName !== undefined) events.push(...this.#subagentResult(result, tracked, status));
       this.#tools.delete(result.tool_use_id);
     }
     return events;
+  }
+
+  /**
+   * The `Task`/`Agent` tool_result is the sub-agent's final report — unless the agent runs
+   * in the background, when it is a placeholder and the row stays running until the
+   * task_notification arrives.
+   */
+  #subagentResult(result: ToolResultBlock, tracked: TrackedTool, status: "ok" | "error"): NormalizedEvent[] {
+    const childKey = result.tool_use_id;
+    const full = toolResultText(result);
+    const child = this.#children.get(childKey);
+    if (status !== "error" && (child?.backgrounded === true || BACKGROUND_PLACEHOLDER.test(full.slice(0, 400)))) {
+      if (child) child.backgrounded = true;
+      return [];
+    }
+    const report = full.trim() === "" ? undefined : capReport(full);
+    return this.#settleChild(childKey, status === "error" ? "error" : "done", {
+      ...(report ? { summary: firstLine(report), report } : {}),
+      parentToolUseId: tracked.parentToolUseId,
+      ...(tracked.childName ? { fallbackName: tracked.childName } : {}),
+    });
   }
 
   #result(message: ResultMessage): NormalizedEvent[] {

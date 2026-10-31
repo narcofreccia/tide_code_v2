@@ -101,3 +101,19 @@
   padding: 0;
 }
 .fileLink:hover { color: var(--accent); text-decoration: underline; }
+/* a tool call's readable result line, after its target */
+.resultLine {
+  flex: 1;
+  min-width: 0;
+  overflow: hidden;
+  text-overflow: ellipsis;
+  white-space: nowrap;
+  font-size: var(--fs-sm);
+  color: var(--muted);
+}
+/* with a result line beside it the target takes only what it needs */
+.targetShrink { flex: 0 1 auto; max-width: 45%; }
+.detailHead { display: flex; align-items: center; justify-content: space-between; gap: var(--sp-2); }
+.copy { flex: none; }
+/* raw JSON payloads: monospace at the small size, pretty-printed */
+.prePayload { font-size: var(--fs-sm); }

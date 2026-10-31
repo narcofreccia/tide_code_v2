@@ -65,3 +65,18 @@ button {
 [data-field] > :is(input, textarea):focus-visible {
   border-color: transparent;
 }
+
+/*
+ * Horizontal scroller with no visible scrollbar (tab strips): wheel support comes from
+ * useWheelScrollX, fades from a data-overflow attribute on the element.
+ */
+.scrollX {
+  overflow-x: auto;
+  overflow-y: hidden;
+  scrollbar-width: none;
+  -ms-overflow-style: none;
+  overscroll-behavior-x: contain;
+}
+.scrollX::-webkit-scrollbar {
+  display: none;
+}

@@ -1,0 +1,8 @@
+/* sits right under the turn footer (MessageItem .meta), same quiet type */
+.conclusion {
+  list-style: none;
+  margin-top: calc(-1 * var(--sp-1));
+  color: var(--muted);
+  font-size: var(--fs-xs);
+  font-variant-numeric: tabular-nums;
+}

@@ -5,7 +5,9 @@ import { resetRun } from "../../../state/run.ts";
 import { activeTab } from "../../../state/workbench.ts";
 import { useTerminals } from "../../../state/terminals.ts";
 import { useUi } from "../../../state/ui.ts";
-import { NO_PROFILES, RunPanel } from "./RunPanel.tsx";
+import { RpcCallError } from "@tide/client";
+import { NO_PROFILES, RUN_UNSUPPORTED, RunPanel } from "./RunPanel.tsx";
+import { splitCommand } from "./RunRow.tsx";
 import { plan, planRow, project, repo, REPOS, session, status, svc } from "./fixtures.ts";
 
 afterEach(() => {
@@ -161,5 +163,44 @@ describe("RunPanel", () => {
     fireEvent.click(screen.getByRole("button", { name: "Open run settings" }));
     expect(useUi.getState().view).toBe("settings");
     expect(useUi.getState().settingsSection).toBe("projects");
+  });
+
+  it("degrades to a quiet note on a server without run.* and hides Start stack", async () => {
+    setup({
+      "run.profiles.get": () => {
+        throw new RpcCallError({ code: "method-not-found", message: "unknown method run.profiles.get" });
+      },
+    });
+    const note = await screen.findByText(RUN_UNSUPPORTED);
+    expect(note.className).not.toMatch(/Error/);
+    expect(screen.queryByText(/Could not load run profiles/)).toBeNull();
+    expect(screen.queryByRole("button", { name: /Start stack/ })).toBeNull();
+  });
+
+  it("keeps other load errors as a wrapped error line", async () => {
+    setup({
+      "run.profiles.get": () => {
+        throw new RpcCallError({ code: "internal", message: "boom" });
+      },
+    });
+    const line = await screen.findByText("Could not load run profiles: boom");
+    expect(line.className).toMatch(/loadError/);
+    expect(screen.getByRole("button", { name: /Start stack/ })).toBeDefined();
+  });
+
+  it("shows the command middle-ellipsised with the full title, env chips, and a wrapping header", async () => {
+    const long = "uv run uvicorn app.main:app --reload --host 0.0.0.0 --port 8000";
+    setup({
+      "run.profiles.get": () => ({ repos: [repo("root", "backend", [svc("api", { command: long, env: { DEBUG: "1" } })])] }),
+    });
+    await screen.findByRole("region", { name: "backend" });
+    const cmd = within(row("backend.api")).getByTitle(long);
+    expect(cmd.className).toMatch(/command/);
+    expect(cmd.querySelector("[class*=commandHead]")?.textContent).toBe(splitCommand(long).head);
+    expect(cmd.querySelector("[class*=commandTail]")?.textContent).toBe(long.slice(-14));
+    expect(within(row("backend.api")).getByText("DEBUG=1").className).toMatch(/envChip/);
+    const actions = screen.getByLabelText("Run stack").querySelector("[class*=headerActions]") as HTMLElement;
+    expect(within(actions).getByRole("button", { name: /Start stack/ })).toBeDefined();
+    expect(splitCommand("pnpm dev")).toEqual({ head: "pnpm dev", tail: "" });
   });
 });

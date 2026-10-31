@@ -17,6 +17,7 @@ import { ContextMenu, type MenuItem, type MenuPosition } from "../../ui/Menu.tsx
 import { Button } from "../../ui/Button.tsx";
 import { Icon } from "../../ui/Icon.tsx";
 import { Kbd } from "../../ui/Kbd.tsx";
+import { useWheelScrollX } from "../useWheelScrollX.ts";
 import styles from "./TerminalDrawer.module.css";
 
 /** xterm and its addons are their own chunk; the shell never pays for them. */
@@ -93,6 +94,8 @@ export function TerminalDrawer({ threadId }: { threadId: string }) {
   const active = useTerminals((s) => s.active[threadId]);
   const onDrag = useDragHeight();
   const drawer = useRef<HTMLDivElement>(null);
+  const tabRow = useRef<HTMLDivElement>(null);
+  useWheelScrollX(tabRow);
   const [menu, setMenu] = useState<{ at: MenuPosition; tab: PtyTab } | undefined>(undefined);
 
   const menuItems = (tab: PtyTab): MenuItem[] => [
@@ -129,7 +132,8 @@ export function TerminalDrawer({ threadId }: { threadId: string }) {
         aria-label="Resize terminal"
         onMouseDown={onDrag}
       />
-      <div className={styles.tabs} role="tablist">
+      <div className={styles.tabs}>
+        <div className={styles.scroll} role="tablist" ref={tabRow}>
         {tabs.map((tab, index) => {
           const name = tabTitle(tab.title, index);
           const selected = tab.ptyId === current?.ptyId;
@@ -206,6 +210,7 @@ export function TerminalDrawer({ threadId }: { threadId: string }) {
         >
           <Icon name="plus" size={14} />
         </Button>
+        </div>
         <Button variant="quiet" className={styles.hide} onClick={toggleDrawer} title="Hide terminal">
           Hide <Kbd>⌘`</Kbd>
         </Button>

@@ -6,15 +6,7 @@
   min-width: 0;
   background: var(--surface);
 }
-.tabs {
-  display: flex;
-  align-items: center;
-  gap: var(--sp-1);
-  height: var(--row-h-nav);
-  padding: 0 var(--sp-2);
-  border-bottom: 1px solid var(--border);
-  overflow-x: auto;
-}
+/* the strip layout (.strip/.scroll/.actions) lives in TabStrip.module.css */
 .tabWrap {
   display: inline-flex;
   align-items: center;
@@ -53,7 +45,6 @@
   background: var(--warn);
 }
 .running { color: var(--warn); font-size: var(--fs-sm); margin-left: var(--sp-2); }
-.spacer { flex: 1; }
 .iconToggle {
   flex: 0 0 auto;
   display: inline-flex;

@@ -18,6 +18,7 @@ export function Popover({
   disabled,
   align = "start",
   flush = false,
+  panelClassName,
   children,
 }: {
   label: React.ReactNode;
@@ -30,6 +31,8 @@ export function Popover({
   align?: "start" | "end";
   /** no padding, wider: the content (a DialogFrame) draws its own layout */
   flush?: boolean;
+  /** extra class on the portalled panel: a caller-sized panel (width, max-height) */
+  panelClassName?: string | undefined;
   children: (close: () => void) => React.ReactNode;
 }) {
   const [open, setOpen] = useState(false);
@@ -76,7 +79,7 @@ export function Popover({
       </Button>
       {open
         ? createPortal(
-            <div ref={panel} className={`${styles.panel} ${flush ? styles.flush : ""}`} style={style} role="dialog" data-tide-layer="">
+            <div ref={panel} className={[styles.panel, flush ? styles.flush : "", panelClassName ?? ""].filter(Boolean).join(" ")} style={style} role="dialog" data-tide-layer="">
               {children(() => setOpen(false))}
             </div>,
             document.body,

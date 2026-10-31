@@ -13,6 +13,7 @@ import { HandoffCard } from "./HandoffCard.tsx";
 import { NoticeRow } from "./NoticeRow.tsx";
 import { MessageItem } from "./MessageItem.tsx";
 import { PlanCard } from "./PlanCard.tsx";
+import { TurnConclusion } from "./TurnConclusion.tsx";
 import { UserInputCard } from "./UserInputCard.tsx";
 import { CiteButton } from "./CiteButton.tsx";
 import { Icon } from "../ui/Icon.tsx";
@@ -68,6 +69,18 @@ function metaMessageIds(entries: TimelineItem[], model: ReadModel): Set<string> 
   return out;
 }
 
+/** Every activity of each turn, nested sub-agent rows included, for the turn's conclusion line. */
+function activitiesByTurn(entries: TimelineItem[]): Map<string, Activity[]> {
+  const out = new Map<string, Activity[]>();
+  for (const entry of entries) {
+    if (entry.kind !== "activity") continue;
+    const list = out.get(entry.activity.turnId);
+    if (list) list.push(entry.activity);
+    else out.set(entry.activity.turnId, [entry.activity]);
+  }
+  return out;
+}
+
 function lastPendingApprovalId(entries: TimelineItem[]): string | undefined {
   let id: string | undefined;
   for (const entry of entries) {
@@ -90,6 +103,7 @@ export function Stream({ threadId, provider }: { threadId: string; provider: Pro
   const nodes = groupActivities(top);
   const liveApprovalId = lastPendingApprovalId(entries);
   const metaIds = metaMessageIds(top, model);
+  const turnActivities = activitiesByTurn(entries);
   const turnNumber = new Map(turns.map((t, i) => [t.id, i + 1]));
   const citeLabel = (turnId: string): string => {
     const n = turnNumber.get(turnId);
@@ -149,6 +163,7 @@ export function Stream({ threadId, provider }: { threadId: string; provider: Pro
                   {...(queuedTurns.has(node.message.turnId) ? { wasQueued: true } : {})}
                   {...(node.message.role === "assistant" ? { citeLabel: citeLabel(node.message.turnId) } : {})}
                 />
+                {metaIds.has(node.message.id) ? <TurnConclusion activities={turnActivities.get(node.message.turnId) ?? []} /> : null}
               </Fragment>
             );
           }

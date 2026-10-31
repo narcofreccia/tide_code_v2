@@ -2,7 +2,7 @@ import { afterEach, describe, expect, it } from "vitest";
 import { cleanup, fireEvent, render, screen } from "@testing-library/react";
 import type { Activity } from "@tide/contracts";
 import type { TimelineItem } from "@tide/client";
-import { HarnessEvents, collapsePassThrough } from "./HarnessEvents.tsx";
+import { HarnessEvents, collapsePassThrough, eventNames } from "./HarnessEvents.tsx";
 
 afterEach(cleanup);
 
@@ -44,5 +44,16 @@ describe("pass-through harness rows", () => {
     render(<ul><HarnessEvents activities={rows} /></ul>);
     fireEvent.click(screen.getByText("2 harness events"));
     expect(screen.getByLabelText("claude: system/two")).toBeDefined();
+  });
+
+  it("names the events inline while collapsed, three at most", () => {
+    const rows = collapsePassThrough([
+      info("a", "u1", "claude: system/session_resumed", { type: "system", subtype: "session_resumed" }),
+      info("b", "u1", "claude: system/compact", { type: "system", subtype: "compactBoundary" }),
+    ]).groups.get("a")!;
+    render(<ul><HarnessEvents activities={rows} /></ul>);
+    expect(screen.getByText("· session resumed, compact boundary")).toBeDefined();
+    const four = ["one", "two", "three", "four"].map((n, i) => info(`x${i}`, "u9", `codex: thing/${n}`));
+    expect(eventNames(collapsePassThrough(four).groups.get("x0")!)).toBe("one, two, three, …");
   });
 });

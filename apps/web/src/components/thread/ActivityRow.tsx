@@ -7,6 +7,7 @@ import { providerStatus, useProviders } from "../../state/providers.ts";
 import { useUi } from "../../state/ui.ts";
 import { openFileTab } from "../../state/workbench.ts";
 import { normalizePastedPath } from "../../lib/mentions.ts";
+import { summarizeToolResult } from "../../lib/toolSummary.ts";
 import { Button } from "../ui/Button.tsx";
 import { Icon } from "../ui/Icon.tsx";
 import { useTurnSettled } from "./activities/turnSettled.ts";
@@ -89,6 +90,28 @@ function ErrorActivity({ activity }: { activity: NoteActivity }) {
   );
 }
 
+/** A raw input/output block with a Copy button: the full text, never a summary. */
+function DetailBlock({ label, text }: { label: string; text: string }) {
+  const [copied, setCopied] = useState(false);
+  const copy = (): void => {
+    void navigator.clipboard
+      ?.writeText(text)
+      .then(() => setCopied(true))
+      .catch(() => undefined);
+  };
+  return (
+    <>
+      <span className={styles.detailHead}>
+        <span className={styles.label}>{label}</span>
+        <Button variant="quiet" className={styles.copy} aria-label={`Copy ${label}`} title={copied ? "Copied" : `Copy ${label}`} onClick={copy}>
+          <Icon name={copied ? "check" : "copy"} size={12} />
+        </Button>
+      </span>
+      <pre className={`${styles.pre} ${styles.prePayload}`}>{text}</pre>
+    </>
+  );
+}
+
 const FULL_TARGET_KEYS = ["file_path", "filePath", "path", "notebook_path", "file", "command", "cmd", "script"];
 
 /** The untruncated path or command (every line) behind the one-line target, for its tooltip. */
@@ -124,6 +147,9 @@ export function ActivityRow({ activity }: { activity: Activity }) {
   const tone = stale ? "" : (styles[activity.status] ?? "");
   const output = activity.output ?? "";
   const input = formatPayload(activity.input);
+  // the one readable line after the target: a JSON reply's message, a SendMessage recipient, …
+  const result = activity.status === "running" ? undefined : summarizeToolResult(activity.toolName, activity.input, activity.output);
+  const line = result?.line && result.line !== target && result.line !== fullTarget && !(filePath !== undefined && result.line === raw) ? result.line : undefined;
 
   return (
     <li className={styles.item}>
@@ -141,9 +167,14 @@ export function ActivityRow({ activity }: { activity: Activity }) {
           ) : (
             <span className={styles.name}>{activity.toolName}</span>
           )}
-          {filePath === undefined ? (
-            <span className={styles.target} title={fullTarget}>
+          {filePath === undefined && target ? (
+            <span className={`${styles.target} ${line ? styles.targetShrink : ""}`} title={fullTarget}>
               {target}
+            </span>
+          ) : null}
+          {line && filePath === undefined ? (
+            <span className={styles.resultLine} title={line}>
+              {line}
             </span>
           ) : null}
         </button>
@@ -157,6 +188,11 @@ export function ActivityRow({ activity }: { activity: Activity }) {
             {shortenPath(filePath)}
           </button>
         )}
+        {line && filePath !== undefined ? (
+          <span className={styles.resultLine} title={line}>
+            {line}
+          </span>
+        ) : null}
         {activity.durationMs === undefined ? null : (
           <span className={styles.duration}>{formatDuration(activity.durationMs)}</span>
         )}
@@ -164,18 +200,8 @@ export function ActivityRow({ activity }: { activity: Activity }) {
       </div>
       {open ? (
         <div className={styles.details}>
-          {input ? (
-            <>
-              <span className={styles.label}>input</span>
-              <pre className={styles.pre}>{input}</pre>
-            </>
-          ) : null}
-          {output ? (
-            <>
-              <span className={styles.label}>output</span>
-              <pre className={styles.pre}>{output}</pre>
-            </>
-          ) : null}
+          {input ? <DetailBlock label="input" text={input} /> : null}
+          {output ? <DetailBlock label="output" text={result?.detail ?? output} /> : null}
         </div>
       ) : null}
     </li>

@@ -25,6 +25,8 @@ import styles from "./Run.module.css";
 const NO_PINS: Record<string, number> = {};
 
 export const NO_PROFILES = "Tide could not detect how to run this repo.";
+export const RUN_UNSUPPORTED =
+  "Run stack needs a newer tide-server on this machine (restart the desktop app / update the server).";
 
 const SOURCE_TITLE: Record<RunProfileSource, string> = {
   quickstart: "from QUICKSTART.md",
@@ -118,7 +120,7 @@ export function RunPanel({
   variant?: "pane" | "strip";
 }) {
   const project = useModel((s) => s.model.projects[projectId]);
-  const { repos, loading, loaded, error } = useRunProfiles(projectId);
+  const { repos, loading, loaded, error, unsupported } = useRunProfiles(projectId);
   const session = useRunSession(projectId);
   const lastPlan = useRun((s) => s.plans[projectId]);
   const pending = useRun((s) => s.pending[projectId]);
@@ -152,7 +154,8 @@ export function RunPanel({
 
   const body = (() => {
     if (!loaded && loading) return <p className={styles.note}>Loading run profiles…</p>;
-    if (error !== undefined && repos.length === 0) return <p className={styles.repoError}>Could not load run profiles: {error}</p>;
+    if (unsupported) return <p className={styles.note}>{RUN_UNSUPPORTED}</p>;
+    if (error !== undefined && repos.length === 0) return <p className={styles.loadError}>Could not load run profiles: {error}</p>;
     if (!hasServices && repos.every((r) => r.error === undefined)) return <EmptyProfiles projectId={projectId} repos={repos} />;
     return repos.map((repo) => (
       <RepoGroup key={repo.repoId} repo={repo}>
@@ -178,6 +181,7 @@ export function RunPanel({
         summary={summary}
         selectedCount={selected.length}
         starting={planning}
+        canStart={!unsupported}
         {...(variant === "strip" ? { collapsed, onToggleCollapsed: () => setCollapsed((c) => !c) } : {})}
         onStart={onStart}
         onStopAll={() => void stopStack(projectId)}

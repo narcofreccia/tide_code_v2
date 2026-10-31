@@ -1,6 +1,6 @@
 import { afterEach, describe, expect, it } from "vitest";
 import { cleanup, fireEvent, render, screen } from "@testing-library/react";
-import { NO_SERVER, PreviewMenu, manualPreviewUrl } from "./PreviewMenu.tsx";
+import { NO_SERVER, PreviewMenu, SERVER_HELP, manualPreviewUrl } from "./PreviewMenu.tsx";
 import { PreviewTab, normalizePreviewUrl, previewSandbox } from "./PreviewTab.tsx";
 import { activeTab, openPreviewTab, resetWorkbench, threadTabs } from "../../../state/workbench.ts";
 import { attachFakeStore, makeThread, mockRpc, mockStream, modelWith, resetUi } from "../../../testHarness.ts";
@@ -76,5 +76,21 @@ describe("Preview", () => {
     // folded by default over a live preview
     expect(screen.getByRole("button", { name: "Run" }).getAttribute("aria-expanded")).toBe("false");
     expect(strip.textContent).toContain("0/0 up");
+  });
+
+  it("opens as a wide panel on the button's end edge with a one-line empty state and the help under the URL field", async () => {
+    mockRpc({ "ports.list": () => ({ ports: [] }) });
+    render(<PreviewMenu threadId="t1" />);
+    const trigger = screen.getByRole("button", { name: "Preview" });
+    (trigger.parentElement as HTMLElement).getBoundingClientRect = () => ({ top: 0, bottom: 28, left: 700, right: 760, width: 60, height: 28, x: 700, y: 0, toJSON: () => ({}) });
+    fireEvent.click(trigger);
+    const panel = screen.getByRole("dialog");
+    expect(panel.className).toMatch(/panel/);
+    expect(panel.style.left).toBe("760px");
+    const note = await screen.findByText(NO_SERVER);
+    expect(note.getAttribute("title")).toBe(SERVER_HELP);
+    expect(note.className).toMatch(/note/);
+    const form = screen.getByLabelText("Preview a URL").closest("form") as HTMLFormElement;
+    expect(form.textContent).toContain(SERVER_HELP);
   });
 });

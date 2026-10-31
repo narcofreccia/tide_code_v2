@@ -14,8 +14,9 @@ type Port = RpcOutput<"ports.list">["ports"][number];
 
 const POLL_MS = 5_000;
 
-export const NO_SERVER =
-  "No dev server detected in this worktree. Start one here in the terminal or ask the agent to run it; Tide finds servers whose working directory is this worktree.";
+export const NO_SERVER = "No dev server detected in this worktree.";
+export const SERVER_HELP =
+  "Start one in the terminal or ask the agent to run it; Tide finds servers whose working directory is this worktree. Or type any URL.";
 
 /** `3000` → `http://localhost:3000`; anything else as the URL bar takes it. */
 export function manualPreviewUrl(raw: string): string {
@@ -29,6 +30,7 @@ function ManualUrl({ threadId, close }: { threadId: string; close: () => void })
   return (
     <form
       className={styles.manual}
+      title={SERVER_HELP}
       onSubmit={(e) => {
         e.preventDefault();
         const url = manualPreviewUrl(draft);
@@ -48,6 +50,7 @@ function ManualUrl({ threadId, close }: { threadId: string; close: () => void })
       <Button variant="quiet" type="submit" disabled={draft.trim() === ""}>
         Open
       </Button>
+      <p className={styles.help}>{SERVER_HELP}</p>
     </form>
   );
 }
@@ -89,11 +92,15 @@ function PortList({ threadId, close }: { threadId: string; close: () => void }) 
     if (ports.length === 0) {
       return (
         <div className={styles.empty}>
-          <p className={styles.note}>{NO_SERVER}</p>
-          <Button variant="quiet" onClick={load}>
-            <Icon name="refresh" size={14} />
-            Refresh
-          </Button>
+          <div className={styles.emptyLine}>
+            <p className={styles.note} title={SERVER_HELP}>
+              {NO_SERVER}
+            </p>
+            <Button variant="quiet" onClick={load}>
+              <Icon name="refresh" size={14} />
+              Refresh
+            </Button>
+          </div>
           {/* R13: start the project's stack right from here */}
           {projectId === undefined ? null : (
             <div className={styles.run}>
@@ -108,7 +115,7 @@ function PortList({ threadId, close }: { threadId: string; close: () => void }) 
 
   return (
     <div className={styles.picker}>
-      {body}
+      <div className={styles.body}>{body}</div>
       <ManualUrl threadId={threadId} close={close} />
     </div>
   );
@@ -139,7 +146,13 @@ function PortItems({ threadId, ports, close }: { threadId: string; ports: Port[]
 /** "Preview" in the workbench header: pick a running dev server to open as a tab. */
 export function PreviewMenu({ threadId }: { threadId: string }) {
   return (
-    <Popover label="Preview" title="Preview a dev server of this thread" variant="quiet" align="end">
+    <Popover
+      label="Preview"
+      title="Preview a dev server of this thread"
+      variant="quiet"
+      align="end"
+      panelClassName={styles.panel}
+    >
       {(close) => <PortList threadId={threadId} close={close} />}
     </Popover>
   );

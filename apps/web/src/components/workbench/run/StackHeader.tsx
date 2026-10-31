@@ -26,6 +26,7 @@ export function StackHeader({
   summary,
   selectedCount,
   starting,
+  canStart = true,
   collapsed,
   onToggleCollapsed,
   onStart,
@@ -37,6 +38,8 @@ export function StackHeader({
   /** shown as the total before anything runs */
   selectedCount: number;
   starting: boolean;
+  /** false when the server has no `run.*`: Start stack is hidden */
+  canStart?: boolean;
   /** strip mode only: the header folds the rows away */
   collapsed?: boolean;
   onToggleCollapsed?: () => void;
@@ -57,48 +60,53 @@ export function StackHeader({
     );
   return (
     <div className={styles.header}>
-      {title}
-      <Pill size="sm" tone={summaryTone(summary)} title="Services up in this stack">
-        {summary.up}/{total} up
-      </Pill>
-      <span className={styles.spacer} />
-      {summary.up > 0 || summary.worst === "starting" ? (
-        <Button variant="quiet" onClick={onStopAll}>
-          <Icon name="stop" size={14} />
-          Stop all
+      <span className={styles.headerTitle}>
+        {title}
+        <Pill size="sm" tone={summaryTone(summary)} title="Services up in this stack">
+          {summary.up}/{total} up
+        </Pill>
+      </span>
+      <span className={styles.headerActions}>
+        {canStart ? (
+          <Button variant="primary" disabled={starting || selectedCount === 0} onClick={onStart}>
+            <Icon name="play" size={14} />
+            Start stack
+          </Button>
+        ) : null}
+        {summary.up > 0 || summary.worst === "starting" ? (
+          <Button variant="quiet" onClick={onStopAll}>
+            <Icon name="stop" size={14} />
+            Stop all
+          </Button>
+        ) : null}
+        <Button variant="quiet" aria-label="Refresh run profiles" title="Refresh" onClick={onRefresh}>
+          <Icon name="refresh" size={14} />
         </Button>
-      ) : null}
-      <Button variant="primary" disabled={starting || selectedCount === 0} onClick={onStart}>
-        <Icon name="play" size={14} />
-        Start stack
-      </Button>
-      <Button variant="quiet" aria-label="Refresh run profiles" title="Refresh" onClick={onRefresh}>
-        <Icon name="refresh" size={14} />
-      </Button>
-      <Popover label={<Icon name="more" label="More run actions" />} title="More run actions" variant="quiet" align="end">
-        {(close) => (
-          <div className={styles.menu}>
-            <Button
-              variant="quiet"
-              onClick={() => {
-                close();
-                onRescan();
-              }}
-            >
-              Rescan profiles
-            </Button>
-            <Button
-              variant="quiet"
-              onClick={() => {
-                close();
-                useUi.getState().openSettings("projects");
-              }}
-            >
-              Open run settings
-            </Button>
-          </div>
-        )}
-      </Popover>
+        <Popover label={<Icon name="more" label="More run actions" />} title="More run actions" variant="quiet" align="end">
+          {(close) => (
+            <div className={styles.menu}>
+              <Button
+                variant="quiet"
+                onClick={() => {
+                  close();
+                  onRescan();
+                }}
+              >
+                Rescan profiles
+              </Button>
+              <Button
+                variant="quiet"
+                onClick={() => {
+                  close();
+                  useUi.getState().openSettings("projects");
+                }}
+              >
+                Open run settings
+              </Button>
+            </div>
+          )}
+        </Popover>
+      </span>
     </div>
   );
 }

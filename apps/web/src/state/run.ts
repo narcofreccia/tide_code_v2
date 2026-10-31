@@ -15,6 +15,8 @@ export interface ProfilesEntry {
   loading: boolean;
   loaded: boolean;
   error?: string;
+  /** the server predates `run.*` (method-not-found): the panel shows a quiet note instead */
+  unsupported?: boolean;
 }
 
 interface RunState {
@@ -52,6 +54,13 @@ function setSession(projectId: string, session: RunSession | undefined): void {
 
 // ---- profiles ----
 
+/** An older tide-server answers `run.*` with `method-not-found` ("unknown method run.…"). */
+export function isMethodNotFound(error: unknown): boolean {
+  const code = (error as { code?: unknown } | null)?.code;
+  if (code === "method-not-found") return true;
+  return error instanceof Error && error.message.startsWith("unknown method ");
+}
+
 /** `run.profiles.get`, once per project unless `force`. */
 export async function loadProfiles(projectId: string, force = false): Promise<void> {
   const entry = useRun.getState().profiles[projectId];
@@ -63,7 +72,8 @@ export async function loadProfiles(projectId: string, force = false): Promise<vo
       profiles: { ...s.profiles, [projectId]: { repos, loading: false, loaded: true } },
     }));
   } catch (error) {
-    patchProfiles(projectId, { loading: false, loaded: true, error: errorText(error) });
+    if (isMethodNotFound(error)) patchProfiles(projectId, { loading: false, loaded: true, unsupported: true });
+    else patchProfiles(projectId, { loading: false, loaded: true, error: errorText(error) });
   }
 }
 
@@ -89,6 +99,7 @@ export interface RunProfilesView {
   loading: boolean;
   loaded: boolean;
   error: string | undefined;
+  unsupported: boolean;
   refresh: () => void;
   rescan: (repoId: string, useModel?: boolean) => Promise<RunRepo | undefined>;
 }
@@ -103,6 +114,7 @@ export function useRunProfiles(projectId: string | undefined): RunProfilesView {
     loading: entry?.loading ?? projectId !== undefined,
     loaded: entry?.loaded ?? false,
     error: entry?.error,
+    unsupported: entry?.unsupported ?? false,
     refresh: () => {
       if (projectId !== undefined) void loadProfiles(projectId, true);
     },

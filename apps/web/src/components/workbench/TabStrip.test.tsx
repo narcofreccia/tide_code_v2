@@ -1,8 +1,8 @@
-import { afterEach, describe, expect, it } from "vitest";
+import { afterEach, describe, expect, it, vi } from "vitest";
 import { act, cleanup, fireEvent, render, screen } from "@testing-library/react";
 import { resetUi } from "../../testHarness.ts";
 import { editDoc, useDocs } from "../../state/docs.ts";
-import { activeTab, openFileTab, tabKey, threadTabs, useThreadTabs } from "../../state/workbench.ts";
+import { activeTab, openFileTab, setActiveTab, tabKey, threadTabs, useActiveTab, useThreadTabs } from "../../state/workbench.ts";
 import { TabStrip } from "./TabStrip.tsx";
 
 afterEach(() => {
@@ -48,5 +48,71 @@ describe("TabStrip", () => {
   it("hints that the agent is writing in the worktree", () => {
     render(<Harness running />);
     expect(screen.getByText("agent running")).toBeTruthy();
+  });
+
+  describe("overflow", () => {
+    function size(el: HTMLElement, scrollWidth: number, clientWidth: number) {
+      Object.defineProperty(el, "scrollWidth", { configurable: true, value: scrollWidth });
+      Object.defineProperty(el, "clientWidth", { configurable: true, value: clientWidth });
+    }
+
+    it("scrolls the tabs in a hidden-scrollbar region, apart from the actions", () => {
+      render(
+        <TabStrip threadId="t1" tabs={[{ kind: "changes" }]} active={{ kind: "changes" }} running={false}>
+          <button type="button">Files</button>
+        </TabStrip>,
+      );
+      const list = screen.getByRole("tablist");
+      expect(list.classList.contains("scrollX")).toBe(true);
+      expect(list.contains(screen.getByText("Files"))).toBe(false);
+    });
+
+    it("reports which ends hide tabs in data-overflow", () => {
+      render(<Harness />);
+      const list = screen.getByRole("tablist");
+      expect(list.dataset.overflow).toBe("none");
+      size(list, 600, 200);
+      fireEvent.scroll(list);
+      expect(list.dataset.overflow).toBe("end");
+      list.scrollLeft = 200;
+      fireEvent.scroll(list);
+      expect(list.dataset.overflow).toBe("both");
+      list.scrollLeft = 400;
+      fireEvent.scroll(list);
+      expect(list.dataset.overflow).toBe("start");
+    });
+
+    it("turns a vertical wheel into horizontal scroll when the tabs overflow", () => {
+      render(<Harness />);
+      const list = screen.getByRole("tablist");
+      fireEvent.wheel(list, { deltaY: 80 });
+      expect(list.scrollLeft).toBe(0);
+      size(list, 600, 200);
+      const notCancelled = fireEvent.wheel(list, { deltaY: 80 });
+      expect(list.scrollLeft).toBe(80);
+      expect(notCancelled).toBe(false);
+      fireEvent.wheel(list, { deltaX: 30, deltaY: 5 });
+      expect(list.scrollLeft).toBe(80);
+    });
+
+    it("scrolls the active tab into view when it changes", () => {
+      const spy = vi.fn();
+      const original = HTMLElement.prototype.scrollIntoView;
+      HTMLElement.prototype.scrollIntoView = spy;
+      try {
+        openFileTab("t1", "src/a.ts");
+        openFileTab("t1", "src/b.ts");
+        function Live() {
+          return <TabStrip threadId="t1" tabs={useThreadTabs("t1")} active={useActiveTab("t1")} running={false} />;
+        }
+        render(<Live />);
+        spy.mockClear();
+        act(() => setActiveTab("t1", { kind: "file", path: "src/a.ts" }));
+        expect(spy).toHaveBeenCalledWith({ inline: "nearest", block: "nearest" });
+        expect(spy.mock.contexts.at(-1)).toBe(screen.getByTitle("src/a.ts"));
+      } finally {
+        HTMLElement.prototype.scrollIntoView = original;
+      }
+    });
   });
 });

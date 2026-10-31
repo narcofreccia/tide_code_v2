@@ -27,13 +27,36 @@
 /* pages paint their own background; white under them matches a browser tab */
 .frame { flex: 1; width: 100%; min-height: 0; border: 0; background: #fff; }
 
-.ports { display: flex; flex-direction: column; min-width: 240px; }
-.port { font-family: var(--font-mono); font-variant-numeric: tabular-nums; margin-right: var(--sp-2); }
-.command { color: var(--muted); overflow: hidden; text-overflow: ellipsis; white-space: nowrap; }
-.note { margin: 0; padding: var(--sp-2); color: var(--muted); font-size: var(--fs-sm); max-width: 280px; }
-.picker { display: flex; flex-direction: column; min-width: 280px; }
-.empty { display: flex; flex-direction: column; align-items: flex-start; gap: var(--sp-1); padding-bottom: var(--sp-2); }
-.empty > button { margin-left: var(--sp-2); }
-.manual { display: flex; align-items: center; gap: var(--sp-2); padding: var(--sp-2); border-top: 1px solid var(--border); }
-/* R13: the run stack under the empty state; wide enough for a row's hover actions */
-.run { align-self: stretch; width: min(480px, 80vw); border-top: 1px solid var(--border); }
+/* the Preview popover: a fixed-width panel that scrolls vertically only; the URL row stays at the bottom.
+   role-qualified so it outranks ui/Popover's own .panel whatever the stylesheet order */
+[role="dialog"].panel {
+  width: min(560px, calc(100vw - 2 * var(--sp-4)));
+  max-width: none;
+  padding: 0;
+  gap: 0;
+  overflow-x: hidden;
+  overflow-y: auto;
+}
+.picker { display: flex; flex-direction: column; min-width: 0; max-height: min(70vh, 640px); }
+.body { flex: 1 1 auto; min-width: 0; min-height: 0; overflow-x: hidden; overflow-y: auto; }
+
+.ports { display: flex; flex-direction: column; min-width: 0; padding: var(--sp-1) 0; }
+.ports > button { justify-content: flex-start; min-width: 0; }
+.port { flex: none; font-family: var(--font-mono); font-variant-numeric: tabular-nums; margin-right: var(--sp-2); }
+.command { min-width: 0; color: var(--muted); overflow: hidden; text-overflow: ellipsis; white-space: nowrap; }
+.note { margin: 0; min-width: 0; color: var(--muted); font-size: var(--fs-sm); overflow-wrap: anywhere; }
+.empty { display: flex; flex-direction: column; min-width: 0; }
+.emptyLine { display: flex; flex-wrap: wrap; align-items: center; justify-content: space-between; gap: var(--sp-2); padding: var(--sp-2) var(--sp-2) var(--sp-2) var(--sp-3); }
+.manual {
+  flex: none;
+  display: flex;
+  flex-wrap: wrap;
+  align-items: center;
+  gap: var(--sp-1) var(--sp-2);
+  min-width: 0;
+  padding: var(--sp-2);
+  border-top: 1px solid var(--border);
+}
+.help { flex-basis: 100%; margin: 0; color: var(--muted); font-size: var(--fs-xs); overflow-wrap: anywhere; }
+/* R13: the run stack under the empty state */
+.run { min-width: 0; border-top: 1px solid var(--border); }

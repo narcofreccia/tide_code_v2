@@ -1,5 +1,5 @@
 import { afterEach, describe, expect, it } from "vitest";
-import { cleanup, render, screen } from "@testing-library/react";
+import { cleanup, fireEvent, render, screen } from "@testing-library/react";
 import type { Activity, ActivityOf, Turn } from "@tide/contracts";
 import { attachFakeStore, makeThread, makeTurn, modelWithTurns, resetUi } from "../../testHarness.ts";
 import { ActivityRow } from "./ActivityRow.tsx";
@@ -44,7 +44,7 @@ describe("ChildGroup settling", () => {
     setup("running");
     render(
       <ul>
-        <ChildGroup child={child} activities={[]} />
+        <ChildGroup child={child} activities={[tool]} />
       </ul>,
     );
     expect(subagentButton().textContent).toContain("…");
@@ -72,16 +72,17 @@ describe("ChildGroup settling", () => {
   });
 
   it.each(["completed", "error", "interrupted"] as const)(
-    "renders a still-running sub-agent as done once its turn is %s",
+    "shows a sub-agent never reported back as 'no result yet' once its turn is %s — no spinner, no check",
     (status) => {
       setup(status);
       render(
         <ul>
-          <ChildGroup child={child} activities={[]} />
+          <ChildGroup child={{ ...child, summary: undefined }} activities={[tool]} />
         </ul>,
       );
-      expect(subagentButton().textContent).toContain("✓");
       expect(subagentButton().textContent).not.toContain("…");
+      expect(screen.queryByLabelText("done")).toBeNull();
+      expect(screen.getAllByText(/no result reported yet/).length).toBeGreaterThan(0);
       expect(subagentButton().getAttribute("aria-expanded")).toBe("false");
     },
   );
@@ -106,5 +107,55 @@ describe("ChildGroup settling", () => {
     );
     const row = screen.getByRole("button", { name: /Read/ }).closest("li");
     expect(row?.textContent).toContain("…");
+  });
+});
+
+describe("ChildGroup report", () => {
+  const done: ActivityOf<"child"> = {
+    ...child,
+    status: "done",
+    description: "Explore",
+    summary: "Findings",
+    report: "## Findings\n\n- the stream renders in **Stream.tsx**",
+  };
+
+  it("shows name, type pill, state and one-line summary, then the report as markdown on click", () => {
+    setup("completed");
+    render(
+      <ul>
+        <ChildGroup child={done} activities={[]} />
+      </ul>,
+    );
+    const button = subagentButton();
+    expect(button.textContent).toContain("Explore");
+    expect(button.textContent).toContain("Findings");
+    expect(screen.getByLabelText("done")).toBeDefined();
+    expect(screen.queryByTestId("child-report")).toBeNull();
+    fireEvent.click(button);
+    const report = screen.getByTestId("child-report");
+    expect(report.querySelector("strong")?.textContent).toBe("Stream.tsx");
+    expect(report.querySelector("h2")?.textContent).toBe("Findings");
+  });
+
+  it("clips a long report behind Show all", () => {
+    setup("completed");
+    render(
+      <ul>
+        <ChildGroup child={{ ...done, report: "line\n\n".repeat(400) }} activities={[]} />
+      </ul>,
+    );
+    fireEvent.click(subagentButton());
+    fireEvent.click(screen.getByRole("button", { name: "Show all" }));
+    expect(screen.getByRole("button", { name: "Show less" })).toBeDefined();
+  });
+
+  it("keeps the open-as-thread link", () => {
+    setup("completed");
+    render(
+      <ul>
+        <ChildGroup child={{ ...done, childThreadId: "t2" }} activities={[]} />
+      </ul>,
+    );
+    expect(screen.getByRole("button", { name: "open as thread" })).toBeDefined();
   });
 });

@@ -65,4 +65,20 @@ describe("Popover", () => {
     fireEvent.mouseDown(screen.getByRole("button", { name: "outside" }));
     expect(screen.queryByRole("dialog")).toBeNull();
   });
+
+  it("adds a caller's panel class and lines the panel up with the trigger's end edge", () => {
+    render(
+      <Popover label="Wide" align="end" panelClassName="wide">
+        {() => <p>content</p>}
+      </Popover>,
+    );
+    const trigger = screen.getByRole("button", { name: "Wide" });
+    (trigger.parentElement as HTMLElement).getBoundingClientRect = () => ({ top: 10, bottom: 30, left: 500, right: 600, width: 100, height: 20, x: 500, y: 10, toJSON: () => ({}) });
+    fireEvent.click(trigger);
+    const panel = screen.getByRole("dialog");
+    expect(panel.className).toContain("wide");
+    // jsdom measures 0 wide: an end-aligned panel starts at the anchor's right edge
+    expect(panel.style.left).toBe("600px");
+    expect(panel.style.position).toBe("fixed");
+  });
 });

@@ -790,6 +790,8 @@ export const ChildActivity = Type.Object({
   status: Type.Union([Type.Literal("running"), Type.Literal("done"), Type.Literal("error")]),
   childThreadId: Type.Optional(Type.String()),
   summary: Type.Optional(Type.String()),
+  /** the sub-agent's final result text (markdown), capped by the driver at 8 KB with a trailing "…" */
+  report: Type.Optional(Type.String()),
 });
 export const InfoActivity = Type.Object({
   ...ActivityBase,

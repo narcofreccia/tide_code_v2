@@ -1,4 +1,4 @@
-import { useState } from "react";
+import { useEffect, useRef, useState } from "react";
 import { useIsDirty } from "../../state/docs.ts";
 import { fileGlyph } from "../../lib/fileIcons.ts";
 import {
@@ -12,6 +12,8 @@ import {
 import { Button } from "../ui/Button.tsx";
 import { Icon } from "../ui/Icon.tsx";
 import styles from "./Workbench.module.css";
+import strip from "./TabStrip.module.css";
+import { useOverflowEdge, useWheelScrollX } from "./useWheelScrollX.ts";
 
 function label(tab: WorkbenchTab): string {
   if (tab.kind === "changes") return "Changes";
@@ -87,49 +89,66 @@ export function TabStrip({
 }) {
   const [dragging, setDragging] = useState<number | null>(null);
   const activeKey = tabKey(active);
+  const scroller = useRef<HTMLDivElement>(null);
+  useWheelScrollX(scroller);
+  const edge = useOverflowEdge(scroller, tabs.length);
+
+  useEffect(() => {
+    const el = scroller.current?.querySelector<HTMLElement>('[role="tab"][aria-selected="true"]');
+    el?.scrollIntoView?.({ inline: "nearest", block: "nearest" });
+  }, [activeKey]);
 
   return (
-    <div className={styles.tabs} role="tablist" aria-label="Workbench tabs">
-      {tabs.map((tab, index) =>
-        tab.kind === "file" ? (
-          <FileTabButton
-            key={tabKey(tab)}
-            threadId={threadId}
-            tab={tab}
-            index={index}
-            active={tabKey(tab) === activeKey}
-            onDragStart={setDragging}
-            onDrop={(to) => {
-              if (dragging !== null) moveTab(threadId, dragging, to);
-              setDragging(null);
-            }}
-          />
-        ) : (
-          <span key={tabKey(tab)} className={styles.tabWrap}>
-            <button
-              type="button"
-              role="tab"
-              aria-selected={tabKey(tab) === activeKey}
-              className={`${styles.tab} ${tabKey(tab) === activeKey ? styles.active : ""}`}
-              onClick={() => setActiveTab(threadId, tab)}
-            >
-              {label(tab)}
-            </button>
-            {tab.kind === "changes" ? null : (
-              <Button variant="quiet" className={styles.close} aria-label={`Close ${label(tab)}`} onClick={() => closeTab(threadId, tab)}>
-                <Icon name="close" size={12} />
-              </Button>
-            )}
+    <div className={strip.strip}>
+      <div
+        ref={scroller}
+        className={`scrollX ${strip.scroll}`}
+        role="tablist"
+        aria-label="Workbench tabs"
+        data-overflow={edge}
+      >
+        {tabs.map((tab, index) =>
+          tab.kind === "file" ? (
+            <FileTabButton
+              key={tabKey(tab)}
+              threadId={threadId}
+              tab={tab}
+              index={index}
+              active={tabKey(tab) === activeKey}
+              onDragStart={setDragging}
+              onDrop={(to) => {
+                if (dragging !== null) moveTab(threadId, dragging, to);
+                setDragging(null);
+              }}
+            />
+          ) : (
+            <span key={tabKey(tab)} className={styles.tabWrap}>
+              <button
+                type="button"
+                role="tab"
+                aria-selected={tabKey(tab) === activeKey}
+                className={`${styles.tab} ${tabKey(tab) === activeKey ? styles.active : ""}`}
+                onClick={() => setActiveTab(threadId, tab)}
+              >
+                {label(tab)}
+              </button>
+              {tab.kind === "changes" ? null : (
+                <Button variant="quiet" className={styles.close} aria-label={`Close ${label(tab)}`} onClick={() => closeTab(threadId, tab)}>
+                  <Icon name="close" size={12} />
+                </Button>
+              )}
+            </span>
+          ),
+        )}
+      </div>
+      <div className={strip.actions}>
+        {running ? (
+          <span className={styles.running} title="The agent is writing in this worktree">
+            agent running
           </span>
-        ),
-      )}
-      {running ? (
-        <span className={styles.running} title="The agent is writing in this worktree">
-          agent running
-        </span>
-      ) : null}
-      <span className={styles.spacer} />
-      {children}
+        ) : null}
+        {children}
+      </div>
     </div>
   );
 }

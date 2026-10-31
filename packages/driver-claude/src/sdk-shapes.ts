@@ -76,7 +76,11 @@ export interface SystemOtherMessage {
   /** housekeeping tasks the CLI itself hides from the transcript */
   ambient?: boolean;
   skip_transcript?: boolean;
-  patch?: { status?: string; description?: string; error?: string };
+  patch?: { status?: string; description?: string; error?: string; is_backgrounded?: boolean };
+  /** task_started: registered in the background (its tool_result is a placeholder, the result comes as task_notification) */
+  is_backgrounded?: boolean;
+  /** task_notification: completed | failed | stopped */
+  status?: string;
 }
 
 export interface AssistantMessage {

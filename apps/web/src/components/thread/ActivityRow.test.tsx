@@ -123,4 +123,22 @@ describe("tool rows", () => {
     expect(screen.getByRole("img", { name: "done" })).toBeDefined();
     expect(row.textContent).toContain("1.2s");
   });
+
+  it("summarises a JSON reply in one line and folds the pretty-printed raw payloads into the details", () => {
+    setup();
+    const output = '{"success":true,"message":"Resuming agent a1d3f1e","resumedAgentId":"a1"}';
+    render(
+      <ul>
+        <ActivityRow activity={makeTool("a2", { toolName: "SendMessage", input: { to: "a1", message: "carry on" }, status: "ok", output })} />
+      </ul>,
+    );
+    expect(screen.getByText("Resuming agent a1d3f1e")).toBeDefined();
+    expect(screen.queryByText(output)).toBeNull();
+    fireEvent.click(screen.getByRole("button", { name: /SendMessage/ }));
+    const pres = Array.from(document.querySelectorAll("pre")).map((p) => p.textContent);
+    expect(pres).toContain(JSON.stringify(JSON.parse(output), null, 2));
+    expect(pres).toContain(JSON.stringify({ to: "a1", message: "carry on" }, null, 2));
+    expect(screen.getByRole("button", { name: "Copy output" })).toBeDefined();
+  });
 });
+

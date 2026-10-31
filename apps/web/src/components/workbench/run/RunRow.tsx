@@ -40,6 +40,18 @@ function openablePort(item: StackService, status: RunServiceStatus | undefined, 
   return previewPort(ports);
 }
 
+const TAIL = 14;
+
+/**
+ * Splits a long command for a middle ellipsis: the head shrinks with `…`, the tail (the script or
+ * last flag, usually what tells two commands apart) always shows. Short commands stay whole.
+ */
+export function splitCommand(command: string): { head: string; tail: string } {
+  const flat = command.replace(/\s+/g, " ").trim();
+  if (flat.length <= TAIL * 2) return { head: flat, tail: "" };
+  return { head: flat.slice(0, -TAIL), tail: flat.slice(-TAIL) };
+}
+
 /** One stack service: toggle · state dot · name · kind · ports · hover actions; reason below when it failed. */
 export function RunRow({
   projectId,
@@ -65,6 +77,8 @@ export function RunRow({
   const port = openablePort(item, status, planRow);
   const reason = state === "failed" ? status?.reason : undefined;
   const blocked = !live && planRow?.blocked !== undefined ? planRow.blocked : undefined;
+  const command = splitCommand(service.command);
+  const env = Object.entries(service.env);
 
   return (
     <div className={styles.row} data-service={key}>
@@ -83,6 +97,10 @@ export function RunRow({
         />
         <span className={styles.name}>{service.name}</span>
         {service.kind === undefined ? null : <Pill size="sm">{service.kind}</Pill>}
+        <span className={styles.command} title={service.command}>
+          <span className={styles.commandHead}>{command.head}</span>
+          {command.tail === "" ? null : <span className={styles.commandTail}>{command.tail}</span>}
+        </span>
         <span className={styles.ports}>
           {ports.map((p) => (
             <span
@@ -132,6 +150,15 @@ export function RunRow({
           ) : null}
         </span>
       </div>
+      {env.length === 0 ? null : (
+        <span className={styles.envChips} aria-label={`Environment of ${service.name}`}>
+          {env.map(([k, v]) => (
+            <span key={k} className={styles.envChip} title={`${k}=${v}`}>
+              {k}={v}
+            </span>
+          ))}
+        </span>
+      )}
       {reason === undefined ? null : <p className={styles.reason}>{reason}</p>}
       {blocked === undefined ? null : <p className={`${styles.reason} ${styles.blocked}`}>{blocked}</p>}
     </div>

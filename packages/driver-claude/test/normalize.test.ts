@@ -245,3 +245,54 @@ describe("rate_limit_event", () => {
     expect(limited[0]).toMatchObject({ rateLimit: { status: "limited" } });
   });
 });
+
+describe("sub-agent reports", () => {
+  const sid = "s1";
+  const children = (events: NormalizedEvent[]) =>
+    events.flatMap((event) => (event.type === "activity" && event.activity.kind === "child" ? [event.activity] : []));
+
+  it("carries the Task tool_result onto the child row as its report", () => {
+    const n = new ClaudeNormalizer({ partialMessages: true });
+    const frames: ClaudeMessage[] = [
+      { type: "assistant", parent_tool_use_id: null, message: { id: "m1", content: [{ type: "tool_use", id: "toolu_t", name: "Task", input: { description: "Survey the chat UI", subagent_type: "Explore", prompt: "look" } }] } },
+      { type: "system", subtype: "task_started", task_id: "task_1", tool_use_id: "toolu_t", description: "Survey the chat UI", subagent_type: "Explore", session_id: sid },
+      { type: "system", subtype: "task_progress", task_id: "task_1", description: "Survey the chat UI", last_tool_name: "Grep", session_id: sid },
+      {
+        type: "user",
+        parent_tool_use_id: null,
+        message: { content: [{ type: "tool_result", tool_use_id: "toolu_t", content: [{ type: "text", text: "## Findings\n\nThe stream renders rows in Stream.tsx." }, { type: "text", text: "agentId: a1" }] }] },
+      },
+    ];
+    const events = frames.flatMap((frame) => n.next(frame));
+    const rows = children(events);
+    expect(new Set(rows.map((row) => row.childKey))).toEqual(new Set(["toolu_t"]));
+    const last = rows.at(-1);
+    expect(last).toMatchObject({ status: "done", name: "Survey the chat UI", description: "Explore", summary: "Findings" });
+    expect(last?.report).toContain("The stream renders rows in Stream.tsx.");
+  });
+
+  it("caps a long report at 8 KB with a trailing ellipsis", () => {
+    const n = new ClaudeNormalizer({ partialMessages: true });
+    n.next({ type: "assistant", parent_tool_use_id: null, message: { content: [{ type: "tool_use", id: "t", name: "Agent", input: { description: "big" } }] } });
+    const events = n.next({ type: "user", parent_tool_use_id: null, message: { content: [{ type: "tool_result", tool_use_id: "t", content: "x".repeat(20000) }] } });
+    const report = children(events).at(-1)?.report ?? "";
+    expect(report.length).toBe(8193);
+    expect(report.endsWith("…")).toBe(true);
+  });
+
+  it("keeps a backgrounded sub-agent running past its placeholder, then settles it on task_notification", () => {
+    const n = new ClaudeNormalizer({ partialMessages: true });
+    n.next({ type: "assistant", parent_tool_use_id: null, message: { content: [{ type: "tool_use", id: "t", name: "Agent", input: { description: "bg", subagent_type: "Explore" } }] } });
+    n.next({ type: "system", subtype: "task_started", task_id: "k", tool_use_id: "t", description: "bg", is_backgrounded: true, session_id: sid });
+    const placeholder = n.next({ type: "user", parent_tool_use_id: null, message: { content: [{ type: "tool_result", tool_use_id: "t", content: "Async agent launched successfully." }] } });
+    expect(children(placeholder)).toHaveLength(0);
+    const done = n.next({ type: "system", subtype: "task_notification", task_id: "k", status: "completed", summary: 'Agent "bg" completed', session_id: sid });
+    expect(children(done)[0]).toMatchObject({ childKey: "t", status: "done", summary: 'Agent "bg" completed', description: "Explore" });
+    const delivered = n.next({
+      type: "user",
+      parent_tool_use_id: null,
+      message: { content: "<task-notification>\n<task-id>k</task-id>\n<status>completed</status>\n<summary>done</summary>\n<result>All 3 files surveyed.</result>\n</task-notification>" },
+    });
+    expect(children(delivered)[0]).toMatchObject({ childKey: "t", status: "done", report: "All 3 files surveyed." });
+  });
+});

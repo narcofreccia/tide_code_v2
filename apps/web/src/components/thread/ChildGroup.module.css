@@ -1,0 +1,64 @@
+/* the sub-agent type (Explore, general-purpose …) beside its name */
+.type { flex: none; }
+.summary {
+  flex: 1;
+  min-width: 0;
+  overflow: hidden;
+  text-overflow: ellipsis;
+  white-space: nowrap;
+  font-size: var(--fs-sm);
+  color: var(--muted);
+}
+.reportWrap {
+  max-width: var(--measure-wide);
+  margin: var(--sp-1) 0 var(--sp-2);
+  display: flex;
+  flex-direction: column;
+  align-items: flex-start;
+  gap: var(--sp-1);
+}
+.report {
+  width: 100%;
+  padding: var(--sp-2) var(--sp-3);
+  background: var(--surface);
+  border: 1px solid var(--border);
+  border-radius: var(--radius-sm);
+  font-size: var(--fs-sm);
+  line-height: 1.55;
+  color: var(--text);
+  overflow-wrap: anywhere;
+}
+.clipped { max-height: 320px; overflow: hidden; }
+.showAll { font-size: var(--fs-sm); }
+.report > :global(*:first-child) { margin-top: 0; }
+.report > :global(*:last-child) { margin-bottom: 0; }
+.report :global(p) { margin: 0 0 0.6em; }
+.report :global(:is(h1, h2, h3, h4, h5, h6)) {
+  margin: 1em 0 0.4em;
+  font-size: var(--fs-base);
+  font-weight: var(--fw-semibold);
+  line-height: var(--lh-tight);
+}
+.report :global(:is(ul, ol)) { margin: 0.2em 0 0.6em; padding-left: 1.25em; }
+.report :global(ul) { list-style: disc; }
+.report :global(ol) { list-style: decimal; }
+.report :global(code) {
+  font-family: var(--font-mono);
+  font-size: var(--fs-xs);
+  background: var(--surface-2);
+  border-radius: var(--radius-sm);
+  padding: 0.1em 0.3em;
+}
+.report :global(pre) {
+  margin: 0 0 0.6em;
+  padding: var(--sp-2);
+  overflow-x: auto;
+  background: var(--bg);
+  border: 1px solid var(--border);
+  border-radius: var(--radius-sm);
+}
+.report :global(pre code) { background: none; padding: 0; }
+.report :global(a) { color: var(--accent); text-decoration: none; }
+.report :global(a:hover) { text-decoration: underline; }
+.report :global(table) { display: block; overflow-x: auto; border-collapse: collapse; }
+.report :global(:is(th, td)) { padding: var(--sp-1) var(--sp-2); border: 1px solid var(--border); }
