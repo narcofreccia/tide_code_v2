@@ -1,17 +1,36 @@
-.user { display: flex; flex-direction: column; align-items: flex-end; }
-.assistant { display: flex; flex-direction: column; align-items: flex-start; }
+/*
+ * One left edge for both roles (docs/design/ui.md § Thread): the stream column is
+ * min(100%, var(--measure-wide)); prose and the user block cap at --measure, code, tables and
+ * diagrams may use the full column.
+ */
+.user,
+.assistant { display: flex; flex-direction: column; align-items: stretch; min-width: 0; }
 .body {
-  max-width: 88%;
-  white-space: pre-wrap;
-  word-break: break-word;
+  min-width: 0;
+  font-size: var(--fs-base);
+  line-height: 1.6;
+  overflow-wrap: anywhere;
 }
+/* plain text from the user keeps its own line breaks; rendered markdown does not */
 .body[data-role="user"] {
+  max-width: var(--measure);
+  white-space: pre-wrap;
   background: var(--surface-2);
   border: 1px solid var(--border);
   border-radius: var(--radius);
-  padding: 5px 8px;
-  color: var(--muted);
+  padding: var(--sp-2) var(--sp-3);
+  color: var(--text);
 }
+.who {
+  display: flex;
+  align-items: center;
+  gap: var(--sp-2);
+  max-width: var(--measure);
+  min-height: var(--activity-h);
+  color: var(--muted);
+  font-size: var(--fs-xs);
+}
+.who > .turnMenu { margin-left: auto; }
 /* streaming caret: a soft accent bar that breathes; static under reduced motion */
 .caret {
   display: inline-block;
@@ -49,42 +68,66 @@
   }
 }
 
+/* inline so the held-out tail (StreamTail) and the caret run on after the last block */
 .markdown { display: inline; }
 .markdown > :global(*:first-child) { margin-top: 0; }
 .markdown > :global(*:last-child) { margin-bottom: 0; }
-.markdown :global(p) { margin: 0 0 var(--sp-2); }
-.markdown :global(ul),
-.markdown :global(ol) { margin: 0 0 var(--sp-2); padding-left: var(--sp-4); }
-.markdown :global(h1),
-.markdown :global(h2),
-.markdown :global(h3) { font-size: var(--fs-base); margin: var(--sp-3) 0 var(--sp-2); }
-.markdown :global(a) { color: var(--accent); }
+.markdown :global(:is(p, ul, ol, h1, h2, h3, h4, h5, h6, blockquote, hr)) { max-width: var(--measure); }
+.markdown :global(p) { margin: 0 0 0.75em; }
+.markdown :global(:is(h1, h2, h3, h4, h5, h6)) {
+  margin: 1.25em 0 0.5em;
+  line-height: var(--lh-tight);
+  font-weight: var(--fw-semibold);
+}
+.markdown :global(h1) { font-size: var(--fs-lg); }
+.markdown :global(h2) { font-size: var(--fs-md); }
+.markdown :global(:is(h3, h4, h5, h6)) { font-size: var(--fs-base); }
+.markdown :global(:is(ul, ol)) { margin: 0.25em 0 0.75em; padding-left: 1.25em; }
+.markdown :global(ul) { list-style: disc; }
+.markdown :global(ol) { list-style: decimal; }
+.markdown :global(li + li) { margin-top: 0.2em; }
+.markdown :global(li > :is(ul, ol)) { margin: 0.2em 0 0; }
+.markdown :global(li > p) { margin-bottom: 0.25em; }
+.markdown :global(strong) { font-weight: var(--fw-semibold); }
+.markdown :global(a) { color: var(--accent); text-decoration: none; }
+.markdown :global(a:hover) { text-decoration: underline; }
 .markdown :global(code) {
   font-family: var(--font-mono);
-  font-size: var(--fs-xs);
+  font-size: var(--fs-sm);
   background: var(--surface-2);
-  border: 1px solid var(--border);
-  border-radius: var(--radius-sm);
-  padding: 0 3px;
+  border-radius: 3px;
+  padding: 0.1em 0.3em;
 }
 .markdown :global(pre) {
-  margin: 0 0 var(--sp-2);
-  padding: var(--sp-2);
+  margin: 0 0 0.75em;
+  padding: var(--sp-3);
   overflow-x: auto;
-  background: var(--surface-2);
+  white-space: pre;
+  background: var(--surface);
   border: 1px solid var(--border);
   border-radius: var(--radius);
+  font-size: var(--fs-sm);
+  line-height: var(--lh-body);
 }
-.markdown :global(pre code) { border: none; background: none; padding: 0; }
-.markdown :global(table) { border-collapse: collapse; }
-.markdown :global(th),
-.markdown :global(td) { border: 1px solid var(--border); padding: 2px 6px; }
+.markdown :global(pre code) { background: none; padding: 0; border-radius: 0; }
+.markdown :global(table) {
+  display: block;
+  max-width: 100%;
+  overflow-x: auto;
+  margin: 0 0 0.75em;
+  border-collapse: collapse;
+  font-size: var(--fs-sm);
+  line-height: var(--lh-body);
+}
+.markdown :global(:is(th, td)) { border: 1px solid var(--border); padding: 2px var(--sp-2); text-align: left; }
+.markdown :global(th) { font-weight: var(--fw-medium); }
 .markdown :global(blockquote) {
-  margin: 0 0 var(--sp-2);
+  margin: 0 0 0.75em;
   padding-left: var(--sp-3);
-  border-left: 2px solid var(--border);
+  border-left: 2px solid var(--border-strong);
   color: var(--muted);
 }
+.markdown :global(hr) { height: 0; margin: 1em 0; border: none; border-top: 1px solid var(--border); }
 
 .queued { display: inline-flex; align-items: center; gap: var(--sp-1); margin-right: var(--sp-2); }
 .drop {
@@ -99,20 +142,26 @@
 
 .attachments { display: inline-flex; flex-wrap: wrap; gap: var(--sp-1); margin-left: var(--sp-1); }
 
+/* collapsed by default: one 24px line like a tool group */
 .reasoning { display: block; margin-bottom: var(--sp-1); }
 .reasoningToggle {
   display: inline-flex;
   align-items: center;
-  gap: var(--sp-1);
+  gap: var(--sp-2);
+  height: var(--activity-h);
   border: none;
+  border-radius: var(--radius-sm);
   background: none;
-  padding: 0;
+  padding: 0 var(--sp-2);
+  margin-left: calc(-1 * var(--sp-2));
   color: var(--muted);
   font-size: var(--fs-sm);
+  line-height: var(--lh-tight);
   cursor: pointer;
 }
-.reasoningToggle:hover { color: var(--text); }
+.reasoningToggle:hover { background: var(--surface-hover); color: var(--text); }
 .reasoningBody {
+  max-width: var(--measure);
   margin: var(--sp-1) 0 0;
   padding-left: var(--sp-2);
   border-left: 1px solid var(--border);
@@ -125,12 +174,13 @@
   color: var(--muted);
 }
 
+/* the turn footer: one quiet line under the reply */
 .meta {
   display: flex;
   gap: var(--sp-2);
-  padding: 2px var(--sp-1) 0;
+  margin-top: var(--sp-4);
   color: var(--muted);
-  font-size: var(--fs-sm);
+  font-size: var(--fs-xs);
   font-variant-numeric: tabular-nums;
 }
 .meta[data-tone="error"] { color: var(--danger); }

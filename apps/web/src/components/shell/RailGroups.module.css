@@ -20,8 +20,11 @@
   letter-spacing: var(--ls-label);
   text-transform: uppercase;
 }
-.needs .label { color: var(--st-needs); }
+.needs .label,
+.needs .count { color: var(--st-needs); }
 .count { font-size: var(--fs-xs); font-variant-numeric: tabular-nums; }
+/* a tiny pulsing dot: something in this group is running */
+.runningDot { display: inline-flex; align-items: center; transform: scale(0.75); }
 .clear {
   height: 20px;
   padding: 0 var(--sp-2);

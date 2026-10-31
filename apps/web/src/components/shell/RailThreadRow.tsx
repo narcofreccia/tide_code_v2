@@ -25,6 +25,8 @@ import { MergeGlyph } from "../ui/VcsBadges.tsx";
 import { Icon } from "../ui/Icon.tsx";
 import { firstGrapheme } from "../ui/ProjectIcon.tsx";
 import { snoozeItems, threadMenu } from "./railMenus.ts";
+import { liveLabelFor, liveLabelKey, parseLiveLabelKey } from "../../lib/liveLabel.ts";
+import { RailLiveLine, recedes } from "./RailLiveLine.tsx";
 import styles from "./RailThreadRow.module.css";
 
 const ROLE_GLYPH: Record<NonNullable<Thread["role"]>, string> = {
@@ -112,6 +114,9 @@ export function RailThreadRow({ thread, siblings, showProject = false, hit }: Ra
   const projectTitle = useModel((s) => (showProject ? s.model.projects[thread.projectId]?.title : undefined));
   const selectedId = useUi((s) => (s.view === "thread" ? s.selectedThreadId : null));
   const unread = useLastSeen((s) => isUnread(thread, count, s, selectedId));
+  // a string from the store, not an object: a fresh object per render would loop the selector
+  const liveKey = useModel((s) => liveLabelKey(liveLabelFor(s.model, s.model.threads[thread.id] ?? thread)));
+  const live = parseLiveLabelKey(liveKey);
   const snoozeAsked = useRailMenuRequest((s) => s.snoozeFor === thread.id);
   const settled = thread.settledAt !== undefined;
   const [menu, setMenu] = useState<{ at: MenuPosition; items: MenuItem[]; label: string } | undefined>(undefined);
@@ -123,7 +128,7 @@ export function RailThreadRow({ thread, siblings, showProject = false, hit }: Ra
   const children = siblings.filter((t) => parentOf(t) === thread.id);
   const archived = thread.archivedAt !== undefined;
   const state = threadStateKey(thread);
-  const loud = state === "needs" || state === "running";
+  const recede = recedes({ state, unread, active, picked, live });
   const merged = thread.merge !== undefined || isThreadMerged(thread);
   const mergeable = !archived && canMergeBack(thread);
   const snoozedUntil = thread.snoozedUntil !== undefined && thread.snoozedUntil > Date.now() ? thread.snoozedUntil : undefined;
@@ -164,6 +169,7 @@ export function RailThreadRow({ thread, siblings, showProject = false, hit }: Ra
           .filter(Boolean)
           .join(" ")}
         data-rail-thread={thread.id}
+        data-recede={recede ? "" : undefined}
         draggable={!renaming}
         onDragStart={(e) => {
           // R11: dropped on the composer, it becomes an @thread context mention
@@ -211,7 +217,7 @@ export function RailThreadRow({ thread, siblings, showProject = false, hit }: Ra
                   ⛓
                 </span>
               ) : null}
-              <span className={`${styles.title} ${loud ? styles.loud : ""}`}>{thread.title}</span>
+              <span className={styles.title}>{thread.title}</span>
               {thread.pinned && !archived ? <Icon name="pin" size={12} label="pinned" className={styles.pinMark ?? ""} /> : null}
               {unread ? <span className={styles.unread} aria-label="unread" role="img" title="New activity" /> : null}
               <span className={styles.meta}>
@@ -226,7 +232,9 @@ export function RailThreadRow({ thread, siblings, showProject = false, hit }: Ra
                 <span className={styles.time}>{relativeTime(thread.updatedAt)}</span>
               </span>
             </span>
-            {hasTags ? (
+            {live !== undefined && hit === undefined ? (
+              <RailLiveLine live={live} />
+            ) : hasTags ? (
               <span className={styles.tags}>
                 {hit !== undefined ? (
                   <span className={styles.snippet} title={hit.snippet}>

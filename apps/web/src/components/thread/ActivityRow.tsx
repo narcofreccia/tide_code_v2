@@ -8,11 +8,18 @@ import { useUi } from "../../state/ui.ts";
 import { openFileTab } from "../../state/workbench.ts";
 import { normalizePastedPath } from "../../lib/mentions.ts";
 import { Button } from "../ui/Button.tsx";
+import { Icon } from "../ui/Icon.tsx";
 import { useTurnSettled } from "./activities/turnSettled.ts";
 import { LiveLabel } from "./LiveLabel.tsx";
 import styles from "./ActivityRow.module.css";
 
-const MARK: Record<string, string> = { ok: "✓", error: "✕", running: "…" };
+/** The fixed 16px status column: a check, a cross, or the live "…" while the call runs. */
+function StatusMark({ status, live }: { status: string; live: boolean }) {
+  if (live) return <LiveLabel text="…" />;
+  if (status === "ok") return <Icon name="check" size={12} label="done" />;
+  if (status === "error") return <Icon name="close" size={12} label="failed" />;
+  return null;
+}
 
 /** A harness that refuses because nobody is logged in says so in these words. */
 const AUTH_ERROR = /401|not logged in|unauthenticated|login/i;
@@ -82,6 +89,19 @@ function ErrorActivity({ activity }: { activity: NoteActivity }) {
   );
 }
 
+const FULL_TARGET_KEYS = ["file_path", "filePath", "path", "notebook_path", "file", "command", "cmd", "script"];
+
+/** The untruncated path or command (every line) behind the one-line target, for its tooltip. */
+function fullToolTarget(input: unknown): string | undefined {
+  if (typeof input !== "object" || input === null) return undefined;
+  const record = input as Record<string, unknown>;
+  for (const key of FULL_TARGET_KEYS) {
+    const value = record[key];
+    if (typeof value === "string" && value.trim() !== "") return value;
+  }
+  return undefined;
+}
+
 /** One 24px stream line: `▸ Read src/foo.ts` / `❯ Bash pnpm test ✓ 2.1s`. */
 export function ActivityRow({ activity }: { activity: Activity }) {
   const [open, setOpen] = useState(false);
@@ -96,6 +116,8 @@ export function ActivityRow({ activity }: { activity: Activity }) {
   const raw = toolFilePath("input" in activity ? activity.input : undefined);
   const filePath = raw === undefined ? undefined : normalizePastedPath(raw, cwd);
   const target = toolTarget(activity.input);
+  // the whole command (all lines) or path, for the tooltip of the one-line target
+  const fullTarget = fullToolTarget(activity.input) ?? target;
   // a call still "running" after its turn settled will never report back: no spinner
   const stale = activity.status === "running" && turnSettled;
   const live = activity.status === "running" && !stale;
@@ -119,7 +141,11 @@ export function ActivityRow({ activity }: { activity: Activity }) {
           ) : (
             <span className={styles.name}>{activity.toolName}</span>
           )}
-          {filePath === undefined ? <span className={styles.target}>{target}</span> : null}
+          {filePath === undefined ? (
+            <span className={styles.target} title={fullTarget}>
+              {target}
+            </span>
+          ) : null}
         </button>
         {filePath === undefined ? null : (
           <button
@@ -131,10 +157,10 @@ export function ActivityRow({ activity }: { activity: Activity }) {
             {shortenPath(filePath)}
           </button>
         )}
-        <span className={`${styles.mark} ${tone}`}>{stale ? "" : (MARK[activity.status] ?? "")}</span>
         {activity.durationMs === undefined ? null : (
           <span className={styles.duration}>{formatDuration(activity.durationMs)}</span>
         )}
+        <span className={`${styles.mark} ${tone}`}>{stale ? null : <StatusMark status={activity.status} live={live} />}</span>
       </div>
       {open ? (
         <div className={styles.details}>

@@ -92,6 +92,10 @@ describe("settle from the rail", () => {
     mount(threads);
     expect(within(screen.getByRole("list", { name: "Inbox threads" })).queryByText("Busy")).toBeNull();
     expect(within(screen.getByRole("list", { name: "Working threads" })).getByText("Busy")).toBeDefined();
+    // the Working header carries a running dot; Inbox (only calm threads now) does not
+    expect(within(screen.getByRole("region", { name: "Working" })).getAllByText("●").length).toBeGreaterThan(0);
+    expect(screen.getByRole("region", { name: "Working" }).querySelector("[data-group-running]")).not.toBeNull();
+    expect(screen.getByRole("region", { name: "Inbox" }).querySelector("[data-group-running]")).toBeNull();
     fireEvent.click(screen.getByRole("button", { name: /Working 1/ }));
     expect(screen.queryByText("Busy")).toBeNull();
   });

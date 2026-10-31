@@ -150,7 +150,7 @@ describe("Rail", () => {
     const model = modelWith({
       projects: { p1: project("p1", "Tide", "/src/tide"), p2: project("p2", "Atlas", "/src/atlas") },
       threads: {
-        t1: makeThread("t1", { projectId: "p1", title: "Needs approval", attention: "approval", updatedAt: 5 }),
+        t1: makeThread("t1", { projectId: "p1", title: "Approve the edit", attention: "approval", updatedAt: 5 }),
         t2: makeThread("t2", { projectId: "p2", title: "Quiet one", updatedAt: 4 }),
         t3: makeThread("t3", { projectId: "p2", title: "Plan waiting", attention: "plan", updatedAt: 3 }),
       },
@@ -162,7 +162,8 @@ describe("Rail", () => {
 
     const group = within(screen.getByRole("region", { name: "Needs you" }));
     expect(group.getByText("2")).toBeDefined();
-    expect(group.getByText("Needs approval")).toBeDefined();
+    expect(group.getByText("Approve the edit")).toBeDefined();
+    expect(group.getByText("Plan ready")).toBeDefined();
     expect(group.getByText("Plan waiting")).toBeDefined();
     expect(group.queryByText("Quiet one")).toBeNull();
     // listed once: not again in the inbox

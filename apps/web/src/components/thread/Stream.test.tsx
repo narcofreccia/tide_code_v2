@@ -1,5 +1,5 @@
 import { afterEach, describe, expect, it } from "vitest";
-import { cleanup, fireEvent, render, screen } from "@testing-library/react";
+import { act, cleanup, fireEvent, render, screen } from "@testing-library/react";
 import { Stream } from "./Stream.tsx";
 import {
   attachFakeStore,
@@ -112,5 +112,49 @@ describe("Stream", () => {
     expect(screen.getAllByText("2.0s")).toHaveLength(1);
     const footer = screen.getByText("2.0s").closest("li");
     expect(footer?.textContent).toContain("second");
+  });
+
+  it("offers a New text pill when output lands while scrolled up, and jumps to the end", () => {
+    attachFakeStore(modelWithTimeline(thread, [makeTool("a1", { toolName: "Bash", input: { command: "ls" } })]));
+    const { container } = render(<Stream threadId="t1" provider="claude" />);
+    const list = container.querySelector("ol")!;
+    const metrics = { scrollHeight: 2000, clientHeight: 400 };
+    Object.defineProperty(list, "scrollHeight", { configurable: true, get: () => metrics.scrollHeight });
+    Object.defineProperty(list, "clientHeight", { configurable: true, get: () => metrics.clientHeight });
+    list.scrollTop = 100;
+    fireEvent.scroll(list);
+    expect(screen.queryByText("New text")).toBeNull();
+
+    act(() => {
+      attachFakeStore(
+        modelWithTimeline(thread, [
+          makeTool("a1", { toolName: "Bash", input: { command: "ls" } }),
+          makeTool("a2", { toolName: "Bash", input: { command: "pwd" } }),
+        ]),
+      );
+    });
+    const pill = screen.getByRole("button", { name: "New text" });
+    fireEvent.click(pill);
+    expect(list.scrollTop).toBe(2000);
+    expect(screen.queryByText("New text")).toBeNull();
+  });
+
+  it("opens each new turn with a turn-start marker on its prompt, not on steers", () => {
+    const first = makeTurn("u1", { status: "completed", requestedAt: 1, startedAt: 1, settledAt: 2 });
+    const second = makeTurn("u2", { status: "completed", requestedAt: 3, startedAt: 3, settledAt: 4 });
+    attachFakeStore(
+      modelWithTurns(thread, [first, second], [
+        makeMessage("p1", { text: "first ask" }),
+        makeMessage("r1", { role: "assistant", text: "one" }),
+        makeMessage("s1", { text: "steer it", steer: true }),
+        makeMessage("p2", { turnId: "u2", text: "second ask" }),
+        makeMessage("r2", { role: "assistant", turnId: "u2", text: "two" }),
+      ]),
+    );
+    render(<Stream threadId="t1" provider="claude" />);
+    expect(screen.getByText("first ask").closest("li")?.hasAttribute("data-turn-start")).toBe(true);
+    expect(screen.getByText("second ask").closest("li")?.hasAttribute("data-turn-start")).toBe(true);
+    expect(screen.getByText("steer it").closest("li")?.hasAttribute("data-turn-start")).toBe(false);
+    expect(screen.getByText("one").closest("li")?.hasAttribute("data-turn-start")).toBe(false);
   });
 });

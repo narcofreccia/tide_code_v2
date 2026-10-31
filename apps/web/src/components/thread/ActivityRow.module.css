@@ -5,16 +5,30 @@
   align-items: center;
   gap: var(--sp-2);
   width: 100%;
+  max-width: var(--measure);
   height: var(--activity-h);
   padding: 0 var(--sp-2);
   background: transparent;
   border: none;
+  border-radius: var(--radius-sm);
   color: var(--muted);
+  font-size: var(--fs-base);
   text-align: left;
 }
-.row:hover { background: var(--surface-2); }
-.glyph { width: 10px; flex: none; text-align: center; color: var(--muted); }
-.name { color: var(--text); flex: none; }
+.row:hover { background: var(--surface-hover); }
+/* a collapsed group or event count: a quiet inline line, as wide as its text */
+.groupRow { width: auto; max-width: 100%; }
+.groupLabel { flex: none; color: var(--text-2); }
+.groupNames {
+  min-width: 0;
+  overflow: hidden;
+  text-overflow: ellipsis;
+  white-space: nowrap;
+  font-size: var(--fs-sm);
+  color: var(--muted);
+}
+.glyph { width: 12px; flex: none; display: inline-flex; justify-content: center; color: var(--muted); }
+.name { color: var(--text); font-weight: var(--fw-medium); flex: none; }
 .target {
   flex: 1;
   min-width: 0;
@@ -22,17 +36,21 @@
   text-overflow: ellipsis;
   white-space: nowrap;
   font-family: var(--font-mono);
-  font-size: var(--fs-xs);
+  font-size: var(--fs-sm);
+  color: var(--muted);
 }
-.mark { flex: none; font-size: var(--fs-sm); }
-.duration { flex: none; font-variant-numeric: tabular-nums; font-size: var(--fs-sm); }
+/* the status column: fixed 16px at the right edge of the line */
+.mark { flex: none; width: 16px; display: inline-flex; justify-content: center; font-size: var(--fs-sm); }
+.duration { flex: none; font-variant-numeric: tabular-nums; font-size: var(--fs-sm); color: var(--muted); }
 .running { color: var(--accent); }
 /* a running call's name carries the live shimmer (LiveLabel) instead of a pulse */
-.liveName { flex: none; }
+.liveName { flex: none; font-weight: var(--fw-medium); }
 .ok { color: var(--ok); }
 .error { color: var(--danger); }
 .summary { color: var(--muted); flex: 1; min-width: 0; }
+.groupRow .summary { flex: none; }
 .details {
+  max-width: var(--measure-wide);
   margin: 0 0 var(--sp-2) var(--sp-4);
   padding: var(--sp-2);
   border-left: 1px solid var(--border);
@@ -56,8 +74,9 @@
   font-size: var(--fs-xs);
   color: var(--text);
 }
-.nested { margin-left: var(--sp-4); }
-.child { border-left: 1px solid var(--border); margin-left: var(--sp-2); }
+/* expanded rows hang under a 1px rail */
+.nested { margin-left: var(--sp-3); padding-left: var(--sp-1); border-left: 1px solid var(--border); }
+.child { margin-left: var(--sp-3); }
 .childRows { list-style: none; margin: 0; padding: 0; }
 .info { color: var(--muted); }
 .childLink { flex: none; font-size: var(--fs-sm); }

@@ -57,11 +57,15 @@
   overflow: hidden;
   text-overflow: ellipsis;
   white-space: nowrap;
-  color: var(--text-2);
+  color: var(--text);
+  font-weight: var(--fw-medium);
+  transition: color var(--dur-fast) var(--ease);
 }
-.loud { color: var(--text); font-weight: var(--fw-medium); }
-.active .title { color: var(--text); font-weight: var(--fw-medium); }
-.archived .title { color: var(--muted); }
+/* rows that need nothing from the user recede; hover brings the text back */
+.row[data-recede] .title { color: var(--text-2); font-weight: var(--fw-regular); }
+.row[data-recede]:hover .title { color: var(--text); }
+.archived .title,
+.archived:hover .title { color: var(--muted); font-weight: var(--fw-regular); }
 .roleGlyph { flex: none; color: var(--muted); font-size: var(--fs-sm); }
 .pinMark { flex: none; color: var(--muted); }
 .unread { flex: none; width: 6px; height: 6px; border-radius: 50%; background: var(--accent); }
@@ -101,6 +105,23 @@
   color: var(--muted);
   font-size: var(--fs-sm);
 }
+/* the live second line: a running tool / Thinking (shimmer), Needs approval, a limit, Queued */
+.live {
+  display: flex;
+  align-items: center;
+  gap: var(--sp-1);
+  min-width: 0;
+  padding: 0 var(--sp-2) var(--sp-1) calc(20px + var(--sp-2));
+  color: var(--muted);
+  font-size: var(--fs-sm);
+  line-height: var(--lh-tight);
+}
+.liveText { min-width: 0; overflow: hidden; text-overflow: ellipsis; white-space: nowrap; }
+.live[data-live-kind="approval"] { color: var(--st-needs); }
+.live[data-live-kind="waiting"],
+.live[data-live-kind="limited"] { color: var(--st-limited); }
+.live[data-live-kind="queued"] { color: var(--muted); }
+
 .tag,
 .settleTag,
 .roleTag {

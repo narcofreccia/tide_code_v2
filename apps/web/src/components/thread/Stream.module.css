@@ -1,8 +1,13 @@
 .wrap { position: relative; flex: 1; min-height: 0; display: flex; }
+/*
+ * The stream column (docs/design/ui.md § Thread): every item sits in one centred
+ * column of min(100%, var(--measure-wide)) and shares its left edge; prose inside caps at
+ * --measure, code, tables, diffs and tool groups may use the full width.
+ */
 .stream {
   list-style: none;
   margin: 0;
-  padding: var(--sp-3);
+  padding: var(--sp-5) var(--sp-3);
   display: flex;
   flex-direction: column;
   gap: var(--sp-2);
@@ -10,18 +15,29 @@
   min-height: 0;
   overflow-y: auto;
 }
+.stream > * {
+  width: min(100%, var(--measure-wide));
+  align-self: center;
+  flex: none;
+}
+/* a new turn opens with --sp-6 of air (on top of the gap), no rule */
+.stream > [data-turn-start]:not(:first-child) { margin-top: calc(var(--sp-6) - var(--sp-2)); }
 .empty { flex: 1; padding: var(--sp-4); color: var(--muted); font-size: var(--fs-sm); }
 .newPill {
   position: absolute;
   left: 50%;
   bottom: var(--sp-3);
   transform: translateX(-50%);
+  display: inline-flex;
+  align-items: center;
+  gap: var(--sp-1);
   height: var(--activity-h);
-  padding: 0 var(--sp-3);
-  border: 1px solid var(--accent);
+  padding: 0 var(--sp-3) 0 var(--sp-2);
+  border: 1px solid var(--border-strong);
   border-radius: 999px;
-  background: var(--surface);
-  color: var(--accent);
+  background: var(--surface-raised);
+  color: var(--text);
   font-size: var(--fs-sm);
   box-shadow: var(--shadow-pop);
 }
+.newPill:hover { border-color: var(--accent); color: var(--accent); }

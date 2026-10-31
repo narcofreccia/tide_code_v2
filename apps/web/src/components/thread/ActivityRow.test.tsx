@@ -4,7 +4,7 @@ import type { Activity } from "@tide/contracts";
 import { ActivityRow } from "./ActivityRow.tsx";
 import { setProvidersForTest } from "../../state/providers.ts";
 import { useUi } from "../../state/ui.ts";
-import { attachFakeStore, makeThread, modelWith, resetUi } from "../../testHarness.ts";
+import { attachFakeStore, makeThread, makeTool, modelWith, resetUi } from "../../testHarness.ts";
 import { LOGGED_OUT, PROVIDER_FIXTURE } from "../settings/fixtures.ts";
 
 function errorActivity(text: string): Activity {
@@ -105,5 +105,22 @@ describe("error activities", () => {
       </ul>,
     );
     expect(screen.queryByRole("button", { name: "just a note" })).toBeNull();
+  });
+});
+
+describe("tool rows", () => {
+  it("shows the first line of a command and the whole command on hover, status at the end", () => {
+    setup();
+    const command = "pnpm install\npnpm test --run";
+    render(
+      <ul>
+        <ActivityRow activity={makeTool("a1", { toolName: "Bash", input: { command }, status: "ok", durationMs: 1200 })} />
+      </ul>,
+    );
+    const target = screen.getByText("pnpm install");
+    expect(target.getAttribute("title")).toBe(command);
+    const row = target.closest("li")!;
+    expect(screen.getByRole("img", { name: "done" })).toBeDefined();
+    expect(row.textContent).toContain("1.2s");
   });
 });

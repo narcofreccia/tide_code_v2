@@ -11,7 +11,12 @@
   color: var(--st-idle);
 }
 .idle { color: var(--st-idle); }
-.running { color: var(--st-running); animation: pulse 1.4s ease-in-out infinite; }
+/* stepped blink (1.6s): full, then half, in six hard steps each; paused off screen, synced in StatusGlyph.tsx */
+.running {
+  color: var(--st-running);
+  animation: statusPulse calc(var(--dur) * 8) linear infinite;
+  animation-play-state: var(--visible-animation-state, paused);
+}
 .interrupted { color: var(--st-interrupted); }
 .error { color: var(--st-error); }
 .needsYou { color: var(--st-needs); }
@@ -21,4 +26,15 @@
 .merged { color: var(--st-ok); }
 @keyframes pulse {
   50% { opacity: 0.35; }
+}
+@keyframes statusPulse {
+  0%,
+  40% { opacity: 1; animation-timing-function: steps(6); }
+  50%,
+  90% { opacity: 0.5; animation-timing-function: steps(6); }
+  100% { opacity: 1; }
+}
+@media (prefers-reduced-motion: reduce), (forced-colors: active) {
+  .running,
+  .interrupting { animation: none; }
 }

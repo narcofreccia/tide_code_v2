@@ -169,13 +169,13 @@ describe("Composer", () => {
     expect(useToasts.getState().toasts).toEqual([]);
   });
 
-  it("grows the textarea up to eight rows", () => {
+  it("grows the textarea from two rows up to twelve", () => {
     attachFakeStore(modelWith({}));
     render(<Composer thread={makeThread("t1")} />);
     const input = screen.getByLabelText<HTMLTextAreaElement>("Message");
-    expect(input.rows).toBe(3);
+    expect(input.rows).toBe(2);
     fireEvent.change(input, { target: { value: "a\n".repeat(20) } });
-    expect(input.rows).toBe(8);
+    expect(input.rows).toBe(12);
   });
 });
 

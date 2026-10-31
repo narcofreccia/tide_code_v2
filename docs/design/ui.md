@@ -72,9 +72,10 @@ A thread with a linked PR and a watch shows a PR watch pill on its card:
 the project root), and types the harness's own resume command into it (`claude --resume <id>` /
 `codex resume` / `opencode`). When no PTY can be created the command is copied instead.
 
-**Thread**: one chronological stream. Messages are plain (user right-aligned muted block,
-assistant as prose). Activities are single lines `▸ Read src/foo.ts` / `▸ Bash pnpm test ✓ 2.1s`,
-expandable; consecutive activities collapse into a group ("read 4 files"). Subagent /
+**Thread**: one chronological stream. Messages are plain (the user's as a quiet labelled block,
+the assistant's as unboxed prose, both on one left edge). Activities are single lines
+`▸ Read src/foo.ts` / `❯ Bash pnpm test  2.1s ✓`, expandable; consecutive activities collapse into a
+group ("read 4 files", "5 tool calls  Bash, Read, Edit…"). Subagent /
 collab children render as an indented group with a "open as thread" link. Cards:
 While a turn runs, the composer's **Steer | Queue** toggle sets what a send does: Steer delivers
 the message into the running turn, Queue runs it after the turn (the primary button reads
@@ -100,6 +101,40 @@ Each settled user message has a per-turn **⋯** menu: `Fork from here…` and
 - User input (AskUserQuestion / codex user-input): options as buttons or free text.
 - Proposed plan: markdown, `Implement in new thread ▾` (provider · model · worktree checkbox) · `Keep planning`. Never auto-executes.
 Composer: textarea, `@` mentions (worktree files), paste images, mode/provider/model pills mirror the top bar, `⌘↵` send, `Esc` stop.
+
+### Thread layout and type
+
+- **Column and measure.** Every stream item sits in one centred column `min(100%, 960px)` and shares its
+  left edge; there is no left/right chat alignment. Prose (paragraphs, lists, headings, quotes, the user
+  block, tool lines) caps at `--measure` (720px) inside it; code blocks, tables, diagrams, diffs and
+  cards may use the full column and scroll sideways rather than wrap. The composer sits at the same left
+  edge and `--measure` width.
+- **User message.** A tiny `You` label (`--fs-xs`, `--muted`, the turn's ⋯ menu at its right) over a
+  `--surface-2` block with a hairline and `--radius`, full measure, `white-space: pre-wrap` so the
+  user's own line breaks survive. Assistant text has no box.
+- **Markdown.** Body `--fs-base`, `line-height: 1.6`, normal white-space: a single newline is a soft
+  break (no `remark-breaks`), a blank line starts a paragraph. `p` margin `0 0 .75em`; `h1` `--fs-lg`,
+  `h2` `--fs-md`, `h3`–`h6` `--fs-base`, all `--fw-semibold`, margin `1.25em 0 .5em`; lists `.25em 0 .75em`,
+  indent `1.25em`, disc / decimal markers at every depth, `li + li` `.2em`, nested lists tighter;
+  inline `code` `--fs-sm` mono on `--surface-2`, 3px radius; `pre` on `--surface` with a hairline,
+  `--radius`, `--sp-3` padding, `--fs-sm`, horizontal scroll; `blockquote` a 2px `--border-strong`
+  bar, muted; tables compact, hairline cells, `--fs-sm`, `--fw-medium` headers; `hr` a hairline;
+  links accent, underlined on hover only; `strong` `--fw-semibold`. First child has no top margin,
+  last child no bottom margin.
+- **Tool lines.** A collapsed group is a 24px inline line as wide as its text: chevron, the summary,
+  up to three distinct tool names (most recent first, `…` past three) in `--fs-sm --muted`, the summed
+  duration. No fill; hover is `--surface-hover`. Expanded rows hang under a 1px `--border` rail. A tool
+  row: glyph, name `--fw-medium`, target `--fs-sm` mono muted on one line with an ellipsis (the full
+  path or every line of the command in its `title`), duration, then a fixed 16px status column
+  (`check` / `close` icon, the live `…` while it runs).
+- **Turns.** The settled turn's footer is one `--fs-xs --muted` line `--sp-4` under the reply; each
+  new turn's prompt opens `--sp-6` below the previous turn. No rules between turns. Thinking stays a
+  collapsed 24px line like a tool group (it opens itself only while the model thinks and nothing else
+  is on screen).
+- **Composer.** `--surface`, hairline (accent while focused), `--radius-lg`; the textarea is
+  borderless inside it at `--fs-base`, `line-height: 1.5`, 2 rows growing to 12; toolbar pills `--fs-sm`.
+- **New text.** Output that lands while the reader is scrolled up raises a `⌄ New text` pill at the
+  bottom centre; it jumps to the end and goes away once the stream is at the bottom.
 
 **Workbench › Changes**: turn selector (`Turn 3 of 5 ▾`, "all turns"), file list with +/−, unified/split toggle, Monaco diff. Actions: revert turn, open file, commit+push+PR.
 **Workbench › File**: Monaco, write-enabled, dirty dot, `⌘S`. Open from diff, tree, `@mention`, activity line.
@@ -235,7 +270,7 @@ Line height `--lh-body: 1.45` for text, `--lh-tight: 1.2` for titles and single-
 - Decorative by default (`aria-hidden`); pass `label` when the icon is the only content of a control
   (`role="img"` + `aria-label`), or label the button itself.
 - UI chrome (toggles, menus, close, nav, attachment chips) uses icons, never Unicode glyphs (`▸ ▾ ⋯ ✕ ⚙`).
-  Status marks in the stream's tool lines and the turn footer's token arrows are data and stay text.
+  The turn footer's token arrows are data and stay text; tool lines mark ok / failed with the `check` / `close` icons.
 
 ## Motion
 

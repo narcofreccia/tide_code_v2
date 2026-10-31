@@ -237,3 +237,36 @@ describe("MessageItem", () => {
     });
   });
 });
+
+describe("MessageItem typography", () => {
+  const assistant = (text: string) =>
+    render(<MessageItem message={makeMessage("m1", { role: "assistant", text })} />).container;
+
+  it("renders paragraphs without blank-line doubling; a soft break stays in its paragraph", () => {
+    attachFakeStore(modelWith({}));
+    const container = assistant("First line\nsame paragraph.\n\nSecond paragraph.\n\nThird paragraph.");
+    const paragraphs = [...container.querySelectorAll("p")];
+    expect(paragraphs.map((p) => p.textContent)).toEqual(["First line\nsame paragraph.", "Second paragraph.", "Third paragraph."]);
+    expect(container.querySelector("br")).toBeNull();
+    expect(paragraphs.some((p) => p.textContent?.trim() === "")).toBe(false);
+    // only the paragraphs themselves sit between them: no stray text nodes holding newlines
+    const markdown = container.querySelector("[data-cite-label] > div > div")!;
+    expect([...markdown.children].every((child) => child.tagName === "P")).toBe(true);
+  });
+
+  it("keeps markdown headings at their levels", () => {
+    attachFakeStore(modelWith({}));
+    const container = assistant("# Big\n\n## Medium\n\n### Small\n\nbody");
+    expect(container.querySelector("h1")?.textContent).toBe("Big");
+    expect(container.querySelector("h2")?.textContent).toBe("Medium");
+    expect(container.querySelector("h3")?.textContent).toBe("Small");
+  });
+
+  it("labels the user's message as a block, keeping its own line breaks", () => {
+    attachFakeStore(modelWith({}));
+    const { container } = render(<MessageItem message={makeMessage("m1", { text: "line one\nline two" })} />);
+    expect(screen.getByText("You")).toBeDefined();
+    const body = container.querySelector('[data-role="user"]');
+    expect(body?.textContent).toBe("line one\nline two");
+  });
+});

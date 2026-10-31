@@ -15,6 +15,7 @@ import { MessageItem } from "./MessageItem.tsx";
 import { PlanCard } from "./PlanCard.tsx";
 import { UserInputCard } from "./UserInputCard.tsx";
 import { CiteButton } from "./CiteButton.tsx";
+import { Icon } from "../ui/Icon.tsx";
 import styles from "./Stream.module.css";
 
 const BOTTOM_SLACK = 48;
@@ -173,7 +174,8 @@ export function Stream({ threadId, provider }: { threadId: string; provider: Pro
       <CiteButton root={scroller} />
       {hasNew ? (
         <button type="button" className={styles.newPill} onClick={toBottom}>
-          ↓ new
+          <Icon name="chevronDown" size={12} />
+          New text
         </button>
       ) : null}
     </div>

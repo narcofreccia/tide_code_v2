@@ -36,8 +36,8 @@ import { DraftsBar } from "./DraftsBar.tsx";
 import { QueueList } from "./QueueList.tsx";
 import styles from "./Composer.module.css";
 
-const MIN_ROWS = 3;
-const MAX_ROWS = 8;
+const MIN_ROWS = 2;
+const MAX_ROWS = 12;
 
 /** Any layer that owns Escape ahead of the thread: dialog, popover, palette, picker. */
 function anOverlayIsOpen(): boolean {

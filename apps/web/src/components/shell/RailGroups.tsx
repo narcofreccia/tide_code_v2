@@ -1,13 +1,16 @@
+import { useRef } from "react";
 import type { ExpertsSession, Thread } from "@tide/contracts";
 import { useModel } from "../../state/model.ts";
 import { useServerSettings } from "../../state/serverSettings.ts";
 import { clearEmptyArchived } from "../../lib/threadActions.ts";
 import { useTicker } from "../mission/useTicker.ts";
 import { Icon } from "../ui/Icon.tsx";
+import { StateGlyph } from "../ui/StatusGlyph.tsx";
 import { ExpertsGroup } from "./ExpertsGroup.tsx";
 import { RailThreadRow, parentOf } from "./RailThreadRow.tsx";
 import { RAIL_GROUP_LABELS, buildRailGroups, claimedBy, type RailGroup } from "./railGroupModel.ts";
 import { isGroupCollapsed, useGroupFolds } from "./railGroupState.ts";
+import { useRailFlip } from "./railMotion.ts";
 import styles from "./RailGroups.module.css";
 
 /** A group's rows: sessions first (their threads nested), then roots with their children below them. */
@@ -64,14 +67,22 @@ export function RailGroups({ projectIds, showProject }: { projectIds: readonly s
   const sessions: ExpertsSession[] = groups.flatMap((g) => g.sessions);
   const claimed = claimedBy(sessions);
   const live = groups.filter((g) => g.key !== "archived").flatMap((g) => g.threads);
+  // the rail's order; rows slide (FLIP) only when it changes
+  const signature = groups
+    .map((g) => `${g.key}${isGroupCollapsed(folds, g.key) ? "-" : ""}:${g.threads.map((t) => t.id).join(",")}:${g.sessions.map((x) => x.id).join(",")}`)
+    .join("|");
+  const rootRef = useRef<HTMLDivElement>(null);
+  useRailFlip(rootRef, signature);
 
   return (
-    <div className={styles.groups}>
+    <div ref={rootRef} className={styles.groups}>
       {groups.map((group) => {
         const count = group.threads.length;
         if (count === 0 && group.sessions.length === 0) return null;
         const label = RAIL_GROUP_LABELS[group.key];
         const collapsed = isGroupCollapsed(folds, group.key);
+        const holdsWork = group.key === "working" || (group.key === "inbox" && workingSection !== true);
+        const running = holdsWork && group.threads.some((t) => t.status === "running");
         return (
           <section key={group.key} className={styles.group} aria-label={label} data-rail-group={group.key}>
             <div className={styles.head}>
@@ -84,6 +95,11 @@ export function RailGroups({ projectIds, showProject }: { projectIds: readonly s
                 <Icon name={collapsed ? "chevronRight" : "chevronDown"} size={12} />
                 <span className={styles.label}>{label}</span>
                 <span className={styles.count}>{count}</span>
+                {running ? (
+                  <span className={styles.runningDot} data-group-running="">
+                    <StateGlyph state="running" />
+                  </span>
+                ) : null}
               </button>
               {group.key === "archived" ? (
                 <button

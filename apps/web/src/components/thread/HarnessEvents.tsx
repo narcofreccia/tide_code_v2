@@ -54,7 +54,7 @@ export function HarnessEvents({ activities }: { activities: Note[] }) {
   const [open, setOpen] = useState(false);
   return (
     <li className={styles.item}>
-      <button type="button" className={styles.row} aria-expanded={open} onClick={() => setOpen((v) => !v)}>
+      <button type="button" className={`${styles.row} ${styles.groupRow}`} aria-expanded={open} onClick={() => setOpen((v) => !v)}>
         <span className={styles.glyph}>
           <Chevron open={open} />
         </span>

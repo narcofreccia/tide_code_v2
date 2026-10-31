@@ -12,9 +12,9 @@ import { MarkdownPre } from "./VisualBlocks.tsx";
 import { Button } from "../ui/Button.tsx";
 import { Popover } from "../ui/Popover.tsx";
 import { Pill } from "../ui/Pill.tsx";
-import { Icon } from "../ui/Icon.tsx";
 import { observeVisibleAnimation } from "../../lib/visibleAnimation.ts";
 import { LiveLabel } from "./LiveLabel.tsx";
+import { Chevron } from "./Chevron.tsx";
 import styles from "./MessageItem.module.css";
 
 /**
@@ -33,7 +33,7 @@ function Reasoning({ text, auto }: { text: string; auto: boolean }) {
         aria-expanded={open}
         onClick={() => setOverride(!open)}
       >
-        <Icon name={open ? "chevronDown" : "chevronRight"} size={12} />
+        <Chevron open={open} />
         {auto ? <LiveLabel text="Thinking…" /> : "Thinking"}
       </button>
       {open ? <pre className={styles.reasoningBody}>{text}</pre> : null}
@@ -224,7 +224,14 @@ export function MessageItem({ message, turn, showMeta, wasQueued, citeLabel }: M
       className={`${isUser ? styles.user : styles.assistant} ${rolledBack ? styles.rolledBack : ""}`}
       {...(rolledBack ? { "data-rolled-back": "true" } : {})}
       {...(!isUser ? { "data-cite-label": citeLabel ?? "" } : {})}
+      {...(isUser && message.steer !== true ? { "data-turn-start": "" } : {})}
     >
+      {isUser ? (
+        <div className={styles.who}>
+          <span>You</span>
+          {menuTurn ? <TurnMenu turn={menuTurn} /> : null}
+        </div>
+      ) : null}
       <div className={styles.body} data-role={message.role}>
         {queued ? (
           <span className={styles.queued} title="Sent while an earlier turn was running">
@@ -263,7 +270,6 @@ export function MessageItem({ message, turn, showMeta, wasQueued, citeLabel }: M
         <Attachments message={message} />
         {streaming ? <span ref={observeVisibleAnimation} className={styles.caret} aria-label="streaming" /> : null}
       </div>
-      {menuTurn ? <TurnMenu turn={menuTurn} /> : null}
       {!isUser && !streaming && message.text.trim() !== "" ? (
         <span className={styles.actions}>
           <Button variant="quiet" title="Quote this reply in the composer" onClick={() => cite(message.text, citeLabel)}>

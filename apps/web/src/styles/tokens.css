@@ -69,7 +69,8 @@
   --sp-5: 24px;
   --sp-6: 32px;
   --sp-7: 48px;
-  --measure: 720px; /* content max width for settings/prose pages */
+  --measure: 720px;
+  --measure-wide: 960px; /* content max width for settings/prose pages */
 
   --font: ui-sans-serif, -apple-system, BlinkMacSystemFont, "Segoe UI", Roboto, Helvetica, Arial,
     sans-serif;
