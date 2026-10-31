@@ -390,10 +390,35 @@ describe("decide: plans", () => {
     expect(decide(base.model, { type: "plan.progress", threadId: "nope", steps: [] }, ctx)).toMatchObject({ ok: false, error: { code: "not-found" } });
   });
 
+  it("implements a plan in place by default: the planning thread leaves plan mode and gets the build turn", () => {
+    const base = withPlan();
+    const settledModel = run(base.model, { type: "turn.settle", turnId: base.turnId, status: "completed" }).model;
+    const planning = run(settledModel, { type: "thread.update", threadId: base.threadId, interaction: "plan" }).model;
+    const { model, events } = run(planning, { type: "plan.implement", planId: base.planId });
+    expect(events.map((e) => e.type)).toEqual(["thread.updated", "turn.requested", "plan.updated"]);
+    expect(events[0]).toMatchObject({ type: "thread.updated", threadId: base.threadId, patch: { interaction: "default" } });
+    const requested = events[1];
+    if (requested?.type !== "turn.requested") throw new Error("expected turn.requested");
+    expect(requested.turn).toMatchObject({ threadId: base.threadId, status: "requested" });
+    expect(requested.userMessage.text).toBe("Implement the following plan.\n\n## Ship it\n\n- step");
+    expect(model.threads[base.threadId]).toMatchObject({ interaction: "default", status: "running" });
+    expect(model.plans[base.planId]).toMatchObject({ status: "implemented", implementationThreadId: base.threadId });
+    expect(Object.keys(model.threads)).toHaveLength(Object.keys(planning.threads).length);
+  });
+
+  it("implementing in place while the planning turn still runs queues the build turn", () => {
+    const base = withPlan();
+    const { model, events } = run(base.model, { type: "plan.implement", planId: base.planId, target: "here" });
+    const requested = events.find((e) => e.type === "turn.requested");
+    if (requested?.type !== "turn.requested") throw new Error("expected turn.requested");
+    expect(requested.turn.status).toBe("queued");
+    expect(model.plans[base.planId]?.status).toBe("implemented");
+  });
+
   it("implements a plan into a sibling thread with a seeded turn", () => {
     const base = withPlan();
     const settledModel = run(base.model, { type: "turn.settle", turnId: base.turnId, status: "completed" }).model;
-    const { model, events } = run(settledModel, { type: "plan.implement", planId: base.planId, provider: "codex", model: "gpt-5", mode: "auto" });
+    const { model, events } = run(settledModel, { type: "plan.implement", planId: base.planId, target: "new", provider: "codex", model: "gpt-5", mode: "auto" });
     expect(events.map((e) => e.type)).toEqual(["thread.created", "turn.requested", "plan.updated"]);
     const created = events[0];
     if (created?.type !== "thread.created") throw new Error("expected thread.created");
@@ -420,7 +445,7 @@ describe("decide: plans", () => {
     const proposed = run(base.model, { type: "plan.propose", turnId: base.turnId, markdown: "just prose" });
     const evt = proposed.events[0];
     if (evt?.type !== "plan.proposed") throw new Error("expected plan.proposed");
-    const { events } = run(proposed.model, { type: "plan.implement", planId: evt.plan.id, provider: "claude" });
+    const { events } = run(proposed.model, { type: "plan.implement", planId: evt.plan.id, target: "new", provider: "claude" });
     const created = events[0];
     if (created?.type !== "thread.created") throw new Error("expected thread.created");
     expect(created.thread.title).toBe("Implement plan");
@@ -428,7 +453,7 @@ describe("decide: plans", () => {
   });
 
   it("rejects implementing an unknown or non-proposed plan", () => {
-    expect(decide(emptyReadModel(), { type: "plan.implement", planId: "nope", provider: "claude" }, ctx)).toMatchObject({ ok: false, error: { code: "not-found" } });
+    expect(decide(emptyReadModel(), { type: "plan.implement", planId: "nope", target: "new", provider: "claude" }, ctx)).toMatchObject({ ok: false, error: { code: "not-found" } });
     const base = withPlan();
     const dismissed = run(base.model, { type: "plan.dismiss", planId: base.planId }).model;
     expect(decide(dismissed, { type: "plan.implement", planId: base.planId, provider: "claude" }, ctx)).toMatchObject({ ok: false, error: { code: "conflict" } });

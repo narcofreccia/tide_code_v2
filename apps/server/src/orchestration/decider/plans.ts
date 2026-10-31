@@ -1,5 +1,6 @@
 import type { CommandOf, Message, ProposedPlan, ReadModel, Thread, Turn } from "@tide/contracts";
 import { fail, isArchived, ok, providerDefault, type DecideContext, type DecideResult } from "./types.ts";
+import { decideTurn } from "./turns.ts";
 
 type PlanCommand =
   | CommandOf<"plan.propose">
@@ -8,6 +9,11 @@ type PlanCommand =
   | CommandOf<"plan.dismiss">;
 
 const HEADING = /^\s{0,3}#{1,6}\s+(.+?)\s*#*\s*$/;
+
+/** The user message that asks for the build (same wording in place and in a new thread). */
+export function implementPrompt(markdown: string): string {
+  return `Implement the following plan.\n\n${markdown}`;
+}
 
 /** Title for the implementation thread: the plan's first markdown heading. */
 export function planTitle(markdown: string): string {
@@ -52,7 +58,20 @@ export function decidePlan(model: ReadModel, command: PlanCommand, ctx: DecideCo
       if (!project) return fail("not-found", `unknown project ${source.projectId}`);
       if (isArchived(project)) return fail("conflict", `project ${project.id} is archived`);
 
-      // A plan never runs in place: it seeds a sibling thread the user can steer.
+      if ((command.target ?? "here") === "here") {
+        // Same thread, same worktree, all the planning context: leave plan mode and ask for the build.
+        if (isArchived(source)) return fail("conflict", `thread ${source.id} is archived`);
+        const turn = decideTurn(model, { type: "turn.request", threadId: source.id, text: implementPrompt(plan.markdown) }, ctx);
+        if (!turn.ok) return turn;
+        return ok(
+          ...(source.interaction === "plan" ? [{ type: "thread.updated" as const, threadId: source.id, patch: { interaction: "default" as const }, updatedAt: ctx.now }] : []),
+          ...turn.events,
+          { type: "plan.updated", planId: plan.id, status: "implemented", implementationThreadId: source.id, at: ctx.now },
+        );
+      }
+
+      // A sibling thread the user can steer, on any harness.
+      if (command.provider === undefined) return fail("invalid-command", "plan.implement with target \"new\" needs a provider");
       const defaults = providerDefault(ctx, command.provider);
       const implModel = command.model ?? defaults.model;
       const thread: Thread = {
@@ -74,7 +93,7 @@ export function decidePlan(model: ReadModel, command: PlanCommand, ctx: DecideCo
         threadId: thread.id,
         turnId: turn.id,
         role: "user",
-        text: `Implement the following plan.\n\n${plan.markdown}`,
+        text: implementPrompt(plan.markdown),
         createdAt: ctx.now,
       };
       return ok(

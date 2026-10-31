@@ -290,7 +290,7 @@ describe("settings defaults in the decider", () => {
     const proposed = run(model, { type: "plan.propose", turnId, markdown: "# Ship it\n- a" });
     const planId = eventOf(proposed.events, "plan.proposed").plan.id;
     const defaults: DecideDefaults = { providerDefaults: { pi: { model: "pi-model", mode: "auto" }, claude: { model: "opus" } } };
-    const impl = eventOf(runWith(proposed.model, { type: "plan.implement", planId, provider: "pi" }, defaults).events, "thread.created").thread;
+    const impl = eventOf(runWith(proposed.model, { type: "plan.implement", planId, target: "new", provider: "pi" }, defaults).events, "thread.created").thread;
     expect(impl).toMatchObject({ title: "Ship it", model: "pi-model", mode: "auto" });
 
     const projectId = f.model.threads[f.threadId]?.projectId ?? "";

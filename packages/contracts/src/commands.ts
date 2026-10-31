@@ -146,11 +146,18 @@ export const UserInputRespond = Type.Object({
   answers: Type.Record(Type.String(), Type.Unknown()),
 });
 
-/** Creates a sibling thread (any provider) seeded with the plan. The only way a plan runs. */
+/**
+ * Runs a plan — only ever on the user's click. `target: "here"` (the default, as in T3 Code)
+ * keeps the planning thread: it leaves plan mode and gets a turn asking for the implementation,
+ * so the harness keeps all the context it gathered while planning, in the same worktree.
+ * `target: "new"` seeds a sibling thread (any provider/model, optionally its own worktree).
+ */
 export const PlanImplement = Type.Object({
   type: Type.Literal("plan.implement"), commandId: CommandId,
   planId: Type.String(),
-  provider: ProviderKind,
+  target: Type.Optional(Type.Union([Type.Literal("here"), Type.Literal("new")])),
+  /** new-thread options; ignored for `here` */
+  provider: Type.Optional(ProviderKind),
   model: Type.Optional(Type.String()),
   mode: Type.Optional(RuntimeMode),
   useWorktree: Type.Optional(Type.Boolean()),
