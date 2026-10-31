@@ -11,6 +11,7 @@ import { ExpertsSite } from "./decisions/sites/experts.ts";
 import { createJudgeService } from "./decisions/service.ts";
 import { ExpertsReactor } from "./experts/reactor.ts";
 import { TideMcpProvisioner } from "./mcp/provision.ts";
+import { delegateTargetsHint } from "./provider/delegateTargets.ts";
 import { AgentTokenStore } from "./rpc/agentTickets.ts";
 import type { DecideDefaults } from "./orchestration/decider/index.ts";
 import { Engine } from "./orchestration/engine.ts";
@@ -142,7 +143,13 @@ export async function createApp(options: AppOptions): Promise<App> {
   // agent token that is revoked when the session closes.
   const agentTokens = new AgentTokenStore();
   const mcp = new TideMcpProvisioner({ tokens: agentTokens });
-  const sessions = new SessionDirectory({ registry, mcp, log, model: () => engine.getModel() });
+  const sessions = new SessionDirectory({
+    registry,
+    mcp,
+    log,
+    model: () => engine.getModel(),
+    harnessHint: () => delegateTargetsHint(registry, settings.get().providerDefaults),
+  });
   registry.setInUse((instance) => sessions.usesInstance(instance));
 
   // The vcs reactor subscribes first on purpose: it must mark a turn's before-checkpoint

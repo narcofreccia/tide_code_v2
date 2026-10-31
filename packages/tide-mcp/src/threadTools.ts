@@ -17,6 +17,10 @@ const ok = (value: string): TextResult => ({ content: [{ type: "text", text: val
 /** Appended to the system prompt the server injects (the server picks this up). */
 export const THREAD_TOOLS_HINT = [
   "Tide thread tools: you can see and drive other threads in this project.",
+  "Your harness's built-in sub-agent tool only runs your own harness's models. When the user asks for sub-agents,",
+  "workers or reviewers on another harness or another model family (Codex, OpenCode, Pi, Gemini, GLM, a cheaper or free model),",
+  "do not say it is impossible: call tide_delegate with that `provider` (and `model` when they name one), one call per worker,",
+  "and collect the results with tide_thread_wait or the finished-delegate messages.",
   "tide_thread_list finds threads; tide_thread_read shows their messages or activity (page with nextPosition);",
   "tide_thread_send gives one a new instruction (auto/queue/steer); tide_thread_wait blocks until a turn settles",
   "(a timeout never cancels it); tide_thread_interrupt stops a running turn; tide_pending_list/tide_pending_respond",

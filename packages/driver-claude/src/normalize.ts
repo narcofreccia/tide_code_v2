@@ -296,7 +296,7 @@ export class ClaudeNormalizer {
     if (taskId === undefined) return this.#unknown(message, "system", message.subtype);
     const childKey = this.#taskChild.get(taskId) ?? message.tool_use_id ?? taskId;
     this.#tasks.delete(taskId);
-    return this.#settleChild(childKey, message.status === "completed" ? "done" : "error", { summary: message.summary, weak: true });
+    return this.#settleChild(childKey, message.status === "completed" ? "done" : "error", { ...(message.summary !== undefined ? { summary: message.summary } : {}), weak: true });
   }
 
   /** The final child update: status, optional report, and a summary only when none was shown. */
@@ -337,7 +337,8 @@ export class ClaudeNormalizer {
     const report = result ? capReport(result) : undefined;
     const statusText = tagText(text, "status");
     const status = statusText === undefined || statusText === "completed" ? "done" : "error";
-    return this.#settleChild(childKey, status, { summary: report ? firstLine(report) : tagText(text, "summary"), ...(report ? { report } : {}) });
+    const summary = report ? firstLine(report) : tagText(text, "summary");
+    return this.#settleChild(childKey, status, { ...(summary !== undefined ? { summary } : {}), ...(report ? { report } : {}) });
   }
 
   #rateLimit(message: RateLimitMessage): NormalizedEvent[] {
@@ -511,8 +512,10 @@ export class ClaudeNormalizer {
       return [];
     }
     const report = full.trim() === "" ? undefined : capReport(full);
+    const summary = report ? firstLine(report) : undefined;
     return this.#settleChild(childKey, status === "error" ? "error" : "done", {
-      ...(report ? { summary: firstLine(report), report } : {}),
+      ...(report ? { report } : {}),
+      ...(summary !== undefined ? { summary } : {}),
       parentToolUseId: tracked.parentToolUseId,
       ...(tracked.childName ? { fallbackName: tracked.childName } : {}),
     });

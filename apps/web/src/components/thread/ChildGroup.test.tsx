@@ -77,7 +77,7 @@ describe("ChildGroup settling", () => {
       setup(status);
       render(
         <ul>
-          <ChildGroup child={{ ...child, summary: undefined }} activities={[tool]} />
+          <ChildGroup child={(({ summary: _dropped, ...rest }) => rest)(child)} activities={[tool]} />
         </ul>,
       );
       expect(subagentButton().textContent).not.toContain("…");

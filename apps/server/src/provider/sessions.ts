@@ -51,6 +51,8 @@ export interface SessionDirectoryOptions {
   mcpServers?: McpServerSpec[];
   /** per-thread MCP servers (the Tide board/delegation tools, carrying an agent token) */
   mcp?: { serversFor(threadId: string): McpServerSpec[]; revoke(threadId: string): void };
+  /** one line naming the harnesses tide_delegate can target right now and their default models; re-read per open */
+  harnessHint?: () => string | undefined;
   /** false in tests: reapIdle() is then driven by hand against a manual clock */
   autoReap?: boolean;
   /** the live read model: who owns a native session id, and which threads have a turn in flight */
@@ -110,6 +112,7 @@ export class SessionDirectory {
   #idleMs: number;
   #mcpServers: McpServerSpec[];
   #mcp: { serversFor(threadId: string): McpServerSpec[]; revoke(threadId: string): void } | undefined;
+  #harnessHint: (() => string | undefined) | undefined;
   #log: (msg: string, data?: unknown) => void;
   #model: (() => ReadModel) | undefined;
   #entries = new Map<string, Entry>();
@@ -122,6 +125,7 @@ export class SessionDirectory {
     this.#idleMs = options.idleMs ?? IDLE_MS;
     this.#mcpServers = options.mcpServers ?? [];
     this.#mcp = options.mcp;
+    this.#harnessHint = options.harnessHint;
     this.#log = options.log ?? (() => undefined);
     this.#model = options.model;
     if (options.autoReap ?? true) {
@@ -186,8 +190,10 @@ export class SessionDirectory {
     const instance = await this.#registry.get(providerId);
     const linkedDirs = resolveLinkedDirs(thread, project);
     // every session that carries Tide's MCP server learns about the thread tools it exposes
-    const tideTools = this.#mcp !== undefined || this.#mcpServers.length > 0 ? THREAD_TOOLS_HINT : undefined;
-    const systemPromptAppend = composeSystemPromptAppend(linkedRepoPreamble(project, linkedDirs), tideTools);
+    const hasTideTools = this.#mcp !== undefined || this.#mcpServers.length > 0;
+    const tideTools = hasTideTools ? THREAD_TOOLS_HINT : undefined;
+    const harnesses = hasTideTools ? this.#harnessHint?.() : undefined;
+    const systemPromptAppend = composeSystemPromptAppend(linkedRepoPreamble(project, linkedDirs), tideTools, harnesses);
     const resume = hints.forkFrom !== undefined ? undefined : resumableSessionId(thread, this.#model?.());
     const session = await instance.openSession({
       threadId: thread.id,
