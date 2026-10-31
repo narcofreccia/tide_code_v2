@@ -296,3 +296,34 @@ describe("sub-agent reports", () => {
     expect(children(delivered)[0]).toMatchObject({ childKey: "t", status: "done", report: "All 3 files surveyed." });
   });
 });
+
+describe("background-subagent fixture (harness-initiated turns)", () => {
+  it("tracks backgrounded children until each <task-notification> settles them, one result per autonomous run", () => {
+    const normalizer = new ClaudeNormalizer({ partialMessages: true });
+    const messages = load("background-subagent");
+    const settledAt: number[] = [];
+    const background: number[] = [];
+    const reported: string[] = [];
+    const events: NormalizedEvent[] = [];
+    messages.forEach((message, index) => {
+      const name = normalizer.notificationName(message);
+      if (name !== undefined) reported.push(name);
+      const out = normalizer.next(message);
+      events.push(...out);
+      if (out.some((event) => event.type === "settled")) {
+        settledAt.push(index);
+        background.push(normalizer.backgroundCount());
+      }
+    });
+    expect(normalizer.unknownCount).toBe(0);
+    // the user turn plus three autonomous runs, each ending in its own result
+    expect(settledAt).toHaveLength(4);
+    expect(background).toEqual([3, 2, 1, 0]);
+    expect(reported).toEqual(["Audit feature gaps", "Audit UI/UX and ease of use", "Audit performance hotspots"]);
+    const done = events.flatMap((event) => (event.type === "activity" && event.activity.kind === "child" && event.activity.status === "done" ? [event.activity] : []));
+    expect(done.map((child) => child.name)).toEqual(reported);
+    expect(done[0]?.report).toContain("feature gaps");
+    const tools = events.flatMap((event) => (event.type === "activity" && event.activity.kind === "tool" && event.activity.status === "running" ? [event.activity.toolName] : []));
+    expect(tools).toEqual(["Agent", "Agent", "Agent", "Bash", "AskUserQuestion"]);
+  });
+});

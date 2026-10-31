@@ -1,4 +1,4 @@
-import type { DriverCaps, McpServerSpec, Project, ProviderInstance, ProviderKind, ProviderSession, ReadModel, SessionSettings, Thread } from "@tide/contracts";
+import type { DriverCaps, McpServerSpec, NormalizedEvent, Project, ProviderInstance, ProviderKind, ProviderSession, ReadModel, SessionSettings, Thread } from "@tide/contracts";
 import { THREAD_TOOLS_HINT } from "@tide/tide-mcp";
 import { composeSystemPromptAppend, linkedRepoPreamble, resolveLinkedDirs } from "./links.ts";
 import type { DriverRegistry } from "./registry.ts";
@@ -57,7 +57,15 @@ export interface SessionDirectoryOptions {
   autoReap?: boolean;
   /** the live read model: who owns a native session id, and which threads have a turn in flight */
   model?: () => ReadModel;
+  /** R14: a session's harness started a turn by itself (Claude Code resuming when a background sub-agent reports) */
+  onHarnessTurn?: (threadId: string, turn: HarnessTurn) => void;
   log?: (msg: string, data?: unknown) => void;
+}
+
+/** R14: a turn the harness started without a `send`; `events` is buffered by the driver and ends after `settled`. */
+export interface HarnessTurn {
+  reason: string;
+  events: AsyncIterable<NormalizedEvent>;
 }
 
 /**
@@ -97,6 +105,14 @@ export function hasLiveTurn(model: ReadModel, threadId: string): boolean {
   return latest?.status === "requested" || latest?.status === "running";
 }
 
+function hasBackgroundWork(session: ProviderSession): boolean {
+  try {
+    return session.hasBackgroundWork?.() === true;
+  } catch {
+    return false;
+  }
+}
+
 /** A thread's cwd is its worktree once P2 lands, the repo root until then. */
 export function threadCwd(thread: Thread, project: Project): string {
   return thread.worktreePath ?? project.rootPath;
@@ -115,6 +131,7 @@ export class SessionDirectory {
   #harnessHint: (() => string | undefined) | undefined;
   #log: (msg: string, data?: unknown) => void;
   #model: (() => ReadModel) | undefined;
+  #onHarnessTurn: ((threadId: string, turn: HarnessTurn) => void) | undefined;
   #entries = new Map<string, Entry>();
   #opening = new Map<string, Promise<ProviderSession>>();
   #timer: ReturnType<typeof setInterval> | undefined;
@@ -128,6 +145,7 @@ export class SessionDirectory {
     this.#harnessHint = options.harnessHint;
     this.#log = options.log ?? (() => undefined);
     this.#model = options.model;
+    this.#onHarnessTurn = options.onHarnessTurn;
     if (options.autoReap ?? true) {
       this.#timer = setInterval(() => void this.reapIdle(), REAP_INTERVAL_MS);
       this.#timer.unref?.();
@@ -208,6 +226,19 @@ export class SessionDirectory {
       ...(linkedDirs.length > 0 ? { linkedDirs } : {}),
       ...(systemPromptAppend !== undefined ? { systemPromptAppend } : {}),
     });
+    // subscribed before the session is handed out, so no harness turn can start unobserved
+    const onHarnessTurn = this.#onHarnessTurn;
+    if (onHarnessTurn !== undefined && session.onHarnessTurn !== undefined) {
+      const threadId = thread.id;
+      session.onHarnessTurn((turn) => {
+        this.touch(threadId);
+        try {
+          onHarnessTurn(threadId, turn);
+        } catch (err) {
+          this.#log("[provider] harness turn listener failed", err);
+        }
+      });
+    }
     this.#entries.set(thread.id, { threadId: thread.id, providerId, instance, cwd, session, settings: settingsOf(thread), lastUsedAt: this.#now() });
     return session;
   }
@@ -243,13 +274,14 @@ export class SessionDirectory {
 
   /**
    * Closes every session untouched for longer than idleMs. A thread with a turn in flight is
-   * never reaped, however long the harness has been quiet (a long tool call emits nothing).
+   * never reaped, however long the harness has been quiet (a long tool call emits nothing), nor
+   * is a session whose harness still runs background work (sub-agents that have not reported).
    */
   async reapIdle(): Promise<string[]> {
     const cutoff = this.#now() - this.#idleMs;
     const model = this.#model?.();
     const stale = [...this.#entries.values()]
-      .filter((e) => e.lastUsedAt <= cutoff && !(model !== undefined && hasLiveTurn(model, e.threadId)))
+      .filter((e) => e.lastUsedAt <= cutoff && !(model !== undefined && hasLiveTurn(model, e.threadId)) && !hasBackgroundWork(e.session))
       .map((e) => e.threadId);
     for (const threadId of stale) await this.close(threadId);
     return stale;

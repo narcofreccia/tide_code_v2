@@ -147,7 +147,7 @@ export function Stream({ threadId, provider }: { threadId: string; provider: Pro
         {nodes.map((node) => {
           if (node.kind === "group") return <ActivityGroup key={node.id} activities={node.activities} />;
           if (node.kind === "message") {
-            if (node.message.notification !== undefined) return <NoticeRow key={node.message.id} message={node.message} />;
+            if (node.message.notification !== undefined) return <NoticeRow key={node.message.id} message={node.message} provider={provider} />;
             const turn = model.turns[node.message.turnId];
             const handoff =
               node.message.role === "user" && node.message.steer !== true && turn?.handoffId !== undefined

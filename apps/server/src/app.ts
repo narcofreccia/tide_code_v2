@@ -149,6 +149,8 @@ export async function createApp(options: AppOptions): Promise<App> {
     log,
     model: () => engine.getModel(),
     harnessHint: () => delegateTargetsHint(registry, settings.get().providerDefaults),
+    // R14: a turn the harness started by itself (background sub-agent reported) becomes a Tide turn
+    onHarnessTurn: (threadId, turn) => reactor.attachHarnessTurn(threadId, turn),
   });
   registry.setInUse((instance) => sessions.usesInstance(instance));
 

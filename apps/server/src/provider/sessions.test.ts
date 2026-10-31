@@ -165,6 +165,42 @@ describe("SessionDirectory", () => {
     expect(await sessions.reapIdle()).toEqual(["t1"]);
   });
 
+  it("R14: never reaps a session whose harness still runs background work", async () => {
+    const { sessions, claude, clock } = setup();
+    await sessions.getOrOpen(thread(), project);
+    const session = claude.sessionFor("t1")!;
+    session.backgroundWork = true;
+    clock.t = 120 * 60_000;
+    expect(await sessions.reapIdle()).toEqual([]);
+    expect(claude.closed).toEqual([]);
+    // the sub-agents reported: the idle rule applies again
+    session.backgroundWork = false;
+    expect(await sessions.reapIdle()).toEqual(["t1"]);
+  });
+
+  it("R14: forwards turns the harness starts by itself, from the moment the session opens", async () => {
+    const clock = { t: 0 };
+    const registry = new DriverRegistry({ env: { dataDir: ":memory:", log: () => undefined } });
+    const claude = createFakeDriver("claude");
+    registry.register(claude.driver);
+    const seen: { threadId: string; reason: string }[] = [];
+    const sessions = new SessionDirectory({
+      registry,
+      now: () => clock.t,
+      autoReap: false,
+      log: () => undefined,
+      model: () => emptyReadModel(),
+      onHarnessTurn: (threadId, turn) => void seen.push({ threadId, reason: turn.reason }),
+    });
+    await sessions.getOrOpen(thread(), project);
+    clock.t = 5_000;
+    claude.control.sessionFor("t1")!.emitHarnessTurn("sub-agent reported", [{ type: "settled", status: "completed" }]);
+    expect(seen).toEqual([{ threadId: "t1", reason: "sub-agent reported" }]);
+    // a harness turn is a sign of life: the reaper counts from it
+    clock.t = 5_000 + 30 * 60_000 - 1;
+    expect(await sessions.reapIdle()).toEqual([]);
+  });
+
   it("close() and closeAll() release live sessions", async () => {
     const { sessions, claude } = setup();
     await sessions.getOrOpen(thread(), project);

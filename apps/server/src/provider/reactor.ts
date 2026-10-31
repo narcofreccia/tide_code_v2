@@ -16,7 +16,8 @@ import { isUsageLimitError } from "../orchestration/limits.ts";
 import { attachmentFooter } from "../workspace/attachments.ts";
 import { activityKey, mergeActivity } from "./activities.ts";
 import { inlinePrompt, planHandoffDelivery, type DeliveryPlan } from "./handoffDelivery.ts";
-import { instanceIdOf, type SessionDirectory } from "./sessions.ts";
+import { drainEvents, HarnessTurnQueue } from "./harnessTurns.ts";
+import { instanceIdOf, type HarnessTurn, type SessionDirectory } from "./sessions.ts";
 
 interface ThreadState {
   /** one turn at a time per thread; different threads run concurrently */
@@ -25,6 +26,12 @@ interface ThreadState {
   activityIds: Map<string, string>;
   /** `${turnId}:${messageKey}` -> message id, so deltas assemble into one message */
   messageIds: Map<string, string>;
+  /**
+   * childKey -> the sub-agent's row and the turn it was launched in, kept across turns: a
+   * background sub-agent reports in a later (harness-initiated) turn, and its row must settle
+   * in place rather than appear twice. Its own tool rows join that turn too.
+   */
+  children: Map<string, { id: string; turnId: string }>;
 }
 
 /** What one running turn learned that matters after it settles. */
@@ -106,6 +113,8 @@ export class ProviderReactor {
   /** threadId -> the turn currently inside `session.send` (the only one a steer can land in) */
   #live = new Map<string, string>();
   #inflight = new Set<Promise<unknown>>();
+  /** R14: turns the harness started by itself, consumed by `#runTurn` instead of `send` */
+  #harnessTurns = new HarnessTurnQueue();
   #unsubscribe: (() => void) | undefined;
 
   constructor(options: ReactorOptions) {
@@ -147,10 +156,39 @@ export class ProviderReactor {
     throw new Error("reactor did not drain");
   }
 
+  /**
+   * R14: the harness started a turn by itself (Claude Code resuming when a background sub-agent
+   * reports). It becomes an ordinary Tide turn — a `turn.request` carrying a `harness`
+   * notification — whose events are read from `turn.events` instead of a `send`.
+   * Wire it as `new SessionDirectory({ ..., onHarnessTurn: (id, turn) => reactor.attachHarnessTurn(id, turn) })`.
+   */
+  attachHarnessTurn(threadId: string, turn: HarnessTurn): void {
+    this.#harnessTurns.offer(threadId, turn);
+    this.#track(
+      (async () => {
+        try {
+          await this.#engine.dispatch({ type: "turn.request", threadId, text: turn.reason, notification: { source: "harness", summary: turn.reason } });
+        } catch (err) {
+          this.#log("[reactor] harness turn refused; discarding its events", err);
+        }
+        // still waiting = no `turn.requested` claimed it (refused, or the thread is gone)
+        if (this.#harnessTurns.withdraw(threadId, turn)) await drainEvents(turn.events, this.#log);
+      })(),
+    );
+  }
+
+  /** A harness turn that will never run: consume its events so the driver frees them. */
+  async #releaseHarnessTurn(events: AsyncIterable<NormalizedEvent> | undefined, why: string, turnId: string): Promise<void> {
+    if (events === undefined) return;
+    this.#log(`[reactor] discarding harness turn: ${why}`, turnId);
+    await drainEvents(events, this.#log);
+  }
+
   #onRecord(record: EventRecord): void {
     const event = record.event;
     switch (event.type) {
       case "turn.requested":
+        if (event.userMessage.notification?.source === "harness") this.#harnessTurns.claim(event.turn.threadId, event.turn.id);
         this.#accept(event.turn.threadId, event.turn.id, textOf(event.userMessage), event.images);
         return;
       // the harness could not take a steer: the message became a turn of its own, run like any other
@@ -162,6 +200,7 @@ export class ProviderReactor {
         return;
       case "turn.dequeued":
         this.#known.delete(event.turnId);
+        this.#track(this.#releaseHarnessTurn(this.#harnessTurns.take(event.turnId), "dequeued", event.turnId));
         return;
       case "approval.responded":
         this.#withSession(
@@ -293,7 +332,7 @@ export class ProviderReactor {
   #state(threadId: string): ThreadState {
     let state = this.#threads.get(threadId);
     if (!state) {
-      state = { queue: Promise.resolve(), activityIds: new Map(), messageIds: new Map() };
+      state = { queue: Promise.resolve(), activityIds: new Map(), messageIds: new Map(), children: new Map() };
       this.#threads.set(threadId, state);
     }
     return state;
@@ -353,8 +392,10 @@ export class ProviderReactor {
   }
 
   async #runTurn(threadId: string, turnId: string, input: TurnInput): Promise<void> {
+    // a turn the harness is already running: its events replace `send`, no prompt is built
+    const attached = this.#harnessTurns.take(turnId);
     // dequeued while waiting, or settled by recovery/shutdown: nothing to run
-    if (this.#engine.getModel().turns[turnId]?.status !== "requested") return;
+    if (this.#engine.getModel().turns[turnId]?.status !== "requested") return this.#releaseHarnessTurn(attached, "turn no longer requested", turnId);
     // Gives the vcs reactor its window to snapshot the working tree before the first tool
     // call, and to attach a worktree, so the session below opens in the final cwd.
     if (this.#beforeTurn) {
@@ -369,7 +410,7 @@ export class ProviderReactor {
     const project = thread ? model.projects[thread.projectId] : undefined;
     if (!thread || !project) {
       await this.#dispatch({ type: "turn.settle", turnId, status: "error", error: "thread or project is gone" });
-      return;
+      return this.#releaseHarnessTurn(attached, "thread or project is gone", turnId);
     }
 
     let started = false;
@@ -389,11 +430,14 @@ export class ProviderReactor {
     let settled = false;
     const run: TurnRun = {};
     try {
-      const { session, prompt } = await this.#openFor(thread, project, turnId, input);
+      // an attached turn never opens/reconfigures: that could close the very session running it
+      const opened = attached === undefined ? await this.#openFor(thread, project, turnId, input) : undefined;
       this.#sessions.touch(threadId);
-      if (session.nativeSessionId !== undefined) await start(session.nativeSessionId);
+      const nativeSessionId = (opened?.session ?? this.#sessions.peek(threadId))?.nativeSessionId;
+      if (nativeSessionId !== undefined) await start(nativeSessionId);
       this.#live.set(threadId, turnId);
-      for await (const event of session.send(prompt)) {
+      const events = opened !== undefined ? opened.session.send(opened.prompt) : attached!;
+      for await (const event of events) {
         // every sign of life keeps the session off the idle reaper
         this.#sessions.touch(threadId);
         if (event.type === "session") {
@@ -530,12 +574,18 @@ export class ProviderReactor {
         // scoped to the turn: Codex request ids restart at 0 per process, tool ids may repeat
         const native = activityKey(event.activity);
         const key = native === undefined ? undefined : `${turnId}:${native}`;
-        let id = event.activity.id ?? (key !== undefined ? state.activityIds.get(key) : undefined);
+        const child = event.activity.kind === "child" ? state.children.get(event.activity.childKey) : undefined;
+        const parentKey = event.activity.kind === "child" ? undefined : event.activity.parentToolUseId ?? undefined;
+        const parent = parentKey === undefined ? undefined : state.children.get(parentKey);
+        let id = event.activity.id ?? child?.id ?? (key !== undefined ? state.activityIds.get(key) : undefined);
         id ??= this.#newId();
         if (key !== undefined) state.activityIds.set(key, id);
+        // a child settling later lands on its own row and turn; its tool rows follow it
+        const ownerTurnId = child?.turnId ?? parent?.turnId ?? turnId;
+        if (event.activity.kind === "child" && child === undefined) state.children.set(event.activity.childKey, { id, turnId });
         const at = this.#now();
         const previous = this.#engine.getModel().activities[id];
-        const activity = mergeActivity(previous, event.activity, { id, threadId, turnId, createdAt: at, updatedAt: at });
+        const activity = mergeActivity(previous, event.activity, { id, threadId, turnId: ownerTurnId, createdAt: at, updatedAt: at });
         await this.#dispatch({ type: "activity.upsert", activity });
         return false;
       }

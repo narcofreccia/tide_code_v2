@@ -80,6 +80,7 @@ function activeTurn(model: ReadModel, thread: Thread): Turn | undefined {
 function turnLabel(model: ReadModel, thread: Thread, turn: Turn): LiveLabelInfo {
   const entries = model.threadTimeline[thread.id] ?? [];
   let latest: "writing" | "other" | undefined;
+  let harnessWake = false;
   for (let i = entries.length - 1; i >= 0; i--) {
     const entry = entries[i];
     if (entry === undefined) continue;
@@ -94,10 +95,13 @@ function turnLabel(model: ReadModel, thread: Thread, turn: Turn): LiveLabelInfo 
       const message = model.messages[entry.id];
       if (message === undefined) continue;
       if (message.turnId !== turn.id) break;
+      if (message.role === "user" && message.notification?.source === "harness") harnessWake = true;
       latest ??= message.role === "assistant" && message.streaming === true && message.text !== "" ? "writing" : "other";
     }
   }
-  return latest === "writing" ? { text: "Writing", kind: undefined } : { text: "Thinking", kind: "thinking" };
+  if (latest === "writing") return { text: "Writing", kind: undefined };
+  if (harnessWake) return { text: "continuing after a sub-agent reported", kind: "thinking" };
+  return { text: "Thinking", kind: "thinking" };
 }
 
 function hasQueuedTurn(model: ReadModel, threadId: string): boolean {

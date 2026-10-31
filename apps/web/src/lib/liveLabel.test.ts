@@ -18,6 +18,13 @@ function build(thread: Thread, turns: Turn[], entries: (Activity | Message)[] = 
 }
 
 describe("liveLabelFor", () => {
+  it("says a harness-initiated turn is continuing after a sub-agent reported", () => {
+    const model = build(running, [makeTurn("u1", { status: "running" })], [
+      makeMessage("m1", { role: "user", text: "x", notification: { source: "harness", summary: "s" } }),
+    ]);
+    expect(liveLabelFor(model, running)).toEqual({ text: "continuing after a sub-agent reported", kind: "thinking" });
+  });
+
   it("names a running tool with the basename of its path", () => {
     const model = build(running, [makeTurn("u1", { status: "running" })], [
       makeTool("a1", { toolName: "Edit", input: { file_path: "/repo/src/routes/Splash.svelte" }, status: "running" }),

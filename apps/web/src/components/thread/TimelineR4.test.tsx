@@ -31,6 +31,19 @@ describe("Stream R4 rows", () => {
     expect(container.querySelector('[data-source="pr"]')).not.toBeNull();
   });
 
+  it("renders a harness-initiated turn as a labelled notice, not a user bubble", () => {
+    attachFakeStore(
+      modelWithTurns(thread, [makeTurn("u1")], [
+        makeMessage("m1", { text: "raw", notification: { source: "harness", summary: 'sub-agent "Audit" reported' } }),
+      ]),
+    );
+    const { container } = render(<Stream threadId="t1" provider="claude" />);
+    expect(screen.getByText("Claude continued")).toBeDefined();
+    expect(screen.getByText('sub-agent "Audit" reported')).toBeDefined();
+    expect(screen.queryByText("raw")).toBeNull();
+    expect(container.querySelector('[data-source="harness"]')).not.toBeNull();
+  });
+
   it("shows a collapsed handoff card above the user message", () => {
     const handoff: Handoff = {
       id: "h1",

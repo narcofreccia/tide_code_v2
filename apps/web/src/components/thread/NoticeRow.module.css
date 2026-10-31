@@ -13,3 +13,5 @@
 }
 .notice[data-source="restart"] .icon { color: var(--warn); }
 .summary { min-width: 0; overflow-wrap: anywhere; }
+.lead { flex: none; color: var(--text); font-weight: 500; }
+.lead::after { content: " ·"; color: var(--muted); font-weight: 400; }

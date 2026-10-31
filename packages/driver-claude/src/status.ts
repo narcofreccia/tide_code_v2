@@ -27,6 +27,8 @@ export const CLAUDE_CAPS = {
   // R8 — Options.effort / Query.applyFlagSettings({effortLevel}); Query.supportedCommands()
   effort: true,
   commands: true,
+  // R14 — Claude Code resumes on its own when a background sub-agent reports (session.ts idle pump)
+  harnessTurns: true,
 } as const;
 
 export const LOGIN_HINT = "Run `claude auth login` in a terminal";

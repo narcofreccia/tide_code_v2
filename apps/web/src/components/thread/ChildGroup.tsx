@@ -31,7 +31,7 @@ function childState(status: ActivityOf<"child">["status"], turnSettled: boolean)
   return status === "running" && turnSettled ? "open" : status;
 }
 
-const OPEN_NOTE = "no result reported yet — it may still be running in the background";
+const OPEN_NOTE = "running in the background — the thread continues when it reports";
 
 function StateMark({ state }: { state: ChildState }) {
   if (state === "running") return <LiveLabel text="…" />;

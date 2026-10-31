@@ -12,6 +12,7 @@ import type {
 import { ApprovalBroker, type CanUseToolContext, type PermissionResultShape } from "./approvals.ts";
 import { AsyncQueue } from "./async-queue.ts";
 import { instanceEnv } from "./env.ts";
+import { CONTINUED_REASON, HarnessTurn, type HarnessTurnListener, isSubstantive, Preamble, reportedReason } from "./harness-turn.ts";
 import { ClaudeNormalizer } from "./normalize.ts";
 import { rollbackPoint } from "./rollback.ts";
 import type { ClaudeMessage, ResultMessage, TranscriptEntry } from "./sdk-shapes.ts";
@@ -36,6 +37,18 @@ import type { ClaudeConfig, QueryFn, QueryLike, SessionMessagesFn } from "./type
  * - fork: `resume: <source>` + `forkSession: true` on the next query mints a new session id.
  * - rollback: a truncating resume (`resume` + `resumeSessionAt: <kept turn's last chain
  *   entry>`) on a fresh query; the uuid comes from the transcript (`getSessionMessages`).
+ *
+ * R14 idle pump and harness turns: Claude Code does not stop at a `result`. When the model
+ * launched background sub-agents (Agent tool, "Async agent launched successfully"), the CLI
+ * later injects a `<task-notification>` user message and runs a new model turn by itself —
+ * text, tools, even an `AskUserQuestion` through `canUseTool` — ending in its own `result`.
+ * So once a send settles, `#idleLoop` keeps reading the same iterator. Bookkeeping read while
+ * idle (session ids, usage, rate limits, child progress, `info` rows) is held in a small
+ * preamble; the first substantive event (see `isSubstantive`), a `<task-notification>` user
+ * message, or a broker emit opens a *harness turn*: its own mailbox handed to the
+ * `onHarnessTurn` listener, ended by the next `result`. A `send()` arriving meanwhile waits
+ * for that turn to settle, then takes the iterator over (the in-flight `next()` is shared
+ * through `#read`, so a read the idle loop started is consumed by the send's pump instead).
  */
 
 async function sdkSessionMessages(): Promise<SessionMessagesFn> {
@@ -111,6 +124,16 @@ export class ClaudeSession implements ProviderSession {
   /** true once the running turn's messages are in the input stream */
   #turnFed = false;
 
+  #harnessListener: HarnessTurnListener | undefined;
+  /** the turn Claude Code is running on its own, if any */
+  #harness: HarnessTurn | undefined;
+  #preamble = new Preamble();
+  /** bumped to stop the idle loop (a send takes over, reset, close) */
+  #idleGen = 0;
+  /** the pending `next()` on the live iterator, shared by whichever reader owns it next */
+  #inflight: { iterator: AsyncIterator<ClaudeMessage>; promise: Promise<IteratorResult<ClaudeMessage>> } | undefined;
+  #warnedNoListener = false;
+
   constructor(config: ClaudeConfig, env: DriverEnv, options: OpenSessionOptions, queryFn: QueryFn, binaryPath?: string) {
     this.#config = config;
     this.#env = env;
@@ -137,8 +160,155 @@ export class ClaudeSession implements ProviderSession {
     });
   }
 
+  /** Broker/driver events: the running send, else the harness turn, else a new harness turn. */
   #emit(event: NormalizedEvent): void {
-    this.#mailbox?.push(event);
+    if (this.#mailbox) {
+      this.#mailbox.push(event);
+      return;
+    }
+    if (this.#closed) return;
+    const reason = event.type === "activity" && event.activity.kind === "user-input" ? "Claude Code asked a question" : CONTINUED_REASON;
+    (this.#harness ?? this.#openHarness(reason)).push(event);
+  }
+
+  onHarnessTurn(listener: HarnessTurnListener): void {
+    this.#harnessListener = listener;
+  }
+
+  hasBackgroundWork(): boolean {
+    return this.#harness !== undefined || this.#normalizer.backgroundCount() > 0;
+  }
+
+  #applySession(event: Extract<NormalizedEvent, { type: "session" }>): void {
+    this.nativeSessionId = event.nativeSessionId;
+    this.#forkFrom = undefined;
+    this.#resumeAt = undefined;
+  }
+
+  /** One `next()` per iterator at a time; a reader that gives up leaves it for the next owner. */
+  #read(iterator: AsyncIterator<ClaudeMessage>): Promise<IteratorResult<ClaudeMessage>> {
+    if (this.#inflight?.iterator === iterator) return this.#inflight.promise;
+    const promise = iterator.next();
+    promise.catch(() => undefined); // an abandoned read must not surface as an unhandled rejection
+    this.#inflight = { iterator, promise };
+    return promise;
+  }
+
+  #claim(promise: Promise<IteratorResult<ClaudeMessage>>): void {
+    if (this.#inflight?.promise === promise) this.#inflight = undefined;
+  }
+
+  #startIdle(): void {
+    const iterator = this.#iterator;
+    if (!iterator || this.#closed) return;
+    const gen = ++this.#idleGen;
+    this.#idleLoop(iterator, gen).catch((error: unknown) => {
+      this.#env.log(`[claude] idle reader failed: ${error instanceof Error ? error.message : String(error)}`);
+    });
+  }
+
+  #stopIdle(): void {
+    this.#idleGen++;
+  }
+
+  #idleOwns(iterator: AsyncIterator<ClaudeMessage>, gen: number): boolean {
+    return !this.#closed && this.#idleGen === gen && this.#iterator === iterator;
+  }
+
+  async #idleLoop(iterator: AsyncIterator<ClaudeMessage>, gen: number): Promise<void> {
+    while (this.#idleOwns(iterator, gen)) {
+      const pending = this.#read(iterator);
+      let step: IteratorResult<ClaudeMessage>;
+      try {
+        step = await pending;
+      } catch (error) {
+        if (!this.#idleOwns(iterator, gen)) return;
+        this.#claim(pending);
+        this.#idleEnded(error instanceof Error ? error.message : String(error));
+        return;
+      }
+      if (!this.#idleOwns(iterator, gen)) return; // a send took over and consumes this read
+      this.#claim(pending);
+      if (step.done) {
+        this.#idleEnded(undefined);
+        return;
+      }
+      await this.#idleMessage(step.value);
+    }
+  }
+
+  async #idleMessage(message: ClaudeMessage): Promise<void> {
+    const reported = this.#normalizer.notificationName(message);
+    const events = this.#normalizer.next(message);
+    if (reported !== undefined && !this.#harness) this.#openHarness(reportedReason(reported));
+    for (const event of events) {
+      if (event.type === "session") this.#applySession(event);
+      if (event.type === "settled") {
+        const turn = this.#harness;
+        if (turn) await this.#settleHarness(turn, event);
+        else this.#preamble.clear();
+        continue;
+      }
+      if (this.#harness) {
+        this.#harness.push(event);
+        continue;
+      }
+      if (!isSubstantive(event)) {
+        this.#preamble.add(event);
+        continue;
+      }
+      const reason = event.type === "activity" && event.activity.kind === "child" ? reportedReason(event.activity.name) : CONTINUED_REASON;
+      this.#openHarness(reason).push(event);
+    }
+  }
+
+  #openHarness(reason: string): HarnessTurn {
+    const turn = new HarnessTurn(reason);
+    this.#harness = turn;
+    this.#interruptRequested = false;
+    for (const event of this.#preamble.take()) turn.push(event);
+    const listener = this.#harnessListener;
+    if (listener) {
+      try {
+        listener({ reason, events: turn.mailbox.drain() });
+      } catch (error) {
+        this.#env.log(`[claude] harness-turn listener threw: ${error instanceof Error ? error.message : String(error)}`);
+      }
+      return turn;
+    }
+    if (!this.#warnedNoListener) {
+      this.#warnedNoListener = true;
+      this.#env.log(`[claude] Claude Code started a turn on its own (${reason}) but nobody listens; its output is dropped`);
+    }
+    void (async () => {
+      for await (const _event of turn.mailbox.drain()) {
+        // drained so the turn still settles and the CLI is never left unread
+      }
+    })();
+    return turn;
+  }
+
+  async #settleHarness(turn: HarnessTurn, event: Extract<NormalizedEvent, { type: "settled" }>): Promise<void> {
+    const contextUsage = await this.#contextUsage();
+    if (contextUsage) turn.push({ type: "usage", contextUsage });
+    turn.push(event);
+    this.#endHarness(turn);
+  }
+
+  #endHarness(turn: HarnessTurn): void {
+    if (this.#harness === turn) this.#harness = undefined;
+    turn.finish();
+  }
+
+  /** The iterator ended or threw while no send owned it: the CLI is gone, the next send resumes. */
+  #idleEnded(error: string | undefined): void {
+    const turn = this.#harness;
+    if (turn) {
+      turn.push({ type: "settled", status: this.#interruptRequested ? "interrupted" : "error", error: error ?? "claude stream ended before the turn settled" });
+      this.#endHarness(turn);
+    }
+    if (error !== undefined) this.#env.log(`[claude] stream failed between turns: ${error}`);
+    this.#resetQuery();
   }
 
   #buildOptions(): Record<string, unknown> {
@@ -217,9 +387,7 @@ export class ClaudeSession implements ProviderSession {
     if (this.#closed) throw new Error("claude session is closed");
     if (this.#turnActive) throw new Error("busy: a turn is already running on this claude session");
     this.#turnActive = true;
-    this.#interruptRequested = false;
     const mailbox = new AsyncQueue<NormalizedEvent>();
-    this.#mailbox = mailbox;
     const pending = buildUserMessage(input, this.nativeSessionId ?? "");
     this.#prompts.push(pending.uuid);
     this.#turnMessages = [pending];
@@ -228,13 +396,22 @@ export class ClaudeSession implements ProviderSession {
     const self = this;
 
     async function* stream(): AsyncGenerator<NormalizedEvent, void> {
-      const pump = self.#pump(mailbox);
       try {
+        // Claude Code is running a turn of its own: this send queues behind it
+        while (self.#harness) await self.#harness.done;
+        if (self.#closed) {
+          yield { type: "settled", status: "interrupted", error: "claude session closed" };
+          return;
+        }
+        self.#stopIdle();
+        self.#interruptRequested = false;
+        self.#mailbox = mailbox;
+        const pump = self.#pump(mailbox);
         for await (const event of mailbox.drain()) yield event;
         await pump;
       } finally {
         self.#turnActive = false;
-        self.#mailbox = undefined;
+        if (self.#mailbox === mailbox) self.#mailbox = undefined;
         self.#turnMessages = [];
         self.#pendingSteers.clear();
       }
@@ -243,20 +420,24 @@ export class ClaudeSession implements ProviderSession {
   }
 
   async #pump(mailbox: AsyncQueue<NormalizedEvent>): Promise<void> {
+    let idle = false;
     try {
       let iterator = this.#ensureQuery();
       for (const message of this.#turnMessages) this.#inbox.push(message);
       this.#turnFed = true;
       for (;;) {
         let step: IteratorResult<ClaudeMessage>;
+        const pending = this.#read(iterator);
         try {
-          step = await iterator.next();
+          step = await pending;
         } catch (error) {
+          this.#claim(pending);
           if (!this.#shouldFallbackFromAuto(error)) throw error;
           iterator = this.#rebuildForAcceptEdits();
           for (const message of this.#turnMessages) this.#inbox.push(message);
           continue;
         }
+        this.#claim(pending);
         this.#started = true;
         if (step.done) {
           mailbox.push({ type: "settled", status: this.#interruptRequested ? "interrupted" : "error", error: "claude stream ended before the turn settled" });
@@ -264,11 +445,7 @@ export class ClaudeSession implements ProviderSession {
         }
         const events = this.#normalizer.next(step.value);
         for (const event of events) {
-          if (event.type === "session") {
-            this.nativeSessionId = event.nativeSessionId;
-            this.#forkFrom = undefined;
-            this.#resumeAt = undefined;
-          }
+          if (event.type === "session") this.#applySession(event);
           if (event.type === "settled") {
             const after = this.#afterResult(step.value as ResultMessage, event.status);
             if (after === "continue") continue; // a steer missed the fold: its own turn follows
@@ -277,6 +454,7 @@ export class ClaudeSession implements ProviderSession {
             if (contextUsage) mailbox.push({ type: "usage", contextUsage });
             mailbox.push(event);
             if (after === "reset") this.#resetQuery();
+            else idle = true;
             return;
           }
           mailbox.push(event);
@@ -287,6 +465,9 @@ export class ClaudeSession implements ProviderSession {
       mailbox.push({ type: "settled", status: this.#interruptRequested ? "interrupted" : "error", error: message });
     } finally {
       mailbox.close();
+      if (this.#mailbox === mailbox) this.#mailbox = undefined;
+      // Claude Code may keep going on its own (background sub-agents reporting): keep reading
+      if (idle) this.#startIdle();
     }
   }
 
@@ -306,6 +487,9 @@ export class ClaudeSession implements ProviderSession {
   /** Ends the live CLI process; the next `send()` builds a new query from `#buildOptions`. */
   #resetQuery(): void {
     const iterator = this.#iterator;
+    this.#stopIdle();
+    this.#inflight = undefined;
+    this.#preamble.clear();
     this.#inbox.close();
     try {
       this.#abort.abort();
@@ -400,7 +584,7 @@ export class ClaudeSession implements ProviderSession {
    */
   async rollback(turns: number): Promise<void> {
     if (this.#closed) throw new Error("claude session is closed");
-    if (this.#turnActive) throw new Error("busy: cannot roll back while a turn is running");
+    if (this.#turnActive || this.#harness) throw new Error("busy: cannot roll back while a turn is running");
     if (turns <= 0) return;
     const source = this.#forkFrom ?? this.nativeSessionId;
     if (source === undefined) throw new Error(`invalid-params: cannot roll back ${turns} turn(s); the claude session has no history`);
@@ -435,7 +619,8 @@ export class ClaudeSession implements ProviderSession {
 
   async interrupt(): Promise<void> {
     this.#interruptRequested = true;
-    this.#normalizer.markInterrupted();
+    // marking an idle normalizer would mislabel whatever turn comes next as interrupted
+    if (this.#turnActive || this.#harness) this.#normalizer.markInterrupted();
     this.#broker.cancelAll();
     const interrupt = this.#query?.interrupt;
     if (!interrupt || !this.#query) return;
@@ -449,14 +634,25 @@ export class ClaudeSession implements ProviderSession {
   async close(): Promise<void> {
     if (this.#closed) return;
     this.#closed = true;
+    this.#stopIdle();
     this.#broker.cancelAll();
     this.#inbox.close();
     this.#mailbox?.close();
+    const turn = this.#harness;
+    if (turn) {
+      turn.push({ type: "settled", status: "interrupted", error: "claude session closed" });
+      this.#endHarness(turn);
+    }
     try {
       this.#abort.abort();
     } catch {
       // an already-aborted controller is fine
     }
-    await this.#iterator?.return?.(undefined).catch(() => undefined);
+    const iterator = this.#iterator;
+    const reading = this.#inflight !== undefined;
+    this.#inflight = undefined;
+    // with a `next()` pending, `return()` queues behind it: abort ends the CLI, don't wait on it
+    if (reading) void iterator?.return?.(undefined).catch(() => undefined);
+    else await iterator?.return?.(undefined).catch(() => undefined);
   }
 }

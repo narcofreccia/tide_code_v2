@@ -82,7 +82,7 @@ describe("ChildGroup settling", () => {
       );
       expect(subagentButton().textContent).not.toContain("…");
       expect(screen.queryByLabelText("done")).toBeNull();
-      expect(screen.getAllByText(/no result reported yet/).length).toBeGreaterThan(0);
+      expect(screen.getAllByText(/running in the background — the thread continues/).length).toBeGreaterThan(0);
       expect(subagentButton().getAttribute("aria-expanded")).toBe("false");
     },
   );

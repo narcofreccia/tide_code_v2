@@ -27,6 +27,7 @@ export function turnConclusion(activities: Activity[]): string {
   if (tools > 0) parts.push(plural(tools, "tool call"));
   if (finished > 0) parts.push(`${plural(finished, "sub-agent")} finished${failed > 0 ? ` (${failed} failed)` : ""}`);
   if (open > 0) parts.push(`${plural(open, "sub-agent")} with no result yet`);
+  if (open > 0) parts[parts.length - 1] += " · the thread continues when they report";
   return parts.join(" · ");
 }
 

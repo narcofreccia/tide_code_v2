@@ -85,7 +85,41 @@ export class FakeSession implements ProviderSession {
 
   send(input: TurnInput): AsyncIterable<NormalizedEvent> {
     this.inputs.push(input);
-    const steps = this.control.takeScript(this.options.threadId);
+    return this.#run(this.control.takeScript(this.options.threadId));
+  }
+
+  /** R14: what `hasBackgroundWork()` answers (backgrounded sub-agents still running). */
+  backgroundWork = false;
+  #harnessListeners: ((turn: { reason: string; events: AsyncIterable<NormalizedEvent> }) => void)[] = [];
+
+  onHarnessTurn(listener: (turn: { reason: string; events: AsyncIterable<NormalizedEvent> }) => void): void {
+    this.#harnessListeners.push(listener);
+  }
+
+  hasBackgroundWork(): boolean {
+    return this.backgroundWork;
+  }
+
+  /**
+   * R14: the harness starts a turn by itself. The items play like a scripted turn (plain events,
+   * or steps such as `awaitInterrupt()`); `drained` resolves once the server consumed them all.
+   */
+  emitHarnessTurn(reason: string, items: ReadonlyArray<NormalizedEvent | FakeStep>): { drained: Promise<void> } {
+    const steps = items.map((item): FakeStep => ("kind" in item ? item : emit(item)));
+    const done = deferred<void>();
+    const inner = this.#run(steps);
+    async function* events(): AsyncGenerator<NormalizedEvent> {
+      try {
+        yield* inner;
+      } finally {
+        done.resolve(undefined);
+      }
+    }
+    for (const listener of this.#harnessListeners) listener({ reason, events: events() });
+    return { drained: done.promise };
+  }
+
+  #run(steps: FakeStep[]): AsyncGenerator<NormalizedEvent> {
     const self = this;
     async function* run(): AsyncGenerator<NormalizedEvent> {
       for (const step of steps) {

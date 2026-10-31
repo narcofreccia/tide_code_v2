@@ -158,7 +158,7 @@ export class ClaudeNormalizer {
    * Every child row this session opened, by childKey, plus task_id -> childKey. Kept past
    * completion: a background sub-agent reports back via task_notification, often a turn later.
    */
-  #children = new Map<string, { name: string; description?: string; backgrounded: boolean; summarised: boolean }>();
+  #children = new Map<string, { name: string; description?: string; backgrounded: boolean; summarised: boolean; settled?: boolean }>();
   #taskChild = new Map<string, string>();
   #interrupted = false;
   #reported: Cumulative = { input: 0, output: 0, cacheRead: 0, cacheWrite: 0, cost: 0 };
@@ -166,6 +166,27 @@ export class ClaudeNormalizer {
 
   constructor(options: NormalizerOptions) {
     this.#opts = options;
+  }
+
+  /** Backgrounded sub-agents that have not reported yet (they keep Claude Code busy between turns). */
+  backgroundCount(): number {
+    let count = 0;
+    for (const child of this.#children.values()) if (child.backgrounded && child.settled !== true) count++;
+    return count;
+  }
+
+  /**
+   * The sub-agent a `<task-notification>` user message reports on: the tracked child's name,
+   * else the CLI's `Agent "<name>" finished` summary. Undefined for any other message.
+   */
+  notificationName(message: ClaudeMessage): string | undefined {
+    if (message.type !== "user") return undefined;
+    const text = userText((message as UserMessage).message?.content);
+    if (!text.includes("<task-notification>")) return undefined;
+    const taskId = tagText(text, "task-id");
+    const childKey = (taskId !== undefined ? this.#taskChild.get(taskId) : undefined) ?? tagText(text, "tool-use-id");
+    const known = childKey !== undefined ? this.#children.get(childKey)?.name : undefined;
+    return known ?? /"([^"]+)"/.exec(tagText(text, "summary") ?? "")?.[1] ?? "background task";
   }
 
   /** Marks the turn as user-interrupted so the terminal `result` settles as `interrupted`. */
@@ -276,7 +297,10 @@ export class ClaudeNormalizer {
       ];
     }
     const status = TASK_STATUS[message.patch?.status ?? "running"] ?? "running";
-    if (status !== "running") this.#tasks.delete(taskId);
+    if (status !== "running") {
+      this.#tasks.delete(taskId);
+      if (child) child.settled = true;
+    }
     const summary = message.patch?.error;
     return [
       {
@@ -302,6 +326,7 @@ export class ClaudeNormalizer {
   /** The final child update: status, optional report, and a summary only when none was shown. */
   #settleChild(childKey: string, status: "done" | "error", fields: { summary?: string; weak?: boolean; report?: string; parentToolUseId?: string | null; fallbackName?: string }): NormalizedEvent[] {
     const child = this.#children.get(childKey);
+    if (child) child.settled = true;
     const name = child?.name ?? fields.fallbackName ?? "Background task";
     const summary = child?.summarised ? undefined : fields.summary !== undefined && fields.summary.trim() !== "" ? truncate(fields.summary.trim(), 1000) : undefined;
     // the CLI's "Agent … completed" one-liner may still be replaced by the result's first line

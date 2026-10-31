@@ -26,7 +26,7 @@ describe("turnConclusion", () => {
 
   it("states sub-agents that never reported back instead of calling them finished", () => {
     expect(turnConclusion([tool("s", { toolName: "SendMessage" } as Partial<Activity>), child("x", "running"), child("y", "running")])).toBe(
-      "ended · 1 tool call · 2 sub-agents with no result yet",
+      "ended · 1 tool call · 2 sub-agents with no result yet · the thread continues when they report",
     );
     expect(turnConclusion([])).toBe("ended");
   });
