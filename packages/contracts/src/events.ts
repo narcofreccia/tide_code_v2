@@ -1,5 +1,5 @@
 import { Type, type Static } from "typebox";
-import { Activity, ApprovalDecision, CheckpointStats, ExpertsFinding, ExpertsMessage, ExpertsPhase, ExpertsSession, Handoff, ImageInput, Limited, MergeStrategy, Message, Project, ProjectLink, ProposedPlan, ProviderKind, PullRequest, RateLimit, ScheduledTask, SettleReason, Thread, Triage, Turn, TurnUsage, HandoffJudge, Verdict, ProjectIcon } from "./domain.ts";
+import { Activity, ApprovalDecision, CheckpointStats, ExpertsFinding, ExpertsMessage, ExpertsPhase, ExpertsSession, Handoff, ImageInput, Limited, MergeStrategy, Message, Project, ProjectLink, ProposedPlan, ProviderKind, PullRequest, RateLimit, ScheduledTask, SettleReason, Thread, Triage, Turn, TurnUsage, HandoffJudge, Verdict, ProjectIcon, RunStack } from "./domain.ts";
 
 // Events = persisted facts. Payloads are self-contained so the projector
 // never needs to look anything up outside the event.
@@ -20,6 +20,8 @@ export const ProjectArchived = evt("project.archived", { projectId: Type.String(
 export const ProjectLinkAdded = evt("project.link.added", { projectId: Type.String(), link: ProjectLink, updatedAt: Type.Number() });
 export const ProjectLinkUpdated = evt("project.link.updated", { projectId: Type.String(), link: ProjectLink, updatedAt: Type.Number() });
 export const ProjectLinkRemoved = evt("project.link.removed", { projectId: Type.String(), linkId: Type.String(), updatedAt: Type.Number() });
+/** R13 */
+export const ProjectRunStackChanged = evt("project.runStack.changed", { projectId: Type.String(), runStack: RunStack, updatedAt: Type.Number() });
 
 /** `useWorktree` is an intent for the vcs reactor, not state; the reactor answers with worktree.attached. */
 export const ThreadCreated = evt("thread.created", {
@@ -224,7 +226,7 @@ export const TaskFired = evt("task.fired", { taskId: Type.String(), threadId: Ty
 export const DomainEvent = Type.Union([
   ProjectCreated,
   ProjectUpdated,
-  ProjectArchived, ProjectLinkAdded, ProjectLinkUpdated, ProjectLinkRemoved,
+  ProjectArchived, ProjectLinkAdded, ProjectLinkUpdated, ProjectLinkRemoved, ProjectRunStackChanged,
   ThreadCreated,
   ThreadUpdated,
   ThreadArchived,

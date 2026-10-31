@@ -9,6 +9,7 @@ type ProjectCommand =
   | CommandOf<"project.unarchive">
   | CommandOf<"project.link.add">
   | CommandOf<"project.link.update">
+  | CommandOf<"project.runStack.set">
   | CommandOf<"project.link.remove">;
 
 /**
@@ -81,6 +82,16 @@ export function decideProject(model: ReadModel, command: ProjectCommand, ctx: De
         access: command.access ?? "write",
       };
       return ok({ type: "project.link.added", projectId: project.id, link, updatedAt: ctx.now });
+    }
+
+    case "project.runStack.set": {
+      const project = model.projects[command.projectId];
+      if (!project) return fail("not-found", `unknown project ${command.projectId}`);
+      const selected = [...new Set(command.runStack.selected)];
+      for (const [key, port] of Object.entries(command.runStack.pins)) {
+        if (!Number.isInteger(port) || port < 1 || port > 65535) return fail("invalid-command", `pin ${key}: port ${port} out of range`);
+      }
+      return ok({ type: "project.runStack.changed", projectId: project.id, runStack: { selected, pins: command.runStack.pins }, updatedAt: ctx.now });
     }
 
     case "project.link.update": {

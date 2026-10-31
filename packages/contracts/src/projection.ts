@@ -177,6 +177,11 @@ export function applyEvent(model: ReadModel, event: DomainEvent): ReadModel {
       if (!p) return model;
       return { ...model, projects: { ...model.projects, [p.id]: { ...p, links: (p.links ?? []).filter((l) => l.id !== event.linkId), updatedAt: event.updatedAt } } };
     }
+    case "project.runStack.changed": {
+      const p = model.projects[event.projectId];
+      if (!p) return model;
+      return { ...model, projects: { ...model.projects, [p.id]: { ...p, runStack: event.runStack, updatedAt: event.updatedAt } } };
+    }
     case "project.archived": {
       const p = model.projects[event.projectId];
       if (!p) return model;

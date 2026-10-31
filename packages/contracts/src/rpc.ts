@@ -1,7 +1,7 @@
 import { Type, type Static, type TSchema } from "typebox";
 import { AgentCommand, ClientCommand } from "./commands.ts";
 import { EventRecord } from "./events.ts";
-import { AttachmentRef, JudgeSite, JudgeSource, MergeStrategy, ProjectIcon, ProviderInstanceConfig, ProviderKind, PullRequest, ReadModel, RuntimeMode, ScheduledTask, SlashCommandInfo, Team } from "./domain.ts";
+import { AttachmentRef, JudgeSite, JudgeSource, MergeStrategy, ProjectIcon, ProviderInstanceConfig, ProviderKind, PullRequest, ReadModel, RuntimeMode, ScheduledTask, SlashCommandInfo, Team, RunPlan, RunProfile, RunRepo, RunServiceStatus, RunSession } from "./domain.ts";
 
 // ---- wire envelope ----
 // client -> server
@@ -402,6 +402,14 @@ export const SearchHit = Type.Object({
 });
 export type SearchHit = Static<typeof SearchHit>;
 
+/** R13 */
+export const RunSessionChunk = Type.Union([
+  Type.Object({ kind: Type.Literal("snapshot"), session: RunSession }),
+  Type.Object({ kind: Type.Literal("service"), key: Type.String(), status: RunServiceStatus }),
+  Type.Object({ kind: Type.Literal("ended") }),
+]);
+export type RunSessionChunk = Static<typeof RunSessionChunk>;
+
 const SpendBucket = Type.Object({ calls: Type.Number(), tokens: Type.Number(), usd: Type.Number() });
 export const DecisionsStats = Type.Object({
   today: Type.Object({ jev: SpendBucket, fallback: SpendBucket }),
@@ -566,8 +574,22 @@ export const rpcMethods = {
     }),
   ),
   // pty
+  /**
+   * R13: a pty belongs to an owner — a thread (cwd = its worktree) or a run stack (`ownerId: "run:<projectId>"`,
+   * `cwd` required and validated inside the project root or a linked repo). `env` is merged over the
+   * server's; `command` is typed into the shell once it is up.
+   */
   "pty.create": unary(
-    Type.Object({ threadId: Type.String(), cols: Type.Number(), rows: Type.Number(), shell: Type.Optional(Type.String()) }),
+    Type.Object({
+      threadId: Type.Optional(Type.String()),
+      ownerId: Type.Optional(Type.String()),
+      cwd: Type.Optional(Type.String()),
+      env: Type.Optional(Type.Record(Type.String(), Type.String())),
+      command: Type.Optional(Type.String({ maxLength: 4096 })),
+      cols: Type.Number(),
+      rows: Type.Number(),
+      shell: Type.Optional(Type.String()),
+    }),
     Type.Object({ ptyId: Type.String() }),
   ),
   /** attaches to a pty: replays the scrollback buffer, then streams output until exit */
@@ -575,7 +597,24 @@ export const rpcMethods = {
   "pty.write": unary(Type.Object({ ptyId: Type.String(), data: Type.String() }), Type.Object({ ok: Type.Boolean() })),
   "pty.resize": unary(Type.Object({ ptyId: Type.String(), cols: Type.Number(), rows: Type.Number() }), Type.Object({ ok: Type.Boolean() })),
   "pty.kill": unary(Type.Object({ ptyId: Type.String() }), Type.Object({ ok: Type.Boolean() })),
-  "pty.list": unary(Type.Object({ threadId: Type.String() }), Type.Object({ ptys: Type.Array(Type.Object({ ptyId: Type.String(), title: Type.Optional(Type.String()), alive: Type.Boolean() })) })),
+  "pty.list": unary(Type.Object({ threadId: Type.Optional(Type.String()), ownerId: Type.Optional(Type.String()) }), Type.Object({ ptys: Type.Array(Type.Object({ ptyId: Type.String(), title: Type.Optional(Type.String()), alive: Type.Boolean(), label: Type.Optional(Type.String()) })) })),
+  // ---- R13: run stack ----
+  /** the project's repos (root + links) with their profiles as loaded right now */
+  "run.profiles.get": unary(Type.Object({ projectId: Type.String() }), Type.Object({ repos: Type.Array(RunRepo) })),
+  /** rescan one repo (manifests, then the text model when `useModel`), write `<repo>/.tide/run.json` */
+  "run.profiles.scan": unary(Type.Object({ projectId: Type.String(), repoId: Type.String(), useModel: Type.Optional(Type.Boolean()) }), RunRepo),
+  /** user-edited profile; saved with source "user" */
+  "run.profiles.set": unary(Type.Object({ projectId: Type.String(), repoId: Type.String(), profile: RunProfile }), RunRepo),
+  /** write (or replace) the ```tide-run``` block + prose table in QUICKSTART.md */
+  "run.quickstart.write": unary(Type.Object({ projectId: Type.String(), repoId: Type.String() }), Type.Object({ path: Type.String() })),
+  /** dry run: ports assigned, env rendered, conflicts; honours `Project.runStack` unless `selected` is given */
+  "run.plan": unary(Type.Object({ projectId: Type.String(), selected: Type.Optional(Type.Array(Type.String())), pins: Type.Optional(Type.Record(Type.String(), Type.Number())) }), RunPlan),
+  /** plans again and starts every non-blocked row; `conflict` when the plan is blocked and `force` is not set */
+  "run.start": unary(Type.Object({ projectId: Type.String(), selected: Type.Optional(Type.Array(Type.String())), pins: Type.Optional(Type.Record(Type.String(), Type.Number())), force: Type.Optional(Type.Boolean()) }), RunSession),
+  "run.stop": unary(Type.Object({ projectId: Type.String(), key: Type.Optional(Type.String()) }), Type.Object({ ok: Type.Boolean() })),
+  "run.restart": unary(Type.Object({ projectId: Type.String(), key: Type.String() }), RunSession),
+  /** snapshot first, then one chunk per service change */
+  "run.subscribe": stream(Type.Object({ projectId: Type.String() }), RunSessionChunk),
   // agent-facing (Tide MCP server; socket authenticated with a per-thread agent ticket → ctx.agentThreadId)
   /** experts board / delegation commands; the server stamps author/from/fromThreadId from the authenticated thread */
   "agent.dispatch": unary(Type.Object({ command: AgentCommand }), DispatchResult),

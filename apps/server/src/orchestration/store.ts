@@ -22,6 +22,7 @@ export function aggregateIdOf(event: DomainEvent): string | null {
     case "project.updated":
     case "project.archived":
     case "project.link.added":
+    case "project.runStack.changed":
     case "project.link.updated":
     case "project.link.removed":
       return event.projectId;

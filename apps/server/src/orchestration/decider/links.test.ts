@@ -212,3 +212,17 @@ describe("decide: delegation privileges", () => {
     expect(decide(p.model, { type: "thread.delegate", fromThreadId: p.threadId, provider: "pi", prompt: "x" }, ctx).ok).toBe(true);
   });
 });
+
+describe("decide: project.runStack.set (R13)", () => {
+  it("replaces the selection and pins, de-duplicating keys", () => {
+    const { model, projectId } = withLinks();
+    const { model: next, events } = run(model, { type: "project.runStack.set", projectId, runStack: { selected: ["api.api", "frontend.web", "api.api"], pins: { "api.api.http": 8010 } } });
+    expect(events[0]).toMatchObject({ type: "project.runStack.changed", projectId, runStack: { selected: ["api.api", "frontend.web"], pins: { "api.api.http": 8010 } } });
+    expect(next.projects[projectId]?.runStack).toEqual({ selected: ["api.api", "frontend.web"], pins: { "api.api.http": 8010 } });
+  });
+  it("rejects a pin outside the port range and an unknown project", () => {
+    const { model, projectId } = withLinks();
+    expect(decide(model, { type: "project.runStack.set", projectId, runStack: { selected: [], pins: { x: 70000 } } }, ctx)).toMatchObject({ ok: false, error: { code: "invalid-command" } });
+    expect(decide(model, { type: "project.runStack.set", projectId: "nope", runStack: { selected: [], pins: {} } }, ctx)).toMatchObject({ ok: false, error: { code: "not-found" } });
+  });
+});

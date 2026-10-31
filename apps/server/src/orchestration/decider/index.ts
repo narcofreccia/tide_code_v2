@@ -28,6 +28,7 @@ export function decide(model: ReadModel, command: Command, ctx: DecideContext): 
     case "project.archive":
     case "project.unarchive":
     case "project.link.add":
+    case "project.runStack.set":
     case "project.link.update":
     case "project.link.remove":
       return decideProject(model, command, ctx);

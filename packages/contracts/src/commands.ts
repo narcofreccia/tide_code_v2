@@ -1,5 +1,5 @@
 import { Type, type Static } from "typebox";
-import { Activity, ApprovalDecision, CheckpointStats, ExpertSpec, ExpertsPhase, ImageInput, InteractionMode, Limited, LinkAccess, MergeStrategy, ProviderKind, PullRequest, RateLimit, RuntimeMode, Schedule, SettleReason, Team, Triage, TurnUsage, HandoffJudge, Verdict, AttachmentRef, ProjectIcon } from "./domain.ts";
+import { Activity, ApprovalDecision, CheckpointStats, ExpertSpec, ExpertsPhase, ImageInput, InteractionMode, Limited, LinkAccess, MergeStrategy, ProviderKind, PullRequest, RateLimit, RuntimeMode, Schedule, SettleReason, Team, Triage, TurnUsage, HandoffJudge, Verdict, AttachmentRef, ProjectIcon, RunStack } from "./domain.ts";
 
 // Commands = validated intents. ClientCommand may arrive over RPC; InternalCommand is
 // issued only by server reactors (driver ingestion) and is rejected at the RPC boundary.
@@ -44,6 +44,12 @@ export const ProjectLinkRemove = Type.Object({
   type: Type.Literal("project.link.remove"), commandId: CommandId,
   projectId: Type.String(),
   linkId: Type.String(),
+});
+/** R13: replace the project's stack selection / pins (what "Start stack" starts). */
+export const ProjectRunStackSet = Type.Object({
+  type: Type.Literal("project.runStack.set"), commandId: CommandId,
+  projectId: Type.String(),
+  runStack: RunStack,
 });
 export const ProjectArchive = Type.Object({ type: Type.Literal("project.archive"), commandId: CommandId, projectId: Type.String() });
 
@@ -277,7 +283,7 @@ export const ExpertsSetPhase = Type.Object({ type: Type.Literal("experts.set-pha
 export const ExpertsArchive = Type.Object({ type: Type.Literal("experts.archive"), commandId: CommandId, sessionId: Type.String() });
 
 export const ClientCommand = Type.Union([
-  ProjectCreate, ProjectUpdate, ProjectArchive, ProjectUnarchive, ProjectLinkAdd, ProjectLinkUpdate, ProjectLinkRemove,
+  ProjectCreate, ProjectUpdate, ProjectArchive, ProjectUnarchive, ProjectLinkAdd, ProjectLinkUpdate, ProjectLinkRemove, ProjectRunStackSet,
   ThreadCreate, ThreadUpdate, ThreadArchive, ThreadUnarchive, ThreadDelete,
   TurnRequest, TurnInterrupt, TurnDequeue,
   ApprovalRespond, UserInputRespond,
