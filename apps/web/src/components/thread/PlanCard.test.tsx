@@ -20,6 +20,24 @@ const caps = {
 };
 
 describe("PlanCard", () => {
+  it("implements the plan in this thread by default", () => {
+    const fake = attachFakeStore(modelWith({}));
+    render(<PlanCard plan={makePlan("pl1")} provider="claude" />);
+    fireEvent.click(screen.getByRole("button", { name: "Implement" }));
+    expect(fake.dispatch).toHaveBeenCalledWith({ type: "plan.implement", planId: "pl1", target: "here" });
+  });
+
+  it("offers a new thread from the chevron, explaining the difference while open", () => {
+    attachFakeStore(modelWith({}));
+    render(<PlanCard plan={makePlan("pl1")} provider="claude" />);
+    const chevron = screen.getByRole("button", { name: "Implement in a new thread" });
+    expect(chevron.getAttribute("aria-haspopup")).toBe("dialog");
+    expect(screen.queryByText(/Same thread keeps the planning context/)).toBeNull();
+    fireEvent.click(chevron);
+    expect(screen.getByText("In a new thread")).toBeDefined();
+    expect(screen.getByText(/Same thread keeps the planning context/)).toBeDefined();
+  });
+
   it("implements the plan in a new thread with the chosen provider and worktree", () => {
     const fake = attachFakeStore(modelWith({}));
     setProvidersForTest([
@@ -34,13 +52,14 @@ describe("PlanCard", () => {
     ]);
     render(<PlanCard plan={makePlan("pl1")} provider="claude" />);
 
-    fireEvent.click(screen.getByRole("button", { name: "Implement in new thread" }));
+    fireEvent.click(screen.getByRole("button", { name: "Implement in a new thread" }));
     chooseOption("Thread provider", "Codex");
     fireEvent.click(screen.getByText("Go"));
 
     expect(fake.dispatch).toHaveBeenCalledWith({
       type: "plan.implement",
       planId: "pl1",
+      target: "new",
       provider: "codex",
       model: "gpt-5-codex",
       useWorktree: true,
@@ -50,12 +69,13 @@ describe("PlanCard", () => {
   it("honours unchecking the worktree box", () => {
     const fake = attachFakeStore(modelWith({}));
     render(<PlanCard plan={makePlan("pl1")} provider="claude" />);
-    fireEvent.click(screen.getByRole("button", { name: "Implement in new thread" }));
+    fireEvent.click(screen.getByRole("button", { name: "Implement in a new thread" }));
     fireEvent.click(screen.getByLabelText("use worktree"));
     fireEvent.click(screen.getByText("Go"));
     expect(fake.dispatch).toHaveBeenCalledWith({
       type: "plan.implement",
       planId: "pl1",
+      target: "new",
       provider: "claude",
       useWorktree: false,
     });
@@ -77,6 +97,18 @@ describe("PlanCard", () => {
       />,
     );
     expect(screen.getByText("open implementation thread")).toBeDefined();
-    expect(screen.queryByRole("button", { name: "Implement in new thread" })).toBeNull();
+    expect(screen.queryByRole("button", { name: "Implement" })).toBeNull();
+  });
+
+  it("says implemented here, with no link, when it ran in the planning thread", () => {
+    attachFakeStore(modelWith({}));
+    render(
+      <PlanCard
+        plan={makePlan("pl1", { status: "implemented", implementationThreadId: "t1" })}
+        provider="claude"
+      />,
+    );
+    expect(screen.getByText("implemented here")).toBeDefined();
+    expect(screen.queryByText("open implementation thread")).toBeNull();
   });
 });

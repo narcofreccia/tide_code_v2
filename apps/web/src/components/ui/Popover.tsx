@@ -19,6 +19,7 @@ export function Popover({
   align = "start",
   flush = false,
   panelClassName,
+  onOpenChange,
   children,
 }: {
   label: React.ReactNode;
@@ -33,12 +34,19 @@ export function Popover({
   flush?: boolean;
   /** extra class on the portalled panel: a caller-sized panel (width, max-height) */
   panelClassName?: string | undefined;
+  /** told whenever the panel opens or closes, for callers that show state outside it */
+  onOpenChange?: (open: boolean) => void;
   children: (close: () => void) => React.ReactNode;
 }) {
   const [open, setOpen] = useState(false);
   const anchor = useRef<HTMLDivElement>(null);
   const panel = useRef<HTMLDivElement>(null);
   const style = useAnchoredPanel(open, anchor, panel, { align });
+  const onOpenChangeRef = useRef(onOpenChange);
+  onOpenChangeRef.current = onOpenChange;
+  useEffect(() => {
+    onOpenChangeRef.current?.(open);
+  }, [open]);
 
   useEffect(() => {
     if (!open) return undefined;

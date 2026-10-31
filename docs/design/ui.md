@@ -112,7 +112,7 @@ Each settled user message has a per-turn **⋯** menu: `Fork from here…` and
 
 - Approval: tool, target (path/command), diff preview when it is an edit, `Allow` `Allow for session` `Deny`, keyboard `y/n`.
 - User input (AskUserQuestion / codex user-input): options as buttons or free text.
-- Proposed plan: markdown, `Implement in new thread ▾` (provider · model · worktree checkbox) · `Keep planning`. Never auto-executes.
+- Proposed plan: markdown, split button `Implement` (runs it in this thread: leaves plan mode, same worktree, planning context kept) with a `▾` for **In a new thread** (provider · model · worktree checkbox), then `Keep planning` · `Dismiss`. Never auto-executes.
 Composer: textarea, `@` mentions (worktree files), paste images, mode/provider/model pills mirror the top bar, `⌘↵` send, `Esc` stop.
 
 ### Thread layout and type

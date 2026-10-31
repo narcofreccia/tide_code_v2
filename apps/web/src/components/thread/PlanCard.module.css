@@ -1,0 +1,17 @@
+/* "Implement" split button: the main half runs the plan here, the chevron offers a new thread. */
+.split { display: inline-flex; }
+.main { border-top-right-radius: 0; border-bottom-right-radius: 0; }
+.chevron {
+  padding: 0 var(--sp-1);
+  border-top-left-radius: 0;
+  border-bottom-left-radius: 0;
+  border-left-color: color-mix(in srgb, var(--on-accent) 35%, transparent);
+}
+.heading {
+  font-size: var(--fs-xs);
+  letter-spacing: var(--ls-section);
+  text-transform: uppercase;
+  font-weight: var(--fw-section);
+  color: var(--muted);
+}
+.why { margin: 0; color: var(--muted); font-size: var(--fs-sm); line-height: var(--lh-body); }

@@ -278,18 +278,27 @@ export function respondUserInput(
   dispatchOrToast("Answering the question", { type: "user-input.respond", threadId, requestId, answers });
 }
 
-export interface ImplementPlanOptions {
+export interface ImplementInNewThreadOptions {
   provider: ProviderKind;
   model?: string;
   mode?: RuntimeMode;
   useWorktree?: boolean;
 }
 
-/** The only path from a proposed plan to running code; never automatic. */
-export async function implementPlan(planId: string, options: ImplementPlanOptions): Promise<void> {
+/**
+ * Runs the plan in the thread that planned it: the server leaves plan mode and queues
+ * one implement turn in the same worktree, with the planning context. Never automatic.
+ */
+export async function implementPlanHere(planId: string): Promise<void> {
+  await dispatch({ type: "plan.implement", planId, target: "here" });
+}
+
+/** Seeds a sibling thread (any harness, optionally its own worktree) with the plan and selects it. */
+export async function implementPlanInNewThread(planId: string, options: ImplementInNewThreadOptions): Promise<void> {
   const result = await dispatch({
     type: "plan.implement",
     planId,
+    target: "new",
     provider: options.provider,
     ...(options.model === undefined ? {} : { model: options.model }),
     ...(options.mode === undefined ? {} : { mode: options.mode }),

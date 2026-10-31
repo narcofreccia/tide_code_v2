@@ -1,6 +1,7 @@
 import { selectExpertsSessions, selectProjects, selectThreadsByProject } from "@tide/client";
 import type { ProposedPlan, ReadModel, Thread } from "@tide/contracts";
 import { fuzzyRank } from "./fuzzy.ts";
+import { runOrToast } from "./dispatchOrToast.ts";
 import { providerIdOf } from "./vocab.ts";
 import { SHORTCUTS, scopeApplies, shortcutKeys } from "./shortcuts.ts";
 import { openThreadTerminal } from "./openInTerminal.ts";
@@ -9,7 +10,8 @@ import { showHowTideWorks } from "../components/shell/HowTideWorks.tsx";
 import {
   createThread,
   detachWorktree,
-  implementPlan,
+  implementPlanHere,
+  implementPlanInNewThread,
   interruptTurn,
   requestArchive,
   requestDelete,
@@ -77,7 +79,16 @@ function threadItems(model: ReadModel, thread: Thread): PaletteItem[] {
       id: "thread:implement-plan",
       label: "Implement latest plan",
       group: "Thread",
-      run: () => void implementPlan(plan.id, { provider: thread.provider, useWorktree: true }),
+      run: () => runOrToast("Implementing the plan", () => implementPlanHere(plan.id)),
+    });
+    items.push({
+      id: "thread:implement-plan-new",
+      label: "Implement latest plan in a new thread",
+      group: "Thread",
+      run: () =>
+        runOrToast("Implementing the plan", () =>
+          implementPlanInNewThread(plan.id, { provider: thread.provider, useWorktree: true }),
+        ),
     });
   }
   if (thread.status === "running" && thread.interrupting !== true) {
