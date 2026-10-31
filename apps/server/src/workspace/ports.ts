@@ -106,7 +106,7 @@ export function parseSs(text: string): Listener[] {
 export function parsePs(text: string): Map<number, number> {
   const map = new Map<number, number>();
   for (const line of text.split("\n")) {
-    const m = /^\s*(\d+)\s+(\d+)\s/.exec(line);
+    const m = /^\s*(\d+)\s+(\d+)(?:\s|$)/.exec(line);
     if (m) map.set(Number(m[1]), Number(m[2]));
   }
   return map;
@@ -129,6 +129,16 @@ export interface PortsOptions {
 export interface ListOptions {
   /** the thread's worktree (or project root): listeners whose process runs in it count too */
   cwd?: string;
+  /** bypass the 3 s cache (the run supervisor polling for readiness) */
+  fresh?: boolean;
+}
+
+/** Every listening socket on the host, with its process' working directory when known. */
+export interface HostListener {
+  port: number;
+  pid: number;
+  command: string;
+  cwd?: string;
 }
 
 interface Snapshot {
@@ -137,7 +147,8 @@ interface Snapshot {
   cwds: Map<number, string>;
 }
 
-const within = (path: string, root: string): boolean => {
+/** `path` is `root` or below it (lexical; callers pass realpaths). */
+export const within = (path: string, root: string): boolean => {
   const base = root.endsWith(sep) && root.length > 1 ? root.slice(0, -1) : root;
   return path === base || path.startsWith(base + sep);
 };
@@ -160,9 +171,9 @@ export class PortLister {
     this.#ttl = options.ttlMs ?? 3000;
   }
 
-  #snapshot(): Promise<Snapshot> {
+  #snapshot(fresh = false): Promise<Snapshot> {
     const t = this.#now();
-    if (this.#cache !== undefined && t - this.#cache.at < this.#ttl) return this.#cache.value;
+    if (!fresh && this.#cache !== undefined && t - this.#cache.at < this.#ttl) return this.#cache.value;
     const value = (async () => {
       const [l, p] = await Promise.all([this.#probe.listeners(), this.#probe.processes()]);
       const listeners = l === undefined ? [] : l.kind === "lsof" ? parseLsof(l.text) : parseSs(l.text);
@@ -178,7 +189,7 @@ export class PortLister {
     const cwd = options.cwd === undefined ? undefined : await realpath(options.cwd).catch(() => options.cwd as string);
     if (rootPids.length === 0 && cwd === undefined) return [];
     const roots = new Set(rootPids);
-    const { listeners, parents, cwds } = await this.#snapshot();
+    const { listeners, parents, cwds } = await this.#snapshot(options.fresh === true);
     const seen = new Set<number>();
     const out: ListeningPort[] = [];
     for (const l of listeners) {
@@ -190,5 +201,20 @@ export class PortLister {
       out.push({ port: l.port, pid: l.pid, command: l.command, url: `http://127.0.0.1:${l.port}` });
     }
     return out.sort((a, b) => a.port - b.port);
+  }
+
+  /** All listeners, one per (port, pid), for the run planner and external-service detection. */
+  async listeners(options: { fresh?: boolean } = {}): Promise<HostListener[]> {
+    const { listeners, cwds } = await this.#snapshot(options.fresh === true);
+    const seen = new Set<string>();
+    const out: HostListener[] = [];
+    for (const l of listeners) {
+      const id = `${l.port}:${l.pid}`;
+      if (seen.has(id)) continue;
+      seen.add(id);
+      const cwd = cwds.get(l.pid);
+      out.push({ port: l.port, pid: l.pid, command: l.command, ...(cwd !== undefined ? { cwd } : {}) });
+    }
+    return out.sort((a, b) => a.port - b.port || a.pid - b.pid);
   }
 }

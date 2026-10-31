@@ -19,6 +19,7 @@ import { CostSummary } from "./CostSummary.tsx";
 import { ThreadTags } from "./ThreadTags.tsx";
 import { ProjectExperts } from "./ProjectExperts.tsx";
 import { ProjectAutomations } from "./ProjectAutomations.tsx";
+import { ProjectRun } from "./ProjectRun.tsx";
 import styles from "./MissionControl.module.css";
 import { plural } from "../../lib/format.ts";
 
@@ -129,6 +130,7 @@ export function ProjectCard({ project }: { project: Project }) {
           </Pill>
         ) : null}
         <span className={styles.pushRight} />
+        <ProjectRun projectId={project.id} />
         <Button variant="quiet" onClick={() => setLinksProject(project.id)} title="Linked repositories">
           {links.length === 0 ? "Link a repo" : `Links · ${links.length}`}
         </Button>

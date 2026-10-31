@@ -53,3 +53,30 @@ describe("ports", () => {
     expect(cwdCalls).toEqual([[100, 200, 300]]);
   });
 });
+
+describe("ports: fresh snapshots and host listeners", () => {
+  it("bypasses the cache with fresh and lists every listener with its cwd", async () => {
+    let calls = 0;
+    const probe: PortProbe = {
+      listeners: async () => (calls++, { kind: "lsof", text: LSOF }),
+      processes: async () => PS,
+      cwds: async () => new Map([[200, "/work/api"]]),
+    };
+    const lister = new PortLister({ probe, now: () => 0 });
+    await lister.list([50]);
+    await lister.list([50], { fresh: true });
+    expect(calls).toBe(2);
+    expect(await lister.listeners()).toEqual([
+      { port: 3000, pid: 100, command: "node" },
+      { port: 5432, pid: 300, command: "postgres" },
+      { port: 8000, pid: 200, command: "python", cwd: "/work/api" },
+    ]);
+    expect(calls).toBe(2);
+    await lister.listeners({ fresh: true });
+    expect(calls).toBe(3);
+  });
+
+  it("parses ps rows without a trailing command column", () => {
+    expect(parsePs("  10     1\n 11    10\n")).toEqual(new Map([[10, 1], [11, 10]]));
+  });
+});

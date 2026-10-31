@@ -15,6 +15,7 @@ import type { GhLike } from "../vcs/gh.ts";
 import { GitHubForge } from "../vcs/forge/github.ts";
 import { ForgeResolver } from "../vcs/forge/resolver.ts";
 import { registerProjectIconHandlers } from "./projectIcon.ts";
+import { loadProjectRepos, registerRunProfileHandlers } from "./run.ts";
 import { sweepAttachments } from "../workspace/attachments.ts";
 import { registerPrHandlers } from "./pr.ts";
 import { AgentTokenStore } from "./agentTickets.ts";
@@ -32,6 +33,7 @@ import { buildRemoteInfo, type Interfaces } from "./remote.ts";
 import { envInfo, registerEnvHandlers, type EnvDeps, type RelayState } from "./env.ts";
 import { createHttpHandler } from "./http.ts";
 import { PairingCodes, safeEqual } from "./pairing.ts";
+import { registerRunStackHandlers } from "./runStack.ts";
 import { registerVcsHandlers } from "./vcs.ts";
 import { createWorkspaceServices, registerWorkspaceHandlers, type WorkspaceServices } from "./workspace.ts";
 import { RpcRouter } from "./router.ts";
@@ -174,7 +176,10 @@ export async function startServer(deps: ServerDeps): Promise<ServerHandle> {
   const workspace = deps.workspace ?? createWorkspaceServices({ engine });
   const ownsWorkspace = deps.workspace === undefined;
   registerWorkspaceHandlers(router, workspace);
+  const runProfileDeps = { engine, registry, settings, tideHome: config.tideHome };
+  const runStack = registerRunStackHandlers(router, { engine, workspace, profilesFor: (projectId) => loadProjectRepos(runProfileDeps, projectId) });
   registerProjectIconHandlers(router, { engine });
+  registerRunProfileHandlers(router, runProfileDeps);
   // no-worktree threads write attachments into the project root; drop upload dirs older than 30 days
   void (async () => {
     let removed = 0;
@@ -274,6 +279,7 @@ export async function startServer(deps: ServerDeps): Promise<ServerHandle> {
     pairing,
     async close() {
       clearInterval(keepalive);
+      runStack.close();
       if (ownsWorkspace) workspace.close();
       for (const ws of wss.clients) ws.terminate();
       await new Promise<void>((res) => wss.close(() => res()));

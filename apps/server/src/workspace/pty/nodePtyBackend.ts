@@ -1,6 +1,7 @@
 import { accessSync, chmodSync, constants as FS } from "node:fs";
 import { createRequire } from "node:module";
 import { dirname, join } from "node:path";
+import { killProcessTree } from "./killTree.ts";
 import type { PtyBackend, PtyHandle, PtySpawnSpec } from "./types.ts";
 
 // Minimal structural view of node-pty; the real types live behind an optional native module.
@@ -65,6 +66,7 @@ function backendFrom(mod: NodePtyModule): PtyBackend {
         write: (data) => proc.write(data),
         resize: (cols, rows) => proc.resize(cols, rows),
         kill: () => proc.kill(),
+        killTree: (signal) => killProcessTree(proc.pid, signal),
       };
     },
   };

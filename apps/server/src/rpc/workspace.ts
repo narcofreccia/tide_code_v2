@@ -1,3 +1,5 @@
+import { realpath } from "node:fs/promises";
+import type { Project } from "@tide/contracts";
 import type { Engine } from "../orchestration/engine.ts";
 import { threadCwd } from "../provider/sessions.ts";
 import { sharingThread } from "../vcs/restore.ts";
@@ -6,7 +8,7 @@ import { FileService } from "../workspace/files.ts";
 import { PtyManager } from "../workspace/pty/index.ts";
 import { search as runSearch, type SearchOptions, type SearchResult } from "../workspace/search.ts";
 import { FsWatcher } from "../workspace/watcher.ts";
-import { PortLister } from "../workspace/ports.ts";
+import { PortLister, within } from "../workspace/ports.ts";
 import { registerAttachmentHandlers } from "./attachments.ts";
 import { createOpenExternal, type OpenExternalFn } from "./workspaceOpen.ts";
 import { RpcException, type RpcRouter } from "./router.ts";
@@ -60,6 +62,24 @@ export function threadCwdResolver(engine: Engine): (threadId: string) => string 
     if (!project) throw new RpcException("not-found", `unknown project ${thread.projectId}`);
     return threadCwd(thread, project);
   };
+}
+
+/**
+ * A run-stack terminal's cwd must exist and sit inside the project root or one of its linked repos
+ * (realpaths on both sides, so a symlink cannot point it elsewhere).
+ */
+export async function runCwdInside(project: Project, cwd: string): Promise<string> {
+  let real: string;
+  try {
+    real = await realpath(cwd);
+  } catch {
+    throw new RpcException("not-found", `working directory ${cwd} does not exist`);
+  }
+  for (const root of [project.rootPath, ...(project.links ?? []).map((l) => l.path)]) {
+    const rootReal = await realpath(root).catch(() => undefined);
+    if (rootReal !== undefined && within(real, rootReal)) return real;
+  }
+  throw new RpcException("forbidden", `${cwd} is outside the project and its linked repos`);
 }
 
 /** Built once per app; `close()` kills every terminal and watcher. */
@@ -183,9 +203,32 @@ export function registerWorkspaceHandlers(router: RpcRouter, services: Workspace
   router.register("workspace.openExternal", async (input) => services.openExternal(input.url));
 
   // ---- terminals ----
+  // a thread's terminal runs in the thread's cwd; a run-stack terminal (`run:<projectId>`) names its
+  // own cwd, which must be inside the project or a linked repo
   router.register("pty.create", async (input) => {
-    const cwd = cwdFor(input.threadId);
-    const ptyId = await ptys.create(input.threadId, cwd, input.cols, input.rows, input.shell);
+    let ownerId: string;
+    let cwd: string;
+    if (input.threadId !== undefined) {
+      ownerId = input.threadId;
+      cwd = cwdFor(input.threadId);
+    } else if (input.ownerId !== undefined && input.ownerId.startsWith("run:")) {
+      ownerId = input.ownerId;
+      const project = services.engine.getModel().projects[ownerId.slice(4)];
+      if (project === undefined) throw new RpcException("not-found", `unknown project ${ownerId.slice(4)}`);
+      if (input.cwd === undefined) throw new RpcException("invalid-params", "a run terminal needs a cwd");
+      cwd = await runCwdInside(project, input.cwd);
+    } else {
+      throw new RpcException("invalid-params", "pty.create needs a threadId or a run:<projectId> ownerId");
+    }
+    const ptyId = await ptys.create({
+      ownerId,
+      cwd,
+      cols: input.cols,
+      rows: input.rows,
+      ...(input.shell !== undefined ? { shell: input.shell } : {}),
+      ...(input.env !== undefined ? { env: input.env } : {}),
+      ...(input.command !== undefined ? { command: input.command } : {}),
+    });
     return { ptyId };
   });
 
@@ -206,11 +249,16 @@ export function registerWorkspaceHandlers(router: RpcRouter, services: Workspace
     return { ok: true };
   });
 
-  router.register("pty.list", async (input) => ({
-    ptys: ptys.list(input.threadId).map((p) => ({
-      ptyId: p.ptyId,
-      ...(p.title !== undefined ? { title: p.title } : {}),
-      alive: p.alive,
-    })),
-  }));
+  router.register("pty.list", async (input) => {
+    const owner = input.ownerId ?? input.threadId;
+    if (owner === undefined) throw new RpcException("invalid-params", "pty.list needs a threadId or an ownerId");
+    return {
+      ptys: ptys.list(owner).map((p) => ({
+        ptyId: p.ptyId,
+        ...(p.title !== undefined ? { title: p.title } : {}),
+        alive: p.alive,
+        ...(p.label !== undefined ? { label: p.label } : {}),
+      })),
+    };
+  });
 }

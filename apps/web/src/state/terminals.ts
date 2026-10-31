@@ -12,13 +12,15 @@ export interface PtyTab {
   title?: string;
   alive: boolean;
   purpose?: PtyPurpose;
+  /** R13: a run-stack pty's service name (`pty.list { ownerId }`) */
+  label?: string;
 }
 
 interface TerminalsState {
   drawerOpen: boolean;
   /** drawer height in px, clamped on set */
   height: number;
-  /** threadId → ptys known to the client (server keeps them alive across threads) */
+  /** threadId (or a run owner `run:<projectId>`) → ptys known to the client (server keeps them alive across threads) */
   tabs: Record<string, PtyTab[]>;
   active: Record<string, string | undefined>;
   loaded: Record<string, boolean>;
@@ -92,6 +94,38 @@ export async function ensurePtys(threadId: string, force = false): Promise<void>
   }
 }
 
+/** R13: the owner id of a project's run-stack ptys. */
+export function runOwnerId(projectId: string): string {
+  return `${RUN_OWNER_PREFIX}${projectId}`;
+}
+
+const RUN_OWNER_PREFIX = "run:";
+
+/**
+ * R13: `pty.list { ownerId }` for a non-thread owner (a run stack). Listed under the owner id in
+ * `tabs`; `force` re-lists (a service started or stopped since).
+ */
+export async function ensureOwnerPtys(ownerId: string, force = false): Promise<PtyTab[]> {
+  const state = useTerminals.getState();
+  if (!force && state.loaded[ownerId]) return state.tabs[ownerId] ?? [];
+  useTerminals.setState((s) => ({ loaded: { ...s.loaded, [ownerId]: true } }));
+  try {
+    const result = await call("pty.list", { ownerId });
+    const tabs: PtyTab[] = result.ptys.map((p) => ({
+      ptyId: p.ptyId,
+      alive: p.alive,
+      ...(p.title === undefined ? {} : { title: p.title }),
+      ...(p.label === undefined ? {} : { label: p.label }),
+    }));
+    setTabs(ownerId, tabs);
+    return tabs;
+  } catch {
+    // the stack group is optional: an older server without owners just shows none
+    useTerminals.setState((s) => ({ loaded: { ...s.loaded, [ownerId]: false } }));
+    return [];
+  }
+}
+
 export async function createPty(threadId: string, cols: number, rows: number, purpose?: PtyPurpose): Promise<string | undefined> {
   try {
     const { ptyId } = await call("pty.create", { threadId, cols, rows });
@@ -140,6 +174,12 @@ export function resizePty(ptyId: string, cols: number, rows: number): void {
 // leaving `loaded` blocking a fresh read.
 onReconnect((envId) => {
   for (const threadId of Object.keys(useTerminals.getState().loaded)) {
+    if (threadId.startsWith(RUN_OWNER_PREFIX)) {
+      const projectId = threadId.slice(RUN_OWNER_PREFIX.length);
+      if (envId !== undefined && useModel.getState().ownership.projects[projectId] !== envId) continue;
+      void ensureOwnerPtys(threadId, true);
+      continue;
+    }
     // R9: only the environment that came back lost its attachments
     if (envId !== undefined && useModel.getState().ownership.threads[threadId] !== envId) continue;
     void ensurePtys(threadId, true);

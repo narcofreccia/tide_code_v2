@@ -5,7 +5,8 @@ import { afterEach, describe, expect, it } from "vitest";
 import type { PtyChunk } from "@tide/contracts";
 import { isBunRuntime } from "./bunBackend.ts";
 import { PtyManager } from "./manager.ts";
-import type { PtyBackend, PtyHandle, PtySpawnSpec } from "./types.ts";
+import { fakeBackend } from "./fakeBackend.ts";
+import { descendants, killProcessTree, type TreeSignal } from "./killTree.ts";
 
 const cleanups: (() => void | Promise<void>)[] = [];
 afterEach(async () => {
@@ -113,51 +114,6 @@ describe("PtyManager (node-pty)", () => {
 
 // ---- fake backend: deterministic coverage of the bookkeeping ----
 
-interface FakeHandle {
-  spec: PtySpawnSpec;
-  data(chunk: string): void;
-  exit(code: number, signal?: string): void;
-  written: string[];
-  resized: [number, number][];
-  killed: number;
-}
-
-/** A PtyBackend whose terminals are driven by the test rather than by a real process. */
-function fakeBackend(): { backend: PtyBackend; handles: FakeHandle[] } {
-  const handles: FakeHandle[] = [];
-  const backend: PtyBackend = {
-    name: "node-pty",
-    spawn(spec: PtySpawnSpec): PtyHandle {
-      let onData: (d: string) => void = () => undefined;
-      let onExit: (e: { code?: number; signal?: string }) => void = () => undefined;
-      const handle: FakeHandle = {
-        spec,
-        data: (chunk) => onData(chunk),
-        exit: (code, signal) => onExit({ code, ...(signal !== undefined ? { signal } : {}) }),
-        written: [],
-        resized: [],
-        killed: 0,
-      };
-      handles.push(handle);
-      return {
-        onData: (cb) => {
-          onData = cb;
-        },
-        onExit: (cb) => {
-          onExit = cb;
-        },
-        write: (data) => handle.written.push(data),
-        resize: (cols, rows) => handle.resized.push([cols, rows]),
-        kill: () => {
-          handle.killed++;
-          onExit({ code: 143, signal: "SIGTERM" });
-        },
-      };
-    },
-  };
-  return { backend, handles };
-}
-
 const ESC = "\x1b";
 const BEL = "\x07";
 
@@ -243,5 +199,171 @@ describe("pty backend selection", () => {
       code: "unavailable",
       message: "terminal support not built",
     });
+  });
+});
+
+/** A manual clock for the command delay and the stop escalation. */
+function manualTimers(): {
+  schedule: (fn: () => void, ms: number) => () => void;
+  sleep: (ms: number) => Promise<void>;
+  advance: (ms: number) => Promise<void>;
+  pending: () => number;
+} {
+  let now = 0;
+  let timers: { at: number; fn: () => void }[] = [];
+  const schedule = (fn: () => void, ms: number): (() => void) => {
+    const t = { at: now + ms, fn };
+    timers.push(t);
+    return () => {
+      timers = timers.filter((x) => x !== t);
+    };
+  };
+  return {
+    schedule,
+    sleep: (ms) => new Promise<void>((resolve) => void schedule(resolve, ms)),
+    async advance(ms) {
+      now += ms;
+      const due = timers.filter((t) => t.at <= now);
+      timers = timers.filter((t) => t.at > now);
+      for (const t of due) t.fn();
+      // let awaiting code run its continuation
+      for (let i = 0; i < 10; i++) await Promise.resolve();
+    },
+    pending: () => timers.length,
+  };
+}
+
+describe("PtyManager owners, env, commands and stop (fake backend)", () => {
+  it("keys terminals by ownerId and lists the label", async () => {
+    const fake = fakeBackend();
+    const ptys = new PtyManager({ backend: fake.backend });
+    const a = await ptys.create({ ownerId: "run:p1", cwd: "/tmp", cols: 120, rows: 30, label: "api" });
+    await ptys.create("th-1", "/tmp", 80, 24);
+    expect(ptys.list("run:p1")).toEqual([{ ptyId: a, title: expect.any(String), alive: true, label: "api" }]);
+    expect(ptys.list("th-1")).toHaveLength(1);
+    expect(ptys.pids("run:p1")).toEqual([fake.handles[0]?.pid]);
+    expect(ptys.pidOf(a)).toBe(fake.handles[0]?.pid);
+    expect(ptys.killOwner("run:p1")).toBe(1);
+    expect(ptys.alive(a)).toBe(false);
+    expect(ptys.list("th-1")[0]?.alive).toBe(true);
+  });
+
+  it("merges env as process.env, then TERM/TIDE_*, then the caller's", async () => {
+    const fake = fakeBackend();
+    const ptys = new PtyManager({ backend: fake.backend });
+    await ptys.create({ ownerId: "run:p1", cwd: "/tmp", cols: 80, rows: 24, env: { PORT: "8082", TERM: "dumb" } });
+    const env = fake.handles[0]?.spec.env ?? {};
+    expect(env["PORT"]).toBe("8082");
+    expect(env["TERM"]).toBe("dumb");
+    expect(env["COLORTERM"]).toBe("truecolor");
+    expect(env["TIDE_RUN_PROJECT_ID"]).toBe("p1");
+    expect(env["TIDE_THREAD_ID"]).toBeUndefined();
+    expect(env["PATH"]).toBe(process.env["PATH"]);
+  });
+
+  it("types the command after the first output chunk, once, with a leading space", async () => {
+    const fake = fakeBackend();
+    const timers = manualTimers();
+    const ptys = new PtyManager({ backend: fake.backend, schedule: timers.schedule });
+    await ptys.create({ ownerId: "run:p1", cwd: "/tmp", cols: 80, rows: 24, command: "pnpm dev --port 8082" });
+    expect(fake.handles[0]?.written).toEqual([]);
+    fake.handles[0]?.data("% ");
+    fake.handles[0]?.data("more");
+    expect(fake.handles[0]?.written).toEqual([" pnpm dev --port 8082\n"]);
+    expect(timers.pending()).toBe(0);
+  });
+
+  it("types the command after the delay when the shell stays silent", async () => {
+    const fake = fakeBackend();
+    const timers = manualTimers();
+    const ptys = new PtyManager({ backend: fake.backend, schedule: timers.schedule });
+    await ptys.create({ ownerId: "run:p1", cwd: "/tmp", cols: 80, rows: 24, command: "make dev" });
+    await timers.advance(299);
+    expect(fake.handles[0]?.written).toEqual([]);
+    await timers.advance(1);
+    expect(fake.handles[0]?.written).toEqual([" make dev\n"]);
+    fake.handles[0]?.data("x");
+    expect(fake.handles[0]?.written).toHaveLength(1);
+  });
+
+  it("rejects an oversized command", async () => {
+    const ptys = new PtyManager({ backend: fakeBackend().backend });
+    await expect(ptys.create({ ownerId: "t", cwd: "/tmp", cols: 80, rows: 24, command: "x".repeat(4097) })).rejects.toMatchObject({ code: "invalid-params" });
+  });
+
+  it("stops with SIGINT, then SIGTERM, then SIGKILL, waiting the grace between", async () => {
+    const fake = fakeBackend();
+    const timers = manualTimers();
+    const ptys = new PtyManager({ backend: fake.backend, sleep: timers.sleep, stopPollMs: 3000, children: async () => [1] });
+    const id = await ptys.create({ ownerId: "run:p1", cwd: "/tmp", cols: 80, rows: 24 });
+    let done = false;
+    const stopped = ptys.stop(id, { graceMs: 3000 }).then(() => {
+      done = true;
+    });
+    await timers.advance(0);
+    expect(fake.handles[0]?.signals).toEqual(["SIGINT"]);
+    await timers.advance(3000);
+    expect(fake.handles[0]?.signals).toEqual(["SIGINT", "SIGTERM"]);
+    expect(done).toBe(false);
+    await timers.advance(3000);
+    await stopped;
+    expect(fake.handles[0]?.signals).toEqual(["SIGINT", "SIGTERM", "SIGKILL"]);
+    expect(ptys.alive(id)).toBe(false);
+  });
+
+  it("hangs up a shell that outlived its children", async () => {
+    const fake = fakeBackend();
+    const timers = manualTimers();
+    const ptys = new PtyManager({ backend: fake.backend, sleep: timers.sleep, stopPollMs: 250, children: async () => [] });
+    const id = await ptys.create({ ownerId: "run:p1", cwd: "/tmp", cols: 80, rows: 24 });
+    const stopped = ptys.stop(id);
+    await timers.advance(0);
+    await timers.advance(250);
+    await stopped;
+    expect(fake.handles[0]?.signals).toEqual(["SIGINT"]);
+    expect(fake.handles[0]?.killed).toBe(1);
+    expect(ptys.alive(id)).toBe(false);
+  });
+
+  it("stopOwner ends early when the tree exits on SIGINT", async () => {
+    const fake = fakeBackend();
+    const timers = manualTimers();
+    const ptys = new PtyManager({ backend: fake.backend, sleep: timers.sleep });
+    await ptys.create({ ownerId: "run:p1", cwd: "/tmp", cols: 80, rows: 24 });
+    await ptys.create({ ownerId: "run:p1", cwd: "/tmp", cols: 80, rows: 24 });
+    for (const h of fake.handles) h.diesOn.add("SIGINT");
+    await ptys.stopOwner("run:p1");
+    expect(fake.handles.map((h) => h.signals)).toEqual([["SIGINT"], ["SIGINT"]]);
+    expect(ptys.pids("run:p1")).toEqual([]);
+  });
+});
+
+describe("killProcessTree", () => {
+  const PS = "  1 0\n 50 1\n 60 50\n 70 60\n 61 50\n 99 1\n";
+
+  it("signals the group, then descendants deepest first, then the shell", async () => {
+    const calls: [number, TreeSignal][] = [];
+    await killProcessTree(50, "SIGTERM", { kill: (pid, sig) => void calls.push([pid, sig]), ps: async () => PS });
+    expect(calls.map(([pid]) => pid)).toEqual([-50, 70, 61, 60, 50]);
+    expect(calls.every(([, sig]) => sig === "SIGTERM")).toBe(true);
+  });
+
+  it("falls back to the ps walk when the group kill fails with ESRCH/EPERM", async () => {
+    const calls: number[] = [];
+    const kill = (pid: number): void => {
+      calls.push(pid);
+      if (pid < 0) throw Object.assign(new Error("no such process group"), { code: "ESRCH" });
+      if (pid === 61) throw Object.assign(new Error("not permitted"), { code: "EPERM" });
+    };
+    await killProcessTree(50, "SIGINT", { kill, ps: async () => PS });
+    expect(calls).toEqual([-50, 70, 61, 60, 50]);
+  });
+
+  it("rethrows unexpected errors and survives a missing ps", async () => {
+    await expect(killProcessTree(50, "SIGINT", { kill: () => { throw new Error("boom"); }, ps: async () => undefined })).rejects.toThrow("boom");
+    const calls: number[] = [];
+    await killProcessTree(50, "SIGINT", { kill: (pid) => void calls.push(pid), ps: async () => undefined });
+    expect(calls).toEqual([-50, 50]);
+    expect(descendants(50, new Map([[60, 50], [70, 60]]))).toEqual([70, 60]);
   });
 });

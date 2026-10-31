@@ -31,6 +31,7 @@ function countingBackend(): { backend: PtyBackend; killed: () => number } {
           killed++;
           onExit({ code: 143 });
         },
+        killTree: async () => undefined,
       };
     },
   };

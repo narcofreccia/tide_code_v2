@@ -61,11 +61,13 @@ export function ProjectRow({
   threads,
   multiEnv,
   onIcon,
+  onRun,
 }: {
   project: Project;
   threads: number;
   multiEnv: boolean;
   onIcon: () => void;
+  onRun: () => void;
 }) {
   const [renaming, setRenaming] = useState(false);
   const [menu, setMenu] = useState<MenuPosition | undefined>(undefined);
@@ -94,6 +96,9 @@ export function ProjectRow({
       control={
         <>
           <span className={styles.count}>{plural(threads, "thread")}</span>
+          <Button variant="quiet" aria-label={`Run stack for ${project.title}`} onClick={onRun}>
+            Run
+          </Button>
           <Button
             variant="quiet"
             aria-label={`Actions for ${project.title}`}

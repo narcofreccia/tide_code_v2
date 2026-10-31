@@ -3,11 +3,16 @@ import { cleanup, fireEvent, render, screen } from "@testing-library/react";
 import { NO_SERVER, PreviewMenu, manualPreviewUrl } from "./PreviewMenu.tsx";
 import { PreviewTab, normalizePreviewUrl, previewSandbox } from "./PreviewTab.tsx";
 import { activeTab, openPreviewTab, resetWorkbench, threadTabs } from "../../../state/workbench.ts";
-import { mockRpc, resetUi } from "../../../testHarness.ts";
+import { attachFakeStore, makeThread, mockRpc, mockStream, modelWith, resetUi } from "../../../testHarness.ts";
+import { useModel } from "../../../state/model.ts";
+import { resetRun } from "../../../state/run.ts";
+import { emptyReadModel } from "@tide/contracts";
 
 afterEach(() => {
   cleanup();
+  resetRun();
   resetUi();
+  useModel.setState({ model: emptyReadModel() });
   resetWorkbench();
 });
 
@@ -56,5 +61,20 @@ describe("Preview", () => {
     expect(previewSandbox("http://127.0.0.1:59999/")).toContain("allow-same-origin");
     expect(previewSandbox(window.location.origin)).not.toContain("allow-same-origin");
     expect(normalizePreviewUrl(" https://x.dev ")).toBe("https://x.dev");
+  });
+
+  it("puts the project's run stack under the empty state and above a live preview", async () => {
+    attachFakeStore(modelWith({ threads: { t1: makeThread("t1", { projectId: "p1" }) } }));
+    mockRpc({ "ports.list": () => ({ ports: [] }), "run.profiles.get": () => ({ repos: [] }) });
+    mockStream();
+    render(<PreviewMenu threadId="t1" />);
+    fireEvent.click(screen.getByRole("button", { name: "Preview" }));
+    expect(await screen.findByLabelText("Run stack")).toBeDefined();
+    cleanup();
+    render(<PreviewTab threadId="t1" url="http://localhost:3000" />);
+    const strip = screen.getByLabelText("Run stack");
+    // folded by default over a live preview
+    expect(screen.getByRole("button", { name: "Run" }).getAttribute("aria-expanded")).toBe("false");
+    expect(strip.textContent).toContain("0/0 up");
   });
 });

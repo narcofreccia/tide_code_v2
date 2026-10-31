@@ -43,7 +43,8 @@ export function cleanTitle(text: string): string {
   return t;
 }
 
-async function pickProvider(deps: TitleDeps): Promise<{ provider: ProviderKind; model?: string }> {
+/** settings.textModel when installed, else the first harness that answers one-shot prompts. */
+export async function pickProvider(deps: Pick<TitleDeps, "registry" | "settings">): Promise<{ provider: ProviderKind; model?: string }> {
   const chosen = deps.settings.get().textModel;
   if (chosen !== undefined && deps.registry.has(chosen.provider)) {
     return { provider: chosen.provider, ...(chosen.model !== undefined ? { model: chosen.model } : {}) };

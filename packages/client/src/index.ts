@@ -97,3 +97,12 @@ export {
   type PrReadiness,
   type PrReadinessLabel,
 } from "./prSelectors.ts";
+export {
+  isUp,
+  previewPort,
+  runSummary,
+  serviceKey,
+  stackServices,
+  type RunSummary,
+  type StackService,
+} from "./runSelectors.ts";

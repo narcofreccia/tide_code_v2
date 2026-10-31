@@ -1,11 +1,12 @@
 import { useCallback, useEffect, useRef, useState } from "react";
 import type { RpcOutput } from "@tide/contracts";
-import { call } from "../../../state/model.ts";
+import { call, useModel } from "../../../state/model.ts";
 import { errorText } from "../../../lib/dispatchOrToast.ts";
 import { openPreviewTab } from "../../../state/workbench.ts";
 import { Button } from "../../ui/Button.tsx";
 import { Icon } from "../../ui/Icon.tsx";
 import { Popover } from "../../ui/Popover.tsx";
+import { RunPanel } from "../run/RunPanel.tsx";
 import { normalizePreviewUrl } from "./PreviewTab.tsx";
 import styles from "./Preview.module.css";
 
@@ -55,6 +56,7 @@ function ManualUrl({ threadId, close }: { threadId: string; close: () => void })
 function PortList({ threadId, close }: { threadId: string; close: () => void }) {
   const [ports, setPorts] = useState<Port[] | undefined>(undefined);
   const [error, setError] = useState<string | undefined>(undefined);
+  const projectId = useModel((s) => s.model.threads[threadId]?.projectId);
 
   const live = useRef(true);
   useEffect(() => {
@@ -92,6 +94,12 @@ function PortList({ threadId, close }: { threadId: string; close: () => void }) 
             <Icon name="refresh" size={14} />
             Refresh
           </Button>
+          {/* R13: start the project's stack right from here */}
+          {projectId === undefined ? null : (
+            <div className={styles.run}>
+              <RunPanel projectId={projectId} threadId={threadId} />
+            </div>
+          )}
         </div>
       );
     }

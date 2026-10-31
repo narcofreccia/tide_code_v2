@@ -168,6 +168,11 @@ pids are not exposed by `SessionDirectory`, so a server the agent starts itself 
 a Tide terminal. `project.detectIcon` looks for a favicon (≤ 32 KB) in the usual places of the project root.
 `tide triage` writes a redacted diagnostics report to `<TIDE_HOME>/triage/<time>.md` (see `remote.md`).
 
+## Run stack
+
+One profile per repo (`.tide/run.json` or a `tide-run` block in `QUICKSTART.md`), a per-project
+selection and port pins, a planner that de-collides ports and injects env, and `run.*` RPCs. See `run.md`.
+
 ## Providers
 
 `ProviderDriver → ProviderInstance → ProviderSession` (`packages/contracts/src/driver.ts`).

@@ -35,3 +35,5 @@
 .empty { display: flex; flex-direction: column; align-items: flex-start; gap: var(--sp-1); padding-bottom: var(--sp-2); }
 .empty > button { margin-left: var(--sp-2); }
 .manual { display: flex; align-items: center; gap: var(--sp-2); padding: var(--sp-2); border-top: 1px solid var(--border); }
+/* R13: the run stack under the empty state; wide enough for a row's hover actions */
+.run { align-self: stretch; width: min(480px, 80vw); border-top: 1px solid var(--border); }

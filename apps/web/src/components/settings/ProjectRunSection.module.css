@@ -1,0 +1,13 @@
+/* Settings › Projects › Run stack */
+.back { align-self: flex-start; margin-bottom: var(--sp-2); }
+.repoHead { display: flex; flex-wrap: wrap; align-items: baseline; gap: var(--sp-1) var(--sp-2); min-width: 0; }
+.repoLabel { font-weight: 600; }
+.path { display: flex; min-width: 0; max-width: 100%; color: var(--muted); font-size: var(--fs-sm); font-family: var(--font-mono); }
+.name { display: inline-flex; align-items: center; gap: var(--sp-2); }
+.command { font-family: var(--font-mono); font-size: var(--fs-sm); overflow-wrap: anywhere; }
+.pins { display: inline-flex; flex-wrap: wrap; align-items: center; gap: var(--sp-2); }
+.error { margin: 0; padding: var(--sp-2) var(--sp-3); color: var(--st-error, var(--fg)); font-size: var(--fs-sm); }
+.muted { color: var(--muted); font-size: var(--fs-sm); }
+.editor { height: 55vh; min-height: 280px; border: 1px solid var(--border); border-radius: var(--radius-sm); overflow: hidden; }
+.dialogActions { display: flex; justify-content: flex-end; gap: var(--sp-2); margin-top: var(--sp-3); }
+.actions { display: flex; flex-wrap: wrap; gap: var(--sp-2); }

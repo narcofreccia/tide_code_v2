@@ -80,3 +80,6 @@
 .body { position: relative; display: flex; flex-direction: column; flex: 1; min-height: 0; padding: var(--sp-1) var(--sp-2); overflow: hidden; }
 .surface { flex: 1; min-height: 0; width: 100%; overflow: hidden; }
 .note { margin: 0; padding: var(--sp-2); color: var(--muted); font-size: var(--fs-sm); }
+/* R13: the project's run-stack tabs, after the thread's own */
+.group { display: inline-flex; flex: 0 1 auto; align-items: center; gap: var(--sp-1); min-width: 0; padding-left: var(--sp-2); border-left: 1px solid var(--border); }
+.groupLabel { flex: none; color: var(--muted); font-size: var(--fs-xs); font-weight: var(--fw-semibold); letter-spacing: var(--ls-label); text-transform: uppercase; }

@@ -1,7 +1,11 @@
 import { Suspense, lazy, useEffect, useLayoutEffect, useRef, useState } from "react";
+import { useModel } from "../../../state/model.ts";
+import { stopStack, useRunSession } from "../../../state/run.ts";
 import {
   createPty,
+  ensureOwnerPtys,
   ensurePtys,
+  runOwnerId,
   killPty,
   setActivePty,
   setDrawerHeight,
@@ -52,11 +56,40 @@ export function tabTitle(given: string | undefined, index: number): string {
   return clean === undefined || clean === "" ? `sh ${index + 1}` : clean;
 }
 
-/** `` ⌘` `` drawer: one tab per pty of the thread; ptys outlive the drawer. */
+/**
+ * R13: the project's run-stack ptys (`ownerId: "run:<projectId>"`), re-listed whenever the session
+ * reports a different set of service ptys. Stopping a tab stops its service, not just the shell.
+ */
+function useStackTabs(open: boolean, projectId: string | undefined): { tabs: PtyTab[]; stop: (tab: PtyTab) => void } {
+  const owner = projectId === undefined ? undefined : runOwnerId(projectId);
+  const tabs = useTerminals((s) => (owner === undefined ? undefined : s.tabs[owner])) ?? NO_TABS;
+  const session = useRunSession(open ? projectId : undefined);
+  const signature = Object.values(session?.services ?? {})
+    .map((st) => st.ptyId ?? "")
+    .sort()
+    .join(",");
+  useEffect(() => {
+    if (open && owner !== undefined) void ensureOwnerPtys(owner, true);
+  }, [open, owner, signature]);
+  const stop = (tab: PtyTab): void => {
+    if (projectId === undefined) return;
+    const key = Object.entries(session?.services ?? {}).find(([, st]) => st.ptyId === tab.ptyId)?.[0];
+    void stopStack(projectId, key ?? tab.label).then(() => {
+      if (owner !== undefined) void ensureOwnerPtys(owner, true);
+    });
+  };
+  return { tabs, stop };
+}
+
+const NO_TABS: PtyTab[] = [];
+
+/** `` ⌘` `` drawer: one tab per pty of the thread, then the project's stack; ptys outlive the drawer. */
 export function TerminalDrawer({ threadId }: { threadId: string }) {
   const open = useTerminals((s) => s.drawerOpen);
   const height = useTerminals((s) => s.height);
-  const tabs = useTerminals((s) => s.tabs[threadId]) ?? [];
+  const tabs = useTerminals((s) => s.tabs[threadId]) ?? NO_TABS;
+  const projectId = useModel((s) => s.model.threads[threadId]?.projectId);
+  const stack = useStackTabs(open, projectId);
   const active = useTerminals((s) => s.active[threadId]);
   const onDrag = useDragHeight();
   const drawer = useRef<HTMLDivElement>(null);
@@ -85,7 +118,7 @@ export function TerminalDrawer({ threadId }: { threadId: string }) {
 
   if (!open) return null;
 
-  const current = tabs.find((t) => t.ptyId === active) ?? tabs[0];
+  const current = tabs.find((t) => t.ptyId === active) ?? stack.tabs.find((t) => t.ptyId === active) ?? tabs[0];
 
   return (
     <div ref={drawer} className={styles.drawer} aria-label="Terminal" data-terminal-drawer="">
@@ -132,6 +165,39 @@ export function TerminalDrawer({ threadId }: { threadId: string }) {
             </span>
           );
         })}
+        {stack.tabs.length === 0 ? null : (
+          <span className={styles.group} role="presentation">
+            <span className={styles.groupLabel}>Stack</span>
+            {stack.tabs.map((tab, index) => {
+              const name = tab.label ?? tabTitle(tab.title, index);
+              const selected = tab.ptyId === current?.ptyId;
+              return (
+                <span key={tab.ptyId} className={`${styles.tabWrap} ${selected ? styles.activeTab : ""}`}>
+                  <button
+                    type="button"
+                    role="tab"
+                    aria-selected={selected}
+                    className={styles.tab}
+                    title={tab.alive ? `${name} (stack)` : `${name} (exited)`}
+                    onClick={() => setActivePty(threadId, tab.ptyId)}
+                  >
+                    <span className={`${styles.dot} ${tab.alive ? "" : styles.dotExited}`} aria-hidden="true" />
+                    <span className={styles.tabName}>{name}</span>
+                  </button>
+                  <button
+                    type="button"
+                    className={styles.close}
+                    aria-label={`Stop ${name}`}
+                    title="Stop service"
+                    onClick={() => stack.stop(tab)}
+                  >
+                    <Icon name="stop" size={12} />
+                  </button>
+                </span>
+              );
+            })}
+          </span>
+        )}
         <Button
           variant="quiet"
           aria-label="New terminal"

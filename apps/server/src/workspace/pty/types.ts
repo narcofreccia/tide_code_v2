@@ -20,6 +20,8 @@ export interface PtyHandle {
   write(data: string): void;
   resize(cols: number, rows: number): void;
   kill(): void;
+  /** signals the shell's process group and every descendant (see killTree.ts) */
+  killTree(signal: "SIGINT" | "SIGTERM" | "SIGKILL"): Promise<void>;
   /** OS pid of the shell, when the backend knows it (ports.list walks its descendants) */
   pid?: number | undefined;
 }
@@ -37,4 +39,6 @@ export interface PtyInfo {
   ptyId: string;
   title?: string;
   alive: boolean;
+  /** the run-stack service name for `run:` terminals */
+  label?: string;
 }

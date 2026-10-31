@@ -1,6 +1,8 @@
 import { afterEach, describe, expect, it, vi } from "vitest";
 import { act, cleanup, fireEvent, render, screen, waitFor } from "@testing-library/react";
-import { mockRpc, mockStream, resetUi } from "../../../testHarness.ts";
+import { attachFakeStore, makeThread, mockRpc, mockStream, modelWith, resetUi } from "../../../testHarness.ts";
+import { resetRun } from "../../../state/run.ts";
+import { emptyReadModel } from "@tide/contracts";
 import { useModel } from "../../../state/model.ts";
 import { setDrawerOpen, useTerminals } from "../../../state/terminals.ts";
 import { TerminalDrawer, tabTitle } from "./TerminalDrawer.tsx";
@@ -38,6 +40,7 @@ vi.mock("@xterm/xterm/css/xterm.css", () => ({}));
 
 afterEach(() => {
   cleanup();
+  resetRun();
   resetUi();
   terms.length = 0;
 });
@@ -164,5 +167,30 @@ describe("TerminalDrawer", () => {
     await waitFor(() => expect(rpc.mock.calls.filter(([m]) => m === "pty.kill").map(([, p]) => p)).toEqual([{ ptyId: "p1" }, { ptyId: "p3" }]));
     expect(useTerminals.getState().tabs.t1?.map((t) => t.ptyId)).toEqual(["p2"]);
     expect(useTerminals.getState().active.t1).toBe("p2");
+  });
+
+  it("lists the project's run-stack ptys in a Stack group; stopping one stops its service", async () => {
+    const fake = attachFakeStore(modelWith({ threads: { t1: makeThread("t1", { projectId: "p1" }) } }));
+    const rpc = mockRpc({
+      "pty.list": (params: { threadId?: string; ownerId?: string }) =>
+        params.ownerId === "run:p1"
+          ? { ptys: [{ ptyId: "r1", alive: true, label: "api" }] }
+          : { ptys: [{ ptyId: "p1", title: "zsh", alive: true }] },
+      "run.stop": () => ({ ok: true }),
+    });
+    const { streams } = mockStream();
+    setDrawerOpen(true);
+    render(<TerminalDrawer threadId="t1" />);
+    await screen.findByRole("tab", { name: "api" });
+    expect(screen.getByText("Stack")).toBeDefined();
+    expect(rpc).toHaveBeenCalledWith("pty.list", { ownerId: "run:p1" });
+    const sub = streams.find((s) => s.method === "run.subscribe");
+    act(() => sub?.push({ kind: "snapshot", session: { projectId: "p1", startedAt: 1, services: { "backend.api": { state: "running", ptyId: "r1", ports: {}, since: 1 } } } }));
+    fireEvent.click(screen.getByRole("tab", { name: "api" }));
+    expect(useTerminals.getState().active.t1).toBe("r1");
+    fireEvent.click(screen.getByLabelText("Stop api"));
+    await waitFor(() => expect(rpc).toHaveBeenCalledWith("run.stop", { projectId: "p1", key: "backend.api" }));
+    fake.detach();
+    useModel.setState({ model: emptyReadModel() });
   });
 });

@@ -1,3 +1,4 @@
+import { killProcessTree } from "./killTree.ts";
 import type { PtyBackend, PtyExit, PtyHandle, PtySpawnSpec } from "./types.ts";
 
 // Bun's own globals are not in @types/node; this is the declared boundary for them.
@@ -67,8 +68,9 @@ export function createBunBackend(): PtyBackend {
         });
       });
 
+      const pid = (proc as { pid?: number }).pid;
       return {
-        pid: (proc as { pid?: number }).pid,
+        pid,
         onData: (cb) => {
           onData = cb;
         },
@@ -78,6 +80,10 @@ export function createBunBackend(): PtyBackend {
         write: (data) => terminal.write(data),
         resize: (cols, rows) => terminal.resize(cols, rows),
         kill: () => proc.kill(),
+        killTree: async (signal) => {
+          if (typeof pid === "number") await killProcessTree(pid, signal);
+          else proc.kill(signal);
+        },
       };
     },
   };

@@ -1,5 +1,7 @@
 import { useEffect, useState } from "react";
+import { useModel } from "../../../state/model.ts";
 import { openPreviewTab } from "../../../state/workbench.ts";
+import { RunPanel } from "../run/RunPanel.tsx";
 import { Button } from "../../ui/Button.tsx";
 import { Icon } from "../../ui/Icon.tsx";
 import styles from "./Preview.module.css";
@@ -27,9 +29,11 @@ export function PreviewTab({ threadId, url }: { threadId: string; url: string })
   const [draft, setDraft] = useState(url);
   const [nonce, setNonce] = useState(0);
   useEffect(() => setDraft(url), [url]);
+  const projectId = useModel((s) => s.model.threads[threadId]?.projectId);
 
   return (
     <div className={styles.preview}>
+      {projectId === undefined ? null : <RunPanel projectId={projectId} threadId={threadId} variant="strip" />}
       <form
         className={styles.bar}
         onSubmit={(e) => {
