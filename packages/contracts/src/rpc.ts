@@ -497,6 +497,8 @@ export const rpcMethods = {
     Type.Object({ attachments: Type.Array(AttachmentRef) }),
   ),
   /** listening TCP ports owned by processes under this thread's terminals and harness, for the Preview tab */
+  /** R12: open a URL with the machine's own handler (`open` / `xdg-open` / `start`): editor deep links (`vscode://…`) that a WebView refuses to navigate to. Only `vscode:`, `cursor:`, `http:` and `https:` schemes. */
+  "workspace.openExternal": unary(Type.Object({ url: Type.String({ maxLength: 4096 }) }), Type.Object({ ok: Type.Boolean(), error: Type.Optional(Type.String()) })),
   "ports.list": unary(Type.Object({ threadId: Type.String() }), Type.Object({ ports: Type.Array(Type.Object({ port: Type.Number(), pid: Type.Number(), command: Type.String(), url: Type.String() })) })),
   /** look for a favicon in the usual places of the project root; `icon` is a data: URL ≤ 32 KB or absent */
   "project.detectIcon": unary(Type.Object({ projectId: Type.String() }), Type.Object({ icon: Type.Optional(ProjectIcon), source: Type.Optional(Type.String()) })),
