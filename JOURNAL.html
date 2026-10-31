@@ -96,6 +96,20 @@
 
       <h2>Phase board</h2>
       <details class="phase" open>
+        <summary><span class="title"><h3>R13 — Run stack (2026-10-31 →)</h3><small>per-repo run profiles (QUICKSTART ```tide-run``` block · .tide/run.json · manifest scan · text-model fallback) · start/stop the project + linked repos as one stack · ports de-collided, "connects" env re-rendered (a moved backend is followed by the frontend) · process-env injection only, repos never edited</small></span><span class="badge status wip">wip</span></summary>
+        <div class="body">
+           <p class="note">2026-10-31 — Andrea: real-world testing across tide_backend / tide_frontend / tide_pos2 / tide_pos_app / tide_reel means five terminals and colliding envs (1420 twice with strictPort, 8081 four times, backend 8000 vs 5000). Decisions: process-env only; stack = project + linked repos (toggles remembered); scan manifests, model only for gaps; one project per repo cross-linked; two fixed-port (Tauri devUrl) services → block the second with the reason, never patch; port changes propagate through <code>connects</code>. Plan: <code>~/.claude/plans/hey-please-audit-this-dapper-platypus.md</code>.</p>
+           <ul class="tasks">
+             <li><span class="badge status done">done</span><span class="t"><b>Contracts</b> (<code>ae4b6f3</code>): <code>RunListen/RunConnect/RunReadiness/RunService/RunProfile/RunRepo</code>, <code>RunPlan</code>, <code>RunSession</code>, <code>Project.runStack</code> + <code>project.runStack.set/changed</code>; <code>pty.create {ownerId?, cwd?, env?, command?}</code>, <code>pty.list</code> by owner; <code>run.profiles.get/scan/set</code>, <code>run.quickstart.write</code>, <code>run.plan/start/stop/restart</code>, stream <code>run.subscribe</code>.</span></li>
+             <li><span class="badge status wip">wip</span><span class="t"><b>S1</b> scan (package.json/vite/tauri/expo/python/Procfile/compose/Makefile/.env read-only, override-env warnings) · profiles precedence + cache + cross-repo connect resolution · QUICKSTART block parse/write · <code>provider/json.ts completeJson</code> · <code>run.profiles.*</code> handlers.</span></li>
+             <li><span class="badge status wip">wip</span><span class="t"><b>S2</b> planner (fixed first, pins, ranges, npm <code>--</code>, vite <code>--strictPort</code>, connects render) · supervisor (ephemeral session, readiness by log/port, SIGINT→TERM→KILL on the process group, external detection) · PTY owner/env/command/killTree · <code>run.*</code> handlers.</span></li>
+             <li><span class="badge status wip">wip</span><span class="t"><b>W1</b> Run panel in the Preview tab (rows, Start stack → plan preview dialog with conflicts/pins, Logs → stack terminal tabs) · <code>state/run.ts</code> · client selectors.</span></li>
+             <li><span class="badge status wip">wip</span><span class="t"><b>W2</b> Mission Control "Run · n/m up" chip · Settings › Projects › Run (rescan, ask the model, edit JSON, write QUICKSTART, pins) · <code>docs/internals/run.md</code>.</span></li>
+             <li><span class="badge status todo">todo</span><span class="t">Live check on Andrea's repos (plan §7): blocked 1420 reel vs pos2; frontend keeps 8081, metro → 8082; pin backend 8010 re-renders <code>VITE_API_URL</code>/<code>TIDE_DEV_BASE_URL</code>; stop leaves no orphans; server restart → external rows.</span></li>
+           </ul>
+        </div>
+      </details>
+      <details class="phase" open>
         <summary><span class="title"><h3>R12 — UI refinement + solo-dev flow (2026-10-30 →)</h3><small>visual system (type/spacing/selection/focus scales, icon set, live shimmer + streaming fade) · icon strip + rail-as-inbox with search and project chips · settings redesign · page sweep · merge back without a PR as a first-class flow · thread search</small></span><span class="badge status wip">wip</span></summary>
         <div class="body">
            <p class="note">2026-10-31 — Andrea: "is my machine really this maxed out?" — no: the mem bar used <code>os.freemem()</code> (macOS free pages only → "58 of 64 GB"), the cpu bar the 1-min loadavg while nine vitest workers ran; fixed in C3. Rail add-project card overflowed the 280 px rail → form moved to a Dialog (B).</p>
@@ -407,6 +421,7 @@
       <h2>Commit log</h2>
       <table>
         <tr><th>Phase</th><th>Date</th><th>Message</th><th>SHA</th></tr>
+        <tr><td>R13</td><td>2026-10-31</td><td>feat(contracts): R13 run stack — RunProfile/RunPlan/RunSession, Project.runStack, pty owner/cwd/env/command, run.* RPCs</td><td class="sha">ae4b6f3</td></tr>
         <tr><td>R12</td><td>2026-10-31</td><td>feat: R12 wiring — Terminal from Chat view, Open in VS Code via the server, Preview by worktree cwd, drawer tabs, editor discoverability, ⌘⇧R / ⌘⇧S</td><td class="sha">799c79a</td></tr>
         <tr><td>R12</td><td>2026-10-31</td><td>feat: approval cards say why the harness asked (Claude decisionReason as Activity.reason)</td><td class="sha">4d4e72b</td></tr>
         <tr><td>R12</td><td>2026-10-31</td><td>feat(contracts): workspace.openExternal for editor deep links from the desktop WebView</td><td class="sha">d9ac7b7</td></tr>
