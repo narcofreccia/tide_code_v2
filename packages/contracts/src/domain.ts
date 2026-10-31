@@ -581,6 +581,8 @@ export const ApprovalActivity = Type.Object({
   input: Type.Unknown(),
   title: Type.Optional(Type.String()),
   description: Type.Optional(Type.String()),
+  /** R12: why the harness asked instead of deciding itself (Claude `decisionReason`: classifier escalation, rule match, path outside the worktree) */
+  reason: Type.Optional(Type.String()),
   /** unified diff when the tool is a file edit */
   diff: Type.Optional(Type.String()),
   status: Type.Union([Type.Literal("pending"), Type.Literal("resolved")]),

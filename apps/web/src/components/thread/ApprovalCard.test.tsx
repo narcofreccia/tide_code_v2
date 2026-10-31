@@ -17,6 +17,12 @@ const respond = (decision: string) => ({
 });
 
 describe("ApprovalCard", () => {
+  it("R12: says why the harness asked when the driver reports a reason", () => {
+    attachFakeStore(modelWith({}));
+    render(<ApprovalCard activity={{ ...makeApproval("a1"), reason: "Path is outside the working directory" }} active />);
+    expect(screen.getByText(/Asked because: Path is outside the working directory/)).toBeTruthy();
+  });
+
   it("dispatches a decision per button", () => {
     const fake = attachFakeStore(modelWith({}));
     render(<ApprovalCard activity={makeApproval("a1")} active />);

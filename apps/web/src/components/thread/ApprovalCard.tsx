@@ -93,6 +93,11 @@ export function ApprovalCard({ activity, active }: { activity: ActivityOf<"appro
           <span className={styles.target}>{target}</span>
         </div>
         {activity.description ? <p className={styles.description}>{activity.description}</p> : null}
+        {activity.reason ? (
+          <p className={styles.reason} title="Why the harness asked instead of deciding itself">
+            Asked because: {activity.reason}
+          </p>
+        ) : null}
         {activity.diff ? <DiffPreview diff={activity.diff} /> : null}
         <div className={styles.actions}>
           <Button variant="primary" onClick={() => respond("accept")}>

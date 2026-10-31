@@ -22,6 +22,7 @@
   color: var(--muted);
 }
 .description { margin: 0; color: var(--muted); font-size: var(--fs-sm); line-height: var(--lh-body); }
+.reason { margin: 0; color: var(--st-needs); font-size: var(--fs-sm); line-height: var(--lh-body); }
 .actions { display: flex; align-items: center; gap: var(--sp-2); flex-wrap: wrap; }
 .hint { color: var(--muted); font-size: var(--fs-sm); display: inline-flex; align-items: center; gap: var(--sp-1); }
 .resolved {

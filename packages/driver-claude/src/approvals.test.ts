@@ -28,6 +28,14 @@ describe("ApprovalBroker acceptForSession / acceptAlways", () => {
     return { events, broker: new ApprovalBroker((event) => events.push(event)) };
   }
 
+  it("R12: carries the CLI's decisionReason as `reason`, separate from the tool description", () => {
+    const { events, broker } = setup();
+    void broker.handle("Bash", { command: "ls ../other" }, { toolUseID: "t9", description: "List the sibling project", decisionReason: "Path is outside the working directory" });
+    const approval = events.find((e) => e.type === "activity" && e.activity.kind === "approval");
+    expect(approval && approval.type === "activity" ? approval.activity : undefined).toMatchObject({ description: "List the sibling project", reason: "Path is outside the working directory" });
+    broker.respondApproval("t9", "decline");
+  });
+
   it("uses the CLI's narrow suggestion for the session rule", async () => {
     const { broker } = setup();
     const result = broker.handle("Bash", { command: "git status" }, { toolUseID: "t1", suggestions: [bashSuggestion] });

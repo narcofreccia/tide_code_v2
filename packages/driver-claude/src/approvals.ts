@@ -95,7 +95,8 @@ export class ApprovalBroker {
         input,
         status: "pending",
         ...(approvalTitle(context) ? { title: approvalTitle(context)! } : {}),
-        ...(context.description ?? context.decisionReason ? { description: context.description ?? context.decisionReason! } : {}),
+        ...(context.description ? { description: context.description } : {}),
+        ...(context.decisionReason && context.decisionReason !== context.description ? { reason: context.decisionReason } : {}),
         ...(diff ? { diff } : {}),
       },
     });
