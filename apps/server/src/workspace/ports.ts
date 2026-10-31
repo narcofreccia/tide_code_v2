@@ -1,4 +1,6 @@
 import { execFile } from "node:child_process";
+import { readlink, realpath } from "node:fs/promises";
+import { sep } from "node:path";
 
 export interface ListeningPort {
   port: number;
@@ -13,6 +15,8 @@ export interface PortProbe {
   listeners(): Promise<{ kind: "lsof" | "ss"; text: string } | undefined>;
   /** `ps -axo pid=,ppid=,comm=` output */
   processes(): Promise<string | undefined>;
+  /** pid -> current working directory, for the listener pids only (one call per snapshot) */
+  cwds?(pids: number[]): Promise<Map<number, string>>;
 }
 
 const run = (file: string, args: string[]): Promise<string | undefined> =>
@@ -28,6 +32,21 @@ export const systemProbe: PortProbe = {
     return ss !== undefined ? { kind: "ss", text: ss } : undefined;
   },
   processes: () => run("ps", ["-axo", "pid=,ppid=,comm="]),
+  async cwds(pids) {
+    if (pids.length === 0) return new Map();
+    const lsof = await run("lsof", ["-a", "-d", "cwd", "-Fn", "-p", pids.join(",")]);
+    if (lsof !== undefined) return parseLsofCwd(lsof);
+    // linux without lsof: /proc is enough
+    const out = new Map<number, string>();
+    await Promise.all(pids.map(async (pid) => {
+      try {
+        out.set(pid, await readlink(`/proc/${pid}/cwd`));
+      } catch {
+        /* gone, or not ours to read */
+      }
+    }));
+    return out;
+  },
 };
 
 interface Listener {
@@ -55,6 +74,17 @@ export function parseLsof(text: string): Listener[] {
       const port = portOfAddress(rest);
       if (port !== undefined && pid > 0) out.push({ port, pid, command });
     }
+  }
+  return out;
+}
+
+/** `lsof -a -d cwd -Fn -p …`: `p<pid>`, `fcwd`, `n<path>` per process. */
+export function parseLsofCwd(text: string): Map<number, string> {
+  const out = new Map<number, string>();
+  let pid = 0;
+  for (const line of text.split("\n")) {
+    if (line[0] === "p") pid = Number(line.slice(1));
+    else if (line[0] === "n" && pid > 0 && !out.has(pid)) out.set(pid, line.slice(1));
   }
   return out;
 }
@@ -96,17 +126,33 @@ export interface PortsOptions {
   ttlMs?: number;
 }
 
+export interface ListOptions {
+  /** the thread's worktree (or project root): listeners whose process runs in it count too */
+  cwd?: string;
+}
+
+interface Snapshot {
+  listeners: Listener[];
+  parents: Map<number, number>;
+  cwds: Map<number, string>;
+}
+
+const within = (path: string, root: string): boolean => {
+  const base = root.endsWith(sep) && root.length > 1 ? root.slice(0, -1) : root;
+  return path === base || path.startsWith(base + sep);
+};
+
 /**
- * Listening TCP ports owned by a descendant of the given root pids. Only terminal (pty) shells are
- * known as roots today: the harness processes are not exposed by `SessionDirectory`, so a dev server
- * the agent starts itself shows up only when it runs in one of the thread's terminals.
- * The two system calls are cached for 3 s and shared by all threads.
+ * Listening TCP ports of a thread: owned by a descendant of its terminal shells (`via: "terminal"`),
+ * or by a process whose working directory is inside its worktree (`via: "cwd"`) — the dev server an
+ * agent starts with its own Bash tool is not a child of any Tide terminal, but it runs in the worktree.
+ * The system calls are cached for 3 s and shared by all threads.
  */
 export class PortLister {
   #probe: PortProbe;
   #now: () => number;
   #ttl: number;
-  #cache: { at: number; value: Promise<{ listeners: Listener[]; parents: Map<number, number> }> } | undefined;
+  #cache: { at: number; value: Promise<Snapshot> } | undefined;
 
   constructor(options: PortsOptions = {}) {
     this.#probe = options.probe ?? systemProbe;
@@ -114,27 +160,33 @@ export class PortLister {
     this.#ttl = options.ttlMs ?? 3000;
   }
 
-  #snapshot(): Promise<{ listeners: Listener[]; parents: Map<number, number> }> {
+  #snapshot(): Promise<Snapshot> {
     const t = this.#now();
     if (this.#cache !== undefined && t - this.#cache.at < this.#ttl) return this.#cache.value;
     const value = (async () => {
       const [l, p] = await Promise.all([this.#probe.listeners(), this.#probe.processes()]);
       const listeners = l === undefined ? [] : l.kind === "lsof" ? parseLsof(l.text) : parseSs(l.text);
-      return { listeners, parents: p === undefined ? new Map<number, number>() : parsePs(p) };
+      const pids = [...new Set(listeners.map((x) => x.pid))];
+      const cwds = this.#probe.cwds !== undefined && pids.length > 0 ? await this.#probe.cwds(pids).catch(() => new Map<number, string>()) : new Map<number, string>();
+      return { listeners, parents: p === undefined ? new Map<number, number>() : parsePs(p), cwds };
     })();
     this.#cache = { at: t, value };
     return value;
   }
 
-  async list(rootPids: number[]): Promise<ListeningPort[]> {
-    if (rootPids.length === 0) return [];
+  async list(rootPids: number[], options: ListOptions = {}): Promise<ListeningPort[]> {
+    const cwd = options.cwd === undefined ? undefined : await realpath(options.cwd).catch(() => options.cwd as string);
+    if (rootPids.length === 0 && cwd === undefined) return [];
     const roots = new Set(rootPids);
-    const { listeners, parents } = await this.#snapshot();
+    const { listeners, parents, cwds } = await this.#snapshot();
     const seen = new Set<number>();
     const out: ListeningPort[] = [];
     for (const l of listeners) {
-      if (seen.has(l.port) || !underRoots(l.pid, parents, roots)) continue;
+      if (seen.has(l.port)) continue;
+      const via = roots.size > 0 && underRoots(l.pid, parents, roots) ? "terminal" : cwd !== undefined && within(cwds.get(l.pid) ?? "", cwd) ? "cwd" : undefined;
+      if (via === undefined) continue;
       seen.add(l.port);
+      // `via` stays internal: the wire shape is { port, pid, command, url }
       out.push({ port: l.port, pid: l.pid, command: l.command, url: `http://127.0.0.1:${l.port}` });
     }
     return out.sort((a, b) => a.port - b.port);

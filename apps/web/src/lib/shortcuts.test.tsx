@@ -77,10 +77,10 @@ describe("shortcuts registry", () => {
     attachFakeStore(modelWith({ threads: { t1: makeThread("t1") } }));
     useUi.getState().selectThread("t1");
     useUi.getState().setFocusMode("thread");
-    // a thread is selected but the workbench is hidden
+    // a thread is selected but the workbench is hidden: ⌘` widens to Split and opens the drawer (R12)
     expect(press("1")).toBe(true);
-    expect(press("`")).toBe(false);
-    useUi.getState().setFocusMode("split");
+    expect(press("`")).toBe(true);
+    expect(useUi.getState().focusMode).toBe("split");
     expect(press("`")).toBe(true);
   });
 
@@ -134,14 +134,13 @@ describe("custom keybindings", () => {
     useServerSettings.setState({ settings: { ...useServerSettings.getState().settings, keybindings: {} } });
   });
 
-  it("keeps ⌘⇧E falling through from effort to the file tree by default", async () => {
-    const { useWorkbench } = await import("../state/workbench.ts").then((m) => ({ useWorkbench: m }));
-    void useWorkbench;
+  it("R12: ⌘⇧E is the file tree alone; effort moved to ⌘⇧R", async () => {
     attachFakeStore(modelWith({ threads: { t1: makeThread("t1") } }));
     useUi.getState().selectThread("t1");
     useUi.getState().setFocusMode("workbench");
-    // effort has no models to cycle in this fixture, so the key reaches "Toggle file tree"
     expect(press("e", { shiftKey: true })).toBe(true);
+    expect(SHORTCUTS.filter((s) => s.keys === "⌘⇧E").map((s) => s.id)).toEqual(["tree"]);
+    expect(SHORTCUTS.find((s) => s.id === "effort")?.keys).toBe("⌘⇧R");
   });
 });
 

@@ -62,8 +62,9 @@ describe("Settings › Keyboard rebinding", () => {
     render(<KeyboardSection />);
     expect(within(row("palette")).getByRole("alert").textContent).toContain("Mission Control");
     expect(within(row("mission")).getByRole("alert").textContent).toContain("Command palette");
-    // the shipped ⌘⇧E pair is deliberate and stays quiet
+    // defaults do not fight each other
     expect(within(row("effort")).queryByRole("alert")).toBeNull();
+    expect(within(row("tree")).queryByRole("alert")).toBeNull();
   });
 
   it("Reset all clears every override", async () => {

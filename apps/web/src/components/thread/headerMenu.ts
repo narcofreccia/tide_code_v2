@@ -39,7 +39,7 @@ export function editorItems(model: ReadModel, thread: Thread): MenuItem[] {
     ...(blocked === undefined ? {} : { hint: blocked }),
     onSelect: () => {
       const url = target === undefined ? undefined : editorUrl(app, target);
-      if (url) launchEditorUrl(url);
+      if (url) void launchEditorUrl(url, { threadId: thread.id });
     },
   }));
 }
@@ -63,7 +63,7 @@ export function headerMenu(
           ...(narrow.terminal === undefined ? { hint: "no session yet" } : {}),
           onSelect: () => {
             const command = narrow.terminal;
-            if (command) void runInThreadTerminal(thread.id, command);
+            if (command) void runInThreadTerminal(thread.id, command, { purpose: "resume" });
           },
         },
         {

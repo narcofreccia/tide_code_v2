@@ -16,7 +16,7 @@ bar. `⌘B` (or the strip's Inbox button) collapses the rail; the strip stays. T
 | Strip | 44px | `--surface`, hairline right border. Top: Mission Control (`⌘0`), Inbox (toggles the rail; amber badge = threads that need you), Pull requests (badge = open PRs), Usage, Experts (new session). Bottom: Environments (only with more than one environment; → Settings › Environments), Settings (`⌘,`). 36×36 icon buttons, `title="Name (shortcut)"`; the active page has `aria-current="page"`, `--selection` fill and a 2px `--selection-bar` on the left edge. |
 | Rail | 280px, resizable 240–360 (persisted) | see **Rail anatomy** |
 | Thread | flexible, primary | header: one 32px row = state chip · title (inline rename: double-click or ✎) · branch chip (mono, tooltip = worktree path, `main checkout` when none) \| Terminal · Fork (latest settled turn) · `⋯` (below ~560px container width Terminal and Fork fold into `⋯`; Stop lives only in the composer) (New child, Roll back last turn…, Snooze ▸, Copy thread ID, Copy branch, Remove worktree…, Archive thread…); a 24px sub-row exists only when it has chips (PR / merge, lineage `forked from <title>`, `Limited` menu, `Rolling back…`, delegates, rate limit) · pinned plan progress while running · stream of messages + activities · inline cards (approval, user-input, proposed plan) · composer |
-| Workbench | flexible, secondary | tabs: **Changes** (default) · open files (Monaco) · tree toggle · terminal drawer |
+| Workbench | flexible, secondary | tab strip: **Changes** (default) · Search · open files (Monaco) · Preview \| `+` menu (Open file… `⌘P`, Search in files… `⌘⇧F`, New terminal) · **Files** toggle (`⌘⇧E`; open by default in Code focus, closed in Split, each layout remembers its last choice) · Preview (dev servers of the thread) · Terminal `` ⌘` ``. Editor bar: path as breadcrumbs (a folder opens the tree on it; the file name is plain) · Save (dot when dirty, disabled when clean). Monaco on the type scale: `--fs-sm` mono, line height 1.5× that, current line in `--selection`. Terminal drawer: a fixed one-line tab strip (`--row-h-nav`, tabs ≤160px, titles ellipsised with the harness's status glyph dropped, a dot = alive, muted = exited; right-click: Close / Close others; `plus` new; Hide right) above the terminal, which refits on resize, on open and on tab switch |
 | Status bar | 24px | `⎇ branch (worktree)` · context % + cost · diff stats · provider health · connection |
 
 Focus modes: `⌘1` Thread only · `⌘2` Split (default 45/55, draggable) · `⌘3` Workbench only.
@@ -68,9 +68,22 @@ folded to one line (`4 agents ready · 1 needs login`), expandable to the per-ha
 A thread with a linked PR and a watch shows a PR watch pill on its card:
 `👁 PR #12 · ✔ · 3 comments`. This is the landing view. "New thread" from here asks project → provider → worktree?.
 
-"Open in terminal" opens a new PTY tab in the terminal drawer, on the thread's worktree (or
+"Open in terminal" opens a PTY tab in the terminal drawer, on the thread's worktree (or
 the project root), and types the harness's own resume command into it (`claude --resume <id>` /
-`codex resume` / `opencode`). When no PTY can be created the command is copied instead.
+`codex resume` / `opencode`). The tab is tagged as the thread's resume tab: while it is alive, the
+header button and the menu item focus it instead of stacking another. The drawer lives in the
+workbench, so from Thread-only focus the action widens to Split first. When no PTY can be created
+the command is copied instead.
+
+"Open in VS Code / Cursor" (`⋯`) asks the local server to hand the `vscode://` / `cursor://` link to
+the OS opener (`workspace.openExternal`); the desktop WebView refuses custom-scheme navigation. A
+remote thread, or a failed launch, falls back to the browser handoff, and the reason is toasted
+("VS Code is not installed (vscode:// has no handler)").
+
+**Preview** lists a thread's dev servers: listeners under its terminal shells, and any listener
+whose process runs inside its worktree (an agent's own Bash tool starts servers outside Tide's
+terminals). With none found it says so, offers Refresh, and a URL field (`3000` or any
+`http://localhost:<port>`) opens any server as the preview tab.
 
 **Thread**: one chronological stream. Messages are plain (the user's as a quiet labelled block,
 the assistant's as unboxed prose, both on one left edge). Activities are single lines
@@ -324,7 +337,7 @@ traffic-light inset.
 
 `⌘K` palette · `⌘N` new thread · `⌘0` Mission Control · `⌘1/2/3` focus modes · `⌘B` rail ·
 `` ⌘` `` terminal · `↵` send and stay · `⌘↵` idle: send in the background (back to Mission Control); while a turn runs: send in the other follow-up mode (Steer ↔ Queue) · `⌥↵` the other mode · `Esc` stop turn / close · `y`/`n` approve/deny focused card ·
-`⌘S` in the composer: stash the draft / apply the latest stash · `⌘Z` undo the last settle (while its toast is up or the rail/thread has focus) · `⌘⇧E` in the thread column: cycle reasoning effort (in the workbench: toggle file tree) ·
+`⌘⇧S` in the composer: stash the draft / apply the latest stash · `⌘Z` undo the last settle (while its toast is up or the rail/thread has focus) · `⌘⇧R` cycle reasoning effort (in the workbench: toggle file tree) ·
 `/` at the start of a line: slash commands + skills of the thread's harness · `@` mention a worktree file ·
 `⌘P` open file in worktree · `⌘S` save · `⌘⇧D` toggle unified/split diff · `[` `]` prev/next turn ·
 `⌘⇧L` toggle light/dark.

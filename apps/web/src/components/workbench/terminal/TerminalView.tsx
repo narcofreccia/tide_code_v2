@@ -47,11 +47,20 @@ export function TerminalView({ threadId, ptyId }: { threadId: string; ptyId: str
     term.loadAddon(fit);
     term.loadAddon(new WebLinksAddon());
     term.open(element);
-    try {
-      fit.fit();
-    } catch {
-      /* zero-sized container (hidden drawer) */
-    }
+    const fitNow = (): void => {
+      try {
+        fit.fit();
+      } catch {
+        return; /* zero-sized container (hidden drawer) */
+      }
+      resizePty(ptyId, term.cols, term.rows);
+    };
+    fitNow();
+    // the first layout (drawer just opened, tab just switched, fonts settling) lands a frame later
+    const frame = typeof requestAnimationFrame === "undefined" ? undefined : requestAnimationFrame(fitNow);
+    // the drawer animates its height in; measure again once it settles
+    const drawer = element.closest("[data-terminal-drawer]");
+    drawer?.addEventListener("transitionend", fitNow);
 
     const input = term.onData((data) => writePty(ptyId, data));
 
@@ -78,14 +87,7 @@ export function TerminalView({ threadId, ptyId }: { threadId: string; ptyId: str
     let timer: ReturnType<typeof setTimeout> | undefined;
     const onResize = (): void => {
       if (timer !== undefined) clearTimeout(timer);
-      timer = setTimeout(() => {
-        try {
-          fit.fit();
-        } catch {
-          return;
-        }
-        resizePty(ptyId, term.cols, term.rows);
-      }, RESIZE_DEBOUNCE_MS);
+      timer = setTimeout(fitNow, RESIZE_DEBOUNCE_MS);
     };
     // the palette comes from the tokens, so a theme change means re-reading them
     const unsubscribeTheme = subscribeTheme(() => {
@@ -98,6 +100,8 @@ export function TerminalView({ threadId, ptyId }: { threadId: string; ptyId: str
 
     return () => {
       if (timer !== undefined) clearTimeout(timer);
+      if (frame !== undefined) cancelAnimationFrame(frame);
+      drawer?.removeEventListener("transitionend", fitNow);
       window.removeEventListener("resize", onResize);
       unsubscribeTheme();
       observer?.disconnect();

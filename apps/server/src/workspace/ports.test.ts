@@ -1,5 +1,5 @@
 import { describe, expect, it } from "vitest";
-import { PortLister, parseLsof, parsePs, parseSs, type PortProbe } from "./ports.ts";
+import { PortLister, parseLsof, parseLsofCwd, parsePs, parseSs, type PortProbe } from "./ports.ts";
 
 const LSOF = "p100\ncnode\nn*:3000\nn[::1]:3000\np200\ncpython\nn127.0.0.1:8000\np300\ncpostgres\nn*:5432\n";
 const PS = "  1     0 launchd\n 50     1 zsh\n100    50 node\n200    60 python\n 60     1 zsh\n300     1 postgres\n";
@@ -28,5 +28,28 @@ describe("ports", () => {
   it("degrades to no ports when the commands are unavailable", async () => {
     const lister = new PortLister({ probe: { listeners: async () => undefined, processes: async () => undefined } });
     expect(await lister.list([1])).toEqual([]);
+  });
+
+  it("parses lsof cwd output", () => {
+    expect(parseLsofCwd("p100\nfcwd\nn/work/tree\np200\nfcwd\nn/elsewhere\n")).toEqual(new Map([[100, "/work/tree"], [200, "/elsewhere"]]));
+  });
+
+  it("lists listeners whose working directory is inside the worktree, probing cwds once per snapshot", async () => {
+    const cwdCalls: number[][] = [];
+    const probe: PortProbe = {
+      listeners: async () => ({ kind: "lsof", text: LSOF }),
+      processes: async () => PS,
+      cwds: async (pids) => {
+        cwdCalls.push(pids);
+        return new Map([[100, "/nowhere"], [200, "/work/tree/apps/web"], [300, "/work/tree-other"]]);
+      },
+    };
+    const lister = new PortLister({ probe, now: () => 0 });
+    // python (cwd under the worktree) is found with no terminal ancestry; postgres in a sibling dir is not
+    expect(await lister.list([], { cwd: "/work/tree" })).toEqual([{ port: 8000, pid: 200, command: "python", url: "http://127.0.0.1:8000" }]);
+    // terminal descendants and cwd matches combine
+    expect((await lister.list([50], { cwd: "/work/tree" })).map((p) => p.port)).toEqual([3000, 8000]);
+    expect(await lister.list([], { cwd: "/somewhere/else" })).toEqual([]);
+    expect(cwdCalls).toEqual([[100, 200, 300]]);
   });
 });

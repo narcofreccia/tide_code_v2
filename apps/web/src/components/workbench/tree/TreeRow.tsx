@@ -41,6 +41,7 @@ export function TreeRow({
           .join(" ")}
         data-depth={Math.min(depth, MAX_INDENT)}
         title={entry.path}
+        data-path={entry.path}
         tabIndex={-1}
         onClick={() => {
           onSelect();

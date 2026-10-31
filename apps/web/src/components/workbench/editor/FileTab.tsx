@@ -13,6 +13,7 @@ import {
   useDoc,
 } from "../../../state/docs.ts";
 import { clearEditorStatus, setEditorStatus, useWorkbench } from "../../../state/workbench.ts";
+import { Breadcrumbs } from "./Breadcrumbs.tsx";
 import styles from "./FileTab.module.css";
 
 /** Monaco is megabytes; it must stay out of the shell chunk. */
@@ -55,17 +56,17 @@ export function FileTab({ threadId, path }: { threadId: string; path: string }) 
   return (
     <div className={styles.tab}>
       <div className={styles.bar}>
-        <span className={styles.path} title={path}>
-          {path}
-        </span>
+        <Breadcrumbs threadId={threadId} path={path} />
         {dirty ? <span className={styles.dirty}>unsaved</span> : null}
         {saved ? <span className={styles.savedFlash}>saved</span> : null}
         <Button
           variant="quiet"
           className={styles.save}
           disabled={!dirty || doc?.saving === true}
+          title={dirty ? "Save (⌘S)" : "No unsaved changes"}
           onClick={() => void saveDoc(threadId, path)}
         >
+          {dirty ? <span className={styles.saveDot} aria-label="unsaved changes" /> : null}
           Save <Kbd>⌘S</Kbd>
         </Button>
       </div>

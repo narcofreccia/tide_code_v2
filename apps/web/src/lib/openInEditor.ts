@@ -1,6 +1,8 @@
 import type { ReadModel, Thread } from "@tide/contracts";
 import { envOfThread, useEnvironments, type EnvironmentsState } from "../state/environments.ts";
-import { envSshHost, isLocalEnv } from "../components/fleet/envView.ts";
+import { envOpt, envSshHost, isLocalEnv } from "../components/fleet/envView.ts";
+import { call } from "../state/model.ts";
+import { showToast } from "../state/toast.ts";
 
 /**
  * "Open in VS Code / Cursor" for a thread's checkout. Both editors register a URL scheme:
@@ -58,7 +60,34 @@ export function editorBlockedReason(target: EditorTarget | undefined): string | 
   return target.sshHost === undefined ? "remote machine: set its SSH host in Settings › Environments" : undefined;
 }
 
-/** Hands the URL to the OS; the page itself stays put. */
-export function launchEditorUrl(url: string): void {
+/** The browser's own handoff: works in a tab, refused silently by the desktop WebView. */
+function assignUrl(url: string): void {
   window.location.assign(url);
+}
+
+/**
+ * Hands the URL to the OS; the page itself stays put. A thread on this machine asks its local
+ * server to run the OS opener (the desktop WebView will not navigate to `vscode://`); a remote
+ * one, or a failed launch, falls back to the browser handoff and toasts why.
+ */
+export async function launchEditorUrl(
+  url: string,
+  options: { threadId?: string } = {},
+  state: EnvironmentsState = useEnvironments.getState(),
+): Promise<void> {
+  const envId = options.threadId === undefined ? state.primaryId : (envOfThread(options.threadId) ?? state.primaryId);
+  if (!isLocalEnv(envId, state)) {
+    assignUrl(url);
+    return;
+  }
+  let error: string | undefined;
+  try {
+    const result = await call("workspace.openExternal", { url }, envOpt(envId));
+    if (result.ok) return;
+    error = result.error;
+  } catch (failure) {
+    error = failure instanceof Error ? failure.message : String(failure);
+  }
+  if (error !== undefined && error !== "") showToast(error);
+  assignUrl(url);
 }

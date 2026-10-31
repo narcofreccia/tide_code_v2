@@ -1,4 +1,4 @@
-import { Suspense, lazy, useEffect, useLayoutEffect, useRef } from "react";
+import { Suspense, lazy, useEffect, useLayoutEffect, useRef, useState } from "react";
 import {
   createPty,
   ensurePtys,
@@ -7,7 +7,9 @@ import {
   setDrawerHeight,
   toggleDrawer,
   useTerminals,
+  type PtyTab,
 } from "../../../state/terminals.ts";
+import { ContextMenu, type MenuItem, type MenuPosition } from "../../ui/Menu.tsx";
 import { Button } from "../../ui/Button.tsx";
 import { Icon } from "../../ui/Icon.tsx";
 import { Kbd } from "../../ui/Kbd.tsx";
@@ -41,8 +43,13 @@ function useDragHeight(): (event: React.MouseEvent) => void {
   };
 }
 
-function title(ptyId: string, given: string | undefined, index: number): string {
-  return given ?? `sh ${index + 1}`;
+/**
+ * The shell's window title, one line: harnesses prefix it with a spinner/status glyph
+ * ("✳ Loading screen redesign"), which the tab drops.
+ */
+export function tabTitle(given: string | undefined, index: number): string {
+  const clean = given?.replace(/^[^\p{L}\p{N}]+/u, "").trim();
+  return clean === undefined || clean === "" ? `sh ${index + 1}` : clean;
 }
 
 /** `` ⌘` `` drawer: one tab per pty of the thread; ptys outlive the drawer. */
@@ -53,6 +60,19 @@ export function TerminalDrawer({ threadId }: { threadId: string }) {
   const active = useTerminals((s) => s.active[threadId]);
   const onDrag = useDragHeight();
   const drawer = useRef<HTMLDivElement>(null);
+  const [menu, setMenu] = useState<{ at: MenuPosition; tab: PtyTab } | undefined>(undefined);
+
+  const menuItems = (tab: PtyTab): MenuItem[] => [
+    { label: "Close", onSelect: () => void killPty(threadId, tab.ptyId) },
+    {
+      label: "Close others",
+      disabled: tabs.length < 2,
+      onSelect: () => {
+        setActivePty(threadId, tab.ptyId);
+        for (const other of tabs) if (other.ptyId !== tab.ptyId) void killPty(threadId, other.ptyId);
+      },
+    },
+  ];
 
   // the height is a CSS custom property, not an inline style object
   useLayoutEffect(() => {
@@ -68,7 +88,7 @@ export function TerminalDrawer({ threadId }: { threadId: string }) {
   const current = tabs.find((t) => t.ptyId === active) ?? tabs[0];
 
   return (
-    <div ref={drawer} className={styles.drawer} aria-label="Terminal">
+    <div ref={drawer} className={styles.drawer} aria-label="Terminal" data-terminal-drawer="">
       <div
         className={styles.grip}
         role="separator"
@@ -77,27 +97,41 @@ export function TerminalDrawer({ threadId }: { threadId: string }) {
         onMouseDown={onDrag}
       />
       <div className={styles.tabs} role="tablist">
-        {tabs.map((tab, index) => (
-          <span key={tab.ptyId} className={styles.tabWrap}>
-            <button
-              type="button"
-              role="tab"
-              aria-selected={tab.ptyId === current?.ptyId}
-              className={`${styles.tab} ${tab.ptyId === current?.ptyId ? styles.activeTab : ""}`}
-              onClick={() => setActivePty(threadId, tab.ptyId)}
+        {tabs.map((tab, index) => {
+          const name = tabTitle(tab.title, index);
+          const selected = tab.ptyId === current?.ptyId;
+          return (
+            <span
+              key={tab.ptyId}
+              className={`${styles.tabWrap} ${selected ? styles.activeTab : ""}`}
+              onContextMenu={(e) => {
+                e.preventDefault();
+                setMenu({ at: { x: e.clientX, y: e.clientY }, tab });
+              }}
             >
-              {title(tab.ptyId, tab.title, index)}
-              {tab.alive ? "" : " ·exited"}
-            </button>
-            <Button
-              variant="quiet"
-              aria-label={`Close ${title(tab.ptyId, tab.title, index)}`}
-              onClick={() => void killPty(threadId, tab.ptyId)}
-            >
-              <Icon name="close" size={12} />
-            </Button>
-          </span>
-        ))}
+              <button
+                type="button"
+                role="tab"
+                aria-selected={selected}
+                className={styles.tab}
+                title={tab.alive ? (tab.title ?? name) : `${name} (exited)`}
+                onClick={() => setActivePty(threadId, tab.ptyId)}
+              >
+                <span className={`${styles.dot} ${tab.alive ? "" : styles.dotExited}`} aria-hidden="true" />
+                <span className={styles.tabName}>{name}</span>
+              </button>
+              <button
+                type="button"
+                className={styles.close}
+                aria-label={`Close ${name}`}
+                title="Close terminal"
+                onClick={() => void killPty(threadId, tab.ptyId)}
+              >
+                <Icon name="close" size={12} />
+              </button>
+            </span>
+          );
+        })}
         <Button
           variant="quiet"
           aria-label="New terminal"
@@ -119,6 +153,9 @@ export function TerminalDrawer({ threadId }: { threadId: string }) {
           <p className={styles.note}>No terminal yet — press + to start one in the worktree.</p>
         )}
       </div>
+      {menu ? (
+        <ContextMenu label="Terminal tab" position={menu.at} items={menuItems(menu.tab)} onClose={() => setMenu(undefined)} />
+      ) : null}
     </div>
   );
 }

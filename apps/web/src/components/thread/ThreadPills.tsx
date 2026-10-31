@@ -126,7 +126,7 @@ export function ThreadPills({ thread }: { thread: Thread }) {
         />
       </Slot>
       {efforts.length === 0 ? null : (
-        <Slot caption="Effort" hint="How hard the model thinks (⌘⇧E cycles)">
+        <Slot caption="Effort" hint="How hard the model thinks (⌘⇧R cycles)">
           <EffortSelect
             label="Effort"
             className={styles.control}

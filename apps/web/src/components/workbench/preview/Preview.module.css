@@ -31,3 +31,7 @@
 .port { font-family: var(--font-mono); font-variant-numeric: tabular-nums; margin-right: var(--sp-2); }
 .command { color: var(--muted); overflow: hidden; text-overflow: ellipsis; white-space: nowrap; }
 .note { margin: 0; padding: var(--sp-2); color: var(--muted); font-size: var(--fs-sm); max-width: 280px; }
+.picker { display: flex; flex-direction: column; min-width: 280px; }
+.empty { display: flex; flex-direction: column; align-items: flex-start; gap: var(--sp-1); padding-bottom: var(--sp-2); }
+.empty > button { margin-left: var(--sp-2); }
+.manual { display: flex; align-items: center; gap: var(--sp-2); padding: var(--sp-2); border-top: 1px solid var(--border); }

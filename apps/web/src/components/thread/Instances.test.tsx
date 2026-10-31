@@ -97,7 +97,7 @@ describe("ThreadPills instances", () => {
   });
 });
 
-describe("⌘⇧E", () => {
+describe("⌘⇧R", () => {
   function select(patch: Parameters<typeof makeThread>[1]) {
     setProvidersForTest(ROSTER);
     useToasts.setState({ toasts: [] });
@@ -105,10 +105,10 @@ describe("⌘⇧E", () => {
     useUi.getState().selectThread("t1");
     return fake;
   }
-  const press = (): boolean => handleShortcut(new KeyboardEvent("keydown", { key: "E", metaKey: true, shiftKey: true }));
+  const press = (): boolean => handleShortcut(new KeyboardEvent("keydown", { key: "R", metaKey: true, shiftKey: true }));
 
   it("is registered in the Thread group", () => {
-    expect(SHORTCUTS.find((s) => s.id === "effort")).toMatchObject({ keys: "⌘⇧E", group: "Thread" });
+    expect(SHORTCUTS.find((s) => s.id === "effort")).toMatchObject({ keys: "⌘⇧R", group: "Thread" });
   });
 
   it("cycles the effort while the thread has the screen", () => {
@@ -119,13 +119,13 @@ describe("⌘⇧E", () => {
     expect(useToasts.getState().toasts.map((t) => t.text)).toEqual(["Effort: High"]);
   });
 
-  it("leaves the key to the file tree when the workbench owns focus", () => {
-    const fake = select({ provider: "codex", providerId: "codex:work" });
+  it("R12: still cycles the effort when the workbench owns focus (⌘⇧E is the tree's alone)", () => {
+    const fake = select({ provider: "codex", providerId: "codex:work", effort: "medium" });
     act(() => useUi.getState().setFocusMode("split"));
     const before = useWorkbench.getState().treeVisible;
     expect(press()).toBe(true);
-    expect(useWorkbench.getState().treeVisible).toBe(!before);
-    expect(fake.dispatch).not.toHaveBeenCalled();
+    expect(useWorkbench.getState().treeVisible).toBe(before);
+    expect(fake.dispatch).toHaveBeenLastCalledWith({ type: "thread.update", threadId: "t1", effort: "high" });
   });
 });
 

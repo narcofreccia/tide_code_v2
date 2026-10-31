@@ -4,10 +4,14 @@ import { call, useModel } from "./model.ts";
 import { onReconnect } from "./reconnect.ts";
 import { showToast } from "./toast.ts";
 
+/** why Tide opened the tab: `resume` runs the harness's own resume command (one per thread) */
+export type PtyPurpose = "resume";
+
 export interface PtyTab {
   ptyId: string;
   title?: string;
   alive: boolean;
+  purpose?: PtyPurpose;
 }
 
 interface TerminalsState {
@@ -67,11 +71,17 @@ export async function ensurePtys(threadId: string, force = false): Promise<void>
   useTerminals.setState((s) => ({ loaded: { ...s.loaded, [threadId]: true } }));
   try {
     const result = await call("pty.list", { threadId });
-    const tabs: PtyTab[] = result.ptys.map((p) => ({
-      ptyId: p.ptyId,
-      alive: p.alive,
-      ...(p.title === undefined ? {} : { title: p.title }),
-    }));
+    // the server does not know why a pty was opened; keep the client's tag
+    const known = new Map((useTerminals.getState().tabs[threadId] ?? []).map((t) => [t.ptyId, t.purpose]));
+    const tabs: PtyTab[] = result.ptys.map((p) => {
+      const purpose = known.get(p.ptyId);
+      return {
+        ptyId: p.ptyId,
+        alive: p.alive,
+        ...(p.title === undefined ? {} : { title: p.title }),
+        ...(purpose === undefined ? {} : { purpose }),
+      };
+    });
     const current = useTerminals.getState().active[threadId];
     const active = tabs.some((t) => t.ptyId === current) ? current : tabs[0]?.ptyId;
     setTabs(threadId, tabs);
@@ -82,10 +92,11 @@ export async function ensurePtys(threadId: string, force = false): Promise<void>
   }
 }
 
-export async function createPty(threadId: string, cols: number, rows: number): Promise<string | undefined> {
+export async function createPty(threadId: string, cols: number, rows: number, purpose?: PtyPurpose): Promise<string | undefined> {
   try {
     const { ptyId } = await call("pty.create", { threadId, cols, rows });
-    const tabs = [...(useTerminals.getState().tabs[threadId] ?? []), { ptyId, alive: true }];
+    const tab: PtyTab = { ptyId, alive: true, ...(purpose === undefined ? {} : { purpose }) };
+    const tabs = [...(useTerminals.getState().tabs[threadId] ?? []), tab];
     setTabs(threadId, tabs, ptyId);
     return ptyId;
   } catch (error) {
@@ -103,6 +114,11 @@ export async function killPty(threadId: string, ptyId: string): Promise<void> {
   } catch {
     /* already gone */
   }
+}
+
+/** The thread's live tab opened for `purpose`, if any (exited or closed tabs do not count). */
+export function livePurposeTab(threadId: string, purpose: PtyPurpose): PtyTab | undefined {
+  return (useTerminals.getState().tabs[threadId] ?? []).find((t) => t.purpose === purpose && t.alive);
 }
 
 export function markExited(threadId: string, ptyId: string): void {

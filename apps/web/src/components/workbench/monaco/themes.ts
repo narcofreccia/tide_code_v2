@@ -13,6 +13,8 @@ interface Palette {
   accentSoft: string;
   added: string;
   removed: string;
+  /** `--selection` as `#rrggbbaa`: the current-line highlight */
+  selection: string;
 }
 
 const DARK: Palette = {
@@ -24,6 +26,7 @@ const DARK: Palette = {
   accentSoft: "#1c2b44",
   added: "#12301f",
   removed: "#3a1a1a",
+  selection: "#5b9dff1a",
 };
 
 const LIGHT: Palette = {
@@ -35,6 +38,7 @@ const LIGHT: Palette = {
   accentSoft: "#e2ecfd",
   added: "#e2f5e9",
   removed: "#fbe3e3",
+  selection: "#2f6fe01a",
 };
 
 export const DARK_THEME = "tide-dark";
@@ -51,7 +55,8 @@ function theme(base: "vs" | "vs-dark", p: Palette): Monaco.editor.IStandaloneThe
       "editorGutter.background": p.bg,
       "editorLineNumber.foreground": p.muted,
       "editorLineNumber.activeForeground": p.text,
-      "editor.lineHighlightBackground": p.surface2,
+      "editor.lineHighlightBackground": p.selection,
+      "editor.lineHighlightBorder": "#00000000",
       "editorWidget.background": p.surface2,
       "editorWidget.border": p.border,
       "editorOverviewRuler.border": p.border,
@@ -77,6 +82,38 @@ export function livePalette(fallback: Palette): Palette {
     accentSoft: blend(hex("--accent", fallback.accentSoft), bg, 0.2),
     added: blend(hex("--ok", fallback.added), bg, 0.2),
     removed: blend(hex("--danger", fallback.removed), bg, 0.2),
+    selection: alphaHex(liveToken("--selection", fallback.selection), fallback.selection),
+  };
+}
+
+/** `rgba(r, g, b, a)` / `#rgb(a)` → `#rrggbbaa`, which Monaco takes for translucent colours. */
+export function alphaHex(input: string, fallback: string): string {
+  const rgba = /^rgba?\(\s*(\d+)[\s,]+(\d+)[\s,]+(\d+)(?:[\s,/]+([\d.]+%?))?\s*\)$/i.exec(input.trim());
+  if (rgba) {
+    const h = (v: number): string => Math.max(0, Math.min(255, Math.round(v))).toString(16).padStart(2, "0");
+    const raw = rgba[4];
+    const a = raw === undefined ? 1 : raw.endsWith("%") ? Number(raw.slice(0, -1)) / 100 : Number(raw);
+    return `#${h(Number(rgba[1]))}${h(Number(rgba[2]))}${h(Number(rgba[3]))}${h(a * 255)}`;
+  }
+  if (/^#[0-9a-f]{6}([0-9a-f]{2})?$/i.test(input.trim())) return input.trim();
+  const hex = colorToHex(input);
+  return /^#[0-9a-f]{6}$/i.test(hex) ? hex : fallback;
+}
+
+export interface EditorFont {
+  fontFamily: string;
+  fontSize: number;
+  lineHeight: number;
+}
+
+/** The editor on the type scale: `--fs-sm` mono for text and gutter, a 1.5 line height from that size. */
+export function editorFont(): EditorFont {
+  const size = Number.parseFloat(liveToken("--fs-sm", "12px"));
+  const fontSize = Number.isFinite(size) && size > 0 ? size : 12;
+  return {
+    fontFamily: liveToken("--font-mono", 'ui-monospace, SFMono-Regular, "SF Mono", Menlo, Consolas, monospace'),
+    fontSize,
+    lineHeight: Math.round(fontSize * 1.5),
   };
 }
 

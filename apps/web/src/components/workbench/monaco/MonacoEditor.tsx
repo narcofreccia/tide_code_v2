@@ -1,7 +1,7 @@
 import { useEffect, useRef, useState } from "react";
 import { Editor, type OnMount } from "@monaco-editor/react";
 import { languageForPath, setupMonaco } from "./monacoSetup.ts";
-import { preferredTheme, subscribeTheme } from "./themes.ts";
+import { editorFont, preferredTheme, subscribeTheme } from "./themes.ts";
 
 setupMonaco();
 
@@ -45,6 +45,7 @@ export function MonacoEditor({
   reveal?: RevealRequest;
 }) {
   const theme = useThemeName();
+  const [font] = useState(editorFont);
   const editor = useRef<EditorInstance | null>(null);
   const saveState = useRef(onSaveViewState);
   saveState.current = onSaveViewState;
@@ -91,7 +92,8 @@ export function MonacoEditor({
         automaticLayout: true,
         minimap: { enabled: false },
         scrollBeyondLastLine: false,
-        fontSize: 12,
+        ...font,
+        renderLineHighlight: "all",
         tabSize: 2,
       }}
     />

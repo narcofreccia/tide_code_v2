@@ -16,29 +16,67 @@
 .grip:hover { background: var(--accent-soft); }
 .tabs {
   display: flex;
+  flex: none;
   align-items: center;
   gap: var(--sp-1);
-  height: var(--row-h);
+  height: var(--row-h-nav);
+  min-width: 0;
   padding: 0 var(--sp-2);
   border-bottom: 1px solid var(--border);
+  overflow: hidden;
 }
-.tabWrap { display: inline-flex; align-items: center; }
-.tab {
-  height: 20px;
-  padding: 0 var(--sp-2);
-  background: transparent;
+.tabWrap {
+  display: inline-flex;
+  flex: 0 1 auto;
+  align-items: center;
+  min-width: 0;
+  max-width: 160px;
+  height: 22px;
   border: 1px solid transparent;
   border-radius: var(--radius-sm);
   color: var(--muted);
-  font: inherit;
-  font-size: var(--fs-sm);
-  cursor: pointer;
   transition: color var(--dur-fast) var(--ease), background var(--dur-fast) var(--ease);
 }
-.tab:hover { color: var(--text); background: var(--surface-hover); }
+.tabWrap:hover { color: var(--text); background: var(--surface-hover); }
 .activeTab,
 .activeTab:hover { color: var(--text); background: var(--surface-2); border-color: var(--border); }
-.hide { margin-left: auto; font-size: var(--fs-sm); }
-.body { flex: 1; min-height: 0; padding: var(--sp-1) var(--sp-2); overflow: hidden; }
-.surface { width: 100%; height: 100%; }
+.tab {
+  display: inline-flex;
+  align-items: center;
+  gap: var(--sp-1);
+  flex: 1 1 auto;
+  min-width: 0;
+  height: 100%;
+  padding: 0 var(--sp-1) 0 var(--sp-2);
+  background: transparent;
+  border: 0;
+  color: inherit;
+  font: inherit;
+  font-size: var(--fs-sm);
+  white-space: nowrap;
+  cursor: pointer;
+}
+.tabName { min-width: 0; overflow: hidden; text-overflow: ellipsis; white-space: nowrap; }
+.dot { flex: none; width: 6px; height: 6px; border-radius: 50%; background: var(--ok, var(--accent)); }
+.dotExited { background: var(--muted); }
+.close {
+  display: inline-flex;
+  flex: none;
+  align-items: center;
+  justify-content: center;
+  width: 18px;
+  height: 18px;
+  margin-right: 2px;
+  padding: 0;
+  background: transparent;
+  border: 0;
+  border-radius: var(--radius-sm);
+  color: var(--muted);
+  cursor: pointer;
+}
+.close:hover { color: var(--text); background: var(--surface-hover); }
+.hide { flex: none; margin-left: auto; font-size: var(--fs-sm); white-space: nowrap; }
+/* the strip is fixed; the terminal takes the rest and never slides under it */
+.body { position: relative; display: flex; flex-direction: column; flex: 1; min-height: 0; padding: var(--sp-1) var(--sp-2); overflow: hidden; }
+.surface { flex: 1; min-height: 0; width: 100%; overflow: hidden; }
 .note { margin: 0; padding: var(--sp-2); color: var(--muted); font-size: var(--fs-sm); }

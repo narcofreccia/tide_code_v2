@@ -1,6 +1,6 @@
 import { afterEach, describe, expect, it } from "vitest";
 import { cleanup, fireEvent, render, screen } from "@testing-library/react";
-import { PreviewMenu } from "./PreviewMenu.tsx";
+import { NO_SERVER, PreviewMenu, manualPreviewUrl } from "./PreviewMenu.tsx";
 import { PreviewTab, normalizePreviewUrl, previewSandbox } from "./PreviewTab.tsx";
 import { activeTab, openPreviewTab, resetWorkbench, threadTabs } from "../../../state/workbench.ts";
 import { mockRpc, resetUi } from "../../../testHarness.ts";
@@ -23,11 +23,19 @@ describe("Preview", () => {
     expect(activeTab("t1")).toEqual({ kind: "preview", url: "http://localhost:5173" });
   });
 
-  it("says how to get a dev server when none listens", async () => {
-    mockRpc({ "ports.list": () => ({ ports: [] }) });
+  it("says how to get a dev server when none listens, refreshes, and previews a typed URL", async () => {
+    const rpc = mockRpc({ "ports.list": () => ({ ports: [] }) });
     render(<PreviewMenu threadId="t1" />);
     fireEvent.click(screen.getByRole("button", { name: "Preview" }));
-    expect(await screen.findByText("No dev server detected — start one in the terminal")).toBeDefined();
+    expect(await screen.findByText(NO_SERVER)).toBeDefined();
+    const before = rpc.mock.calls.length;
+    fireEvent.click(screen.getByRole("button", { name: "Refresh" }));
+    expect(rpc.mock.calls.length).toBe(before + 1);
+    const field = screen.getByLabelText("Preview a URL");
+    fireEvent.change(field, { target: { value: "4321" } });
+    fireEvent.submit(field.closest("form") as HTMLFormElement);
+    expect(activeTab("t1")).toEqual({ kind: "preview", url: "http://localhost:4321" });
+    expect(manualPreviewUrl("localhost:3000/x")).toBe("http://localhost:3000/x");
   });
 
   it("keeps one preview tab per thread and retargets it from the URL bar", () => {

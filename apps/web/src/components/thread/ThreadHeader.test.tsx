@@ -24,6 +24,7 @@ describe("ThreadHeader", () => {
   it("opens a terminal on the thread and types the resume command", async () => {
     const rpc = mockRpc({
       "thread.terminalCommand": () => ({ command: RESUME }),
+      "pty.list": () => ({ ptys: [] }),
       "pty.create": () => ({ ptyId: "pty-1" }),
       "pty.write": () => ({}),
     });
@@ -40,11 +41,51 @@ describe("ThreadHeader", () => {
     expect(useTerminals.getState().drawerOpen).toBe(true);
   });
 
+  it("in Chat focus widens to Split so the drawer shows, and a second click reuses the resume tab", async () => {
+    let next = 0;
+    const rpc = mockRpc({
+      "thread.terminalCommand": () => ({ command: RESUME }),
+      "pty.list": () => ({ ptys: [] }),
+      "pty.create": () => ({ ptyId: `pty-${++next}` }),
+      "pty.write": () => ({}),
+    });
+    useUi.getState().setFocusMode("thread");
+    mount({ worktreePath: "/wt/t1" });
+
+    const button = await screen.findByRole("button", { name: "Terminal" });
+    await waitFor(() => expect((button as HTMLButtonElement).disabled).toBe(false));
+    await act(async () => {
+      fireEvent.click(button);
+    });
+    expect(useUi.getState().focusMode).toBe("split");
+    expect(useTerminals.getState().drawerOpen).toBe(true);
+
+    // the user hides the drawer, then clicks Terminal again: same tab, drawer back
+    act(() => useTerminals.setState({ drawerOpen: false }));
+    await act(async () => {
+      fireEvent.click(button);
+    });
+    expect(rpc.mock.calls.filter(([m]) => m === "pty.create")).toHaveLength(1);
+    expect(rpc.mock.calls.filter(([m]) => m === "pty.write")).toHaveLength(1);
+    expect(useTerminals.getState().tabs.t1).toEqual([{ ptyId: "pty-1", alive: true, purpose: "resume" }]);
+    expect(useTerminals.getState().active.t1).toBe("pty-1");
+    expect(useTerminals.getState().drawerOpen).toBe(true);
+
+    // once the resume shell exits, the next click opens a fresh one
+    act(() => useTerminals.setState((s) => ({ tabs: { ...s.tabs, t1: [{ ptyId: "pty-1", alive: false, purpose: "resume" }] } })));
+    await act(async () => {
+      fireEvent.click(button);
+    });
+    expect(rpc.mock.calls.filter(([m]) => m === "pty.create")).toHaveLength(2);
+    expect(useTerminals.getState().active.t1).toBe("pty-2");
+  });
+
   it("falls back to the clipboard when no pty can be created", async () => {
     const writeText = vi.fn(async () => undefined);
     Object.defineProperty(navigator, "clipboard", { value: { writeText }, configurable: true });
     mockRpc({
       "thread.terminalCommand": () => ({ command: RESUME }),
+      "pty.list": () => ({ ptys: [] }),
       "pty.create": () => {
         throw new Error("no pty host");
       },

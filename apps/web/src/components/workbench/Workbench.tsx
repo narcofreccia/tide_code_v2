@@ -3,7 +3,7 @@ import { selectActiveTurn } from "@tide/client";
 import { useSelectedThread } from "../../state/hooks.ts";
 import { useModel } from "../../state/model.ts";
 import { watchDocs } from "../../state/docs.ts";
-import { openExpertsTab, toggleTree, useActiveTab, useThreadTabs, useWorkbench } from "../../state/workbench.ts";
+import { openExpertsTab, toggleTree, useActiveTab, useThreadTabs, useTreeVisible } from "../../state/workbench.ts";
 import { toggleDrawer, useTerminals } from "../../state/terminals.ts";
 import { Icon } from "../ui/Icon.tsx";
 import { Kbd } from "../ui/Kbd.tsx";
@@ -14,6 +14,7 @@ import { FileTab } from "./editor/FileTab.tsx";
 import { SearchPanel } from "./search/SearchPanel.tsx";
 import { Board } from "../experts/Board.tsx";
 import { TerminalDrawer } from "./terminal/TerminalDrawer.tsx";
+import { AddMenu } from "./AddMenu.tsx";
 import { PreviewMenu } from "./preview/PreviewMenu.tsx";
 import { PreviewTab } from "./preview/PreviewTab.tsx";
 import styles from "./Workbench.module.css";
@@ -21,7 +22,7 @@ import styles from "./Workbench.module.css";
 function WorkbenchFor({ threadId, expertsSessionId }: { threadId: string; expertsSessionId?: string }) {
   const tabs = useThreadTabs(threadId);
   const active = useActiveTab(threadId);
-  const treeVisible = useWorkbench((s) => s.treeVisible);
+  const treeVisible = useTreeVisible();
   const drawerOpen = useTerminals((s) => s.drawerOpen);
   const running = useModel((s) => selectActiveTurn(s.model, threadId) !== undefined);
 
@@ -35,15 +36,16 @@ function WorkbenchFor({ threadId, expertsSessionId }: { threadId: string; expert
   return (
     <section className={styles.workbench} aria-label="Workbench">
       <TabStrip threadId={threadId} tabs={tabs} active={active} running={running}>
+        <AddMenu threadId={threadId} />
         <button
           type="button"
-          className={styles.iconToggle}
+          className={styles.terminalToggle}
           aria-pressed={treeVisible}
           title="Toggle file tree (⌘⇧E)"
-          aria-label="Toggle file tree"
           onClick={toggleTree}
         >
           <Icon name="folder" size={14} />
+          Files
         </button>
         <PreviewMenu threadId={threadId} />
         <button

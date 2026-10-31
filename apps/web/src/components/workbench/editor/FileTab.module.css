@@ -16,10 +16,28 @@
   font-family: var(--font-mono);
   font-size: var(--fs-xs);
 }
-.path { overflow: hidden; text-overflow: ellipsis; white-space: nowrap; }
+.crumbs { display: flex; align-items: center; min-width: 0; overflow: hidden; white-space: nowrap; }
+.crumb { display: inline-flex; align-items: center; min-width: 0; flex: 0 1 auto; }
+.crumb:last-child { flex-shrink: 0; }
+.crumbSep { flex: none; margin: 0 2px; color: var(--muted); }
+.crumbButton {
+  min-width: 0;
+  overflow: hidden;
+  text-overflow: ellipsis;
+  padding: 0 2px;
+  background: transparent;
+  border: 0;
+  border-radius: var(--radius-sm);
+  color: var(--muted);
+  font: inherit;
+  cursor: pointer;
+}
+.crumbButton:hover { color: var(--text); background: var(--surface-hover); }
+.crumbFile { padding: 0 2px; color: var(--text); }
 .dirty { color: var(--warn); }
 .savedFlash { color: var(--ok); }
 .save { margin-left: auto; }
+.saveDot { width: 6px; height: 6px; border-radius: 50%; background: var(--warn); }
 .banner {
   display: flex;
   align-items: center;

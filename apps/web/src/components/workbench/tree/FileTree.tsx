@@ -1,7 +1,8 @@
-import { useEffect, useMemo, useState } from "react";
+import { useEffect, useMemo, useRef, useState } from "react";
 import type { FsEntry } from "@tide/contracts";
 import { ContextMenu, type MenuItem, type MenuPosition } from "../../ui/Menu.tsx";
 import { Button } from "../../ui/Button.tsx";
+import { Icon } from "../../ui/Icon.tsx";
 import { ConfirmDialog, PromptDialog } from "../../ui/Dialog.tsx";
 import {
   baseName,
@@ -62,6 +63,14 @@ export function FileTree({ threadId }: { threadId: string }) {
 
   const root = dirs[dirKey(threadId, "")];
   const index = rows.findIndex((r) => r.entry.path === selected);
+  const list = useRef<HTMLUListElement>(null);
+
+  // a selection made elsewhere (breadcrumbs, keyboard) scrolls into view once its row exists
+  useEffect(() => {
+    if (index === -1 || selected === undefined) return;
+    const row = [...(list.current?.querySelectorAll<HTMLElement>("[data-path]") ?? [])].find((el) => el.dataset.path === selected);
+    row?.scrollIntoView?.({ block: "nearest" });
+  }, [selected, index]);
 
   const open = (row: TreeRowModel): void => {
     if (row.entry.kind === "dir") setExpanded(threadId, row.entry.path, !row.expanded);
@@ -125,12 +134,13 @@ export function FileTree({ threadId }: { threadId: string }) {
           aria-label="New file"
           onClick={() => setPending({ kind: "new-file", dir: "" })}
         >
-          +
+          <Icon name="plus" size={14} />
         </Button>
       </div>
       {root?.error ? <p className={styles.note}>{root.error}</p> : null}
       {root?.loading && rows.length === 0 ? <p className={styles.note}>Loading…</p> : null}
       <ul
+        ref={list}
         className={styles.list}
         role="tree"
         aria-label="Worktree files"

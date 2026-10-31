@@ -112,7 +112,7 @@ export function ThreadHeader({ thread }: { thread: Thread }) {
             disabled={command === undefined}
             title={command ? `Open in terminal: ${command}` : NO_COMMAND}
             onClick={() => {
-              if (command) void runInThreadTerminal(thread.id, command);
+              if (command) void runInThreadTerminal(thread.id, command, { purpose: "resume" });
             }}
           >
             <Icon name="terminal" size={14} />

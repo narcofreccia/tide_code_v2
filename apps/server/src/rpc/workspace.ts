@@ -8,6 +8,7 @@ import { search as runSearch, type SearchOptions, type SearchResult } from "../w
 import { FsWatcher } from "../workspace/watcher.ts";
 import { PortLister } from "../workspace/ports.ts";
 import { registerAttachmentHandlers } from "./attachments.ts";
+import { createOpenExternal, type OpenExternalFn } from "./workspaceOpen.ts";
 import { RpcException, type RpcRouter } from "./router.ts";
 
 export type SearchFn = (cwd: string, options: SearchOptions) => Promise<SearchResult>;
@@ -20,6 +21,8 @@ export interface WorkspaceServices {
   search: SearchFn;
   /** listening ports under the thread's terminals (cached 3 s) */
   ports: PortLister;
+  /** hands an editor deep link / web URL to the OS opener */
+  openExternal: OpenExternalFn;
   /** thread -> cwd (worktree path, else project root) */
   cwdFor: (threadId: string) => string;
   /** directory browser for the project picker */
@@ -36,6 +39,7 @@ export interface WorkspaceOptions {
   ptys?: PtyManager;
   search?: SearchFn;
   ports?: PortLister;
+  openExternal?: OpenExternalFn;
   log?: (msg: string, data?: unknown) => void;
 }
 
@@ -93,6 +97,7 @@ export function createWorkspaceServices(options: WorkspaceOptions): WorkspaceSer
     ptys,
     search,
     ports: options.ports ?? new PortLister(),
+    openExternal: options.openExternal ?? createOpenExternal(),
     cwdFor,
     browse: (input) => browseDirectories(options.engine.getModel(), input),
     teardown,
@@ -167,11 +172,15 @@ export function registerWorkspaceHandlers(router: RpcRouter, services: Workspace
   });
 
   // ---- ports (Preview tab) ----
-  // roots are the thread's terminal shells; harness child pids are not exposed by SessionDirectory
+  // the thread's terminal shells and their children, plus any listener running inside its worktree
+  // (an agent's own Bash tool starts dev servers outside Tide's terminals)
   router.register("ports.list", async (input) => {
-    cwdFor(input.threadId); // not-found for unknown threads
-    return { ports: await services.ports.list(ptys.pids(input.threadId)) };
+    const cwd = cwdFor(input.threadId); // not-found for unknown threads
+    return { ports: await services.ports.list(ptys.pids(input.threadId), { cwd }) };
   });
+
+  // editor deep links from the desktop WebView, which refuses custom-scheme navigations
+  router.register("workspace.openExternal", async (input) => services.openExternal(input.url));
 
   // ---- terminals ----
   router.register("pty.create", async (input) => {

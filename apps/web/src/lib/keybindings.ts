@@ -46,7 +46,7 @@ const KEY_LABEL: Record<string, string> = {
   backspace: "⌫", tab: "Tab",
 };
 
-/** `⌘⇧E` on macOS, `Ctrl+Shift+E` elsewhere. */
+/** `⌘⇧R` on macOS, `Ctrl+Shift+R` elsewhere. */
 export function formatBinding(binding: string, mac: boolean = isMac()): string {
   const { mod, shift, alt, key } = parseBinding(binding);
   const label = KEY_LABEL[key] ?? (key.length === 1 ? key.toUpperCase() : key[0]?.toUpperCase() + key.slice(1));
@@ -66,7 +66,7 @@ export interface BindingEntry {
   label: string;
   when?: BindingScope;
   binding: string;
-  /** true while on the shipped default: two defaults sharing a chord are deliberate (⌘⇧E) */
+  /** true while on the shipped default */
   isDefault: boolean;
 }
 

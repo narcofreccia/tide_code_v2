@@ -3,7 +3,7 @@ import { act, cleanup, fireEvent, render, screen, waitFor } from "@testing-libra
 import { mockRpc, mockStream, resetUi } from "../../../testHarness.ts";
 import { useModel } from "../../../state/model.ts";
 import { setDrawerOpen, useTerminals } from "../../../state/terminals.ts";
-import { TerminalDrawer } from "./TerminalDrawer.tsx";
+import { TerminalDrawer, tabTitle } from "./TerminalDrawer.tsx";
 
 interface FakeTerm {
   written: string[];
@@ -141,5 +141,28 @@ describe("TerminalDrawer", () => {
     expect(drawer.style.height).toBe("");
     act(() => useTerminals.setState({ height: 200 }));
     expect(drawer.style.getPropertyValue("--drawer-h")).toBe("200px");
+  });
+
+  it("drops the harness status glyph from tab titles", () => {
+    expect(tabTitle("✳ Loading screen redesign", 0)).toBe("Loading screen redesign");
+    expect(tabTitle("⠂ zsh", 1)).toBe("zsh");
+    expect(tabTitle(undefined, 2)).toBe("sh 3");
+    expect(tabTitle("✳", 0)).toBe("sh 1");
+  });
+
+  it("closes the other tabs from the tab context menu", async () => {
+    const rpc = mockRpc({
+      "pty.list": () => ({ ptys: [{ ptyId: "p1", alive: true }, { ptyId: "p2", alive: true }, { ptyId: "p3", alive: true }] }),
+      "pty.kill": () => ({ ok: true }),
+    });
+    mockStream();
+    setDrawerOpen(true);
+    render(<TerminalDrawer threadId="t1" />);
+    const tab = await screen.findByRole("tab", { name: "sh 2" });
+    fireEvent.contextMenu(tab);
+    fireEvent.click(screen.getByRole("menuitem", { name: "Close others" }));
+    await waitFor(() => expect(rpc.mock.calls.filter(([m]) => m === "pty.kill").map(([, p]) => p)).toEqual([{ ptyId: "p1" }, { ptyId: "p3" }]));
+    expect(useTerminals.getState().tabs.t1?.map((t) => t.ptyId)).toEqual(["p2"]);
+    expect(useTerminals.getState().active.t1).toBe("p2");
   });
 });

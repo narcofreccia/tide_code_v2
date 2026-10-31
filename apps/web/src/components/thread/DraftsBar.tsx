@@ -27,12 +27,12 @@ export function DraftsBar({ threadId, restored, hasText, stash, open, onOpen }: 
       {hasText ? (
         <Button variant="quiet" title="Stash this prompt to apply in any thread" onClick={() => stashDraft(threadId)}>
           <span>Stash</span>
-          <Kbd>⌘S</Kbd>
+          <Kbd>⌘⇧S</Kbd>
         </Button>
       ) : stash.length > 0 ? (
         <Button variant="quiet" title="Apply the latest stash" onClick={() => onOpen(!open)} aria-expanded={open}>
           <span>Apply stash · {stash.length}</span>
-          <Kbd>⌘S</Kbd>
+          <Kbd>⌘⇧S</Kbd>
         </Button>
       ) : null}
       {open && !hasText && stash.length > 0 ? (

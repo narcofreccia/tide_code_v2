@@ -1,6 +1,7 @@
 import { create } from "zustand";
 import { createJSONStorage, persist } from "zustand/middleware";
 import { scopedStateStorage } from "./envStorage.ts";
+import { useUi, type FocusMode } from "./ui.ts";
 
 /** Changes is always the first tab of a thread; Search and files follow it. */
 export type WorkbenchTab =
@@ -32,12 +33,23 @@ export interface EditorStatus {
   language: string;
 }
 
+/** The file tree remembers its own visibility per layout: Split (narrow) and Code (full). */
+export type TreeLayout = "split" | "code";
+
+export const DEFAULT_TREE: Record<TreeLayout, boolean> = { split: false, code: true };
+
+export function treeLayoutOf(mode: FocusMode): TreeLayout {
+  return mode === "workbench" ? "code" : "split";
+}
+
 interface WorkbenchState {
   /** threadId → ordered tabs; index 0 is always Changes */
   tabs: Record<string, WorkbenchTab[]>;
   /** threadId → active tab key */
   active: Record<string, string>;
+  /** the tree as last shown; kept for callers that read it, follows `treeByMode` */
   treeVisible: boolean;
+  treeByMode: Record<TreeLayout, boolean>;
   quickOpen: boolean;
   /** `threadId:path` → where the next editor mount should jump */
   reveal: Record<string, RevealTarget>;
@@ -52,6 +64,7 @@ export const useWorkbench = create<WorkbenchState>()(
       tabs: {},
       active: {},
       treeVisible: false,
+      treeByMode: { ...DEFAULT_TREE },
       quickOpen: false,
       reveal: {},
       editorStatus: null,
@@ -61,7 +74,7 @@ export const useWorkbench = create<WorkbenchState>()(
       // R9: per-thread tabs live under the owning environment's key (`tide.workbench@<envId>`)
       storage: createJSONStorage(() => scopedStateStorage),
       // paths only — no file contents, no scroll state
-      partialize: (s) => ({ tabs: s.tabs, active: s.active, treeVisible: s.treeVisible }),
+      partialize: (s) => ({ tabs: s.tabs, active: s.active, treeVisible: s.treeVisible, treeByMode: s.treeByMode }),
     },
   ),
 );
@@ -204,12 +217,22 @@ export function moveTab(threadId: string, from: number, to: number): void {
   write(threadId, rest);
 }
 
-export function setTreeVisible(visible: boolean): void {
-  useWorkbench.setState({ treeVisible: visible });
+const currentLayout = (): TreeLayout => treeLayoutOf(useUi.getState().focusMode);
+
+/** Shows or hides the tree in the current layout; the choice sticks to that layout. */
+export function setTreeVisible(visible: boolean, layout: TreeLayout = currentLayout()): void {
+  useWorkbench.setState((s) => ({ treeVisible: visible, treeByMode: { ...s.treeByMode, [layout]: visible } }));
 }
 
 export function toggleTree(): void {
-  useWorkbench.setState((s) => ({ treeVisible: !s.treeVisible }));
+  const layout = currentLayout();
+  setTreeVisible(!(useWorkbench.getState().treeByMode[layout] ?? DEFAULT_TREE[layout]), layout);
+}
+
+/** The tree's visibility in the layout on screen (open by default in Code, closed in Split). */
+export function useTreeVisible(): boolean {
+  const layout = treeLayoutOf(useUi((s) => s.focusMode));
+  return useWorkbench((s) => s.treeByMode?.[layout] ?? DEFAULT_TREE[layout]);
 }
 
 export function setQuickOpen(open: boolean): void {
@@ -229,5 +252,5 @@ export function clearEditorStatus(threadId: string, path: string): void {
 }
 
 export function resetWorkbench(): void {
-  useWorkbench.setState({ tabs: {}, active: {}, treeVisible: false, quickOpen: false, reveal: {}, editorStatus: null });
+  useWorkbench.setState({ tabs: {}, active: {}, treeVisible: false, treeByMode: { ...DEFAULT_TREE }, quickOpen: false, reveal: {}, editorStatus: null });
 }

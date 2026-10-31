@@ -2,7 +2,7 @@ import { applyStash, getDraft, stashDraft } from "../state/drafts.ts";
 import { useModel } from "../state/model.ts";
 import { useUi } from "../state/ui.ts";
 import { closeActiveTab, openSearchTab, setQuickOpen, toggleTree } from "../state/workbench.ts";
-import { toggleDrawer } from "../state/terminals.ts";
+import { setDrawerOpen, toggleDrawer } from "../state/terminals.ts";
 import { toggleTheme } from "../state/settings.ts";
 import { effortsOf, nextEffort, threadProviderStatus, useProvidersStore } from "../state/providers.ts";
 import { showToast } from "../state/toast.ts";
@@ -85,16 +85,10 @@ export function bindingEntries(overrides: Record<string, string>): BindingEntry[
   return entries;
 }
 
-/**
- * ⌘⇧E is shared with "Toggle file tree": effort owns it while the thread column
- * has focus (or the workbench is hidden); anywhere else it falls through to the tree.
- */
+/** ⌘⇧R cycles the reasoning effort of the selected thread (R12: no longer shares ⌘⇧E with the file tree). */
 function cycleEffort(): boolean {
   const id = threadId();
   if (!id) return false;
-  const active = typeof document !== "undefined" ? document.activeElement : null;
-  const inThread = active instanceof Element && active.closest("[data-thread-column]") !== null;
-  if (!inThread && ui().focusMode !== "thread") return false;
   const thread = useModel.getState().model.threads[id];
   if (!thread) return false;
   const models = threadProviderStatus(useProvidersStore.getState().providers, thread)?.models ?? [];
@@ -192,7 +186,7 @@ export const SHORTCUTS: Shortcut[] = [
   { id: "rail", keys: "⌘B", label: "Toggle rail", group: "View", key: "b", shift: false, when: "always", run: () => ui().toggleRail() },
   { id: "send", keys: "⌘↵", label: "Send in background (while running: the selected follow-up mode)", group: "Thread", when: "thread" },
   {
-    id: "stash", keys: "⌘S", label: "Stash prompt / apply stash (composer focused)", group: "Thread", key: "s", shift: false,
+    id: "stash", keys: "⌘⇧S", label: "Stash prompt / apply stash (composer focused)", group: "Thread", key: "s", shift: true,
     when: "thread",
     run: () => {
       const id = threadId();
@@ -207,11 +201,21 @@ export const SHORTCUTS: Shortcut[] = [
   { id: "approve", keys: "y", label: "Approve focused card", group: "Thread", when: "thread" },
   { id: "deny", keys: "n", label: "Deny focused card", group: "Thread", when: "thread" },
   {
-    id: "effort", keys: "⌘⇧E", label: "Cycle reasoning effort (thread focused)", group: "Thread", key: "e", shift: true,
+    id: "effort", keys: "⌘⇧R", label: "Cycle reasoning effort", group: "Thread", key: "r", shift: true,
     when: "thread",
     run: () => cycleEffort(),
   },
-  { id: "terminal", keys: "⌘`", label: "Terminal drawer", group: "Workbench", key: "`", when: "workbench", run: () => (toggleDrawer(), true) },
+  {
+    id: "terminal", keys: "⌘`", label: "Terminal drawer", group: "Workbench", key: "`", when: "thread",
+    // R12: works from Chat view too — the drawer lives in the workbench, so widen to Split first
+    run: () => {
+      if (ui().focusMode === "thread") {
+        ui().setFocusMode("split");
+        setDrawerOpen(true);
+      } else toggleDrawer();
+      return true;
+    },
+  },
   {
     id: "quick-open", keys: "⌘P", label: "Open file in worktree", group: "Workbench", key: "p", shift: false,
     when: "workbench",
@@ -270,7 +274,7 @@ export function handleShortcut(event: KeyboardEvent): boolean {
     }
     // out of context: let the key through to the surface rather than swallowing it
     if (!scopeApplies(shortcut.when)) return false;
-    // `false` = not right now: a later entry on the same key (⌘⇧E effort → file tree) may take it
+    // `false` = not right now: a later entry on the same key may take it
     if (shortcut.run() !== false) return true;
   }
   return false;
