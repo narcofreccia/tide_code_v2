@@ -127,7 +127,7 @@ export const TurnRequest = Type.Object({
   /** idempotency key: a retry with the same id on the same thread is rejected with `conflict` */
   requestId: Type.Optional(Type.String({ minLength: 1 })),
   /** server-authored wake-ups (delegate done, child question, PR change, restart) are marked so the UI can render them as notices */
-  notification: Type.Optional(Type.Object({ source: Type.Union([Type.Literal("delegate"), Type.Literal("child-question"), Type.Literal("pr"), Type.Literal("restart"), Type.Literal("system"), Type.Literal("schedule"), Type.Literal("webhook")]), summary: Type.String() })),
+  notification: Type.Optional(Type.Object({ source: Type.Union([Type.Literal("delegate"), Type.Literal("child-question"), Type.Literal("pr"), Type.Literal("restart"), Type.Literal("system"), Type.Literal("schedule"), Type.Literal("webhook"), Type.Literal("harness")]), summary: Type.String() })),
 });
 export const TurnInterrupt = Type.Object({ type: Type.Literal("turn.interrupt"), commandId: CommandId, threadId: Type.String() });
 /** Drops a turn that is still queued (never sent to the harness). */

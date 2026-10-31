@@ -12,6 +12,7 @@ const ICON: Record<Source, IconName> = {
   system: "bell",
   schedule: "snooze",
   webhook: "bell",
+  harness: "play",
 };
 
 /** A server-authored wake-up (delegate done, child asked, PR changed, restart) — not something the user typed. */

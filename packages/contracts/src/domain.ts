@@ -676,9 +676,10 @@ export const Message = Type.Object({
   streaming: Type.Optional(Type.Boolean()),
   /** user message delivered into the running turn (steer), not as a turn of its own */
   steer: Type.Optional(Type.Boolean()),
-  /** server-authored wake-up (delegate finished, child asked a question, PR changed, restart) */
+  /** server-authored wake-up (delegate finished, child asked a question, PR changed, restart), or `harness`:
+   *  the harness resumed on its own (a background sub-agent reported) and this turn carries what it did */
   notification: Type.Optional(Type.Object({
-    source: Type.Union([Type.Literal("delegate"), Type.Literal("child-question"), Type.Literal("pr"), Type.Literal("restart"), Type.Literal("system"), Type.Literal("schedule"), Type.Literal("webhook")]),
+    source: Type.Union([Type.Literal("delegate"), Type.Literal("child-question"), Type.Literal("pr"), Type.Literal("restart"), Type.Literal("system"), Type.Literal("schedule"), Type.Literal("webhook"), Type.Literal("harness")]),
     summary: Type.String(),
   })),
 });

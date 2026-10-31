@@ -36,6 +36,11 @@ export interface DriverCaps {
   effort?: boolean;
   /** R8: the harness lists slash commands / skills (`ProviderInstance.listCommands` or a `commands` event) */
   commands?: boolean;
+  /**
+   * R14: the harness can run a turn nobody asked for — Claude Code resumes when a background
+   * sub-agent reports — and the session surfaces it through `ProviderSession.onHarnessTurn`.
+   */
+  harnessTurns?: boolean;
 }
 
 /**
@@ -184,6 +189,21 @@ export interface ProviderSession {
    * Pi session tree, OpenCode `session.revert`). Called between turns only. Only when `caps.rollback`.
    */
   rollback?(turns: number): Promise<void>;
+  /**
+   * R14: subscribe to turns the harness starts by itself between `send`s (Claude Code's
+   * background sub-agents finishing re-invoke the model, and the CLI then runs tools, streams
+   * text and may ask the user — with nobody reading). The driver buffers every event of such a
+   * turn until the listener's iterable is consumed; the iterable ends after its `settled` event.
+   * `reason` is one line for the notice ("sub-agent 'Audit feature gaps' reported"). A `send`
+   * that arrives while a harness turn runs waits for it to settle instead of failing `busy`.
+   * Only when `caps.harnessTurns`.
+   */
+  onHarnessTurn?(listener: (turn: { reason: string; events: AsyncIterable<NormalizedEvent> }) => void): void;
+  /**
+   * R14: true while the harness still has work running outside a turn (backgrounded sub-agents
+   * that have not reported). The server keeps such a session off the idle reaper.
+   */
+  hasBackgroundWork?(): boolean;
 }
 
 export interface ProviderInstance {
