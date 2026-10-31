@@ -198,3 +198,12 @@
 .warnings { margin: 0; padding-left: var(--sp-4); color: var(--muted); font-size: var(--fs-sm); }
 .scroll { max-height: 50vh; overflow: auto; }
 .footer { display: flex; align-items: center; justify-content: flex-end; gap: var(--sp-2); }
+
+/* ---- worktree root ---- */
+.rootPill { min-width: 0; max-width: 220px; }
+.rootLabel { min-width: 0; overflow: hidden; text-overflow: ellipsis; }
+.where { flex: none; max-width: 30%; overflow: hidden; margin-left: var(--sp-1); color: var(--muted); font-family: var(--font-mono); font-size: var(--fs-xs); text-overflow: ellipsis; white-space: nowrap; }
+.fix { display: flex; margin: 0 0 var(--sp-1) calc(14px + 6px + var(--sp-2) * 2); min-width: 0; }
+.fix .hint { display: inline-flex; align-items: center; gap: var(--sp-1); max-width: 100%; overflow-wrap: anywhere; }
+.dialogHead { display: flex; align-items: center; gap: var(--sp-2); }
+.elsewhere { padding-bottom: var(--sp-1); border-bottom: 1px solid var(--border); }

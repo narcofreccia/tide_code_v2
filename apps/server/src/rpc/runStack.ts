@@ -8,7 +8,7 @@ export interface RunStackDeps {
   engine: Engine;
   workspace: Pick<WorkspaceServices, "ptys" | "ports">;
   /** the project's stack repos with their profiles (run/profiles.ts) */
-  profilesFor(projectId: string): Promise<RunRepo[]>;
+  profilesFor(projectId: string, rootPath?: string): Promise<RunRepo[]>;
   log?: (msg: string, data?: unknown) => void;
   /** tests inject one with a fake clock */
   supervisor?: RunSupervisor;
@@ -35,7 +35,8 @@ export function registerRunStackHandlers(router: RpcRouter, deps: RunStackDeps):
   const requireProject = (projectId: string): void => {
     if (deps.engine.getModel().projects[projectId] === undefined) throw new RpcException("not-found", `unknown project ${projectId}`);
   };
-  const planOptions = (input: { selected?: string[]; pins?: Record<string, number> }) => ({
+  const planOptions = (input: { threadId?: string; selected?: string[]; pins?: Record<string, number> }) => ({
+    ...(input.threadId !== undefined ? { threadId: input.threadId } : {}),
     ...(input.selected !== undefined ? { selected: input.selected } : {}),
     ...(input.pins !== undefined ? { pins: input.pins } : {}),
   });

@@ -153,6 +153,7 @@ export function retainRunSession(projectId: string): () => void {
   };
 }
 
+/** The live session; `session.worktree` says which checkout of the root repo it runs from (absent = main checkout). */
 export function useRunSession(projectId: string | undefined): RunSession | undefined {
   useEffect(() => (projectId === undefined ? undefined : retainRunSession(projectId)), [projectId]);
   return useRun((s) => (projectId === undefined ? undefined : s.sessions[projectId]));
@@ -170,13 +171,16 @@ onReconnect((envId) => {
 // ---- actions ----
 
 export interface StackOptions {
+  /** run the project's own repo from this thread's worktree */
+  threadId?: string;
   selected?: string[];
   pins?: Record<string, number>;
 }
 
-function stackParams(projectId: string, opts: StackOptions): { projectId: string; selected?: string[]; pins?: Record<string, number> } {
+function stackParams(projectId: string, opts: StackOptions): { projectId: string; threadId?: string; selected?: string[]; pins?: Record<string, number> } {
   return {
     projectId,
+    ...(opts.threadId === undefined ? {} : { threadId: opts.threadId }),
     ...(opts.selected === undefined ? {} : { selected: opts.selected }),
     ...(opts.pins === undefined ? {} : { pins: opts.pins }),
   };

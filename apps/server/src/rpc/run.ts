@@ -1,9 +1,9 @@
-import { readFile, writeFile } from "node:fs/promises";
+import { readFile, stat, writeFile } from "node:fs/promises";
 import { join } from "node:path";
 import { Check, Errors } from "typebox/value";
 import { RunProfile, type RunRepo } from "@tide/contracts";
 import type { Engine } from "../orchestration/engine.ts";
-import { inferWithModel, invalidate, loadRepoProfile, projectRepos, QUICKSTART, resolveConnects, saveRunJson, type InferDeps } from "../run/profiles.ts";
+import { inferWithModel, invalidate, loadRepoProfile, projectRepos, QUICKSTART, resolveConnects, RUN_JSON, saveRunJson, type InferDeps } from "../run/profiles.ts";
 import { writeQuickstart } from "../run/quickstart.ts";
 import { defaultRepoKey, nodeRepoFs, scanRepo } from "../run/scan.ts";
 import { RpcException, type RpcRouter } from "./router.ts";
@@ -39,9 +39,38 @@ async function loadOne(ref: RepoRef): Promise<RunRepo> {
   }
 }
 
-/** Every repo of the project, loaded (errors per repo, never thrown) and cross-resolved. */
-export async function loadProjectRepos(deps: RunProfileDeps, projectId: string): Promise<RunRepo[]> {
-  return resolveConnects(await Promise.all(reposOf(deps, projectId).map(loadOne)));
+const isFile = (path: string): Promise<boolean> => stat(path).then(
+  (s) => s.isFile(),
+  () => false,
+);
+
+/**
+ * The root repo at a thread's worktree, under the main checkout's repoKey. A full checkout carries its
+ * own QUICKSTART.md / `.tide/run.json`; without either the main checkout's profile applies (nothing is copied).
+ */
+async function loadWorktreeRoot(main: RunRepo, worktreePath: string): Promise<RunRepo> {
+  const own = (await isFile(join(worktreePath, QUICKSTART))) || (await isFile(join(worktreePath, RUN_JSON)));
+  if (!own) return { ...main, path: worktreePath };
+  try {
+    const loaded = await loadRepoProfile(worktreePath, { repoKey: main.repoKey, write: false });
+    const { profile: _main, error: _error, ...base } = main;
+    return {
+      ...base,
+      path: worktreePath,
+      ...(loaded.profile ? { profile: { ...loaded.profile, repoKey: main.repoKey } } : {}),
+      stale: loaded.stale,
+      ...(loaded.error !== undefined ? { error: loaded.error } : {}),
+    };
+  } catch (err) {
+    return { ...main, path: worktreePath, error: (err as Error)?.message ?? String(err) };
+  }
+}
+
+/** Every repo of the project, loaded (errors per repo, never thrown) and cross-resolved; `rootPath` = a worktree of the root repo. */
+export async function loadProjectRepos(deps: RunProfileDeps, projectId: string, rootPath?: string): Promise<RunRepo[]> {
+  const repos = await Promise.all(reposOf(deps, projectId).map(loadOne));
+  if (rootPath !== undefined && repos[0] !== undefined && rootPath !== repos[0].path) repos[0] = await loadWorktreeRoot(repos[0], rootPath);
+  return resolveConnects(repos);
 }
 
 /** One repo with `profile` swapped in, resolved against the project's other repos. */

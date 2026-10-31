@@ -9,7 +9,7 @@ import { clearProfileCache, RUN_JSON } from "../run/profiles.ts";
 import { tideBackend, tideFrontend } from "../run/testing/fixtures.ts";
 import { SettingsStore } from "../settings.ts";
 import { RpcRouter } from "./router.ts";
-import { registerRunProfileHandlers, type RunProfileDeps } from "./run.ts";
+import { loadProjectRepos, registerRunProfileHandlers, type RunProfileDeps } from "./run.ts";
 
 const cleanups: (() => Promise<void>)[] = [];
 afterEach(async () => {
@@ -43,7 +43,8 @@ async function setup(complete: () => Promise<CompletionResult> = () => Promise.r
   const instance = { kind: "claude", complete } as unknown as ProviderInstance;
   const registry = { has: () => true, get: async () => instance, status: async () => ({}), statusAll: async () => [{ kind: "claude", caps: { oneShot: true } }] } as unknown as RunProfileDeps["registry"];
   const router = new RpcRouter();
-  registerRunProfileHandlers(router, { engine, registry, settings: new SettingsStore(), tideHome: parent });
+  const deps: RunProfileDeps = { engine, registry, settings: new SettingsStore(), tideHome: parent };
+  registerRunProfileHandlers(router, deps);
   const frames: RpcFrame[] = [];
   const connection = router.connection("c1", (frame) => frames.push(frame));
   let seq = 0;
@@ -55,7 +56,7 @@ async function setup(complete: () => Promise<CompletionResult> = () => Promise.r
     if (frame && "error" in frame) return { error: frame.error };
     throw new Error(`no frame for ${method}`);
   };
-  return { call, projectId, frontend, backend, backendId: links[0]?.id as string, goneId: links[1]?.id as string };
+  return { call, deps, parent, projectId, frontend, backend, backendId: links[0]?.id as string, goneId: links[1]?.id as string };
 }
 
 describe("run.profiles.*", () => {
@@ -117,5 +118,21 @@ describe("run.profiles.*", () => {
     const repos = (await s.call<{ repos: RunRepo[] }>("run.profiles.get", { projectId: s.projectId })).result?.repos;
     expect(repos?.[0]?.profile?.source).toBe("quickstart");
     expect(repos?.[0]?.stale).toBe(false);
+  });
+
+  it("a worktree root: its own run.json when it has one, else the main checkout's profile, nothing copied", async () => {
+    const s = await setup();
+    await loadProjectRepos(s.deps, s.projectId); // writes the main checkout's .tide/run.json
+    const wt = join(s.parent, "wt-feat");
+    await write(wt, tideFrontend);
+    const [root, backend] = await loadProjectRepos(s.deps, s.projectId, wt);
+    expect(root).toMatchObject({ repoId: "root", path: wt, repoKey: "tide_frontend", profile: { repoKey: "tide_frontend", source: "manifest" } });
+    expect(backend?.path).toBe(s.backend);
+    await expect(readFile(join(wt, RUN_JSON), "utf8")).rejects.toThrow();
+
+    const own: RunProfile = { version: 1, repoKey: "something_else", source: "user", manifestHash: "", generatedAt: 0, warnings: [], services: [{ id: "only", name: "only", command: "run", listens: [], connects: [], env: {}, readiness: { kind: "none" } }] };
+    await write(wt, { [RUN_JSON]: JSON.stringify(own) });
+    const [mine] = await loadProjectRepos(s.deps, s.projectId, wt);
+    expect(mine).toMatchObject({ path: wt, repoKey: "tide_frontend", profile: { repoKey: "tide_frontend", source: "user", services: [{ id: "only" }] } });
   });
 });

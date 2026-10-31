@@ -1,5 +1,6 @@
-import { realpath as fsRealpath } from "node:fs/promises";
-import type { PtyChunk, ReadModel, RunPlan, RunPlanRow, RunRepo, RunServiceStatus, RunSession, RunSessionChunk } from "@tide/contracts";
+import { access, realpath as fsRealpath } from "node:fs/promises";
+import { join } from "node:path";
+import type { PtyChunk, ReadModel, RunPlan, RunPlanRow, RunRepo, RunServiceKind, RunServiceStatus, RunSession, RunSessionChunk } from "@tide/contracts";
 import { RpcException } from "../rpc/router.ts";
 import { within, type PortLister } from "../workspace/ports.ts";
 import { killProcessTree, type TreeSignal } from "../workspace/pty/killTree.ts";
@@ -24,8 +25,8 @@ export const RUN_TIMINGS: RunTimings = { pollMs: 1000, readyTimeoutMs: 60_000, n
 export interface RunSupervisorDeps {
   ptys: Pick<PtyManager, "create" | "attach" | "pidOf" | "alive" | "stop">;
   ports: Pick<PortLister, "list" | "listeners">;
-  /** the project's stack repos with their profiles (run/profiles.ts) */
-  profilesFor(projectId: string): Promise<RunRepo[]>;
+  /** the project's stack repos with their profiles (run/profiles.ts); `rootPath` swaps the root repo's path (a worktree) */
+  profilesFor(projectId: string, rootPath?: string): Promise<RunRepo[]>;
   model(): ReadModel;
   now?: () => number;
   sleep?: (ms: number) => Promise<void>;
@@ -37,9 +38,13 @@ export interface RunSupervisorDeps {
   killPid?: (pid: number, signal: TreeSignal) => Promise<void>;
   pidAlive?: (pid: number) => boolean;
   realpath?: (path: string) => Promise<string>;
+  /** the dependency hint's probe for `node_modules` / `venv` */
+  exists?: (path: string) => Promise<boolean>;
 }
 
 export interface PlanOptions {
+  /** run the project's own repo from this thread's worktree (linked repos keep their paths) */
+  threadId?: string;
   selected?: string[];
   pins?: Record<string, number>;
 }
@@ -48,9 +53,20 @@ const PORT_TAKEN = /Port \d+ is in use|EADDRINUSE|address already in use/i;
 const ANSI = /\x1b\[[0-?]*[ -/]*[@-~]|\x1b\][^\x07\x1b]*(?:\x07|\x1b\\)/g;
 const LIVE = new Set<RunServiceStatus["state"]>(["starting", "ready", "running", "external"]);
 const TAIL_BYTES = 8192;
+const JS_KINDS = new Set<RunServiceKind>(["vite", "tauri", "expo", "node"]);
+const PY_KINDS = new Set<RunServiceKind>(["uvicorn", "worker"]);
+export const DEPS_MISSING = "dependencies missing in this worktree — run the install step (e.g. npm install) there first";
+
+type Worktree = NonNullable<RunSession["worktree"]>;
+
+const defaultExists = (path: string): Promise<boolean> => access(path).then(
+  () => true,
+  () => false,
+);
 
 interface Svc {
   row: RunPlanRow;
+  kind: RunServiceKind | undefined;
   ptyId: string | undefined;
   /** bumped by stop/restart: readiness checks of an older epoch drop their result */
   epoch: number;
@@ -117,9 +133,24 @@ export class RunSupervisor {
   // ---- planning ----
 
   async plan(projectId: string, options: PlanOptions = {}): Promise<RunPlan> {
+    return (await this.#plan(projectId, options, this.#worktreeOf(projectId, options.threadId))).plan;
+  }
+
+  /** The thread's worktree when it has one; a thread outside the project is `invalid-params`. */
+  #worktreeOf(projectId: string, threadId: string | undefined): Worktree | undefined {
+    const model = this.#deps.model();
+    if (model.projects[projectId] === undefined) throw new RpcException("not-found", `unknown project ${projectId}`);
+    if (threadId === undefined) return undefined;
+    const thread = model.threads[threadId];
+    if (thread === undefined || thread.projectId !== projectId) throw new RpcException("invalid-params", `thread ${threadId} is not in project ${projectId}`);
+    if (thread.worktreePath === undefined) return undefined;
+    return { threadId, path: thread.worktreePath, ...(thread.branch !== undefined ? { branch: thread.branch } : {}) };
+  }
+
+  async #plan(projectId: string, options: PlanOptions, worktree: Worktree | undefined): Promise<{ plan: RunPlan; repos: RunRepo[] }> {
     const project = this.#deps.model().projects[projectId];
     if (project === undefined) throw new RpcException("not-found", `unknown project ${projectId}`);
-    const repos = await this.#deps.profilesFor(projectId);
+    const repos = await this.#deps.profilesFor(projectId, worktree?.path);
     const listening = await this.#deps.ports.listeners({ fresh: true });
     await this.#markExternal(projectId, repos, listening);
 
@@ -138,7 +169,25 @@ export class RunSupervisor {
         if (!this.#isFixed(repos, key, listen)) pins[`${key}.${listen}`] = port;
       }
     }
-    return planStack({ repos, selected, pins, listening, ownPorts, host: (this.#deps.host ?? lanHost)(), now: this.#now() });
+    const plan = planStack({ repos, selected, pins, listening, ownPorts, host: (this.#deps.host ?? lanHost)(), now: this.#now() });
+    if (worktree !== undefined) {
+      plan.rootPath = worktree.path;
+      if (worktree.branch !== undefined) plan.rootBranch = worktree.branch;
+    }
+    // one session per project: a stack running from another checkout of the root repo must stop first
+    const launched = run !== undefined && Object.values(run.session.services).some((s) => s.state === "starting" || s.state === "ready" || s.state === "running");
+    if (launched && run.session.worktree?.path !== worktree?.path) {
+      const from = run.session.worktree === undefined ? "main checkout" : (run.session.worktree.branch ?? run.session.worktree.path);
+      const rootKey = repos.find((r) => r.repoId === "root")?.repoKey ?? "root";
+      plan.conflicts.push({ key: `${rootKey}.*`, port: 0, with: from, reason: `stack already running from ${from}; stop it first` });
+      plan.status = "blocked";
+    }
+    return { plan, repos };
+  }
+
+  #kindOf(repos: RunRepo[], key: string): RunServiceKind | undefined {
+    for (const r of repos) for (const s of r.profile?.services ?? []) if (`${r.repoKey}.${s.id}` === key) return s.kind;
+    return undefined;
   }
 
   #isFixed(repos: RunRepo[], key: string, listen: string): boolean {
@@ -149,17 +198,20 @@ export class RunSupervisor {
   // ---- lifecycle ----
 
   async start(projectId: string, options: PlanOptions & { force?: boolean } = {}): Promise<RunSession> {
-    const plan = await this.plan(projectId, options);
+    const worktree = this.#worktreeOf(projectId, options.threadId);
+    const { plan, repos } = await this.#plan(projectId, options, worktree);
     if (plan.status === "blocked" && options.force !== true) {
       throw new RpcException("conflict", `the stack is blocked: ${plan.conflicts.map((c) => c.reason).join("; ")}`, { conflicts: plan.conflicts });
     }
     const run = this.#ensure(projectId);
     run.session.plan = plan;
+    if (worktree !== undefined) run.session.worktree = worktree;
+    else delete run.session.worktree;
     for (const row of plan.rows) {
       if (row.blocked !== undefined) continue;
       const state = run.session.services[row.key]?.state;
       if (state !== undefined && LIVE.has(state)) continue;
-      this.#launch(projectId, run, row);
+      this.#launch(projectId, run, row, this.#kindOf(repos, row.key));
     }
     return structuredClone(run.session);
   }
@@ -179,12 +231,13 @@ export class RunSupervisor {
     const previous = run?.session.plan;
     if (run === undefined || previous === undefined) throw new RpcException("not-found", `no run session for ${projectId}`);
     if (run.session.services[key] !== undefined) await this.#stopOne(projectId, run, key);
-    const plan = await this.plan(projectId, { selected: previous.rows.map((r) => r.key) });
+    // the restart stays on the checkout the session runs from
+    const { plan, repos } = await this.#plan(projectId, { selected: previous.rows.map((r) => r.key) }, run.session.worktree);
     const row = plan.rows.find((r) => r.key === key);
     if (row === undefined) throw new RpcException("not-found", `${key} is not in the stack`);
     if (row.blocked !== undefined) throw new RpcException("conflict", row.blocked);
     run.session.plan = { ...previous, rows: previous.rows.map((r) => (r.key === key ? row : r)) };
-    this.#launch(projectId, run, row);
+    this.#launch(projectId, run, row, this.#kindOf(repos, key));
     return structuredClone(run.session);
   }
 
@@ -291,13 +344,13 @@ export class RunSupervisor {
     return !this.#closed && this.#runs.get(projectId) === run && run.svcs.get(svc.row.key) === svc && svc.epoch === epoch;
   }
 
-  #launch(projectId: string, run: ProjectRun, row: RunPlanRow): void {
+  #launch(projectId: string, run: ProjectRun, row: RunPlanRow, kind: RunServiceKind | undefined): void {
     const prev = run.svcs.get(row.key);
     if (prev !== undefined) {
       prev.epoch++;
       prev.detach?.();
     }
-    const svc: Svc = { row, ptyId: undefined, epoch: 0, startedAt: this.#now(), tail: "", stopping: false, detach: undefined };
+    const svc: Svc = { row, kind, ptyId: undefined, epoch: 0, startedAt: this.#now(), tail: "", stopping: false, detach: undefined };
     run.svcs.set(row.key, svc);
     const waiting = row.dependsOn.filter((d) => run.session.services[d]?.state !== "ready" && run.session.services[d]?.state !== "running" && run.session.services[d]?.state !== "external");
     this.#set(projectId, run, row.key, {
@@ -426,9 +479,25 @@ export class RunSupervisor {
     if (svc.stopping) return this.#set(projectId, run, key, base);
     if (prev?.state === "failed") return this.#set(projectId, run, key, { ...base, state: "failed", ...(prev.reason !== undefined ? { reason: prev.reason } : {}) });
     if (prev?.state === "starting" && this.#now() - svc.startedAt < this.#t.fastFailMs) {
-      return this.#set(projectId, run, key, { ...base, state: "failed", reason: PORT_TAKEN.test(svc.tail.replace(ANSI, "")) ? "port-taken" : "exited" });
+      const portTaken = PORT_TAKEN.test(svc.tail.replace(ANSI, ""));
+      this.#set(projectId, run, key, { ...base, state: "failed", reason: portTaken ? "port-taken" : "exited" });
+      if (!portTaken) void this.#track(this.#hintDeps(projectId, run, svc, svc.epoch));
+      return;
     }
     this.#set(projectId, run, key, base);
+  }
+
+  /** A root-repo service that died at once in a worktree without `node_modules` / a venv: say so. */
+  async #hintDeps(projectId: string, run: ProjectRun, svc: Svc, epoch: number): Promise<void> {
+    const worktree = run.session.worktree;
+    if (worktree === undefined || svc.row.repoId !== "root" || svc.kind === undefined) return;
+    const names = JS_KINDS.has(svc.kind) ? ["node_modules"] : PY_KINDS.has(svc.kind) ? ["venv", ".venv"] : [];
+    if (names.length === 0) return;
+    const exists = this.#deps.exists ?? defaultExists;
+    const dirs = [...new Set([svc.row.cwd, worktree.path])];
+    for (const dir of dirs) for (const name of names) if (await exists(join(dir, name))) return;
+    const status = run.session.services[svc.row.key];
+    if (this.#current(projectId, run, svc, epoch) && status?.state === "failed" && status.reason === "exited") this.#patch(projectId, run, svc.row.key, { state: "failed", reason: DEPS_MISSING });
   }
 
   async #stopOne(projectId: string, run: ProjectRun, key: string): Promise<void> {

@@ -21,10 +21,29 @@ export function summaryTone(summary: RunSummary): PillTone {
   }
 }
 
+export const ROOT_PILL_TITLE = "the project's own repo runs from this thread's worktree";
+
+/** What the root repo runs from: the worktree's branch (its folder name without one), or "main checkout". */
+export function rootLabel(root: { path: string; branch?: string | undefined } | undefined): string {
+  if (root === undefined) return "main checkout";
+  return root.branch ?? root.path.split(/[\\/]/).filter(Boolean).at(-1) ?? root.path;
+}
+
+/** Branch pill: which checkout of the project's own repo the stack runs from. */
+export function RootPill({ label }: { label: string }) {
+  return (
+    <Pill size="sm" title={ROOT_PILL_TITLE} className={styles.rootPill}>
+      <Icon name="branch" size={12} />
+      <span className={styles.rootLabel}>{label}</span>
+    </Pill>
+  );
+}
+
 /** "Run · 3/5 up" with Start stack / Stop all / Refresh and a `more` menu. */
 export function StackHeader({
   summary,
   selectedCount,
+  root,
   starting,
   canStart = true,
   collapsed,
@@ -37,6 +56,8 @@ export function StackHeader({
   summary: RunSummary;
   /** shown as the total before anything runs */
   selectedCount: number;
+  /** branch pill text ("main checkout" or the worktree's branch); no pill when absent */
+  root?: string | undefined;
   starting: boolean;
   /** false when the server has no `run.*`: Start stack is hidden */
   canStart?: boolean;
@@ -65,6 +86,7 @@ export function StackHeader({
         <Pill size="sm" tone={summaryTone(summary)} title="Services up in this stack">
           {summary.up}/{total} up
         </Pill>
+        {root === undefined ? null : <RootPill label={root} />}
       </span>
       <span className={styles.headerActions}>
         {canStart ? (

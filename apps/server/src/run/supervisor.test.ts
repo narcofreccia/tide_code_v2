@@ -59,14 +59,24 @@ const repo = (repoKey: string, services: RunService[]): RunRepo => ({
   profile: { version: 1, repoKey, services, source: "manifest", manifestHash: "h", generatedAt: 0, warnings: [] },
 });
 
-function setup(repos: RunRepo[]) {
+interface SetupOptions {
+  threads?: Record<string, { projectId: string; worktreePath?: string; branch?: string }>;
+  exists?: (path: string) => Promise<boolean>;
+}
+
+/** The root repo moved to `rootPath` when the supervisor asks for a worktree. */
+const atRoot = (repos: RunRepo[], rootPath: string | undefined): RunRepo[] =>
+  rootPath === undefined ? repos : repos.map((r) => (r.repoId === "root" ? { ...r, path: rootPath } : r));
+
+function setup(repos: RunRepo[], opts: SetupOptions = {}) {
   const c = clock();
   const fake = fakeBackend();
   const ptys = new PtyManager({ backend: fake.backend, schedule: c.schedule, sleep: c.sleep, children: async () => [1] });
   const state = { listeners: [] as HostListener[], owned: [] as ListeningPort[], listCalls: [] as { pids: number[]; fresh: boolean | undefined }[] };
   const killed: [number, TreeSignal][] = [];
   const alivePids = new Set<number>();
-  const model = { projects: { p1: { id: "p1", title: "P", rootPath: "/src/backend", createdAt: 0, updatedAt: 0 } } } as unknown as ReadModel;
+  const model = { projects: { p1: { id: "p1", title: "P", rootPath: "/src/backend", createdAt: 0, updatedAt: 0 } }, threads: opts.threads ?? {} } as unknown as ReadModel;
+  const rootPaths: (string | undefined)[] = [];
   const sup = new RunSupervisor({
     ptys,
     ports: {
@@ -76,7 +86,11 @@ function setup(repos: RunRepo[]) {
       },
       listeners: async () => state.listeners,
     },
-    profilesFor: async () => repos,
+    profilesFor: async (_projectId, rootPath) => {
+      rootPaths.push(rootPath);
+      return atRoot(repos, rootPath);
+    },
+    ...(opts.exists !== undefined ? { exists: opts.exists } : {}),
     model: () => model,
     now: c.now,
     sleep: c.sleep,
@@ -95,7 +109,7 @@ function setup(repos: RunRepo[]) {
     await sup.drain();
     await c.flush();
   };
-  return { c, fake, ptys, sup, state, chunks, killed, alivePids, model, settle };
+  return { c, fake, ptys, sup, state, chunks, killed, alivePids, model, settle, rootPaths };
 }
 
 const stateOf = (sup: RunSupervisor, key: string) => sup.get("p1")?.services[key];
@@ -252,5 +266,93 @@ describe("RunSupervisor", () => {
     expect(t.fake.handles).toHaveLength(2);
     expect(session.services["backend.api"]).toMatchObject({ state: "starting" });
     expect(stateOf(t.sup, "backend.api")?.ptyId).not.toBe(undefined);
+  });
+
+  describe("from a thread's worktree", () => {
+    const threads = {
+      t1: { projectId: "p1", worktreePath: "/wt/feat", branch: "tide/feat" },
+      t2: { projectId: "p1" },
+      other: { projectId: "p2", worktreePath: "/wt/other" },
+    };
+
+    it("plans the root repo under the worktree; linked repos keep their paths", async () => {
+      const t = setup([repo("backend", [svc("api", { cwd: "server" })]), repo("frontend", [svc("web")])], { threads });
+      const plan = await t.sup.plan("p1", { threadId: "t1" });
+      expect(t.rootPaths.at(-1)).toBe("/wt/feat");
+      expect(plan).toMatchObject({ status: "ok", rootPath: "/wt/feat", rootBranch: "tide/feat" });
+      expect(plan.rows.map((r) => r.cwd)).toEqual(["/wt/feat/server", "/src/frontend"]);
+      // a thread without a worktree runs the main checkout
+      const main = await t.sup.plan("p1", { threadId: "t2" });
+      expect(t.rootPaths.at(-1)).toBeUndefined();
+      expect(main.rootPath).toBeUndefined();
+      expect(main.rows[0]?.cwd).toBe("/src/backend/server");
+    });
+
+    it("refuses a thread of another project or an unknown thread", async () => {
+      const t = setup([repo("backend", [svc("api")])], { threads });
+      await expect(t.sup.plan("p1", { threadId: "other" })).rejects.toMatchObject({ code: "invalid-params" });
+      await expect(t.sup.start("p1", { threadId: "nope" })).rejects.toMatchObject({ code: "invalid-params" });
+    });
+
+    it("records the worktree on the session and restarts from it", async () => {
+      const t = setup([repo("backend", [svc("api")])], { threads });
+      const session = await t.sup.start("p1", { threadId: "t1" });
+      await t.settle();
+      expect(session.worktree).toEqual({ threadId: "t1", path: "/wt/feat", branch: "tide/feat" });
+      expect(t.fake.handles[0]?.spec.cwd).toBe("/wt/feat");
+      t.fake.handles[0]?.diesOn.add("SIGINT");
+      await t.sup.restart("p1", "backend.api");
+      await t.settle();
+      expect(t.fake.handles[1]?.spec.cwd).toBe("/wt/feat");
+    });
+
+    it("blocks a plan from another checkout while a stack runs, and start refuses unless forced", async () => {
+      const t = setup([repo("backend", [svc("api")])], { threads });
+      await t.sup.start("p1");
+      await t.settle();
+      const plan = await t.sup.plan("p1", { threadId: "t1" });
+      expect(plan.status).toBe("blocked");
+      expect(plan.conflicts).toContainEqual({ key: "backend.*", port: 0, with: "main checkout", reason: "stack already running from main checkout; stop it first" });
+      await expect(t.sup.start("p1", { threadId: "t1" })).rejects.toMatchObject({ code: "conflict" });
+      // the same checkout is no conflict
+      expect((await t.sup.plan("p1", { threadId: "t2" })).status).toBe("ok");
+    });
+
+    it("names the worktree's branch when the running stack is the worktree's", async () => {
+      const t = setup([repo("backend", [svc("api")])], { threads });
+      await t.sup.start("p1", { threadId: "t1" });
+      await t.settle();
+      const plan = await t.sup.plan("p1");
+      expect(plan.conflicts[0]?.reason).toBe("stack already running from tide/feat; stop it first");
+    });
+
+    it("says dependencies are missing when a root service dies at once in a worktree without node_modules", async () => {
+      const probed: string[] = [];
+      const exists = async (path: string): Promise<boolean> => {
+        probed.push(path);
+        return false;
+      };
+      const t = setup([repo("backend", [svc("web", { kind: "vite", cwd: "web" }), svc("api", { kind: "uvicorn" })]), repo("frontend", [svc("app", { kind: "vite" })])], { threads, exists });
+      await t.sup.start("p1", { threadId: "t1" });
+      await t.settle();
+      t.fake.handles[0]?.exit(127);
+      t.fake.handles[1]?.exit(1);
+      t.fake.handles[2]?.exit(1);
+      await t.settle();
+      expect(stateOf(t.sup, "backend.web")).toMatchObject({ state: "failed", reason: "dependencies missing in this worktree — run the install step (e.g. npm install) there first" });
+      expect(stateOf(t.sup, "backend.api")?.reason).toContain("dependencies missing");
+      expect(probed).toEqual(expect.arrayContaining(["/wt/feat/web/node_modules", "/wt/feat/node_modules", "/wt/feat/venv", "/wt/feat/.venv"]));
+      // linked repos never get the hint
+      expect(stateOf(t.sup, "frontend.app")).toMatchObject({ state: "failed", reason: "exited" });
+    });
+
+    it("keeps the generic reason when the worktree has its dependencies", async () => {
+      const t = setup([repo("backend", [svc("web", { kind: "vite", cwd: "web" })])], { threads, exists: async (p) => p === "/wt/feat/node_modules" });
+      await t.sup.start("p1", { threadId: "t1" });
+      await t.settle();
+      t.fake.handles[0]?.exit(1);
+      await t.settle();
+      expect(stateOf(t.sup, "backend.web")).toMatchObject({ state: "failed", reason: "exited" });
+    });
   });
 });

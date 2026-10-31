@@ -1,4 +1,4 @@
-import type { RunPlanRow, RunServiceStatus } from "@tide/contracts";
+import type { RunPlanRow, RunService, RunServiceStatus } from "@tide/contracts";
 import { isUp, previewPort, type StackService } from "@tide/client";
 import { openPreviewTab } from "../../../state/workbench.ts";
 import { restartService, showServiceLog, startStack, stopStack } from "../../../state/run.ts";
@@ -6,6 +6,7 @@ import { Button } from "../../ui/Button.tsx";
 import { Checkbox } from "../../ui/Choice.tsx";
 import { Icon } from "../../ui/Icon.tsx";
 import { Pill } from "../../ui/Pill.tsx";
+import { copyText } from "./PlanPreviewDialog.tsx";
 import styles from "./Run.module.css";
 
 const STATE_TITLE: Record<RunServiceStatus["state"], string> = {
@@ -40,6 +41,24 @@ function openablePort(item: StackService, status: RunServiceStatus | undefined, 
   return previewPort(ports);
 }
 
+/** The server's reason when a root-repo service died at once in a worktree without its dependencies. */
+export const isDepsMissing = (reason: string | undefined): boolean => reason?.startsWith("dependencies missing") === true;
+
+/** The install step to copy for a worktree that lacks `node_modules` / a venv, run in `cwd`. */
+export function installCommand(service: Pick<RunService, "kind" | "command">, cwd?: string): string {
+  const py = service.kind === "uvicorn" || service.kind === "worker";
+  const runner = /^\s*(pnpm|yarn|bun)\b/.exec(service.command)?.[1];
+  const install = py ? "python -m venv venv && source venv/bin/activate && pip install -r requirements.txt" : `${runner ?? "npm"} install`;
+  return cwd === undefined ? install : `cd ${JSON.stringify(cwd)} && ${install}`;
+}
+
+/** `cwd` relative to the root it was planned under: "." for the root itself, else the sub-path. */
+export function relativeCwd(cwd: string, root: string): string | undefined {
+  const base = root.replace(/[\\/]+$/, "");
+  if (cwd === base) return ".";
+  return cwd.startsWith(`${base}/`) || cwd.startsWith(`${base}\\`) ? cwd.slice(base.length + 1) : undefined;
+}
+
 const TAIL = 14;
 
 /**
@@ -60,6 +79,7 @@ export function RunRow({
   selected,
   status,
   planRow,
+  rootPath,
   onToggle,
 }: {
   projectId: string;
@@ -68,6 +88,8 @@ export function RunRow({
   selected: boolean;
   status: RunServiceStatus | undefined;
   planRow: RunPlanRow | undefined;
+  /** the plan's root when the project's own repo runs from a worktree: root rows show their cwd under it */
+  rootPath?: string | undefined;
   onToggle: (key: string, on: boolean) => void;
 }) {
   const { service, key } = item;
@@ -79,6 +101,8 @@ export function RunRow({
   const blocked = !live && planRow?.blocked !== undefined ? planRow.blocked : undefined;
   const command = splitCommand(service.command);
   const env = Object.entries(service.env);
+  const where = rootPath !== undefined && item.repoId === "root" && planRow !== undefined ? relativeCwd(planRow.cwd, rootPath) : undefined;
+  const install = isDepsMissing(reason) ? installCommand(service, planRow?.cwd) : undefined;
 
   return (
     <div className={styles.row} data-service={key}>
@@ -97,6 +121,11 @@ export function RunRow({
         />
         <span className={styles.name}>{service.name}</span>
         {service.kind === undefined ? null : <Pill size="sm">{service.kind}</Pill>}
+        {where === undefined ? null : (
+          <span className={styles.where} title={planRow?.cwd}>
+            {where}
+          </span>
+        )}
         <span className={styles.command} title={service.command}>
           <span className={styles.commandHead}>{command.head}</span>
           {command.tail === "" ? null : <span className={styles.commandTail}>{command.tail}</span>}
@@ -114,7 +143,7 @@ export function RunRow({
         </span>
         <span className={styles.actions}>
           {live ? null : (
-            <Button variant="quiet" aria-label={`Start ${service.name}`} title="Start" onClick={() => void startStack(projectId, { selected: [key] })}>
+            <Button variant="quiet" aria-label={`Start ${service.name}`} title="Start" onClick={() => void startStack(projectId, { ...(threadId === undefined ? {} : { threadId }), selected: [key] })}>
               <Icon name="play" size={14} />
             </Button>
           )}
@@ -160,6 +189,14 @@ export function RunRow({
         </span>
       )}
       {reason === undefined ? null : <p className={styles.reason}>{reason}</p>}
+      {install === undefined ? null : (
+        <span className={styles.fix}>
+          <button type="button" className={styles.hint} title="Copy the install command" aria-label={`Copy ${install}`} onClick={() => copyText(install)}>
+            <Icon name="copy" size={12} />
+            {install}
+          </button>
+        </span>
+      )}
       {blocked === undefined ? null : <p className={`${styles.reason} ${styles.blocked}`}>{blocked}</p>}
     </div>
   );

@@ -113,11 +113,11 @@ export async function loadRepoProfile(repoPath: string, opts: { repoKey?: string
   return result;
 }
 
-/** The project's stack repos: its root first, then every linked repo. */
-export function projectRepos(model: ReadModel, projectId: string): { repoId: string; path: string; label: string }[] | undefined {
+/** The project's stack repos: its root first (at `rootPathOverride`, a thread's worktree, when given), then every linked repo. */
+export function projectRepos(model: ReadModel, projectId: string, rootPathOverride?: string): { repoId: string; path: string; label: string }[] | undefined {
   const project = model.projects[projectId];
   if (project === undefined) return undefined;
-  return [{ repoId: "root", path: project.rootPath, label: project.title }, ...(project.links ?? []).map((l) => ({ repoId: l.id, path: l.path, label: l.label }))];
+  return [{ repoId: "root", path: rootPathOverride ?? project.rootPath, label: project.title }, ...(project.links ?? []).map((l) => ({ repoId: l.id, path: l.path, label: l.label }))];
 }
 
 interface Owner {

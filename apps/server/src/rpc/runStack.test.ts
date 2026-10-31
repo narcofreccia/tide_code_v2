@@ -32,7 +32,7 @@ async function setup(repos: (root: string) => RunRepo[] = () => []) {
   cleanups.push(() => workspace.close());
   const router = new RpcRouter();
   registerWorkspaceHandlers(router, workspace);
-  const supervisor = registerRunStackHandlers(router, { engine, workspace, profilesFor: async () => repos(root) });
+  const supervisor = registerRunStackHandlers(router, { engine, workspace, profilesFor: async (_projectId, rootPath) => repos(rootPath ?? root) });
   cleanups.push(() => supervisor.close());
   const created = (await engine.dispatch({ type: "project.create", title: "App", rootPath: root })).events[0]?.event;
   if (created?.type !== "project.created") throw new Error("expected project.created");
@@ -50,7 +50,7 @@ async function setup(repos: (root: string) => RunRepo[] = () => []) {
     if (frame && "error" in frame) return { error: frame.error };
     throw new Error(`no frame for ${method}`);
   };
-  return { root, dir, projectId, fake, call, frames, connection, supervisor };
+  return { root, dir, projectId, fake, call, frames, connection, supervisor, engine };
 }
 
 describe("rpc: run terminals and the run stack", () => {
@@ -112,5 +112,38 @@ describe("rpc: run terminals and the run stack", () => {
     expect(chunks.filter((c) => c.kind === "service").map((c) => c.status?.state)).toEqual(expect.arrayContaining(["starting", "ready", "exited"]));
     expect(chunks.at(-1)).toEqual({ kind: "ended" });
     expect(connection.cancelStream("sub")).toBe(true);
+  });
+
+  it("plans and starts the root repo from a thread's worktree, and refuses a thread of another project", async () => {
+    const repos = (path: string): RunRepo[] => [
+      {
+        repoId: "root",
+        repoKey: "app",
+        path,
+        label: "app",
+        stale: false,
+        profile: { version: 1, repoKey: "app", source: "user", manifestHash: "", generatedAt: 0, warnings: [], services: [{ id: "web", name: "web", cwd: "web", command: "pnpm dev", listens: [], connects: [], env: {}, readiness: { kind: "none" } }] },
+      },
+    ];
+    const { projectId, call, engine, fake, supervisor } = await setup(repos);
+    const mkThread = async (pid: string): Promise<string> => {
+      const e = (await engine.dispatch({ type: "thread.create", projectId: pid, provider: "claude" })).events[0]?.event;
+      if (e?.type !== "thread.created") throw new Error("expected thread.created");
+      return e.thread.id;
+    };
+    const threadId = await mkThread(projectId);
+    await engine.dispatch({ type: "worktree.attach", threadId, worktreePath: "/wt/feat", branch: "tide/feat" });
+    const plan = await call<{ rootPath?: string; rootBranch?: string; rows: { cwd: string }[] }>("run.plan", { projectId, threadId });
+    expect(plan.result).toMatchObject({ rootPath: "/wt/feat", rootBranch: "tide/feat", rows: [{ cwd: join("/wt/feat", "web") }] });
+    const started = await call<{ worktree?: unknown }>("run.start", { projectId, threadId });
+    expect(started.result?.worktree).toEqual({ threadId, path: "/wt/feat", branch: "tide/feat" });
+    await supervisor.drain();
+    expect(fake.handles[0]?.spec.cwd).toBe(join("/wt/feat", "web"));
+
+    const other = (await engine.dispatch({ type: "project.create", title: "Other", rootPath: "/elsewhere" })).events[0]?.event;
+    if (other?.type !== "project.created") throw new Error("expected project.created");
+    const foreign = await mkThread(other.project.id);
+    expect((await call("run.plan", { projectId, threadId: foreign })).error?.code).toBe("invalid-params");
+    expect((await call("run.start", { projectId, threadId: "nope" })).error?.code).toBe("invalid-params");
   });
 });

@@ -177,7 +177,7 @@ export async function startServer(deps: ServerDeps): Promise<ServerHandle> {
   const ownsWorkspace = deps.workspace === undefined;
   registerWorkspaceHandlers(router, workspace);
   const runProfileDeps = { engine, registry, settings, tideHome: config.tideHome };
-  const runStack = registerRunStackHandlers(router, { engine, workspace, profilesFor: (projectId) => loadProjectRepos(runProfileDeps, projectId) });
+  const runStack = registerRunStackHandlers(router, { engine, workspace, profilesFor: (projectId, rootPath) => loadProjectRepos(runProfileDeps, projectId, rootPath) });
   registerProjectIconHandlers(router, { engine });
   registerRunProfileHandlers(router, runProfileDeps);
   // no-worktree threads write attachments into the project root; drop upload dirs older than 30 days

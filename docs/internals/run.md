@@ -100,6 +100,22 @@ place, or appends a `## Run with Tide` section (prose table plus block). It neve
 - `dependsOn` starts a service only when its dependencies are ready.
 - Each service runs in its own terminal (`ownerId run:<projectId>`), so logs and Ctrl+C work as usual.
 
+## Running from a thread's worktree
+
+`run.plan` and `run.start` take an optional `threadId`. When that thread has a worktree, the
+project's own repo (the root) runs from it: root rows get their `cwd` under the worktree, the plan
+carries `rootPath`/`rootBranch`, and the session records `worktree {threadId, path, branch}` (restarts
+stay on it). Linked repos keep their paths. The worktree is a full checkout, so its own
+`QUICKSTART.md` or `.tide/run.json` wins; without either the main checkout's profile applies and
+nothing is copied. The `repoKey` is the main checkout's either way. A project has one session: while
+services run from one checkout, a plan from another adds a blocking `<rootRepoKey>.*` conflict
+("stack already running from <branch or main checkout>; stop it first") and `run.start` refuses
+with `conflict` unless forced. A fresh worktree usually has no `node_modules` or venv: a root
+service that exits within 5 s, with neither `node_modules` (vite/tauri/expo/node) nor
+`venv`/`.venv` (uvicorn/worker) in its cwd or the worktree root, fails with "dependencies missing in
+this worktree"; the Run panel offers the install command to copy. The panel and the plan dialog show
+which checkout the root runs from as a branch pill.
+
 ## Limits
 
 - Tauri dev ports are fixed in `tauri.conf.json` (`devUrl`); they cannot move. Two fixed services

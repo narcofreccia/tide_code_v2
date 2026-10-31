@@ -1,11 +1,11 @@
 import { afterEach, describe, expect, it, vi } from "vitest";
-import { applyRunChunk, resetRun, retainRunSession, setSelectionDebounced, SELECTION_DEBOUNCE_MS, useRun, showServiceLog } from "./run.ts";
+import { applyRunChunk, planStack, resetRun, retainRunSession, setSelectionDebounced, SELECTION_DEBOUNCE_MS, startStack, useRun, showServiceLog } from "./run.ts";
 import { attachFakeStore, mockRpc, mockStream, modelWith, resetUi } from "../testHarness.ts";
 import { runReconnectHandlers } from "./reconnect.ts";
 import { useTerminals } from "./terminals.ts";
 import { useModel } from "./model.ts";
 import { emptyOwnership } from "@tide/client";
-import { project, session, status } from "../components/workbench/run/fixtures.ts";
+import { plan, project, session, status } from "../components/workbench/run/fixtures.ts";
 
 afterEach(() => {
   resetRun();
@@ -84,5 +84,18 @@ describe("showServiceLog", () => {
     expect(rpc).toHaveBeenCalledWith("pty.list", { ownerId: "run:p1" });
     expect(useTerminals.getState().drawerOpen).toBe(true);
     expect(useTerminals.getState().active.t1).toBe("r2");
+  });
+});
+
+describe("worktree", () => {
+  it("plan and start pass the thread, and the session keeps its worktree across deltas", async () => {
+    const wt = { threadId: "t1", path: "/wt/feat", branch: "tide/feat" };
+    const rpc = mockRpc({ "run.plan": () => plan([], { rootPath: "/wt/feat", rootBranch: "tide/feat" }), "run.start": () => session({}, { worktree: wt }) });
+    expect((await planStack("p1", { threadId: "t1", selected: ["a.x"] }))?.rootBranch).toBe("tide/feat");
+    expect(rpc).toHaveBeenCalledWith("run.plan", { projectId: "p1", threadId: "t1", selected: ["a.x"] });
+    await startStack("p1", { threadId: "t1" });
+    expect(rpc).toHaveBeenCalledWith("run.start", { projectId: "p1", threadId: "t1" });
+    const next = applyRunChunk(useRun.getState().sessions.p1, { kind: "service", key: "a.x", status: status("running") }, "p1");
+    expect(next?.worktree).toEqual(wt);
   });
 });

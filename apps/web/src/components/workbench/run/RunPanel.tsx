@@ -1,6 +1,6 @@
 import { useMemo, useState } from "react";
 import { createPortal } from "react-dom";
-import type { RunPlan, RunProfileSource, RunRepo } from "@tide/contracts";
+import type { RunPlan, RunProfileSource, RunRepo, RunSession, Thread } from "@tide/contracts";
 import { runSummary, stackServices, type StackService } from "@tide/client";
 import { useModel } from "../../../state/model.ts";
 import {
@@ -19,7 +19,7 @@ import { Pill } from "../../ui/Pill.tsx";
 import { LAYER_ATTR } from "../../ui/useAnchoredPanel.ts";
 import { PlanPreviewDialog } from "./PlanPreviewDialog.tsx";
 import { RunRow } from "./RunRow.tsx";
-import { StackHeader } from "./StackHeader.tsx";
+import { rootLabel, StackHeader } from "./StackHeader.tsx";
 import styles from "./Run.module.css";
 
 const NO_PINS: Record<string, number> = {};
@@ -100,6 +100,19 @@ function EmptyProfiles({ projectId, repos }: { projectId: string; repos: RunRepo
   );
 }
 
+const LAUNCHED = new Set(["starting", "ready", "running"]);
+
+/**
+ * The branch pill: what a running stack's root repo runs from, else what this thread would run
+ * (its worktree, or the main checkout); nothing outside a thread with nothing running.
+ */
+export function stackRoot(session: RunSession | undefined, thread: Pick<Thread, "worktreePath" | "branch"> | undefined): string | undefined {
+  const running = session !== undefined && Object.values(session.services).some((s) => LAUNCHED.has(s.state));
+  if (running) return rootLabel(session.worktree);
+  if (thread === undefined) return undefined;
+  return rootLabel(thread.worktreePath === undefined ? undefined : { path: thread.worktreePath, branch: thread.branch });
+}
+
 interface OpenPlan {
   plan: RunPlan;
   selected: string[];
@@ -120,6 +133,7 @@ export function RunPanel({
   variant?: "pane" | "strip";
 }) {
   const project = useModel((s) => s.model.projects[projectId]);
+  const thread = useModel((s) => (threadId === undefined ? undefined : s.model.threads[threadId]));
   const { repos, loading, loaded, error, unsupported } = useRunProfiles(projectId);
   const session = useRunSession(projectId);
   const lastPlan = useRun((s) => s.plans[projectId]);
@@ -143,7 +157,7 @@ export function RunPanel({
 
   const onStart = (): void => {
     setPlanning(true);
-    void planStack(projectId, { selected, pins }).then((plan) => {
+    void planStack(projectId, { ...(threadId === undefined ? {} : { threadId }), selected, pins }).then((plan) => {
       setPlanning(false);
       if (plan) setOpen({ plan, selected, pins });
     });
@@ -168,6 +182,7 @@ export function RunPanel({
             selected={selected.includes(item.key)}
             status={session?.services[item.key]}
             planRow={(session?.plan ?? lastPlan)?.rows.find((r) => r.key === item.key)}
+            rootPath={(session?.plan ?? lastPlan)?.rootPath}
             onToggle={onToggle}
           />
         ))}
@@ -180,6 +195,7 @@ export function RunPanel({
       <StackHeader
         summary={summary}
         selectedCount={selected.length}
+        root={stackRoot(session, thread)}
         starting={planning}
         canStart={!unsupported}
         {...(variant === "strip" ? { collapsed, onToggleCollapsed: () => setCollapsed((c) => !c) } : {})}
@@ -195,6 +211,7 @@ export function RunPanel({
             <div {...{ [LAYER_ATTR]: "" }}>
               <PlanPreviewDialog
                 projectId={projectId}
+                threadId={threadId}
                 initialPlan={open.plan}
                 initialSelected={open.selected}
                 initialPins={open.pins}

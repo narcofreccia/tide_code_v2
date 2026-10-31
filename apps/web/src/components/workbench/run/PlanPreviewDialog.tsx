@@ -1,16 +1,18 @@
 import { useState } from "react";
 import type { RunConflict, RunPlan, RunPlanRow, RunReadiness, RunRepo } from "@tide/contracts";
 import type { StackService } from "@tide/client";
-import { planStack, setRunStack, startStack } from "../../../state/run.ts";
+import { planStack, setRunStack, startStack, stopStack } from "../../../state/run.ts";
 import { showToast } from "../../../state/toast.ts";
 import { Button } from "../../ui/Button.tsx";
 import { Dialog } from "../../ui/Dialog.tsx";
 import { Icon } from "../../ui/Icon.tsx";
+import { relativeCwd } from "./RunRow.tsx";
+import { RootPill, rootLabel } from "./StackHeader.tsx";
 import styles from "./Run.module.css";
 
 const MAX_CHIPS = 4;
 
-function copy(text: string): void {
+export function copyText(text: string): void {
   const clipboard = typeof navigator === "undefined" ? undefined : navigator.clipboard;
   if (!clipboard) return;
   void clipboard.writeText(text).then(
@@ -39,7 +41,7 @@ function EnvChips({ env }: { env: Record<string, string> }) {
   return (
     <span className={styles.chips}>
       {shown.map(([k, v]) => (
-        <button key={k} type="button" className={styles.chip} title={`Copy ${k}=${v}`} onClick={() => copy(`${k}=${v}`)}>
+        <button key={k} type="button" className={styles.chip} title={`Copy ${k}=${v}`} onClick={() => copyText(`${k}=${v}`)}>
           {k}={v}
         </button>
       ))}
@@ -107,6 +109,23 @@ export function tauriHint(repoPath: string, port: number): string {
   return `change build.devUrl in ${repoPath}/src-tauri/tauri.conf.json (and the vite port) to ${port + 10}`;
 }
 
+/** The server's "the stack runs from another checkout" conflict (`<rootRepoKey>.*`). */
+export const isElsewhere = (conflict: RunConflict): boolean => conflict.key.endsWith(".*");
+
+function ElsewhereItem({ conflict, busy, onStop }: { conflict: RunConflict; busy: boolean; onStop: () => void }) {
+  return (
+    <div className={`${styles.conflict} ${styles.elsewhere}`}>
+      <span>{conflict.reason}</span>
+      <span className={styles.conflictActions}>
+        <Button variant="ghost" disabled={busy} onClick={onStop}>
+          <Icon name="stop" size={14} />
+          Stop that stack
+        </Button>
+      </span>
+    </div>
+  );
+}
+
 function ConflictItem({
   conflict,
   plan,
@@ -139,7 +158,7 @@ function ConflictItem({
         <strong>{other === undefined ? conflict.with : nameOf(other)}</strong> both want :{conflict.port}. {conflict.reason}
       </span>
       {hint === undefined ? null : (
-        <button type="button" className={styles.hint} title="Copy" onClick={() => copy(hint)}>
+        <button type="button" className={styles.hint} title="Copy" onClick={() => copyText(hint)}>
           {hint}
         </button>
       )}
@@ -157,6 +176,7 @@ function ConflictItem({
 /** "Start stack" dry run: ports, env, readiness, conflicts; pins and deselects re-plan live. */
 export function PlanPreviewDialog({
   projectId,
+  threadId,
   initialPlan,
   initialSelected,
   initialPins,
@@ -165,6 +185,8 @@ export function PlanPreviewDialog({
   onClose,
 }: {
   projectId: string;
+  /** the project's own repo runs from this thread's worktree */
+  threadId?: string | undefined;
   initialPlan: RunPlan;
   initialSelected: string[];
   initialPins: Record<string, number>;
@@ -176,13 +198,14 @@ export function PlanPreviewDialog({
   const [selected, setSelected] = useState(initialSelected);
   const [pins, setPins] = useState(initialPins);
   const [busy, setBusy] = useState(false);
+  const thread = threadId === undefined ? {} : { threadId };
 
   const replan = async (nextSelected: string[], nextPins: Record<string, number>): Promise<void> => {
     setSelected(nextSelected);
     setPins(nextPins);
     setBusy(true);
     void setRunStack(projectId, { selected: nextSelected, pins: nextPins });
-    const next = await planStack(projectId, { selected: nextSelected, pins: nextPins });
+    const next = await planStack(projectId, { ...thread, selected: nextSelected, pins: nextPins });
     if (next) setPlan(next);
     setBusy(false);
   };
@@ -194,11 +217,22 @@ export function PlanPreviewDialog({
     void replan(selected, next);
   };
 
+  const stopElsewhere = async (): Promise<void> => {
+    setBusy(true);
+    await stopStack(projectId);
+    const next = await planStack(projectId, { ...thread, selected, pins });
+    if (next) setPlan(next);
+    setBusy(false);
+  };
+
   const startable = plan.rows.filter((r) => r.blocked === undefined).length;
   const blocked = plan.status === "blocked";
 
   return (
     <Dialog title="Start stack" size="lg" onCancel={onClose}>
+      <div className={styles.dialogHead}>
+        <RootPill label={rootLabel(plan.rootPath === undefined ? undefined : { path: plan.rootPath, branch: plan.rootBranch })} />
+      </div>
       <div className={styles.scroll}>
         <table className={styles.table}>
           <thead>
@@ -213,7 +247,14 @@ export function PlanPreviewDialog({
           <tbody>
             {plan.rows.map((row) => (
               <tr key={row.key} className={row.blocked === undefined ? undefined : styles.rowBlocked}>
-                <td title={row.command}>{row.name}</td>
+                <td title={row.command}>
+                  {row.name}
+                  {plan.rootPath === undefined || row.repoId !== "root" ? null : (
+                    <span className={styles.where} title={row.cwd}>
+                      {relativeCwd(row.cwd, plan.rootPath) ?? row.cwd}
+                    </span>
+                  )}
+                </td>
                 <td>
                   <PortCell row={row} pins={pins} onPin={onPin} />
                 </td>
@@ -236,16 +277,20 @@ export function PlanPreviewDialog({
       {plan.conflicts.length === 0 ? null : (
         <section className={styles.conflicts} aria-label="Conflicts">
           <h4 className={styles.conflictsTitle}>Conflicts</h4>
-          {plan.conflicts.map((c) => (
-            <ConflictItem
-              key={`${c.key}:${c.with}`}
-              conflict={c}
-              plan={plan}
-              services={services}
-              repos={repos}
-              onDeselect={(key) => void replan(selected.filter((k) => k !== key), pins)}
-            />
-          ))}
+          {plan.conflicts.map((c) =>
+            isElsewhere(c) ? (
+              <ElsewhereItem key={c.key} conflict={c} busy={busy} onStop={() => void stopElsewhere()} />
+            ) : (
+              <ConflictItem
+                key={`${c.key}:${c.with}`}
+                conflict={c}
+                plan={plan}
+                services={services}
+                repos={repos}
+                onDeselect={(key) => void replan(selected.filter((k) => k !== key), pins)}
+              />
+            ),
+          )}
         </section>
       )}
       {plan.warnings.length === 0 ? null : (
@@ -265,7 +310,7 @@ export function PlanPreviewDialog({
           title={blocked ? "Resolve the conflicts first" : undefined}
           onClick={() => {
             setBusy(true);
-            void startStack(projectId, { selected, pins }).then((session) => {
+            void startStack(projectId, { ...thread, selected, pins }).then((session) => {
               setBusy(false);
               if (session) onClose();
             });
