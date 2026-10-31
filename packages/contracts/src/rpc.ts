@@ -608,9 +608,10 @@ export const rpcMethods = {
   /** write (or replace) the ```tide-run``` block + prose table in QUICKSTART.md */
   "run.quickstart.write": unary(Type.Object({ projectId: Type.String(), repoId: Type.String() }), Type.Object({ path: Type.String() })),
   /** dry run: ports assigned, env rendered, conflicts; honours `Project.runStack` unless `selected` is given */
-  "run.plan": unary(Type.Object({ projectId: Type.String(), selected: Type.Optional(Type.Array(Type.String())), pins: Type.Optional(Type.Record(Type.String(), Type.Number())) }), RunPlan),
+  /** `threadId`: run the project's own repo from that thread's worktree (linked repos keep their paths) */
+  "run.plan": unary(Type.Object({ projectId: Type.String(), threadId: Type.Optional(Type.String()), selected: Type.Optional(Type.Array(Type.String())), pins: Type.Optional(Type.Record(Type.String(), Type.Number())) }), RunPlan),
   /** plans again and starts every non-blocked row; `conflict` when the plan is blocked and `force` is not set */
-  "run.start": unary(Type.Object({ projectId: Type.String(), selected: Type.Optional(Type.Array(Type.String())), pins: Type.Optional(Type.Record(Type.String(), Type.Number())), force: Type.Optional(Type.Boolean()) }), RunSession),
+  "run.start": unary(Type.Object({ projectId: Type.String(), threadId: Type.Optional(Type.String()), selected: Type.Optional(Type.Array(Type.String())), pins: Type.Optional(Type.Record(Type.String(), Type.Number())), force: Type.Optional(Type.Boolean()) }), RunSession),
   "run.stop": unary(Type.Object({ projectId: Type.String(), key: Type.Optional(Type.String()) }), Type.Object({ ok: Type.Boolean() })),
   "run.restart": unary(Type.Object({ projectId: Type.String(), key: Type.String() }), RunSession),
   /** snapshot first, then one chunk per service change */

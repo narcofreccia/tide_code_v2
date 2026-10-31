@@ -236,6 +236,9 @@ export type RunPlanRow = Static<typeof RunPlanRow>;
 
 export const RunPlan = Type.Object({
   status: Type.Union([Type.Literal("ok"), Type.Literal("blocked")]),
+  /** root repo path the rows were planned against (a worktree when `threadId` was given) */
+  rootPath: Type.Optional(Type.String()),
+  rootBranch: Type.Optional(Type.String()),
   rows: Type.Array(RunPlanRow),
   conflicts: Type.Array(RunConflict),
   warnings: Type.Array(Type.String()),
@@ -267,6 +270,8 @@ export type RunServiceStatus = Static<typeof RunServiceStatus>;
 export const RunSession = Type.Object({
   projectId: Type.String(),
   startedAt: Type.Number(),
+  /** when the root repo runs from a thread's worktree: that thread, its path and branch */
+  worktree: Type.Optional(Type.Object({ threadId: Type.String(), path: Type.String(), branch: Type.Optional(Type.String()) })),
   plan: Type.Optional(RunPlan),
   services: Type.Record(Type.String(), RunServiceStatus),
 });
