@@ -41,7 +41,8 @@ ENTRY="$REPO_ROOT/apps/server/src/bin.ts"
 OUT_DIR="$REPO_ROOT/apps/desktop/src-tauri/binaries"
 
 
-VERSION="$(node -p "require('$REPO_ROOT/package.json').version")"
+# relative path: under Git Bash on Windows $REPO_ROOT is /d/a/…, which node cannot resolve inside a JS string
+VERSION="$(cd "$REPO_ROOT" && node -p "require('./package.json').version")"
 WITH_WEB=0
 if [ "${1:-}" = "--with-web" ]; then WITH_WEB=1; shift; fi
 
