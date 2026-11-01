@@ -2,6 +2,7 @@ import { mkdir, rm } from "node:fs/promises";
 import { basename, join } from "node:path";
 import type { Project, Thread } from "@tide/contracts";
 import { Git } from "./git.ts";
+import { provisionWorktree } from "./worktreeInclude.ts";
 
 export interface WorktreeInfo {
   worktreePath: string;
@@ -73,9 +74,10 @@ export class WorktreeManager {
    * `startRef` (R4 fork): the new branch starts at that ref — a checkpoint of the source turn —
    * instead of the base branch's head, so the fork's files match what its history says. The
    * base branch (what the fork merges back into) is still the checkout's current branch.
+   * The new worktree then gets the ignored files `.worktreeinclude` names (best-effort).
    */
   async create(project: Project, thread: Thread, startRef?: string): Promise<WorktreeInfo> {
-    return this.#withLock(project.rootPath, async () => {
+    const info = await this.#withLock(project.rootPath, async () => {
       const root = this.#git(project.rootPath);
       if (!(await root.isRepo())) throw new Error(`${project.rootPath} is not a git repository`);
       const baseBranch = (await root.currentBranch()) ?? (await root.revParse("HEAD")) ?? "HEAD";
@@ -88,6 +90,9 @@ export class WorktreeManager {
       await root.worktreeAdd(worktreePath, branch, startRef ?? baseBranch);
       return { worktreePath, branch, baseBranch };
     });
+    const { copied } = await provisionWorktree({ sourceRoot: project.rootPath, worktreePath: info.worktreePath, git: this.#git, log: this.#log });
+    if (copied.length > 0) this.#log(`[vcs] copied ${copied.length} .worktreeinclude file(s) into ${info.worktreePath}`);
+    return info;
   }
 
   /** `tide/<title slug>`, suffixed with the thread's short id when that name is taken. */

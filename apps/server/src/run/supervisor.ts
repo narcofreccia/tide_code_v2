@@ -5,6 +5,8 @@ import { RpcException } from "../rpc/router.ts";
 import { within, type PortLister } from "../workspace/ports.ts";
 import { killProcessTree, type TreeSignal } from "../workspace/pty/killTree.ts";
 import type { PtyManager } from "../workspace/pty/manager.ts";
+import { provisionWorktree } from "../vcs/worktreeInclude.ts";
+import { ANSI, exitReason, isFailedExit } from "./exitReason.ts";
 import { lanHost } from "./lanHost.ts";
 import { planStack } from "./plan.ts";
 
@@ -40,6 +42,8 @@ export interface RunSupervisorDeps {
   realpath?: (path: string) => Promise<string>;
   /** the dependency hint's probe for `node_modules` / `venv` */
   exists?: (path: string) => Promise<boolean>;
+  /** copies `.worktreeinclude` files from the main checkout into a worktree (vcs/worktreeInclude.ts) */
+  provision?: (sourceRoot: string, worktreePath: string) => Promise<unknown>;
 }
 
 export interface PlanOptions {
@@ -50,7 +54,6 @@ export interface PlanOptions {
 }
 
 const PORT_TAKEN = /Port \d+ is in use|EADDRINUSE|address already in use/i;
-const ANSI = /\x1b\[[0-?]*[ -/]*[@-~]|\x1b\][^\x07\x1b]*(?:\x07|\x1b\\)/g;
 const LIVE = new Set<RunServiceStatus["state"]>(["starting", "ready", "running", "external"]);
 const TAIL_BYTES = 8192;
 const JS_KINDS = new Set<RunServiceKind>(["vite", "tauri", "expo", "node"]);
@@ -203,6 +206,8 @@ export class RunSupervisor {
     if (plan.status === "blocked" && options.force !== true) {
       throw new RpcException("conflict", `the stack is blocked: ${plan.conflicts.map((c) => c.reason).join("; ")}`, { conflicts: plan.conflicts });
     }
+    // a worktree made before its `.worktreeinclude` (or missing a file since) gets it now; never blocks
+    if (worktree !== undefined) await this.#provision(this.#deps.model().projects[projectId]?.rootPath, worktree.path);
     const run = this.#ensure(projectId);
     run.session.plan = plan;
     if (worktree !== undefined) run.session.worktree = worktree;
@@ -287,6 +292,12 @@ export class RunSupervisor {
   }
 
   // ---- internals ----
+
+  async #provision(sourceRoot: string | undefined, worktreePath: string): Promise<void> {
+    if (sourceRoot === undefined) return;
+    const provision = this.#deps.provision ?? ((root: string, path: string) => provisionWorktree({ sourceRoot: root, worktreePath: path, log: this.#log }));
+    await provision(sourceRoot, worktreePath).catch((err: unknown) => this.#log("[run] worktree provisioning failed", err));
+  }
 
   #track<T>(p: Promise<T>): Promise<T> {
     this.#inflight.add(p);
@@ -452,8 +463,10 @@ export class RunSupervisor {
     if (this.#runs.get(projectId) !== run || run.svcs.get(svc.row.key) !== svc) return;
     const key = svc.row.key;
     if (chunk.kind === "data") {
-      if (!this.#starting(run, key) || svc.stopping) return;
+      if (svc.stopping) return;
+      // kept for the whole life of the service: a late crash is explained from it
       svc.tail = (svc.tail + chunk.data).slice(-TAIL_BYTES);
+      if (!this.#starting(run, key)) return;
       const text = svc.tail.replace(ANSI, "");
       if (PORT_TAKEN.test(text)) {
         this.#patch(projectId, run, key, { state: "failed", reason: "port-taken" });
@@ -477,18 +490,24 @@ export class RunSupervisor {
       ...(svc.ptyId !== undefined ? { ptyId: svc.ptyId } : {}),
     };
     if (svc.stopping) return this.#set(projectId, run, key, base);
-    if (prev?.state === "failed") return this.#set(projectId, run, key, { ...base, state: "failed", ...(prev.reason !== undefined ? { reason: prev.reason } : {}) });
+    // a readiness timeout says less than the exit that followed it
+    if (prev?.state === "failed" && !(prev.reason === "timeout" && isFailedExit(exit))) {
+      return this.#set(projectId, run, key, { ...base, state: "failed", ...(prev.reason !== undefined ? { reason: prev.reason } : {}) });
+    }
     if (prev?.state === "starting" && this.#now() - svc.startedAt < this.#t.fastFailMs) {
       const portTaken = PORT_TAKEN.test(svc.tail.replace(ANSI, ""));
-      this.#set(projectId, run, key, { ...base, state: "failed", reason: portTaken ? "port-taken" : "exited" });
-      if (!portTaken) void this.#track(this.#hintDeps(projectId, run, svc, svc.epoch));
+      const reason = portTaken ? "port-taken" : exitReason(exit, svc.tail);
+      this.#set(projectId, run, key, { ...base, state: "failed", reason });
+      if (!portTaken) void this.#track(this.#hintDeps(projectId, run, svc, svc.epoch, reason));
       return;
     }
+    // dying on its own with a non-zero code or a signal is a failure however long it ran
+    if (isFailedExit(exit)) return this.#set(projectId, run, key, { ...base, state: "failed", reason: exitReason(exit, svc.tail) });
     this.#set(projectId, run, key, base);
   }
 
   /** A root-repo service that died at once in a worktree without `node_modules` / a venv: say so. */
-  async #hintDeps(projectId: string, run: ProjectRun, svc: Svc, epoch: number): Promise<void> {
+  async #hintDeps(projectId: string, run: ProjectRun, svc: Svc, epoch: number, reason: string): Promise<void> {
     const worktree = run.session.worktree;
     if (worktree === undefined || svc.row.repoId !== "root" || svc.kind === undefined) return;
     const names = JS_KINDS.has(svc.kind) ? ["node_modules"] : PY_KINDS.has(svc.kind) ? ["venv", ".venv"] : [];
@@ -497,7 +516,7 @@ export class RunSupervisor {
     const dirs = [...new Set([svc.row.cwd, worktree.path])];
     for (const dir of dirs) for (const name of names) if (await exists(join(dir, name))) return;
     const status = run.session.services[svc.row.key];
-    if (this.#current(projectId, run, svc, epoch) && status?.state === "failed" && status.reason === "exited") this.#patch(projectId, run, svc.row.key, { state: "failed", reason: DEPS_MISSING });
+    if (this.#current(projectId, run, svc, epoch) && status?.state === "failed" && status.reason === reason) this.#patch(projectId, run, svc.row.key, { state: "failed", reason: DEPS_MISSING });
   }
 
   async #stopOne(projectId: string, run: ProjectRun, key: string): Promise<void> {

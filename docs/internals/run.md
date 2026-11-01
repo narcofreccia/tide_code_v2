@@ -116,6 +116,28 @@ service that exits within 5 s, with neither `node_modules` (vite/tauri/expo/node
 this worktree"; the Run panel offers the install command to copy. The panel and the plan dialog show
 which checkout the root runs from as a branch pill.
 
+A fresh worktree also lacks gitignored build artifacts the dev build may need (sidecar binaries,
+`.env`). Tide follows Claude Code's `.worktreeinclude` convention: a file at the repo root, in
+gitignore syntax, naming them. Every untracked file in the main checkout that matches a pattern
+and is also gitignored is copied into the worktree (`vcs/worktreeInclude.ts`); the main checkout's
+`.worktreeinclude` wins, a committed one in the worktree is the fallback. Copying runs right after
+`WorktreeManager` creates a thread's worktree and again on every `run.start` from a worktree, so a
+worktree made before the file existed is filled on the next Start stack. It never overwrites a file
+already in the worktree, recreates symlinks as symlinks, keeps the file mode, and clones
+copy-on-write where the filesystem supports it (APFS, btrfs). Both calls are best-effort: a failure
+is logged and never blocks the worktree or the stack.
+
+## Exits and failure reasons
+
+A service stopped by Tide ends `exited`. A service that dies on its own with a non-zero code or a
+signal ends `failed`, however long it ran, with a reason naming the exit and the most telling line
+of its last 8 KB of output (ANSI stripped, clipped to 200 characters): the last line that names a
+cause (`doesn't exist`, `not found`, `cannot find`, `ENOENT`, `EADDRINUSE`, `panicked`), else the
+last `error` line, else the last line. For example: exited with code 101 — resource path
+\`binaries/ffmpeg-aarch64-apple-darwin\` doesn't exist. Exit code 0 stays `exited`. Specific
+reasons stay: `port-taken` (the bind error seen while starting) and the dependencies-missing hint for
+a fast fail; a readiness `timeout` is replaced by the exit reason when the process later dies.
+
 ## Limits
 
 - Tauri dev ports are fixed in `tauri.conf.json` (`devUrl`); they cannot move. Two fixed services

@@ -62,6 +62,7 @@ const repo = (repoKey: string, services: RunService[]): RunRepo => ({
 interface SetupOptions {
   threads?: Record<string, { projectId: string; worktreePath?: string; branch?: string }>;
   exists?: (path: string) => Promise<boolean>;
+  provision?: (sourceRoot: string, worktreePath: string) => Promise<unknown>;
 }
 
 /** The root repo moved to `rootPath` when the supervisor asks for a worktree. */
@@ -77,6 +78,7 @@ function setup(repos: RunRepo[], opts: SetupOptions = {}) {
   const alivePids = new Set<number>();
   const model = { projects: { p1: { id: "p1", title: "P", rootPath: "/src/backend", createdAt: 0, updatedAt: 0 } }, threads: opts.threads ?? {} } as unknown as ReadModel;
   const rootPaths: (string | undefined)[] = [];
+  const provisioned: [string, string][] = [];
   const sup = new RunSupervisor({
     ptys,
     ports: {
@@ -91,6 +93,11 @@ function setup(repos: RunRepo[], opts: SetupOptions = {}) {
       return atRoot(repos, rootPath);
     },
     ...(opts.exists !== undefined ? { exists: opts.exists } : {}),
+    provision:
+      opts.provision ??
+      (async (sourceRoot, worktreePath) => {
+        provisioned.push([sourceRoot, worktreePath]);
+      }),
     model: () => model,
     now: c.now,
     sleep: c.sleep,
@@ -109,7 +116,7 @@ function setup(repos: RunRepo[], opts: SetupOptions = {}) {
     await sup.drain();
     await c.flush();
   };
-  return { c, fake, ptys, sup, state, chunks, killed, alivePids, model, settle, rootPaths };
+  return { c, fake, ptys, sup, state, chunks, killed, alivePids, model, settle, rootPaths, provisioned };
 }
 
 const stateOf = (sup: RunSupervisor, key: string) => sup.get("p1")?.services[key];
@@ -153,7 +160,7 @@ describe("RunSupervisor", () => {
     await t.settle();
     t.fake.handles[0]?.exit(1);
     await t.settle();
-    expect(stateOf(t.sup, "backend.redis")).toMatchObject({ state: "failed", reason: "exited", exit: { code: 1 } });
+    expect(stateOf(t.sup, "backend.redis")).toMatchObject({ state: "failed", reason: "exited with code 1", exit: { code: 1 } });
     expect(stateOf(t.sup, "backend.celery")).toMatchObject({ state: "failed", reason: "dependency backend.redis failed" });
     expect(t.fake.handles).toHaveLength(1);
   });
@@ -219,6 +226,47 @@ describe("RunSupervisor", () => {
     expect(t.chunks[0]).toEqual({ kind: "snapshot", session: { projectId: "p1", startedAt: 0, services: {} } });
   });
 
+  it("fails a service that dies with a non-zero code however long it ran, naming the error line", async () => {
+    const t = setup([repo("frontend", [svc("gui", { kind: "tauri", readiness: { kind: "port" }, listens: [{ name: "http", port: 1420, how: "fixed" }] })])]);
+    await t.sup.start("p1");
+    await t.settle();
+    t.state.owned = [{ port: 1420, pid: 5, command: "node", url: "http://127.0.0.1:1420" }];
+    await t.c.advance(1000);
+    expect(stateOf(t.sup, "frontend.gui")?.state).toBe("ready");
+    t.fake.handles[0]?.data("   Compiling tidereel v0.1.0\r\n\x1b[31merror\x1b[0m: failed to run custom build command for `tidereel`\r\n");
+    t.fake.handles[0]?.data("  resource path `binaries/ffmpeg-aarch64-apple-darwin` doesn't exist\r\n");
+    await t.c.advance(60_000);
+    t.fake.handles[0]?.exit(101);
+    expect(stateOf(t.sup, "frontend.gui")).toMatchObject({
+      state: "failed",
+      reason: "exited with code 101 — resource path `binaries/ffmpeg-aarch64-apple-darwin` doesn't exist",
+      exit: { code: 101 },
+    });
+  });
+
+  it("replaces a readiness timeout with the exit that followed it", async () => {
+    const t = setup([repo("backend", [svc("api", { readiness: { kind: "log", pattern: "never" } })])]);
+    await t.sup.start("p1");
+    await t.settle();
+    await t.c.advance(60_000);
+    expect(stateOf(t.sup, "backend.api")?.reason).toBe("timeout");
+    t.fake.handles[0]?.data("Error: Cannot find module 'express'\n");
+    t.fake.handles[0]?.exit(1);
+    expect(stateOf(t.sup, "backend.api")).toMatchObject({ state: "failed", reason: "exited with code 1 — Error: Cannot find module 'express'" });
+  });
+
+  it("calls a stopped service exited, not failed", async () => {
+    const t = setup([repo("backend", [svc("api")])]);
+    await t.sup.start("p1");
+    await t.settle();
+    await t.c.advance(6000);
+    t.fake.handles[0]?.diesOn.add("SIGINT");
+    t.fake.handles[0]?.data("error: something noisy\n");
+    await t.sup.stop("p1", "backend.api");
+    expect(stateOf(t.sup, "backend.api")).toMatchObject({ state: "exited", exit: { signal: "SIGINT" } });
+    expect(stateOf(t.sup, "backend.api")?.reason).toBeUndefined();
+  });
+
   it("fails fast with port-taken on the bind error and stops the terminal", async () => {
     const t = setup([repo("frontend", [svc("web", { readiness: { kind: "port" }, listens: [{ name: "http", port: 8081, how: "flag", flag: "--port" }] })])]);
     await t.sup.start("p1");
@@ -227,6 +275,9 @@ describe("RunSupervisor", () => {
     expect(stateOf(t.sup, "frontend.web")).toMatchObject({ state: "failed", reason: "port-taken" });
     await t.c.advance(0);
     expect(t.fake.handles[0]?.signals).toEqual(["SIGINT"]);
+    // the non-zero exit of that stop keeps the specific reason
+    await t.c.advance(6000);
+    expect(stateOf(t.sup, "frontend.web")).toMatchObject({ state: "failed", reason: "port-taken", exit: { signal: "SIGKILL" } });
   });
 
   it("refuses a blocked stack unless forced, and force starts the rest", async () => {
@@ -343,7 +394,7 @@ describe("RunSupervisor", () => {
       expect(stateOf(t.sup, "backend.api")?.reason).toContain("dependencies missing");
       expect(probed).toEqual(expect.arrayContaining(["/wt/feat/web/node_modules", "/wt/feat/node_modules", "/wt/feat/venv", "/wt/feat/.venv"]));
       // linked repos never get the hint
-      expect(stateOf(t.sup, "frontend.app")).toMatchObject({ state: "failed", reason: "exited" });
+      expect(stateOf(t.sup, "frontend.app")).toMatchObject({ state: "failed", reason: "exited with code 1" });
     });
 
     it("keeps the generic reason when the worktree has its dependencies", async () => {
@@ -352,7 +403,20 @@ describe("RunSupervisor", () => {
       await t.settle();
       t.fake.handles[0]?.exit(1);
       await t.settle();
-      expect(stateOf(t.sup, "backend.web")).toMatchObject({ state: "failed", reason: "exited" });
+      expect(stateOf(t.sup, "backend.web")).toMatchObject({ state: "failed", reason: "exited with code 1" });
+    });
+
+    it("copies .worktreeinclude files into the worktree on start, and a provisioning failure does not block it", async () => {
+      const t = setup([repo("backend", [svc("api")])], { threads });
+      await t.sup.start("p1", { threadId: "t1" });
+      expect(t.provisioned).toEqual([["/src/backend", "/wt/feat"]]);
+      await t.sup.stop("p1");
+      await t.sup.start("p1");
+      expect(t.provisioned).toHaveLength(1);
+
+      const broken = setup([repo("backend", [svc("api")])], { threads, provision: async () => Promise.reject(new Error("disk full")) });
+      const session = await broken.sup.start("p1", { threadId: "t1" });
+      expect(Object.keys(session.services)).toEqual(["backend.api"]);
     });
   });
 });

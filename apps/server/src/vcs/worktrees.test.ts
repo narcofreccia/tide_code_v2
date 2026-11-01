@@ -1,4 +1,4 @@
-import { stat } from "node:fs/promises";
+import { readFile, stat } from "node:fs/promises";
 import { rm } from "node:fs/promises";
 import { mkdtemp } from "node:fs/promises";
 import { tmpdir } from "node:os";
@@ -103,6 +103,16 @@ describe("WorktreeManager", () => {
     expect(maxInFlight).toBe(1);
     expect(new Set(infos.map((i) => i.branch)).size).toBe(3);
     expect(new Set(infos.map((i) => i.worktreePath)).size).toBe(3);
+  });
+
+  it("copies the ignored files .worktreeinclude names into a new worktree", async () => {
+    const { repo, project, manager } = await fixture();
+    await repo.write(".gitignore", "binaries/\n");
+    await repo.write(".worktreeinclude", "binaries/\n");
+    await repo.commit("include");
+    await repo.write("binaries/sidecar-aarch64-apple-darwin", "bin");
+    const info = await manager.create(project, thread("01THREADINCLUDE1", "Provisioned"));
+    expect(await readFile(join(info.worktreePath, "binaries/sidecar-aarch64-apple-darwin"), "utf8")).toBe("bin");
   });
 
   it("removes a worktree", async () => {
