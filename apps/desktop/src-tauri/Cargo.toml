@@ -1,6 +1,6 @@
 [package]
 name = "tide-desktop"
-version = "2.0.0-alpha.0"
+version = "0.1.0"
 edition = "2021"
 description = "Tide desktop shell: supervises the bundled tide-server and hosts the web client."
 publish = false
