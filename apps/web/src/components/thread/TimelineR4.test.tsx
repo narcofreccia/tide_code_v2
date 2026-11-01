@@ -38,8 +38,9 @@ describe("Stream R4 rows", () => {
       ]),
     );
     const { container } = render(<Stream threadId="t1" provider="claude" />);
+    // the driver's `sub-agent "<name>" reported` reads as the continuation of that agent
     expect(screen.getByText("Claude continued")).toBeDefined();
-    expect(screen.getByText('sub-agent "Audit" reported')).toBeDefined();
+    expect(container.querySelector('[data-source="harness"]')?.textContent).toContain("Audit reported");
     expect(screen.queryByText("raw")).toBeNull();
     expect(container.querySelector('[data-source="harness"]')).not.toBeNull();
   });

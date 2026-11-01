@@ -17,6 +17,8 @@ import { RateLimitBadge } from "../ui/RateLimitBadge.tsx";
 import { StateGlyph } from "../ui/StatusGlyph.tsx";
 import { MergeGlyph, PrBadge } from "../ui/VcsBadges.tsx";
 import { threadStateKey, threadStateLabel } from "../../lib/vocab.ts";
+import { useBackgroundAgentCount } from "../../state/hooks.ts";
+import { LiveLabel } from "./LiveLabel.tsx";
 import styles from "./ThreadHeader.module.css";
 
 /** Below this container width Terminal and Fork fold into the More menu. */
@@ -80,8 +82,10 @@ function hasChips(thread: Thread, delegates: number): boolean {
  */
 export function ThreadHeader({ thread }: { thread: Thread }) {
   const command = useTerminalCommand(thread.id, thread.nativeSessionId);
-  const state = threadStateKey(thread);
-  const word = threadStateLabel(thread);
+  const background = useBackgroundAgentCount(thread.id);
+  const now = Date.now();
+  const state = threadStateKey(thread, now, background);
+  const word = threadStateLabel(thread, now, background);
   const forkTurn = useModel((s) => selectLatestSettledTurnId(s.model, thread.id));
   const delegates = useModel((s) => selectDelegates(s.model, thread.id).length);
   const [menu, setMenu] = useState<MenuPosition | undefined>(undefined);
@@ -93,7 +97,7 @@ export function ThreadHeader({ thread }: { thread: Thread }) {
       <div className={styles.main} ref={mainRef}>
         <span className={styles.state} data-state={state} title={word}>
           <StateGlyph state={state} />
-          {word}
+          {state === "background" ? <LiveLabel text={word} className={styles.liveWord} /> : word}
         </span>
         <ThreadTitle thread={thread} />
         <span

@@ -1,7 +1,8 @@
-import { memo, useMemo, useState } from "react";
+import { memo, useEffect, useMemo, useRef, useState } from "react";
 import { groupActivities } from "@tide/client";
 import type { Activity, ActivityOf } from "@tide/contracts";
 import { useUi } from "../../state/ui.ts";
+import { useRevealNonce } from "../../state/childReveal.ts";
 import { ActivityGroup } from "./ActivityGroup.tsx";
 import { ActivityRow } from "./ActivityRow.tsx";
 import { Chevron } from "./Chevron.tsx";
@@ -72,9 +73,19 @@ export const ChildGroup = memo(function ChildGroup({ child, activities }: { chil
   const report = child.report?.trim() ? child.report : undefined;
   const summary = child.summary ?? (state === "open" ? OPEN_NOTE : undefined);
   const expandable = report !== undefined || nodes.length > 0;
+  // "show in the transcript" from the background strip or a "reported" notice: open, scroll, focus
+  const reveal = useRevealNonce(child.threadId, child.childKey);
+  const itemRef = useRef<HTMLLIElement>(null);
+  useEffect(() => {
+    if (reveal === 0) return;
+    setOpen(true);
+    const el = itemRef.current;
+    el?.scrollIntoView?.({ block: "center", behavior: "smooth" });
+    el?.querySelector<HTMLButtonElement>("button")?.focus({ preventScroll: true });
+  }, [reveal]);
 
   return (
-    <li className={styles.item}>
+    <li className={styles.item} ref={itemRef} data-child-key={child.childKey}>
       <div className={styles.row}>
         <button
           type="button"
@@ -124,7 +135,7 @@ export const ChildGroup = memo(function ChildGroup({ child, activities }: { chil
                 node.kind === "group" ? (
                   <ActivityGroup key={node.id} activities={node.activities} />
                 ) : node.kind === "activity" ? (
-                  <ActivityRow key={node.activity.id} activity={node.activity} />
+                  <ActivityRow key={node.activity.id} activity={node.activity} ownerRunning={child.status === "running"} />
                 ) : null,
               )}
             </ul>

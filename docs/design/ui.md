@@ -102,9 +102,26 @@ disclosure above the answer. A settled turn gets a subtle footer under its last 
 message: duration, tokens in/out, cost, or the error that ended it. Model / mode / interaction
 can be changed mid-turn — they apply from the next turn, and the pill says so.
 
+**Background agents.** Sub-agents (normalized `child` activities, any harness) still `running` outside
+the turn in flight — Claude Code's `run_in_background` agents keep streaming tool rows after their
+turn settles — get a strip just above the composer (above the QueueList): one `--row-h` button per
+agent (breathing `--st-running` dot, shimmering name, description muted, `last: Read skills.py · 8s ago`,
+tool count, elapsed `m:ss`), or `quiet for 12m` in `--warn` past 5 minutes of silence (never a
+guessed "done"). More than three fold into one summary line that expands. A click opens and scrolls
+to that agent's group in the transcript. The strip is gone when none run. The thread then reads
+`◉ Working · 1 agent in background` in the header (outlined `--st-running` pill, shimmering word),
+`thread: 1 agent in background` in the status bar, a `1 agent in background` live line in the rail
+(tooltip `1 sub-agent working in the background`; the row sits in Working, not idle), and a row in
+Mission Control's Running now without Stop. The latest settled turn's conclusion adds
+`n sub-agents from an earlier turn still working`. Their own tool rows keep the live mark after the turn settled.
+
 Stream details: a user message delivered into a running turn carries a `steer` tag. Server-authored
 wake-ups (delegate finished, child asked a question, PR changed, restart) render as a notice row,
-not a message. A turn that started after a harness change or fork shows a collapsed **Handoff**
+not a message. A harness-initiated turn whose summary is the driver's `sub-agent "<name>" reported`
+reads `▷ <name> reported · Claude continued`, the name linking to that agent's group (its report);
+any other summary passes through after `<Harness> continued`. Rate-limit warning rows
+(`Rate limit allowed_warning …`) fold into the turn's harness-events line — the limit badge shows them;
+a rejection stays in the stream. A turn that started after a harness change or fork shows a collapsed **Handoff**
 card (`Handoff · <strategy> · covers N turns, M omitted`, a delivery pill, `from → to`) that
 expands to the handed-over text. A rolled-back turn's messages are dimmed and tagged `rolled back`.
 Each settled user message has a per-turn **⋯** menu: `Fork from here…` and
@@ -197,7 +214,8 @@ Keyboard, Environments (this machine, pairing, other machines, relay).
 
 ## States per thread (status glyph)
 
-`○ idle` · `● running` (pulsing) · `◐ needs you` (approval / question / plan ready) ·
+`○ idle` · `● running` (pulsing) · `◉ working in background` (the turn settled, its sub-agents still
+run; slower breathing) · `◐ needs you` (approval / question / plan ready) ·
 `✕ error` · `⏸ interrupted` · `✓ PR merged` · `⛔ limited` (usage window exhausted; the header badge
 and the Limited section show it, the status column has no glyph) · `snoozed` (hidden until its time;
 only in the collapsed Snoozed section, no glyph). Rail sorts needs-you first within a project.

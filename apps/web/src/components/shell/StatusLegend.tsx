@@ -6,6 +6,7 @@ import styles from "./StatusLegend.module.css";
 export const LEGEND: Array<{ state: ThreadStateKey; meaning: string }> = [
   { state: "idle", meaning: "Waiting for your next message" },
   { state: "running", meaning: "The agent is working" },
+  { state: "background", meaning: "The turn ended; sub-agents it launched are still working" },
   { state: "needs", meaning: "Waiting on you: an approval, a question or a plan" },
   { state: "error", meaning: "The last turn failed" },
   { state: "interrupted", meaning: "You stopped the last turn" },

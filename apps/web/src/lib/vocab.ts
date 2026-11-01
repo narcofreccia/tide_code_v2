@@ -98,7 +98,9 @@ export type ThreadStateKey =
   | "interrupting"
   | "limited"
   | "snoozed"
-  | "merged";
+  | "merged"
+  /** the turn settled but sub-agents it launched still work in the background */
+  | "background";
 
 export const THREAD_STATE_WORDS: Record<ThreadStateKey, string> = {
   idle: "Idle",
@@ -110,21 +112,38 @@ export const THREAD_STATE_WORDS: Record<ThreadStateKey, string> = {
   limited: "Limited",
   snoozed: "Snoozed",
   merged: "Merged",
+  background: "Working in background",
 };
 
-/** Precedence: stopping, waiting on the user, limited, snoozed, then run state; an idle merged branch reads Merged. */
-export function threadStateKey(thread: Thread, now: number = Date.now()): ThreadStateKey {
+/**
+ * Precedence: stopping, waiting on the user, limited, snoozed, then run state; a thread
+ * between turns with sub-agents still working (`background` = how many) reads Background,
+ * an idle merged branch reads Merged.
+ */
+export function threadStateKey(thread: Thread, now: number = Date.now(), background = 0): ThreadStateKey {
   if (thread.interrupting === true) return "interrupting";
   if (thread.attention) return "needs";
   if (thread.limited) return "limited";
   if (thread.snoozedUntil !== undefined && thread.snoozedUntil > now) return "snoozed";
+  if (background > 0 && thread.status !== "running") return "background";
   if (thread.status === "idle" && isThreadMerged(thread)) return "merged";
   return thread.status;
 }
 
+/** `1 agent in background`, `3 agents in background` */
+export function backgroundAgentsText(count: number): string {
+  return `${count} ${count === 1 ? "agent" : "agents"} in background`;
+}
+
+/** `1 sub-agent working in the background` — the rail's tooltip. */
+export function backgroundAgentsTip(count: number): string {
+  return `${count} ${count === 1 ? "sub-agent" : "sub-agents"} working in the background`;
+}
+
 /** `Idle`, `Running`, `Needs you`, `Limited · resets in 2h`, … */
-export function threadStateLabel(thread: Thread, now: number = Date.now()): string {
-  const key = threadStateKey(thread, now);
+export function threadStateLabel(thread: Thread, now: number = Date.now(), background = 0): string {
+  const key = threadStateKey(thread, now, background);
+  if (key === "background") return `Working · ${backgroundAgentsText(background)}`;
   if (key === "limited") {
     const at = thread.limited?.resetsAt;
     return at === undefined ? "Limited" : `Limited · resets ${relativeUntil(at, now)}`;

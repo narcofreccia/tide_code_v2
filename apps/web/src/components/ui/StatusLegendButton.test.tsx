@@ -10,6 +10,6 @@ describe("StatusLegendButton", () => {
     const trigger = screen.getByRole("button", { name: "Status legend" });
     expect(trigger.getAttribute("title")).toBe("What do the status symbols mean?");
     fireEvent.click(trigger);
-    expect(screen.getByRole("table", { name: "Status legend" }).querySelectorAll("tr")).toHaveLength(8);
+    expect(screen.getByRole("table", { name: "Status legend" }).querySelectorAll("tr")).toHaveLength(9);
   });
 });

@@ -1,11 +1,16 @@
 import type { Activity, AttentionKind, Message, ReadModel, Thread, TimelineEntry, Turn } from "@tide/contracts";
+import { clipTarget as clip, countBackgroundAgents, displayToolName, shortTarget } from "@tide/client";
+import { backgroundAgentsText } from "./vocab.ts";
+
+export { displayToolName, shortTarget };
 
 /**
  * What a rail row says a thread is doing right now, on its second line:
- * "Bash npm test", "Writing", "Thinking", "Needs approval", "Waiting for limit reset", "Queued".
+ * "Bash npm test", "Writing", "Thinking", "Needs approval", "Waiting for limit reset", "Queued",
+ * "1 agent in background".
  * Pure over the read model; undefined for an idle or settled thread.
  */
-export type LiveLabelKind = "thinking" | "tool" | "waiting" | "approval" | "queued" | "limited";
+export type LiveLabelKind = "thinking" | "tool" | "waiting" | "approval" | "queued" | "limited" | "background";
 export interface LiveLabelInfo {
   text: string;
   kind: LiveLabelKind | undefined;
@@ -16,47 +21,6 @@ const ATTENTION_TEXT: Record<AttentionKind, string> = {
   question: "Needs an answer",
   plan: "Plan ready",
 };
-
-const PATH_KEYS = ["file_path", "filePath", "path", "notebook_path", "file"];
-const COMMAND_KEYS = ["command", "cmd", "script"];
-const TEXT_KEYS = ["pattern", "query", "url", "description", "prompt", "text"];
-const TARGET_MAX = 40;
-
-function firstString(input: unknown, keys: readonly string[]): string | undefined {
-  if (typeof input !== "object" || input === null) return undefined;
-  const record = input as Record<string, unknown>;
-  for (const key of keys) {
-    const value = record[key];
-    if (typeof value === "string" && value.trim() !== "") return value;
-  }
-  return undefined;
-}
-
-/** One line, no quotes, at most 40 characters. */
-function clip(text: string): string {
-  const line = (text.split("\n")[0] ?? "").replace(/["'`]/g, "").replace(/\s+/g, " ").trim();
-  return line.length > TARGET_MAX ? line.slice(0, TARGET_MAX).trimEnd() : line;
-}
-
-/** `mcp__tide__tide_delegate` → `Tide_delegate`, `mcp:github.search` → `Search`, `bash` → `Bash`. */
-export function displayToolName(toolName: string): string {
-  const parts = toolName.split(/__|[:.]/).filter((p) => p !== "");
-  const last = parts[parts.length - 1] ?? toolName;
-  return last.charAt(0).toUpperCase() + last.slice(1);
-}
-
-/** The short target of a tool call: a path's basename, a command's first 40 characters, else a query. */
-export function shortTarget(input: unknown): string | undefined {
-  const path = firstString(input, PATH_KEYS);
-  if (path !== undefined) {
-    const base = path.split(/[\\/]/).filter((p) => p !== "").pop();
-    return base === undefined ? undefined : clip(base);
-  }
-  const command = firstString(input, COMMAND_KEYS) ?? firstString(input, TEXT_KEYS);
-  if (command === undefined) return undefined;
-  const short = clip(command);
-  return short === "" ? undefined : short;
-}
 
 function runningLabel(activity: Activity): string | undefined {
   if (activity.kind === "tool" && activity.status === "running") {
@@ -165,6 +129,9 @@ export function liveLabelFor(model: ReadModel, thread: Thread): LiveLabelInfo | 
   if (turn !== undefined) return turnLabel(model, thread, turn);
   // queued turns sit behind a live one; seen here only when the thread is between turns
   if (thread.status !== "idle" && hasQueuedTurn(model, thread.id)) return { text: "Queued", kind: "queued" };
+  // the turn settled, but sub-agents it launched still work: not idle, not stale
+  const background = countBackgroundAgents(model, thread.id);
+  if (background > 0) return { text: backgroundAgentsText(background), kind: "background" };
   return undefined;
 }
 

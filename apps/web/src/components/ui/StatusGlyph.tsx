@@ -1,5 +1,6 @@
 import type { AttentionKind, Thread } from "@tide/contracts";
 import { threadStateKey, threadStateLabel, type ThreadStateKey } from "../../lib/vocab.ts";
+import { useBackgroundAgentCount } from "../../state/hooks.ts";
 import { observeVisibleAnimation } from "../../lib/visibleAnimation.ts";
 import styles from "./StatusGlyph.module.css";
 
@@ -48,7 +49,7 @@ export function pulseRef(el: HTMLElement | null): (() => void) | undefined {
   };
 }
 
-/** ○ idle · ● running · ◐ needs you · ✕ error · ⏸ interrupted · ◔ limited · ☾ snoozed · ✓ merged */
+/** ○ idle · ● running · ◉ background · ◐ needs you · ✕ error · ⏸ interrupted · ◔ limited · ☾ snoozed · ✓ merged */
 export const STATE_GLYPH: Record<ThreadStateKey, string> = {
   idle: "○",
   running: "●",
@@ -59,6 +60,7 @@ export const STATE_GLYPH: Record<ThreadStateKey, string> = {
   limited: "◔",
   snoozed: "☾",
   merged: "✓",
+  background: "◉",
 };
 
 const TONE: Record<ThreadStateKey, string> = {
@@ -71,6 +73,7 @@ const TONE: Record<ThreadStateKey, string> = {
   limited: styles.limited ?? "",
   snoozed: styles.snoozed ?? "",
   merged: styles.merged ?? "",
+  background: styles.background ?? "",
 };
 
 const ATTENTION_LABEL: Record<AttentionKind, string> = {
@@ -79,11 +82,16 @@ const ATTENTION_LABEL: Record<AttentionKind, string> = {
   plan: "needs you: plan ready",
 };
 
+/** The background glyph breathes on its own slower cycle: paused off screen, not in the running sync. */
+function breatheRef(el: HTMLElement | null): (() => void) | undefined {
+  return el === null ? undefined : observeVisibleAnimation(el);
+}
+
 /** The bare glyph for a state key; used by chips and the legend. */
 export function StateGlyph({ state, label }: { state: ThreadStateKey; label?: string }) {
   return (
     <span
-      ref={state === "running" ? pulseRef : undefined}
+      ref={state === "running" ? pulseRef : state === "background" ? breatheRef : undefined}
       className={`${styles.glyph} ${TONE[state]}`}
       data-pulse={state === "running" ? "" : undefined}
       {...(label === undefined ? { "aria-hidden": true } : { title: label, "aria-label": label, role: "img" })}
@@ -147,5 +155,7 @@ const THREAD_LABEL_FALLBACK = { needs: "needs you", limited: "limited", snoozed:
 
 /** The glyph for a thread; its tooltip is `threadStateLabel`, the same word the header chip and status bar show. */
 export function ThreadGlyph({ thread }: { thread: Thread }) {
-  return <StateGlyph state={threadStateKey(thread)} label={threadStateLabel(thread)} />;
+  const background = useBackgroundAgentCount(thread.id);
+  const now = Date.now();
+  return <StateGlyph state={threadStateKey(thread, now, background)} label={threadStateLabel(thread, now, background)} />;
 }

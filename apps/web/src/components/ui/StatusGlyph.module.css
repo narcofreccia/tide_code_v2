@@ -17,6 +17,12 @@
   animation: statusPulse calc(var(--dur) * 8) linear infinite;
   animation-play-state: var(--visible-animation-state, paused);
 }
+/* sub-agents still working after the turn: the running hue, a slower softer pulse */
+.background {
+  color: var(--st-running);
+  animation: backgroundPulse calc(var(--dur) * 16) ease-in-out infinite;
+  animation-play-state: var(--visible-animation-state, paused);
+}
 .interrupted { color: var(--st-interrupted); }
 .error { color: var(--st-error); }
 .needsYou { color: var(--st-needs); }
@@ -34,7 +40,11 @@
   90% { opacity: 0.5; animation-timing-function: steps(6); }
   100% { opacity: 1; }
 }
+@keyframes backgroundPulse {
+  50% { opacity: 0.45; }
+}
 @media (prefers-reduced-motion: reduce), (forced-colors: active) {
   .running,
+  .background,
   .interrupting { animation: none; }
 }

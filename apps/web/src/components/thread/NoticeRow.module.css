@@ -15,3 +15,8 @@
 .summary { min-width: 0; overflow-wrap: anywhere; }
 .lead { flex: none; color: var(--text); font-weight: 500; }
 .lead::after { content: " ·"; color: var(--muted); font-weight: 400; }
+/* "<agent> reported · Claude continued": the continuation of a background sub-agent */
+.reported { min-width: 0; color: var(--text); overflow-wrap: anywhere; }
+.reported::after { content: " ·"; color: var(--muted); }
+.agent { font-weight: 500; }
+.agentLink { font-weight: 500; }

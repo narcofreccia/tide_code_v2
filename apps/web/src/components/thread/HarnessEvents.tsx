@@ -12,12 +12,20 @@ type Note = Extract<Activity, { kind: "info" | "error" }>;
 const HARNESS_FRAME = /^(claude|codex|opencode|pi|acp): /;
 
 /**
+ * A usage-window warning row ("Rate limit allowed_warning on seven_day (96% used)"): the
+ * header's limit badge and the status bar already show it, so it folds with the frames.
+ * A rejection ("Rate limit rejected …") is not matched and stays in the stream.
+ */
+const RATE_WARNING = /^Rate limit allowed(_warning)?\b/;
+
+/**
  * Raw harness frames Tide does not model: info rows carrying the native payload
- * or named after the harness frame they pass through. Declines stay visible.
+ * or named after the harness frame they pass through, plus rate-limit warnings.
+ * Declines stay visible.
  */
 export function isPassThrough(activity: Activity): activity is Note {
   if (activity.kind !== "info" || /declined/.test(activity.text)) return false;
-  return activity.payload !== undefined || HARNESS_FRAME.test(activity.text);
+  return activity.payload !== undefined || HARNESS_FRAME.test(activity.text) || RATE_WARNING.test(activity.text);
 }
 
 export interface Collapsed {
@@ -61,6 +69,7 @@ function humanize(raw: string): string {
 
 /** A short name for one pass-through row: the native frame's subtype/type, else its text. */
 export function eventName(note: Note): string {
+  if (RATE_WARNING.test(note.text)) return "rate limit warning";
   const payload = typeof note.payload === "object" && note.payload !== null ? (note.payload as Record<string, unknown>) : undefined;
   const native = typeof payload?.["subtype"] === "string" ? payload["subtype"] : typeof payload?.["type"] === "string" ? payload["type"] : undefined;
   const text = note.text.replace(HARNESS_FRAME, "").replace(/\s*\(.*\)\s*$/, "");

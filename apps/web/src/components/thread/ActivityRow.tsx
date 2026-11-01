@@ -126,7 +126,11 @@ function fullToolTarget(input: unknown): string | undefined {
 }
 
 /** One 24px stream line: `▸ Read src/foo.ts` / `❯ Bash pnpm test ✓ 2.1s`. */
-export const ActivityRow = memo(function ActivityRow({ activity }: { activity: Activity }) {
+export const ActivityRow = memo(function ActivityRow({ activity, ownerRunning = false }: {
+  activity: Activity;
+  /** the row belongs to a sub-agent still running in the background: its calls outlive the turn */
+  ownerRunning?: boolean;
+}) {
   const [open, setOpen] = useState(false);
   const cwd = useModel((s) => s.model.threads[activity.threadId]?.worktreePath);
   const turnSettled = useTurnSettled(activity.turnId);
@@ -141,8 +145,9 @@ export const ActivityRow = memo(function ActivityRow({ activity }: { activity: A
   const target = toolTarget(activity.input);
   // the whole command (all lines) or path, for the tooltip of the one-line target
   const fullTarget = fullToolTarget(activity.input) ?? target;
-  // a call still "running" after its turn settled will never report back: no spinner
-  const stale = activity.status === "running" && turnSettled;
+  // a call still "running" after its turn settled will never report back: no spinner —
+  // unless a background sub-agent made it, which keeps working past the turn
+  const stale = activity.status === "running" && turnSettled && !ownerRunning;
   const live = activity.status === "running" && !stale;
   const tone = stale ? "" : (styles[activity.status] ?? "");
   const output = activity.output ?? "";

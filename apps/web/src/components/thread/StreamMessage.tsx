@@ -39,7 +39,7 @@ export const StreamMessage = memo(function StreamMessage({ messageId, provider, 
     <>
       {handoff ? <HandoffCard handoff={handoff} delivery={turn?.handoffDelivery} /> : null}
       <MessageItem message={message} turn={turn} showMeta={showMeta} wasQueued={wasQueued} citeLabel={label} />
-      {showMeta ? <TurnConclusion activities={conclusion ?? NONE} /> : null}
+      {showMeta ? <TurnConclusion activities={conclusion ?? NONE} threadId={message.threadId} turnId={message.turnId} /> : null}
     </>
   );
 });

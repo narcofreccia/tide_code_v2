@@ -1,3 +1,4 @@
+import { countBackgroundAgents } from "@tide/client";
 import type { Thread } from "@tide/contracts";
 import { useModel } from "./model.ts";
 import { useUi, type View } from "./ui.ts";
@@ -44,4 +45,9 @@ export function useShownThread(): Thread | undefined {
 /** Status of the thread's latest turn; stays `requested` until P1 drivers run. */
 export function useLatestTurnStatus(thread: Thread | undefined): string | undefined {
   return useModel((s) => (thread?.latestTurnId ? s.model.turns[thread.latestTurnId]?.status : undefined));
+}
+
+/** Sub-agents of the thread still working outside a running turn (a number: safe as a store selector). */
+export function useBackgroundAgentCount(threadId: string): number {
+  return useModel((s) => countBackgroundAgents(s.model, threadId));
 }

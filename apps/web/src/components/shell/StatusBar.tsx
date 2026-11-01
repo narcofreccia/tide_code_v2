@@ -1,14 +1,14 @@
 import { useMemo } from "react";
 import type { Thread } from "@tide/contracts";
 import { useModel } from "../../state/model.ts";
-import { useShownThread } from "../../state/hooks.ts";
+import { useBackgroundAgentCount, useShownThread } from "../../state/hooks.ts";
 import { contextTitle, formatUsd } from "../../lib/glassBox.ts";
 import { shortInstanceLabel, tightestInstance, windowsText } from "../../lib/limits.ts";
 import { useServerSettings } from "../../state/serverSettings.ts";
 import { useProvidersSnapshot } from "../../state/providers.ts";
 import { useUi } from "../../state/ui.ts";
 import { resolveServerUrl } from "../../lib/bootstrap.ts";
-import { threadStateLabel } from "../../lib/vocab.ts";
+import { backgroundAgentsText, threadStateKey, threadStateLabel } from "../../lib/vocab.ts";
 import { ConnectionDot } from "../ui/ConnectionDot.tsx";
 import { PrBadge } from "../ui/VcsBadges.tsx";
 import { useSelectedDiffStats, useVcsStatus } from "../../state/vcs.ts";
@@ -112,6 +112,13 @@ function serverHost(): string {
   }
 }
 
+/** `Idle`, `Running`, or `1 agent in background` while sub-agents outlive the turn. */
+function ThreadStateWord({ thread }: { thread: Thread }) {
+  const background = useBackgroundAgentCount(thread.id);
+  const now = Date.now();
+  return <>{threadStateKey(thread, now, background) === "background" ? backgroundAgentsText(background) : threadStateLabel(thread, now)}</>;
+}
+
 export function StatusBar() {
   const status = useModel((s) => s.status);
   const lastError = useModel((s) => s.lastError);
@@ -125,7 +132,7 @@ export function StatusBar() {
       </span>
       {thread ? (
         <span className={styles.item}>
-          thread: {threadStateLabel(thread)}
+          thread: <ThreadStateWord thread={thread} />
         </span>
       ) : null}
       {thread ? <ThreadStats thread={thread} /> : null}

@@ -100,6 +100,9 @@
   white-space: nowrap;
 }
 .state[data-state="running"] { background: var(--st-running-soft); color: var(--st-running); }
+/* sub-agents working after the turn settled: the running hue, outlined instead of filled */
+.state[data-state="background"] { background: transparent; color: var(--st-running); box-shadow: inset 0 0 0 1px var(--st-running-soft); }
+.state .liveWord { color: inherit; }
 .state[data-state="needs"] { background: var(--st-needs-soft); color: var(--st-needs); }
 .state[data-state="error"] { background: var(--st-error-soft); color: var(--st-error); }
 .state[data-state="merged"] { background: var(--st-ok-soft); color: var(--st-ok); }

@@ -112,3 +112,13 @@ export {
   type RunSummary,
   type StackService,
 } from "./runSelectors.ts";
+export { clipTarget, displayToolName, shortTarget } from "./toolTarget.ts";
+export {
+  BACKGROUND_QUIET_MS,
+  countBackgroundAgents,
+  selectBackgroundAgents,
+  selectBackgroundAgentsCore,
+  type BackgroundAgent,
+  type BackgroundAgentCore,
+  type BackgroundAgentStep,
+} from "./backgroundAgents.ts";

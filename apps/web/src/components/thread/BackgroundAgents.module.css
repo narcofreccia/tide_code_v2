@@ -1,0 +1,63 @@
+/* above the composer, on its left edge and measure (Composer.module.css) */
+.strip {
+  width: min(calc(100% - 2 * var(--sp-3)), var(--measure));
+  margin: 0 0 var(--sp-2) calc(var(--sp-3) + max(0px, (100% - 2 * var(--sp-3) - var(--measure-wide)) / 2));
+  border: 1px solid var(--border);
+  border-radius: var(--radius-lg);
+  background: var(--bg);
+  overflow: hidden;
+}
+.list { list-style: none; margin: 0; padding: 0; }
+.list > li + li,
+.summary + .list { border-top: 1px solid var(--border); }
+.row,
+.summary {
+  display: flex;
+  align-items: center;
+  gap: var(--sp-2);
+  width: 100%;
+  min-height: var(--row-h);
+  padding: 0 var(--sp-2);
+  background: transparent;
+  border: none;
+  color: inherit;
+  font: inherit;
+  font-size: var(--fs-sm);
+  text-align: left;
+  cursor: pointer;
+  transition: background var(--dur-fast) var(--ease);
+}
+.row:hover,
+.summary:hover { background: var(--surface-hover); }
+.row:focus-visible,
+.summary:focus-visible { outline: 2px solid var(--accent); outline-offset: -2px; }
+/* the live dot: the running hue, breathing like the background state glyph */
+.dot {
+  flex: none;
+  width: 6px;
+  height: 6px;
+  border-radius: 50%;
+  background: var(--st-running);
+  animation: breathe calc(var(--dur) * 16) ease-in-out infinite;
+}
+.row[data-quiet] .dot { background: var(--warn); animation: none; }
+.name { flex: none; font-weight: var(--fw-medium); }
+.summaryText { flex: none; font-weight: var(--fw-medium); }
+.description,
+.last,
+.count,
+.elapsed {
+  color: var(--muted);
+  white-space: nowrap;
+}
+.description { flex: none; max-width: 20%; overflow: hidden; text-overflow: ellipsis; }
+.last { flex: 1; min-width: 0; overflow: hidden; text-overflow: ellipsis; }
+.row[data-quiet] .last { color: var(--warn); }
+.count { flex: none; }
+.elapsed { flex: none; font-family: var(--font-mono); font-size: var(--fs-xs); font-variant-numeric: tabular-nums; }
+@keyframes breathe {
+  50% { opacity: 0.4; }
+}
+@media (prefers-reduced-motion: reduce), (forced-colors: active) {
+  .dot { animation: none; }
+}

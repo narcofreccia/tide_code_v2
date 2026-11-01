@@ -12,6 +12,6 @@ describe("StatusLegend", () => {
     for (const word of ["Idle", "Running", "Needs you", "Error", "Interrupted", "Limited", "Snoozed", "Merged"]) {
       expect(table.textContent).toContain(word);
     }
-    expect(table.querySelectorAll("tr")).toHaveLength(8);
+    expect(table.querySelectorAll("tr")).toHaveLength(9);
   });
 });

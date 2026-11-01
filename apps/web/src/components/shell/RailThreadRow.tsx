@@ -5,7 +5,8 @@ import { canMergeBack, mergeBackThread, settleThread, unsettleThread, updateThre
 import { isThreadMerged } from "@tide/client";
 import type { SearchHit } from "@tide/contracts";
 import { relativeTime, relativeUntil } from "../../lib/relativeTime.ts";
-import { PROVIDER_MONOGRAMS, threadStateKey } from "../../lib/vocab.ts";
+import { PROVIDER_MONOGRAMS, backgroundAgentsTip, threadStateKey } from "../../lib/vocab.ts";
+import { useBackgroundAgentCount } from "../../state/hooks.ts";
 import { useThreadHarnessLabel } from "../../state/providers.ts";
 import { useServerSettings } from "../../state/serverSettings.ts";
 import { useModel } from "../../state/model.ts";
@@ -134,7 +135,8 @@ export const RailThreadRow = memo(function RailThreadRowView({ thread, childNode
   const fromSiblings = useMemo(() => (childNodes !== undefined || siblings === undefined ? NO_NODES : childNodesIn(siblings, thread.id)), [childNodes, siblings, thread.id]);
   const children = childNodes ?? fromSiblings;
   const archived = thread.archivedAt !== undefined;
-  const state = threadStateKey(thread);
+  const background = useBackgroundAgentCount(thread.id);
+  const state = threadStateKey(thread, Date.now(), background);
   const recede = recedes({ state, unread, active, picked, live });
   const merged = thread.merge !== undefined || isThreadMerged(thread);
   const mergeable = !archived && canMergeBack(thread);
@@ -243,7 +245,7 @@ export const RailThreadRow = memo(function RailThreadRowView({ thread, childNode
               </span>
             </span>
             {live !== undefined && hit === undefined ? (
-              <RailLiveLine live={live} />
+              <RailLiveLine live={live} title={live.kind === "background" ? backgroundAgentsTip(background) : undefined} />
             ) : hasTags ? (
               <span className={styles.tags}>
                 {hit !== undefined ? (

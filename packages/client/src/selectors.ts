@@ -15,6 +15,7 @@ import type {
   Thread,
   Turn,
 } from "@tide/contracts";
+import { countBackgroundAgents } from "./backgroundAgents.ts";
 
 /** Non-archived projects, alphabetical by title (stable via id tiebreak). */
 export function selectProjects(model: ReadModel): Project[] {
@@ -154,7 +155,7 @@ export interface RailGroups {
 }
 
 export interface RailGroupOptions {
-  /** `settings.inbox.workingSection`: running, unpinned threads leave the inbox for "Working" */
+  /** `settings.inbox.workingSection`: running (or background-working), unpinned threads leave the inbox for "Working" */
   workingSection?: boolean;
 }
 
@@ -193,7 +194,7 @@ export function selectRailGroups(
     else if (isSnoozed(thread, now)) groups.snoozed.push(thread);
     else if (isSettled(thread)) groups.settled.push(thread);
     else if (thread.pinned === true) groups.pinned.push(thread);
-    else if (opts.workingSection === true && thread.status === "running" && thread.attention === undefined) groups.working.push(thread);
+    else if (opts.workingSection === true && (thread.status === "running" || countBackgroundAgents(model, thread.id) > 0) && thread.attention === undefined) groups.working.push(thread);
     else groups.threads.push(thread);
   }
   groups.pinned.sort(compareByAttention);
