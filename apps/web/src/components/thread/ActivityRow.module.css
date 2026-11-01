@@ -29,6 +29,8 @@
 }
 .glyph { width: 12px; flex: none; display: inline-flex; justify-content: center; color: var(--muted); }
 .name { color: var(--text); font-weight: var(--fw-medium); flex: none; }
+/* a sub-agent's name is a sentence, not a tool name: it may shrink and ellipsize */
+.nameLong { flex: 0 1 auto; min-width: 0; overflow: hidden; text-overflow: ellipsis; white-space: nowrap; }
 .target {
   flex: 1;
   min-width: 0;

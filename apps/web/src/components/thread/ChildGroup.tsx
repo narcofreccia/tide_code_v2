@@ -82,9 +82,9 @@ export function ChildGroup({ child, activities }: { child: ActivityOf<"child">; 
         >
           <span className={`${styles.glyph} ${tone}`}>◇</span>
           {state === "running" ? (
-            <LiveLabel className={styles.liveName} text={`subagent: ${child.name}`} />
+            <LiveLabel className={`${styles.liveName} ${styles.nameLong}`} text={`subagent: ${child.name}`} />
           ) : (
-            <span className={styles.name}>subagent: {child.name}</span>
+            <span className={`${styles.name} ${styles.nameLong}`}>subagent: {child.name}</span>
           )}
           {child.description ? (
             <Pill size="sm" className={own.type}>
