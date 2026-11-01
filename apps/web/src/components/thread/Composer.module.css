@@ -12,6 +12,8 @@
   border-radius: var(--radius-lg);
 }
 .composer:focus-within { border-color: var(--accent); }
+/* a file held over the island: dashed accent ring, so the drop target is unmistakable */
+.composer[data-dropping] { border-style: dashed; border-color: var(--accent); background: var(--accent-soft); }
 .input {
   display: block;
   width: 100%;

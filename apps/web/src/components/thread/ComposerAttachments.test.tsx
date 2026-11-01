@@ -85,6 +85,18 @@ describe("Composer file attachments", () => {
     expect(screen.getByLabelText("Attached files").textContent).toContain("notes.txt");
   });
 
+  it("highlights the island while a file is held over it and clears on drop", () => {
+    setProvidersForTest(PROVIDER_FIXTURE);
+    attachFakeStore(modelWith({}));
+    const { container } = render(<Composer thread={makeThread("t1")} />);
+    const root = container.firstElementChild as HTMLElement;
+    const transfer = { files: [pdf("notes.txt")], items: [], types: ["Files"], getData: () => "" };
+    fireEvent(root, createEvent.dragOver(root, { dataTransfer: transfer }));
+    expect(root.hasAttribute("data-dropping")).toBe(true);
+    fireEvent(root, createEvent.drop(root, { dataTransfer: transfer }));
+    expect(root.hasAttribute("data-dropping")).toBe(false);
+  });
+
   it("sends files without text with a default prompt", async () => {
     setProvidersForTest(PROVIDER_FIXTURE);
     mockRpc({ "attachments.upload": () => ({ attachments: [REF] }) });

@@ -83,6 +83,7 @@ export function Composer({ thread }: { thread: Thread }) {
   const { text, setText } = draft;
   const stash = useDrafts((s) => s.stash);
   const [stashOpen, setStashOpen] = useState(false);
+  const [dropping, setDropping] = useState(false);
   const providers = useProviders();
   const status = threadProviderStatus(providers, thread);
   const acceptsImages = status === undefined || status.caps.images;
@@ -237,11 +238,20 @@ export function Composer({ thread }: { thread: Thread }) {
     <div
       className={styles.composer}
       ref={root}
+      {...(dropping ? { "data-dropping": "" } : {})}
       onDragOver={(e) => {
         const types = e.dataTransfer?.types ?? [];
-        if (types.includes(THREAD_DRAG_TYPE) || transferHasFiles(e.dataTransfer)) e.preventDefault();
+        if (types.includes(THREAD_DRAG_TYPE) || transferHasFiles(e.dataTransfer)) {
+          e.preventDefault();
+          if (!dropping && transferHasFiles(e.dataTransfer)) setDropping(true);
+        }
+      }}
+      onDragLeave={(e) => {
+        // leaving the island itself, not moving between its children
+        if (!e.currentTarget.contains(e.relatedTarget as Node | null)) setDropping(false);
       }}
       onDrop={(e) => {
+        setDropping(false);
         // a rail thread becomes an @thread mention
         const threadId = e.dataTransfer?.getData(THREAD_DRAG_TYPE) ?? "";
         if (threadId !== "") {
