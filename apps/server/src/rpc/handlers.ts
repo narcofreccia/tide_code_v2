@@ -12,6 +12,7 @@ import { SettingsError, type SettingsStore } from "../settings.ts";
 import { JudgeLedger } from "../decisions/ledger.ts";
 import { RpcException, type RpcRouter } from "./router.ts";
 import { regenerateTitle } from "./titles.ts";
+import { createDeltaCoalescer, type CoalesceTimer } from "./coalesce.ts";
 
 export interface HandlerDeps {
   engine: Engine;
@@ -28,6 +29,8 @@ export interface HandlerDeps {
   remote?: (options: { includePairing: boolean }) => RemoteInfo;
   /** W1: resolves + validates a linked-repo path; injectable so tests need no real directories */
   resolveDir?: (path: string) => Promise<string>;
+  /** R15: timer behind the live-delta coalescer of `model.subscribe`; injectable for tests */
+  coalesceTimer?: CoalesceTimer;
   settings?: SettingsStore;
   /** R6: judge spend ledger; built over `store` when absent */
   judgeLedger?: JudgeLedger;
@@ -207,15 +210,24 @@ export function registerHandlers(router: RpcRouter, deps: HandlerDeps): void {
     let live = false;
     let lastSeq = input.fromSeq !== undefined && input.fromSeq >= 0 ? input.fromSeq : -1;
     const buffered: EventRecord[] = [];
+    const send = (record: EventRecord): void => emit({ kind: "event", record });
+    // R15: live text deltas are merged per message before they hit the socket;
+    // catch-up frames read from the store go out raw.
+    const coalescer = createDeltaCoalescer(send, deps.coalesceTimer ? { timer: deps.coalesceTimer } : {});
     const push = (record: EventRecord): void => {
       if (record.seq <= lastSeq) return;
       lastSeq = record.seq;
-      emit({ kind: "event", record });
+      if (live) coalescer.push(record);
+      else send(record);
     };
-    const unsubscribe = deps.engine.subscribe((record) => {
+    const unsubscribeEngine = deps.engine.subscribe((record) => {
       if (live) push(record);
       else buffered.push(record);
     });
+    const unsubscribe = (): void => {
+      unsubscribeEngine();
+      coalescer.close();
+    };
 
     if (input.fromSeq !== undefined && input.fromSeq >= 0) {
       for (const record of deps.store.readFrom(input.fromSeq + 1)) push(record);
