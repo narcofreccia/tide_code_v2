@@ -16,6 +16,13 @@ import { useTurnSettled } from "./activities/turnSettled.ts";
 import styles from "./ActivityRow.module.css";
 import own from "./ChildGroup.module.css";
 
+
+/** A sub-agent named after a long command: the shimmer label cannot ellipsize (its sweep copy must match the drawn text), so cap it. */
+const LABEL_MAX = 72;
+function capLabel(name: string): string {
+  return name.length > LABEL_MAX ? `${name.slice(0, LABEL_MAX - 1)}…` : name;
+}
+
 const MARKDOWN_COMPONENTS = { pre: MarkdownPre };
 /** past this a report opens clipped to 320px with a "Show all" */
 const LONG_REPORT = 1200;
@@ -82,7 +89,7 @@ export function ChildGroup({ child, activities }: { child: ActivityOf<"child">; 
         >
           <span className={`${styles.glyph} ${tone}`}>◇</span>
           {state === "running" ? (
-            <LiveLabel className={`${styles.liveName} ${styles.nameLong}`} text={`subagent: ${child.name}`} />
+            <LiveLabel className={styles.liveName} text={`subagent: ${capLabel(child.name)}`} />
           ) : (
             <span className={`${styles.name} ${styles.nameLong}`}>subagent: {child.name}</span>
           )}

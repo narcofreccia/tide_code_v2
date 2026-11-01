@@ -14,6 +14,8 @@ export function recedes(opts: { state: ThreadStateKey; unread: boolean; active: 
   return opts.state === "running" || opts.state === "idle" || opts.state === "merged" || opts.state === "snoozed";
 }
 
+const RAIL_LABEL_MAX = 44;
+
 /** The row's second line while something is happening: what the agent is doing, or what it waits on. */
 export function RailLiveLine({ live }: { live: LiveLabelInfo }) {
   const kind = live.kind ?? "writing";
@@ -26,7 +28,8 @@ export function RailLiveLine({ live }: { live: LiveLabelInfo }) {
       </>
     );
   } else if (kind === "tool" || kind === "thinking" || kind === "writing") {
-    body = <LiveLabel text={live.text} className={styles.liveText} />;
+    // the shimmer cannot ellipsize (its sweep copy must match the drawn text): cap it for the narrow rail
+    body = <LiveLabel text={live.text.length > RAIL_LABEL_MAX ? `${live.text.slice(0, RAIL_LABEL_MAX - 1)}…` : live.text} className={styles.liveText} />;
   } else {
     body = <span className={styles.liveText}>{live.text}</span>;
   }

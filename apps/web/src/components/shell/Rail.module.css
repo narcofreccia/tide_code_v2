@@ -9,7 +9,7 @@
   background: var(--surface);
   border-right: 1px solid var(--border);
 }
-.scroll { flex: 1; min-height: 0; overflow-y: auto; }
+.scroll { flex: 1; min-height: 0; overflow-y: auto; overflow-x: hidden; }
 .resize {
   position: absolute;
   top: 0;
