@@ -1,4 +1,4 @@
-import { useState } from "react";
+import { memo, useState } from "react";
 import ReactMarkdown from "react-markdown";
 import remarkGfm from "remark-gfm";
 import type { ProposedPlan, ProviderKind } from "@tide/contracts";
@@ -14,11 +14,13 @@ import markdown from "./MessageItem.module.css";
 import styles from "./Card.module.css";
 import own from "./PlanCard.module.css";
 
+const REMARK_PLUGINS = [remarkGfm];
+
 /**
  * A plan-mode result. "Implement" runs it in this thread (same worktree, planning
  * context kept); the chevron seeds a new thread instead. Never runs on its own.
  */
-export function PlanCard({ plan, provider }: { plan: ProposedPlan; provider: ProviderKind }) {
+export const PlanCard = memo(function PlanCard({ plan, provider }: { plan: ProposedPlan; provider: ProviderKind }) {
   const [draft, patch] = useThreadDraft(provider);
   const [choosing, setChoosing] = useState(false);
   const selectThread = useUi((s) => s.selectThread);
@@ -39,7 +41,7 @@ export function PlanCard({ plan, provider }: { plan: ProposedPlan; provider: Pro
           )}
         </div>
         <div className={markdown.markdown}>
-          <ReactMarkdown remarkPlugins={[remarkGfm]}>{plan.markdown}</ReactMarkdown>
+          <ReactMarkdown remarkPlugins={REMARK_PLUGINS}>{plan.markdown}</ReactMarkdown>
         </div>
         {plan.status === "proposed" ? (
           <>
@@ -106,4 +108,4 @@ export function PlanCard({ plan, provider }: { plan: ProposedPlan; provider: Pro
       </section>
     </li>
   );
-}
+});

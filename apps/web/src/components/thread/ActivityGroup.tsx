@@ -1,4 +1,4 @@
-import { useState } from "react";
+import { memo, useState } from "react";
 import type { ActivityOf } from "@tide/contracts";
 import { formatDuration, summarizeGroup } from "../../lib/activity.ts";
 import { ActivityRow } from "./ActivityRow.tsx";
@@ -29,7 +29,7 @@ function groupDuration(activities: ActivityOf<"tool">[]): number | undefined {
 }
 
 /** Consecutive settled tool calls collapsed to one quiet line ("5 tool calls  Bash, Read, Edit…"). */
-export function ActivityGroup({ activities }: { activities: ActivityOf<"tool">[] }) {
+export const ActivityGroup = memo(function ActivityGroup({ activities }: { activities: ActivityOf<"tool">[] }) {
   const [open, setOpen] = useState(false);
   const names = groupToolNames(activities);
   const duration = groupDuration(activities);
@@ -57,4 +57,4 @@ export function ActivityGroup({ activities }: { activities: ActivityOf<"tool">[]
       ) : null}
     </li>
   );
-}
+});

@@ -1,4 +1,4 @@
-import { isValidElement, useEffect, useRef, useState } from "react";
+import { createContext, isValidElement, useContext, useEffect, useRef, useState } from "react";
 import {
   HTML_PREVIEW_HEIGHT,
   HTML_SANDBOX,
@@ -97,8 +97,23 @@ function codeOf(children: React.ReactNode): { lang?: string; text: string } | un
   return lang === undefined ? { text } : { lang, text };
 }
 
+/**
+ * Set by a streaming markdown block whose last fence is still open: the length of that
+ * block's text. An unclosed fence runs to the end of the text, so the `pre` ending there
+ * is the one still being written.
+ */
+export const OpenFence = createContext<number | undefined>(undefined);
+
+interface PositionedNode {
+  position?: { end?: { offset?: number } };
+}
+
 /** react-markdown `pre` override: html and mermaid fences become visuals, the rest stays code. */
-export function MarkdownPre({ children, node: _node, ...rest }: React.ComponentProps<"pre"> & { node?: unknown }) {
+export function MarkdownPre({ children, node, ...rest }: React.ComponentProps<"pre"> & { node?: unknown }) {
+  const openEnd = useContext(OpenFence);
+  const end = (node as PositionedNode | undefined)?.position?.end?.offset;
+  // a visual is drawn once its fence closes: a half-written diagram or page stays code
+  if (openEnd !== undefined && end !== undefined && end >= openEnd) return <pre {...rest}>{children}</pre>;
   const code = codeOf(children);
   if (code?.lang === "html") return <HtmlPreview code={code.text.replace(/\n$/, "")} />;
   if (code?.lang === "mermaid") return <MermaidBlock code={code.text.replace(/\n$/, "")} />;

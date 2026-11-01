@@ -1,6 +1,4 @@
-import { useState } from "react";
-import ReactMarkdown from "react-markdown";
-import remarkGfm from "remark-gfm";
+import { memo, useMemo, useState } from "react";
 import { groupActivities } from "@tide/client";
 import type { Activity, ActivityOf } from "@tide/contracts";
 import { useUi } from "../../state/ui.ts";
@@ -8,7 +6,7 @@ import { ActivityGroup } from "./ActivityGroup.tsx";
 import { ActivityRow } from "./ActivityRow.tsx";
 import { Chevron } from "./Chevron.tsx";
 import { LiveLabel } from "./LiveLabel.tsx";
-import { MarkdownPre } from "./VisualBlocks.tsx";
+import { Markdown } from "./Markdown.tsx";
 import { Button } from "../ui/Button.tsx";
 import { Icon } from "../ui/Icon.tsx";
 import { Pill } from "../ui/Pill.tsx";
@@ -23,7 +21,6 @@ function capLabel(name: string): string {
   return name.length > LABEL_MAX ? `${name.slice(0, LABEL_MAX - 1)}…` : name;
 }
 
-const MARKDOWN_COMPONENTS = { pre: MarkdownPre };
 /** past this a report opens clipped to 320px with a "Show all" */
 const LONG_REPORT = 1200;
 
@@ -54,9 +51,7 @@ function ChildReport({ report }: { report: string }) {
   return (
     <div className={own.reportWrap}>
       <div className={`${own.report} ${long && !all ? own.clipped : ""}`} data-testid="child-report">
-        <ReactMarkdown remarkPlugins={[remarkGfm]} components={MARKDOWN_COMPONENTS}>
-          {report}
-        </ReactMarkdown>
+        <Markdown text={report} />
       </div>
       {long ? (
         <Button variant="link" className={own.showAll} onClick={() => setAll((v) => !v)}>
@@ -68,11 +63,11 @@ function ChildReport({ report }: { report: string }) {
 }
 
 /** A harness sub-agent: name, type, state and one-line summary; opens to its report and its own rows. */
-export function ChildGroup({ child, activities }: { child: ActivityOf<"child">; activities: Activity[] }) {
+export const ChildGroup = memo(function ChildGroup({ child, activities }: { child: ActivityOf<"child">; activities: Activity[] }) {
   const state = childState(child.status, useTurnSettled(child.turnId));
   const [open, setOpen] = useState(state === "running");
   const selectThread = useUi((s) => s.selectThread);
-  const nodes = groupActivities(activities.map((activity) => ({ kind: "activity" as const, activity })));
+  const nodes = useMemo(() => groupActivities(activities.map((activity) => ({ kind: "activity" as const, activity }))), [activities]);
   const tone = state === "error" ? styles.error : state === "running" ? styles.running : state === "done" ? styles.ok : "";
   const report = child.report?.trim() ? child.report : undefined;
   const summary = child.summary ?? (state === "open" ? OPEN_NOTE : undefined);
@@ -138,4 +133,4 @@ export function ChildGroup({ child, activities }: { child: ActivityOf<"child">; 
       ) : null}
     </li>
   );
-}
+});

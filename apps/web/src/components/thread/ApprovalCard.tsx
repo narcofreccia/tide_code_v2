@@ -1,4 +1,4 @@
-import { useEffect } from "react";
+import { memo, useEffect } from "react";
 import type { ActivityOf, ApprovalDecision } from "@tide/contracts";
 import { toolTarget } from "../../lib/activity.ts";
 import { diffStats, parseUnifiedDiff } from "../../lib/diff.ts";
@@ -47,7 +47,7 @@ function DiffPreview({ diff }: { diff: string }) {
  * A harness permission prompt, mapped 1:1. `y` / `n` answer the card that is
  * currently the thread's live prompt.
  */
-export function ApprovalCard({ activity, active }: { activity: ActivityOf<"approval">; active: boolean }) {
+export const ApprovalCard = memo(function ApprovalCard({ activity, active }: { activity: ActivityOf<"approval">; active: boolean }) {
   const pending = activity.status === "pending";
   const low = useServerSettings((s) => s.settings.decisions.grayZone.low);
   const judged = activity.judge?.label !== undefined && activity.judge.confidence >= low ? activity.judge : undefined;
@@ -114,4 +114,4 @@ export function ApprovalCard({ activity, active }: { activity: ActivityOf<"appro
       </section>
     </li>
   );
-}
+});

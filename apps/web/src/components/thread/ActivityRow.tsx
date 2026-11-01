@@ -1,4 +1,4 @@
-import { useState } from "react";
+import { memo, useState } from "react";
 import type { Activity } from "@tide/contracts";
 import { formatDuration, formatPayload, shortenPath, toolFilePath, toolGlyph, toolTarget } from "../../lib/activity.ts";
 import { resolveLoginCommand, runOrCopy } from "../../lib/providerLogin.ts";
@@ -126,7 +126,7 @@ function fullToolTarget(input: unknown): string | undefined {
 }
 
 /** One 24px stream line: `▸ Read src/foo.ts` / `❯ Bash pnpm test ✓ 2.1s`. */
-export function ActivityRow({ activity }: { activity: Activity }) {
+export const ActivityRow = memo(function ActivityRow({ activity }: { activity: Activity }) {
   const [open, setOpen] = useState(false);
   const cwd = useModel((s) => s.model.threads[activity.threadId]?.worktreePath);
   const turnSettled = useTurnSettled(activity.turnId);
@@ -206,4 +206,4 @@ export function ActivityRow({ activity }: { activity: Activity }) {
       ) : null}
     </li>
   );
-}
+});

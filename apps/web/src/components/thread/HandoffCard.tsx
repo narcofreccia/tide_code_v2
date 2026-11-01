@@ -1,4 +1,4 @@
-import { useState } from "react";
+import { memo, useState } from "react";
 import type { Handoff, Turn } from "@tide/contracts";
 import { Icon } from "../ui/Icon.tsx";
 import { Pill } from "../ui/Pill.tsx";
@@ -16,7 +16,7 @@ export function handoffCoverage(handoff: Handoff): string {
 }
 
 /** The verbatim history a harness was given when the thread changed harness or forked. Collapsed by default. */
-export function HandoffCard({ handoff, delivery }: { handoff: Handoff; delivery: Turn["handoffDelivery"] }) {
+export const HandoffCard = memo(function HandoffCard({ handoff, delivery }: { handoff: Handoff; delivery: Turn["handoffDelivery"] }) {
   const [open, setOpen] = useState(false);
   return (
     <li className={styles.card}>
@@ -37,4 +37,4 @@ export function HandoffCard({ handoff, delivery }: { handoff: Handoff; delivery:
       {open ? <pre className={styles.text}>{handoff.text}</pre> : null}
     </li>
   );
-}
+});

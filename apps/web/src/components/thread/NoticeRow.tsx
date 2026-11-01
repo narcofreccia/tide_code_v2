@@ -1,3 +1,4 @@
+import { memo } from "react";
 import type { Message, ProviderKind } from "@tide/contracts";
 import { Icon, type IconName } from "../ui/Icon.tsx";
 import styles from "./NoticeRow.module.css";
@@ -18,7 +19,7 @@ const ICON: Record<Source, IconName> = {
 const ACTOR: Partial<Record<ProviderKind, string>> = { claude: "Claude", codex: "Codex", opencode: "OpenCode", pi: "Pi" };
 
 /** A server-authored wake-up (delegate done, child asked, PR changed, restart) — not something the user typed. */
-export function NoticeRow({ message, provider }: { message: Message; provider?: ProviderKind }) {
+export const NoticeRow = memo(function NoticeRow({ message, provider }: { message: Message; provider?: ProviderKind }) {
   const notification = message.notification;
   if (!notification) return null;
   return (
@@ -30,4 +31,4 @@ export function NoticeRow({ message, provider }: { message: Message; provider?: 
       <span className={styles.summary}>{notification.summary}</span>
     </li>
   );
-}
+});

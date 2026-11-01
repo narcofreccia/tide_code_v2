@@ -1,6 +1,4 @@
-import { useEffect, useRef, useState } from "react";
-import ReactMarkdown from "react-markdown";
-import remarkGfm from "remark-gfm";
+import { memo, useEffect, useRef, useState } from "react";
 import type { Message, Turn } from "@tide/contracts";
 import { formatDuration } from "../../lib/activity.ts";
 import { formatBytes } from "../../lib/images.ts";
@@ -8,7 +6,8 @@ import { formatTokens } from "../../lib/glassBox.ts";
 import { useUi } from "../../state/ui.ts";
 import { openFileTab } from "../../state/workbench.ts";
 import { cite } from "../../lib/cite.ts";
-import { MarkdownPre } from "./VisualBlocks.tsx";
+import { Markdown } from "./Markdown.tsx";
+import { TAIL_WORDS, advanceScan, emptyScan, endsInOpenFence, splitStreamingTail, type StreamScan } from "./streamBlocks.ts";
 import { Button } from "../ui/Button.tsx";
 import { Popover } from "../ui/Popover.tsx";
 import { Pill } from "../ui/Pill.tsx";
@@ -95,43 +94,7 @@ function TurnMenu({ turn }: { turn: Turn }) {
   );
 }
 
-const MARKDOWN_COMPONENTS = { pre: MarkdownPre };
-
-/** how many trailing words of a streaming reply fade in one by one */
-const TAIL_WORDS = 12;
-/** a line this short rides its paragraph's block fade instead */
-const MIN_LINE_WORDS = 4;
-/** in the tail, anything markdown could read as syntax: the split is skipped */
-const INLINE_SYNTAX = /[`*_~[\]<>&\\|@]|:\/\/|www\./;
-/** a line that opens, continues or underlines something other than a plain paragraph */
-const BLOCK_LINE = /^(?:[ \t]|[#>*+=<:|-]|\d+[.)]|```|~~~)/;
-const FENCE = /^ {0,3}(?:```|~~~)/gm;
-
-/**
- * While a reply streams, its last few words are held out of the markdown and
- * rendered as plain spans so each new word can fade in. Only when that cannot
- * change the result: the reply ends in a plain paragraph line (no open fence,
- * list, quote, heading or table in the last block) and the tail holds no
- * markdown syntax. Otherwise `undefined`, and the whole text goes to markdown.
- */
-export function splitStreamingTail(text: string, words = TAIL_WORDS): { prefix: string; tail: string } | undefined {
-  if ((text.match(FENCE)?.length ?? 0) % 2 === 1) return undefined;
-  const lines = text.split("\n");
-  for (let i = lines.length - 1; i >= 0 && lines[i]!.trim() !== ""; i--) {
-    // the reply's last block must be one plain paragraph (a `|` anywhere may make it a table)
-    if (BLOCK_LINE.test(lines[i]!) || lines[i]!.includes("|")) return undefined;
-  }
-  const lineStart = text.lastIndexOf("\n") + 1;
-  const gaps = [...text.slice(lineStart).matchAll(/[ \t]+/g)].map((m) => lineStart + (m.index ?? 0));
-  // a gap at the very start of the line is indentation, not a word boundary
-  const inner = gaps.filter((at) => at > lineStart);
-  if (inner.length < MIN_LINE_WORDS - 1) return undefined;
-  const at = inner[Math.max(0, inner.length - words)]!;
-  const prefix = text.slice(0, at);
-  const tail = text.slice(at);
-  if (prefix.trim() === "" || INLINE_SYNTAX.test(tail)) return undefined;
-  return { prefix, tail };
-}
+export { splitStreamingTail } from "./streamBlocks.ts";
 
 /** One tail word. Whether it fades is fixed at mount: a word already on screen never blinks. */
 function TailWord({ text, seen }: { text: string; seen: boolean }) {
@@ -196,22 +159,28 @@ function Attachments({ message }: { message: Message }) {
 export interface MessageItemProps {
   message: Message;
   /** the turn this message belongs to, when the model knows it */
-  turn?: Turn;
+  turn?: Turn | undefined;
   /** last assistant message of a settled turn — the one that carries the footer */
-  showMeta?: boolean;
+  showMeta?: boolean | undefined;
   /** the turn waited behind an earlier one; its prompt keeps the tag after it ran */
-  wasQueued?: boolean;
+  wasQueued?: boolean | undefined;
   /** R11: where a citation of this message says it came from, e.g. `turn 3 of "Fix auth"` */
-  citeLabel?: string;
+  citeLabel?: string | undefined;
 }
 
 /** User turns stay plain text; assistant prose renders as markdown. */
-export function MessageItem({ message, turn, showMeta, wasQueued, citeLabel }: MessageItemProps) {
+export const MessageItem = memo(function MessageItem({ message, turn, showMeta, wasQueued, citeLabel }: MessageItemProps) {
   const isUser = message.role === "user";
   const queued = isUser && message.steer !== true && (turn?.status === "queued" || wasQueued === true);
   const streaming = message.streaming === true;
   const rolledBack = turn?.rolledBack === true;
-  const split = streaming && !isUser ? splitStreamingTail(message.text) : undefined;
+  // fence parity, kept across deltas so a token does not recount the whole reply
+  const scan = useRef<StreamScan | undefined>(undefined);
+  let split: { prefix: string; tail: string } | undefined;
+  if (streaming && !isUser) {
+    scan.current = advanceScan(scan.current ?? emptyScan(), message.text);
+    split = splitStreamingTail(message.text, TAIL_WORDS, endsInOpenFence(scan.current, message.text));
+  } else scan.current = undefined;
   // how much of the reply the last render put on screen (for StreamTail)
   const shown = useRef(0);
   useEffect(() => {
@@ -260,9 +229,7 @@ export function MessageItem({ message, turn, showMeta, wasQueued, citeLabel }: M
               data-streaming={streaming ? "" : undefined}
               data-tail={split === undefined ? undefined : ""}
             >
-              <ReactMarkdown remarkPlugins={[remarkGfm]} components={MARKDOWN_COMPONENTS}>
-                {split?.prefix ?? message.text}
-              </ReactMarkdown>
+              <Markdown text={split?.prefix ?? message.text} streaming={streaming} />
             </div>
             {split === undefined ? null : <StreamTail tail={split.tail} offset={split.prefix.length} shown={shown.current} />}
           </>
@@ -280,4 +247,4 @@ export function MessageItem({ message, turn, showMeta, wasQueued, citeLabel }: M
       {showMeta === true && turn ? <TurnMeta turn={turn} /> : null}
     </li>
   );
-}
+});
