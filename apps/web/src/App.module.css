@@ -1,6 +1,6 @@
 .app {
   display: grid;
-  grid-template-rows: 36px minmax(0, 1fr) 24px;
+  grid-template-rows: 28px minmax(0, 1fr) 24px;
   height: 100%;
 }
 .topRow {

@@ -52,6 +52,9 @@ def version_tuple(v: str) -> tuple[int, ...]:
 
 
 def main() -> int:
+    # `--compare LIVE NEW`: exit 0 when NEW >= LIVE (release preflight), 1 otherwise.
+    if len(sys.argv) == 4 and sys.argv[1] == "--compare":
+        return 0 if version_tuple(sys.argv[3]) >= version_tuple(sys.argv[2]) else 1
     ap = argparse.ArgumentParser()
     ap.add_argument("--manifest", required=True, help="existing latest.json (may be empty/missing)")
     ap.add_argument("--platform", required=True, choices=sorted(VALID_PLATFORMS))

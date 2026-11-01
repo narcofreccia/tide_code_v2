@@ -180,6 +180,23 @@ fi
 APP_BUNDLE=""
 APP_TAR_GZ=""
 
+# Preflight: refuse a version that would LOWER the live manifest BEFORE building or
+# uploading anything. merge_manifest.py refuses too, but only after step 7 has already
+# replaced mac/tide.app.tar.gz, leaving a live signature that no longer matches it.
+# ALLOW_DOWNGRADE=1 is for a deliberate reset (installed newer builds will not auto-update).
+if [[ -n "$PUBLIC_BASE" ]]; then
+  LIVE_VERSION="$(curl -fsS --max-time 15 "${PUBLIC_BASE%/}/latest.json" 2>/dev/null | python3 -c 'import json,sys
+try: print(json.load(sys.stdin).get("version",""))
+except Exception: print("")' || true)"
+  if [[ -n "$LIVE_VERSION" ]] && python3 "$SCRIPT_DIR/merge_manifest.py" --compare "$LIVE_VERSION" "$VERSION"; then
+    :
+  elif [[ -n "$LIVE_VERSION" && "${ALLOW_DOWNGRADE:-0}" != "1" ]]; then
+    die "live manifest is $LIVE_VERSION and this build is $VERSION (a downgrade). Bump higher, or rerun with ALLOW_DOWNGRADE=1 for a deliberate reset."
+  fi
+fi
+DOWNGRADE_FLAG=()
+[[ "${ALLOW_DOWNGRADE:-0}" == "1" ]] && DOWNGRADE_FLAG=(--allow-downgrade)
+
 if [[ "$MANIFEST_ONLY" -eq 0 ]]; then
   need_cmd pnpm
 
@@ -322,7 +339,8 @@ python3 "$SCRIPT_DIR/merge_manifest.py" \
   --platform "$PLATFORM" \
   --version "$VERSION" \
   --signature "$SIGNATURE" \
-  --url "$URL"
+  --url "$URL" \
+  ${DOWNGRADE_FLAG[@]+"${DOWNGRADE_FLAG[@]}"}
 
 # The repo copy is the reviewable record of what is live.
 cp "$MANIFEST_STAGE" "$LATEST_JSON"

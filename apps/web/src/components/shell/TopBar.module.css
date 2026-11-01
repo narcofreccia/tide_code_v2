@@ -2,13 +2,13 @@
   display: flex;
   align-items: center;
   gap: var(--sp-2);
-  height: 36px;
+  height: 28px;
   min-width: 0;
   padding: 0 var(--sp-2);
   user-select: none;
 }
 /*
- * macOS traffic lights sit at x≈12 with 20px spacing, so the third light ends
+ * macOS traffic lights sit at x≈12 with 20px spacing; the bar is the native 28px and trafficLightPosition.y=7 centres the 14px buttons in it, so the third light ends
  * around x=72; 78px keeps a hairline of breathing room at the default
  * `trafficLightPosition`. Windows/Linux keep their native decorations.
  */
@@ -32,6 +32,7 @@
 .logo {
   display: flex;
   align-items: center;
+  height: 22px;
   padding: 0 var(--sp-1);
   color: var(--muted);
 }
@@ -43,8 +44,8 @@
   display: inline-flex;
   align-items: center;
   justify-content: center;
-  width: 28px;
-  height: 28px;
+  width: 22px;
+  height: 22px;
   padding: 0;
   border: 0;
   border-radius: var(--radius);
@@ -64,3 +65,6 @@
 }
 .crumbProject { flex: none; max-width: 200px; overflow: hidden; text-overflow: ellipsis; white-space: nowrap; }
 .crumbThread { min-width: 0; overflow: hidden; text-overflow: ellipsis; white-space: nowrap; color: var(--text); font-weight: var(--fw-medium); }
+
+.bar > *, .end > * { align-self: center; }
+.heading, .crumb { line-height: 28px; }
