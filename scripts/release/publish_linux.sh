@@ -35,8 +35,12 @@ upload() { "${AWS[@]}" s3 cp "$1" "s3://$R2_BUCKET/linux/$2" --cache-control no-
 [[ -n "$DEB_SRC" ]] && upload "$DEB_SRC" "tide.deb"
 [[ -n "$RPM_SRC" ]] && upload "$RPM_SRC" "tide.rpm"
 # prune anything else in linux/ so only the newest build is hosted
-"${AWS[@]}" s3 ls "s3://$R2_BUCKET/linux/" | awk '{print $4}' | grep -vE '^(tide\.deb|tide\.rpm)$' | while read -r key; do
-  [[ -n "$key" ]] && "${AWS[@]}" s3 rm "s3://$R2_BUCKET/linux/$key" --only-show-errors && echo "pruned linux/$key"
+# (same loop as publish_windows.sh: a filtering `grep -v` that matches nothing exits 1 and,
+# under pipefail, failed the step after both uploads had succeeded)
+("${AWS[@]}" s3 ls "s3://$R2_BUCKET/linux/" || true) | awk '{print $NF}' | while read -r key; do
+  [[ -z "$key" || "$key" == "tide.deb" || "$key" == "tide.rpm" ]] && continue
+  "${AWS[@]}" s3 rm "s3://$R2_BUCKET/linux/$key" --only-show-errors
+  echo "pruned linux/$key"
 done
 for name in tide.deb tide.rpm; do
   curl -fsIL --max-time 30 "${TIDE_PUBLIC_BUCKET%/}/linux/$name" >/dev/null && echo "verified ${TIDE_PUBLIC_BUCKET%/}/linux/$name" || true
