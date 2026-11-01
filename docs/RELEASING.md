@@ -7,6 +7,9 @@ Actions, because Tauri cannot cross-compile.
 
 **Releases are user-triggered only** — no agent, hook, or CI job publishes on its own.
 
+The step-by-step runbook to follow is [`RELEASING.md`](../RELEASING.md) at the repo root.
+This page explains the design behind it.
+
 ## Bucket layout — only the latest release, fixed links
 
 ```
@@ -14,8 +17,8 @@ s3://storage/tidecode/latest.json              ONE updater manifest, all platfor
 s3://storage/tidecode/mac/tide.dmg             installer — PERMANENT download link
 s3://storage/tidecode/mac/tide.app.tar.gz      updater artifact (signed, fixed name)
 s3://storage/tidecode/windows/tide-setup.exe   NSIS installer = updater artifact
-s3://storage/tidecode/linux/tide.AppImage      installer — PERMANENT download link
-s3://storage/tidecode/linux/tide.AppImage.tar.gz  updater artifact
+s3://storage/tidecode/linux/tide.deb           installer — PERMANENT download link
+s3://storage/tidecode/linux/tide.rpm           installer — PERMANENT download link
 ```
 
 Public base: `https://pub-7b3e5bbd605d43adbeb4601a962d84bd.r2.dev/tidecode`. The updater
@@ -34,7 +37,8 @@ endpoint baked into `tauri.conf.json` is `{public}/latest.json` — **it never m
 - **One key per platform.** `latest.json` is shared, so every path merges only its own
   `platforms[...]` key through `scripts/release/merge_manifest.py`. A mac release never
   clobbers the Windows entry.
-- **Versions only go up.** `merge_manifest.py` refuses a merge that would lower the
+- **Versions only go up.** `build_release.sh` checks the live manifest before building and
+  stops on a lower version (`ALLOW_DOWNGRADE=1` overrides), and `merge_manifest.py` refuses a merge that would lower the
   manifest version (exit 2) — that once un-published a newer release for every platform.
   `--allow-downgrade` exists for a deliberate rollback.
 - **One global version.** Ship all three platforms at the same version or the lagging
@@ -105,7 +109,9 @@ Tauri cannot cross-compile, so these build on GitHub-hosted runners:
   --port 3799`, `curl /health`) → `scripts/release/publish_windows.sh`.
 - `.github/workflows/release-linux.yml` — `ubuntu-latest` with
   `libwebkit2gtk-4.1-dev libappindicator3-dev librsvg2-dev patchelf` →
-  `--bundles appimage` → `scripts/release/publish_linux.sh`.
+  `--bundles deb,rpm` → `scripts/release/publish_linux.sh`. Linux has no updater entry
+  yet: AppImage (the verified Linux updater format) fails while linuxdeploy processes the
+  bun sidecar, so Linux users reinstall the package by hand.
 
 Trigger: **Actions → release-windows → Run workflow** (or `gh workflow run
 release-windows.yml`), after the mac release of the same version. The optional `version`
