@@ -99,6 +99,8 @@ export interface RailThreadRowProps {
   showProject?: boolean;
   /** a server search hit: its snippet is the second line */
   hit?: SearchHit;
+  /** rendered inside its parent's children list (the parent row sits right above) */
+  nested?: boolean;
 }
 
 /**
@@ -106,7 +108,7 @@ export interface RailThreadRowProps {
  * (harness, project, time), an optional tag line, and hover merge / `…` actions.
  * Children (forks, delegates) nest below it.
  */
-export function RailThreadRow({ thread, siblings, showProject = false, hit }: RailThreadRowProps) {
+export function RailThreadRow({ thread, siblings, showProject = false, hit, nested = false }: RailThreadRowProps) {
   const active = useUi((s) => s.view === "thread" && s.selectedThreadId === thread.id);
   const selectThread = useUi((s) => s.selectThread);
   const picked = useRailSelection((s) => s.ids.includes(thread.id));
@@ -139,9 +141,12 @@ export function RailThreadRow({ thread, siblings, showProject = false, hit }: Ra
   ]
     .filter(Boolean)
     .join(" · ");
+  // a child listed away from its parent (the parent sits in another group): say whose it is
+  const parentId = parentOf(thread);
+  const parentTitle = useModel((s) => (nested || parentId === undefined ? undefined : s.model.threads[parentId]?.title));
   const hasTags =
     hit !== undefined || (settled && thread.settleReason !== undefined) || thread.pr !== undefined || merged ||
-    judge !== undefined || thread.delegateRole !== undefined || snoozedUntil !== undefined;
+    judge !== undefined || thread.delegateRole !== undefined || snoozedUntil !== undefined || parentTitle !== undefined;
 
   const openMenu = (at: MenuPosition): void =>
     setMenu({ at, label: "Thread actions", items: threadMenu(useModel.getState().model, thread, () => setRenaming(true)) });
@@ -207,7 +212,7 @@ export function RailThreadRow({ thread, siblings, showProject = false, hit }: Ra
               <span className={styles.glyph}>
                 <ThreadGlyph thread={thread} />
               </span>
-              {thread.role ? (
+              {thread.role && !(thread.role === "delegate" && !nested) ? (
                 <span className={styles.roleGlyph} title={thread.role} aria-label={thread.role} role="img">
                   {ROLE_GLYPH[thread.role]}
                 </span>
@@ -249,6 +254,11 @@ export function RailThreadRow({ thread, siblings, showProject = false, hit }: Ra
                 ) : null}
                 {thread.pr !== undefined ? <span className={styles.tag}>PR #{thread.pr.number}</span> : null}
                 {merged ? <MergeGlyph thread={thread} /> : null}
+                {parentTitle !== undefined ? (
+                  <span className={styles.tag} title={`Delegated by ${parentTitle}`}>
+                    <Icon name="arrowRight" size={12} /> {parentTitle}
+                  </span>
+                ) : null}
                 {thread.delegateRole ? (
                   <span className={styles.roleTag} title={`Role: ${thread.delegateRole}`}>
                     {truncateRole(thread.delegateRole)}
@@ -311,7 +321,7 @@ export function RailThreadRow({ thread, siblings, showProject = false, hit }: Ra
       {children.length > 0 ? (
         <ul className={styles.children}>
           {children.map((c) => (
-            <RailThreadRow key={c.id} thread={c} siblings={siblings} showProject={showProject} />
+            <RailThreadRow key={c.id} thread={c} siblings={siblings} showProject={showProject} nested />
           ))}
         </ul>
       ) : null}
