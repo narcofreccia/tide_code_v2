@@ -557,3 +557,92 @@ export function selectIdleMs(model: ReadModel, thread: Thread, now: number = Dat
   if (turn) last = Math.max(last, turn.requestedAt, turn.startedAt ?? 0, turn.settledAt ?? 0);
   return Math.max(0, now - last);
 }
+
+// ---- stable per-thread views (R15) ----
+// A streaming delta replaces `model.messages` (and only that) on every token of every
+// thread. These selectors return the previous array when nothing of THIS thread changed,
+// so a component subscribed through them does not re-render for another thread's delta.
+
+const itemOf = new WeakMap<object, TimelineItem>();
+
+function messageItem(message: Message): TimelineItem {
+  let item = itemOf.get(message);
+  if (item === undefined) itemOf.set(message, (item = { kind: "message", message }));
+  return item;
+}
+
+function activityItem(activity: Activity): TimelineItem {
+  let item = itemOf.get(activity);
+  if (item === undefined) itemOf.set(activity, (item = { kind: "activity", activity }));
+  return item;
+}
+
+function planItem(plan: ProposedPlan): TimelineItem {
+  let item = itemOf.get(plan);
+  if (item === undefined) itemOf.set(plan, (item = { kind: "plan", plan }));
+  return item;
+}
+
+const lastTimeline = new Map<string, TimelineItem[]>();
+
+/**
+ * `selectTimeline` with stable identity: the same array (and the same item objects)
+ * until a message, activity or plan of this thread changes or the timeline grows.
+ * Allocates only when something differs from the previous result.
+ */
+export function selectTimelineStable(model: ReadModel, threadId: string): TimelineItem[] {
+  const prev = lastTimeline.get(threadId);
+  let out: TimelineItem[] | undefined;
+  let n = 0;
+  const push = (item: TimelineItem): void => {
+    if (out === undefined) {
+      if (prev !== undefined && prev[n] === item) {
+        n += 1;
+        return;
+      }
+      out = prev === undefined ? [] : prev.slice(0, n);
+    }
+    out.push(item);
+    n += 1;
+  };
+  const entries = model.threadTimeline[threadId];
+  if (entries === undefined) {
+    for (const id of model.threadMessages[threadId] ?? []) {
+      const message = model.messages[id];
+      if (message) push(messageItem(message));
+    }
+  } else {
+    for (const entry of entries) {
+      if (entry.kind === "message") {
+        const message = model.messages[entry.id];
+        if (message) push(messageItem(message));
+      } else if (entry.kind === "activity") {
+        const activity = model.activities[entry.id];
+        if (activity) push(activityItem(activity));
+      } else {
+        const plan = model.plans[entry.id];
+        if (plan) push(planItem(plan));
+      }
+    }
+  }
+  if (out === undefined && prev !== undefined && prev.length === n) return prev;
+  const next = out ?? (prev ?? []).slice(0, n);
+  lastTimeline.set(threadId, next);
+  return next;
+}
+
+const lastTurns = new Map<string, { turns: ReadModel["turns"]; list: Turn[] }>();
+
+/**
+ * `selectThreadTurns` with stable identity: recomputed only when `model.turns` is
+ * replaced, and the previous array kept when this thread's turns did not change.
+ */
+export function selectThreadTurnsStable(model: ReadModel, threadId: string): Turn[] {
+  const prev = lastTurns.get(threadId);
+  if (prev !== undefined && prev.turns === model.turns) return prev.list;
+  const list = selectThreadTurns(model, threadId);
+  const same = prev !== undefined && prev.list.length === list.length && list.every((turn, i) => prev.list[i] === turn);
+  const kept = same && prev !== undefined ? prev.list : list;
+  lastTurns.set(threadId, { turns: model.turns, list: kept });
+  return kept;
+}

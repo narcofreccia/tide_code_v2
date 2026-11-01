@@ -88,6 +88,8 @@ export {
   type TimelineItem,
   type TimelineNode,
 } from "./selectors.ts";
+// R15: stable-identity per-thread views (kept in their own export so parallel edits to the list above do not collide)
+export { selectThreadTurnsStable, selectTimelineStable } from "./selectors.ts";
 export {
   prChecksSummary,
   prReadiness,

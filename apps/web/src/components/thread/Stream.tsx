@@ -1,6 +1,7 @@
-import { Fragment, useEffect, useRef, useState } from "react";
-import { groupActivities, selectThreadTurns, selectTimeline, type TimelineItem } from "@tide/client";
-import type { Activity, ActivityOf, ProviderKind, ReadModel, TurnStatus } from "@tide/contracts";
+import { memo, useEffect, useMemo, useRef, useState } from "react";
+import { groupActivities, selectThreadTurnsStable, selectTimelineStable } from "@tide/client";
+import type { Activity, ActivityOf, ProposedPlan, ProviderKind, Turn } from "@tide/contracts";
+import type { TimelineItem } from "@tide/client";
 import { useModel } from "../../state/model.ts";
 import { orderByTurn, queuedTurnIds } from "../../lib/streamOrder.ts";
 import { ActivityGroup } from "./ActivityGroup.tsx";
@@ -9,127 +10,146 @@ import { ApprovalCard } from "./ApprovalCard.tsx";
 import { ChildGroup } from "./ChildGroup.tsx";
 import { EmptyThread } from "./EmptyThread.tsx";
 import { HarnessEvents, collapsePassThrough, isPassThrough } from "./HarnessEvents.tsx";
-import { HandoffCard } from "./HandoffCard.tsx";
-import { NoticeRow } from "./NoticeRow.tsx";
-import { MessageItem } from "./MessageItem.tsx";
 import { PlanCard } from "./PlanCard.tsx";
-import { TurnConclusion } from "./TurnConclusion.tsx";
+import { StreamMessage } from "./StreamMessage.tsx";
 import { UserInputCard } from "./UserInputCard.tsx";
 import { CiteButton } from "./CiteButton.tsx";
+import { activitiesByTurn, lastPendingApprovalId, listStabilizer, metaMessageIds, splitChildren } from "./streamModel.ts";
 import { Icon } from "../ui/Icon.tsx";
 import styles from "./Stream.module.css";
 
 const BOTTOM_SLACK = 48;
 
-interface Split {
-  top: TimelineItem[];
-  /** childKey -> the sub-agent's own activities, pulled out of the main flow */
-  nested: Map<string, Activity[]>;
-}
+type Note = Extract<Activity, { kind: "info" | "error" }>;
 
-/** Moves sub-agent output under its child header so the main flow stays readable. */
-function splitChildren(entries: TimelineItem[]): Split {
-  const children = new Set<string>();
-  for (const entry of entries) {
-    if (entry.kind === "activity" && entry.activity.kind === "child") children.add(entry.activity.childKey);
-  }
-  const nested = new Map<string, Activity[]>();
-  const top: TimelineItem[] = [];
-  for (const entry of entries) {
-    if (entry.kind === "activity" && entry.activity.kind !== "child") {
-      const parent = entry.activity.parentToolUseId;
-      if (parent !== undefined && children.has(parent)) {
-        nested.set(parent, [...(nested.get(parent) ?? []), entry.activity]);
-        continue;
-      }
-    }
-    top.push(entry);
-  }
-  return { top, nested };
-}
-
-const SETTLED: TurnStatus[] = ["completed", "error", "interrupted"];
+/** One stream row with its props, built once per change of this thread's timeline or turns. */
+type Row =
+  | { kind: "group"; key: string; activities: ActivityOf<"tool">[] }
+  | { kind: "message"; key: string; showMeta: boolean; wasQueued: boolean; turnNumber: number | undefined; conclusion: Activity[] | undefined }
+  | { kind: "plan"; key: string; plan: ProposedPlan }
+  | { kind: "approval"; key: string; activity: ActivityOf<"approval">; active: boolean }
+  | { kind: "input"; key: string; activity: ActivityOf<"user-input"> }
+  | { kind: "child"; key: string; child: ActivityOf<"child">; activities: Activity[] }
+  | { kind: "harness"; key: string; activities: Note[] }
+  | { kind: "activity"; key: string; activity: Activity };
 
 /**
- * The messages that carry a turn footer: the last assistant message of every
- * turn that has settled. A turn still running keeps its numbers to itself.
+ * The thread's timeline shaped into rows. List props (a group's calls, a sub-agent's
+ * rows, a turn's activities) keep their identity while their items do, so memoized rows
+ * skip re-rendering when the rebuild was caused by another row.
  */
-function metaMessageIds(entries: TimelineItem[], model: ReadModel): Set<string> {
-  const last = new Map<string, string>();
-  for (const entry of entries) {
-    if (entry.kind === "message" && entry.message.role === "assistant") {
-      last.set(entry.message.turnId, entry.message.id);
-    }
-  }
-  const out = new Set<string>();
-  for (const [turnId, messageId] of last) {
-    const turn = model.turns[turnId];
-    if (turn && SETTLED.includes(turn.status)) out.add(messageId);
-  }
-  return out;
-}
-
-/** Every activity of each turn, nested sub-agent rows included, for the turn's conclusion line. */
-function activitiesByTurn(entries: TimelineItem[]): Map<string, Activity[]> {
-  const out = new Map<string, Activity[]>();
-  for (const entry of entries) {
-    if (entry.kind !== "activity") continue;
-    const list = out.get(entry.activity.turnId);
-    if (list) list.push(entry.activity);
-    else out.set(entry.activity.turnId, [entry.activity]);
-  }
-  return out;
-}
-
-function lastPendingApprovalId(entries: TimelineItem[]): string | undefined {
-  let id: string | undefined;
-  for (const entry of entries) {
-    if (entry.kind === "activity" && entry.activity.kind === "approval" && entry.activity.status === "pending") {
-      id = entry.activity.id;
-    }
-  }
-  return id;
-}
-
-export function Stream({ threadId, provider }: { threadId: string; provider: ProviderKind }) {
-  const model = useModel((s) => s.model);
-  const turns = selectThreadTurns(model, threadId);
-  const entries = orderByTurn(selectTimeline(model, threadId), turns);
-  const queuedTurns = queuedTurnIds(turns);
+function buildRows(items: readonly TimelineItem[], turns: readonly Turn[], prev: ReadonlyMap<string, Activity[]>) {
+  const { stable, lists } = listStabilizer<Activity>(prev);
+  const entries = orderByTurn(items, turns);
+  const queued = queuedTurnIds(turns);
   const split = splitChildren(entries);
   const { entries: top, groups } = collapsePassThrough(split.top);
-  const nested = split.nested;
-  const thread = model.threads[threadId];
-  const nodes = groupActivities(top);
   const liveApprovalId = lastPendingApprovalId(entries);
-  const metaIds = metaMessageIds(top, model);
+  const metaIds = metaMessageIds(top, turns);
   const turnActivities = activitiesByTurn(entries);
-  const turnNumber = new Map(turns.map((t, i) => [t.id, i + 1]));
-  const citeLabel = (turnId: string): string => {
-    const n = turnNumber.get(turnId);
-    const title = thread?.title ?? "this thread";
-    return n === undefined ? `"${title}"` : `turn ${n} of "${title}"`;
-  };
+  const turnNumber = new Map(turns.map((t, i) => [t.id, i + 1] as const));
+  const rows: Row[] = [];
+  for (const node of groupActivities(top)) {
+    if (node.kind === "group") {
+      rows.push({ kind: "group", key: node.id, activities: stable(node.id, node.activities) as ActivityOf<"tool">[] });
+    } else if (node.kind === "message") {
+      const { id, turnId } = node.message;
+      const showMeta = metaIds.has(id);
+      rows.push({
+        kind: "message",
+        key: id,
+        showMeta,
+        wasQueued: queued.has(turnId),
+        turnNumber: turnNumber.get(turnId),
+        conclusion: showMeta ? stable(`turn:${turnId}`, turnActivities.get(turnId) ?? []) : undefined,
+      });
+    } else if (node.kind === "plan") {
+      rows.push({ kind: "plan", key: node.plan.id, plan: node.plan });
+    } else {
+      const activity = node.activity;
+      const events = isPassThrough(activity) ? groups.get(activity.id) : undefined;
+      if (activity.kind === "approval") rows.push({ kind: "approval", key: activity.id, activity, active: activity.id === liveApprovalId });
+      else if (activity.kind === "user-input") rows.push({ kind: "input", key: activity.id, activity });
+      else if (activity.kind === "child") {
+        rows.push({ kind: "child", key: activity.id, child: activity, activities: stable(`child:${activity.childKey}`, split.nested.get(activity.childKey) ?? []) });
+      } else if (events) rows.push({ kind: "harness", key: activity.id, activities: stable(`harness:${activity.id}`, events) as Note[] });
+      else rows.push({ kind: "activity", key: activity.id, activity });
+    }
+  }
+  return { rows, lists };
+}
+
+function renderRow(row: Row, provider: ProviderKind) {
+  switch (row.kind) {
+    case "group":
+      return <ActivityGroup key={row.key} activities={row.activities} />;
+    case "message":
+      return (
+        <StreamMessage
+          key={row.key}
+          messageId={row.key}
+          provider={provider}
+          showMeta={row.showMeta}
+          wasQueued={row.wasQueued}
+          turnNumber={row.turnNumber}
+          conclusion={row.conclusion}
+        />
+      );
+    case "plan":
+      return <PlanCard key={row.key} plan={row.plan} provider={provider} />;
+    case "approval":
+      return <ApprovalCard key={row.key} activity={row.activity} active={row.active} />;
+    case "input":
+      return <UserInputCard key={row.key} activity={row.activity} />;
+    case "child":
+      return <ChildGroup key={row.key} child={row.child} activities={row.activities} />;
+    case "harness":
+      return <HarnessEvents key={row.key} activities={row.activities} />;
+    case "activity":
+      return <ActivityRow key={row.key} activity={row.activity} />;
+  }
+}
+
+/**
+ * The thread's stream. Subscribes to this thread's timeline and turns only (stable
+ * selectors), so another thread's delta renders nothing here; rows read their own slice.
+ */
+export const Stream = memo(function Stream({ threadId, provider }: { threadId: string; provider: ProviderKind }) {
+  const items = useModel((s) => selectTimelineStable(s.model, threadId));
+  const turns = useModel((s) => selectThreadTurnsStable(s.model, threadId));
+  const thread = useModel((s) => s.model.threads[threadId]);
+  const lists = useRef<ReadonlyMap<string, Activity[]>>(new Map());
+  const rows = useMemo(() => {
+    const built = buildRows(items, turns, lists.current);
+    lists.current = built.lists;
+    return built.rows;
+  }, [items, turns]);
 
   const scroller = useRef<HTMLOListElement>(null);
   const atBottom = useRef(true);
   const [hasNew, setHasNew] = useState(false);
+  const showsNew = useRef(false);
+  const setNew = (value: boolean): void => {
+    if (showsNew.current === value) return;
+    showsNew.current = value;
+    setHasNew(value);
+  };
 
   const toBottom = (): void => {
     const el = scroller.current;
     if (!el) return;
     el.scrollTop = el.scrollHeight;
     atBottom.current = true;
-    setHasNew(false);
+    setNew(false);
   };
 
-  const signature = entries.length + ":" + (model.seq || 0);
+  // this thread changed: a new row, a delta on one of its messages, or a turn settling (footer)
   useEffect(() => {
     if (atBottom.current) toBottom();
-    else setHasNew(true);
-  }, [signature]);
+    else setNew(true);
+  }, [rows]);
 
-  if (entries.length === 0) {
+  if (items.length === 0) {
     return thread ? <EmptyThread thread={thread} /> : <div className={styles.empty}>No messages yet.</div>;
   }
 
@@ -141,50 +161,10 @@ export function Stream({ threadId, provider }: { threadId: string; provider: Pro
         onScroll={(e) => {
           const el = e.currentTarget;
           atBottom.current = el.scrollHeight - el.scrollTop - el.clientHeight < BOTTOM_SLACK;
-          if (atBottom.current) setHasNew(false);
+          if (atBottom.current) setNew(false);
         }}
       >
-        {nodes.map((node) => {
-          if (node.kind === "group") return <ActivityGroup key={node.id} activities={node.activities} />;
-          if (node.kind === "message") {
-            if (node.message.notification !== undefined) return <NoticeRow key={node.message.id} message={node.message} provider={provider} />;
-            const turn = model.turns[node.message.turnId];
-            const handoff =
-              node.message.role === "user" && node.message.steer !== true && turn?.handoffId !== undefined
-                ? model.handoffs[turn.handoffId]
-                : undefined;
-            return (
-              <Fragment key={node.message.id}>
-                {handoff ? <HandoffCard handoff={handoff} delivery={turn?.handoffDelivery} /> : null}
-                <MessageItem
-                  message={node.message}
-                  {...(turn === undefined ? {} : { turn })}
-                  {...(metaIds.has(node.message.id) ? { showMeta: true } : {})}
-                  {...(queuedTurns.has(node.message.turnId) ? { wasQueued: true } : {})}
-                  {...(node.message.role === "assistant" ? { citeLabel: citeLabel(node.message.turnId) } : {})}
-                />
-                {metaIds.has(node.message.id) ? <TurnConclusion activities={turnActivities.get(node.message.turnId) ?? []} /> : null}
-              </Fragment>
-            );
-          }
-          if (node.kind === "plan") return <PlanCard key={node.plan.id} plan={node.plan} provider={provider} />;
-          const activity = node.activity;
-          if (activity.kind === "approval") {
-            return (
-              <ApprovalCard key={activity.id} activity={activity} active={activity.id === liveApprovalId} />
-            );
-          }
-          if (activity.kind === "user-input") return <UserInputCard key={activity.id} activity={activity} />;
-          if (activity.kind === "child") {
-            const child: ActivityOf<"child"> = activity;
-            return <ChildGroup key={child.id} child={child} activities={nested.get(child.childKey) ?? []} />;
-          }
-          if (isPassThrough(activity)) {
-            const events = groups.get(activity.id);
-            if (events) return <HarnessEvents key={activity.id} activities={events} />;
-          }
-          return <ActivityRow key={activity.id} activity={activity} />;
-        })}
+        {rows.map((row) => renderRow(row, provider))}
       </ol>
       <CiteButton root={scroller} />
       {hasNew ? (
@@ -195,4 +175,4 @@ export function Stream({ threadId, provider }: { threadId: string; provider: Pro
       ) : null}
     </div>
   );
-}
+});

@@ -1,3 +1,4 @@
+import { memo } from "react";
 import type { Activity } from "@tide/contracts";
 import { plural } from "../../lib/format.ts";
 import styles from "./TurnConclusion.module.css";
@@ -32,10 +33,10 @@ export function turnConclusion(activities: Activity[]): string {
 }
 
 /** The muted line under a settled turn's footer. */
-export function TurnConclusion({ activities }: { activities: Activity[] }) {
+export const TurnConclusion = memo(function TurnConclusion({ activities }: { activities: Activity[] }) {
   return (
     <li className={styles.conclusion} data-testid="turn-conclusion">
       {turnConclusion(activities)}
     </li>
   );
-}
+});

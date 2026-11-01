@@ -1,5 +1,6 @@
 import { selectDelegates } from "@tide/client";
 import type { Thread } from "@tide/contracts";
+import { useShallow } from "zustand/react/shallow";
 import { useModel } from "../../state/model.ts";
 import { useUi } from "../../state/ui.ts";
 import { Button } from "../ui/Button.tsx";
@@ -10,8 +11,8 @@ import styles from "./ThreadHeader.module.css";
 
 /** "n delegated": the threads this one spawned, with a jump into each. */
 export function DelegatesPopover({ threadId }: { threadId: string }) {
-  const model = useModel((s) => s.model);
-  const delegates = selectDelegates(model, threadId);
+  // the delegate threads themselves (stable objects): a delta anywhere renders nothing here
+  const delegates = useModel(useShallow((s) => selectDelegates(s.model, threadId)));
   const selectThread = useUi((s) => s.selectThread);
   if (delegates.length === 0) return null;
   return (

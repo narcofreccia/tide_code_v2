@@ -1,4 +1,4 @@
-import { useState } from "react";
+import { memo, useState } from "react";
 import type { ActivityOf } from "@tide/contracts";
 import { respondUserInput } from "../../lib/threadActions.ts";
 import { Button } from "../ui/Button.tsx";
@@ -14,7 +14,7 @@ function answered(question: Question, answer: Answer | undefined): boolean {
 }
 
 /** A harness question (AskUserQuestion / codex user-input) rendered 1:1. */
-export function UserInputCard({ activity }: { activity: ActivityOf<"user-input"> }) {
+export const UserInputCard = memo(function UserInputCard({ activity }: { activity: ActivityOf<"user-input"> }) {
   const [answers, setAnswers] = useState<Record<string, Answer>>({});
   const questions = activity.questions;
   const single = questions.length === 1 && questions[0]?.multi !== true && (questions[0]?.options?.length ?? 0) > 0;
@@ -108,4 +108,4 @@ export function UserInputCard({ activity }: { activity: ActivityOf<"user-input">
       </section>
     </li>
   );
-}
+});

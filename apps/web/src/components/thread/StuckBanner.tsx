@@ -21,14 +21,16 @@ export function stuckText(idleMs: number, stuck: number): string {
 
 /** A running thread the judge rates as stuck: stop it or ask it for a status. Dismissed per turn. */
 export function StuckBanner({ thread }: { thread: Thread }) {
-  const model = useModel((s) => s.model);
   const [dismissedTurn, setDismissedTurn] = useState<string | undefined>(undefined);
   const stuck = thread.triage?.stuck ?? 0;
-  if (thread.status !== "running" || stuck < STUCK_THRESHOLD) return null;
+  const visible = thread.status === "running" && stuck >= STUCK_THRESHOLD;
+  // whole minutes (all the text shows), and nothing while hidden: a delta elsewhere renders nothing here
+  const idleMs = useModel((s) => (visible ? Math.round(selectIdleMs(s.model, thread) / 60_000) * 60_000 : 0));
+  if (!visible) return null;
   if (thread.latestTurnId !== undefined && dismissedTurn === thread.latestTurnId) return null;
   return (
     <div className={styles.banner} role="status">
-      <span className={styles.text}>{stuckText(selectIdleMs(model, thread), stuck)}</span>
+      <span className={styles.text}>{stuckText(idleMs, stuck)}</span>
       <Button variant="ghost" onClick={() => interruptTurn(thread.id)}>
         Stop
       </Button>

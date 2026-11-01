@@ -1,4 +1,4 @@
-import { useState } from "react";
+import { memo, useState } from "react";
 import type { Activity } from "@tide/contracts";
 import type { TimelineItem } from "@tide/client";
 import { ActivityRow } from "./ActivityRow.tsx";
@@ -74,7 +74,7 @@ export function eventNames(notes: Note[]): string {
 }
 
 /** One muted "n harness events · names" line per turn; open it to see each raw row. */
-export function HarnessEvents({ activities }: { activities: Note[] }) {
+export const HarnessEvents = memo(function HarnessEvents({ activities }: { activities: Note[] }) {
   const [open, setOpen] = useState(false);
   return (
     <li className={styles.item}>
@@ -94,4 +94,4 @@ export function HarnessEvents({ activities }: { activities: Note[] }) {
       ) : null}
     </li>
   );
-}
+});
