@@ -1,6 +1,7 @@
-import { afterEach, describe, expect, it } from "vitest";
+import { afterEach, describe, expect, it, vi } from "vitest";
 import { act, cleanup, fireEvent, render, screen } from "@testing-library/react";
 import { Stream } from "./Stream.tsx";
+import { forgetAllScroll } from "../../lib/scrollMemory.ts";
 import {
   attachFakeStore,
   makeApproval,
@@ -16,6 +17,8 @@ import {
 afterEach(() => {
   cleanup();
   resetUi();
+  forgetAllScroll();
+  vi.useRealTimers();
 });
 
 const thread = makeThread("t1");
@@ -114,13 +117,16 @@ describe("Stream", () => {
     expect(footer?.textContent).toContain("second");
   });
 
-  it("offers a New text pill when output lands while scrolled up, and jumps to the end", () => {
+  it("offers a New text pill when output lands after the reader scrolled up, and jumps to the end", () => {
+    vi.useFakeTimers({ toFake: ["setTimeout", "clearTimeout", "requestAnimationFrame", "cancelAnimationFrame"] });
     attachFakeStore(modelWithTimeline(thread, [makeTool("a1", { toolName: "Bash", input: { command: "ls" } })]));
     const { container } = render(<Stream threadId="t1" provider="claude" />);
     const list = container.querySelector("ol")!;
     const metrics = { scrollHeight: 2000, clientHeight: 400 };
     Object.defineProperty(list, "scrollHeight", { configurable: true, get: () => metrics.scrollHeight });
     Object.defineProperty(list, "clientHeight", { configurable: true, get: () => metrics.clientHeight });
+    act(() => void vi.advanceTimersByTime(300)); // past the switch grace
+    fireEvent.wheel(list, { deltaY: -120 });
     list.scrollTop = 100;
     fireEvent.scroll(list);
     expect(screen.queryByText("New text")).toBeNull();
@@ -133,10 +139,27 @@ describe("Stream", () => {
         ]),
       );
     });
+    expect(list.scrollTop).toBe(100);
+    act(() => void vi.advanceTimersByTime(150));
     const pill = screen.getByRole("button", { name: "New text" });
     fireEvent.click(pill);
     expect(list.scrollTop).toBe(2000);
     expect(screen.queryByText("New text")).toBeNull();
+  });
+
+  it("starts each thread with a fresh list and scroll state", () => {
+    const model = modelWithTimeline(thread, [makeTool("a1", { toolName: "Bash", input: { command: "ls" } })]);
+    const other = makeThread("t2");
+    model.threads[other.id] = other;
+    model.threadTimeline[other.id] = [{ kind: "activity", id: "a1" }];
+    attachFakeStore(model);
+    const { container, rerender } = render(<Stream threadId="t1" provider="claude" />);
+    const first = container.querySelector("ol")!;
+    first.scrollTop = 300;
+    rerender(<Stream threadId="t2" provider="claude" />);
+    const second = container.querySelector("ol")!;
+    expect(second).not.toBe(first);
+    expect(second.scrollTop).toBe(0);
   });
 
   it("opens each new turn with a turn-start marker on its prompt, not on steers", () => {

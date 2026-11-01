@@ -146,8 +146,16 @@ Composer: textarea, `@` mentions (worktree files), paste images, mode/provider/m
   is on screen).
 - **Composer.** `--surface`, hairline (accent while focused), `--radius-lg`; the textarea is
   borderless inside it at `--fs-base`, `line-height: 1.5`, 2 rows growing to 12; toolbar pills `--fs-sm`.
-- **New text.** Output that lands while the reader is scrolled up raises a `⌄ New text` pill at the
-  bottom centre; it jumps to the end and goes away once the stream is at the bottom.
+- **Follow, release, restore.** The stream follows the end while you read the end: every new row,
+  delta or late resize (composer growing, a row expanding, a diagram finishing) re-pins the bottom
+  before paint. Reading up releases it, and only input does: wheel up, a touch drag, a press on the
+  scrollbar, `PageUp` / `Home` / `↑`. Scrolling back within 40px of the end follows again. While
+  released, a row above the view that grows or collapses does not move what you are reading.
+  Output for this thread that lands while released raises a `⌄ New text` pill at the bottom centre
+  after 150ms; it hides as soon as the stream follows again, jumps to the end on click, and never
+  appears in the first 300ms after a thread switch. Each thread remembers where you left it (the
+  last 100 threads): switching back restores that row and offset before paint, or the end if you
+  were following.
 
 **Workbench › Changes**: turn selector (`Turn 3 of 5 ▾`, "all turns"), file list with +/−, unified/split toggle, Monaco diff. Actions: revert turn, open file, commit+push+PR.
 **Workbench › File**: Monaco, write-enabled, dirty dot, `⌘S`. Open from diff, tree, `@mention`, activity line.
@@ -310,6 +318,9 @@ Line height `--lh-body: 1.45` for text, `--lh-tight: 1.2` for titles and single-
   as plain markdown: no attributes, no held-out tail, nothing replays.
 - **Caret:** a 2px `--accent` bar that breathes (opacity 0.35 to 1, 1.2s ease-in-out); static under
   reduced motion.
+- **Scroll:** the stream never animates its own scrolling. Following the end and restoring a thread's
+  position both jump before paint (`useStreamScroll`), and native scroll anchoring is off
+  (`overflow-anchor: none`) because the hook anchors by hand.
 - Reduced motion / forced colours: no shimmer window (the muted label alone), no fades, static caret.
 
 ## Component inventory (apps/web/src/components)

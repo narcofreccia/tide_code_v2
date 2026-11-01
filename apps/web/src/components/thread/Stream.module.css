@@ -16,6 +16,8 @@
   overflow-y: auto;
   /* rows ellipsize and code blocks scroll on their own: the column itself never scrolls sideways */
   overflow-x: hidden;
+  /* useStreamScroll anchors by hand (follow the end, or keep the visible rows put) */
+  overflow-anchor: none;
 }
 .stream > * {
   width: min(100%, var(--measure-wide));

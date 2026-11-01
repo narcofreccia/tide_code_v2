@@ -1,4 +1,4 @@
-import { memo, useEffect, useMemo, useRef, useState } from "react";
+import { memo, useMemo, useRef } from "react";
 import { groupActivities, selectThreadTurnsStable, selectTimelineStable } from "@tide/client";
 import type { Activity, ActivityOf, ProposedPlan, ProviderKind, Turn } from "@tide/contracts";
 import type { TimelineItem } from "@tide/client";
@@ -16,9 +16,8 @@ import { UserInputCard } from "./UserInputCard.tsx";
 import { CiteButton } from "./CiteButton.tsx";
 import { activitiesByTurn, lastPendingApprovalId, listStabilizer, metaMessageIds, splitChildren } from "./streamModel.ts";
 import { Icon } from "../ui/Icon.tsx";
+import { useStreamScroll } from "./useStreamScroll.ts";
 import styles from "./Stream.module.css";
-
-const BOTTOM_SLACK = 48;
 
 type Note = Extract<Activity, { kind: "info" | "error" }>;
 
@@ -113,8 +112,13 @@ function renderRow(row: Row, provider: ProviderKind) {
 /**
  * The thread's stream. Subscribes to this thread's timeline and turns only (stable
  * selectors), so another thread's delta renders nothing here; rows read their own slice.
+ * Keyed by thread so each visit starts with fresh scroll state and restores its position.
  */
 export const Stream = memo(function Stream({ threadId, provider }: { threadId: string; provider: ProviderKind }) {
+  return <ThreadStream key={threadId} threadId={threadId} provider={provider} />;
+});
+
+function ThreadStream({ threadId, provider }: { threadId: string; provider: ProviderKind }) {
   const items = useModel((s) => selectTimelineStable(s.model, threadId));
   const turns = useModel((s) => selectThreadTurnsStable(s.model, threadId));
   const thread = useModel((s) => s.model.threads[threadId]);
@@ -126,53 +130,25 @@ export const Stream = memo(function Stream({ threadId, provider }: { threadId: s
   }, [items, turns]);
 
   const scroller = useRef<HTMLOListElement>(null);
-  const atBottom = useRef(true);
-  const [hasNew, setHasNew] = useState(false);
-  const showsNew = useRef(false);
-  const setNew = (value: boolean): void => {
-    if (showsNew.current === value) return;
-    showsNew.current = value;
-    setHasNew(value);
-  };
+  const hasRows = items.length > 0;
+  const { showNew, jumpToEnd } = useStreamScroll(scroller, { threadId, rowsSignature: rows, hasRows });
 
-  const toBottom = (): void => {
-    const el = scroller.current;
-    if (!el) return;
-    el.scrollTop = el.scrollHeight;
-    atBottom.current = true;
-    setNew(false);
-  };
-
-  // this thread changed: a new row, a delta on one of its messages, or a turn settling (footer)
-  useEffect(() => {
-    if (atBottom.current) toBottom();
-    else setNew(true);
-  }, [rows]);
-
-  if (items.length === 0) {
+  if (!hasRows) {
     return thread ? <EmptyThread thread={thread} /> : <div className={styles.empty}>No messages yet.</div>;
   }
 
   return (
     <div className={styles.wrap}>
-      <ol
-        className={styles.stream}
-        ref={scroller}
-        onScroll={(e) => {
-          const el = e.currentTarget;
-          atBottom.current = el.scrollHeight - el.scrollTop - el.clientHeight < BOTTOM_SLACK;
-          if (atBottom.current) setNew(false);
-        }}
-      >
+      <ol className={styles.stream} ref={scroller}>
         {rows.map((row) => renderRow(row, provider))}
       </ol>
       <CiteButton root={scroller} />
-      {hasNew ? (
-        <button type="button" className={styles.newPill} onClick={toBottom}>
+      {showNew ? (
+        <button type="button" className={styles.newPill} onClick={jumpToEnd}>
           <Icon name="chevronDown" size={12} />
           New text
         </button>
       ) : null}
     </div>
   );
-});
+}
