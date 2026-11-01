@@ -26,12 +26,14 @@ afterEach(() => {
 });
 
 describe("Composer", () => {
-  it("sends a turn with ⌘↵", () => {
+  it("sends a turn with ↵ and stays; ⇧↵ keeps typing", () => {
     const fake = attachFakeStore(modelWith({}));
     render(<Composer thread={makeThread("t1")} />);
     const input = screen.getByLabelText("Message");
     fireEvent.change(input, { target: { value: "go" } });
-    fireEvent.keyDown(input, { key: "Enter", metaKey: true });
+    fireEvent.keyDown(input, { key: "Enter", shiftKey: true });
+    expect(fake.dispatch).not.toHaveBeenCalled();
+    fireEvent.keyDown(input, { key: "Enter" });
     expect(fake.dispatch).toHaveBeenCalledWith({
       type: "turn.request",
       threadId: "t1",
@@ -68,7 +70,8 @@ describe("Composer", () => {
     render(<Composer thread={makeThread("t1")} />);
     expect(screen.queryByRole("button", { name: /Stop/ })).toBeNull();
     expect(screen.queryByRole("group", { name: "Follow-up mode" })).toBeNull();
-    expect(screen.getByText("send in background")).toBeDefined();
+    expect(screen.getByText(/send in background/)).toBeDefined();
+    expect(screen.getByText("↵")).toBeDefined();
   });
 
   it("interrupts on Esc while running", () => {
@@ -256,13 +259,13 @@ describe("Composer drafts", () => {
     expect(useDrafts.getState().stash).toHaveLength(0);
   });
 
-  it("⌘↵ while idle sends, clears the draft and returns to Mission Control", async () => {
+  it("⌘⇧↵ while idle sends, clears the draft and returns to Mission Control", async () => {
     const fake = attachFakeStore(modelWith({}));
     useUi.getState().selectThread("t1");
     render(<Composer thread={makeThread("t1")} />);
     const input = screen.getByLabelText("Message");
     fireEvent.change(input, { target: { value: "go" } });
-    fireEvent.keyDown(input, { key: "Enter", metaKey: true });
+    fireEvent.keyDown(input, { key: "Enter", metaKey: true, shiftKey: true });
     expect(fake.dispatch).toHaveBeenCalledWith(expect.objectContaining({ type: "turn.request", text: "go" }));
     await waitFor(() => expect(useUi.getState().view).toBe("mission"));
     expect(getDraft("t1")).toBeUndefined();

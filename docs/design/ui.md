@@ -347,7 +347,7 @@ traffic-light inset.
 ## Keyboard map
 
 `⌘K` palette · `⌘N` new thread · `⌘0` Mission Control · `⌘1/2/3` focus modes · `⌘B` rail ·
-`` ⌘` `` terminal · `↵` send and stay · `⌘↵` idle: send in the background (back to Mission Control); while a turn runs: send in the other follow-up mode (Steer ↔ Queue) · `⌥↵` the other mode · `Esc` stop turn / close · `y`/`n` approve/deny focused card ·
+`` ⌘` `` terminal · `↵` / `⌘↵` send and stay (while a turn runs: in the selected follow-up mode) · `⇧↵` newline · `⌥↵` the other follow-up mode (Steer ↔ Queue) · `⌘⇧↵` idle: send in the background (back to Mission Control) · `Esc` stop turn / close · `y`/`n` approve/deny focused card ·
 `⌘⇧S` in the composer: stash the draft / apply the latest stash · `⌘Z` undo the last settle (while its toast is up or the rail/thread has focus) · `⌘⇧R` cycle reasoning effort (in the workbench: toggle file tree) ·
 `/` at the start of a line: slash commands + skills of the thread's harness · `@` mention a worktree file ·
 `⌘P` open file in worktree · `⌘S` save · `⌘⇧D` toggle unified/split diff · `[` `]` prev/next turn ·

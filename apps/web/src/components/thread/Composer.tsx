@@ -218,16 +218,14 @@ export function Composer({ thread }: { thread: Thread }) {
   };
 
   const onDefaultKey = (e: React.KeyboardEvent<HTMLTextAreaElement>): void => {
-    if (e.key !== "Enter") return;
-    // running: ⌘↵ sends in the selected mode; idle: ⌘↵ sends in the background. ⌥↵ sends the other mode
-    if (e.metaKey || e.ctrlKey) {
-      e.preventDefault();
-      if (running) void send(followUp.mode);
-      else void send(undefined, true);
-    } else if (e.altKey) {
-      e.preventDefault();
-      void send(running ? followUp.alternate : undefined);
-    }
+    if (e.key !== "Enter" || e.nativeEvent.isComposing) return;
+    // ↵ / ⌘↵ send and stay (running: in the selected follow-up mode); ⇧↵ newline;
+    // ⌥↵ the other follow-up mode; ⌘⇧↵ send and go back to Mission Control.
+    if (e.shiftKey && !(e.metaKey || e.ctrlKey)) return;
+    e.preventDefault();
+    if (e.altKey) void send(running ? followUp.alternate : undefined);
+    else if (e.shiftKey) void send(running ? followUp.mode : undefined, !running);
+    else void send(running ? followUp.mode : undefined);
   };
 
   const rows = Math.min(MAX_ROWS, Math.max(MIN_ROWS, text.split("\n").length));
@@ -346,13 +344,19 @@ export function Composer({ thread }: { thread: Thread }) {
             <span className={styles.interrupting}>interrupting…</span>
           ) : (
             <>
-              <Kbd>⌘↵</Kbd> {running ? followUp.mode : "send in background"}
+              <Kbd>↵</Kbd> {running ? followUp.mode : "send"}
               {running && followUp.canSteer ? (
                 <>
                   {" · "}
                   <Kbd>⌥↵</Kbd> {followUp.alternate}
                 </>
               ) : null}
+              {running ? null : (
+                <>
+                  {" · "}
+                  <Kbd>⌘⇧↵</Kbd> send in background
+                </>
+              )}
             </>
           )}
         </span>

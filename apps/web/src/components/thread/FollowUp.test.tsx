@@ -64,9 +64,9 @@ describe("Composer follow-up mode", () => {
     attachFakeStore(modelWithTurns(running, []));
     render(<Composer thread={running} />);
     const hint = () => screen.getByText("⌥↵").parentElement?.textContent ?? "";
-    expect(hint()).toContain("⌘↵ steer · ⌥↵ queue");
+    expect(hint()).toContain("↵ steer · ⌥↵ queue");
     fireEvent.click(screen.getByRole("button", { name: "Queue", pressed: false }));
-    expect(hint()).toContain("⌘↵ queue · ⌥↵ steer");
+    expect(hint()).toContain("↵ queue · ⌥↵ steer");
   });
 
   it("takes the default from server settings", async () => {
