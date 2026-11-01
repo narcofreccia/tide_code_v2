@@ -1,6 +1,6 @@
 import { emptyReadModel, type ClientCommand, type ReadModel, type RpcChunk, type RpcInput, type RpcOutput, type StreamMethodName, type UnaryMethodName } from "@tide/contracts";
 import type { EnvConnectionSnapshot, EnvironmentConnectionOptions, ModelStore, ModelStoreState, StreamHandle } from "@tide/client";
-import { setConnectionFactory, type EnvConnectionLike } from "./envManager.ts";
+import { setConnectionFactory, setFrameScheduler, type EnvConnectionLike } from "./envManager.ts";
 import { defaultUserSettings } from "./serverSettings.ts";
 
 /** Test double for EnvironmentConnection: no sockets, the test drives snapshots and models. */
@@ -86,8 +86,12 @@ export class FakeEnvConnection implements EnvConnectionLike {
   }
 }
 
-/** Routes every EnvironmentConnection the manager creates to a FakeEnvConnection. */
+/**
+ * Routes every EnvironmentConnection the manager creates to a FakeEnvConnection, and
+ * merges on a microtask instead of an animation frame (`flushMicrotasks` settles it).
+ */
 export function installFakeConnections(): { conns: FakeEnvConnection[]; byId: (id: string) => FakeEnvConnection } {
+  setFrameScheduler(queueMicrotask);
   const conns: FakeEnvConnection[] = [];
   setConnectionFactory((opts) => {
     const conn = new FakeEnvConnection(opts);

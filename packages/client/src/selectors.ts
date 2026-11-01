@@ -272,31 +272,74 @@ export function groupActivities(entries: readonly TimelineItem[]): TimelineNode[
 
 // ---- turns / checkpoints ----
 
-/** Turns of a thread in request order (oldest first). */
-export function selectThreadTurns(model: ReadModel, threadId: string): Turn[] {
-  return Object.values(model.turns)
+/**
+ * Caches `compute(map, key)` per map object. The projector replaces a map only when
+ * something in it changed, so while `model.turns` / `model.threads` keep their identity
+ * (every streaming delta) the derived value comes back as is: same identity, no scan.
+ * The WeakMap lets old maps and their cache entries go with the model that held them.
+ */
+export function memoByRef<M extends object, R>(compute: (map: M, key: string) => R): (map: M, key: string) => R {
+  const cache = new WeakMap<M, Map<string, R>>();
+  return (map, key) => {
+    let perKey = cache.get(map);
+    if (perKey === undefined) {
+      perKey = new Map();
+      cache.set(map, perKey);
+    }
+    if (perKey.has(key)) return perKey.get(key) as R;
+    const value = compute(map, key);
+    perKey.set(key, value);
+    return value;
+  };
+}
+
+type TurnMap = ReadModel["turns"];
+
+const threadTurnsOf = memoByRef((turns: TurnMap, threadId: string): Turn[] =>
+  Object.values(turns)
     .filter((t) => t.threadId === threadId)
-    .sort((a, b) => a.requestedAt - b.requestedAt || a.id.localeCompare(b.id));
+    .sort((a, b) => a.requestedAt - b.requestedAt || a.id.localeCompare(b.id)),
+);
+const queuedTurnsOf = memoByRef((turns: TurnMap, threadId: string): Turn[] =>
+  threadTurnsOf(turns, threadId).filter((t) => t.status === "queued"),
+);
+const checkpointTurnsOf = memoByRef((turns: TurnMap, threadId: string): Turn[] =>
+  threadTurnsOf(turns, threadId).filter((t) => t.checkpoint !== undefined),
+);
+const latestSettledOf = memoByRef((turns: TurnMap, threadId: string): string | undefined => {
+  const list = threadTurnsOf(turns, threadId);
+  for (let i = list.length - 1; i >= 0; i--) {
+    const turn = list[i] as Turn;
+    if (turn.status === "completed" || turn.status === "interrupted" || turn.status === "error") return turn.id;
+  }
+  return undefined;
+});
+
+/** Turns of a thread in request order (oldest first); the same array while `model.turns` is unchanged. */
+export function selectThreadTurns(model: ReadModel, threadId: string): Turn[] {
+  return threadTurnsOf(model.turns, threadId);
 }
 
 /** Turns waiting behind the live one, oldest first — the composer's queue. */
 export function selectQueuedTurns(model: ReadModel, threadId: string): Turn[] {
-  return selectThreadTurns(model, threadId).filter((t) => t.status === "queued");
+  return queuedTurnsOf(model.turns, threadId);
 }
 
 /** Turns that recorded a checkpoint — the ones a diff can be shown for. */
 export function selectCheckpointTurns(model: ReadModel, threadId: string): Turn[] {
-  return selectThreadTurns(model, threadId).filter((t) => t.checkpoint !== undefined);
+  return checkpointTurnsOf(model.turns, threadId);
 }
 
-/** The prompt that opened a turn; used to label it in the turn selector. */
+/** The newest settled turn (completed, interrupted or error): the one Fork starts from. */
+export function selectLatestSettledTurnId(model: ReadModel, threadId: string): string | undefined {
+  return latestSettledOf(model.turns, threadId);
+}
+
+/** The prompt that opened a turn; used to label it in the turn selector. Reads only the thread's messages. */
 export function selectTurnPrompt(model: ReadModel, threadId: string, turnId: string): string | undefined {
   for (const id of model.threadMessages[threadId] ?? []) {
     const message = model.messages[id];
     if (message && message.turnId === turnId && message.role === "user") return message.text;
-  }
-  for (const message of Object.values(model.messages)) {
-    if (message.turnId === turnId && message.role === "user") return message.text;
   }
   return undefined;
 }
@@ -348,11 +391,15 @@ export function selectExpertsBoard(model: ReadModel, sessionId: string): Experts
   };
 }
 
-/** Threads this thread spawned via `tide_delegate`, oldest first. */
-export function selectDelegates(model: ReadModel, threadId: string): Thread[] {
-  return Object.values(model.threads)
+const delegatesOf = memoByRef((threads: ReadModel["threads"], threadId: string): Thread[] =>
+  Object.values(threads)
     .filter((t) => t.delegatedBy === threadId && t.archivedAt === undefined)
-    .sort((a, b) => a.createdAt - b.createdAt || a.id.localeCompare(b.id));
+    .sort((a, b) => a.createdAt - b.createdAt || a.id.localeCompare(b.id)),
+);
+
+/** Threads this thread spawned via `tide_delegate`, oldest first; the same array while `model.threads` is unchanged. */
+export function selectDelegates(model: ReadModel, threadId: string): Thread[] {
+  return delegatesOf(model.threads, threadId);
 }
 
 /** Every thread that descends from `threadId` (forks via parentThreadId, delegates via delegatedBy), archived included, any order. */

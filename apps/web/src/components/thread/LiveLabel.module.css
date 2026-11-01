@@ -1,9 +1,17 @@
 /*
  * Live shimmer (docs/design/ui.md § Motion). A 4.5rem window, masked soft at both
  * edges, steps across the label in 2.2s; the copy inside it counter-translates by
- * the same amount so the bright glyphs sit exactly on the muted ones. The window
- * moves with `left` (percent of the label) and the copy with `transform` (percent
- * of itself, which is the label's width since both hold the same nowrap text).
+ * the same amount so the bright glyphs sit exactly on the muted ones.
+ *
+ * Transform only, no layout per step. A translate's percent is of the element's own
+ * box, so the window cannot be a 4.5rem box (100% would be 4.5rem, not the label).
+ * Instead `.sweep` spans the label (`width: 100%`) plus `--live-window` of right
+ * padding, and the bright window is its mask: one gradient tile `--live-window` wide
+ * at its left edge, no repeat; everything else is masked out. Its border box is
+ * label + window wide, so `translateX(calc(100% - var(--live-window)))` is exactly
+ * the label width, the same end point `left: 100%` had, and a label shorter than the
+ * window never clips the tile. The copy moves by `-100%` of itself, which is the label
+ * width since both hold the same nowrap text, so the two still cancel at every step.
  */
 .live {
   position: relative;
@@ -20,13 +28,19 @@
   position: absolute;
   top: 0;
   bottom: 0;
-  left: calc(-1 * var(--live-window));
-  width: var(--live-window);
-  overflow: hidden;
+  left: 0;
+  box-sizing: content-box;
+  width: 100%;
+  padding-right: var(--live-window);
   color: var(--text);
   pointer-events: none;
   -webkit-mask-image: linear-gradient(90deg, transparent, #000, transparent);
   mask-image: linear-gradient(90deg, transparent, #000, transparent);
+  -webkit-mask-size: var(--live-window) 100%;
+  mask-size: var(--live-window) 100%;
+  -webkit-mask-repeat: no-repeat;
+  mask-repeat: no-repeat;
+  transform: translateX(calc(-1 * var(--live-window)));
   animation: liveWindow 2.2s steps(30) infinite;
   animation-play-state: var(--visible-animation-state, paused);
 }
@@ -41,8 +55,8 @@
 .copy::before { content: attr(data-label); }
 
 @keyframes liveWindow {
-  from { left: calc(-1 * var(--live-window)); }
-  to { left: 100%; }
+  from { transform: translateX(calc(-1 * var(--live-window))); }
+  to { transform: translateX(calc(100% - var(--live-window))); }
 }
 @keyframes liveCopy {
   from { transform: translateX(var(--live-window)); }

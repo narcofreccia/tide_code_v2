@@ -1,3 +1,4 @@
+import { memo } from "react";
 import { applyStash, removeStash, stashDraft, type StashedDraft } from "../../state/drafts.ts";
 import { Button } from "../ui/Button.tsx";
 import { Kbd } from "../ui/Kbd.tsx";
@@ -19,8 +20,8 @@ const preview = (d: StashedDraft): string => {
   return d.images.length > 0 ? `${label || "(images)"} +${d.images.length} img` : label;
 };
 
-/** Footer controls for the composer draft: "Draft" hint, Stash, Apply stash list. */
-export function DraftsBar({ threadId, restored, hasText, stash, open, onOpen }: Props) {
+/** Footer controls for the composer draft: "Draft" hint, Stash, Apply stash list. Memoized: keystrokes only flip `hasText`. */
+export const DraftsBar = memo(function DraftsBar({ threadId, restored, hasText, stash, open, onOpen }: Props) {
   return (
     <span className={styles.drafts}>
       {restored ? <span className={styles.draftHint}>Draft</span> : null}
@@ -58,4 +59,4 @@ export function DraftsBar({ threadId, restored, hasText, stash, open, onOpen }: 
       ) : null}
     </span>
   );
-}
+});

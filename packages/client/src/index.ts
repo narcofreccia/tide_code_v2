@@ -12,8 +12,10 @@ export {
   createModelStore,
   type ModelStore,
   type ModelStoreConnection,
+  type ModelStoreOptions,
   type ModelStoreState,
 } from "./modelStore.ts";
+export { onPageHidden, scheduleFrame, type FrameScheduler } from "./frameScheduler.ts";
 export {
   EnvironmentConnection,
   type EnvConnectionSnapshot,
@@ -72,6 +74,8 @@ export {
   selectThreadsByProject,
   selectThreadsNeedingAttention,
   selectThreadTurns,
+  selectLatestSettledTurnId,
+  memoByRef,
   selectTimeline,
   selectTurnPrompt,
   selectTeamStages,

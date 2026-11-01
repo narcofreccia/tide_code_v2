@@ -1,3 +1,4 @@
+import { memo } from "react";
 import { selectThreadTurns } from "@tide/client";
 import type { Thread } from "@tide/contracts";
 import { useModel } from "../../state/model.ts";
@@ -7,9 +8,10 @@ import styles from "./Composer.module.css";
 /**
  * Shown once the thread has turns and its provider differs from the one that ran
  * the last turn (or a handoff is already pending): the next turn gets a text
- * handoff, not the native session.
+ * handoff, not the native session. `selectThreadTurns` is memoized on the turns
+ * map, so the boolean selector costs nothing on streaming deltas.
  */
-export function ProviderSwitchHint({ thread }: { thread: Thread }) {
+export const ProviderSwitchHint = memo(function ProviderSwitchHint({ thread }: { thread: Thread }) {
   const switched = useModel((s) => {
     const turns = selectThreadTurns(s.model, thread.id);
     const last = turns[turns.length - 1];
@@ -23,4 +25,4 @@ export function ProviderSwitchHint({ thread }: { thread: Thread }) {
       History will be handed over to {label} as text (lossy: no tool state)
     </p>
   );
-}
+});

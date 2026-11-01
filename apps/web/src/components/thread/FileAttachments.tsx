@@ -1,4 +1,4 @@
-import { useCallback } from "react";
+import { memo, useCallback } from "react";
 import { admitFiles, fileBytesAvailable, forgetFiles, rememberFile, type DraftFile } from "../../lib/attachments.ts";
 import { formatBytes } from "../../lib/images.ts";
 import { threadMentionIds, removeThreadMention } from "../../lib/mentions.ts";
@@ -47,7 +47,13 @@ export function useFileAttachments(threadId: string): FileAttachments {
 }
 
 /** Chips for the files that will be uploaded with the next prompt. */
-export function FileChips({ files, onRemove }: { files: readonly DraftFile[]; onRemove: (id: string) => void }) {
+export const FileChips = memo(function FileChips({
+  files,
+  onRemove,
+}: {
+  files: readonly DraftFile[];
+  onRemove: (id: string) => void;
+}) {
   if (files.length === 0) return null;
   return (
     <ul className={styles.strip} aria-label="Attached files">
@@ -70,7 +76,7 @@ export function FileChips({ files, onRemove }: { files: readonly DraftFile[]; on
       })}
     </ul>
   );
-}
+});
 
 /** The threads an `@thread:<id>` in the text points at; the close button takes the token out of the text. */
 export function ThreadContextChips({ text, onChange }: { text: string; onChange: (text: string) => void }) {

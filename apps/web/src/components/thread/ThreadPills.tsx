@@ -1,3 +1,4 @@
+import { memo } from "react";
 import type { InteractionMode, Thread } from "@tide/contracts";
 import {
   INTERACTION_HINTS,
@@ -64,8 +65,9 @@ function InteractionToggle({
 /**
  * Agent / model / permissions / build-or-plan for a thread. Lives in the
  * composer only: the settings that shape the next message sit next to it.
+ * Memoized: the thread object is stable across keystrokes and streaming deltas.
  */
-export function ThreadPills({ thread }: { thread: Thread }) {
+export const ThreadPills = memo(function ThreadPills({ thread }: { thread: Thread }) {
   const providers = useProviders();
   const running = thread.status === "running";
 
@@ -150,4 +152,4 @@ export function ThreadPills({ thread }: { thread: Thread }) {
       </Slot>
     </div>
   );
-}
+});

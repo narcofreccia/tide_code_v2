@@ -1,7 +1,10 @@
 import {
   EnvironmentConnection,
   MergedModel,
+  onPageHidden,
+  scheduleFrame,
   type ConnectionStatus,
+  type FrameScheduler,
   type EnvConnectionSnapshot,
   type EnvironmentConnectionOptions,
   type FetchLike,
@@ -95,11 +98,29 @@ export function patchEnv(id: string, patch: Partial<KnownEnvironment>): void {
 
 // ---- merged model ----
 
+/*
+ * At most one `useModel.setState` per animation frame: every environment's store updates
+ * merge on the shared frame (`scheduleFrame` runs a store's publish and this merge in one
+ * pass). Command receipts and a page going hidden flush at once.
+ */
+let scheduleMerge: FrameScheduler = scheduleFrame;
+
+/** Test seam: how merges are scheduled (the fakes use a microtask); undefined restores the frame. */
+export function setFrameScheduler(next: FrameScheduler | undefined): void {
+  scheduleMerge = next ?? scheduleFrame;
+}
+
+function flushIfQueued(): void {
+  if (flushQueued) flushModel();
+}
+
 function scheduleFlush(): void {
   if (flushQueued) return;
   flushQueued = true;
-  queueMicrotask(flushModel);
+  scheduleMerge(flushIfQueued);
 }
+
+onPageHidden(flushIfQueued);
 
 /** Recomputes the merged view once per batch of store updates. */
 export function flushModel(): void {
@@ -348,7 +369,11 @@ export const routedDispatch: Dispatcher = (command: ClientCommand, opts?: RouteO
   } catch (err) {
     return Promise.reject(err);
   }
-  return entry.conn.store.dispatch(command);
+  // the store publishes its receipt at once; the merged view must not wait for a frame either
+  return entry.conn.store.dispatch(command).then((result) => {
+    flushIfQueued();
+    return result;
+  });
 };
 
 // ---- boot ----
@@ -423,6 +448,7 @@ export function resetEnvManager(): void {
   ptyOwners.clear();
   merged.seedOwnership({ projects: {}, threads: {} });
   flushModel();
+  setFrameScheduler(undefined);
   setConnectionFactory(undefined);
   setEnvFetch(undefined);
   useEnvironments.setState({ environments: [], statuses: {}, primaryId: undefined });

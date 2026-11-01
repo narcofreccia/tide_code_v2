@@ -1,4 +1,4 @@
-import { useCallback, useRef, useState } from "react";
+import { memo, useCallback, useRef, useState } from "react";
 import type { SerializedImage } from "../../state/drafts.ts";
 import { errorText } from "../../lib/dispatchOrToast.ts";
 import { showToast } from "../../state/toast.ts";
@@ -96,7 +96,13 @@ export function useAttachments(): Attachments {
 }
 
 /** Thumbnails of the images that will ride along with the next prompt. */
-export function AttachmentStrip({ images, onRemove }: { images: PendingImage[]; onRemove: (id: string) => void }) {
+export const AttachmentStrip = memo(function AttachmentStrip({
+  images,
+  onRemove,
+}: {
+  images: PendingImage[];
+  onRemove: (id: string) => void;
+}) {
   if (images.length === 0) return null;
   return (
     <ul className={styles.strip} aria-label="Attached images">
@@ -116,4 +122,4 @@ export function AttachmentStrip({ images, onRemove }: { images: PendingImage[]; 
       ))}
     </ul>
   );
-}
+});

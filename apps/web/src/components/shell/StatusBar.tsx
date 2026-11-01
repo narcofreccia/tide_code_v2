@@ -1,3 +1,4 @@
+import { useMemo } from "react";
 import type { Thread } from "@tide/contracts";
 import { useModel } from "../../state/model.ts";
 import { useShownThread } from "../../state/hooks.ts";
@@ -80,11 +81,12 @@ function EditorPosition({ threadId }: { threadId: string }) {
  */
 export function LimitsItem() {
   const on = useServerSettings((s) => s.settings.glassBox.limitsInStatusBar);
-  const model = useModel((s) => s.model);
+  // rate limits ride on threads: streaming deltas leave the threads map alone, so no re-render
+  const threads = useModel((s) => s.model.threads);
+  const entry = useMemo(() => tightestInstance({ threads }), [threads]);
   const providers = useProvidersSnapshot();
   const showUsage = useUi((s) => s.showUsage);
   if (!on) return null;
-  const entry = tightestInstance(model);
   if (!entry) return null;
   const windows = windowsText(entry);
   if (windows === "") return null;
