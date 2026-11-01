@@ -7,6 +7,7 @@
 #   package.json                          the source of truth — tauri.conf.json's
 #                                         "version" points at this file
 #   apps/desktop/src-tauri/Cargo.toml     the shell crate
+#   apps/desktop/src-tauri/Cargo.lock     its tide-desktop entry, so a build leaves no diff
 #
 # The updater manifest carries ONE global version, so every platform ships the
 # same number: bump here, run the mac release, then trigger the two workflows.
@@ -54,10 +55,21 @@ assert n == 1, "no [package] version line in %s" % p
 p.write_text(s)
 PY
 
-echo "updated package.json and $(basename "$CARGO")"
+LOCK="$ROOT/apps/desktop/src-tauri/Cargo.lock"
+python3 - "$LOCK" "$VERSION" <<'PY'
+import re, sys
+from pathlib import Path
+p = Path(sys.argv[1])
+s = p.read_text()
+s, n = re.subn(r'(\[\[package\]\]\nname = "tide-desktop"\nversion = )"[^"]*"', r'\g<1>"%s"' % sys.argv[2], s, count=1)
+assert n == 1, "no tide-desktop entry in %s" % p
+p.write_text(s)
+PY
+
+echo "updated package.json, $(basename "$CARGO") and $(basename "$LOCK")"
 
 if [[ "$COMMIT" -eq 1 ]]; then
-  git -C "$ROOT" add package.json apps/desktop/src-tauri/Cargo.toml
+  git -C "$ROOT" add package.json apps/desktop/src-tauri/Cargo.toml apps/desktop/src-tauri/Cargo.lock
   git -C "$ROOT" commit -m "chore: v$VERSION"
   echo "committed 'chore: v$VERSION' — the tag is created by build_release.sh"
 else
