@@ -1,6 +1,7 @@
 import type { Activity, AgentThreadSummary, AgentTimelineItem, Command, ReadModel, RpcOutput, Thread, TimelineEntry } from "@tide/contracts";
 import { clampMode } from "../orchestration/decider/agent.ts";
 import { CommandError, type Engine } from "../orchestration/engine.ts";
+import { affectsQuiet, agentStatus, isQuiescent } from "../orchestration/background.ts";
 import { lastAssistantText, type DelegateWaits } from "../orchestration/delegation.ts";
 import type { DriverRegistry } from "../provider/registry.ts";
 import { instanceIdOf } from "../provider/sessions.ts";
@@ -58,14 +59,15 @@ function requireNoBroader(caller: Thread, target: Thread): void {
   }
 }
 
-export function summarize(thread: Thread): AgentThreadSummary {
+/** `status` is the thread's own, or "working (N background sub-agents)" while sub-agents outlive their turn. */
+export function summarize(model: ReadModel, thread: Thread): AgentThreadSummary {
   return {
     id: thread.id,
     projectId: thread.projectId,
     title: thread.title,
     provider: thread.provider,
     ...(thread.model !== undefined ? { model: thread.model } : {}),
-    status: thread.status,
+    status: agentStatus(model, thread),
     ...(thread.attention !== undefined ? { attention: thread.attention } : {}),
     ...(thread.role !== undefined ? { role: thread.role } : {}),
     ...(thread.delegatedBy !== undefined ? { delegatedBy: thread.delegatedBy } : {}),
@@ -142,9 +144,9 @@ function waitResult(model: ReadModel, threadId: string, turnId: string | undefin
   const thread = model.threads[threadId];
   const turn = turnId === undefined ? undefined : model.turns[turnId];
   const text = lastAssistantText(model, threadId);
-  const settled = turnId === undefined ? thread?.status !== "running" : turn === undefined || turn.settledAt !== undefined;
+  const settled = (turnId !== undefined && turn === undefined) || isQuiescent(model, threadId);
   return {
-    status: thread?.status ?? "unknown",
+    status: thread !== undefined ? agentStatus(model, thread, { names: timedOut }) : "unknown",
     settled,
     timedOut,
     ...(thread?.attention !== undefined ? { attention: thread.attention } : {}),
@@ -157,8 +159,10 @@ function waitResult(model: ReadModel, threadId: string, turnId: string | undefin
 }
 
 /**
- * Resolves when `turnId` (default: the thread's live turn) settles or is dequeued, at once when
- * nothing is in flight, or with `timedOut` after `timeoutMs`. A timeout never cancels the turn.
+ * Resolves once the thread is quiescent (see `threadQuiet`: no turn in flight, no background
+ * sub-agent, so through the harness turn their report starts) and `turnId`, when given, has
+ * settled; at once when it already is; when `turnId` is dequeued; or with `timedOut` after
+ * `timeoutMs`. A timeout never cancels anything.
  */
 export function waitForThread(
   engine: Engine,
@@ -168,21 +172,25 @@ export function waitForThread(
   schedule: (fn: () => void, ms: number) => CancelTimer = realTimer,
   grayZone?: () => { low: number; high: number },
 ): Promise<WaitResult> {
+  const done = (m: ReadModel): boolean => {
+    if (turnId === undefined) return isQuiescent(m, threadId);
+    const turn = m.turns[turnId];
+    return turn === undefined || (turn.settledAt !== undefined && isQuiescent(m, threadId));
+  };
   const model = engine.getModel();
-  const thread = model.threads[threadId];
-  const target = turnId ?? (thread?.status === "running" ? thread.latestTurnId : undefined);
-  const done = (m: ReadModel): boolean => target === undefined || m.turns[target] === undefined || m.turns[target]?.settledAt !== undefined;
-  if (done(model)) return Promise.resolve(waitResult(model, threadId, target, false, grayZone?.().low));
+  if (done(model)) return Promise.resolve(waitResult(model, threadId, turnId, false, grayZone?.().low));
   return new Promise((resolve) => {
     let cancel: CancelTimer | undefined;
+    let finished = false;
     const off = engine.subscribe((record) => {
-      const e = record.event;
-      if ((e.type === "turn.settled" || e.type === "turn.dequeued") && e.turnId === target) finish(false);
+      if (affectsQuiet(record.event) && done(engine.getModel())) finish(false);
     });
     function finish(timedOut: boolean): void {
+      if (finished) return;
+      finished = true;
       off();
       cancel?.();
-      resolve(waitResult(engine.getModel(), threadId, target, timedOut, grayZone?.().low));
+      resolve(waitResult(engine.getModel(), threadId, turnId, timedOut, grayZone?.().low));
     }
     cancel = schedule(() => finish(true), timeoutMs);
   });
@@ -212,13 +220,13 @@ export function registerAgentThreadHandlers(router: RpcRouter, deps: AgentThread
       .filter((t) => title === undefined || t.title.toLowerCase().includes(title))
       .sort((a, b) => b.updatedAt - a.updatedAt)
       .slice(0, input.limit ?? DEFAULT_LIST_LIMIT);
-    return { threads: threads.map(summarize) };
+    return { threads: threads.map((t) => summarize(model, t)) };
   });
 
   router.register("agent.thread.read", async (input, ctx) => {
     const model = engine.getModel();
     const target = reachable(model, callerThread(model, ctx), input.threadId);
-    return { thread: summarize(target), ...readTimeline(model, target.id, input) };
+    return { thread: summarize(model, target), ...readTimeline(model, target.id, input) };
   });
 
   router.register("agent.thread.send", async (input, ctx) => {

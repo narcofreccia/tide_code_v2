@@ -1,4 +1,5 @@
 import type { EventRecord, ExpertsMessage, ExpertsSession, ReadModel } from "@tide/contracts";
+import { quiescedBy } from "../orchestration/background.ts";
 import type { Engine } from "../orchestration/engine.ts";
 import { messageDeliveryPrompt } from "./prompts.ts";
 
@@ -79,11 +80,14 @@ export class ExpertsReactor {
       }
       return;
     }
-    if (event.type === "turn.settled") {
+    // an expert is idle once quiet: background sub-agents and the harness turn they start count as work
+    if (event.type === "turn.settled" || event.type === "activity.upserted") {
       const model = this.#engine.getModel();
-      const thread = model.threads[event.threadId];
-      const session = sessionOfThread(model, event.threadId);
-      if (session && thread?.role === "expert" && thread.status !== "running") {
+      const quiet = quiescedBy(model, event);
+      const thread = quiet === undefined ? undefined : model.threads[quiet];
+      const session = thread === undefined ? undefined : sessionOfThread(model, thread.id);
+      const turn = thread?.latestTurnId === undefined ? undefined : model.turns[thread.latestTurnId];
+      if (session && thread?.role === "expert") {
         const expert = session.experts.find((e) => e.threadId === thread.id);
         if (expert) {
           this.#track(
@@ -91,7 +95,7 @@ export class ExpertsReactor {
               type: "experts.expert.status",
               sessionId: session.id,
               key: expert.key,
-              status: event.status === "error" ? "error" : "idle",
+              status: turn?.status === "error" ? "error" : "idle",
             }),
           );
         }

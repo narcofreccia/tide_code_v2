@@ -1,5 +1,6 @@
 import type { AgentCommand, ExpertsSession, ReadModel, RpcOutput, Thread } from "@tide/contracts";
 import { CommandError, type Engine } from "../orchestration/engine.ts";
+import { agentStatus, isQuiescent } from "../orchestration/background.ts";
 import { lastAssistantText } from "../orchestration/delegation.ts";
 import { RpcException, type RpcCallContext, type RpcRouter } from "./router.ts";
 
@@ -128,10 +129,11 @@ export function registerAgentHandlers(router: RpcRouter, deps: AgentHandlerDeps)
     const turn = target.latestTurnId === undefined ? undefined : model.turns[target.latestTurnId];
     const text = lastAssistantText(model, target.id);
     return {
-      status: target.status,
+      status: agentStatus(model, target),
       ...(target.attention !== undefined ? { attention: target.attention } : {}),
       ...(text !== undefined ? { lastAssistantText: text } : {}),
-      settled: target.status !== "running",
+      // settled = quiescent: a turn that settled while its background sub-agents work is not done
+      settled: isQuiescent(model, target.id),
       ...(turn?.error !== undefined ? { error: turn.error } : {}),
     };
   });

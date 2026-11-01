@@ -94,17 +94,30 @@ Reactors subscribe to events and issue further commands; they hold no business r
   `ForgeResolver` (`vcs/forge/resolver.ts`, forge per checkout from `origin`, cached 10 min).
   `server.info.tools.ghAuth` reports `gh auth status`. See `forge.md`.
 - `DelegationReactor` (`orchestration/delegation.ts`) — wakes the thread that ran `tide_delegate`.
-  When a delegate's last turn settles (completed / interrupted / error) or it goes `limited`, the
-  parent gets a `turn.request` (notification `delegate`) quoting the outcome and up to 1500 chars
-  of the last reply; settles within 2 s become one message. A pending `user-input` on a delegate is
+  A delegate *finishes* when it is quiescent (`threadQuiet` in `orchestration/background.ts`): no
+  turn queued, requested or running, and no sub-agent still `running` in the background
+  (`hasBackgroundChildren`). A turn that settles while Claude Code's `run_in_background` agents work
+  is not the end: the delegate finishes when the harness turn their report starts settles, or when
+  the last of them is closed as lost (`error`, "No report: …"). Each quiet spell starts with one
+  event (`quiescedBy`: a `turn.settled`, or a child leaving `running` with nothing in flight), so
+  the wake-up goes once. Then, or when it goes `limited` (held until quiet), the parent gets a
+  `turn.request` (notification `delegate`) quoting the outcome of the latest turn, how many
+  background sub-agents of the round ended without a report, and up to 1500 chars of the final
+  reply; finishes within 2 s become one message. A pending `user-input` on a delegate is
   relayed at once (notification `child-question`, with the threadId/requestId for
   `tide_pending_respond`) and dequeued again if it is answered before the relay ran. Queued behind
   a running parent, started on an idle one; never for an archived parent, and never for a child
   the parent is blocked on in `agent.thread.wait` (`DelegateWaits`, marked by that handler — the
   wait returns the result itself). Questions are relayed even then. Started after recovery, so
-  restart-interrupted delegates do not wake their parents.
+  restart-interrupted delegates do not wake their parents (a latest turn settled with the restart
+  or shutdown error never wakes one). Restarts: on a graceful shutdown it keeps listening until the
+  sessions closed, so sub-agents closed as lost there finish their delegate and the wake-up is
+  flushed into the log as a requested parent turn that recovery runs after the restart; after a
+  crash, `resumeAfterRestart` gets the threads that had background sub-agents before recovery
+  closed them and wakes the parents of the delegates among them. Neither replays on a later boot.
 - `ExpertsReactor` — delivers each board message as a `turn.request` on its recipients (queued
-  behind a running turn, so the backlog lives in the log), tracks expert status.
+  behind a running turn, so the backlog lives in the log), tracks expert status (an expert turns
+  idle once quiescent, background sub-agents included).
 - `TriageReactor` (`decisions/`) — optional and off by default (`settings.decisions.enabled` plus a
   TypeSafe key). On `turn.settled`, a pending approval/question, `plan.proposed` and a 10-minute
   sweep of silent running threads, it batches one System One request per project (debounced 2 s)
@@ -200,6 +213,11 @@ and its delegates, never drives a thread whose mode is broader than its own, can
 approvals, `diff` (`rpc/agentDiff.ts`, tool `tide_thread_diff`) returns the same first-checkpoint →
 working-tree diff as `vcs.threadDiff` with each patch cut at `maxCharsPerFile` (default 8000) and
 binary files without a patch, and `send` in `auto` steers a running turn when the harness can, else queues/starts.
+`wait`, `threadStatus` and the `status` of `list`/`read` use the same quiescence as delegation:
+`wait` returns once the thread is quiescent (through background sub-agents and the harness turn
+their report starts; on a timeout `status` names the ones still working, e.g. `working (2 background
+sub-agents: architect, tester)`), and while a settled turn's sub-agents work `status` reads
+`working (N background sub-agents)` with `settled: false`.
 Every session's system prompt append carries the tools hint (`THREAD_TOOLS_HINT`).
 
 ## Auth & remote

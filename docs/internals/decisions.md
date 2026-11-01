@@ -92,8 +92,9 @@ Each site (`apps/server/src/decisions/sites/`) is a small reactor: it subscribes
 checks `judge.enabled(site)`, asks exactly one clipped question at one moment, and persists the
 verdict with `judge.record`. Nothing here blocks the flow it annotates.
 
-- **delegates**: on `turn.settled` of a delegate (thread with `delegatedBy`, no longer running),
-  one `label` question (`delegate:<thread>:<turn>`: task ≤ 600, last reply ≤ 1500, outcome, error,
+- **delegates**: when a delegate (thread with `delegatedBy`) finishes, i.e. goes quiescent
+  (`quiescedBy`: its turn settled with no background sub-agent left, or the last one left `running`),
+  one `label` question (`delegate:<thread>:<latest turn>`: task ≤ 600, last reply ≤ 1500, outcome, error,
   pending question) with labels `done | blocked | needs-user | failed`, or `pass | fail |
   inconclusive` when the role matches `/review|test|qa/i`. The verdict lands on `Thread.judge`.
   The parent's wake-up (`delegation.ts`) never waits for it: if the verdict is there at the 2 s

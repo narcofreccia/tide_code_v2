@@ -22,14 +22,14 @@ export const THREAD_TOOLS_HINT = [
   "do not say it is impossible: call tide_delegate with that `provider` (and `model` when they name one), one call per worker,",
   "and collect the results with tide_thread_wait or the finished-delegate messages.",
   "tide_thread_list finds threads; tide_thread_read shows their messages or activity (page with nextPosition);",
-  "tide_thread_send gives one a new instruction (auto/queue/steer); tide_thread_wait blocks until a turn settles",
-  "(a timeout never cancels it); tide_thread_interrupt stops a running turn; tide_pending_list/tide_pending_respond",
+  "tide_thread_send gives one a new instruction (auto/queue/steer); tide_thread_wait blocks until the thread is done:",
+  "its turn settled and any background sub-agents it launched reported back (a timeout never cancels it); tide_thread_interrupt stops a running turn; tide_pending_list/tide_pending_respond",
   "answer a thread's pending questions. You cannot approve another thread's tool calls, and you can only act on",
   "threads whose privileges are no broader than yours. Pass clientRequestId to make a send or delegate idempotent.",
   "tide_delegate with completion=wait runs a child and returns its result in one call;",
   "pass inheritWorktreeFrom with another thread's id to run the child in that thread's checkout (a reviewer or tester on the implementer's branch).",
   "tide_thread_diff shows what a thread changed (per-file +/- counts and patches) — read it before reviewing another thread's work.",
-  "A delegate you did not wait on reports back by itself: when it finishes (or hits its usage limit) you get a",
+  "A delegate you did not wait on reports back by itself: when it finishes, background sub-agents included (or hits its usage limit), you get a",
   "message \"Delegate ... finished\" with its last reply, several at once batched into one; when it asks a question you",
   "get \"Delegate ... asks\" with the threadId and requestId to answer via tide_pending_respond (or ask the user).",
   "tide_schedule_task (with tide_update_scheduled_task, tide_delete_scheduled_task, tide_run_scheduled_task_now) sets up an automation:",
@@ -85,7 +85,7 @@ export const THREAD_TOOL_DEFINITIONS: ToolDef[] = [
   {
     name: "tide_thread_wait",
     description:
-      "Wait until a thread's live turn settles (returns at once if idle), then report status, settled, timedOut, attention, its last assistant text and any error. A timeout only stops your waiting; the thread keeps running. If attention is set, the thread is blocked on a question or approval: use tide_pending_list.",
+      "Wait until a thread is done: its live turn settled and any background sub-agents it launched reported back and the turn that follows settled (returns at once if idle). Then report status, settled, timedOut, attention, its last assistant text and any error. A timeout only stops your waiting; the thread keeps running, and status names the background sub-agents still working. If attention is set, the thread is blocked on a question or approval: use tide_pending_list.",
     inputSchema: {
       type: "object",
       properties: {
@@ -176,7 +176,10 @@ export function formatWait(r: ThreadWaitResult): string {
     ...(r.attention !== undefined ? [`attention: ${r.attention}`] : []),
     ...(r.error !== undefined ? [`error: ${r.error}`] : []),
   ];
-  if (r.timedOut) lines.push("Waiting timed out; the thread keeps running. Wait again or read it later.");
+  if (r.timedOut) {
+    const background = r.status.startsWith("working (") ? " Its background sub-agents are still working; it is not stuck." : "";
+    lines.push(`Waiting timed out; the thread keeps running.${background} Wait again or read it later.`);
+  }
   if (r.lastAssistantText) lines.push("lastAssistantText:", bound(r.lastAssistantText, WAIT_TEXT_MAX));
   return lines.join("\n");
 }

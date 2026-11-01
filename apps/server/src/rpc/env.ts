@@ -1,6 +1,7 @@
 import { spawn } from "node:child_process";
 import { arch, cpus, freemem, hostname, platform, totalmem } from "node:os";
 import type { ProviderKind, RpcOutput } from "@tide/contracts";
+import { threadsWithBackgroundChildren } from "../orchestration/background.ts";
 import type { Engine } from "../orchestration/engine.ts";
 import { BUNDLED_KINDS, type DriverRegistry } from "../provider/registry.ts";
 import { instanceIdOf } from "../provider/sessions.ts";
@@ -50,11 +51,17 @@ export const spawnUpdate: UpdateRunner = (command, args, onLine, signal) =>
     child.on("close", (code) => resolve(code));
   });
 
-/** Threads with a turn in flight right now, by harness kind. */
+/**
+ * Busy threads right now, by harness kind: a turn in flight, or sub-agents still working in the
+ * background after their turn settled (they live inside the harness process). Each thread counts once.
+ */
 export function runningByKind(engine: Engine, registry: DriverRegistry): Map<ProviderKind, number> {
+  const model = engine.getModel();
+  const background = new Set(threadsWithBackgroundChildren(model));
   const out = new Map<ProviderKind, number>();
-  for (const thread of Object.values(engine.getModel().threads)) {
-    if (thread.status !== "running") continue;
+  for (const thread of Object.values(model.threads)) {
+    const busy = thread.status === "running" || background.has(thread.id);
+    if (!busy) continue;
     const kind = registry.kindOf(instanceIdOf(thread)) ?? thread.provider;
     out.set(kind, (out.get(kind) ?? 0) + 1);
   }
@@ -137,7 +144,7 @@ export function registerEnvHandlers(router: RpcRouter, deps: EnvDeps): void {
           }
           const running = runningByKind(deps.engine, deps.registry).get(kind) ?? 0;
           if (running > 0) {
-            emit({ kind, line: `${kind}: skipped, ${running} thread(s) running on it; retry when they settle`, done: true, ok: false });
+            emit({ kind, line: `${kind}: skipped, ${running} thread(s) busy on it (a turn or background sub-agents); retry when they finish`, done: true, ok: false });
             allOk = false;
             continue;
           }

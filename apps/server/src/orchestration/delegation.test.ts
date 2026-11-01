@@ -12,7 +12,7 @@ import {
   type CancelTimer,
 } from "./delegation.ts";
 import { Engine } from "./engine.ts";
-import { EventStore } from "./store.ts";
+import { EventStore, openEventStore } from "./store.ts";
 
 interface Timer {
   fn: () => void;
@@ -299,5 +299,51 @@ describe("DelegationReactor — in the app, with the fake driver", () => {
     const wake = Object.values(app.engine.getModel().messages).find((m) => m.threadId === parent.thread.id && m.notification?.source === "delegate");
     expect(wake?.text).toContain(`Delegate "Scout" (claude) finished: completed. Last reply:\nFound it in auth.ts`);
     expect(control.opened.map((o) => o.threadId)).toEqual([child.thread.id, parent.thread.id]);
+  });
+
+  it("a delegate whose background sub-agent dies with a graceful shutdown wakes its parent once, after the restart", async () => {
+    const store = await openEventStore(":memory:");
+    const { driver, control } = createFakeDriver("claude");
+    const first = await createApp({ config: baseConfig("/tmp/tide-delegation-test"), store, keepStoreOpen: true, listen: false, log: () => undefined, registerDrivers: (r) => r.register(driver) });
+    const engine = first.engine;
+    const project = (await engine.dispatch({ type: "project.create", title: "P", rootPath: "/tmp/tide-delegation-test-repo" })).events[0]?.event;
+    if (project?.type !== "project.created") throw new Error("expected project");
+    const parent = (await engine.dispatch({ type: "thread.create", projectId: project.project.id, provider: "claude", title: "Lead" })).events[0]?.event;
+    if (parent?.type !== "thread.created") throw new Error("expected thread");
+    control.script(
+      emit({ type: "activity", activity: { kind: "child", childKey: "k1", name: "architect", status: "running" } }),
+      emit({ type: "assistant.delta", messageKey: "m0", delta: "Waiting for the architect." }),
+      emit({ type: "settled", status: "completed" }),
+    );
+    await engine.dispatch({ type: "thread.delegate", fromThreadId: parent.thread.id, provider: "claude", prompt: "plan", title: "Planner", useWorktree: false });
+    await first.reactor.drain();
+    await first.delegation.drain();
+    const wakes = (a: App) => Object.values(a.engine.getModel().messages).filter((m) => m.threadId === parent.thread.id && m.notification?.source === "delegate");
+    expect(wakes(first)).toEqual([]);
+
+    await first.close();
+    const afterClose = first.engine.getModel();
+    const wake = Object.values(afterClose.messages).find((m) => m.threadId === parent.thread.id && m.notification?.source === "delegate");
+    expect(wake?.text).toContain(`Delegate "Planner" (claude) finished: completed. 1 background sub-agent ended without a report. Last reply:\nWaiting for the architect.`);
+    expect(afterClose.turns[wake?.turnId ?? ""]?.status).toBe("requested");
+
+    const second = createFakeDriver("claude");
+    second.control.script(emit({ type: "settled", status: "completed" }));
+    const again = await createApp({ config: baseConfig("/tmp/tide-delegation-test"), store, keepStoreOpen: true, listen: false, log: () => undefined, registerDrivers: (r) => r.register(second.driver) });
+    try {
+      await again.reactor.drain();
+      await again.delegation.drain();
+      expect(wakes(again)).toHaveLength(1);
+      expect(again.engine.getModel().turns[wake?.turnId ?? ""]?.status).toBe("completed");
+    } finally {
+      await again.close();
+    }
+    const third = await createApp({ config: baseConfig("/tmp/tide-delegation-test"), store, listen: false, log: () => undefined, registerDrivers: (r) => r.register(createFakeDriver("claude").driver) });
+    try {
+      await third.delegation.drain();
+      expect(wakes(third)).toHaveLength(1);
+    } finally {
+      await third.close();
+    }
   });
 });

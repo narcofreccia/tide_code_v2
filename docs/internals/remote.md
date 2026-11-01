@@ -110,7 +110,7 @@ A scheduled task with `schedule: {kind: "webhook", hookId, secret?}` never fires
 ## `server.info` and the fleet view
 
 `server.info` adds `name`, `host {hostname, os, arch, cpus, cpuLoad (1-min load / cpus, 0..1),
-memTotal, memFree, busyThreads (threads with a turn running)}`, `harnesses [{kind, version?,
+memTotal, memFree, busyThreads (threads with a turn running or sub-agents working in the background, each once)}`, `harnesses [{kind, version?,
 installed}]` for the four bundled harnesses, `sshHost` (settings), and `relay {url, connected,
 clientUrl?}` when the relay client reports state.
 

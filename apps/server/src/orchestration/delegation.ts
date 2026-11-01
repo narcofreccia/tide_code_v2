@@ -1,5 +1,7 @@
 import type { ActivityOf, EventRecord, ReadModel, Thread } from "@tide/contracts";
+import { isQuiescent, lostInRound, quiescedBy } from "./background.ts";
 import type { Engine } from "./engine.ts";
+import { RESTART_ERROR, SHUTDOWN_ERROR } from "./recovery.ts";
 
 export type CancelTimer = () => void;
 
@@ -59,6 +61,8 @@ export interface FinishedDelegate {
   outcome: DelegateOutcome;
   error?: string;
   lastReply?: string;
+  /** background sub-agents of this round that ended without a report (their harness process went away) */
+  lostAgents?: number;
   /** the delegates-site verdict, only when it was confident enough to show */
   judge?: { label: string; source: string; confidence: number };
 }
@@ -72,9 +76,14 @@ function describeOutcome(d: FinishedDelegate): string {
   return d.error !== undefined ? `${d.outcome} (${d.error})` : d.outcome;
 }
 
+function lostNote(n: number | undefined): string {
+  if (n === undefined || n === 0) return "";
+  return ` ${n} background sub-agent${n === 1 ? "" : "s"} ended without a report.`;
+}
+
 function finishedBlock(d: FinishedDelegate): string {
   return [
-    `Delegate "${d.title}" (${d.provider}) finished: ${describeOutcome(d)}. Last reply:`,
+    `Delegate "${d.title}" (${d.provider}) finished: ${describeOutcome(d)}.${lostNote(d.lostAgents)} Last reply:`,
     d.lastReply !== undefined ? clip(d.lastReply, DELEGATE_REPLY_CHARS) : "(no reply)",
     ...(d.judge !== undefined ? [`Judge: ${d.judge.label} (${d.judge.source} ${d.judge.confidence.toFixed(2)})`] : []),
     `Use tide_delegate_status / tide_thread_read ${d.threadId} for details.`,
@@ -110,15 +119,20 @@ export interface DelegationReactorOptions {
 
 interface Batch {
   /** child id → latest outcome; insertion order = settle order */
-  delegates: Map<string, { outcome: DelegateOutcome; error?: string }>;
+  delegates: Map<string, { outcome: DelegateOutcome; error?: string; lostAgents?: number }>;
   cancel: CancelTimer;
 }
 
 /**
- * Wakes the thread that delegated when a delegate settles, hits its usage limit or asks a
- * question. Everything reaches the parent as an ordinary `turn.request` with a notification:
- * queued behind a running turn, started on an idle one. Settles within `batchMs` of each other
- * become one message. A question's wake-up is dequeued again when it is answered before it ran.
+ * Wakes the thread that delegated when a delegate finishes, hits its usage limit or asks a
+ * question. "Finishes" means quiescent (`threadQuiet`): a delegate whose turn settled while its
+ * background sub-agents work is still working; it finishes when the harness turn their report
+ * starts settles (with that final reply), or when the last of them is closed as lost. Each
+ * quiet spell starts with exactly one event (`quiescedBy`), so the wake-up is sent once; the
+ * events are live only, so a restart replays none of them (see `resumeAfterRestart`).
+ * Everything reaches the parent as an ordinary `turn.request` with a notification: queued behind
+ * a running turn, started on an idle one. Finishes within `batchMs` of each other become one
+ * message. A question's wake-up is dequeued again when it is answered before it ran.
  */
 export class DelegationReactor {
   #engine: Engine;
@@ -128,6 +142,8 @@ export class DelegationReactor {
   #grayZone: (() => { low: number; high: number }) | undefined;
   #log: (msg: string, data?: unknown) => void;
   #batches = new Map<string, Batch>();
+  /** delegates that hit their usage limit while still working: reported as limited once quiet */
+  #limitedBusy = new Set<string>();
   /** user-input activity id → the parent turn that relays it */
   #questions = new Map<string, { parentId: string; turnId?: string }>();
   #inflight = new Set<Promise<unknown>>();
@@ -153,6 +169,32 @@ export class DelegationReactor {
     this.#batches.clear();
   }
 
+  /**
+   * After a restart: `threadIds` had background sub-agents when the previous process died (read
+   * before recovery). Recovery closed them as lost without this reactor listening, so a delegate
+   * among them that is now quiet wakes its parent here. It happens once: the next boot finds
+   * none of them running. Call after `start()`.
+   */
+  resumeAfterRestart(threadIds: Iterable<string>): void {
+    const model = this.#engine.getModel();
+    for (const threadId of threadIds) {
+      const child = model.threads[threadId];
+      if (child?.delegatedBy !== undefined && isQuiescent(model, threadId)) this.#quiet(model, child);
+    }
+  }
+
+  /**
+   * Sends every open batch now instead of at the end of its window. Shutdown calls it after the
+   * sessions closed (their background sub-agents closed as lost): the wake-up lands in the log
+   * as a requested parent turn, which recovery runs after the restart.
+   */
+  flushAll(): void {
+    for (const [parentId, batch] of [...this.#batches]) {
+      batch.cancel();
+      this.#flush(parentId);
+    }
+  }
+
   /** Resolves when the engine is drained and no wake-up dispatch is in flight (open batches stay open). */
   async drain(): Promise<void> {
     for (let i = 0; i < 1_000; i++) {
@@ -165,19 +207,20 @@ export class DelegationReactor {
 
   #onRecord(record: EventRecord): void {
     const event = record.event;
+    if (event.type === "turn.settled") this.#cancelAnsweredQuestions(this.#engine.getModel(), event.threadId);
+    if (event.type === "turn.settled" || event.type === "activity.upserted") {
+      const model = this.#engine.getModel();
+      const quiet = quiescedBy(model, event);
+      const child = quiet === undefined ? undefined : model.threads[quiet];
+      if (child?.delegatedBy !== undefined) this.#quiet(model, child);
+    }
     switch (event.type) {
-      case "turn.settled": {
+      case "thread.limited": {
         const model = this.#engine.getModel();
         const child = model.threads[event.threadId];
-        this.#cancelAnsweredQuestions(model, event.threadId);
-        // a queued turn was promoted: the delegate is still working
-        if (child?.delegatedBy === undefined || child.status === "running") return;
-        this.#finished(child, event.status, event.error);
-        return;
-      }
-      case "thread.limited": {
-        const child = this.#engine.getModel().threads[event.threadId];
-        if (child?.delegatedBy !== undefined) this.#finished(child, "limited", undefined);
+        if (child?.delegatedBy === undefined) return;
+        if (isQuiescent(model, child.id)) this.#finished(child, "limited", undefined, lostInRound(model, child.id));
+        else this.#limitedBusy.add(child.id);
         return;
       }
       case "activity.upserted": {
@@ -210,7 +253,21 @@ export class DelegationReactor {
     }
   }
 
-  #finished(child: Thread, outcome: DelegateOutcome, error: string | undefined): void {
+  /** The delegate went quiet: its outcome is its latest turn's, unless it hit its limit meanwhile. */
+  #quiet(model: ReadModel, child: Thread): void {
+    const lost = lostInRound(model, child.id);
+    if (this.#limitedBusy.delete(child.id)) {
+      this.#finished(child, "limited", undefined, lost);
+      return;
+    }
+    const turn = child.latestTurnId === undefined ? undefined : model.turns[child.latestTurnId];
+    // the turn died with the server (shutdown, or recovery after a crash): that wakes no parent
+    if (turn?.error === SHUTDOWN_ERROR || turn?.error === RESTART_ERROR) return;
+    const outcome: DelegateOutcome = turn?.status === "interrupted" || turn?.status === "error" ? turn.status : "completed";
+    this.#finished(child, outcome, turn?.error, lost);
+  }
+
+  #finished(child: Thread, outcome: DelegateOutcome, error: string | undefined, lostAgents: number): void {
     const parentId = child.delegatedBy;
     if (parentId === undefined) return;
     const parent = this.#engine.getModel().threads[parentId];
@@ -226,7 +283,7 @@ export class DelegationReactor {
     const previous = batch.delegates.get(child.id);
     // an error settle followed by `thread.limited` is one event for the parent: the limit
     if (previous?.outcome === "limited") return;
-    batch.delegates.set(child.id, { outcome, ...(error !== undefined ? { error } : {}) });
+    batch.delegates.set(child.id, { outcome, ...(error !== undefined ? { error } : {}), ...(lostAgents > 0 ? { lostAgents } : {}) });
   }
 
   #flush(parentId: string): void {
@@ -237,7 +294,7 @@ export class DelegationReactor {
     const parent = model.threads[parentId];
     if (!parent || parent.archivedAt !== undefined) return;
     const delegates: FinishedDelegate[] = [];
-    for (const [threadId, { outcome, error }] of batch.delegates) {
+    for (const [threadId, { outcome, error, lostAgents }] of batch.delegates) {
       const child = model.threads[threadId];
       if (!child) continue;
       const lastReply = lastAssistantText(model, threadId);
@@ -251,6 +308,7 @@ export class DelegationReactor {
         outcome,
         ...(error !== undefined ? { error } : {}),
         ...(lastReply !== undefined ? { lastReply } : {}),
+        ...(lostAgents !== undefined ? { lostAgents } : {}),
         ...(judge !== undefined ? { judge } : {}),
       });
     }

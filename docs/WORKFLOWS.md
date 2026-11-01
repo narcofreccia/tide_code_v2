@@ -25,11 +25,14 @@ Any thread can hand work to another harness through the `tide` MCP server attach
 session. The calling thread is the lead; each call creates a child thread you can open, steer
 or stop like any other.
 
-- **`completion: "wait"`** blocks until the child settles and returns its last message. A
+- **`completion: "wait"`** blocks until the child is done and returns its last message. Done
+  means its turn settled and any sub-agents it launched in the background reported back (and the
+  turn their report starts settled). A
   single wait lasts at most 10 minutes (`timeoutMs` up to 600000). On a timeout the child keeps
   running and the lead calls `tide_thread_wait` again.
 - **`completion: "async"`** (the default) returns the child's `threadId` at once. Tide wakes the
-  lead with a "Delegate … finished" message when the child settles or hits its usage limit,
+  lead with a "Delegate … finished" message when the child is done (background sub-agents
+  included; the message says how many ended without a report) or hits its usage limit,
   and with "Delegate … asks" when the child asks a question. Several results that land close
   together arrive as one message. The lead answers questions with `tide_pending_respond`.
 - **`role`** is a free-text label (reviewer, tester, research). It frames the child's prompt

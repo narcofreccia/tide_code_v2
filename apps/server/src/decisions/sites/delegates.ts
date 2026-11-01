@@ -1,4 +1,5 @@
 import type { EventRecord, ReadModel, Thread } from "@tide/contracts";
+import { quiescedBy } from "../../orchestration/background.ts";
 import type { Engine } from "../../orchestration/engine.ts";
 import type { Judge } from "../judge.ts";
 import { clip, Inflight, recordCommand, usable } from "./siteKit.ts";
@@ -40,8 +41,10 @@ function pendingQuestion(model: ReadModel, threadId: string): string | undefined
 }
 
 /**
- * Site `delegates`: when a delegate's turn settles, one small label question says how the task
- * ended. The verdict lands on the thread (`Thread.judge`); the parent's wake-up and the rail read it.
+ * Site `delegates`: when a delegate finishes — goes quiet (`threadQuiet`), so after the harness
+ * turn its background sub-agents' report starts, not at the turn that launched them — one small
+ * label question says how the task ended. The verdict lands on the thread (`Thread.judge`); the
+ * parent's wake-up and the rail read it.
  */
 export class DelegatesSite {
   #engine: Engine;
@@ -78,13 +81,15 @@ export class DelegatesSite {
 
   #onRecord(record: EventRecord): void {
     const event = record.event;
-    if (event.type !== "turn.settled") return;
+    if (event.type !== "turn.settled" && event.type !== "activity.upserted") return;
     try {
-      if (!this.#judge.enabled("delegates")) return;
       const model = this.#engine.getModel();
-      const child = model.threads[event.threadId];
-      if (child?.delegatedBy === undefined || child.status === "running") return;
-      this.#inflight.track(this.#ask(model, child, event.turnId, event.status, event.error));
+      const quiet = quiescedBy(model, event);
+      const child = quiet === undefined ? undefined : model.threads[quiet];
+      if (child?.delegatedBy === undefined || child.latestTurnId === undefined) return;
+      const turn = model.turns[child.latestTurnId];
+      if (turn === undefined || !this.#judge.enabled("delegates")) return;
+      this.#inflight.track(this.#ask(model, child, turn.id, turn.status, turn.error));
     } catch (err) {
       this.#log("[delegates] trigger failed", err);
     }

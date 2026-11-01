@@ -5,7 +5,7 @@ import type { AgentCommand } from "@tide/contracts";
 import type { AgentBackend, AgentContext, AgentDispatchResult, AgentThreadStatus, PendingRespondInput, ThreadDiffInput, ThreadDiffResult, ThreadListInput, ThreadReadInput, ThreadSendInput, ThreadWaitInput, ThreadWaitResult } from "./backend.ts";
 import { createTideMcpServer } from "./server.ts";
 import { TOOL_DEFINITIONS } from "./tools.ts";
-import { THREAD_TOOLS_HINT } from "./threadTools.ts";
+import { formatWait, THREAD_TOOLS_HINT } from "./threadTools.ts";
 
 /** In-process stand-in for the Tide server's `agent.*` methods. */
 class FakeBackend implements AgentBackend {
@@ -454,5 +454,14 @@ describe("R5: thread diff and inherited worktrees", () => {
     expect(THREAD_TOOLS_HINT).toContain("tide_thread_diff");
     expect(THREAD_TOOLS_HINT).toContain("inheritWorktreeFrom");
     expect(TOOL_DEFINITIONS.map((t) => t.name)).toContain("tide_thread_diff");
+  });
+});
+
+describe("formatWait", () => {
+  it("says a timed-out thread is not stuck while its background sub-agents work", () => {
+    const text = formatWait({ status: "working (1 background sub-agent: architect)", settled: false, timedOut: true });
+    expect(text).toContain("status: working (1 background sub-agent: architect)");
+    expect(text).toContain("Its background sub-agents are still working; it is not stuck.");
+    expect(formatWait({ status: "running", settled: false, timedOut: true })).not.toContain("background");
   });
 });

@@ -18,7 +18,7 @@ import { Engine } from "./orchestration/engine.ts";
 import { DelegateWaits, DelegationReactor, type CancelTimer } from "./orchestration/delegation.ts";
 import { LimitsWorker } from "./orchestration/limits.ts";
 import { SettlementReactor } from "./orchestration/settlement.ts";
-import { markChildrenLost } from "./orchestration/background.ts";
+import { markChildrenLost, threadsWithBackgroundChildren } from "./orchestration/background.ts";
 import { continueAfterRestart, recoverLostChildren, recoverRollbacks, recoverUnsettledTurns, SHUTDOWN_ERROR, unsettledTurns } from "./orchestration/recovery.ts";
 import { RollbackService } from "./orchestration/rollback.ts";
 import { openEventStore, type EventStore } from "./orchestration/store.ts";
@@ -231,6 +231,8 @@ export async function createApp(options: AppOptions): Promise<App> {
   // After every reactor subscribed: the dead turns' settles must reach the vcs reactor (after-
   // checkpoint), the experts reactor (expert status) and the provider reactor (which runs the
   // queued turn each settle promotes).
+  // read before recovery: delegates whose turn settled while sub-agents kept working die quiet below
+  const backgroundAtBoot = threadsWithBackgroundChildren(engine.getModel());
   const recovered = await recoverUnsettledTurns(engine, { log, resume: (threadId, turnId) => reactor.resume(threadId, turnId) });
   await recoverLostChildren(engine, { log });
   await recoverRollbacks(engine, { log });
@@ -240,6 +242,7 @@ export async function createApp(options: AppOptions): Promise<App> {
   const delegateWaits = new DelegateWaits();
   const delegation = new DelegationReactor({ engine, waits: delegateWaits, grayZone, log, ...(options.delegationSchedule !== undefined ? { schedule: options.delegationSchedule } : {}) });
   delegation.start();
+  delegation.resumeAfterRestart(backgroundAtBoot);
 
   // after recovery: a slot due during the downtime fires once, never as a burst
   const scheduler = new Scheduler({ engine, settings, log });
@@ -313,7 +316,7 @@ export async function createApp(options: AppOptions): Promise<App> {
       rollback.stop();
       limits.stop();
       settlement.stop();
-      delegation.stop();
+      // delegation keeps listening until the sessions closed (see below)
       for (const site of decisionSites) site.stop();
       scheduler.stop();
       relay?.stop();
@@ -342,6 +345,11 @@ export async function createApp(options: AppOptions): Promise<App> {
 
       workspace.close();
       await sessions.closeAll();
+      // closing a session closes its background sub-agents as lost, which may finish a delegate:
+      // its wake-up is sent now, as a parent turn that recovery runs after the restart
+      delegation.flushAll();
+      await withTimeout(delegation.drain(), options.shutdownTimeoutMs ?? DEFAULT_SHUTDOWN_TIMEOUT_MS, log);
+      delegation.stop();
       await registry.dispose();
       if (!options.keepStoreOpen) store.close();
     },
