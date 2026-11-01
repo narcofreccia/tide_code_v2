@@ -1,4 +1,4 @@
-import { useEffect, useRef, useState } from "react";
+import { memo, useEffect, useMemo, useRef, useState } from "react";
 import { THREAD_DRAG_TYPE } from "../../lib/mentions.ts";
 import type { Thread } from "@tide/contracts";
 import { canMergeBack, mergeBackThread, settleThread, unsettleThread, updateThread } from "../../lib/threadActions.ts";
@@ -27,6 +27,7 @@ import { firstGrapheme } from "../ui/ProjectIcon.tsx";
 import { snoozeItems, threadMenu } from "./railMenus.ts";
 import { liveLabelFor, liveLabelKey, parseLiveLabelKey } from "../../lib/liveLabel.ts";
 import { RailLiveLine, recedes } from "./RailLiveLine.tsx";
+import { NO_NODES, childNodesIn, parentOf, type RailNode } from "./railTree.ts";
 import styles from "./RailThreadRow.module.css";
 
 const ROLE_GLYPH: Record<NonNullable<Thread["role"]>, string> = {
@@ -43,10 +44,7 @@ export function truncateRole(role: string): string {
   return role.length > 12 ? `${role.slice(0, 11)}…` : role;
 }
 
-/** Delegation wins over the ordinary parent link, so a delegate nests under its caller. */
-export function parentOf(thread: Thread): string | undefined {
-  return thread.delegatedBy ?? thread.parentThreadId;
-}
+export { parentOf };
 
 /** The muted tag a settled row carries: why it left the inbox. */
 export const SETTLE_TAGS: Record<NonNullable<Thread["settleReason"]>, string> = {
@@ -94,7 +92,12 @@ function RenameField({ thread, onDone }: { thread: Thread; onDone: () => void })
 
 export interface RailThreadRowProps {
   thread: Thread;
-  siblings: readonly Thread[];
+  /** the row's nested children, prebuilt by the rail (stable across renders, so the memo holds) */
+  childNodes?: readonly RailNode[] | undefined;
+  /** without `childNodes`: the threads to find this row's children among */
+  siblings?: readonly Thread[];
+  /** the rail's minute clock: re-renders the relative time */
+  now?: number;
   /** scope is All and there is more than one project: a project initial in the meta column */
   showProject?: boolean;
   /** a server search hit: its snippet is the second line */
@@ -106,9 +109,10 @@ export interface RailThreadRowProps {
 /**
  * A rail thread row: status glyph (a settle box on hover), title, meta column
  * (harness, project, time), an optional tag line, and hover merge / `…` actions.
- * Children (forks, delegates) nest below it.
+ * Children (forks, delegates) nest below it. Memoized: the inner function has its own
+ * name so the nested `<RailThreadRow>` below resolves to the memo, not to itself.
  */
-export function RailThreadRow({ thread, siblings, showProject = false, hit, nested = false }: RailThreadRowProps) {
+export const RailThreadRow = memo(function RailThreadRowView({ thread, childNodes, siblings, now, showProject = false, hit, nested = false }: RailThreadRowProps) {
   const active = useUi((s) => s.view === "thread" && s.selectedThreadId === thread.id);
   const selectThread = useUi((s) => s.selectThread);
   const picked = useRailSelection((s) => s.ids.includes(thread.id));
@@ -127,7 +131,8 @@ export function RailThreadRow({ thread, siblings, showProject = false, hit, nest
   const low = useServerSettings((s) => s.settings.decisions.grayZone.low);
   const j = thread.judge;
   const judge = thread.delegatedBy !== undefined && thread.status !== "running" && j?.label !== undefined && j.confidence >= low ? { label: j.label, source: j.source, confidence: j.confidence } : undefined;
-  const children = siblings.filter((t) => parentOf(t) === thread.id);
+  const fromSiblings = useMemo(() => (childNodes !== undefined || siblings === undefined ? NO_NODES : childNodesIn(siblings, thread.id)), [childNodes, siblings, thread.id]);
+  const children = childNodes ?? fromSiblings;
   const archived = thread.archivedAt !== undefined;
   const state = threadStateKey(thread);
   const recede = recedes({ state, unread, active, picked, live });
@@ -234,7 +239,7 @@ export function RailThreadRow({ thread, siblings, showProject = false, hit, nest
                     {firstGrapheme(projectTitle).toUpperCase()}
                   </span>
                 ) : null}
-                <span className={styles.time}>{relativeTime(thread.updatedAt)}</span>
+                <span className={styles.time}>{relativeTime(thread.updatedAt, now)}</span>
               </span>
             </span>
             {live !== undefined && hit === undefined ? (
@@ -321,10 +326,10 @@ export function RailThreadRow({ thread, siblings, showProject = false, hit, nest
       {children.length > 0 ? (
         <ul className={styles.children}>
           {children.map((c) => (
-            <RailThreadRow key={c.id} thread={c} siblings={siblings} showProject={showProject} nested />
+            <RailThreadRow key={c.thread.id} thread={c.thread} childNodes={c.children} showProject={showProject} now={now} nested />
           ))}
         </ul>
       ) : null}
     </li>
   );
-}
+});

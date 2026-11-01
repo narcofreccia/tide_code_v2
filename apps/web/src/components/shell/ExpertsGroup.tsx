@@ -62,8 +62,9 @@ export function ExpertsGroup({
   renderThread: (thread: Thread) => React.ReactNode;
   heading?: boolean;
 }) {
-  const model = useModel((s) => s.model);
-  const sessions = given ?? (projectId === undefined ? [] : selectExpertsSessions(model, projectId));
+  // only the sessions map, and only when the caller did not pass sessions: streaming text never reaches here
+  const allSessions = useModel((s) => (given === undefined && projectId !== undefined ? s.model.expertsSessions : undefined));
+  const sessions = given ?? (projectId === undefined || allSessions === undefined ? [] : selectExpertsSessions({ ...useModel.getState().model, expertsSessions: allSessions }, projectId));
   const selectedExpertsSessionId = useUi((s) => s.selectedExpertsSessionId);
   const view = useUi((s) => s.view);
   const selectExpertsSession = useUi((s) => s.selectExpertsSession);

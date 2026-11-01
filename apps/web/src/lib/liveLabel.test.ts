@@ -1,7 +1,7 @@
 import { describe, expect, it } from "vitest";
 import type { Activity, Message, ReadModel, Thread, Turn } from "@tide/contracts";
 import { makeMessage, makeThread, makeTool, makeTurn, modelWith } from "../testHarness.ts";
-import { displayToolName, liveLabelFor, liveLabelKey, parseLiveLabelKey, shortTarget } from "./liveLabel.ts";
+import { LIVE_WALK_MAX, displayToolName, liveLabelFor, liveLabelKey, parseLiveLabelKey, shortTarget } from "./liveLabel.ts";
 
 const running = makeThread("t1", { status: "running", latestTurnId: "u1" });
 
@@ -96,6 +96,28 @@ describe("liveLabelFor", () => {
     const thread = makeThread("t1", { status: "interrupted", latestTurnId: "u1" });
     const model = build(thread, [makeTurn("u1", { status: "interrupted" }), makeTurn("u2", { status: "queued" })]);
     expect(liveLabelFor(model, thread)).toEqual({ text: "Queued", kind: "queued" });
+  });
+
+  it(`reads only the last ${LIVE_WALK_MAX} entries of the running turn`, () => {
+    const done = Array.from({ length: LIVE_WALK_MAX }, (_, i) => makeTool(`d${i}`, { toolName: "Read", status: "ok" }));
+    const far = build(running, [makeTurn("u1", { status: "running" })], [makeTool("a0", { toolName: "Bash", input: { command: "far back" }, status: "running" }), ...done]);
+    expect(liveLabelFor(far, running)?.text).toBe("Thinking");
+    const near = build(running, [makeTurn("u1", { status: "running" })], [makeTool("a0", { toolName: "Bash", input: { command: "in reach" }, status: "running" }), ...done.slice(1)]);
+    expect(liveLabelFor(near, running)?.text).toBe("Bash in reach");
+  });
+
+  it("never enumerates every turn, and follows a tool settling in place", () => {
+    const model = build(running, [makeTurn("u1", { status: "running" })], [makeTool("a1", { toolName: "Bash", input: { command: "npm test" }, status: "running" })]);
+    const turns = model.turns;
+    model.turns = new Proxy(turns, {
+      ownKeys: () => {
+        throw new Error("scanned every turn");
+      },
+    });
+    expect(liveLabelFor(model, running)?.text).toBe("Bash npm test");
+    // same timeline array, the activity replaced: the memo must not serve the old label
+    const settled = { ...model, activities: { ...model.activities, a1: makeTool("a1", { toolName: "Bash", status: "ok" }) } };
+    expect(liveLabelFor(settled, running)?.text).toBe("Thinking");
   });
 
   it("is undefined for idle, settled or archived threads", () => {

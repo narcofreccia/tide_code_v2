@@ -29,6 +29,22 @@ export interface RailGroup {
 const bySettledDesc = (a: Thread, b: Thread): number => (b.settledAt ?? 0) - (a.settledAt ?? 0) || a.id.localeCompare(b.id);
 
 /**
+ * Ids of the scope's threads waiting on the user, in inbox order (most urgent first),
+ * each once. Reads activities and plans: an inbox reorder can happen without a thread change.
+ */
+export function railNeedsOrder(model: ReadModel, projectIds: readonly string[], now: number): string[] {
+  const scope = new Set(projectIds);
+  const ids: string[] = [];
+  const seen = new Set<string>();
+  for (const item of selectInbox(model, undefined, now)) {
+    if (!scope.has(item.thread.projectId) || seen.has(item.thread.id)) continue;
+    seen.add(item.thread.id);
+    ids.push(item.thread.id);
+  }
+  return ids;
+}
+
+/**
  * Merges `selectRailGroups` over the projects in scope. Needs you is pulled out of
  * the inbox (and Working) so a waiting thread is listed once; pinned threads lead
  * the inbox. A session lands in its lead's group (else its first expert's, else Inbox).
@@ -38,14 +54,16 @@ export function buildRailGroups(
   projectIds: readonly string[],
   now: number,
   opts: { workingSection?: boolean } = {},
+  /** `railNeedsOrder`, when the caller already has it (the rail memoizes it apart) */
+  needsOrder: readonly string[] = railNeedsOrder(model, projectIds, now),
 ): RailGroup[] {
-  const scope = new Set(projectIds);
   const needsIds = new Set<string>();
   const needs: Thread[] = [];
-  for (const item of selectInbox(model)) {
-    if (!scope.has(item.thread.projectId) || needsIds.has(item.thread.id)) continue;
-    needsIds.add(item.thread.id);
-    needs.push(item.thread);
+  for (const id of needsOrder) {
+    const thread = model.threads[id];
+    if (thread === undefined || needsIds.has(id)) continue;
+    needsIds.add(id);
+    needs.push(thread);
   }
   const pinned: Thread[] = [];
   const loose: Thread[] = [];

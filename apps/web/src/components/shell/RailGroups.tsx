@@ -1,36 +1,31 @@
-import { useRef } from "react";
-import type { ExpertsSession, Thread } from "@tide/contracts";
-import { useModel } from "../../state/model.ts";
+import { memo, useMemo, useRef } from "react";
+import type { Thread } from "@tide/contracts";
 import { useServerSettings } from "../../state/serverSettings.ts";
 import { clearEmptyArchived } from "../../lib/threadActions.ts";
 import { useTicker } from "../mission/useTicker.ts";
 import { Icon } from "../ui/Icon.tsx";
 import { StateGlyph } from "../ui/StatusGlyph.tsx";
 import { ExpertsGroup } from "./ExpertsGroup.tsx";
-import { RailThreadRow, parentOf } from "./RailThreadRow.tsx";
-import { RAIL_GROUP_LABELS, buildRailGroups, claimedBy, type RailGroup } from "./railGroupModel.ts";
+import { RailThreadRow } from "./RailThreadRow.tsx";
+import { RAIL_GROUP_LABELS } from "./railGroupModel.ts";
 import { isGroupCollapsed, useGroupFolds } from "./railGroupState.ts";
 import { useRailFlip } from "./railMotion.ts";
+import { useRailGroups, type RailGroupView } from "./useRailGroups.ts";
 import styles from "./RailGroups.module.css";
 
 /** A group's rows: sessions first (their threads nested), then roots with their children below them. */
-function GroupBody({
-  group,
-  claimed,
+const GroupBody = memo(function GroupBody({
+  view,
   live,
   showProject,
+  now,
 }: {
-  group: RailGroup;
-  claimed: Set<string>;
+  view: RailGroupView;
   live: Thread[];
   showProject: boolean;
+  now: number;
 }) {
-  const loose = group.key === "archived" ? group.threads : group.threads.filter((t) => !claimed.has(t.id));
-  const listed = new Set(loose.map((t) => t.id));
-  const roots = loose.filter((t) => {
-    const parent = parentOf(t);
-    return parent === undefined || !listed.has(parent);
-  });
+  const { group, roots, sessionNodes } = view;
   const label = RAIL_GROUP_LABELS[group.key];
   return (
     <>
@@ -39,44 +34,49 @@ function GroupBody({
           sessions={group.sessions}
           threads={live}
           heading={false}
-          renderThread={(t) => <RailThreadRow key={t.id} thread={t} siblings={live} showProject={showProject} />}
+          renderThread={(t) => {
+            const node = sessionNodes.get(t.id);
+            return <RailThreadRow key={t.id} thread={node?.thread ?? t} childNodes={node?.children} showProject={showProject} now={now} />;
+          }}
         />
       ) : null}
       {roots.length > 0 ? (
         <ul className={styles.list} aria-label={`${label} threads`}>
-          {roots.map((t) => (
-            <RailThreadRow key={t.id} thread={t} siblings={loose} showProject={showProject} />
+          {roots.map((n) => (
+            <RailThreadRow key={n.thread.id} thread={n.thread} childNodes={n.children} showProject={showProject} now={now} />
           ))}
         </ul>
       ) : null}
     </>
   );
-}
+});
 
 /**
  * The rail's one flat list for the scope (All, or one project): Needs you · Inbox ·
  * Working · Snoozed · Settled · Archived. Empty groups are not drawn; each label
- * folds its group, and the fold is remembered.
+ * folds its group, and the fold is remembered. It re-renders only when the groups'
+ * inputs change (see `useRailGroups`), never on streaming text.
  */
 export function RailGroups({ projectIds, showProject }: { projectIds: readonly string[]; showProject: boolean }) {
-  const model = useModel((s) => s.model);
   const now = useTicker(60_000);
   const workingSection = useServerSettings((s) => s.settings.inbox.workingSection);
   const { folds, toggle } = useGroupFolds();
-  const groups = buildRailGroups(model, projectIds, now, { workingSection });
-  const sessions: ExpertsSession[] = groups.flatMap((g) => g.sessions);
-  const claimed = claimedBy(sessions);
-  const live = groups.filter((g) => g.key !== "archived").flatMap((g) => g.threads);
+  const { groups: views, live } = useRailGroups(projectIds, now, workingSection);
   // the rail's order; rows slide (FLIP) only when it changes
-  const signature = groups
-    .map((g) => `${g.key}${isGroupCollapsed(folds, g.key) ? "-" : ""}:${g.threads.map((t) => t.id).join(",")}:${g.sessions.map((x) => x.id).join(",")}`)
-    .join("|");
+  const signature = useMemo(
+    () =>
+      views
+        .map(({ group: g }) => `${g.key}${isGroupCollapsed(folds, g.key) ? "-" : ""}:${g.threads.map((t) => t.id).join(",")}:${g.sessions.map((x) => x.id).join(",")}`)
+        .join("|"),
+    [views, folds],
+  );
   const rootRef = useRef<HTMLDivElement>(null);
   useRailFlip(rootRef, signature);
 
   return (
     <div ref={rootRef} className={styles.groups}>
-      {groups.map((group) => {
+      {views.map((view) => {
+        const { group } = view;
         const count = group.threads.length;
         if (count === 0 && group.sessions.length === 0) return null;
         const label = RAIL_GROUP_LABELS[group.key];
@@ -112,7 +112,7 @@ export function RailGroups({ projectIds, showProject }: { projectIds: readonly s
                 </button>
               ) : null}
             </div>
-            {collapsed ? null : <GroupBody group={group} claimed={claimed} live={live} showProject={showProject} />}
+            {collapsed ? null : <GroupBody view={view} live={live} showProject={showProject} now={now} />}
           </section>
         );
       })}
