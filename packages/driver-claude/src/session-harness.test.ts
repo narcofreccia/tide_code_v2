@@ -5,7 +5,7 @@ import { fileURLToPath } from "node:url";
 import { describe, expect, it } from "vitest";
 import type { DriverEnv, NormalizedEvent, OpenSessionOptions } from "@tide/contracts";
 import type { PermissionResultShape } from "./approvals.ts";
-import { AsyncQueue } from "./async-queue.ts";
+import { AsyncQueue, deferred } from "./async-queue.ts";
 import type { ClaudeMessage } from "./sdk-shapes.ts";
 import { ClaudeSession, LOST_BACKGROUND_SUMMARY } from "./session.ts";
 import type { QueryFn } from "./types.ts";
@@ -387,5 +387,105 @@ describe("ClaudeSession harness-initiated turns", () => {
     queries[0]!.result();
     expect(texts(await second)).toEqual(["reply"]);
     expect(logs.filter((line) => line.includes("nobody listens"))).toHaveLength(1);
+  });
+});
+
+describe("ClaudeSession steer during a harness turn", () => {
+  const uuidOf = (message: { message: { content: unknown } }): string => (message as unknown as { uuid: string }).uuid;
+  const resultWith = (extra: Record<string, unknown>): ClaudeMessage => ({ type: "result", subtype: "success", session_id: "s", is_error: false, usage: {}, ...extra }) as ClaudeMessage;
+
+  /** A finished user turn, then a harness turn Claude Code opened on its own (left running). */
+  async function inHarnessTurn() {
+    const h = harness();
+    await userTurn(h, "go", runs()[0]!);
+    h.query().text("working on my own");
+    const turn = await h.nextHarnessTurn();
+    return { h, query: h.query(), events: collect(turn.events) };
+  }
+
+  it("pushes the steer into the live input and the harness turn's result acknowledges it", async () => {
+    const { h, query, events } = await inHarnessTurn();
+    const before = query.sent.length;
+    await h.session.steer({ text: "also check the tests" });
+    const steer = await query.nextInput();
+    expect(steer.message.content).toBe("also check the tests");
+    expect(query.sent).toHaveLength(before + 1);
+    query.text("checking the tests too");
+    query.push(resultWith({ user_message_uuids: [uuidOf(steer)], queued_turn_count: 0 }));
+    const out = await events;
+    expect(texts(out)).toEqual(["working on my own", "checking the tests too"]);
+    expect(out.filter((event) => event.type === "settled")).toEqual([{ type: "settled", status: "completed" }]);
+    expect(h.session.hasBackgroundWork()).toBe(true); // the fixture's sub-agents are still out
+    expect(h.openedCount()).toBe(1);
+
+    // the next send is a clean turn of its own
+    const next = collect(h.session.send({ text: "next" }));
+    expect((await query.nextInput()).message.content).toBe("next");
+    query.text("reply");
+    query.result();
+    expect(texts(await next)).toEqual(["reply"]);
+  });
+
+  it("keeps the harness turn open when the steer missed the fold and runs as the CLI's next turn", async () => {
+    const { h, query, events } = await inHarnessTurn();
+    await h.session.steer({ text: "and then summarize" });
+    const steer = await query.nextInput();
+    query.push(resultWith({ user_message_uuids: [], queued_turn_count: 1 }));
+    query.text("summary");
+    query.push(resultWith({ user_message_uuids: [uuidOf(steer)], queued_turn_count: 0 }));
+    const out = await events;
+    expect(texts(out)).toEqual(["working on my own", "summary"]);
+    expect(out.filter((event) => event.type === "settled")).toHaveLength(1);
+    expect(h.openedCount()).toBe(1);
+  });
+
+  it("refuses a steer once the harness turn's result is read, and after it ended", async () => {
+    const { h, query, events } = await inHarnessTurn();
+    const usage = deferred<{ totalTokens: number; maxTokens: number }>();
+    const asked = deferred<void>();
+    Object.assign(query, {
+      getContextUsage: () => {
+        asked.resolve();
+        return usage.promise;
+      },
+    });
+    query.result();
+    await asked.promise; // the result is read; the turn is settling
+    const sent = query.sent.length;
+    await expect(h.session.steer({ text: "too late" })).rejects.toThrow(/ending/);
+    usage.resolve({ totalTokens: 10, maxTokens: 100 });
+    expect((await events).at(-1)).toEqual({ type: "settled", status: "completed" });
+    await expect(h.session.steer({ text: "later still" })).rejects.toThrow(/no turn is running/);
+    expect(query.sent).toHaveLength(sent); // nothing reached the CLI
+  });
+
+  it("a steer for a send waiting behind a harness turn goes with that send's prompt", async () => {
+    const { h, query, events } = await inHarnessTurn();
+    const sent = collect(h.session.send({ text: "next please" }));
+    await h.session.steer({ text: "for the send" });
+    await tick();
+    const before = query.sent.length;
+    query.result(); // the harness turn ends without the steer
+    expect(texts(await events)).toEqual(["working on my own"]);
+    expect((await query.nextInput()).message.content).toBe("next please");
+    expect((await query.nextInput()).message.content).toBe("for the send");
+    expect(query.sent.length).toBe(before + 2);
+    query.push(resultWith({ user_message_uuids: query.sent.slice(-2).map(uuidOf) }));
+    expect((await sent).filter((event) => event.type === "settled")).toHaveLength(1);
+  });
+
+  it("an interrupt with a steer still queued settles the turn without tearing the query down", async () => {
+    const { h, query, events } = await inHarnessTurn();
+    await h.session.steer({ text: "and this" });
+    await query.nextInput();
+    await h.session.interrupt();
+    query.push(resultWith({ subtype: "error_during_execution", is_error: true, user_message_uuids: [], queued_turn_count: 1 }));
+    expect((await events).at(-1)).toMatchObject({ type: "settled", status: "interrupted" });
+    // the CLI runs the queued steer next: it surfaces as a harness turn, nothing is lost
+    query.text("doing this");
+    const turn = await h.nextHarnessTurn();
+    query.result();
+    expect(texts(await collect(turn.events))).toEqual(["doing this"]);
+    expect(h.queries).toHaveLength(1);
   });
 });

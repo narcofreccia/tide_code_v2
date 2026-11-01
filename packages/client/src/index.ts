@@ -78,6 +78,8 @@ export {
   memoByRef,
   selectTimeline,
   selectTurnPrompt,
+  selectSteerFallbackReason,
+  steerFallbackReason,
   selectTeamStages,
   type TeamStageStatus,
   type TeamStageView,

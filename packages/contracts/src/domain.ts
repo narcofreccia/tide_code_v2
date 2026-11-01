@@ -731,6 +731,8 @@ export const Turn = Type.Object({
   handoffDelivery: Type.Optional(Type.Union([Type.Literal("inline"), Type.Literal("native")])),
   /** undone by a later `thread.rollback`; stays in the log, hidden from the harness's history */
   rolledBack: Type.Optional(Type.Boolean()),
+  /** queued because the harness refused it as a steer (the message was meant for the running turn) */
+  steerFallback: Type.Optional(Type.Object({ reason: Type.String() })),
 });
 export type Turn = Static<typeof Turn>;
 

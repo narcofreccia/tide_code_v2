@@ -1,5 +1,6 @@
 import { memo, useEffect, useRef, useState } from "react";
 import type { Message, Turn } from "@tide/contracts";
+import { steerFallbackReason } from "@tide/client";
 import { formatDuration } from "../../lib/activity.ts";
 import { formatBytes } from "../../lib/images.ts";
 import { formatTokens } from "../../lib/glassBox.ts";
@@ -15,6 +16,7 @@ import { observeVisibleAnimation } from "../../lib/visibleAnimation.ts";
 import { LiveLabel } from "./LiveLabel.tsx";
 import { Chevron } from "./Chevron.tsx";
 import styles from "./MessageItem.module.css";
+import { STEER_FALLBACK_NOTE } from "./steerFallback.ts";
 
 /**
  * Extended thinking, folded away. It opens itself while the model is still
@@ -172,6 +174,8 @@ export interface MessageItemProps {
 export const MessageItem = memo(function MessageItem({ message, turn, showMeta, wasQueued, citeLabel }: MessageItemProps) {
   const isUser = message.role === "user";
   const queued = isUser && message.steer !== true && (turn?.status === "queued" || wasQueued === true);
+  // only while it still waits: once it ran, the note has nothing left to explain
+  const fallbackReason = queued && turn?.status === "queued" ? steerFallbackReason(turn) : undefined;
   const streaming = message.streaming === true;
   const rolledBack = turn?.rolledBack === true;
   // fence parity, kept across deltas so a token does not recount the whole reply
@@ -205,6 +209,11 @@ export const MessageItem = memo(function MessageItem({ message, turn, showMeta, 
         {queued ? (
           <span className={styles.queued} title="Sent while an earlier turn was running">
             <Pill tone="idle">queued</Pill>
+            {fallbackReason !== undefined ? (
+              <span className={styles.fallback} title={fallbackReason}>
+                {STEER_FALLBACK_NOTE}
+              </span>
+            ) : null}
           </span>
         ) : null}
         {message.steer === true ? (

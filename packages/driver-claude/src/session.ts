@@ -255,8 +255,16 @@ export class ClaudeSession implements ProviderSession {
       if (event.type === "session") this.#applySession(event);
       if (event.type === "settled") {
         const turn = this.#harness;
-        if (turn) await this.#settleHarness(turn, event);
-        else this.#preamble.clear();
+        if (!turn) {
+          this.#preamble.clear();
+          continue;
+        }
+        // a steer that missed the fold runs as the CLI's next turn: it stays this harness turn.
+        // After an interrupt it is not torn down (that would kill the background sub-agents):
+        // the CLI runs it next, and the idle loop surfaces that as a harness turn of its own.
+        if (this.#afterResult(message as ResultMessage, event.status, turn.pendingSteers) === "continue") continue;
+        turn.ending = true; // from here a steer would land after the turn: refuse it
+        await this.#settleHarness(turn, event);
         continue;
       }
       if (this.#harness) {
@@ -467,7 +475,7 @@ export class ClaudeSession implements ProviderSession {
         for (const event of events) {
           if (event.type === "session") this.#applySession(event);
           if (event.type === "settled") {
-            const after = this.#afterResult(step.value as ResultMessage, event.status);
+            const after = this.#afterResult(step.value as ResultMessage, event.status, this.#pendingSteers);
             if (after === "continue") continue; // a steer missed the fold: its own turn follows
 
             const contextUsage = await this.#contextUsage();
@@ -498,9 +506,9 @@ export class ClaudeSession implements ProviderSession {
    * (`continue`). After an interrupt such a steer would run on its own once the turn is gone,
    * so the query is torn down instead (`reset`) and the next send resumes the transcript.
    */
-  #afterResult(result: ResultMessage, status: "completed" | "interrupted" | "error"): "end" | "continue" | "reset" {
-    for (const uuid of result.user_message_uuids ?? []) this.#pendingSteers.delete(uuid);
-    if (this.#pendingSteers.size === 0 || (result.queued_turn_count ?? 0) === 0) return "end";
+  #afterResult(result: ResultMessage, status: "completed" | "interrupted" | "error", pending: Set<string>): "end" | "continue" | "reset" {
+    for (const uuid of result.user_message_uuids ?? []) pending.delete(uuid);
+    if (pending.size === 0 || (result.queued_turn_count ?? 0) === 0) return "end";
     if (status === "interrupted" || this.#interruptRequested) return "reset";
     return "continue";
   }
@@ -603,10 +611,24 @@ export class ClaudeSession implements ProviderSession {
     return "applied";
   }
 
+  /**
+   * Into the running send, else into the harness turn. A send waiting behind a harness turn is
+   * the server's live turn, so it takes the steer (delivered with its prompt). A harness turn is
+   * already fed: the message goes straight into the live input and the CLI folds it in like any
+   * steer, acknowledged by the harness turn's `result` (`user_message_uuids`). Once that turn's
+   * final `result` is read the steer is refused, never dropped: the server queues it instead.
+   */
   async steer(input: TurnInput): Promise<void> {
-    if (this.#closed || !this.#turnActive) throw new Error("no turn is running on this claude session");
+    const harness = this.#turnActive ? undefined : this.#harness;
+    if (this.#closed || (!this.#turnActive && !harness)) throw new Error("no turn is running on this claude session");
+    if (harness?.ending) throw new Error("the claude turn is ending; the message cannot join it");
     const message = buildUserMessage(input, this.nativeSessionId ?? "");
     this.#steers.add(message.uuid);
+    if (harness) {
+      harness.pendingSteers.add(message.uuid);
+      this.#inbox.push(message);
+      return;
+    }
     this.#pendingSteers.add(message.uuid);
     this.#turnMessages.push(message);
     if (this.#turnFed) this.#inbox.push(message);

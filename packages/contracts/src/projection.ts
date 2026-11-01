@@ -461,7 +461,7 @@ export function applyEvent(model: ReadModel, event: DomainEvent): ReadModel {
     case "turn.steered":
       return withThread(addUserMessage(model, event.message), event.threadId, { updatedAt: event.message.createdAt });
     case "turn.steer-fell-back":
-      return requestTurn(dropMessage(model, event.threadId, event.messageId), event.turn, event.userMessage);
+      return requestTurn(dropMessage(model, event.threadId, event.messageId), { ...event.turn, steerFallback: { reason: event.reason } }, event.userMessage);
     case "turn.edited": {
       const m = model.messages[event.messageId];
       if (!m) return model;

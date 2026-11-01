@@ -63,4 +63,30 @@ live("claude driver (live)", () => {
     await session.close();
     await instance.dispose();
   }, 180_000);
+
+  it("takes a steer into a turn Claude Code runs on its own after a background sub-agent reports", async () => {
+    const cwd = mkdtempSync(join(tmpdir(), "tide-claude-live-harness-"));
+    const instance = await claudeDriver.create(claudeDriver.defaultConfig(), env);
+    const session = await instance.openSession({ threadId: "live-harness", cwd, mode: "full-access", interaction: "default", mcpServers: [] });
+    const harnessTurn = new Promise<{ reason: string; events: AsyncIterable<NormalizedEvent> }>((resolve) => session.onHarnessTurn?.(resolve));
+
+    const first: NormalizedEvent[] = [];
+    const prompt =
+      "Launch exactly one background sub-agent with the Agent tool (run_in_background: true) whose only job is to run `sleep 15 && echo ready` with Bash and report the output. " +
+      "Do not wait for it: reply with the single word launched and end your turn. When it reports later, summarize its report in one sentence.";
+    for await (const event of session.send({ text: prompt })) first.push(event);
+    expect(first.at(-1)).toMatchObject({ type: "settled", status: "completed" });
+
+    const turn = await harnessTurn;
+    // the CLI is already running the harness turn: the steer joins it instead of being refused
+    await session.steer!({ text: "Also end that summary with the exact word PINEAPPLE." });
+    const events: NormalizedEvent[] = [];
+    for await (const event of turn.events) events.push(event);
+    expect(events.at(-1)).toMatchObject({ type: "settled", status: "completed" });
+    const said = events.flatMap((event) => (event.type === "assistant.delta" ? [event.delta] : [])).join("");
+    expect(said).toContain("PINEAPPLE");
+
+    await session.close();
+    await instance.dispose();
+  }, 300_000);
 });

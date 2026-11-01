@@ -53,6 +53,13 @@ export function reportedReason(name: string): string {
 export class HarnessTurn {
   readonly reason: string;
   readonly mailbox = new AsyncQueue<NormalizedEvent>();
+  /** uuids of messages steered into this turn the CLI has not reported consuming yet */
+  readonly pendingSteers = new Set<string>();
+  /**
+   * Set once the turn's final `result` is read (or the turn is abandoned): a steer pushed now
+   * would run after the turn, outside it, so `steer()` refuses and the server queues it instead.
+   */
+  ending = false;
   readonly #done: Deferred<void> = deferred<void>();
 
   constructor(reason: string) {
@@ -69,6 +76,7 @@ export class HarnessTurn {
   }
 
   finish(): void {
+    this.ending = true;
     this.mailbox.close();
     this.#done.resolve();
   }

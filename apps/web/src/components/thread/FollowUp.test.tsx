@@ -1,6 +1,8 @@
 import { afterEach, beforeEach, describe, expect, it } from "vitest";
 import { act, cleanup, fireEvent, render, screen } from "@testing-library/react";
+import type { Message, Turn } from "@tide/contracts";
 import { Composer } from "./Composer.tsx";
+import { STEER_FALLBACK_NOTE } from "./steerFallback.ts";
 import { attachFakeStore, makeMessage, makeThread, makeTurn, modelWithTurns, resetUi } from "../../testHarness.ts";
 import { PROVIDER_FIXTURE } from "../settings/fixtures.ts";
 import { resetFollowUp } from "../../lib/followUp.ts";
@@ -163,6 +165,18 @@ describe("queue list", () => {
     render(<Composer thread={running} />);
     fireEvent.click(screen.getAllByText("Send now as steer")[0]!);
     expect(fake.dispatch).toHaveBeenCalledWith(expect.objectContaining({ type: "turn.promote", turnId: "q1" }));
+  });
+
+  it("says when a queued message is a steer the harness refused, with the reason as a tooltip", () => {
+    const reason = "the harness refused the message: no turn is running on this claude session";
+    const fellBack = { ...makeTurn("q1", { status: "queued" }), steerFallback: { reason } } as Turn;
+    const [t2, m2] = queued("q2", "second");
+    attachFakeStore(modelWithTurns(running, [fellBack, t2!] as Turn[], [makeMessage("m-q1", { turnId: "q1", text: "first" }), m2!] as Message[]));
+    render(<Composer thread={running} />);
+    const notes = screen.getAllByText(STEER_FALLBACK_NOTE);
+    expect(notes).toHaveLength(1);
+    expect(notes[0]!.getAttribute("title")).toBe(reason);
+    expect(notes[0]!.closest("li")?.textContent).toContain("first");
   });
 
   it("drops a queued turn with ×", () => {

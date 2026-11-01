@@ -181,7 +181,8 @@ export interface ProviderSession {
   /**
    * R4: deliver a user message into the turn that `send` is currently running, without
    * interrupting tools (Claude SDK streaming input, Codex `turn/steer`, Pi `steer`, OpenCode
-   * `prompt` while busy). Rejects when no turn is running. Only called when `caps.steer`.
+   * `prompt` while busy). Claude also takes it into a turn the harness started on its own (a
+   * harness turn). Rejects when no turn is running. Only called when `caps.steer`.
    */
   steer?(input: TurnInput): Promise<void>;
   /**

@@ -2,7 +2,9 @@ import { afterEach, describe, expect, it } from "vitest";
 import { cleanup, fireEvent, render, screen } from "@testing-library/react";
 import ReactMarkdown from "react-markdown";
 import remarkGfm from "remark-gfm";
+import type { Turn } from "@tide/contracts";
 import { MessageItem, splitStreamingTail } from "./MessageItem.tsx";
+import { STEER_FALLBACK_NOTE } from "./steerFallback.ts";
 import { MarkdownPre } from "./VisualBlocks.tsx";
 import { useUi } from "../../state/ui.ts";
 import { attachFakeStore, makeMessage, makeTurn, modelWith, resetUi } from "../../testHarness.ts";
@@ -21,6 +23,23 @@ describe("MessageItem", () => {
     expect(screen.getByText("queued")).toBeDefined();
     expect(screen.queryByLabelText("Remove queued turn")).toBeNull();
     expect(screen.queryByTitle("Turn actions")).toBeNull();
+  });
+
+  it("notes on the queued chip that a refused steer is waiting, with the reason as a tooltip", () => {
+    attachFakeStore(modelWith({}));
+    const turn = { ...makeTurn("u2", { status: "queued" }), steerFallback: { reason: "codex cannot take a message into a running turn" } } as Turn;
+    const { rerender } = render(<MessageItem message={makeMessage("m1", { turnId: "u2", text: "later" })} turn={turn} />);
+    expect(screen.getByText(STEER_FALLBACK_NOTE).getAttribute("title")).toBe("codex cannot take a message into a running turn");
+    // once it ran, the chip stays but the note goes
+    rerender(<MessageItem message={makeMessage("m1", { turnId: "u2", text: "later" })} turn={{ ...turn, status: "completed" }} wasQueued />);
+    expect(screen.getByText("queued")).toBeDefined();
+    expect(screen.queryByText(STEER_FALLBACK_NOTE)).toBeNull();
+  });
+
+  it("shows no steer note on an ordinary queued message", () => {
+    attachFakeStore(modelWith({}));
+    render(<MessageItem message={makeMessage("m1", { turnId: "u2" })} turn={makeTurn("u2", { status: "queued" })} />);
+    expect(screen.queryByText(STEER_FALLBACK_NOTE)).toBeNull();
   });
 
   it("offers fork and rollback on a settled turn", () => {

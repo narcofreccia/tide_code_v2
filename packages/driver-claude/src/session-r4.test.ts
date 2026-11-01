@@ -213,6 +213,26 @@ describe("ClaudeSession rollback", () => {
     expect(h.last().options["resumeSessionAt"]).toBe("a1");
   });
 
+  it("does not count a message steered into a harness turn as a turn", async () => {
+    const transcript: TranscriptEntry[] = [];
+    const h = harness({}, transcript);
+    const harnessTurn = new Promise<AsyncIterable<NormalizedEvent>>((resolve) => h.session.onHarnessTurn((turn) => resolve(turn.events)));
+    const first = await turn(h, "one");
+    const second = await turn(h, "two");
+    const query = h.last();
+    // Claude Code continues by itself
+    query.messages.push({ type: "stream_event", parent_tool_use_id: null, event: { type: "content_block_delta", index: 0, delta: { type: "text_delta", text: "on my own" } } } as ClaudeMessage);
+    const events = collect(await harnessTurn);
+    await h.session.steer({ text: "nudge" });
+    const steer = (await query.nextInput()).uuid;
+    query.result({ user_message_uuids: [steer] });
+    expect(settled(await events)).toEqual([{ type: "settled", status: "completed" }]);
+    transcript.push(user(first), assistant("a1"), user(second), assistant("a2"), assistant("a2-own"), user(steer), assistant("a2b"));
+    await h.session.rollback(1);
+    await turn(h, "again");
+    expect(h.last().options["resumeSessionAt"]).toBe("a1");
+  });
+
   it("starts a brand-new session when every turn is dropped", async () => {
     const transcript: TranscriptEntry[] = [];
     const h = harness({}, transcript);

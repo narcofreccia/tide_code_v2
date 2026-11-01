@@ -345,6 +345,20 @@ export function selectTurnPrompt(model: ReadModel, threadId: string, turnId: str
   return undefined;
 }
 
+/**
+ * Why a queued turn exists: the harness refused it as a steer (the server's `steer.fallback`
+ * reason), else undefined. Reads `Turn.steerFallback`, which the projector sets on
+ * `turn.steer-fell-back` once contracts carry the field; until then this is always undefined.
+ */
+export function steerFallbackReason(turn: Turn | undefined): string | undefined {
+  return turn?.steerFallback?.reason;
+}
+
+/** `steerFallbackReason` of a thread's turn, as a string selector (stable across unrelated updates). */
+export function selectSteerFallbackReason(model: ReadModel, turnId: string): string | undefined {
+  return steerFallbackReason(model.turns[turnId]);
+}
+
 // ---- experts ----
 
 /** Non-archived experts sessions, newest first (optionally one project's). */

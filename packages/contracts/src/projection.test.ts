@@ -232,6 +232,7 @@ describe("projection — R4 steer, queue editing, handoff, rollback, limits", ()
     expect(m2.messages["m2"]).toBeUndefined();
     expect(m2.threadTimeline["t1"]?.map((e) => e.id)).toEqual(["m1", "m3"]);
     expect(m2.turns["u2"]?.status).toBe("queued");
+    expect(m2.turns["u2"]?.steerFallback).toEqual({ reason: "no steer" });
     expect(m2.threads["t1"]?.latestTurnId).toBe("u1");
   });
 

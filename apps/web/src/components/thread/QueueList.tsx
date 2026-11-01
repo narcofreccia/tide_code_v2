@@ -1,17 +1,19 @@
 import { memo, useState } from "react";
-import { selectQueuedTurns, selectTurnPrompt } from "@tide/client";
+import { selectQueuedTurns, selectSteerFallbackReason, selectTurnPrompt } from "@tide/client";
 import { dequeueTurn } from "../../lib/threadActions.ts";
 import { editQueuedTurn, promoteTurn, reorderQueue } from "../../lib/turnActions.ts";
 import { useModel } from "../../state/model.ts";
 import { Button } from "../ui/Button.tsx";
 import { Icon } from "../ui/Icon.tsx";
 import styles from "./QueueList.module.css";
+import { STEER_FALLBACK_NOTE } from "./steerFallback.ts";
 
 function QueueRow({
   index,
   count,
   turnId,
   text,
+  fallbackReason,
   canPromote,
   onMove,
   onDrop,
@@ -20,6 +22,8 @@ function QueueRow({
   count: number;
   turnId: string;
   text: string;
+  /** the harness refused this message as a steer: why (the queue row says so) */
+  fallbackReason?: string | undefined;
   canPromote: boolean;
   onMove: (delta: -1 | 1) => void;
   onDrop: (from: number) => void;
@@ -86,6 +90,11 @@ function QueueRow({
           <span className={styles.text} title={text}>
             {text}
           </span>
+          {fallbackReason !== undefined ? (
+            <span className={styles.fallback} title={fallbackReason}>
+              {STEER_FALLBACK_NOTE}
+            </span>
+          ) : null}
           <button
             type="button"
             className={styles.icon}
@@ -142,9 +151,10 @@ function QueueRow({
 }
 
 /** A row reading its own prompt through a string selector, so unrelated model updates skip it. */
-function QueueEntry({ threadId, turnId, ...rest }: Omit<Parameters<typeof QueueRow>[0], "text"> & { threadId: string }) {
+function QueueEntry({ threadId, turnId, ...rest }: Omit<Parameters<typeof QueueRow>[0], "text" | "fallbackReason"> & { threadId: string }) {
   const text = useModel((s) => selectTurnPrompt(s.model, threadId, turnId) ?? "");
-  return <QueueRow {...rest} turnId={turnId} text={text} />;
+  const fallbackReason = useModel((s) => selectSteerFallbackReason(s.model, turnId));
+  return <QueueRow {...rest} turnId={turnId} text={text} fallbackReason={fallbackReason} />;
 }
 
 /**
