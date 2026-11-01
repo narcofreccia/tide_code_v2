@@ -195,6 +195,9 @@ if [[ "$MANIFEST_ONLY" -eq 0 ]]; then
 
   step "Step 3: Build the web client"
   (cd "$PROJECT_ROOT" && pnpm --filter @tide/web build)
+  # bundled as a Tauri resource (bundle.resources) so the packaged server can serve it to other devices
+  rm -rf "$PROJECT_ROOT/apps/desktop/src-tauri/binaries/web"
+  cp -R "$PROJECT_ROOT/apps/web/dist" "$PROJECT_ROOT/apps/desktop/src-tauri/binaries/web"
 
   step "Step 4: Bundle the desktop app (app, dmg, updater)"
   [[ -n "${TAURI_SIGNING_PRIVATE_KEY:-}" ]] || die "TAURI_SIGNING_PRIVATE_KEY unset and $UPDATER_KEY_FILE missing — the updater artifact cannot be signed"

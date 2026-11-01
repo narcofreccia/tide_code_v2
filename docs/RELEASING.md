@@ -61,7 +61,9 @@ pnpm release:mac                               # or: bash scripts/release/build_
 ```
 
 `build_release.sh` runs: preflight and remote-version guard → `pnpm typecheck && pnpm test`
-→ `scripts/build-server-sidecar.sh` for the host triple → `pnpm --filter @tide/web build` →
+→ `scripts/build-server-sidecar.sh` for the host triple → `pnpm --filter @tide/web build`
+(+ copy of `apps/web/dist` to `binaries/web`, bundled via `bundle.resources` so the packaged
+server can serve the web client to phones and other computers; the shell passes `--web`) →
 `tauri build --bundles app,dmg,updater` → **entitlements guard** → notarize + staple →
 upload `mac/` with pruning → merge `darwin-aarch64` into `latest.json` → verify the updater
 path → `git tag -a v<version>`.

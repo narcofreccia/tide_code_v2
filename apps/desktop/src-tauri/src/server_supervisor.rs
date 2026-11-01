@@ -247,6 +247,15 @@ fn boot(app: &AppHandle, inner: &Shared, port: &mut Option<u16>) -> Result<Insta
         // Dev also accepts `?token=` on the websocket, which is what we hand the web app.
         cmd.arg("--dev");
     }
+    // The bundled web client (tauri.conf.json bundle.resources) lets a phone or another
+    // computer open this machine's server in a browser; the sidecar finds nothing on its own
+    // because the resource dir is not next to the executable on macOS.
+    if let Ok(resources) = app.path().resource_dir() {
+        let web = resources.join("web");
+        if web.join("index.html").is_file() {
+            cmd.arg("--web").arg(&web);
+        }
+    }
     if let crate::launcher::Launcher::Node { entry, .. } = &launcher {
         if let Some(repo) = entry.ancestors().nth(4) {
             cmd.current_dir(repo);

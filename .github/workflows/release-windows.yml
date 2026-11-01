@@ -28,6 +28,11 @@ env:
   R2_BUCKET: storage/tidecode
   TIDE_PUBLIC_BUCKET: https://pub-7b3e5bbd605d43adbeb4601a962d84bd.r2.dev/tidecode
 
+# one release build per ref at a time; a re-run cancels the stale one (Actions minutes are paid)
+concurrency:
+  group: release-windows-${{ github.ref }}
+  cancel-in-progress: true
+
 jobs:
   windows:
     runs-on: windows-latest
@@ -70,7 +75,11 @@ jobs:
         run: bash scripts/build-server-sidecar.sh --target windows-x64
 
       - name: Build the web client
-        run: pnpm --filter @tide/web build
+        run: |
+          pnpm --filter @tide/web build
+          # bundled as a Tauri resource so the packaged server can serve it to other devices
+          rm -rf apps/desktop/src-tauri/binaries/web
+          cp -R apps/web/dist apps/desktop/src-tauri/binaries/web
 
       - name: Build the Tauri app (NSIS + updater signature)
         env:
