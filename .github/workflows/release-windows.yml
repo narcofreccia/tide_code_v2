@@ -94,10 +94,13 @@ jobs:
           set -euo pipefail
           setup="$(ls -t apps/desktop/src-tauri/target/release/bundle/nsis/*-setup.exe | head -1)"
           echo "installing $setup"
-          # silent per-user install; NSIS returns once files are in place
-          "$setup" /S /CURRENTUSER || "$setup" /S
+          # silent install (per-user is Tauri's default). MSYS_NO_PATHCONV: Git Bash otherwise
+          # rewrites `/S` into `S:/`, the installer opens its GUI and the step hangs until timeout.
+          # `timeout` turns any other hang into a fast, visible failure.
+          MSYS_NO_PATHCONV=1 timeout 180 "$setup" /S || { echo "installer failed or hung (exit $?)"; exit 1; }
+          localappdata="$(cygpath -u "$LOCALAPPDATA")"
           for _ in $(seq 1 30); do
-            server="$(find "$LOCALAPPDATA/Tide" "$LOCALAPPDATA/Programs/Tide" "/c/Program Files/Tide" -name 'tide-server*.exe' 2>/dev/null | head -1 || true)"
+            server="$(find "$localappdata/Tide" "$localappdata/Programs/Tide" "/c/Program Files/Tide" -name 'tide-server*.exe' 2>/dev/null | head -1 || true)"
             [ -n "$server" ] && break
             sleep 2
           done
