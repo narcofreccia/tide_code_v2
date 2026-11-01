@@ -1,11 +1,10 @@
 import { useEffect, useRef, useState } from "react";
-import { selectDelegates } from "@tide/client";
+import { selectDelegates, selectLatestSettledTurnId } from "@tide/client";
 import type { Thread } from "@tide/contracts";
 import { fetchTerminalCommand } from "../../lib/threadActions.ts";
 import { runInThreadTerminal } from "../../lib/openInTerminal.ts";
 import { useModel } from "../../state/model.ts";
 import { useUi } from "../../state/ui.ts";
-import { latestSettledTurnId } from "../shell/railMenus.ts";
 import { LimitedBadge, LineageChip, RollbackPill } from "./ThreadChips.tsx";
 import { DelegatedBy, DelegatesPopover } from "./Delegates.tsx";
 import { headerMenu } from "./headerMenu.ts";
@@ -83,7 +82,7 @@ export function ThreadHeader({ thread }: { thread: Thread }) {
   const command = useTerminalCommand(thread.id, thread.nativeSessionId);
   const state = threadStateKey(thread);
   const word = threadStateLabel(thread);
-  const forkTurn = useModel((s) => latestSettledTurnId(s.model, thread.id));
+  const forkTurn = useModel((s) => selectLatestSettledTurnId(s.model, thread.id));
   const delegates = useModel((s) => selectDelegates(s.model, thread.id).length);
   const [menu, setMenu] = useState<MenuPosition | undefined>(undefined);
   const mainRef = useRef<HTMLDivElement>(null);

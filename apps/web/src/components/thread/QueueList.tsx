@@ -1,4 +1,4 @@
-import { useState } from "react";
+import { memo, useState } from "react";
 import { selectQueuedTurns, selectTurnPrompt } from "@tide/client";
 import { dequeueTurn } from "../../lib/threadActions.ts";
 import { editQueuedTurn, promoteTurn, reorderQueue } from "../../lib/turnActions.ts";
@@ -141,8 +141,18 @@ function QueueRow({
   );
 }
 
-/** The thread's queued follow-ups: edit, reorder, promote to a steer, or drop. */
-export function QueueList({
+/** A row reading its own prompt through a string selector, so unrelated model updates skip it. */
+function QueueEntry({ threadId, turnId, ...rest }: Omit<Parameters<typeof QueueRow>[0], "text"> & { threadId: string }) {
+  const text = useModel((s) => selectTurnPrompt(s.model, threadId, turnId) ?? "");
+  return <QueueRow {...rest} turnId={turnId} text={text} />;
+}
+
+/**
+ * The thread's queued follow-ups: edit, reorder, promote to a steer, or drop.
+ * Memoized and subscribed to the memoized queued-turns array only (stable while
+ * `model.turns` is), so neither keystrokes nor streaming deltas re-render it.
+ */
+export const QueueList = memo(function QueueList({
   threadId,
   running,
   canSteer,
@@ -151,8 +161,7 @@ export function QueueList({
   running: boolean;
   canSteer: boolean;
 }) {
-  const model = useModel((s) => s.model);
-  const turns = selectQueuedTurns(model, threadId);
+  const turns = useModel((s) => selectQueuedTurns(s.model, threadId));
   if (turns.length === 0) return null;
   const ids = turns.map((t) => t.id);
 
@@ -167,12 +176,12 @@ export function QueueList({
   return (
     <ol className={styles.list} aria-label="Queued messages">
       {turns.map((turn, index) => (
-        <QueueRow
+        <QueueEntry
           key={turn.id}
+          threadId={threadId}
           index={index}
           count={turns.length}
           turnId={turn.id}
-          text={selectTurnPrompt(model, threadId, turn.id) ?? ""}
           canPromote={running && canSteer}
           onMove={(delta) => move(index, index + delta)}
           onDrop={(from) => move(from, index)}
@@ -180,4 +189,4 @@ export function QueueList({
       ))}
     </ol>
   );
-}
+});

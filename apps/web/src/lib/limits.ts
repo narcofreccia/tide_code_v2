@@ -36,7 +36,7 @@ export interface InstanceLimits {
  * The subscription is shared by every thread on an instance, so the newest report
  * for a window is the current one, whichever thread carried it.
  */
-export function selectInstanceLimits(model: ReadModel): InstanceLimits[] {
+export function selectInstanceLimits(model: Pick<ReadModel, "threads">): InstanceLimits[] {
   const byId = new Map<string, InstanceLimits>();
   for (const thread of Object.values(model.threads)) {
     const limit = thread.rateLimit;
@@ -83,7 +83,7 @@ export function windowsText(entry: InstanceLimits): string {
 }
 
 /** The instance closest to its limit, or undefined when nothing reported a usable number. */
-export function tightestInstance(model: ReadModel): InstanceLimits | undefined {
+export function tightestInstance(model: Pick<ReadModel, "threads">): InstanceLimits | undefined {
   let best: InstanceLimits | undefined;
   let bestScore = -1;
   for (const entry of selectInstanceLimits(model)) {

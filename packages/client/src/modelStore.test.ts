@@ -123,3 +123,92 @@ describe("createModelStore", () => {
     expect(Object.keys(store.getState().model.projects)).toEqual(["p1"]);
   });
 });
+
+describe("createModelStore frame batching", () => {
+  /** A hand-stepped frame clock: `frame()` runs what was scheduled since the last one. */
+  function fakeFrames(): { schedule: (cb: () => void) => void; frame: () => void; pending: () => number } {
+    let queue: (() => void)[] = [];
+    return {
+      schedule: (cb) => {
+        queue.push(cb);
+      },
+      frame: () => {
+        const run = queue;
+        queue = [];
+        for (const cb of run) cb();
+      },
+      pending: () => queue.length,
+    };
+  }
+
+  it("publishes ten records in one frame once, with the last model", () => {
+    const h = harness();
+    const frames = fakeFrames();
+    const store = createModelStore(h.conn, { schedule: frames.schedule });
+    h.setStatus("open");
+    h.streamCalls[0]?.push(snapshot({ ...emptyReadModel(), seq: 0 }));
+    frames.frame();
+
+    const seen: number[] = [];
+    store.subscribe(() => seen.push(store.getState().model.seq));
+    for (let seq = 1; seq <= 10; seq++) h.streamCalls[0]?.push(projectCreated(seq, `p${seq}`));
+    // applied per record, published not yet
+    expect(store.getState().model.seq).toBe(10);
+    expect(seen).toEqual([]);
+    expect(frames.pending()).toBe(1);
+
+    frames.frame();
+    expect(seen).toEqual([10]);
+    expect(Object.keys(store.getState().model.projects)).toHaveLength(10);
+    frames.frame();
+    expect(seen).toEqual([10]);
+  });
+
+  it("a dispatch receipt publishes at once, taking pending records along", async () => {
+    const h = harness();
+    const frames = fakeFrames();
+    const store = createModelStore(h.conn, { schedule: frames.schedule });
+    h.setStatus("open");
+    h.streamCalls[0]?.push(snapshot(emptyReadModel()));
+    frames.frame();
+    const listener = vi.fn();
+    store.subscribe(listener);
+
+    h.streamCalls[0]?.push(projectCreated(1, "streamed"));
+    const record = (projectCreated(2, "commanded") as { kind: "event"; record: EventRecord }).record;
+    h.dispatchResult = { seq: 2, events: [record] };
+    await store.dispatch({ type: "project.create", title: "commanded", rootPath: "/c" });
+
+    expect(listener).toHaveBeenCalledTimes(1);
+    expect(Object.keys(store.getState().model.projects).sort()).toEqual(["commanded", "streamed"]);
+    // the frame already queued finds nothing left to publish
+    frames.frame();
+    expect(listener).toHaveBeenCalledTimes(1);
+  });
+
+  it("a receipt with no new records still flushes what streamed in", async () => {
+    const h = harness();
+    const frames = fakeFrames();
+    const store = createModelStore(h.conn, { schedule: frames.schedule });
+    h.setStatus("open");
+    h.streamCalls[0]?.push(snapshot(emptyReadModel()));
+    frames.frame();
+    const listener = vi.fn();
+    store.subscribe(listener);
+    h.streamCalls[0]?.push(projectCreated(1, "p1"));
+    h.dispatchResult = { seq: 1, events: [] };
+    await store.dispatch({ type: "project.create", title: "x", rootPath: "/x" });
+    expect(listener).toHaveBeenCalledTimes(1);
+  });
+
+  it("status changes publish immediately", () => {
+    const h = harness();
+    const frames = fakeFrames();
+    const store = createModelStore(h.conn, { schedule: frames.schedule });
+    const listener = vi.fn();
+    store.subscribe(listener);
+    h.setStatus("open");
+    expect(listener).toHaveBeenCalled();
+    expect(store.getState().status).toBe("open");
+  });
+});

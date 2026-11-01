@@ -151,8 +151,9 @@ function onModelChange(model: ReadModel): void {
   for (const threadId of stale) invalidateThread(threadId);
 }
 
+// streaming deltas replace messages, never turns: skip the per-turn walk until turns change
 useModel.subscribe((state, prev) => {
-  if (state.model !== prev.model) onModelChange(state.model);
+  if (state.model.turns !== prev.model.turns) onModelChange(state.model);
 });
 
 // ---- hooks ----
@@ -200,10 +201,10 @@ export function useVcsStatus(threadId: string | undefined): StatusQuery {
 /** `+n −m` for the turn the Changes tab is showing; read-only, never fetches. */
 export function useSelectedDiffStats(threadId: string | undefined): DiffTotals | undefined {
   const explicit = useVcs((s) => (threadId ? s.selection[threadId] : undefined));
-  const model = useModel((s) => s.model);
-  const selection = threadId ? resolveSelection(model, threadId, explicit) : undefined;
+  // narrow subscriptions: a string and one turn, both stable across streaming deltas
+  const selection = useModel((s) => (threadId ? resolveSelection(s.model, threadId, explicit) : undefined));
+  const turn = useModel((s) => (selection === undefined || selection === ALL_CHANGES ? undefined : s.model.turns[selection]));
   const entry = useVcs((s) => (threadId && selection ? s.diffs[diffKey(threadId, selection)] : undefined));
   if (!threadId || selection === undefined) return undefined;
-  const turn = selection === ALL_CHANGES ? undefined : model.turns[selection];
   return diffTotals(turn, entry?.data);
 }
