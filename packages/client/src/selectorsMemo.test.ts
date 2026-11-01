@@ -58,7 +58,7 @@ describe("memoByRef", () => {
 
 describe("turn selectors keyed on the turns map", () => {
   const turns = [
-    turn("u1", "completed", 10, { checkpoint: { before: "a", after: "b" } as Turn["checkpoint"] }),
+    turn("u1", "completed", 10, { checkpoint: { before: "a", after: "b" } }),
     turn("u2", "error", 20),
     turn("u3", "running", 30),
     turn("u4", "queued", 40),

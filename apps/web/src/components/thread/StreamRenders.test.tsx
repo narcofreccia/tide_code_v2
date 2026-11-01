@@ -10,7 +10,7 @@ import { attachFakeStore, makeThread, resetUi } from "../../testHarness.ts";
 const renders = vi.hoisted(() => new Map<string, number>());
 vi.mock("./MessageItem.tsx", async (importOriginal) => {
   const real = await importOriginal<typeof import("./MessageItem.tsx")>();
-  const Spy = memo(function Spy(props: real.MessageItemProps) {
+  const Spy = memo(function Spy(props: import("./MessageItem.tsx").MessageItemProps) {
     renders.set(props.message.id, (renders.get(props.message.id) ?? 0) + 1);
     return <real.MessageItem {...props} />;
   });

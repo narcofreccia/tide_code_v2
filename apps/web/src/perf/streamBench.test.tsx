@@ -17,7 +17,7 @@ import { attachFakeStore, makeThread, resetUi } from "../testHarness.ts";
  * to the console. Thresholds are loose on purpose; the printed numbers are the point.
  */
 
-const PERF = process.env["TIDE_PERF"] === "1";
+const PERF = (globalThis as { process?: { env?: Record<string, string | undefined> } }).process?.env?.["TIDE_PERF"] === "1";
 
 const PARAGRAPH =
   "The build runs the gates in order: typecheck, unit tests, then the bundle. A failing gate stops the run and the row says which one. " +

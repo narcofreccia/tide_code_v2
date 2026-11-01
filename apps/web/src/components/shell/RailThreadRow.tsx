@@ -97,7 +97,7 @@ export interface RailThreadRowProps {
   /** without `childNodes`: the threads to find this row's children among */
   siblings?: readonly Thread[];
   /** the rail's minute clock: re-renders the relative time */
-  now?: number;
+  now?: number | undefined;
   /** scope is All and there is more than one project: a project initial in the meta column */
   showProject?: boolean;
   /** a server search hit: its snippet is the second line */
@@ -326,7 +326,7 @@ export const RailThreadRow = memo(function RailThreadRowView({ thread, childNode
       {children.length > 0 ? (
         <ul className={styles.children}>
           {children.map((c) => (
-            <RailThreadRow key={c.thread.id} thread={c.thread} childNodes={c.children} showProject={showProject} now={now} nested />
+            <RailThreadRow key={c.thread.id} thread={c.thread} childNodes={c.children} showProject={showProject ?? false} now={now} nested />
           ))}
         </ul>
       ) : null}

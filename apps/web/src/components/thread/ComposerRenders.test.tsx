@@ -44,7 +44,7 @@ afterEach(() => {
 
 function runningWithQueue(): { model: ReadModel; thread: ReturnType<typeof makeThread> } {
   const thread = makeThread("t1", { status: "running" });
-  let model = modelWith({ threads: [thread] });
+  let model = modelWith({ threads: { [thread.id]: thread } });
   let seq = model.seq;
   const record = (event: Parameters<typeof applyRecord>[1]["event"]): void => {
     seq += 1;

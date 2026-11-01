@@ -8,7 +8,7 @@ function build(events: DomainEvent[]): ReadModel {
 
 const thread = (id: string): DomainEvent => ({
   type: "thread.created",
-  thread: { id, projectId: "p1", title: id, provider: "claude", runtimeMode: "approval-required", interactionMode: "default", status: "idle", createdAt: 1, updatedAt: 1 },
+  thread: { id, projectId: "p1", title: id, provider: "claude", mode: "approval-required", interaction: "default", status: "idle", createdAt: 1, updatedAt: 1 },
 });
 
 function turn(threadId: string): DomainEvent[] {

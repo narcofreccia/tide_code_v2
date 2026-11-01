@@ -61,7 +61,7 @@ export function useRailGroups(projectIds: readonly string[], now: number, workin
     const model: ReadModel = { ...useModel.getState().model, threads, expertsSessions };
     const ids = scopeKey === "" ? [] : scopeKey.split("\n");
     const needsOrder = needsKey === "" ? [] : needsKey.split("\n");
-    const groups = buildRailGroups(model, ids, now, { workingSection }, needsOrder);
+    const groups = buildRailGroups(model, ids, now, workingSection === undefined ? {} : { workingSection }, needsOrder);
     const claimed = claimedBy(groups.flatMap((g) => g.sessions));
     const live = groups.filter((g) => g.key !== "archived").flatMap((g) => g.threads);
     const liveIds = new Set(live.map((t) => t.id));
