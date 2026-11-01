@@ -3,7 +3,10 @@ import type { McpServerSpec } from "@tide/contracts";
 import { JsonRpcConnection, type RequestId } from "./jsonrpc.ts";
 import type { ChildLike, CodexConfig, SpawnFn, TimerLike } from "./types.ts";
 
-const CLIENT_INFO = { name: "tide", title: "Tide", version: "2.0.0" };
+/** Defined by the sidecar build (`bun build --define TIDE_BUILD_VERSION=…`); undefined in dev and tests. */
+declare const TIDE_BUILD_VERSION: string | undefined;
+
+const CLIENT_INFO = { name: "tide", title: "Tide", version: typeof TIDE_BUILD_VERSION === "string" ? TIDE_BUILD_VERSION : "0.0.0-dev" };
 
 /** A handshake that never answers must not hang `openSession` forever. */
 export const INITIALIZE_TIMEOUT_MS = 45_000;

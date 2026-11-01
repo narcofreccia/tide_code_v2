@@ -67,7 +67,7 @@ describe("codex session", () => {
     expect(session.nativeSessionId).toBe(THREAD);
     expect(server.args).toEqual(["app-server"]);
     expect(server.written[0]?.method).toBe("initialize");
-    expect(server.written[0]?.params?.["clientInfo"]).toEqual({ name: "tide", title: "Tide", version: "2.0.0" });
+    expect(server.written[0]?.params?.["clientInfo"]).toEqual({ name: "tide", title: "Tide", version: "0.0.0-dev" });
     expect(server.written[1]?.method).toBe("initialized");
     expect(server.calls("thread/start")[0]).toMatchObject({ cwd: "/tmp/repo", approvalPolicy: "untrusted", sandbox: "workspace-write" });
     await session.close();

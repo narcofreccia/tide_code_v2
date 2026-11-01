@@ -5,7 +5,9 @@ import { installHint, isNotFound, probeStatus, type AgentFacts } from "./status.
 import type { AcpConfig, AcpDeps } from "./types.ts";
 
 const STATUS_TTL_MS = 60_000;
-export const CLIENT_VERSION = "0.1.0";
+/** Defined by the sidecar build (`bun build --define TIDE_BUILD_VERSION=…`); undefined in dev and tests. */
+declare const TIDE_BUILD_VERSION: string | undefined;
+export const CLIENT_VERSION = typeof TIDE_BUILD_VERSION === "string" ? TIDE_BUILD_VERSION : "0.0.0-dev";
 
 /**
  * One configured ACP agent (`acp:gemini`, `acp:copilot`, a manual command…). Each session is

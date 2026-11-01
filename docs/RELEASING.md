@@ -60,7 +60,7 @@ endpoint baked into `tauri.conf.json` is `{public}/latest.json` — **it never m
 
 ```sh
 source ~/.nvm/nvm.sh && nvm use 22
-./scripts/release/bump_version.sh 2.0.0        # package.json + Cargo.toml, commits
+./scripts/release/bump_version.sh 0.1.1        # package.json + Cargo.toml, commits
 pnpm release:mac                               # or: bash scripts/release/build_release.sh
 ```
 

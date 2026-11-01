@@ -2,7 +2,7 @@
 # =============================================================================
 # Bump the release version in the two places that carry it.
 #
-#   scripts/release/bump_version.sh 2.0.0 [--no-commit]
+#   scripts/release/bump_version.sh 0.1.1 [--no-commit]
 #
 #   package.json                          the source of truth — tauri.conf.json's
 #                                         "version" points at this file
