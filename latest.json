@@ -1,14 +1,14 @@
 {
   "version": "0.1.1",
   "notes": "v0.1.1",
-  "pub_date": "2026-11-01T20:01:00Z",
+  "pub_date": "2026-11-01T20:17:23Z",
   "platforms": {
     "darwin-aarch64": {
       "signature": "dW50cnVzdGVkIGNvbW1lbnQ6IHNpZ25hdHVyZSBmcm9tIHRhdXJpIHNlY3JldCBrZXkKUlVURFlJczZXUGlBMzhiRUJHd2ttTnpTUUFoMHVrZktIalNkYXpLdjRuc0lYNlBhZWFZY2dnN0UrdGMzOG9rQXdPSDBwWktZeE5IdTNrZ3FMeHp3MlgyZ0tYL3djd1pTSmdrPQp0cnVzdGVkIGNvbW1lbnQ6IHRpbWVzdGFtcDoxNzkzNTYzMTYwCWZpbGU6VGlkZS5hcHAudGFyLmd6CjFkSDlpNG1udEJBdHgwdU5PWUxreXJSeVFNMUVpN1lDTStlTHRvM0d1YUJHRE4vU0xrdVNaMDgyN255ZW5iZEFPNkJWbm84dmhWV2IyY3NlZlV2OEFnPT0K",
       "url": "https://pub-7b3e5bbd605d43adbeb4601a962d84bd.r2.dev/tidecode/mac/tide.app.tar.gz"
     },
     "windows-x86_64": {
-      "signature": "dW50cnVzdGVkIGNvbW1lbnQ6IHNpZ25hdHVyZSBmcm9tIHRhdXJpIHNlY3JldCBrZXkKUlVURFlJczZXUGlBMzVseHNvMEZPdnltNjVkVzdSVGpab0NjcmRmNURFR1NFU2wrNVZQS29rSUdUSWIySkt0ejBMMFJKaXNRL0hOTTB1bm5YSnQ4Vzc1WXRHZjVRL3hUbWdvPQp0cnVzdGVkIGNvbW1lbnQ6IHRpbWVzdGFtcDoxNzkzNTUyNDA5CWZpbGU6VGlkZV8wLjEuMF94NjQtc2V0dXAuZXhlCmhDVzRxYWVSZzlKOWZtK2xMRmFiTUlUblN1RzZDZWdTRHZuWVFVUkpGRk1XcEozYktaK0xXZ0M4QitIanQ1K1BiN2NvenRMRUxjNEt6ZEVxR0VpYUJRPT0K",
+      "signature": "dW50cnVzdGVkIGNvbW1lbnQ6IHNpZ25hdHVyZSBmcm9tIHRhdXJpIHNlY3JldCBrZXkKUlVURFlJczZXUGlBMzlFUDNBak5IZlhzMkFSZ3pvcG11ei9JVTVVeXRvdzFLRXR5aWNVLzhRdFV3K2tiVzhRWjJJVU1BanJ5TnlidGUrSVhLd1F1dlJyNEdNTmVTenpIYmdnPQp0cnVzdGVkIGNvbW1lbnQ6IHRpbWVzdGFtcDoxNzkzNTY0MjI5CWZpbGU6VGlkZV8wLjEuMV94NjQtc2V0dXAuZXhlCmo3WG1aekpYQW5jTmFzK2xQSEJROGIxSEFiRVpzSUt6VFpUZDUyN2R6NHQwV0RReG5Kd1gzTEhCeFRJbWx3YTM1Z2N0M0xwaUt6c2RUQ2RRbGVyQ0RnPT0K",
       "url": "https://pub-7b3e5bbd605d43adbeb4601a962d84bd.r2.dev/tidecode/windows/tide-setup.exe"
     }
   }
