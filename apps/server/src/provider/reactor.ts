@@ -1,6 +1,7 @@
 import {
   newId as defaultNewId,
   type Activity,
+  type Command,
   type EventRecord,
   type ImageInput,
   type InternalCommand,
@@ -16,7 +17,7 @@ import { isUsageLimitError } from "../orchestration/limits.ts";
 import { attachmentFooter } from "../workspace/attachments.ts";
 import { activityKey, mergeActivity } from "./activities.ts";
 import { inlinePrompt, planHandoffDelivery, type DeliveryPlan } from "./handoffDelivery.ts";
-import { drainEvents, HarnessTurnQueue } from "./harnessTurns.ts";
+import { dismissHarnessTurn, HarnessTurnQueue, SteerRetargets } from "./harnessTurns.ts";
 import { instanceIdOf, type HarnessTurn, type SessionDirectory } from "./sessions.ts";
 
 interface ThreadState {
@@ -114,6 +115,10 @@ export class ProviderReactor {
   #interruptTimers = new Map<string, CancelTimer>();
   /** threadId -> the turn currently inside `session.send` (the only one a steer can land in) */
   #live = new Map<string, string>();
+  /** threadId -> the driver's key of the live turn, when it is a harness turn (steers name it) */
+  #liveKey = new Map<string, string>();
+  /** R14: steers refused because the harness moved on to its next turn, re-aimed at that turn */
+  #retargets = new SteerRetargets();
   #inflight = new Set<Promise<unknown>>();
   /** R14: turns the harness started by itself, consumed by `#runTurn` instead of `send` */
   #harnessTurns = new HarnessTurnQueue();
@@ -174,7 +179,7 @@ export class ProviderReactor {
           this.#log("[reactor] harness turn refused; discarding its events", err);
         }
         // still waiting = no `turn.requested` claimed it (refused, or the thread is gone)
-        if (this.#harnessTurns.withdraw(threadId, turn)) await drainEvents(turn.events, this.#log);
+        if (this.#harnessTurns.withdraw(threadId, turn)) await dismissHarnessTurn(turn, this.#log);
       })(),
     );
   }
@@ -210,10 +215,10 @@ export class ProviderReactor {
   }
 
   /** A harness turn that will never run: consume its events so the driver frees them. */
-  async #releaseHarnessTurn(events: AsyncIterable<NormalizedEvent> | undefined, why: string, turnId: string): Promise<void> {
-    if (events === undefined) return;
+  async #releaseHarnessTurn(turn: HarnessTurn | undefined, why: string, turnId: string): Promise<void> {
+    if (turn === undefined) return;
     this.#log(`[reactor] discarding harness turn: ${why}`, turnId);
-    await drainEvents(events, this.#log);
+    await dismissHarnessTurn(turn, this.#log);
   }
 
   #onRecord(record: EventRecord): void {
@@ -225,6 +230,7 @@ export class ProviderReactor {
         return;
       // the harness could not take a steer: the message became a turn of its own, run like any other
       case "turn.steer-fell-back":
+        this.#retargetFallback(event.threadId, event.messageId, event.turn.id, event.turn.status === "queued");
         this.#accept(event.threadId, event.turn.id, textOf(event.userMessage), event.images);
         return;
       case "turn.steered":
@@ -232,6 +238,7 @@ export class ProviderReactor {
         return;
       case "turn.dequeued":
         this.#known.delete(event.turnId);
+        this.#retargets.forget(event.threadId, event.turnId);
         this.#track(this.#releaseHarnessTurn(this.#harnessTurns.take(event.turnId), "dequeued", event.turnId));
         return;
       case "approval.responded":
@@ -278,7 +285,9 @@ export class ProviderReactor {
   /**
    * Out-of-band like approvals: the message goes into the turn `send` is running right now. Any
    * reason it cannot (no live turn on this reactor, no cap, the harness refused) is reported as
-   * `steer.fallback`, and the decider turns the message into a queued turn.
+   * `steer.fallback`, and the decider turns the message into a queued turn. A harness turn is
+   * named by its key: when the harness already moved on to its next turn (which waits behind
+   * this one in Tide), that queued fallback is promoted into it once it runs (`#retargetFallback`).
    */
   async #steer(threadId: string, turnId: string, messageId: string, input: TurnInput): Promise<void> {
     const fallback = (reason: string): Promise<void> => this.#dispatch({ type: "steer.fallback", messageId, reason });
@@ -292,13 +301,32 @@ export class ProviderReactor {
       this.#log("[reactor] could not read driver caps", err);
     }
     if (!steerable) return fallback(`${thread.provider} cannot take a message into a running turn`);
+    const turnKey = this.#liveKey.get(threadId);
     try {
-      await session.steer!(input);
+      if (turnKey === undefined) await session.steer!(input);
+      else await session.steer!(input, { turnKey });
       this.#sessions.touch(threadId);
     } catch (err) {
       this.#log("[reactor] steer refused", err);
+      if (turnKey !== undefined && this.#harnessTurns.hasPending(threadId)) this.#retargets.refused(messageId, threadId, turnId);
       await fallback(`the harness refused the message: ${err instanceof Error ? err.message : String(err)}`);
     }
+  }
+
+  /**
+   * A steer refused because the harness had moved on fell back to a queued turn: promote it into
+   * the next harness turn as soon as that runs in Tide (right away if it already does). If it
+   * cannot be promoted (images, a handoff) it stays queued and runs as a turn of its own.
+   */
+  #retargetFallback(threadId: string, messageId: string, turnId: string, queued: boolean): void {
+    const origin = this.#retargets.fellBack(messageId, turnId, queued);
+    if (origin === undefined) return;
+    const live = this.#live.get(threadId);
+    if (live !== undefined && live !== origin.fromTurnId && this.#liveKey.has(threadId)) this.#promoteRetargets(threadId);
+  }
+
+  #promoteRetargets(threadId: string): void {
+    for (const turnId of this.#retargets.take(threadId)) this.#track(this.#dispatchClient({ type: "turn.promote", turnId }));
   }
 
   /**
@@ -415,6 +443,15 @@ export class ProviderReactor {
     );
   }
 
+  /** A user-level command the reactor issues on the user's behalf (re-aiming a steer). */
+  async #dispatchClient(command: Extract<Command, { type: "turn.promote" }>): Promise<void> {
+    try {
+      await this.#engine.dispatch(command);
+    } catch (err) {
+      this.#log(`[reactor] ${command.type} rejected`, err);
+    }
+  }
+
   async #dispatch(command: InternalCommand): Promise<void> {
     try {
       await this.#engine.dispatch(command);
@@ -426,6 +463,7 @@ export class ProviderReactor {
   async #runTurn(threadId: string, turnId: string, input: TurnInput): Promise<void> {
     // a turn the harness is already running: its events replace `send`, no prompt is built
     const attached = this.#harnessTurns.take(turnId);
+    this.#retargets.forget(threadId, turnId);
     // dequeued while waiting, or settled by recovery/shutdown: nothing to run
     if (this.#engine.getModel().turns[turnId]?.status !== "requested") return this.#releaseHarnessTurn(attached, "turn no longer requested", turnId);
     // Gives the vcs reactor its window to snapshot the working tree before the first tool
@@ -468,7 +506,10 @@ export class ProviderReactor {
       const nativeSessionId = (opened?.session ?? this.#sessions.peek(threadId))?.nativeSessionId;
       if (nativeSessionId !== undefined) await start(nativeSessionId);
       this.#live.set(threadId, turnId);
-      const events = opened !== undefined ? opened.session.send(opened.prompt) : attached!;
+      if (attached?.key !== undefined) this.#liveKey.set(threadId, attached.key);
+      // steers the harness refused for the turn before this one belong here
+      if (attached !== undefined) this.#promoteRetargets(threadId);
+      const events = opened !== undefined ? opened.session.send(opened.prompt) : attached!.events;
       for await (const event of events) {
         // every sign of life keeps the session off the idle reaper
         this.#sessions.touch(threadId);
@@ -495,7 +536,10 @@ export class ProviderReactor {
         if (isUsageLimitError(message)) run.limited ??= { note: message };
       }
     } finally {
-      if (this.#live.get(threadId) === turnId) this.#live.delete(threadId);
+      if (this.#live.get(threadId) === turnId) {
+        this.#live.delete(threadId);
+        this.#liveKey.delete(threadId);
+      }
     }
     if (settled && run.limited !== undefined) {
       await this.#dispatch({

@@ -1,4 +1,4 @@
-import { hasBackgroundChildren, type DriverCaps, type McpServerSpec, type NormalizedEvent, type Project, type ProviderInstance, type ProviderKind, type ProviderSession, type ReadModel, type SessionSettings, type Thread } from "@tide/contracts";
+import { hasBackgroundChildren, type DriverCaps, type HarnessTurnHandle, type McpServerSpec, type NormalizedEvent, type Project, type ProviderInstance, type ProviderKind, type ProviderSession, type ReadModel, type SessionSettings, type Thread } from "@tide/contracts";
 import { THREAD_TOOLS_HINT } from "@tide/tide-mcp";
 import { composeSystemPromptAppend, linkedRepoPreamble, resolveLinkedDirs } from "./links.ts";
 import type { DriverRegistry } from "./registry.ts";
@@ -70,10 +70,7 @@ export interface SessionDirectoryOptions {
 }
 
 /** R14: a turn the harness started without a `send`; `events` is buffered by the driver and ends after `settled`. */
-export interface HarnessTurn {
-  reason: string;
-  events: AsyncIterable<NormalizedEvent>;
-}
+export type HarnessTurn = HarnessTurnHandle;
 
 /**
  * The provider a thread's `nativeSessionId` belongs to: the harness of its most recently

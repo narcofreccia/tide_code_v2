@@ -1,6 +1,6 @@
 import { tmpdir } from "node:os";
 import { describe, expect, it } from "vitest";
-import type { DriverEnv, NormalizedEvent, OpenSessionOptions } from "@tide/contracts";
+import type { DriverEnv, HarnessTurnHandle, NormalizedEvent, OpenSessionOptions } from "@tide/contracts";
 import { AsyncQueue } from "./async-queue.ts";
 import type { ClaudeMessage, TranscriptEntry } from "./sdk-shapes.ts";
 import { ClaudeSession } from "./session.ts";
@@ -90,6 +90,12 @@ async function turn(h: ReturnType<typeof harness>, text: string, sessionId = "se
   query.result({ user_message_uuids: [prompt.uuid] });
   await done;
   return prompt.uuid;
+}
+
+/** Claude Code writing text on its own: the streamed delta (what opens a harness turn), then the assistant entry `a-<text>`. */
+function ownText(query: InputQuery, text: string): void {
+  query.messages.push({ type: "stream_event", parent_tool_use_id: null, event: { type: "content_block_delta", index: 0, delta: { type: "text_delta", text } } } as ClaudeMessage);
+  query.text(text);
 }
 
 const user = (uuid: string, content: unknown = "prompt"): TranscriptEntry => ({ type: "user", uuid, parent_tool_use_id: null, message: { role: "user", content } });
@@ -222,15 +228,17 @@ describe("ClaudeSession rollback", () => {
     const query = h.last();
     // Claude Code continues by itself
     query.messages.push({ type: "stream_event", parent_tool_use_id: null, event: { type: "content_block_delta", index: 0, delta: { type: "text_delta", text: "on my own" } } } as ClaudeMessage);
+    query.messages.push({ type: "assistant", uuid: "a2-own", parent_tool_use_id: null, message: { content: [{ type: "text", text: "on my own" }] } } as ClaudeMessage);
     const events = collect(await harnessTurn);
     await h.session.steer({ text: "nudge" });
     const steer = (await query.nextInput()).uuid;
     query.result({ user_message_uuids: [steer] });
     expect(settled(await events)).toEqual([{ type: "settled", status: "completed" }]);
     transcript.push(user(first), assistant("a1"), user(second), assistant("a2"), assistant("a2-own"), user(steer), assistant("a2b"));
+    // the harness turn is a turn of its own (the server counts it); the steer inside it is not
     await h.session.rollback(1);
     await turn(h, "again");
-    expect(h.last().options["resumeSessionAt"]).toBe("a1");
+    expect(h.last().options["resumeSessionAt"]).toBe("a2");
   });
 
   it("starts a brand-new session when every turn is dropped", async () => {
@@ -272,5 +280,193 @@ describe("ClaudeSession rollback", () => {
     query.result();
     await done;
     await expect(harness().session.rollback(1)).rejects.toThrow(/no history/);
+  });
+});
+
+describe("ClaudeSession rollback across harness turns", () => {
+  const notice = (uuid: string): ClaudeMessage =>
+    ({ type: "user", uuid, parent_tool_use_id: null, message: { role: "user", content: `<task-notification>\n<task-id>${uuid}</task-id>\n<status>completed</status>\n<summary>Agent "Audit" finished</summary>\n</task-notification>` } }) as ClaudeMessage;
+  const noticeEntry = (uuid: string): TranscriptEntry => user(uuid, `<task-notification>\n<task-id>${uuid}</task-id>\n</task-notification>`);
+
+  /** Collects every harness turn the session opens. */
+  function listen(h: ReturnType<typeof harness>): () => Promise<HarnessTurnHandle> {
+    const handles = new AsyncQueue<HarnessTurnHandle>();
+    const next = handles.drain();
+    h.session.onHarnessTurn((turn) => handles.push(turn));
+    return async () => {
+      const step = await next.next();
+      if (step.done) throw new Error("no harness turn");
+      return step.value;
+    };
+  }
+
+  /**
+   * A sub-agent reports and Claude Code runs a turn by itself: its `<task-notification>` entry
+   * `note`, a reply `a-<reply>`, optionally a steered message folded in. Returns the steer's uuid.
+   */
+  async function harnessRun(
+    h: ReturnType<typeof harness>,
+    next: () => Promise<HarnessTurnHandle>,
+    note: string,
+    reply: string,
+    options: { steer?: string; dismiss?: boolean } = {},
+  ): Promise<string | undefined> {
+    const query = h.last();
+    query.messages.push(notice(note));
+    const handle = await next();
+    if (options.dismiss) handle.dismiss?.();
+    const events = collect(handle.events);
+    query.text(reply);
+    let steer: string | undefined;
+    if (options.steer !== undefined) {
+      await h.session.steer({ text: options.steer }, { turnKey: handle.key! });
+      steer = (await query.nextInput()).uuid;
+    }
+    query.result({ user_message_uuids: steer !== undefined ? [steer] : [] });
+    expect(settled(await events)).toHaveLength(1);
+    return steer;
+  }
+
+  /** [send "one", send "two", harness turn n1] with its transcript. */
+  async function sendSendHarness(options: { steer?: string; dismiss?: boolean } = {}) {
+    const transcript: TranscriptEntry[] = [];
+    const h = harness({}, transcript);
+    const next = listen(h);
+    const one = await turn(h, "one");
+    const two = await turn(h, "two");
+    const steer = await harnessRun(h, next, "n1", "own", options);
+    transcript.push(user(one), assistant("a-re one"), user(two), assistant("a-re two"), noticeEntry("n1"), assistant("a-own"));
+    if (steer !== undefined) transcript.push(user(steer), assistant("a-steered"));
+    return { h, next, transcript };
+  }
+
+  it("rollback(1) after a send and a harness turn cuts just the harness turn", async () => {
+    const { h } = await sendSendHarness();
+    await h.session.rollback(1);
+    await turn(h, "again");
+    expect(h.last().options["resumeSessionAt"]).toBe("a-re two");
+  });
+
+  it("rollback(2) cuts the harness turn and the send before it", async () => {
+    const { h } = await sendSendHarness();
+    await h.session.rollback(2);
+    await turn(h, "again");
+    expect(h.last().options["resumeSessionAt"]).toBe("a-re one");
+  });
+
+  it("a steer inside the harness turn goes with it and starts nothing", async () => {
+    const { h } = await sendSendHarness({ steer: "nudge" });
+    await h.session.rollback(1);
+    await turn(h, "again");
+    expect(h.last().options["resumeSessionAt"]).toBe("a-re two");
+  });
+
+  it("a harness turn the server dismissed is not a turn: its entries stay with the turn before", async () => {
+    const { h } = await sendSendHarness({ dismiss: true });
+    await h.session.rollback(1);
+    await turn(h, "again");
+    expect(h.last().options["resumeSessionAt"]).toBe("a-re one");
+  });
+
+  it("forgets the cut harness turn: the next rollback counts from what is left", async () => {
+    const { h, next, transcript } = await sendSendHarness();
+    await h.session.rollback(1);
+    const three = await turn(h, "three");
+    transcript.splice(transcript.findIndex((entry) => entry.uuid === "n1"));
+    transcript.push(user(three), assistant("a-re three"));
+    await harnessRun(h, next, "n2", "own2");
+    transcript.push(noticeEntry("n2"), assistant("a-own2"));
+    await h.session.rollback(2);
+    await turn(h, "again");
+    expect(h.last().options["resumeSessionAt"]).toBe("a-re two");
+  });
+
+  it("a harness turn whose first entry is Claude's own text takes the unknown notice before it", async () => {
+    const transcript: TranscriptEntry[] = [];
+    const h = harness({}, transcript);
+    const next = listen(h);
+    const one = await turn(h, "one");
+    const query = h.last();
+    ownText(query, "on my own");
+    const handle = await next();
+    const events = collect(handle.events);
+    query.result();
+    await events;
+    transcript.push(user(one), assistant("a-re one"), user("reminder", "<system-reminder>x</system-reminder>"), assistant("a-on my own"));
+    await h.session.rollback(1);
+    await turn(h, "again");
+    expect(h.last().options["resumeSessionAt"]).toBe("a-re one");
+  });
+
+  it("a harness turn that wrote nothing is an empty turn, still counted like the server does", async () => {
+    const transcript: TranscriptEntry[] = [];
+    const h = harness({}, transcript);
+    const next = listen(h);
+    const one = await turn(h, "one");
+    const query = h.last();
+    query.messages.push({ type: "stream_event", parent_tool_use_id: null, event: { type: "content_block_delta", index: 0, delta: { type: "text_delta", text: "x" } } } as ClaudeMessage);
+    const events = collect((await next()).events);
+    query.result();
+    await events;
+    const two = await turn(h, "two");
+    transcript.push(user(one), assistant("a-re one"), user(two), assistant("a-re two"));
+    await h.session.rollback(2);
+    await turn(h, "again");
+    expect(h.last().options["resumeSessionAt"]).toBe("a-re one");
+  });
+
+  it("after a reopen (resume, no ledger) a sub-agent's notice still starts a turn", async () => {
+    const h = harness({ resume: "session-1" }, [user("p1"), assistant("a1"), user("p2"), assistant("a2"), noticeEntry("n1"), assistant("a3")]);
+    await h.session.rollback(1);
+    await turn(h, "go");
+    expect(h.last().options["resumeSessionAt"]).toBe("a2");
+    const again = harness({ resume: "session-1" }, [user("p1"), assistant("a1"), user("p2"), assistant("a2"), noticeEntry("n1"), assistant("a3")]);
+    await again.session.rollback(2);
+    await turn(again, "go");
+    expect(again.last().options["resumeSessionAt"]).toBe("a1");
+  });
+});
+
+describe("ClaudeSession steer target", () => {
+  it("refuses a steer naming a harness turn that is no longer the live one", async () => {
+    const h = harness();
+    const handles: HarnessTurnHandle[] = [];
+    const opened = new AsyncQueue<HarnessTurnHandle>();
+    const next = opened.drain();
+    h.session.onHarnessTurn((turn) => {
+      handles.push(turn);
+      opened.push(turn);
+    });
+    await turn(h, "one");
+    const query = h.last();
+    ownText(query, "first on my own");
+    const a = (await next.next()).value as HarnessTurnHandle;
+    const aEvents = collect(a.events);
+    query.result();
+    await aEvents;
+    ownText(query, "second on my own");
+    const b = (await next.next()).value as HarnessTurnHandle;
+    const bEvents = collect(b.events);
+    expect(b.key).not.toBe(a.key);
+    const sent = query.sent.length;
+    await expect(h.session.steer({ text: "for A" }, { turnKey: a.key! })).rejects.toThrow(/conflict/);
+    expect(query.sent).toHaveLength(sent);
+    await h.session.steer({ text: "for B" }, { turnKey: b.key! });
+    expect((await query.nextInput()).message.content).toBe("for B");
+    query.result();
+    await bEvents;
+  });
+
+  it("refuses a harness turn's key while a send runs, and takes an untargeted steer as before", async () => {
+    const h = harness();
+    await turn(h, "one");
+    const done = collect(h.session.send({ text: "two" }));
+    const query = h.last();
+    const prompt = (await query.nextInput()).uuid;
+    await expect(h.session.steer({ text: "stale" }, { turnKey: "gone" })).rejects.toThrow(/conflict/);
+    await h.session.steer({ text: "nudge" });
+    const steer = (await query.nextInput()).uuid;
+    query.result({ user_message_uuids: [prompt, steer] });
+    expect(settled(await done)).toHaveLength(1);
   });
 });

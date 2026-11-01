@@ -6,7 +6,7 @@ import { EventStore } from "../orchestration/store.ts";
 import { ProviderReactor } from "./reactor.ts";
 import { DriverRegistry } from "./registry.ts";
 import { SessionDirectory } from "./sessions.ts";
-import { awaitApproval, awaitInterrupt, awaitSteer, awaitUserInput, createFakeDriver, emit, type FakeDriverControl, type FakeSession } from "./testing/fakeDriver.ts";
+import { awaitApproval, awaitInterrupt, awaitSteer, awaitUserInput, createFakeDriver, effect, emit, type FakeDriverControl, type FakeSession } from "./testing/fakeDriver.ts";
 
 // R14: turns Claude Code runs by itself (a background sub-agent reported) become ordinary Tide turns.
 
@@ -230,12 +230,70 @@ describe("ProviderReactor: harness-initiated turns", () => {
     const h = await harness({ steer: true });
     const session = await openSession(h);
     const streamed = waitFor(h.engine, (e) => e.type === "assistant.delta");
-    session.emitHarnessTurn("sub-agent reported", [{ type: "assistant.delta", messageKey: "m0", delta: "working" }, awaitSteer(), { type: "settled", status: "completed" }]);
+    const { key } = session.emitHarnessTurn("sub-agent reported", [{ type: "assistant.delta", messageKey: "m0", delta: "working" }, awaitSteer(), { type: "settled", status: "completed" }]);
     await streamed;
     await h.engine.dispatch({ type: "turn.steer", threadId: h.threadId, text: "skip the docs" });
     await h.reactor.drain();
-    expect(h.control.steers.map((s) => s.input.text)).toEqual(["skip the docs"]);
+    // the steer names the harness turn it is meant for
+    expect(h.control.steers).toEqual([{ threadId: h.threadId, input: { text: "skip the docs" }, target: { turnKey: key } }]);
     expect(all(h.events, "turn.steer-fell-back")).toHaveLength(0);
+  });
+
+  it("a steer meant for a harness turn the harness already left is re-aimed at the harness turn it runs now", async () => {
+    const h = await harness({ steer: true });
+    const session = await openSession(h);
+    let release!: () => void;
+    const gate = new Promise<void>((resolve) => {
+      release = resolve;
+    });
+    const streamed = waitFor(h.engine, (e) => e.type === "assistant.delta");
+    const aRequested = waitFor(h.engine, (e) => e.type === "turn.requested");
+    // Tide still streams harness turn A while the harness has finished it and started B
+    session.emitHarnessTurn("sub-agent A reported", [{ type: "assistant.delta", messageKey: "m0", delta: "A" }, effect(() => gate), { type: "settled", status: "completed" }]);
+    const aTurn = ((await aRequested) as EventOf<"turn.requested">).turn.id;
+    await streamed;
+    const bRequested = waitFor(h.engine, (e) => e.type === "turn.requested");
+    const b = session.emitHarnessTurn("sub-agent B reported", [{ type: "assistant.delta", messageKey: "m0", delta: "B" }, awaitSteer(), { type: "settled", status: "completed" }]);
+    const bTurn = ((await bRequested) as EventOf<"turn.requested">).turn;
+    expect(bTurn.status).toBe("queued");
+
+    const fellBack = waitFor(h.engine, (e) => e.type === "turn.steer-fell-back");
+    await h.engine.dispatch({ type: "turn.steer", threadId: h.threadId, text: "and check the tests" });
+    await fellBack;
+    release();
+    await h.reactor.drain();
+
+    // delivered once, into B, and recorded inside B
+    expect(h.control.steers).toEqual([{ threadId: h.threadId, input: { text: "and check the tests" }, target: { turnKey: b.key } }]);
+    const model = h.engine.getModel();
+    const steered = Object.values(model.messages).filter((m) => m.text === "and check the tests");
+    expect(steered).toEqual([expect.objectContaining({ turnId: bTurn.id, role: "user", steer: true })]);
+    expect(model.turns[aTurn]?.status).toBe("completed");
+    expect(model.turns[bTurn.id]?.status).toBe("completed");
+    expect(assistantTexts(model, bTurn.id)).toEqual(["B"]);
+    // the fallback turn was promoted away, never run
+    expect(all(h.events, "turn.dequeued")).toHaveLength(1);
+    expect(Object.values(model.turns).filter((t) => t.threadId === h.threadId)).toHaveLength(3);
+    expect(session.inputs.map((i) => i.text)).toEqual(["start the audit in the background"]);
+  });
+
+  it("a steer a harness turn refuses with no other harness turn waiting falls back to a turn of its own", async () => {
+    const h = await harness({ steer: true });
+    const session = await openSession(h);
+    const streamed = waitFor(h.engine, (e) => e.type === "assistant.delta");
+    session.emitHarnessTurn("sub-agent reported", [{ type: "assistant.delta", messageKey: "m0", delta: "working" }, awaitInterrupt(), { type: "settled", status: "completed" }]);
+    await streamed;
+    h.control.steerError = new Error("the claude turn is ending; the message cannot join it");
+    h.control.script(emit({ type: "assistant.delta", messageKey: "m0", delta: "ok" }), emit({ type: "settled", status: "completed" }));
+    const fellBack = waitFor(h.engine, (e) => e.type === "turn.steer-fell-back");
+    await h.engine.dispatch({ type: "turn.steer", threadId: h.threadId, text: "one more thing" });
+    const fallback = (await fellBack) as EventOf<"turn.steer-fell-back">;
+    expect(fallback.turn.status).toBe("queued");
+    await h.engine.dispatch({ type: "turn.interrupt", threadId: h.threadId });
+    await h.reactor.drain();
+    expect(all(h.events, "turn.dequeued")).toHaveLength(0);
+    expect(h.engine.getModel().turns[fallback.turn.id]?.status).toBe("completed");
+    expect(session.inputs.map((i) => i.text)).toEqual(["start the audit in the background", "one more thing"]);
   });
 
   it("drains a harness turn whose thread is archived, so the driver releases it", async () => {
@@ -247,6 +305,8 @@ describe("ProviderReactor: harness-initiated turns", () => {
     await drained;
     expect(all(h.events, "turn.requested")).toHaveLength(1);
     expect(h.logs.some((l) => l.includes("harness turn refused"))).toBe(true);
+    // the driver must not count it as a turn for rollback
+    expect(session.dismissed).toHaveLength(1);
   });
 
   it("drains a harness turn that was dequeued before it ran", async () => {
@@ -267,6 +327,7 @@ describe("ProviderReactor: harness-initiated turns", () => {
     const model = h.engine.getModel();
     expect(model.turns[harnessTurn.turn.id]).toBeUndefined();
     expect(Object.values(model.messages).some((m) => m.text === "never shown")).toBe(false);
+    expect(session.dismissed).toHaveLength(1);
   });
 });
 

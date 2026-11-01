@@ -165,6 +165,28 @@ export type NormalizedEvent =
   | { type: "commands"; commands: SlashCommandInfo[] }
   | { type: "settled"; status: "completed" | "interrupted" | "error"; error?: string };
 
+/** R14: which turn a steer is meant for; see `ProviderSession.steer`. */
+export interface SteerTarget {
+  /** a harness turn's `HarnessTurnHandle.key`; absent for a turn the server started with `send` */
+  turnKey?: string;
+}
+
+/** R14: a turn the harness started by itself, as handed to the `onHarnessTurn` listener. */
+export interface HarnessTurnHandle {
+  /** one line for the notice ("sub-agent 'Audit feature gaps' reported") */
+  reason: string;
+  /** every event of the turn, buffered by the driver; ends after its `settled` */
+  events: AsyncIterable<NormalizedEvent>;
+  /** opaque id of this harness turn, passed back as `SteerTarget.turnKey` */
+  key?: string;
+  /**
+   * The server will not record this turn (refused, dequeued, thread gone): the driver stops
+   * counting it as a turn of its own for `rollback`, so its counts keep matching the server's.
+   * The events must still be drained.
+   */
+  dismiss?(): void;
+}
+
 export interface ProviderSession {
   readonly nativeSessionId: string | undefined;
   /** Runs one turn; the iterable ends after a `settled` event. */
@@ -183,8 +205,11 @@ export interface ProviderSession {
    * interrupting tools (Claude SDK streaming input, Codex `turn/steer`, Pi `steer`, OpenCode
    * `prompt` while busy). Claude also takes it into a turn the harness started on its own (a
    * harness turn). Rejects when no turn is running. Only called when `caps.steer`.
+   * `target.turnKey` names the harness turn the server meant (the `key` its `onHarnessTurn`
+   * handed over): the driver rejects when that turn is no longer the one running instead of
+   * landing the message in a later turn. Absent = whatever turn is running (as before).
    */
-  steer?(input: TurnInput): Promise<void>;
+  steer?(input: TurnInput, target?: SteerTarget): Promise<void>;
   /**
    * R4: forget the last `turns` turns of the harness's own conversation (Codex `thread/revert`,
    * Pi session tree, OpenCode `session.revert`). Called between turns only. Only when `caps.rollback`.
@@ -199,7 +224,7 @@ export interface ProviderSession {
    * that arrives while a harness turn runs waits for it to settle instead of failing `busy`.
    * Only when `caps.harnessTurns`.
    */
-  onHarnessTurn?(listener: (turn: { reason: string; events: AsyncIterable<NormalizedEvent> }) => void): void;
+  onHarnessTurn?(listener: (turn: HarnessTurnHandle) => void): void;
   /**
    * R14: true while the harness still has work running outside a turn (backgrounded sub-agents
    * that have not reported). The server keeps such a session off the idle reaper.

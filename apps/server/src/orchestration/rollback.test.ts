@@ -91,6 +91,24 @@ describe("RollbackService", () => {
     expect(h.model().threads[threadId]?.rollback).toMatchObject({ status: "error", error: "revert refused" });
   });
 
+  it("counts a harness turn as a turn the harness ran", async () => {
+    const h = await harness(cleanups);
+    h.control.setCaps({ rollback: true, harnessTurns: true });
+    const { threadId, t2 } = await twoTurns(h);
+    const session = h.control.sessionFor(threadId)!;
+    // Claude Code runs a turn by itself after the second send
+    const { drained } = session.emitHarnessTurn("sub-agent reported", [{ type: "assistant.delta", messageKey: "m0", delta: "report" }, { type: "settled", status: "completed" }]);
+    await h.settle();
+    await drained;
+    const turns = Object.values(h.model().turns).filter((t) => t.threadId === threadId);
+    expect(turns).toHaveLength(3);
+    expect(session.dismissed).toEqual([]);
+    // back to before the second send: that send and the harness turn after it
+    await h.app.engine.dispatch({ type: "thread.rollback", threadId, turnId: t2, restoreFiles: false });
+    await settleRollback(h);
+    expect(h.control.rollbacks.map((r) => r.turns)).toEqual([2]);
+  });
+
   it("recovery fails a rollback the previous process never finished", async () => {
     const h = await harness(cleanups);
     const { threadId, t2 } = await twoTurns(h);

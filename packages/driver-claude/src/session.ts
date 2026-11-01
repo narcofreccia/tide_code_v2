@@ -7,6 +7,7 @@ import type {
   ProviderSession,
   ReconfigureResult,
   SessionSettings,
+  SteerTarget,
   TurnInput,
 } from "@tide/contracts";
 import { ApprovalBroker, type CanUseToolContext, type PermissionResultShape } from "./approvals.ts";
@@ -14,7 +15,7 @@ import { AsyncQueue } from "./async-queue.ts";
 import { instanceEnv } from "./env.ts";
 import { CONTINUED_REASON, HarnessTurn, type HarnessTurnListener, isIdleActivity, isSubstantive, Preamble, reportedReason } from "./harness-turn.ts";
 import { ClaudeNormalizer } from "./normalize.ts";
-import { rollbackPoint } from "./rollback.ts";
+import { SessionLedger } from "./rollback.ts";
 import type { ClaudeMessage, ResultMessage, TranscriptEntry } from "./sdk-shapes.ts";
 import type { ClaudeConfig, QueryFn, QueryLike, SessionMessagesFn } from "./types.ts";
 
@@ -37,6 +38,8 @@ import type { ClaudeConfig, QueryFn, QueryLike, SessionMessagesFn } from "./type
  * - fork: `resume: <source>` + `forkSession: true` on the next query mints a new session id.
  * - rollback: a truncating resume (`resume` + `resumeSessionAt: <kept turn's last chain
  *   entry>`) on a fresh query; the uuid comes from the transcript (`getSessionMessages`).
+ *   A turn is what the server counts: each send and each harness turn it recorded (see
+ *   `SessionLedger`); steers never start one.
  *
  * R14 idle pump and harness turns: Claude Code does not stop at a `result`. When the model
  * launched background sub-agents (Agent tool, "Async agent launched successfully"), the CLI
@@ -118,10 +121,8 @@ export class ClaudeSession implements ProviderSession {
   #forkFrom: string | undefined;
   /** pending truncating resume (rollback), consumed with the next query's `system/init` */
   #resumeAt: string | undefined;
-  /** uuids of this session's `send()` prompts, oldest first */
-  #prompts: string[] = [];
-  /** uuids of every message steered by this session */
-  #steers = new Set<string>();
+  /** turn starts (send prompts, harness turns the server records) and steers, for rollback */
+  #ledger = new SessionLedger();
   /** messages of the running turn (prompt first, then steers), re-pushed if the query is rebuilt */
   #turnMessages: UserMessageEnvelope[] = [];
   /** steers of the running turn the CLI has not reported consuming yet */
@@ -244,6 +245,7 @@ export class ClaudeSession implements ProviderSession {
         return;
       }
       await this.#idleMessage(step.value);
+      if (this.#harness) this.#ledger.harnessMessage(this.#harness, step.value);
     }
   }
 
@@ -292,12 +294,13 @@ export class ClaudeSession implements ProviderSession {
   #openHarness(reason: string): HarnessTurn {
     const turn = new HarnessTurn(reason);
     this.#harness = turn;
+    this.#ledger.harnessOpened(turn);
     this.#interruptRequested = false;
     for (const event of this.#preamble.take()) turn.push(event);
     const listener = this.#harnessListener;
     if (listener) {
       try {
-        listener({ reason, events: turn.mailbox.drain() });
+        listener({ reason, events: turn.mailbox.drain(), key: turn.key, dismiss: () => this.#ledger.dismiss(turn) });
       } catch (error) {
         this.#env.log(`[claude] harness-turn listener threw: ${error instanceof Error ? error.message : String(error)}`);
       }
@@ -416,7 +419,7 @@ export class ClaudeSession implements ProviderSession {
     this.#turnActive = true;
     const mailbox = new AsyncQueue<NormalizedEvent>();
     const pending = buildUserMessage(input, this.nativeSessionId ?? "");
-    this.#prompts.push(pending.uuid);
+    this.#ledger.prompt(pending.uuid);
     this.#turnMessages = [pending];
     this.#pendingSteers.clear();
     this.#turnFed = false;
@@ -617,13 +620,16 @@ export class ClaudeSession implements ProviderSession {
    * already fed: the message goes straight into the live input and the CLI folds it in like any
    * steer, acknowledged by the harness turn's `result` (`user_message_uuids`). Once that turn's
    * final `result` is read the steer is refused, never dropped: the server queues it instead.
+   * A steer naming a harness turn (`target.turnKey`) that is no longer the live one is refused
+   * too, so a message meant for one turn never lands in the next: the server re-targets it.
    */
-  async steer(input: TurnInput): Promise<void> {
+  async steer(input: TurnInput, target?: SteerTarget): Promise<void> {
     const harness = this.#turnActive ? undefined : this.#harness;
     if (this.#closed || (!this.#turnActive && !harness)) throw new Error("no turn is running on this claude session");
+    if (target?.turnKey !== undefined && harness?.key !== target.turnKey) throw new Error("conflict: the claude turn this message was meant for has ended");
     if (harness?.ending) throw new Error("the claude turn is ending; the message cannot join it");
     const message = buildUserMessage(input, this.nativeSessionId ?? "");
-    this.#steers.add(message.uuid);
+    this.#ledger.steer(message.uuid);
     if (harness) {
       harness.pendingSteers.add(message.uuid);
       this.#inbox.push(message);
@@ -652,9 +658,7 @@ export class ClaudeSession implements ProviderSession {
       const at = entries.findIndex((entry) => entry.uuid === this.#resumeAt);
       if (at >= 0) entries = entries.slice(0, at + 1);
     }
-    const point = rollbackPoint(entries, { prompts: this.#prompts, steers: this.#steers }, turns);
-    const kept = new Set(entries.slice(0, point.kind === "at" ? entries.findIndex((entry) => entry.uuid === point.uuid) + 1 : 0).map((entry) => entry.uuid));
-    this.#prompts = this.#prompts.filter((uuid) => kept.has(uuid));
+    const point = this.#ledger.cut(entries, turns);
     if (this.#query) this.#resetQuery();
     if (point.kind === "at") {
       this.#resumeAt = point.uuid;

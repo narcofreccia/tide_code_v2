@@ -2,6 +2,7 @@ import type {
   ApprovalDecision,
   DriverCaps,
   DriverEnv,
+  HarnessTurnHandle,
   NormalizedEvent,
   OpenSessionOptions,
   ProviderDriver,
@@ -12,6 +13,7 @@ import type {
   ReconfigureResult,
   SessionSettings,
   SlashCommandInfo,
+  SteerTarget,
   TurnInput,
 } from "@tide/contracts";
 
@@ -90,9 +92,14 @@ export class FakeSession implements ProviderSession {
 
   /** R14: what `hasBackgroundWork()` answers (backgrounded sub-agents still running). */
   backgroundWork = false;
-  #harnessListeners: ((turn: { reason: string; events: AsyncIterable<NormalizedEvent> }) => void)[] = [];
+  #harnessListeners: ((turn: HarnessTurnHandle) => void)[] = [];
+  /** key of the harness turn the fake "runs" now: the latest one emitted, until its events end */
+  #liveHarnessKey: string | undefined;
+  #harnessCount = 0;
+  /** keys of harness turns the server dismissed (will never record) */
+  readonly dismissed: string[] = [];
 
-  onHarnessTurn(listener: (turn: { reason: string; events: AsyncIterable<NormalizedEvent> }) => void): void {
+  onHarnessTurn(listener: (turn: HarnessTurnHandle) => void): void {
     this.#harnessListeners.push(listener);
   }
 
@@ -115,19 +122,24 @@ export class FakeSession implements ProviderSession {
    * R14: the harness starts a turn by itself. The items play like a scripted turn (plain events,
    * or steps such as `awaitInterrupt()`); `drained` resolves once the server consumed them all.
    */
-  emitHarnessTurn(reason: string, items: ReadonlyArray<NormalizedEvent | FakeStep>): { drained: Promise<void> } {
+  emitHarnessTurn(reason: string, items: ReadonlyArray<NormalizedEvent | FakeStep>): { drained: Promise<void>; key: string } {
     const steps = items.map((item): FakeStep => ("kind" in item ? item : emit(item)));
     const done = deferred<void>();
     const inner = this.#run(steps);
+    const key = `harness-${++this.#harnessCount}`;
+    this.#liveHarnessKey = key;
+    const self = this;
     async function* events(): AsyncGenerator<NormalizedEvent> {
       try {
         yield* inner;
       } finally {
+        if (self.#liveHarnessKey === key) self.#liveHarnessKey = undefined;
         done.resolve(undefined);
       }
     }
-    for (const listener of this.#harnessListeners) listener({ reason, events: events() });
-    return { drained: done.promise };
+    const dismiss = (): void => void this.dismissed.push(key);
+    for (const listener of this.#harnessListeners) listener({ reason, events: events(), key, dismiss });
+    return { drained: done.promise, key };
   }
 
   #run(steps: FakeStep[]): AsyncGenerator<NormalizedEvent> {
@@ -186,10 +198,14 @@ export class FakeSession implements ProviderSession {
     this.control.received(`close:${this.options.threadId}`, undefined);
   }
 
-  /** R4: only reached when `control.statusResult.caps.steer`; `control.steerError` makes the harness refuse. */
-  async steer(input: TurnInput): Promise<void> {
+  /**
+   * R4: only reached when `control.statusResult.caps.steer`; `control.steerError` makes the harness
+   * refuse, and so does a `target.turnKey` that is not the harness turn the fake runs now.
+   */
+  async steer(input: TurnInput, target?: SteerTarget): Promise<void> {
     if (this.control.steerError) throw this.control.steerError;
-    this.control.steers.push({ threadId: this.options.threadId, input });
+    if (target?.turnKey !== undefined && target.turnKey !== this.#liveHarnessKey) throw new Error("conflict: the turn this message was meant for has ended");
+    this.control.steers.push({ threadId: this.options.threadId, input, ...(target !== undefined ? { target } : {}) });
     this.control.received(`steer:${this.options.threadId}`, input);
     this.#waiter<TurnInput>("steer").resolve(input);
   }
@@ -218,7 +234,7 @@ export class FakeDriverControl {
   readonly interrupts: string[] = [];
   readonly closed: string[] = [];
   readonly reconfigures: { threadId: string; settings: SessionSettings }[] = [];
-  readonly steers: { threadId: string; input: TurnInput }[] = [];
+  readonly steers: { threadId: string; input: TurnInput; target?: SteerTarget }[] = [];
   readonly rollbacks: { threadId: string; turns: number; nativeSessionId: string | undefined }[] = [];
   steerError: Error | undefined;
   rollbackError: Error | undefined;

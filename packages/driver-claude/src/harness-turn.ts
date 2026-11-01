@@ -1,7 +1,9 @@
-import type { NormalizedEvent } from "@tide/contracts";
+import { randomUUID } from "node:crypto";
+import type { HarnessTurnHandle, NormalizedEvent } from "@tide/contracts";
 import { AsyncQueue, deferred, type Deferred } from "./async-queue.ts";
+import type { LedgerTurn } from "./rollback.ts";
 
-export type HarnessTurnListener = (turn: { reason: string; events: AsyncIterable<NormalizedEvent> }) => void;
+export type HarnessTurnListener = (turn: HarnessTurnHandle) => void;
 
 export const CONTINUED_REASON = "Claude Code continued on its own";
 
@@ -50,8 +52,12 @@ export function reportedReason(name: string): string {
 }
 
 /** A turn the harness started by itself: its own mailbox, ended by the next `result`. */
-export class HarnessTurn {
+export class HarnessTurn implements LedgerTurn {
   readonly reason: string;
+  /** opaque id handed to the server, which names this turn when it steers into it */
+  readonly key = randomUUID();
+  /** uuid of the turn's first transcript entry, once read (its turn start for rollback) */
+  start: string | undefined;
   readonly mailbox = new AsyncQueue<NormalizedEvent>();
   /** uuids of messages steered into this turn the CLI has not reported consuming yet */
   readonly pendingSteers = new Set<string>();
