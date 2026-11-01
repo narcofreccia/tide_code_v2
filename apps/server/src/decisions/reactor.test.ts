@@ -196,6 +196,44 @@ describe("TriageReactor with a fake judge", () => {
   });
 });
 
+describe("TriageReactor and background sub-agents", () => {
+  it("treats a settled turn with running background agents as working; only their long silence re-asks", async () => {
+    const store = new EventStore(await openDatabase(":memory:"));
+    stores.push(store);
+    const engine = new Engine({ store });
+    const clock = new ManualClock();
+    const judge = fakeJudge({});
+    const reactor = new TriageReactor({ engine, judge, schedule: clock.schedule, now: () => clock.now, log: () => undefined });
+    reactor.start(); // sweeps at 10, 20, … min
+    reactors.push(reactor);
+    const { threadIds, turnIds } = await seedThreads(engine, 1);
+    const threadId = threadIds[0] as string;
+    const turnId = turnIds[0] as string;
+    const base = { threadId, turnId, createdAt: 0 };
+    await engine.dispatch({ type: "activity.upsert", activity: { ...base, id: "bg", updatedAt: 0, kind: "child", childKey: "bg", name: "Audit", status: "running" } });
+    await engine.dispatch({ type: "turn.settle", turnId, status: "completed" });
+    clock.advance(2000);
+    await reactor.drain();
+    expect(judge.questions).toHaveLength(1);
+    const q = judge.questions[0];
+    const state = q?.kind === "per-item" ? q.items[0]?.state : undefined;
+    expect(state).toMatchObject({ status: "working (background sub-agents)", backgroundAgents: ["Audit"] });
+
+    // the agent keeps working: its tool call 10 s before the sweep keeps the thread off it
+    await engine.dispatch({ type: "activity.upsert", activity: { ...base, id: "tool", updatedAt: 590_000, kind: "tool", toolUseId: "t1", toolName: "Bash", input: {}, status: "running", parentToolUseId: "bg" } });
+    clock.advance(598_000); // the 10-min sweep
+    clock.advance(2000);
+    await reactor.drain();
+    expect(judge.questions).toHaveLength(1);
+
+    // silent for 10 more minutes: a stuck candidate
+    clock.advance(598_000);
+    clock.advance(2000);
+    await reactor.drain();
+    expect(judge.questions).toHaveLength(2);
+  });
+});
+
 function clockStart(r: Rig): void {
   r.clock.now = 1_000_000;
 }

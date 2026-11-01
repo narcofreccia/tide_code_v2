@@ -7,7 +7,7 @@ import type { DriverEnv, NormalizedEvent, OpenSessionOptions } from "@tide/contr
 import type { PermissionResultShape } from "./approvals.ts";
 import { AsyncQueue } from "./async-queue.ts";
 import type { ClaudeMessage } from "./sdk-shapes.ts";
-import { ClaudeSession } from "./session.ts";
+import { ClaudeSession, LOST_BACKGROUND_SUMMARY } from "./session.ts";
 import type { QueryFn } from "./types.ts";
 
 type CanUseTool = (toolName: string, input: Record<string, unknown>, context: { toolUseID: string }) => Promise<PermissionResultShape>;
@@ -308,6 +308,34 @@ describe("ClaudeSession harness-initiated turns", () => {
     expect(h.query().interrupts).toBe(1);
     h.query().result();
     expect((await events).at(-1)).toEqual({ type: "settled", status: "interrupted" });
+  });
+
+  it("a stream that ends between turns closes the unreported background sub-agents as lost", async () => {
+    const h = harness();
+    const [first, second] = runs();
+    await userTurn(h, "spin up some subagents", first!);
+    h.query().push(...second!);
+    await collect((await h.nextHarnessTurn()).events); // one of three reported
+    h.idle.length = 0;
+    h.query().messages.close(); // the CLI process went away
+    await tick();
+    await tick();
+    const lost = h.idle.flatMap((event) => (event.type === "activity" && event.activity.kind === "child" ? [event.activity] : []));
+    expect(lost).toHaveLength(2);
+    for (const child of lost) expect(child).toMatchObject({ status: "error", summary: LOST_BACKGROUND_SUMMARY });
+    expect(lost.map((child) => child.name)).not.toContain("Audit feature gaps");
+    expect(h.session.hasBackgroundWork()).toBe(false);
+    expect(h.openedCount()).toBe(1);
+  });
+
+  it("close() leaves background sub-agents to the server (no lost rows from the driver)", async () => {
+    const h = harness();
+    await userTurn(h, "go", runs()[0]!);
+    expect(h.session.hasBackgroundWork()).toBe(true);
+    h.idle.length = 0;
+    await h.session.close();
+    await tick();
+    expect(h.idle).toEqual([]);
   });
 
   it("close() while idle resolves and nothing is emitted afterwards", async () => {

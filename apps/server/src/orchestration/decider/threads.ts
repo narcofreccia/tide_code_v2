@@ -1,4 +1,4 @@
-import type { CommandOf, DomainEvent, LinkAccess, Project, ReadModel, Thread } from "@tide/contracts";
+import { hasBackgroundChildren, type CommandOf, type DomainEvent, type LinkAccess, type Project, type ReadModel, type Thread } from "@tide/contracts";
 import { handoffTurns } from "../handoff/select.ts";
 import { DEFAULT_THREAD_TITLE } from "./autoTitle.ts";
 import { descendantsOf } from "./descendants.ts";
@@ -171,8 +171,10 @@ export function decideThread(model: ReadModel, command: ThreadCommand, ctx: Deci
       if (isArchived(thread)) return fail("conflict", `thread ${thread.id} is archived`);
       if (thread.settledAt !== undefined) return ok(); // idempotent
       const reason = command.reason ?? "user";
-      // the server's own rules never close something that is working or waiting on the user
-      if (reason !== "user" && (thread.status === "running" || thread.attention !== undefined || thread.pinned === true || thread.autoSettle === false)) {
+      // the server's own rules never close something that is working (background sub-agents
+      // included: the turn that launched them settled, the work did not) or waiting on the user
+      const working = thread.status === "running" || hasBackgroundChildren(model, thread.id);
+      if (reason !== "user" && (working || thread.attention !== undefined || thread.pinned === true || thread.autoSettle === false)) {
         return fail("conflict", `thread ${thread.id} is not settleable automatically`);
       }
       return ok({ type: "thread.settled", threadId: thread.id, reason, at: ctx.now });

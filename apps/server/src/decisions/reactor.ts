@@ -2,6 +2,7 @@ import type { EventRecord } from "@tide/contracts";
 import type { Engine } from "../orchestration/engine.ts";
 import type { CancelTimer } from "../provider/reactor.ts";
 import { OVER_BUDGET, type Judge } from "./judge.ts";
+import { backgroundActivityAt } from "../orchestration/background.ts";
 import { buildTriageQuestion, lastActivityAt, mapAnswers } from "./triage.ts";
 
 export const DEBOUNCE_MS = 2_000;
@@ -82,12 +83,22 @@ export class TriageReactor {
     }, TICK_MS);
   }
 
-  /** Running threads with no event for 10 min: ask again, they may be stuck. */
+  /**
+   * Working threads with no event for 10 min: ask again, they may be stuck. A thread whose turn
+   * settled while background sub-agents still run is working too; it is re-asked only when none
+   * of those agents produced anything (their row or a tool call of theirs) for the same 10 min.
+   * Background agents emit a row per tool call, so that long a silence is the same signal as a
+   * silent foreground turn. While they are active the thread is never a stale candidate.
+   */
   #staleSweep(): void {
     const model = this.#engine.getModel();
     const now = this.#now();
     for (const t of Object.values(model.threads)) {
-      if (t.status === "running" && t.archivedAt === undefined && now - lastActivityAt(model, t) >= STALE_RUNNING_MS) this.#trigger(t.projectId);
+      if (t.archivedAt !== undefined) continue;
+      const running = t.status === "running" && now - lastActivityAt(model, t) >= STALE_RUNNING_MS;
+      const backgroundAt = t.status === "running" ? undefined : backgroundActivityAt(model, t.id);
+      const silentBackground = backgroundAt !== undefined && now - backgroundAt >= STALE_RUNNING_MS;
+      if (running || silentBackground) this.#trigger(t.projectId);
     }
   }
 

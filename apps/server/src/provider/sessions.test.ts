@@ -178,6 +178,44 @@ describe("SessionDirectory", () => {
     expect(await sessions.reapIdle()).toEqual(["t1"]);
   });
 
+  it("keeps a session alive on the read model's background children when the driver has no signal", async () => {
+    const { sessions, claude, clock, state } = setup();
+    await sessions.getOrOpen(thread(), project);
+    const session = claude.sessionFor("t1")!;
+    // a driver without `hasBackgroundWork()`
+    (session as { hasBackgroundWork?: unknown }).hasBackgroundWork = undefined;
+    const child = { id: "c1", threadId: "t1", turnId: "turn-1", createdAt: 1, updatedAt: 1, kind: "child" as const, childKey: "k", name: "audit", status: "running" as const };
+    const model = modelWith(thread());
+    state.model = { ...model, activities: { c1: child }, threadTimeline: { t1: [{ kind: "activity", id: "c1" }] } };
+    clock.t = 120 * 60_000;
+    expect(await sessions.reapIdle()).toEqual([]);
+    expect(claude.closed).toEqual([]);
+    state.model = { ...state.model, activities: { c1: { ...child, status: "done" } } };
+    expect(await sessions.reapIdle()).toEqual(["t1"]);
+  });
+
+  it("tells the listener when a session closes (explicitly, on reap, on a provider switch)", async () => {
+    const registry = new DriverRegistry({ env: { dataDir: ":memory:", log: () => undefined } });
+    const claude = createFakeDriver("claude");
+    const codex = createFakeDriver("codex");
+    registry.register(claude.driver);
+    registry.register(codex.driver);
+    const clock = { t: 0 };
+    const closed: string[] = [];
+    const sessions = new SessionDirectory({ registry, now: () => clock.t, idleMs: 1_000, autoReap: false, log: () => undefined, onClosed: (id) => void closed.push(id) });
+    await sessions.getOrOpen(thread(), project);
+    await sessions.getOrOpen(thread({ provider: "codex" }), project);
+    expect(closed).toEqual(["t1"]);
+    await sessions.close("t1");
+    expect(closed).toEqual(["t1", "t1"]);
+    await sessions.close("t1"); // nothing open: no event
+    expect(closed).toHaveLength(2);
+    await sessions.getOrOpen(thread({ id: "t2" }), project);
+    clock.t = 5_000;
+    await sessions.reapIdle();
+    expect(closed).toEqual(["t1", "t1", "t2"]);
+  });
+
   it("R14: forwards turns the harness starts by itself, from the moment the session opens", async () => {
     const clock = { t: 0 };
     const registry = new DriverRegistry({ env: { dataDir: ":memory:", log: () => undefined } });

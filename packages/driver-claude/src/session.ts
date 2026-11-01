@@ -53,6 +53,9 @@ import type { ClaudeConfig, QueryFn, QueryLike, SessionMessagesFn } from "./type
  * held: it goes live to the `onIdleActivity` listener, which lands it on the sub-agent's row.
  */
 
+/** A background sub-agent's final row when the CLI process that ran it ended before it reported. */
+export const LOST_BACKGROUND_SUMMARY = "No report: the Claude Code session ended before this sub-agent finished";
+
 async function sdkSessionMessages(): Promise<SessionMessagesFn> {
   const module: unknown = await import("@anthropic-ai/claude-agent-sdk");
   const { getSessionMessages } = module as { getSessionMessages: SessionMessagesFn };
@@ -456,6 +459,7 @@ export class ClaudeSession implements ProviderSession {
         this.#claim(pending);
         this.#started = true;
         if (step.done) {
+          this.#abandonBackground();
           mailbox.push({ type: "settled", status: this.#interruptRequested ? "interrupted" : "error", error: "claude stream ended before the turn settled" });
           return;
         }
@@ -478,6 +482,7 @@ export class ClaudeSession implements ProviderSession {
       }
     } catch (error) {
       const message = error instanceof Error ? error.message : String(error);
+      this.#abandonBackground();
       mailbox.push({ type: "settled", status: this.#interruptRequested ? "interrupted" : "error", error: message });
     } finally {
       mailbox.close();
@@ -503,6 +508,7 @@ export class ClaudeSession implements ProviderSession {
   /** Ends the live CLI process; the next `send()` builds a new query from `#buildOptions`. */
   #resetQuery(): void {
     const iterator = this.#iterator;
+    this.#abandonBackground();
     this.#stopIdle();
     this.#inflight = undefined;
     this.#preamble.clear();
@@ -518,6 +524,19 @@ export class ClaudeSession implements ProviderSession {
     this.#iterator = undefined;
     this.#query = undefined;
     this.#normalizer = this.#newNormalizer();
+  }
+
+  /**
+   * The CLI process ended (stream end, crash, a reset): background sub-agents died with it and
+   * will never report. Their rows are closed as failed through the idle-activity channel, which
+   * lands each on its own row and turn, whatever turn (if any) is running now.
+   */
+  #abandonBackground(): void {
+    const events = this.#normalizer.abandonBackground(LOST_BACKGROUND_SUMMARY);
+    if (events.length === 0) return;
+    this.#env.log(`[claude] ${events.length} background sub-agent(s) lost with the CLI process`);
+    const listener = this.#idleActivityListener;
+    if (listener) for (const event of events) this.#deliverIdle(listener, event);
   }
 
   /**

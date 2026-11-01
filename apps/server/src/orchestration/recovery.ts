@@ -1,4 +1,5 @@
 import type { Activity, ActivityOf, ReadModel, Turn } from "@tide/contracts";
+import { markChildrenLost } from "./background.ts";
 import type { Engine } from "./engine.ts";
 
 export const RESTART_ERROR = "server restarted while this turn was running";
@@ -105,6 +106,22 @@ export async function recoverUnsettledTurns(engine: Engine, options: RecoveryOpt
   }
   if (report.turns > 0) log(`[recovery] settled ${report.turns} turn(s) left running by a previous run; ${report.promoted} queued turn(s) resumed`);
   return report;
+}
+
+/**
+ * Background sub-agents still `running` in the replayed log died with the previous process:
+ * they live inside the harness process, which never survives a restart (a resumed session does
+ * not bring them back). Each one is closed as failed with a "No report" summary, never `done`.
+ * Run after `recoverUnsettledTurns`, so the children of the turns it settled count too (a child
+ * of a turn still in flight is the turn's own, and that turn is settled or resumed first).
+ */
+export async function recoverLostChildren(engine: Engine, options: Pick<RecoveryOptions, "log" | "now"> = {}): Promise<number> {
+  const threadIds = new Set<string>();
+  for (const a of Object.values(engine.getModel().activities)) if (a.kind === "child" && a.status === "running") threadIds.add(a.threadId);
+  let count = 0;
+  for (const threadId of threadIds) count += await markChildrenLost(engine, threadId, options);
+  if (count > 0) options.log?.(`[recovery] ${count} background sub-agent(s) lost with the previous run closed without a report`);
+  return count;
 }
 
 export const CONTINUE_PROMPT = "Continue where you left off.";

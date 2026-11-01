@@ -1,4 +1,4 @@
-import type { ActivityOf, ReadModel, TurnStatus } from "@tide/contracts";
+import { backgroundChildren, type ActivityOf, type ReadModel } from "@tide/contracts";
 import { displayToolName, shortTarget } from "./toolTarget.ts";
 
 /*
@@ -8,8 +8,8 @@ import { displayToolName, shortTarget } from "./toolTarget.ts";
  * own tool rows onto that turn until it reports. Harness-agnostic: it reads normalized
  * child activities only, so any driver's children are covered.
  *
- * Never invents "done": a child whose session went away stays listed with an honest
- * `quietMs` until the harness reports it.
+ * Never invents "done": a silent child stays listed with an honest `quietMs`. When its
+ * harness session ends, the server closes it as `error` ("No report: …") and it drops out.
  */
 
 /** The newest tool call a background agent made. */
@@ -86,32 +86,20 @@ function indexActivities(activities: ReadModel["activities"]): Index {
       if (stats.newest === undefined || a.updatedAt >= stats.newest.updatedAt) stats.newest = a;
     }
   }
-  for (const list of running.values()) list.sort((x, y) => x.createdAt - y.createdAt || x.id.localeCompare(y.id));
   index = { running, tools };
   indexOf.set(activities, index);
   return index;
 }
 
-const IN_FLIGHT: ReadonlySet<TurnStatus> = new Set<TurnStatus>(["requested", "running"]);
-
-/** The running children of `threadId` that count as background (see the module comment). */
-function backgroundChildren(model: ReadModel, threadId: string): Child[] {
-  const thread = model.threads[threadId];
-  if (thread === undefined || thread.archivedAt !== undefined) return [];
+/** The running children of `threadId` that count as background (rule shared with the server). */
+function backgroundChildrenOf(model: ReadModel, threadId: string): Child[] {
   const children = indexActivities(model.activities).running.get(threadId);
-  if (children === undefined) return [];
-  const latest = thread.latestTurnId === undefined ? undefined : model.turns[thread.latestTurnId];
-  // a child of the turn in flight is foreground: the turn's own rows already show it live
-  const activeTurnId = latest !== undefined && IN_FLIGHT.has(latest.status) ? latest.id : undefined;
-  return children.filter((c) => {
-    const turn = model.turns[c.turnId];
-    return turn !== undefined && turn.rolledBack !== true && c.turnId !== activeTurnId;
-  });
+  return children === undefined ? [] : backgroundChildren(model, threadId, children);
 }
 
 /** How many sub-agents of the thread work in the background. Cheap: one shared index per activities map. */
 export function countBackgroundAgents(model: ReadModel, threadId: string): number {
-  return backgroundChildren(model, threadId).length;
+  return backgroundChildrenOf(model, threadId).length;
 }
 
 function coreOf(child: Child, index: Index): BackgroundAgentCore {
@@ -170,7 +158,7 @@ export function selectBackgroundAgentsCore(model: ReadModel, threadId: string): 
   const prev = lastCore.get(threadId);
   if (prev !== undefined && prev.activities === model.activities && prev.turns === model.turns && prev.threads === model.threads) return prev.list;
   const index = indexActivities(model.activities);
-  const fresh = backgroundChildren(model, threadId).map((c) => coreOf(c, index));
+  const fresh = backgroundChildrenOf(model, threadId).map((c) => coreOf(c, index));
   let list: BackgroundAgentCore[];
   if (fresh.length === 0) list = EMPTY;
   else if (prev !== undefined && prev.list.length === fresh.length && fresh.every((c, i) => sameCore(c, prev.list[i] as BackgroundAgentCore))) list = prev.list;

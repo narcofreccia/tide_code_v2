@@ -176,6 +176,20 @@ export class ClaudeNormalizer {
   }
 
   /**
+   * The CLI process is gone: every backgrounded sub-agent that has not reported never will.
+   * Returns their final rows (`error`, with `summary`) and stops counting them.
+   */
+  abandonBackground(summary: string): NormalizedEvent[] {
+    const out: NormalizedEvent[] = [];
+    for (const [childKey, child] of this.#children) {
+      if (!child.backgrounded || child.settled === true) continue;
+      child.settled = true;
+      out.push({ type: "activity", activity: { kind: "child", childKey, name: child.name, status: "error", ...(child.description ? { description: child.description } : {}), summary } });
+    }
+    return out;
+  }
+
+  /**
    * The sub-agent a `<task-notification>` user message reports on: the tracked child's name,
    * else the CLI's `Agent "<name>" finished` summary. Undefined for any other message.
    */

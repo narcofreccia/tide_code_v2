@@ -18,7 +18,8 @@ import { Engine } from "./orchestration/engine.ts";
 import { DelegateWaits, DelegationReactor, type CancelTimer } from "./orchestration/delegation.ts";
 import { LimitsWorker } from "./orchestration/limits.ts";
 import { SettlementReactor } from "./orchestration/settlement.ts";
-import { continueAfterRestart, recoverRollbacks, recoverUnsettledTurns, SHUTDOWN_ERROR, unsettledTurns } from "./orchestration/recovery.ts";
+import { markChildrenLost } from "./orchestration/background.ts";
+import { continueAfterRestart, recoverLostChildren, recoverRollbacks, recoverUnsettledTurns, SHUTDOWN_ERROR, unsettledTurns } from "./orchestration/recovery.ts";
 import { RollbackService } from "./orchestration/rollback.ts";
 import { openEventStore, type EventStore } from "./orchestration/store.ts";
 import { AcpRegistry } from "./provider/acpRegistry.ts";
@@ -153,6 +154,8 @@ export async function createApp(options: AppOptions): Promise<App> {
     onHarnessTurn: (threadId, turn) => reactor.attachHarnessTurn(threadId, turn),
     // a background sub-agent's tool calls and progress land on its row live, no turn opened
     onIdleActivity: (threadId, event) => reactor.ingestIdleActivity(threadId, event),
+    // the harness process is gone: its background sub-agents can never report
+    onClosed: (threadId) => markChildrenLost(engine, threadId, { log }).then(() => undefined),
   });
   registry.setInUse((instance) => sessions.usesInstance(instance));
 
@@ -229,6 +232,7 @@ export async function createApp(options: AppOptions): Promise<App> {
   // checkpoint), the experts reactor (expert status) and the provider reactor (which runs the
   // queued turn each settle promotes).
   const recovered = await recoverUnsettledTurns(engine, { log, resume: (threadId, turnId) => reactor.resume(threadId, turnId) });
+  await recoverLostChildren(engine, { log });
   await recoverRollbacks(engine, { log });
   if (settings.get().continueAfterRestart) await continueAfterRestart(engine, recovered.threadIds, { log });
 

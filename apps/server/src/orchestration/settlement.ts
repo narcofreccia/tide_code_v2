@@ -1,4 +1,4 @@
-import type { EventRecord, ReadModel, SettleReason, Thread } from "@tide/contracts";
+import { hasBackgroundChildren, type EventRecord, type ReadModel, type SettleReason, type Thread } from "@tide/contracts";
 import type { SettingsStore } from "../settings.ts";
 import { descendantsOf } from "./decider/descendants.ts";
 import { CommandError, type Engine } from "./engine.ts";
@@ -127,7 +127,9 @@ function eligible(model: ReadModel, thread: Thread, cutoff: number): boolean {
   if (thread.archivedAt !== undefined || thread.settledAt !== undefined) return false;
   if (thread.pinned === true || thread.autoSettle === false) return false;
   if (thread.status !== "idle" || thread.attention !== undefined) return false;
-  if (thread.updatedAt > cutoff) return false;
+  // background sub-agents still working: not idle, whatever the settled turn says
+  if (hasBackgroundChildren(model, thread.id)) return false;
+  if (lastActiveAt(model, thread) > cutoff) return false;
   if (descendantsOf(model, thread.id).some((d) => d.status === "running")) return false;
   // a delegate whose parent works, or an expert / lead whose session still works, is part of that work
   const parentId = thread.delegatedBy ?? thread.parentThreadId;
@@ -136,4 +138,19 @@ function eligible(model: ReadModel, thread: Thread, cutoff: number): boolean {
     if (Object.values(model.threads).some((t) => t.expertsSessionId === thread.expertsSessionId && t.status === "running")) return false;
   }
   return true;
+}
+
+/**
+ * When the thread last did anything. A sub-agent's rows do not bump `thread.updatedAt`, so a
+ * thread whose background agents reported (or were closed as lost) counts from their last row,
+ * not from the earlier settle of the turn that launched them.
+ */
+function lastActiveAt(model: ReadModel, thread: Thread): number {
+  let last = thread.updatedAt;
+  for (const entry of model.threadTimeline[thread.id] ?? []) {
+    if (entry.kind !== "activity") continue;
+    const a = model.activities[entry.id];
+    if (a?.kind === "child" || (a?.kind === "tool" && a.parentToolUseId != null)) last = Math.max(last, a.updatedAt);
+  }
+  return last;
 }

@@ -1,4 +1,4 @@
-import type { DriverCaps, McpServerSpec, NormalizedEvent, Project, ProviderInstance, ProviderKind, ProviderSession, ReadModel, SessionSettings, Thread } from "@tide/contracts";
+import { hasBackgroundChildren, type DriverCaps, type McpServerSpec, type NormalizedEvent, type Project, type ProviderInstance, type ProviderKind, type ProviderSession, type ReadModel, type SessionSettings, type Thread } from "@tide/contracts";
 import { THREAD_TOOLS_HINT } from "@tide/tide-mcp";
 import { composeSystemPromptAppend, linkedRepoPreamble, resolveLinkedDirs } from "./links.ts";
 import type { DriverRegistry } from "./registry.ts";
@@ -61,6 +61,11 @@ export interface SessionDirectoryOptions {
   onHarnessTurn?: (threadId: string, turn: HarnessTurn) => void;
   /** R14: between turns, a background sub-agent's own tool calls and progress, delivered live */
   onIdleActivity?: (threadId: string, event: NormalizedEvent) => void;
+  /**
+   * A session was closed (explicitly, on a provider/worktree/settings reopen, by the reaper, at
+   * shutdown). Its harness process is gone, and with it any background sub-agent it still ran.
+   */
+  onClosed?: (threadId: string) => void | Promise<void>;
   log?: (msg: string, data?: unknown) => void;
 }
 
@@ -107,12 +112,20 @@ export function hasLiveTurn(model: ReadModel, threadId: string): boolean {
   return latest?.status === "requested" || latest?.status === "running";
 }
 
-function hasBackgroundWork(session: ProviderSession): boolean {
-  try {
-    return session.hasBackgroundWork?.() === true;
-  } catch {
-    return false;
+/**
+ * The harness still runs work of its own between turns (background sub-agents that have not
+ * reported). The driver's answer wins when it gives one: it sees the live process. A driver
+ * without the signal falls back to the read model's running background children.
+ */
+function hasBackgroundWork(session: ProviderSession, model: ReadModel | undefined, threadId: string): boolean {
+  if (session.hasBackgroundWork !== undefined) {
+    try {
+      return session.hasBackgroundWork() === true;
+    } catch {
+      return false;
+    }
   }
+  return model !== undefined && hasBackgroundChildren(model, threadId);
 }
 
 /** A thread's cwd is its worktree once P2 lands, the repo root until then. */
@@ -135,6 +148,7 @@ export class SessionDirectory {
   #model: (() => ReadModel) | undefined;
   #onHarnessTurn: ((threadId: string, turn: HarnessTurn) => void) | undefined;
   #onIdleActivity: ((threadId: string, event: NormalizedEvent) => void) | undefined;
+  #onClosed: ((threadId: string) => void | Promise<void>) | undefined;
   #entries = new Map<string, Entry>();
   #opening = new Map<string, Promise<ProviderSession>>();
   #timer: ReturnType<typeof setInterval> | undefined;
@@ -150,6 +164,7 @@ export class SessionDirectory {
     this.#model = options.model;
     this.#onHarnessTurn = options.onHarnessTurn;
     this.#onIdleActivity = options.onIdleActivity;
+    this.#onClosed = options.onClosed;
     if (options.autoReap ?? true) {
       this.#timer = setInterval(() => void this.reapIdle(), REAP_INTERVAL_MS);
       this.#timer.unref?.();
@@ -284,6 +299,11 @@ export class SessionDirectory {
     } catch (err) {
       this.#log("[provider] session close failed", err);
     }
+    try {
+      await this.#onClosed?.(threadId);
+    } catch (err) {
+      this.#log("[provider] session-closed listener failed", err);
+    }
     // an instance replaced in settings while this session ran can go now
     await this.#registry.sweepRetired();
   }
@@ -297,7 +317,7 @@ export class SessionDirectory {
     const cutoff = this.#now() - this.#idleMs;
     const model = this.#model?.();
     const stale = [...this.#entries.values()]
-      .filter((e) => e.lastUsedAt <= cutoff && !(model !== undefined && hasLiveTurn(model, e.threadId)) && !hasBackgroundWork(e.session))
+      .filter((e) => e.lastUsedAt <= cutoff && !(model !== undefined && hasLiveTurn(model, e.threadId)) && !hasBackgroundWork(e.session, model, e.threadId))
       .map((e) => e.threadId);
     for (const threadId of stale) await this.close(threadId);
     return stale;

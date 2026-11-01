@@ -1,4 +1,5 @@
-import type { Activity, ReadModel, Thread, Triage } from "@tide/contracts";
+import { backgroundChildren, type Activity, type ReadModel, type Thread, type Triage } from "@tide/contracts";
+import { backgroundActivityAt } from "../orchestration/background.ts";
 import type { Ask, JudgeVerdict, PerItemQuestion } from "./judge.ts";
 
 export const SETTLED_WINDOW_MS = 30 * 60_000;
@@ -15,7 +16,8 @@ const URGENCY_LEVELS = [
 ];
 
 const NEEDS_USER = "This thread is waiting on the user: an approval, a question, a plan to accept, or it cannot proceed without them";
-const STUCK = "The agent appears stuck: looping on the same tool/error, no progress for a long time, or repeating itself";
+const STUCK =
+  "The agent appears stuck: looping on the same tool/error, no progress for a long time, or repeating itself. Background sub-agents still producing activity count as progress; a long silence from them does not";
 const URGENCY = "How urgently does this thread need the user's attention?";
 
 const clip = (text: string, max: number): string => (text.length <= max ? text : `${text.slice(0, max - 1)}…`);
@@ -30,12 +32,16 @@ export function lastActivityAt(model: ReadModel, thread: Thread): number {
   return last;
 }
 
-/** Threads worth sorting: running, needing the user, or settled in the last 30 minutes. */
+/**
+ * Threads worth sorting: running, working through background sub-agents, needing the user, or
+ * settled in the last 30 minutes.
+ */
 export function triageCandidates(model: ReadModel, projectId: string, now: number): Thread[] {
   return Object.values(model.threads)
     .filter((t) => {
       if (t.projectId !== projectId || t.archivedAt !== undefined) return false;
       if (t.status === "running" || t.attention !== undefined) return true;
+      if (backgroundActivityAt(model, t.id) !== undefined) return true;
       const settledAt = t.latestTurnId !== undefined ? model.turns[t.latestTurnId]?.settledAt : undefined;
       return settledAt !== undefined && now - settledAt <= SETTLED_WINDOW_MS;
     })
@@ -78,16 +84,22 @@ export function threadState(model: ReadModel, thread: Thread, now: number): Reco
     if (a) activities.unshift(activityLine(a));
   }
   const planProposed = Object.values(model.plans).some((p) => p.threadId === thread.id && p.status === "proposed");
+  // a settled turn with sub-agents still running is work in progress, not an idle thread
+  const background = backgroundChildren(model, thread.id);
+  const backgroundAt = backgroundActivityAt(model, thread.id);
   return {
     title: thread.title,
     provider: thread.provider,
-    status: thread.status,
+    status: thread.status === "idle" && background.length > 0 ? "working (background sub-agents)" : thread.status,
     attention: thread.attention ?? "none",
     lastUserMessage: clip(lastMessage(model, thread.id, "user"), MAX_USER_CHARS),
     lastAssistantText: clip(lastMessage(model, thread.id, "assistant"), MAX_ASSISTANT_CHARS),
     recentActivities: activities,
     minutesSinceLastActivity: Math.max(0, Math.round((now - lastActivityAt(model, thread)) / 60_000)),
     planProposed,
+    ...(background.length > 0 && backgroundAt !== undefined
+      ? { backgroundAgents: background.map((c) => c.name), minutesSinceBackgroundActivity: Math.max(0, Math.round((now - backgroundAt) / 60_000)) }
+      : {}),
   };
 }
 
