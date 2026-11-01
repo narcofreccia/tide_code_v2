@@ -8,6 +8,8 @@ import { ActivityGroup } from "./ActivityGroup.tsx";
 import { ActivityRow } from "./ActivityRow.tsx";
 import { ApprovalCard } from "./ApprovalCard.tsx";
 import { ChildGroup } from "./ChildGroup.tsx";
+import { CompactionNotice } from "./CompactionNotice.tsx";
+import { compactionOf, type Compaction } from "../../lib/compaction.ts";
 import { EmptyThread } from "./EmptyThread.tsx";
 import { HarnessEvents, collapsePassThrough, isPassThrough } from "./HarnessEvents.tsx";
 import { PlanCard } from "./PlanCard.tsx";
@@ -30,6 +32,7 @@ type Row =
   | { kind: "input"; key: string; activity: ActivityOf<"user-input"> }
   | { kind: "child"; key: string; child: ActivityOf<"child">; activities: Activity[] }
   | { kind: "harness"; key: string; activities: Note[] }
+  | { kind: "compaction"; key: string; activity: Activity; compaction: Compaction }
   | { kind: "activity"; key: string; activity: Activity };
 
 /**
@@ -47,6 +50,9 @@ function buildRows(items: readonly TimelineItem[], turns: readonly Turn[], prev:
   const metaIds = metaMessageIds(top, turns);
   const turnActivities = activitiesByTurn(entries);
   const turnNumber = new Map(turns.map((t, i) => [t.id, i + 1] as const));
+  // a harness that reports start and end as two rows (Pi): the "done" row stands for both
+  const compacted = new Set<string>();
+  for (const entry of top) if (entry.kind === "activity" && compactionOf(entry.activity)?.phase === "done") compacted.add(entry.activity.turnId);
   const rows: Row[] = [];
   for (const node of groupActivities(top)) {
     if (node.kind === "group") {
@@ -67,7 +73,10 @@ function buildRows(items: readonly TimelineItem[], turns: readonly Turn[], prev:
     } else {
       const activity = node.activity;
       const events = isPassThrough(activity) ? groups.get(activity.id) : undefined;
-      if (activity.kind === "approval") rows.push({ kind: "approval", key: activity.id, activity, active: activity.id === liveApprovalId });
+      const compaction = compactionOf(activity);
+      if (compaction !== undefined) {
+        if (compaction.phase === "done" || !compacted.has(activity.turnId)) rows.push({ kind: "compaction", key: activity.id, activity, compaction });
+      } else if (activity.kind === "approval") rows.push({ kind: "approval", key: activity.id, activity, active: activity.id === liveApprovalId });
       else if (activity.kind === "user-input") rows.push({ kind: "input", key: activity.id, activity });
       else if (activity.kind === "child") {
         rows.push({ kind: "child", key: activity.id, child: activity, activities: stable(`child:${activity.childKey}`, split.nested.get(activity.childKey) ?? []) });
@@ -104,6 +113,8 @@ function renderRow(row: Row, provider: ProviderKind) {
       return <ChildGroup key={row.key} child={row.child} activities={row.activities} />;
     case "harness":
       return <HarnessEvents key={row.key} activities={row.activities} />;
+    case "compaction":
+      return <CompactionNotice key={row.key} activity={row.activity} compaction={row.compaction} />;
     case "activity":
       return <ActivityRow key={row.key} activity={row.activity} />;
   }

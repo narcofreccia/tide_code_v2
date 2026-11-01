@@ -19,6 +19,13 @@ describe("RateLimitBadge", () => {
     expect(badge.className).toMatch(/limited/);
   });
 
+  it("an exhausted overage window stays a warning that says what ran out", () => {
+    render(<RateLimitBadge limit={{ status: "warning", note: "seven_day_overage_included 100% used (rejected)", remainingPct: 0, at: 1 }} now={NOW} />);
+    const badge = screen.getByLabelText("rate limit warning");
+    expect(badge.textContent).toBe("⚠ overage used up");
+    expect(badge.className).toMatch(/warning/);
+  });
+
   it("renders nothing for ok or no report", () => {
     const { container } = render(
       <>

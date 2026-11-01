@@ -351,3 +351,23 @@ describe("ClaudeSession", () => {
     });
   });
 });
+
+describe("ClaudeSession compaction", () => {
+  it("refreshes the context gauge right after a compact_boundary, before the turn ends", async () => {
+    const { session, query } = harness();
+    const events: NormalizedEvent[] = [];
+    const done = collect(session.send({ text: "/compact" }), events);
+    await tick();
+    query().init();
+    query().contextUsage = { totalTokens: 21_000, rawMaxTokens: 200_000 };
+    query().messages.push({ type: "system", subtype: "status", status: "compacting", session_id: "session-1" } as ClaudeMessage);
+    query().messages.push({ type: "system", subtype: "compact_boundary", compact_metadata: { trigger: "manual", pre_tokens: 182_000, post_tokens: 21_000 }, session_id: "session-1" } as ClaudeMessage);
+    query().result();
+    await done;
+    const texts = events.map((e) => (e.type === "activity" && e.activity.kind === "info" ? e.activity.text : e.type));
+    const boundary = texts.indexOf("Context compacted (manual) · 182k → 21k tokens");
+    expect(texts).toContain("Compacting conversation…");
+    expect(boundary).toBeGreaterThan(-1);
+    expect(events[boundary + 1]).toEqual({ type: "usage", contextUsage: { used: 21_000, window: 200_000 } });
+  });
+});

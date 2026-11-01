@@ -99,7 +99,7 @@ export function ThreadHeader({ thread }: { thread: Thread }) {
           <StateGlyph state={state} />
           {state === "background" ? <LiveLabel text={word} className={styles.liveWord} /> : word}
         </span>
-        <ThreadTitle thread={thread} />
+        <ThreadTitle thread={thread} live={state === "running" || state === "background"} />
         <span
           className={styles.branch}
           title={thread.worktreePath ?? "Runs in the project's main checkout"}

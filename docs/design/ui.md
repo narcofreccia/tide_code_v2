@@ -120,8 +120,16 @@ wake-ups (delegate finished, child asked a question, PR changed, restart) render
 not a message. A harness-initiated turn whose summary is the driver's `sub-agent "<name>" reported`
 reads `▷ <name> reported · Claude continued`, the name linking to that agent's group (its report);
 any other summary passes through after `<Harness> continued`. Rate-limit warning rows
-(`Rate limit allowed_warning …`) fold into the turn's harness-events line — the limit badge shows them;
-a rejection stays in the stream. A turn that started after a harness change or fork shows a collapsed **Handoff**
+(`Rate limit allowed_warning …`, and an exhausted overage window `Rate limit rejected on
+seven_day_overage_included …`, which stops nothing) fold into the turn's harness-events line — the limit
+badge shows them (`⚠ overage used up` for the latter); any other rejection stays in the stream.
+Context compaction (`/compact`, or the harness compacting on its own) is a muted divider row in the turn,
+never folded: `── Context compacted · 182k → 21k tokens ──` (`CompactionNotice`; the trigger `(manual)` /
+`(auto)` is in the tooltip; token figures only when the harness gives them — Claude does, Codex /
+OpenCode / Pi say only `Context compacted`). While it runs the row reads `Compacting conversation…` with
+the live shimmer, and the live label (rail, Mission Control) says `Compacting conversation…` — also for a
+turn whose prompt is `/compact` before the harness reports anything. A harness that reports start and
+end as two rows (Pi) shows the end row only. A turn that started after a harness change or fork shows a collapsed **Handoff**
 card (`Handoff · <strategy> · covers N turns, M omitted`, a delivery pill, `from → to`) that
 expands to the handed-over text. A rolled-back turn's messages are dimmed and tagged `rolled back`.
 Each settled user message has a per-turn **⋯** menu: `Fork from here…` and
@@ -339,6 +347,11 @@ Line height `--lh-body: 1.45` for text, `--lh-tight: 1.2` for titles and single-
 - **Scroll:** the stream never animates its own scrolling. Following the end and restoring a thread's
   position both jump before paint (`useStreamScroll`), and native scroll anchoring is off
   (`overflow-anchor: none`) because the hook anchors by hand.
+- **Live title:** while the thread works — a running turn, or `◉ Working · N agents in background` — the
+  header title is a `LiveLabel` (muted title, sweeping window), capped at 64 characters because the shimmer
+  cannot ellipsize. It stops the moment the thread is idle, limited, interrupting or errored. Under
+  reduced motion the title is a static `--accent`. The rail row title does not shimmer: its live line
+  already does, and two stacked sweeps read as noise.
 - Reduced motion / forced colours: no shimmer window (the muted label alone), no fades, static caret.
 
 ## Component inventory (apps/web/src/components)

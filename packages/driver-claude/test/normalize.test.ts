@@ -244,6 +244,52 @@ describe("rate_limit_event", () => {
     const limited = n.next(frame({ status: "rejected" }));
     expect(limited[0]).toMatchObject({ rateLimit: { status: "limited" } });
   });
+
+  it("a rejected overage window is a warning, not a block: the plan's own windows still allow requests", () => {
+    const n = new ClaudeNormalizer({ partialMessages: true, now: () => 1 });
+    const events = n.next(frame({ status: "rejected", rateLimitType: "seven_day_overage_included", isUsingOverage: false, resetsAt: 1788141000, unifiedWindows: { seven_day_overage_included: { utilization: 1 } } }));
+    expect(events[0]).toMatchObject({ type: "usage", rateLimit: { status: "warning", remainingPct: 0, note: "seven_day_overage_included 100% used (rejected)" } });
+    const plain = n.next(frame({ status: "rejected", rateLimitType: "overage" }));
+    expect(plain[0]).toMatchObject({ rateLimit: { status: "warning" } });
+    // a regular window rejecting is still a limit signal
+    expect(n.next(frame({ status: "rejected", rateLimitType: "five_hour" }))[0]).toMatchObject({ rateLimit: { status: "limited" } });
+  });
+});
+
+describe("compaction", () => {
+  const system = (fields: Record<string, unknown>) => ({ type: "system", session_id: "s", ...fields }) as ClaudeMessage;
+  const ids = () => {
+    let i = 0;
+    return () => `c${++i}`;
+  };
+
+  it("shows a live row while compacting and replaces it with the token figures", () => {
+    const n = new ClaudeNormalizer({ partialMessages: true, newId: ids() });
+    expect(n.next(system({ subtype: "status", status: "compacting" }))).toEqual([
+      { type: "activity", activity: { id: "c1", kind: "info", text: "Compacting conversation…" } },
+    ]);
+    expect(n.next(system({ subtype: "compact_boundary", compact_metadata: { trigger: "manual", pre_tokens: 182_400, post_tokens: 21_300 } }))).toEqual([
+      { type: "activity", activity: { id: "c1", kind: "info", text: "Context compacted (manual) · 182k → 21k tokens" } },
+    ]);
+    expect(n.next(system({ subtype: "status", status: null, compact_result: "success" }))).toEqual([]);
+    expect(n.next(system({ subtype: "status", status: "requesting" }))).toEqual([]);
+  });
+
+  it("a boundary without a live row gets its own row; missing post_tokens is tolerated", () => {
+    const n = new ClaudeNormalizer({ partialMessages: true, newId: ids() });
+    expect(n.next(system({ subtype: "compact_boundary", compact_metadata: { trigger: "auto", pre_tokens: 160_000 } }))).toEqual([
+      { type: "activity", activity: { id: "c1", kind: "info", text: "Context compacted (auto) · from 160k tokens" } },
+    ]);
+    expect(n.next(system({ subtype: "compact_boundary", compact_metadata: { trigger: "auto" } }))).toMatchObject([{ activity: { id: "c2", text: "Context compacted (auto)" } }]);
+  });
+
+  it("a failed compaction turns the live row into an error", () => {
+    const n = new ClaudeNormalizer({ partialMessages: true, newId: ids() });
+    n.next(system({ subtype: "status", status: "compacting" }));
+    expect(n.next(system({ subtype: "status", status: null, compact_result: "failed", compact_error: "Not enough messages to compact." }))).toEqual([
+      { type: "activity", activity: { id: "c1", kind: "error", text: "Compaction failed: Not enough messages to compact." } },
+    ]);
+  });
 });
 
 describe("sub-agent reports", () => {

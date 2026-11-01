@@ -1,0 +1,24 @@
+/* "── Context compacted · 182k → 21k tokens ──": a quiet divider inside the turn */
+.notice {
+  display: flex;
+  align-items: center;
+  gap: var(--sp-2);
+  min-height: var(--activity-h);
+  color: var(--muted);
+  font-size: var(--fs-sm);
+}
+.rule {
+  flex: 1 1 0;
+  min-width: var(--sp-4);
+  height: 1px;
+  background: var(--border);
+}
+.text {
+  flex: 0 1 auto;
+  min-width: 0;
+  overflow: hidden;
+  text-overflow: ellipsis;
+  white-space: nowrap;
+}
+/* the shimmer cannot ellipsize; its text is short ("Compacting conversation…") */
+.live { flex: none; }

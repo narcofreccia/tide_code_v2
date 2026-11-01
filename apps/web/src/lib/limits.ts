@@ -9,10 +9,12 @@ export const WINDOW_LABELS: Record<LimitWindow, string> = { "5h": "5h", wk: "wk"
 /**
  * Which window a report is about. The drivers keep the harness's own wording in
  * `note` (`five_hour 38% used`, `codex 12% used (5h window)`), so this reads it;
- * a report that names no window is `other`.
+ * a report that names no window, or an overage window, is `other`.
  */
 export function limitWindow(limit: RateLimit): LimitWindow {
   const note = (limit.note ?? "").toLowerCase();
+  // extra usage beyond the plan (`seven_day_overage_included`): not the plan's weekly window
+  if (note.includes("overage")) return "other";
   if (/five_hour|5h window|\b5 ?h\b|primary/.test(note)) return "5h";
   if (/seven_day|week|\b168h window|\b7d\b|secondary/.test(note)) return "wk";
   return "other";

@@ -32,3 +32,16 @@
 }
 .wrap:hover .pencil, .pencil:focus-visible { opacity: 1; }
 .pencil:hover { color: var(--text); background: var(--surface-2); }
+/*
+ * Live title (the agent is working): LiveLabel's shimmer — muted text, a bright window
+ * sweeping across. The label clips instead of ellipsizing; ThreadTitle caps its length.
+ */
+.text.live {
+  overflow: visible;
+  text-overflow: clip;
+  color: var(--muted);
+}
+/* no motion: the sweep is hidden by LiveLabel; a static accent still says "working" */
+@media (prefers-reduced-motion: reduce) {
+  .text.live { color: var(--accent); }
+}

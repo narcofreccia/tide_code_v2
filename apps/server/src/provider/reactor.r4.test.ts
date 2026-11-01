@@ -207,6 +207,32 @@ describe("ProviderReactor: limits", () => {
     expect(h.engine.getModel().threads[h.threadId]?.limited).toMatchObject({ note: "Claude AI usage limit reached|1760000000" });
   });
 
+  it("never limits a turn that completed: an exhausted overage window is only a warning", async () => {
+    const h = await harness();
+    h.claude.script(
+      emit({ type: "usage", rateLimit: { status: "warning", note: "seven_day_overage_included 100% used (rejected)", resetsAt: 9_000, at: 1 } }),
+      // even a "limited" frame does not block a turn the harness went on to complete
+      emit({ type: "usage", rateLimit: { status: "limited", note: "seven_day_overage_included 100% used (rejected)", at: 2 } }),
+      emit({ type: "settled", status: "completed" }),
+    );
+    await turn(h, h.threadId, "go");
+    const thread = h.engine.getModel().threads[h.threadId];
+    expect(thread?.limited).toBeUndefined();
+    expect(thread?.rateLimit).toMatchObject({ note: "seven_day_overage_included 100% used (rejected)" });
+    expect(h.events.map((e) => e.type)).not.toContain("thread.limited");
+  });
+
+  it("a completed turn clears a limit left from before", async () => {
+    const h = await harness();
+    await h.engine.dispatch({ type: "thread.limited", threadId: h.threadId, note: "seven_day_overage_included 100% used (rejected)", resetsAt: 9_000 });
+    expect(h.engine.getModel().threads[h.threadId]?.limited).toBeDefined();
+    h.claude.script(emit({ type: "settled", status: "completed" }));
+    await turn(h, h.threadId, "go");
+    await h.reactor.drain();
+    expect(h.engine.getModel().threads[h.threadId]?.limited).toBeUndefined();
+    expect(h.events.map((e) => e.type)).toContain("thread.resumed");
+  });
+
   it("leaves ordinary errors alone", async () => {
     const h = await harness();
     h.claude.script(emit({ type: "settled", status: "error", error: "tool crashed" }));

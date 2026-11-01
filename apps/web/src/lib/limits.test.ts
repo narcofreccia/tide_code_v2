@@ -17,6 +17,7 @@ describe("limits", () => {
     expect(limitWindow(lim("codex 12% used (5h window)", 88))).toBe("5h");
     expect(limitWindow(lim("codex 3% used (168h window)", 97))).toBe("wk");
     expect(limitWindow(lim("rate limit", undefined))).toBe("other");
+    expect(limitWindow(lim("seven_day_overage_included 100% used (rejected)", 0))).toBe("other");
   });
 
   it("keeps the newest report per instance and window", () => {

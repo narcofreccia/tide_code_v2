@@ -16,15 +16,20 @@ export function rateLimitTitle(limit: RateLimit, now = Date.now()): string {
 
 /**
  * The harness's subscription / API rate-limit state, only when it is not `ok`:
- * `⚠ 12% left · resets in 2h` (warning) or `⛔ limited · resets in 2h`.
+ * `⚠ 12% left · resets in 2h` (warning), `⚠ overage used up` (an exhausted overage
+ * window the plan absorbs) or `⛔ limited · resets in 2h`.
  */
 export function RateLimitBadge({ limit, now }: { limit: RateLimit | undefined; now?: number }) {
   if (!limit || limit.status === "ok") return null;
   const at = now ?? Date.now();
   const limited = limit.status === "limited";
+  // an exhausted overage window: the plan still runs, only extra usage is gone
+  const overageSpent = !limited && /overage/.test(limit.note ?? "") && (limit.remainingPct ?? 0) <= 0;
   const head = limited
     ? "⛔ limited"
-    : limit.remainingPct === undefined
+    : overageSpent
+      ? "⚠ overage used up"
+      : limit.remainingPct === undefined
       ? "⚠ near limit"
       : `⚠ ${Math.round(limit.remainingPct)}% left`;
   const reset = limit.resetsAt === undefined ? "" : ` · resets ${relativeUntil(limit.resetsAt, at)}`;

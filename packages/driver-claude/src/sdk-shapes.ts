@@ -79,8 +79,11 @@ export interface SystemOtherMessage {
   patch?: { status?: string; description?: string; error?: string; is_backgrounded?: boolean };
   /** task_started: registered in the background (its tool_result is a placeholder, the result comes as task_notification) */
   is_backgrounded?: boolean;
-  /** task_notification: completed | failed | stopped */
-  status?: string;
+  /** task_notification: completed | failed | stopped; status (SDKStatusMessage): requesting | compacting | null */
+  status?: string | null;
+  /** status: how the compaction that just ended went */
+  compact_result?: string;
+  compact_error?: string;
 }
 
 export interface AssistantMessage {

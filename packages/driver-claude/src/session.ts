@@ -490,6 +490,11 @@ export class ClaudeSession implements ProviderSession {
           }
           mailbox.push(event);
         }
+        // compaction just shrank the context: the gauge should not wait for the turn to end
+        if (isCompactBoundary(step.value)) {
+          const contextUsage = await this.#contextUsage();
+          if (contextUsage) mailbox.push({ type: "usage", contextUsage });
+        }
       }
     } catch (error) {
       const message = error instanceof Error ? error.message : String(error);
@@ -716,4 +721,8 @@ export class ClaudeSession implements ProviderSession {
     if (reading) void iterator?.return?.(undefined).catch(() => undefined);
     else await iterator?.return?.(undefined).catch(() => undefined);
   }
+}
+
+function isCompactBoundary(message: ClaudeMessage): boolean {
+  return message.type === "system" && (message as { subtype?: string }).subtype === "compact_boundary";
 }

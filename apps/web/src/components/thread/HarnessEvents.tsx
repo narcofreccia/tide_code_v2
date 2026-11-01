@@ -12,11 +12,12 @@ type Note = Extract<Activity, { kind: "info" | "error" }>;
 const HARNESS_FRAME = /^(claude|codex|opencode|pi|acp): /;
 
 /**
- * A usage-window warning row ("Rate limit allowed_warning on seven_day (96% used)"): the
- * header's limit badge and the status bar already show it, so it folds with the frames.
- * A rejection ("Rate limit rejected …") is not matched and stays in the stream.
+ * A usage-window warning row ("Rate limit allowed_warning on seven_day (96% used)", or an
+ * exhausted overage window "Rate limit rejected on seven_day_overage_included …", which
+ * does not stop work): the header's limit badge and the status bar already show it, so it
+ * folds with the frames. Any other rejection stays in the stream.
  */
-const RATE_WARNING = /^Rate limit allowed(_warning)?\b/;
+const RATE_WARNING = /^Rate limit (allowed(_warning)?\b|rejected on \w*overage)/;
 
 /**
  * Raw harness frames Tide does not model: info rows carrying the native payload

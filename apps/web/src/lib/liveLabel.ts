@@ -1,13 +1,14 @@
 import type { Activity, AttentionKind, Message, ReadModel, Thread, TimelineEntry, Turn } from "@tide/contracts";
 import { clipTarget as clip, countBackgroundAgents, displayToolName, shortTarget } from "@tide/client";
+import { COMPACTING_LABEL, compactionOf, isCompactPrompt } from "./compaction.ts";
 import { backgroundAgentsText } from "./vocab.ts";
 
 export { displayToolName, shortTarget };
 
 /**
  * What a rail row says a thread is doing right now, on its second line:
- * "Bash npm test", "Writing", "Thinking", "Needs approval", "Waiting for limit reset", "Queued",
- * "1 agent in background".
+ * "Bash npm test", "Writing", "Thinking", "Compacting conversation…", "Needs approval",
+ * "Waiting for limit reset", "Queued", "1 agent in background".
  * Pure over the read model; undefined for an idle or settled thread.
  */
 export type LiveLabelKind = "thinking" | "tool" | "waiting" | "approval" | "queued" | "limited" | "background";
@@ -91,17 +92,24 @@ function turnLabel(model: ReadModel, thread: Thread, turn: Turn): LiveLabelInfo 
 function labelFromTail(read: readonly (Activity | Message)[]): LiveLabelInfo {
   let latest: "writing" | "other" | undefined;
   let harnessWake = false;
+  /** the newest compaction row of the turn, if any: still running, or done */
+  let compaction: "running" | "done" | undefined;
+  let compactPrompt = false;
   for (const item of read) {
     if ("role" in item) {
       if (item.role === "user" && item.notification?.source === "harness") harnessWake = true;
+      if (item.role === "user" && isCompactPrompt(item.text)) compactPrompt = true;
       latest ??= item.role === "assistant" && item.streaming === true && item.text !== "" ? "writing" : "other";
     } else {
       const label = runningLabel(item);
       if (label !== undefined) return { text: label, kind: "tool" };
+      compaction ??= compactionOf(item)?.phase;
       latest ??= "other";
     }
   }
   if (latest === "writing") return { text: "Writing", kind: undefined };
+  // `/compact` writes nothing until it is done; a harness that says it is compacting (Claude, Pi) is too
+  if (compaction === "running" || (compactPrompt && compaction === undefined)) return { text: COMPACTING_LABEL, kind: "thinking" };
   if (harnessWake) return { text: "continuing after a sub-agent reported", kind: "thinking" };
   return { text: "Thinking", kind: "thinking" };
 }

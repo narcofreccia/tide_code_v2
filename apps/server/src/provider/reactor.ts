@@ -41,6 +41,8 @@ interface ThreadState {
 interface TurnRun {
   /** the harness said the subscription window is exhausted */
   limited?: { resetsAt?: number; note?: string };
+  /** how the turn settled */
+  status?: "completed" | "interrupted" | "error";
 }
 
 /** Drops every `${turnId}:…` entry of a settled turn: harness keys (request ids, tool ids) repeat across turns. */
@@ -444,7 +446,7 @@ export class ProviderReactor {
   }
 
   /** A user-level command the reactor issues on the user's behalf (re-aiming a steer). */
-  async #dispatchClient(command: Extract<Command, { type: "turn.promote" }>): Promise<void> {
+  async #dispatchClient(command: Extract<Command, { type: "turn.promote" | "thread.resume" }>): Promise<void> {
     try {
       await this.#engine.dispatch(command);
     } catch (err) {
@@ -524,6 +526,7 @@ export class ProviderReactor {
         await start();
         await this.#dispatch({ type: "turn.settle", turnId, status: "completed" });
         settled = true;
+        run.status = "completed";
       }
     } catch (err) {
       const message = err instanceof Error ? err.message : String(err);
@@ -533,6 +536,7 @@ export class ProviderReactor {
         await this.#dispatch({ type: "activity.upsert", activity: this.#errorActivity(threadId, turnId, message) });
         await this.#dispatch({ type: "turn.settle", turnId, status: "error", error: message });
         settled = true;
+        run.status = "error";
         if (isUsageLimitError(message)) run.limited ??= { note: message };
       }
     } finally {
@@ -541,7 +545,22 @@ export class ProviderReactor {
         this.#liveKey.delete(threadId);
       }
     }
-    if (settled && run.limited !== undefined) {
+    if (settled) await this.#settleLimit(threadId, run);
+  }
+
+  /**
+   * A thread is limited only when the harness refused work: the turn failed or was cut
+   * short and a limit signal came with it. A window reported exhausted while the turn
+   * completed (an overage window, a warning the plan absorbed) never blocks the thread,
+   * and a completed turn clears a limit left from before.
+   */
+  async #settleLimit(threadId: string, run: TurnRun): Promise<void> {
+    if (run.status === "completed") {
+      const thread = this.#engine.getModel().threads[threadId];
+      if (thread?.limited !== undefined && thread.status !== "running") await this.#dispatchClient({ type: "thread.resume", threadId });
+      return;
+    }
+    if (run.limited !== undefined) {
       await this.#dispatch({
         type: "thread.limited",
         threadId,
@@ -690,6 +709,7 @@ export class ProviderReactor {
         this.#onCommands?.(threadId, event.commands);
         return false;
       case "settled":
+        run.status = event.status;
         if (event.status === "error" && isUsageLimitError(event.error)) run.limited ??= { note: event.error as string };
         await this.#dispatch({
           type: "turn.settle",

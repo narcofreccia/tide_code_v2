@@ -77,6 +77,20 @@ describe("liveLabelFor", () => {
     expect(liveLabelFor(model, running)?.text).toBe("Thinking");
   });
 
+  const note = (id: string, text: string): Activity => ({ id, threadId: "t1", turnId: "u1", kind: "info", text, createdAt: 1, updatedAt: 1 });
+
+  it("says Compacting conversation… while a /compact turn runs, and while the harness says it compacts", () => {
+    const prompt = makeMessage("m1", { role: "user", text: "/compact keep the API notes" });
+    const turn = [makeTurn("u1", { status: "running" })];
+    expect(liveLabelFor(build(running, turn, [prompt]), running)).toEqual({ text: "Compacting conversation…", kind: "thinking" });
+    expect(liveLabelFor(build(running, turn, [prompt, note("i1", "Compacting conversation…")]), running)?.text).toBe("Compacting conversation…");
+    // auto-compaction mid-turn, no /compact prompt
+    const auto = build(running, turn, [makeMessage("m1", { role: "user", text: "refactor" }), note("i1", "Compacting conversation…")]);
+    expect(liveLabelFor(auto, running)?.text).toBe("Compacting conversation…");
+    // done: back to what the turn does next
+    expect(liveLabelFor(build(running, turn, [prompt, note("i1", "Context compacted (manual) · 182k → 21k tokens")]), running)?.text).toBe("Thinking");
+  });
+
   it("says Needs approval for a pending approval", () => {
     const thread = { ...running, attention: "approval" as const };
     expect(liveLabelFor(build(thread, [makeTurn("u1", { status: "running" })]), thread)).toEqual({ text: "Needs approval", kind: "approval" });

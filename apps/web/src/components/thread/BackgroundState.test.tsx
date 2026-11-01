@@ -51,6 +51,19 @@ describe("a thread whose sub-agents outlive the turn", () => {
     expect(screen.getByTitle("Idle")).toBeDefined();
   });
 
+  it("the header title shimmers while sub-agents work and stops when they report", () => {
+    mockRpc({ "thread.terminalCommand": () => ({}) });
+    const working = model([child("a")]);
+    attachFakeStore(working);
+    render(<ThreadHeader thread={working.threads.t1 as Thread} />);
+    expect(screen.getByTitle("Rename").querySelector("[data-live-label]")?.textContent).toBe((working.threads.t1 as Thread).title);
+    cleanup();
+    const done = model([child("a", { status: "done" })]);
+    attachFakeStore(done);
+    render(<ThreadHeader thread={done.threads.t1 as Thread} />);
+    expect(screen.getByTitle("Rename").querySelector("[data-live-label]")).toBeNull();
+  });
+
   it("status bar says thread: 1 agent in background", () => {
     attachFakeStore(model([child("a")]));
     useUi.setState({ selectedThreadId: "t1", view: "thread" });

@@ -327,6 +327,25 @@ describe("ThreadHeader state chip", () => {
     expect(screen.getByText(word)).toBeDefined();
   });
 
+  const liveTitle = () => screen.getByTitle("Rename").querySelector("[data-live-label]");
+
+  it("animates the title while the agent runs, not when idle, limited or interrupting", () => {
+    mockRpc({ "thread.terminalCommand": () => ({}) });
+    mount({ status: "running", title: "Fix the parser" });
+    expect(liveTitle()?.textContent).toBe("Fix the parser");
+    for (const patch of [{}, { status: "running" as const, limited: { resume: "manual" as const, at: 1 } }, { status: "running" as const, interrupting: true }, { status: "error" as const }]) {
+      cleanup();
+      mount(patch);
+      expect(liveTitle()).toBeNull();
+    }
+  });
+
+  it("caps a long live title instead of letting the shimmer clip it", () => {
+    mockRpc({ "thread.terminalCommand": () => ({}) });
+    mount({ status: "running", title: "x".repeat(100) });
+    expect(liveTitle()?.textContent).toBe(`${"x".repeat(63)}…`);
+  });
+
   it("keeps needs-you and interrupted visually distinct", () => {
     mockRpc({ "thread.terminalCommand": () => ({}) });
     mount({ attention: "approval" });

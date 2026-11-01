@@ -1,4 +1,6 @@
+import { randomUUID } from "node:crypto";
 import type { NormalizedEvent } from "@tide/contracts";
+import { COMPACTING_TEXT, compactedText } from "./compaction.ts";
 import type {
   AssistantMessage,
   ClaudeMessage,
@@ -43,7 +45,7 @@ const SILENT_MESSAGE_TYPES = new Set([
 ]);
 
 const SILENT_SYSTEM_SUBTYPES = new Set([
-  "status", // per-request spinner state (requesting/…)
+  "status", // per-request spinner state (requesting/…); `compacting` is handled before this set is read
   "background_tasks_changed", // level signal duplicating the task_* bookends the child rows already show
   "thinking_tokens", // live thinking-token estimate for a progress pill
 ]);
@@ -55,6 +57,8 @@ export interface NormalizerOptions {
   onUnknown?: (type: string, subtype?: string) => void;
   /** clock for `rateLimit.at` (tests) */
   now?: () => number;
+  /** id for the compaction row, so "Compacting…" and "Context compacted" land on one row (tests) */
+  newId?: () => string;
 }
 
 /** Cumulative per-`query()` figures from the previous `result`, to turn totals into per-turn deltas. */
@@ -161,6 +165,8 @@ export class ClaudeNormalizer {
   #children = new Map<string, { name: string; description?: string; backgrounded: boolean; summarised: boolean; settled?: boolean }>();
   #taskChild = new Map<string, string>();
   #interrupted = false;
+  /** the "Compacting conversation…" row in flight; its compact_boundary replaces it */
+  #compactingId: string | undefined;
   #reported: Cumulative = { input: 0, output: 0, cacheRead: 0, cacheWrite: 0, cost: 0 };
   unknownCount = 0;
 
@@ -256,9 +262,11 @@ export class ClaudeNormalizer {
       return this.#info(`Retrying API request (attempt ${other.attempt ?? "?"}/${other.max_retries ?? "?"}${other.error ? `, ${other.error}` : ""})`);
     }
     if (other.subtype === "compact_boundary") {
-      const trigger = other.compact_metadata?.trigger ?? "auto";
-      return this.#info(`Context compacted (${trigger})`);
+      const id = this.#compactingId ?? this.#newId();
+      this.#compactingId = undefined;
+      return [{ type: "activity", activity: { id, kind: "info", text: compactedText(other.compact_metadata) } }];
     }
+    if (other.subtype === "status") return this.#status(other);
     if (other.subtype === "task_started" || other.subtype === "task_updated" || other.subtype === "task_progress") {
       return this.#task(other);
     }
@@ -380,6 +388,31 @@ export class ClaudeNormalizer {
     return this.#settleChild(childKey, status, { ...(summary !== undefined ? { summary } : {}), ...(report ? { report } : {}) });
   }
 
+  #newId(): string {
+    return (this.#opts.newId ?? randomUUID)();
+  }
+
+  /**
+   * `SDKStatusMessage`: `status: "compacting"` while Claude Code summarises the conversation
+   * (manual `/compact` or auto-compaction), then `status: null` with `compact_result`. The
+   * live row is replaced in place by the compact_boundary that follows; a failure turns it
+   * into an error. `requesting` is per-request spinner noise.
+   */
+  #status(message: SystemOtherMessage): NormalizedEvent[] {
+    if (message.status === "compacting") {
+      if (this.#compactingId !== undefined) return [];
+      this.#compactingId = this.#newId();
+      return [{ type: "activity", activity: { id: this.#compactingId, kind: "info", text: COMPACTING_TEXT } }];
+    }
+    if (message.compact_result === "failed") {
+      const id = this.#compactingId ?? this.#newId();
+      this.#compactingId = undefined;
+      const reason = message.compact_error ? `: ${truncate(message.compact_error, 300)}` : "";
+      return [{ type: "activity", activity: { id, kind: "error", text: `Compaction failed${reason}` } }];
+    }
+    return [];
+  }
+
   #rateLimit(message: RateLimitMessage): NormalizedEvent[] {
     const info = message.rate_limit_info;
     if (!info || info.status === undefined) return [];
@@ -388,7 +421,7 @@ export class ClaudeNormalizer {
     const resets = info.rateLimitType ? info.unifiedWindows?.[info.rateLimitType]?.resetsAt : undefined;
     const resetsAt = info.resetsAt ?? resets;
     const overage = info.isUsingOverage ?? info.overageInUse;
-    const status = nominal ? "ok" : info.status === "allowed_warning" ? "warning" : "limited";
+    const status = nominal ? "ok" : info.status === "allowed_warning" || overageOnly(info) ? "warning" : "limited";
     const note = `${info.rateLimitType ?? "rate limit"}${used !== undefined ? ` ${Math.round(used * 100)}% used` : ""}${info.status === "rejected" ? " (rejected)" : ""}`;
     const events: NormalizedEvent[] = [
       {
@@ -604,6 +637,16 @@ export class ClaudeNormalizer {
 }
 
 /** Used share of the window, 0..1. The CLI reports fractions (0.18); a stray >1 value is read as percent. */
+/**
+ * A rejection that does not stop work: the exhausted window is an *overage* window
+ * (`overage`, `seven_day_overage_included`) — extra usage on top of the plan, whose
+ * regular windows still allow requests. Such a frame is a warning, never a block; the
+ * server only marks a thread limited when its turn actually fails (docs/internals/providers.md).
+ */
+function overageOnly(info: RateLimitInfoShape): boolean {
+  return info.status === "rejected" && info.rateLimitType !== undefined && info.rateLimitType.includes("overage");
+}
+
 function usedFraction(info: RateLimitInfoShape): number | undefined {
   const raw = info.utilization ?? (info.rateLimitType ? info.unifiedWindows?.[info.rateLimitType]?.utilization : undefined);
   if (typeof raw !== "number" || !Number.isFinite(raw)) return undefined;

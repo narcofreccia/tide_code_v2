@@ -36,6 +36,15 @@ describe("pass-through harness rows", () => {
     expect(groups.get("a")?.map((x) => x.id)).toEqual(["a", "b", "d", "e"]);
   });
 
+  it("folds an exhausted overage window with the frames but keeps a real rejection visible", () => {
+    const { entries } = collapsePassThrough([
+      info("a", "u1", "claude: system/one", {}),
+      info("b", "u1", "Rate limit rejected on seven_day_overage_included (100% used)"),
+      info("c", "u1", "Rate limit rejected on five_hour (100% used)"),
+    ]);
+    expect(entries.map((e) => (e.kind === "activity" ? e.activity.id : ""))).toEqual(["a", "c"]);
+  });
+
   it("renders a muted count that opens to the raw rows", () => {
     const rows = collapsePassThrough([
       info("a", "u1", "claude: system/one", {}),
