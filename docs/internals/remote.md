@@ -21,6 +21,20 @@ tide --version
 - On start it prints the environment id, the name, one `http://<ip>:<port>` line per routable
   IPv4 address, and one pairing code. It writes `<TIDE_HOME>/runtime.json` (`pid`, `host`,
   `port`) so `tide pair` and `tide doctor` find the port; the file is removed on shutdown.
+- One server per `TIDE_HOME`. Before opening the event store, `serve` takes
+  `<TIDE_HOME>/server.lock` (`pid`, `port`, `startedAt`, `version`, then `environmentId` once it
+  listens; created with an exclusive open). If the holder's pid is alive and
+  `GET 127.0.0.1:<port>/health` answers within 1 s with this home's environment id, the new
+  server prints who holds it and exits with code **75** (`HOME_IN_USE_EXIT_CODE`,
+  `apps/server/src/homeLock.ts`). A dead pid, a recycled pid or a holder that does not answer
+  counts as stale and is taken over. The lock is removed on exit only while it still names this
+  pid. Consequence: `pnpm dev` (:3777) and the installed app cannot both run on `~/.tide`; point
+  one of them at another `TIDE_HOME`. Two engines on one store settle each other's turns, so
+  this refusal is deliberate. `--mcp`, `pair`, `doctor`, `triage` and `service` never take it.
+- `TIDE_PARENT_PID=<pid>` (set by the desktop shell) makes the server watch that process every
+  2 s and shut down gracefully, as on SIGTERM, once it is gone (`process.kill(pid, 0)` fails, or
+  under node `process.ppid` changes; bun caches `ppid`, so there only the pid probe applies).
+  The variable is removed from the server's env at start so harness processes do not inherit it.
 - `--name` stores the machine name in `settings.environment.name` (default: the hostname).
 - `--log <file>` mirrors console output to that file, rotated at 5 MB, keeping 3 files.
 - `tide service install` writes `~/Library/LaunchAgents/com.tide.server.plist` (macOS,

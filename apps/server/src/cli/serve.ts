@@ -4,6 +4,8 @@ import { parseArgs, resolveConfig } from "../config.ts";
 import { pairingUrls } from "../rpc/env.ts";
 import { buildRemoteInfo, isLoopbackHost } from "../rpc/remote.ts";
 import { RotatingLog, teeConsole } from "./logFile.ts";
+import { acquireHomeLock, hostLockProbes, releaseHomeLock, updateHomeLock } from "../homeLock.ts";
+import { PARENT_PID_ENV, parentPidFrom, watchParent } from "./parentWatch.ts";
 import { clearRuntime, writeRuntime } from "./runtime.ts";
 
 export interface BannerInput {
@@ -55,11 +57,22 @@ export async function runServe(args: string[], legacy: boolean): Promise<void> {
     });
   }
   const config = resolveConfig(args, process.env, { defaultHost: legacy ? "127.0.0.1" : "0.0.0.0" });
+  // the desktop shell's pid: read once and kept out of the env harness processes inherit
+  const parentPid = parentPidFrom(process.env);
+  delete process.env[PARENT_PID_ENV];
+
+  // One server per TIDE_HOME (throws HomeInUseError, which bin.ts turns into its exit code).
+  // Released from the exit hook so every way out (shutdown, a failed boot, a fatal error) drops it.
+  const startedAt = Date.now();
+  const lock = { pid: process.pid, port: config.port, startedAt, version: config.version };
+  await acquireHomeLock(config.tideHome, lock, config.environmentId, hostLockProbes());
+  process.on("exit", () => releaseHomeLock(config.tideHome));
 
   const app = await createApp({ config });
   if (flags.name !== undefined && flags.name.trim().length > 0) app.settings.set({ environment: { name: flags.name.trim().slice(0, 64) } });
   const port = app.server?.port ?? config.port;
   writeRuntime(config.tideHome, { pid: process.pid, host: config.host, port, startedAt: Date.now() });
+  updateHomeLock(config.tideHome, { ...lock, port, environmentId: app.environmentId });
 
   const name = app.settings.get().environment.name;
   if (legacy) {
@@ -99,4 +112,5 @@ export async function runServe(args: string[], legacy: boolean): Promise<void> {
   };
   process.on("SIGINT", () => shutdown("SIGINT"));
   process.on("SIGTERM", () => shutdown("SIGTERM"));
+  if (parentPid !== undefined) watchParent(parentPid, (reason) => shutdown(reason));
 }

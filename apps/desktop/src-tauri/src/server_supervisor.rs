@@ -33,6 +33,9 @@ const BACKOFF_MAX: Duration = Duration::from_secs(30);
 const STABLE_AFTER: Duration = Duration::from_secs(60);
 const RESTART_WINDOW: Duration = Duration::from_secs(120);
 const MAX_STARTS_IN_WINDOW: usize = 5;
+/// `tide-server` exits with this when another server already holds `TIDE_HOME/server.lock`
+/// (apps/server/src/homeLock.ts). Restarting cannot help, so the shell asks for a Retry.
+const HOME_IN_USE_EXIT_CODE: i32 = 75;
 
 #[derive(Clone, Serialize)]
 pub struct Endpoint {
@@ -181,6 +184,17 @@ fn supervise(app: AppHandle, inner: Shared) {
         first = false;
 
         let reason = match boot(&app, &inner, &mut port) {
+            Err(err) if exit_code(&inner) == Some(HOME_IN_USE_EXIT_CODE) => {
+                eprintln!("[tide-shell] {err}");
+                show_splash(&app, &inner);
+                set_status(&app, &inner, "failed", Some(home_in_use_message()));
+                if !wait_retry(&inner) {
+                    return;
+                }
+                starts.clear();
+                backoff = BACKOFF_MIN;
+                continue;
+            }
             Ok(started_at) => {
                 let code = wait_for_exit(&inner);
                 if stopping(&inner) {
@@ -243,6 +257,9 @@ fn boot(app: &AppHandle, inner: &Shared, port: &mut Option<u16>) -> Result<Insta
 
     let mut cmd = launcher.command();
     cmd.arg("--port").arg(port_no.to_string()).arg("--host").arg("127.0.0.1").env("TIDE_HOME", &home);
+    // The server shuts itself down once this pid is gone: a SIGKILLed or crashed shell runs
+    // none of the stop code below, and an orphaned sidecar would keep writing to TIDE_HOME.
+    cmd.env("TIDE_PARENT_PID", std::process::id().to_string());
     if tauri::is_dev() {
         // Dev also accepts `?token=` on the websocket, which is what we hand the web app.
         cmd.arg("--dev");
@@ -293,6 +310,29 @@ fn take_and_stop(inner: &Shared) {
     if let Some(mut child) = child {
         process::stop(&mut child);
     }
+}
+
+/// The exit code of a child that has already been reaped by `exited`/`try_wait`.
+fn exit_code(inner: &Shared) -> Option<i32> {
+    let mut guard = inner.lock().ok()?;
+    guard.child.as_mut()?.try_wait().ok()??.code()
+}
+
+/// What holds `TIDE_HOME`, from the lock the other server wrote.
+fn home_in_use_message() -> String {
+    let home = tide_home().unwrap_or_default();
+    let holder = std::fs::read_to_string(home.join("server.lock"))
+        .ok()
+        .and_then(|raw| serde_json::from_str::<serde_json::Value>(&raw).ok())
+        .map(|v| {
+            let field = |k: &str| v.get(k).map(|x| x.to_string().trim_matches('"').to_string()).unwrap_or_else(|| "?".into());
+            format!(" (pid {}, port {}, version {})", field("pid"), field("port"), field("version"))
+        })
+        .unwrap_or_default();
+    format!(
+        "Another Tide server{holder} is already using {}.\nQuit it (an older Tide, `pnpm dev`, or a leftover tide-server), or set TIDE_HOME to another directory, then press Retry.",
+        home.display()
+    )
 }
 
 fn exited(inner: &Shared) -> bool {

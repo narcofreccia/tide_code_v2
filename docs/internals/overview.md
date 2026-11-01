@@ -213,6 +213,10 @@ over Tailscale/SSH; the server never splits.
 ## Desktop
 
 `apps/desktop` is a thin Tauri v2 shell (~500 LOC Rust): free port, spawn the sidecar with
-`TIDE_HOME`, poll `/health`, navigate the WebView, restart with backoff, kill on exit. The
+`TIDE_HOME` and `TIDE_PARENT_PID`, poll `/health`, navigate the WebView, restart with backoff,
+kill on exit. A shell that dies without that stop (SIGKILL, crash, a `cargo tauri dev` rebuild)
+runs no cleanup, so the server watches `TIDE_PARENT_PID` and exits on its own. A sidecar that
+exits with 75 found another server on the same `TIDE_HOME` (`server.lock`, see `remote.md`); the
+shell shows who holds it on the splash and waits for Retry instead of restarting. The
 sidecar is `apps/server` compiled with bun (`scripts/build-server-sidecar.sh`); under Bun the
 server uses `bun:sqlite` and `Bun.spawn({terminal})` for PTYs, so it has no native deps.

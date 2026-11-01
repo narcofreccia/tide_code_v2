@@ -2,6 +2,7 @@
 import { runMcpServer } from "@tide/tide-mcp";
 import { CliError, parseCli, USAGE } from "./cli/args.ts";
 import { ConfigError } from "./config.ts";
+import { HOME_IN_USE_EXIT_CODE, HomeInUseError } from "./homeLock.ts";
 import { VERSION } from "./version.ts";
 
 async function main(): Promise<number | undefined> {
@@ -57,6 +58,10 @@ main()
     if (code !== undefined) process.exit(code);
   })
   .catch((err: unknown) => {
+    if (err instanceof HomeInUseError) {
+      console.error(`tide: ${err.message}`);
+      process.exit(HOME_IN_USE_EXIT_CODE);
+    }
     if (err instanceof CliError) console.error(`tide: ${err.message}\n\n${USAGE}`);
     else if (err instanceof ConfigError || (err instanceof Error && err.name === "PairError")) console.error(`tide: ${err.message}`);
     else console.error(err);
