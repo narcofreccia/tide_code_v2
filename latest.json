@@ -1,10 +1,10 @@
 {
-  "version": "0.1.1",
-  "notes": "v0.1.1",
-  "pub_date": "2026-11-01T20:17:23Z",
+  "version": "0.1.2",
+  "notes": "v0.1.2",
+  "pub_date": "2026-11-01T22:54:22Z",
   "platforms": {
     "darwin-aarch64": {
-      "signature": "dW50cnVzdGVkIGNvbW1lbnQ6IHNpZ25hdHVyZSBmcm9tIHRhdXJpIHNlY3JldCBrZXkKUlVURFlJczZXUGlBMzhiRUJHd2ttTnpTUUFoMHVrZktIalNkYXpLdjRuc0lYNlBhZWFZY2dnN0UrdGMzOG9rQXdPSDBwWktZeE5IdTNrZ3FMeHp3MlgyZ0tYL3djd1pTSmdrPQp0cnVzdGVkIGNvbW1lbnQ6IHRpbWVzdGFtcDoxNzkzNTYzMTYwCWZpbGU6VGlkZS5hcHAudGFyLmd6CjFkSDlpNG1udEJBdHgwdU5PWUxreXJSeVFNMUVpN1lDTStlTHRvM0d1YUJHRE4vU0xrdVNaMDgyN255ZW5iZEFPNkJWbm84dmhWV2IyY3NlZlV2OEFnPT0K",
+      "signature": "dW50cnVzdGVkIGNvbW1lbnQ6IHNpZ25hdHVyZSBmcm9tIHRhdXJpIHNlY3JldCBrZXkKUlVURFlJczZXUGlBMzZIL0dySzRSY2RLenh2REZXdVI5NkNHV3k3ckJMc0I0WSt0a0ZIWFBvMXNCekNkbHJMd1d2MHdmRUc1NDAwenF5MGRiaXRvOS9uMW9XalhvZ2d1MGdJPQp0cnVzdGVkIGNvbW1lbnQ6IHRpbWVzdGFtcDoxNzkzNTczNTgzCWZpbGU6VGlkZS5hcHAudGFyLmd6ClVocWF2Qm1LL2N0QnV0WkZwUlYwQ3M3UFFFZFJUdFIwTzNHeENZbWxSclhNNHlDQUNRSTdKbkFTV2MrSWFaR01abENtTUEvQUNsOExKQzh4UGFuckFBPT0K",
       "url": "https://pub-7b3e5bbd605d43adbeb4601a962d84bd.r2.dev/tidecode/mac/tide.app.tar.gz"
     },
     "windows-x86_64": {
