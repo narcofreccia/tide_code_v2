@@ -76,7 +76,7 @@ class ScriptedQuery {
   }
 }
 
-function harness() {
+function harness(opts: { idleListener?: boolean } = {}) {
   const queries: ScriptedQuery[] = [];
   const logs: string[] = [];
   const env: DriverEnv = { dataDir: tmpdir(), log: (line) => logs.push(line) };
@@ -94,8 +94,12 @@ function harness() {
     turns.push(turn);
   });
   const next = turns.drain();
+  const idle: NormalizedEvent[] = [];
+  if (opts.idleListener !== false) session.onIdleActivity((event) => idle.push(event));
   return {
     session,
+    /** events delivered live through `onIdleActivity` */
+    idle,
     logs,
     query: () => queries[queries.length - 1]!,
     queries,
@@ -209,17 +213,50 @@ describe("ClaudeSession harness-initiated turns", () => {
     expect(h.session.nativeSessionId).toBe("s2");
   });
 
-  it("a background sub-agent's own tool calls while idle open nothing; its report opens the turn with its name", async () => {
+  /** A sub-agent working between turns: its task row starts and progresses, it runs a Bash call. */
+  function subAgentWork(parent: string): ClaudeMessage[] {
+    return [
+      { type: "system", subtype: "task_started", task_id: "task-sub", tool_use_id: parent, description: "Audit feature gaps", subagent_type: "Explore" } as ClaudeMessage,
+      { type: "assistant", parent_tool_use_id: parent, message: { id: "sub-1", role: "assistant", content: [{ type: "tool_use", id: "toolu_sub", name: "Bash", input: { command: "ls" } }] } } as ClaudeMessage,
+      { type: "user", parent_tool_use_id: parent, message: { role: "user", content: [{ type: "tool_result", tool_use_id: "toolu_sub", content: "a.txt" }] } } as ClaudeMessage,
+      { type: "system", subtype: "task_progress", task_id: "task-sub", summary: "Reading the editor" } as ClaudeMessage,
+    ];
+  }
+  const PARENT = "toolu_01Ji2F6wAAbCG4NMx87dmXi2"; // the fixture's "Audit feature gaps" Agent call
+
+  it("a background sub-agent's tool calls and progress while idle stream live and open nothing; its report opens the turn", async () => {
     const h = harness();
     const [first, report] = runs();
     await userTurn(h, "spin up some subagents", first!);
-    // the sub-agent works: its tool_use/tool_result stream with parent_tool_use_id set
-    const child = first!.find((m) => m.type === "assistant" && JSON.stringify(m).includes('"name":"Agent"')) as { message: { content: { id?: string }[] } } | undefined;
-    const parent = child?.message.content.find((b) => b.id !== undefined)?.id ?? "toolu_parent";
-    h.query().push(
-      { type: "assistant", parent_tool_use_id: parent, message: { id: "sub-1", role: "assistant", content: [{ type: "tool_use", id: "toolu_sub", name: "Bash", input: { command: "ls" } }] } } as ClaudeMessage,
-      { type: "user", parent_tool_use_id: parent, message: { role: "user", content: [{ type: "tool_result", tool_use_id: "toolu_sub", content: "a.txt" }] } } as ClaudeMessage,
-    );
+    h.query().push(...subAgentWork(PARENT));
+    await tick();
+    await tick();
+    expect(h.openedCount()).toBe(0);
+    expect(h.idle.map((event) => (event.type === "activity" ? [event.activity.kind, "status" in event.activity ? event.activity.status : undefined] : [event.type]))).toEqual([
+      ["child", "running"],
+      ["tool", "running"],
+      ["tool", "ok"],
+      ["child", "running"],
+    ]);
+    expect(h.idle[1]).toMatchObject({ type: "activity", activity: { kind: "tool", toolName: "Bash", parentToolUseId: PARENT } });
+    expect(h.idle[3]).toMatchObject({ type: "activity", activity: { kind: "child", childKey: PARENT, summary: "Reading the editor" } });
+
+    h.query().push(...report!);
+    const turn = await h.nextHarnessTurn();
+    expect(turn.reason).toBe('sub-agent "Audit feature gaps" reported');
+    const events = await collect(turn.events);
+    // already delivered live: nothing of the sub-agent's work is replayed at the head of the turn
+    expect(events.some((event) => event.type === "activity" && event.activity.kind === "tool" && event.activity.parentToolUseId === PARENT)).toBe(false);
+    expect(events.some((event) => event.type === "activity" && event.activity.kind === "child" && event.activity.status === "running")).toBe(false);
+    expect(events[0]).toMatchObject({ type: "activity", activity: { kind: "child", status: "done" } });
+    expect(h.idle).toHaveLength(4);
+  });
+
+  it("without an idle-activity listener the sub-agent's work is held and replayed at the head of the turn it wakes", async () => {
+    const h = harness({ idleListener: false });
+    const [first, report] = runs();
+    await userTurn(h, "spin up some subagents", first!);
+    h.query().push(...subAgentWork(PARENT));
     await tick();
     await tick();
     expect(h.openedCount()).toBe(0);
@@ -227,8 +264,8 @@ describe("ClaudeSession harness-initiated turns", () => {
     const turn = await h.nextHarnessTurn();
     expect(turn.reason).toBe('sub-agent "Audit feature gaps" reported');
     const events = await collect(turn.events);
-    // the held-back sub-agent tool row is replayed at the head of the turn it woke
-    expect(events[0]).toMatchObject({ type: "activity", activity: { kind: "tool", toolName: "Bash", parentToolUseId: parent } });
+    expect(events[0]).toMatchObject({ type: "activity", activity: { kind: "tool", toolName: "Bash", parentToolUseId: PARENT } });
+    expect(h.idle).toHaveLength(0);
   });
 
   it("send() during a harness turn waits for it to settle, then runs without mixing events", async () => {

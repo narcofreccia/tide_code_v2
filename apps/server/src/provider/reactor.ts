@@ -32,6 +32,8 @@ interface ThreadState {
    * in place rather than appear twice. Its own tool rows join that turn too.
    */
   children: Map<string, { id: string; turnId: string }>;
+  /** R14: idle sub-agent activity lands in arrival order (each upsert merges onto the previous one) */
+  idleQueue: Promise<void>;
 }
 
 /** What one running turn learned that matters after it settles. */
@@ -175,6 +177,36 @@ export class ProviderReactor {
         if (this.#harnessTurns.withdraw(threadId, turn)) await drainEvents(turn.events, this.#log);
       })(),
     );
+  }
+
+  /**
+   * R14: a background sub-agent's own tool calls and progress, produced between turns. They
+   * land on the sub-agent's row and the turn that launched it (no new turn is opened), keyed
+   * exactly like in-turn rows so a tool's start and finish stay one row.
+   * Wire it as `new SessionDirectory({ ..., onIdleActivity: (id, event) => reactor.ingestIdleActivity(id, event) })`.
+   */
+  ingestIdleActivity(threadId: string, event: NormalizedEvent): void {
+    const state = this.#state(threadId);
+    const task = async (): Promise<void> => {
+      const turnId = this.#idleTurnOf(threadId, state, event);
+      if (turnId === undefined) {
+        this.#log("[reactor] idle activity with no turn to land on; dropped", threadId);
+        return;
+      }
+      await this.#ingest(threadId, turnId, event, {});
+    };
+    state.idleQueue = state.idleQueue.then(task).catch((err: unknown) => this.#log("[reactor] idle activity failed", err));
+    this.#track(state.idleQueue);
+  }
+
+  /** The turn that launched the sub-agent the event belongs to, else the thread's latest turn. */
+  #idleTurnOf(threadId: string, state: ThreadState, event: NormalizedEvent): string | undefined {
+    if (event.type === "activity") {
+      const activity = event.activity;
+      const owner = activity.kind === "child" ? state.children.get(activity.childKey) : activity.parentToolUseId ? state.children.get(activity.parentToolUseId) : undefined;
+      if (owner !== undefined) return owner.turnId;
+    }
+    return this.#engine.getModel().threads[threadId]?.latestTurnId;
   }
 
   /** A harness turn that will never run: consume its events so the driver frees them. */
@@ -332,7 +364,7 @@ export class ProviderReactor {
   #state(threadId: string): ThreadState {
     let state = this.#threads.get(threadId);
     if (!state) {
-      state = { queue: Promise.resolve(), activityIds: new Map(), messageIds: new Map(), children: new Map() };
+      state = { queue: Promise.resolve(), activityIds: new Map(), messageIds: new Map(), children: new Map(), idleQueue: Promise.resolve() };
       this.#threads.set(threadId, state);
     }
     return state;

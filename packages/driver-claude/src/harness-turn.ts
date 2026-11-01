@@ -34,6 +34,17 @@ export function isSubstantive(event: NormalizedEvent): boolean {
   }
 }
 
+/**
+ * Non-substantive activity of a background sub-agent: its child row while not settled, or a
+ * tool call it makes (`parentToolUseId` set). Streamed live between turns, never preambled.
+ */
+export function isIdleActivity(event: NormalizedEvent): boolean {
+  if (event.type !== "activity" || isSubstantive(event)) return false;
+  const activity = event.activity;
+  if (activity.kind === "child") return true;
+  return activity.kind === "tool" && activity.parentToolUseId !== undefined && activity.parentToolUseId !== null;
+}
+
 export function reportedReason(name: string): string {
   return `sub-agent "${name}" reported`;
 }

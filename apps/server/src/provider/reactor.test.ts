@@ -364,7 +364,7 @@ describe("ProviderReactor: plans", () => {
     const planId = Object.keys(h.engine.getModel().plans)[0] ?? "";
 
     h.control.script(emit({ type: "assistant.delta", messageKey: "m0", delta: "on it" }), emit({ type: "settled", status: "completed" }));
-    const events = (await h.engine.dispatch({ type: "plan.implement", planId, provider: "claude", mode: "auto" })).events;
+    const events = (await h.engine.dispatch({ type: "plan.implement", planId, target: "new", provider: "claude", mode: "auto" })).events;
     const created = pick(events, "thread.created");
     await h.reactor.drain();
 

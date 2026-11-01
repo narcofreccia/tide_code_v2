@@ -66,6 +66,7 @@ async function harness(caps: { steer?: boolean } = {}): Promise<Harness> {
     log,
     model: () => engine.getModel(),
     onHarnessTurn: (threadId, turn) => reactor?.attachHarnessTurn(threadId, turn),
+    onIdleActivity: (threadId, event) => reactor?.ingestIdleActivity(threadId, event),
   });
   reactor = new ProviderReactor({ engine, sessions, log });
   reactor.start();
@@ -268,3 +269,59 @@ describe("ProviderReactor: harness-initiated turns", () => {
     expect(Object.values(model.messages).some((m) => m.text === "never shown")).toBe(false);
   });
 });
+
+describe("ProviderReactor: idle sub-agent activity", () => {
+  /** Turn 1 launches a background child keyed `agent-1` and settles. */
+  async function launched(h: Harness): Promise<{ session: FakeSession; turnId: string; childId: string }> {
+    h.control.script(
+      emit({ type: "session", nativeSessionId: "sess-1" }),
+      emit({ type: "activity", activity: { kind: "tool", toolUseId: "agent-1", toolName: "Agent", input: {}, status: "ok" } }),
+      emit({ type: "activity", activity: { kind: "child", childKey: "agent-1", name: "Audit feature gaps", status: "running" } }),
+      emit({ type: "settled", status: "completed" }),
+    );
+    await h.engine.dispatch({ type: "turn.request", threadId: h.threadId, text: "audit in the background" });
+    await h.reactor.drain();
+    const childId = Object.values(h.engine.getModel().activities).find((a) => a.kind === "child")!.id;
+    return { session: h.control.sessionFor(h.threadId)!, turnId: all(h.events, "turn.requested")[0]!.turn.id, childId };
+  }
+
+  it("lands a child's progress and its sub-agent's tool rows on the launching turn, opening no turn", async () => {
+    const h = await harness();
+    const { session, turnId, childId } = await launched(h);
+    session.emitIdleActivity({ type: "activity", activity: { kind: "child", childKey: "agent-1", name: "Audit feature gaps", status: "running", summary: "Reading the editor" } });
+    session.emitIdleActivity({ type: "activity", activity: { kind: "tool", toolUseId: "sub-bash", toolName: "Bash", input: { command: "ls" }, status: "running", parentToolUseId: "agent-1" } });
+    await h.reactor.drain();
+
+    const model = h.engine.getModel();
+    const children = Object.values(model.activities).filter((a) => a.kind === "child");
+    expect(children).toHaveLength(1);
+    expect(children[0]).toMatchObject({ id: childId, turnId, status: "running", summary: "Reading the editor" });
+    expect(Object.values(model.activities).find((a) => a.kind === "tool" && a.toolUseId === "sub-bash")).toMatchObject({ turnId, status: "running" });
+    expect(all(h.events, "turn.requested")).toHaveLength(1);
+    expect(model.threads[h.threadId]).toMatchObject({ status: "idle", latestTurnId: turnId });
+    expect(model.turns[turnId]?.status).toBe("completed");
+  });
+
+  it("a sub-agent tool's start and finish arriving idle map to one row", async () => {
+    const h = await harness();
+    const { session, turnId } = await launched(h);
+    session.emitIdleActivity({ type: "activity", activity: { kind: "tool", toolUseId: "sub-bash", toolName: "Bash", input: { command: "ls" }, status: "running", parentToolUseId: "agent-1" } });
+    session.emitIdleActivity({ type: "activity", activity: { kind: "tool", toolUseId: "sub-bash", toolName: "Bash", input: { command: "ls" }, status: "ok", output: "a.txt", parentToolUseId: "agent-1" } });
+    await h.reactor.drain();
+    const rows = Object.values(h.engine.getModel().activities).filter((a) => a.kind === "tool" && a.toolUseId === "sub-bash");
+    expect(rows).toHaveLength(1);
+    expect(rows[0]).toMatchObject({ turnId, status: "ok", output: "a.txt" });
+  });
+
+  it("a tool whose parent is unknown falls back to the thread's latest turn", async () => {
+    const h = await harness();
+    const session = await openSession(h);
+    const latest = h.engine.getModel().threads[h.threadId]!.latestTurnId!;
+    session.emitIdleActivity({ type: "activity", activity: { kind: "tool", toolUseId: "orphan", toolName: "Read", input: {}, status: "ok", parentToolUseId: "agent-unknown" } });
+    await h.reactor.drain();
+    const model = h.engine.getModel();
+    expect(Object.values(model.activities).find((a) => a.kind === "tool" && a.toolUseId === "orphan")?.turnId).toBe(latest);
+    expect(all(h.events, "turn.requested")).toHaveLength(1);
+  });
+});
+

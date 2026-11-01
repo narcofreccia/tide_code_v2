@@ -59,6 +59,8 @@ export interface SessionDirectoryOptions {
   model?: () => ReadModel;
   /** R14: a session's harness started a turn by itself (Claude Code resuming when a background sub-agent reports) */
   onHarnessTurn?: (threadId: string, turn: HarnessTurn) => void;
+  /** R14: between turns, a background sub-agent's own tool calls and progress, delivered live */
+  onIdleActivity?: (threadId: string, event: NormalizedEvent) => void;
   log?: (msg: string, data?: unknown) => void;
 }
 
@@ -132,6 +134,7 @@ export class SessionDirectory {
   #log: (msg: string, data?: unknown) => void;
   #model: (() => ReadModel) | undefined;
   #onHarnessTurn: ((threadId: string, turn: HarnessTurn) => void) | undefined;
+  #onIdleActivity: ((threadId: string, event: NormalizedEvent) => void) | undefined;
   #entries = new Map<string, Entry>();
   #opening = new Map<string, Promise<ProviderSession>>();
   #timer: ReturnType<typeof setInterval> | undefined;
@@ -146,6 +149,7 @@ export class SessionDirectory {
     this.#log = options.log ?? (() => undefined);
     this.#model = options.model;
     this.#onHarnessTurn = options.onHarnessTurn;
+    this.#onIdleActivity = options.onIdleActivity;
     if (options.autoReap ?? true) {
       this.#timer = setInterval(() => void this.reapIdle(), REAP_INTERVAL_MS);
       this.#timer.unref?.();
@@ -236,6 +240,18 @@ export class SessionDirectory {
           onHarnessTurn(threadId, turn);
         } catch (err) {
           this.#log("[provider] harness turn listener failed", err);
+        }
+      });
+    }
+    const onIdleActivity = this.#onIdleActivity;
+    if (onIdleActivity !== undefined && session.onIdleActivity !== undefined) {
+      const threadId = thread.id;
+      session.onIdleActivity((event) => {
+        this.touch(threadId);
+        try {
+          onIdleActivity(threadId, event);
+        } catch (err) {
+          this.#log("[provider] idle activity listener failed", err);
         }
       });
     }

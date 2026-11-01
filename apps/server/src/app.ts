@@ -151,6 +151,8 @@ export async function createApp(options: AppOptions): Promise<App> {
     harnessHint: () => delegateTargetsHint(registry, settings.get().providerDefaults),
     // R14: a turn the harness started by itself (background sub-agent reported) becomes a Tide turn
     onHarnessTurn: (threadId, turn) => reactor.attachHarnessTurn(threadId, turn),
+    // a background sub-agent's tool calls and progress land on its row live, no turn opened
+    onIdleActivity: (threadId, event) => reactor.ingestIdleActivity(threadId, event),
   });
   registry.setInUse((instance) => sessions.usesInstance(instance));
 

@@ -96,6 +96,17 @@ export class FakeSession implements ProviderSession {
     this.#harnessListeners.push(listener);
   }
 
+  #idleListeners: ((event: NormalizedEvent) => void)[] = [];
+
+  onIdleActivity(listener: (event: NormalizedEvent) => void): void {
+    this.#idleListeners.push(listener);
+  }
+
+  /** R14: the harness produced activity between turns (a background sub-agent's tool call or progress). */
+  emitIdleActivity(event: NormalizedEvent): void {
+    for (const listener of this.#idleListeners) listener(event);
+  }
+
   hasBackgroundWork(): boolean {
     return this.backgroundWork;
   }

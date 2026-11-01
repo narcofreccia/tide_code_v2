@@ -12,7 +12,7 @@ import type {
 import { ApprovalBroker, type CanUseToolContext, type PermissionResultShape } from "./approvals.ts";
 import { AsyncQueue } from "./async-queue.ts";
 import { instanceEnv } from "./env.ts";
-import { CONTINUED_REASON, HarnessTurn, type HarnessTurnListener, isSubstantive, Preamble, reportedReason } from "./harness-turn.ts";
+import { CONTINUED_REASON, HarnessTurn, type HarnessTurnListener, isIdleActivity, isSubstantive, Preamble, reportedReason } from "./harness-turn.ts";
 import { ClaudeNormalizer } from "./normalize.ts";
 import { rollbackPoint } from "./rollback.ts";
 import type { ClaudeMessage, ResultMessage, TranscriptEntry } from "./sdk-shapes.ts";
@@ -49,6 +49,8 @@ import type { ClaudeConfig, QueryFn, QueryLike, SessionMessagesFn } from "./type
  * `onHarnessTurn` listener, ended by the next `result`. A `send()` arriving meanwhile waits
  * for that turn to settle, then takes the iterator over (the in-flight `next()` is shared
  * through `#read`, so a read the idle loop started is consumed by the send's pump instead).
+ * A background sub-agent's own progress (its tool calls, its child row while running) is not
+ * held: it goes live to the `onIdleActivity` listener, which lands it on the sub-agent's row.
  */
 
 async function sdkSessionMessages(): Promise<SessionMessagesFn> {
@@ -125,6 +127,7 @@ export class ClaudeSession implements ProviderSession {
   #turnFed = false;
 
   #harnessListener: HarnessTurnListener | undefined;
+  #idleActivityListener: ((event: NormalizedEvent) => void) | undefined;
   /** the turn Claude Code is running on its own, if any */
   #harness: HarnessTurn | undefined;
   #preamble = new Preamble();
@@ -173,6 +176,10 @@ export class ClaudeSession implements ProviderSession {
 
   onHarnessTurn(listener: HarnessTurnListener): void {
     this.#harnessListener = listener;
+  }
+
+  onIdleActivity(listener: (event: NormalizedEvent) => void): void {
+    this.#idleActivityListener = listener;
   }
 
   hasBackgroundWork(): boolean {
@@ -254,11 +261,20 @@ export class ClaudeSession implements ProviderSession {
         continue;
       }
       if (!isSubstantive(event)) {
-        this.#preamble.add(event);
+        if (isIdleActivity(event) && this.#idleActivityListener) this.#deliverIdle(this.#idleActivityListener, event);
+        else this.#preamble.add(event);
         continue;
       }
       const reason = event.type === "activity" && event.activity.kind === "child" ? reportedReason(event.activity.name) : CONTINUED_REASON;
       this.#openHarness(reason).push(event);
+    }
+  }
+
+  #deliverIdle(listener: (event: NormalizedEvent) => void, event: NormalizedEvent): void {
+    try {
+      listener(event);
+    } catch (error) {
+      this.#env.log(`[claude] idle-activity listener threw: ${error instanceof Error ? error.message : String(error)}`);
     }
   }
 
