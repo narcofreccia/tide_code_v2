@@ -10,6 +10,8 @@ mod server_supervisor;
 mod updater;
 
 use server_supervisor::{Supervisor, LOADING_HTML};
+use std::sync::atomic::{AtomicBool, Ordering};
+
 use tauri::{Manager, RunEvent, WindowEvent};
 
 /// Serves the desktop-only splash page; `tauri.conf.json` points the main window here
@@ -42,7 +44,10 @@ pub fn run() {
                     }
                     ("text/plain", Vec::new())
                 }
-                _ => ("text/html; charset=utf-8", LOADING_HTML.as_bytes().to_vec()),
+                _ => {
+                    let version = ctx.app_handle().package_info().version.to_string();
+                    ("text/html; charset=utf-8", LOADING_HTML.replace("__TIDE_VERSION__", &version).into_bytes())
+                }
             };
             tauri::http::Response::builder()
                 .header("Content-Type", mime)
@@ -58,7 +63,19 @@ pub fn run() {
         .expect("failed to build the Tide shell");
 
     app.run(|handle, event| match event {
-        // Closing the only window quits the app, which runs the Exit branch below.
+        // Closing the window or ⌘Q shows the closing screen while the server stops, then quits.
+        RunEvent::WindowEvent { event: WindowEvent::CloseRequested { api, .. }, .. } => {
+            if !CLOSING.load(Ordering::SeqCst) {
+                api.prevent_close();
+                close_gracefully(handle.clone());
+            }
+        }
+        RunEvent::ExitRequested { api, .. } => {
+            if !CLOSING.load(Ordering::SeqCst) {
+                api.prevent_exit();
+                close_gracefully(handle.clone());
+            }
+        }
         RunEvent::WindowEvent { event: WindowEvent::Destroyed, .. } => handle.exit(0),
         RunEvent::Exit => {
             if let Some(sup) = handle.try_state::<Supervisor>() {
@@ -66,6 +83,26 @@ pub fn run() {
             }
         }
         _ => {}
+    });
+}
+
+static CLOSING: AtomicBool = AtomicBool::new(false);
+
+/// Puts the boot screen back with an indeterminate bar, stops the server group, then exits.
+/// The short pause lets the webview paint the screen before the stop blocks.
+fn close_gracefully(handle: tauri::AppHandle) {
+    if CLOSING.swap(true, Ordering::SeqCst) {
+        return;
+    }
+    if let Some(sup) = handle.try_state::<Supervisor>() {
+        sup.show_splash("closing", "Closing Tide…".into());
+    }
+    std::thread::spawn(move || {
+        std::thread::sleep(std::time::Duration::from_millis(350));
+        if let Some(sup) = handle.try_state::<Supervisor>() {
+            sup.shutdown();
+        }
+        handle.exit(0);
     });
 }
 
