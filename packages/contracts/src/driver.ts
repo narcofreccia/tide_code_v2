@@ -204,6 +204,13 @@ export interface ProviderSession {
    * that have not reported). The server keeps such a session off the idle reaper.
    */
   hasBackgroundWork?(): boolean;
+  /**
+   * R14: activity the harness produces between turns that does not wake the model — a background
+   * sub-agent's own tool calls and progress. Delivered live, one event at a time; the server lands
+   * it on the sub-agent's existing row (the turn that launched it) instead of opening a turn.
+   * Only when `caps.harnessTurns`.
+   */
+  onIdleActivity?(listener: (event: NormalizedEvent) => void): void;
 }
 
 export interface ProviderInstance {
