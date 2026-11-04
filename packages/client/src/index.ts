@@ -65,6 +65,7 @@ export {
   selectRailGroups,
   selectSettled,
   isSettled,
+  isMergedSettle,
   isListedThread,
   type RailGroups,
   type RailGroupOptions,

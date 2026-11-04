@@ -1,5 +1,6 @@
 import { memo, useMemo, useRef } from "react";
 import type { Thread } from "@tide/contracts";
+import { isMergedSettle } from "@tide/client";
 import { useServerSettings } from "../../state/serverSettings.ts";
 import { clearEmptyArchived } from "../../lib/threadActions.ts";
 import { useTicker } from "../mission/useTicker.ts";
@@ -8,7 +9,7 @@ import { StateGlyph } from "../ui/StatusGlyph.tsx";
 import { ExpertsGroup } from "./ExpertsGroup.tsx";
 import { RailThreadRow } from "./RailThreadRow.tsx";
 import { RAIL_GROUP_LABELS, type RailGroupKey } from "./railGroupModel.ts";
-import { isGroupCollapsed, useGroupFolds } from "./railGroupState.ts";
+import { isGroupCollapsed, useGroupFolds, useSettledMergedOnly } from "./railGroupState.ts";
 import { useRailFlip } from "./railMotion.ts";
 import { useRailGroups, type RailGroupView } from "./useRailGroups.ts";
 import styles from "./RailGroups.module.css";
@@ -70,7 +71,21 @@ export function RailGroups({
   const now = useTicker(60_000);
   const workingSection = useServerSettings((s) => s.settings.inbox.workingSection);
   const { folds, toggle } = useGroupFolds();
-  const { groups: views, live } = useRailGroups(projectIds, now, workingSection);
+  const { groups: allViews, live } = useRailGroups(projectIds, now, workingSection);
+  const [mergedOnly, toggleMergedOnly] = useSettledMergedOnly();
+  // the Settled group's "merged only" filter: the body shows just the merged settles
+  const views = useMemo(
+    () =>
+      mergedOnly
+        ? allViews.map((v): RailGroupView =>
+            v.group.key !== "settled"
+              ? v
+              : { ...v, group: { ...v.group, threads: v.group.threads.filter(isMergedSettle) }, roots: v.roots.filter((n) => isMergedSettle(n.thread)) },
+          )
+        : allViews,
+    [allViews, mergedOnly],
+  );
+  const settledTotal = allViews.find((v) => v.group.key === "settled")?.group.threads.length ?? 0;
   // the rail's order; rows slide (FLIP) only when it changes
   const signature = useMemo(
     () =>
@@ -88,7 +103,8 @@ export function RailGroups({
         const { group } = view;
         if (only !== undefined && !only.includes(group.key)) return null;
         const count = group.threads.length;
-        if (count === 0 && group.sessions.length === 0) return null;
+        // the filter may empty the group; keep it drawn so the toggle can be turned off
+        if (count === 0 && group.sessions.length === 0 && !(group.key === "settled" && mergedOnly)) return null;
         const label = RAIL_GROUP_LABELS[group.key];
         const collapsed = isGroupCollapsed(folds, group.key);
         const holdsWork = group.key === "working" || (group.key === "inbox" && workingSection !== true);
@@ -104,13 +120,24 @@ export function RailGroups({
               >
                 <Icon name={collapsed ? "chevronRight" : "chevronDown"} size={12} />
                 <span className={styles.label}>{label}</span>
-                <span className={styles.count}>{count}</span>
+                <span className={styles.count}>{group.key === "settled" && mergedOnly ? `${count}/${settledTotal}` : count}</span>
                 {running ? (
                   <span className={styles.runningDot} data-group-running="">
                     <StateGlyph state="running" />
                   </span>
                 ) : null}
               </button>
+              {group.key === "settled" ? (
+                <button
+                  type="button"
+                  className={`${styles.clear} ${mergedOnly ? styles.filterOn : ""}`}
+                  aria-pressed={mergedOnly}
+                  title="Show only threads settled by a merge"
+                  onClick={toggleMergedOnly}
+                >
+                  merged only
+                </button>
+              ) : null}
               {group.key === "archived" ? (
                 <button
                   type="button"

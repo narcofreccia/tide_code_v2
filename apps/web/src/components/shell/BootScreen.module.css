@@ -1,0 +1,15 @@
+.screen {
+  position: fixed;
+  inset: 0;
+  z-index: 100;
+  display: flex;
+  align-items: center;
+  justify-content: center;
+  padding: var(--sp-4);
+  background: var(--bg);
+  color: var(--text);
+}
+.screen > section { width: min(460px, 100%); }
+.message { margin: 0 0 var(--sp-2); font-family: var(--font-mono); overflow-wrap: anywhere; }
+.hint { margin: 0 0 var(--sp-2); color: var(--muted); font-size: var(--fs-sm); }
+.actions { display: flex; gap: var(--sp-2); margin-top: var(--sp-3); }

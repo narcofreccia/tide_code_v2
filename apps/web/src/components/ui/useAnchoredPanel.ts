@@ -14,6 +14,8 @@ export interface AnchoredPanelOptions {
   matchAnchorWidth?: boolean;
   /** anchor at a viewport point instead of an element (context menus) */
   point?: AnchorPoint | undefined;
+  /** viewport edge margin, px (default 8) */
+  margin?: number;
 }
 
 /**
@@ -24,7 +26,7 @@ export interface AnchoredPanelOptions {
 export const LAYER_ATTR = "data-tide-layer";
 
 /** Keeps popovers off the very edge of the window. */
-const MARGIN = 8;
+const DEFAULT_MARGIN = 8;
 const HIDDEN: CSSProperties = { position: "fixed", top: 0, left: 0, visibility: "hidden" };
 
 function clamp(value: number, min: number, max: number): number {
@@ -43,7 +45,7 @@ export function useAnchoredPanel(
   panel: RefObject<HTMLElement | null>,
   options: AnchoredPanelOptions = {},
 ): CSSProperties {
-  const { align = "start", gap = 4, matchAnchorWidth = false, point } = options;
+  const { align = "start", gap = 4, matchAnchorWidth = false, point, margin: MARGIN = DEFAULT_MARGIN } = options;
   const pointX = point?.x;
   const pointY = point?.y;
   const [style, setStyle] = useState<CSSProperties>(HIDDEN);
@@ -76,7 +78,7 @@ export function useAnchoredPanel(
       maxHeight,
       ...(matchAnchorWidth ? { minWidth: rect.width } : {}),
     });
-  }, [align, anchor, gap, matchAnchorWidth, panel, pointX, pointY]);
+  }, [MARGIN, align, anchor, gap, matchAnchorWidth, panel, pointX, pointY]);
 
   useLayoutEffect(() => {
     if (!open) {

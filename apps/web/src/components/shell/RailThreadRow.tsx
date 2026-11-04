@@ -29,6 +29,7 @@ import { snoozeItems, threadMenu } from "./railMenus.ts";
 import { liveLabelFor, liveLabelKey, parseLiveLabelKey } from "../../lib/liveLabel.ts";
 import { RailLiveLine, recedes } from "./RailLiveLine.tsx";
 import { NO_NODES, childNodesIn, parentOf, type RailNode } from "./railTree.ts";
+import { RailHoverCard } from "./RailHoverCard.tsx";
 import styles from "./RailThreadRow.module.css";
 
 const ROLE_GLYPH: Record<NonNullable<Thread["role"]>, string> = {
@@ -323,6 +324,7 @@ export const RailThreadRow = memo(function RailThreadRowView({ thread, childNode
           </button>
         </span>
       </div>
+      {renaming || menu ? null : <RailHoverCard thread={thread} anchor={rowRef} />}
       {menu ? (
         <ContextMenu position={menu.at} items={menu.items} onClose={() => setMenu(undefined)} label={menu.label} />
       ) : null}

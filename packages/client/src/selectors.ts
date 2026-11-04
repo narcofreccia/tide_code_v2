@@ -164,6 +164,11 @@ export function isSettled(thread: Thread): boolean {
   return thread.settledAt !== undefined;
 }
 
+/** Settled because the work landed: merged back, or its PR merged (not the same as `isThreadMerged`, which reads branch state). */
+export function isMergedSettle(thread: Thread): boolean {
+  return isSettled(thread) && (thread.settleReason === "merged-back" || thread.settleReason === "pr-merged");
+}
+
 function bySettledDesc(a: Thread, b: Thread): number {
   return (b.settledAt ?? 0) - (a.settledAt ?? 0) || a.id.localeCompare(b.id);
 }

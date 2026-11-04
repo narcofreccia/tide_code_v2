@@ -24,6 +24,7 @@ import {
   selectRailGroups,
   selectSettled,
   isSettled,
+  isMergedSettle,
   selectActiveTurn,
   selectIdleMs,
   selectInbox,
@@ -532,5 +533,16 @@ describe("selectIdleMs", () => {
     expect(selectIdleMs(model, thread, 61_000)).toBe(60_000);
     const { latestTurnId: _drop, ...fresh } = thread;
     expect(selectIdleMs({ ...emptyReadModel(), threads: { t1: fresh } }, fresh, 50)).toBe(0);
+  });
+});
+
+describe("isMergedSettle", () => {
+  const t = (patch: Partial<Thread>): Thread => ({ id: "x", ...patch }) as Thread;
+  it("is true only for settled threads settled by a merge", () => {
+    expect(isMergedSettle(t({ settledAt: 1, settleReason: "merged-back" }))).toBe(true);
+    expect(isMergedSettle(t({ settledAt: 1, settleReason: "pr-merged" }))).toBe(true);
+    expect(isMergedSettle(t({ settledAt: 1, settleReason: "user" }))).toBe(false);
+    expect(isMergedSettle(t({ settleReason: "merged-back" }))).toBe(false);
+    expect(isMergedSettle(t({ mergedAt: 1 }))).toBe(false);
   });
 });

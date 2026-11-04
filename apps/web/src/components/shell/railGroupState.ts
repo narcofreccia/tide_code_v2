@@ -37,3 +37,27 @@ export function useGroupFolds(): { folds: Folds; toggle: (key: string) => void }
   }, []);
   return { folds, toggle };
 }
+
+/** The Settled group's "merged only" filter, persisted beside the folds. */
+export const SETTLED_MERGED_KEY = "tide.rail.settledMergedOnly";
+
+export function useSettledMergedOnly(): [boolean, () => void] {
+  const [on, setOn] = useState<boolean>(() => {
+    try {
+      return window.localStorage.getItem(SETTLED_MERGED_KEY) === "1";
+    } catch {
+      return false;
+    }
+  });
+  const toggle = useCallback(() => {
+    setOn((current) => {
+      try {
+        window.localStorage.setItem(SETTLED_MERGED_KEY, current ? "0" : "1");
+      } catch {
+        // storage blocked: the filter still applies for this session
+      }
+      return !current;
+    });
+  }, []);
+  return [on, toggle];
+}
