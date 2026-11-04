@@ -142,3 +142,24 @@ describe("Composer file attachments", () => {
     expect(useToasts.getState().toasts.map((t) => t.text)).toEqual(["At most 10 files per message"]);
   });
 });
+
+describe("Composer pasted text", () => {
+  const paste = (value: string): void => {
+    fireEvent.paste(screen.getByLabelText("Message"), { clipboardData: { files: [], items: [], types: ["text/plain"], getData: () => value } });
+  };
+  it("turns a 60-line paste into a chip and leaves the textarea alone", () => {
+    setProvidersForTest(PROVIDER_FIXTURE);
+    attachFakeStore(modelWith({}));
+    render(<Composer thread={makeThread("t1")} />);
+    paste(Array.from({ length: 60 }, (_, i) => `line ${i}`).join("\n"));
+    expect(screen.getByLabelText("Attached files").textContent).toContain("Pasted text · 60 lines");
+    expect((screen.getByLabelText("Message") as HTMLTextAreaElement).value).toBe("");
+  });
+  it("keeps a 3-line paste inline", () => {
+    setProvidersForTest(PROVIDER_FIXTURE);
+    attachFakeStore(modelWith({}));
+    render(<Composer thread={makeThread("t1")} />);
+    paste("a\nb\nc");
+    expect(screen.queryByLabelText("Attached files")).toBeNull();
+  });
+});

@@ -679,7 +679,7 @@ export const Message = Type.Object({
    * `name` + `path` (relative to the thread cwd, under `.tide/attachments/`), written by `attachments.upload`
    * so the agent can read the real bytes; the prompt gets an "Attached files" footer.
    */
-  attachments: Type.Optional(Type.Array(Type.Object({ mediaType: Type.String(), bytes: Type.Number(), name: Type.Optional(Type.String()), path: Type.Optional(Type.String()) }))),
+  attachments: Type.Optional(Type.Array(Type.Object({ mediaType: Type.String(), bytes: Type.Number(), name: Type.Optional(Type.String()), path: Type.Optional(Type.String()), lines: Type.Optional(Type.Number()) }))),
   createdAt: Type.Number(),
   /** true while the assistant is still streaming into this message */
   streaming: Type.Optional(Type.Boolean()),

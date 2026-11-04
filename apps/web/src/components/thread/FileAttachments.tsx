@@ -1,5 +1,5 @@
 import { memo, useCallback } from "react";
-import { admitFiles, fileBytesAvailable, forgetFiles, rememberFile, type DraftFile } from "../../lib/attachments.ts";
+import { admitFiles, fileBytesAvailable, forgetFiles, isPastedName, pastedLabel, pendingLines, rememberFile, type DraftFile } from "../../lib/attachments.ts";
 import { formatBytes } from "../../lib/images.ts";
 import { threadMentionIds, removeThreadMention } from "../../lib/mentions.ts";
 import { setDraft, useDrafts } from "../../state/drafts.ts";
@@ -59,6 +59,7 @@ export const FileChips = memo(function FileChips({
     <ul className={styles.strip} aria-label="Attached files">
       {files.map((file) => {
         const stale = !fileBytesAvailable(file.id);
+        const pasted = isPastedName(file.name, file.mediaType);
         return (
           <li
             key={file.id}
@@ -66,8 +67,8 @@ export const FileChips = memo(function FileChips({
             title={stale ? "Re-attach: file contents are not kept across reloads" : file.mediaType}
           >
             <Icon name="file" size={12} className={`${styles.kind}`} />
-            <span className={styles.name}>{file.name}</span>
-            <span className={styles.meta}>{formatBytes(file.bytes)}</span>
+            <span className={styles.name}>{pasted ? pastedLabel(pendingLines(file.id)) : file.name}</span>
+            {pasted ? null : <span className={styles.meta}>{formatBytes(file.bytes)}</span>}
             <button type="button" className={styles.remove} aria-label={`Remove ${file.name}`} onClick={() => onRemove(file.id)}>
               <Icon name="close" size={12} />
             </button>

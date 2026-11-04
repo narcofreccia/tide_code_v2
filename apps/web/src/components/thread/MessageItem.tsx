@@ -1,4 +1,5 @@
 import { memo, useEffect, useRef, useState } from "react";
+import { isPastedName, pastedLabel } from "../../lib/attachments.ts";
 import type { Message, Turn } from "@tide/contracts";
 import { steerFallbackReason } from "@tide/client";
 import { formatDuration } from "../../lib/activity.ts";
@@ -151,7 +152,10 @@ function Attachments({ message }: { message: Message }) {
             title={`Open ${attachment.path}`}
             onClick={() => open(attachment)}
           >
-            <Icon name="file" size={12} /> {attachment.name ?? attachment.path.slice(attachment.path.lastIndexOf("/") + 1)} · {formatBytes(attachment.bytes)}
+            <Icon name="file" size={12} />{" "}
+            {isPastedName(attachment.name ?? "", attachment.mediaType)
+              ? pastedLabel(attachment.lines)
+              : `${attachment.name ?? attachment.path.slice(attachment.path.lastIndexOf("/") + 1)} · ${formatBytes(attachment.bytes)}`}
           </button>
         ),
       )}

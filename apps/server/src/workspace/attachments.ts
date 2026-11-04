@@ -78,7 +78,9 @@ export async function saveAttachments(cwd: string, files: UploadFile[], opts: { 
     used.add(name);
     const bytes = Buffer.from(file.data, "base64");
     await writeFile(join(dir, name), bytes);
-    refs.push({ name, path: relative(cwd, join(dir, name)).split("\\").join("/"), mediaType: file.mediaType, bytes: bytes.length });
+    const ref: AttachmentRef = { name, path: relative(cwd, join(dir, name)).split("\\").join("/"), mediaType: file.mediaType, bytes: bytes.length };
+    if (file.mediaType.startsWith("text/")) ref.lines = countLines(bytes);
+    refs.push(ref);
   }
   return refs;
 }
@@ -106,11 +108,21 @@ export async function sweepAttachments(root: string, now: number, maxAgeMs: numb
   return removed;
 }
 
+/** Newline-separated lines; a trailing newline does not add one. */
+const countLines = (bytes: Buffer): number => {
+  if (bytes.length === 0) return 0;
+  let n = 1;
+  for (let i = 0; i < bytes.length - 1; i++) if (bytes[i] === 10) n++;
+  return n;
+};
+
 const fmtSize = (bytes: number): string => (bytes >= 1024 * 1024 ? `${(bytes / 1024 / 1024).toFixed(1)} MB` : bytes >= 1024 ? `${Math.round(bytes / 1024)} KB` : `${bytes} B`);
 
 /** The prompt footer for a user message's file attachments (images carry no `path` and are skipped). */
-export function attachmentFooter(attachments: ReadonlyArray<{ mediaType: string; bytes: number; name?: string; path?: string }> | undefined): string {
+export function attachmentFooter(attachments: ReadonlyArray<{ mediaType: string; bytes: number; name?: string; path?: string; lines?: number }> | undefined): string {
   const files = (attachments ?? []).filter((a) => a.path !== undefined);
   if (files.length === 0) return "";
-  return `\n\nAttached files (read them from disk):\n${files.map((a) => `- ${a.path} (${a.mediaType}, ${fmtSize(a.bytes)})`).join("\n")}`;
+  return `\n\nAttached files (read them from disk):\n${files.map((a) => a.name?.startsWith("pasted-") && a.mediaType === "text/plain"
+        ? `- ${a.path} (pasted text${a.lines === undefined ? "" : `, ${a.lines} lines`}, ${fmtSize(a.bytes)})`
+        : `- ${a.path} (${a.mediaType}, ${fmtSize(a.bytes)})`).join("\n")}`;
 }

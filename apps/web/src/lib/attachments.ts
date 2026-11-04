@@ -13,6 +13,31 @@ export const MAX_FILES_BYTES = 20 * 1024 * 1024;
 
 export type { DraftFile };
 
+/** A paste at least this big becomes a "Pasted text" file chip instead of landing in the textarea. */
+export const PASTE_LINES = 12;
+export const PASTE_CHARS = 1500;
+
+export const countLines = (text: string): number => (text === "" ? 0 : text.replace(/\r?\n$/, "").split(/\r?\n/).length);
+
+export const isBigPaste = (text: string): boolean => text.length >= PASTE_CHARS || countLines(text) >= PASTE_LINES;
+
+const pastedLines = new WeakMap<File, number>();
+const linesById = new Map<string, number>();
+
+export function pastedTextFile(text: string, n: number): File {
+  const file = new File([text], `pasted-${n}.txt`, { type: "text/plain" });
+  pastedLines.set(file, countLines(text));
+  return file;
+}
+
+export const isPastedName = (name: string, mediaType: string): boolean => name.startsWith("pasted-") && mediaType === "text/plain";
+
+/** Lines of a pending pasted-text file, when this tab still knows them. */
+export const pendingLines = (id: string): number | undefined => linesById.get(id);
+
+/** Chip label for a pasted-text attachment, pending or sent. */
+export const pastedLabel = (lines: number | undefined): string => (lines === undefined ? "Pasted text" : `Pasted text · ${lines} ${lines === 1 ? "line" : "lines"}`);
+
 /**
  * The bytes of pending files, for this tab's lifetime only. A draft restored after a
  * reload keeps the chips but not the contents; the composer asks for a re-attach.
@@ -23,6 +48,8 @@ let seq = 1;
 export function rememberFile(file: File): DraftFile {
   const id = `file-${Date.now().toString(36)}-${seq++}`;
   blobs.set(id, file);
+  const lines = pastedLines.get(file);
+  if (lines !== undefined) linesById.set(id, lines);
   return { id, name: file.name || "file", mediaType: file.type || "application/octet-stream", bytes: file.size };
 }
 
@@ -31,7 +58,10 @@ export function fileBytesAvailable(id: string): boolean {
 }
 
 export function forgetFiles(ids: readonly string[]): void {
-  for (const id of ids) blobs.delete(id);
+  for (const id of ids) {
+    blobs.delete(id);
+    linesById.delete(id);
+  }
 }
 
 /** Splits a paste/drop/picker selection into inline images and on-disk files. */
@@ -111,4 +141,11 @@ export async function uploadFiles(threadId: string, files: readonly DraftFile[])
   );
   const { attachments } = await call("attachments.upload", { threadId, files: payload });
   return attachments;
+}
+
+/** Intercepts a big text paste: returns the file to attach, or undefined to let the textarea take it. */
+export function bigPasteFile(text: string, existing: readonly DraftFile[]): File | undefined {
+  if (!isBigPaste(text)) return undefined;
+  const taken = existing.filter((f) => isPastedName(f.name, f.mediaType)).length;
+  return pastedTextFile(text, taken + 1);
 }

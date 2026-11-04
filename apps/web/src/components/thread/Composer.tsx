@@ -16,7 +16,7 @@ import {
   threadMention,
   threadMentionIds,
 } from "../../lib/mentions.ts";
-import { filesOf, splitFiles, transferHasFiles } from "../../lib/attachments.ts";
+import { bigPasteFile, filesOf, splitFiles, transferHasFiles } from "../../lib/attachments.ts";
 import { applyCompose } from "../../lib/cite.ts";
 import { interceptSide, useComposeEvent, useEscInterrupt, type ComposerScope } from "./composerScope.ts";
 import { Button } from "../ui/Button.tsx";
@@ -244,6 +244,12 @@ export function Composer({ thread, scope = "main" }: { thread: Thread; scope?: C
             return;
           }
           const pasted = e.clipboardData.getData("text");
+          const big = bigPasteFile(pasted, files);
+          if (big) {
+            e.preventDefault();
+            fileAttachments.add([big]);
+            return;
+          }
           const relative = normalizePastedPath(pasted, thread.worktreePath);
           if (relative === pasted) return;
           e.preventDefault();

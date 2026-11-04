@@ -83,3 +83,20 @@ describe("attachmentFooter", () => {
       .toBe("\n\nAttached files (read them from disk):\n- .tide/attachments/X/spec.pdf (application/pdf, 1.2 MB)\n- .tide/attachments/X/n.txt (text/plain, 12 B)");
   });
 });
+
+describe("pasted text", () => {
+  it("counts lines for text media types only", async () => {
+    const r = await repo();
+    const refs = await saveAttachments(r.dir, [
+      { name: "pasted-1.txt", mediaType: "text/plain", data: b64("a\nb\nc\n") },
+      { name: "x.bin", mediaType: "application/octet-stream", data: b64("a\nb") },
+    ], { git: git(r.dir) });
+    expect(refs[0]?.lines).toBe(3);
+    expect(refs[1]?.lines).toBeUndefined();
+  });
+
+  it("tells the harness what a pasted file is", () => {
+    expect(attachmentFooter([{ mediaType: "text/plain", bytes: 12, name: "pasted-1.txt", path: "p/pasted-1.txt", lines: 48 }]))
+      .toBe("\n\nAttached files (read them from disk):\n- p/pasted-1.txt (pasted text, 48 lines, 12 B)");
+  });
+});

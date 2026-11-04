@@ -1,5 +1,5 @@
 import { describe, expect, it } from "vitest";
-import { MAX_FILES_BYTES, admitFiles, splitFiles } from "./attachments.ts";
+import { PASTE_CHARS, PASTE_LINES, countLines, isBigPaste, pastedTextFile, MAX_FILES_BYTES, admitFiles, splitFiles } from "./attachments.ts";
 
 const f = (id: string, bytes: number) => ({ id, name: `${id}.bin`, mediaType: "application/octet-stream", bytes });
 
@@ -15,5 +15,25 @@ describe("file attachment caps", () => {
     const pdf = new File([""], "a.pdf", { type: "application/pdf" });
     expect(splitFiles([png, pdf], true)).toEqual({ images: [png], files: [pdf] });
     expect(splitFiles([png, pdf], false)).toEqual({ images: [], files: [png, pdf] });
+  });
+});
+
+describe("big paste", () => {
+  const lines = (n: number) => Array.from({ length: n }, (_, i) => `l${i}`).join("\n");
+  it("trips on line or char thresholds, not below", () => {
+    expect(isBigPaste(lines(PASTE_LINES - 1))).toBe(false);
+    expect(isBigPaste(lines(PASTE_LINES))).toBe(true);
+    expect(isBigPaste("x".repeat(PASTE_CHARS - 1))).toBe(false);
+    expect(isBigPaste("x".repeat(PASTE_CHARS))).toBe(true);
+  });
+  it("counts lines ignoring a trailing newline", () => {
+    expect(countLines("")).toBe(0);
+    expect(countLines("a\nb\n")).toBe(2);
+    expect(countLines("a\r\nb\r\nc")).toBe(3);
+  });
+  it("names the file", () => {
+    const f = pastedTextFile("hi", 2);
+    expect(f.name).toBe("pasted-2.txt");
+    expect(f.type).toBe("text/plain");
   });
 });

@@ -63,7 +63,7 @@ export const isArchived = (e: { archivedAt?: number }): boolean => e.archivedAt 
 export function attachmentsOf(images: ImageInput[] | undefined, files?: AttachmentRef[]): Pick<Message, "attachments"> {
   const list = [
     ...(images ?? []).map((img) => ({ mediaType: img.mediaType, bytes: Math.floor((img.data.length * 3) / 4) })),
-    ...(files ?? []).map((f) => ({ mediaType: f.mediaType, bytes: f.bytes, name: f.name, path: f.path })),
+    ...(files ?? []).map((f) => ({ mediaType: f.mediaType, bytes: f.bytes, name: f.name, path: f.path, ...(f.lines !== undefined ? { lines: f.lines } : {}) })),
   ];
   return list.length === 0 ? {} : { attachments: list };
 }
