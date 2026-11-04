@@ -4,6 +4,7 @@ import { openDatabase } from "../db/sqlite.ts";
 import { Engine } from "../orchestration/engine.ts";
 import { EventStore } from "../orchestration/store.ts";
 import { ProviderReactor } from "./reactor.ts";
+import { redactSecretTool } from "./secretInput.ts";
 import { DriverRegistry } from "./registry.ts";
 import { SessionDirectory } from "./sessions.ts";
 import { awaitUserInput, createFakeDriver, emit } from "./testing/fakeDriver.ts";
@@ -65,5 +66,18 @@ describe("ProviderReactor: secret cards", () => {
     await reactor.drain();
     expect(control.userInputs).toEqual([{ requestId: "q1", answers: { a: "A" } }]);
     expect(engine.getModel().turns[requested.turn.id]?.status).toBe("completed");
+  });
+});
+
+describe("redactSecretTool", () => {
+  const base = { id: "a1", threadId: "t1", turnId: "u1", createdAt: 1, updatedAt: 1, status: "ok" as const };
+  it("strips the value from a tide_request_secret result, keeping the first line", () => {
+    const out = redactSecretTool({ ...base, kind: "tool", toolUseId: "x", toolName: "mcp__tide__tide_request_secret", input: { name: "T" }, output: "The user provided T. Use it for this task only.\nhunter2" });
+    expect(out.kind === "tool" ? out.output : "").not.toContain("hunter2");
+    expect(out.kind === "tool" ? out.output : "").toMatch(/^The user provided T\./);
+  });
+  it("leaves every other tool alone", () => {
+    const a = { ...base, kind: "tool" as const, toolUseId: "x", toolName: "Read", input: {}, output: "hunter2" };
+    expect(redactSecretTool(a)).toBe(a);
   });
 });

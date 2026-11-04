@@ -13,7 +13,7 @@ import {
   type TurnInput,
 } from "@tide/contracts";
 import type { Engine } from "../orchestration/engine.ts";
-import { isSecretResponse } from "./secretInput.ts";
+import { isSecretResponse, redactSecretTool } from "./secretInput.ts";
 import { isUsageLimitError } from "../orchestration/limits.ts";
 import { attachmentFooter } from "../workspace/attachments.ts";
 import { activityKey, mergeActivity } from "./activities.ts";
@@ -684,7 +684,7 @@ export class ProviderReactor {
         if (event.activity.kind === "child") rememberChild(state.children, event.activity.childKey, event.activity.taskId, child ?? { id, turnId });
         const at = this.#now();
         const previous = this.#engine.getModel().activities[id];
-        const activity = mergeActivity(previous, event.activity, { id, threadId, turnId: ownerTurnId, createdAt: at, updatedAt: at });
+        const activity = redactSecretTool(mergeActivity(previous, event.activity, { id, threadId, turnId: ownerTurnId, createdAt: at, updatedAt: at }));
         await this.#dispatch({ type: "activity.upsert", activity });
         return false;
       }
