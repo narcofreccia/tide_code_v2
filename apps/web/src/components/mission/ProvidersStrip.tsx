@@ -86,6 +86,8 @@ export function ProvidersStrip() {
                       <Icon name="check" size={12} />
                     ) : glyph === "✕" ? (
                       <Icon name="close" size={12} />
+                    ) : glyph === "⚠" ? (
+                      <Icon name="warning" size={12} />
                     ) : (
                       <span className={styles.chipDot} />
                     )}

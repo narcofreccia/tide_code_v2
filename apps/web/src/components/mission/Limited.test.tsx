@@ -69,7 +69,7 @@ describe("Mission Control R4 sections", () => {
     attachFakeStore(model);
     render(<MissionControl />);
     expect(screen.getByText("review")).toBeDefined();
-    expect(screen.getByText(/👁 PR #7 · ✘ · 2 comments/)).toBeDefined();
+    expect(screen.getByText(/PR #7 · ✘ · 2 comments/)).toBeDefined();
     expect(screen.getByText(/conflict/)).toBeDefined();
     expect(screen.getByText("CI failed on #7")).toBeDefined();
   });

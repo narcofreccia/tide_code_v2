@@ -278,7 +278,7 @@ describe("Mission Control — providers", () => {
     const strip = within(screen.getByLabelText("Providers"));
     fireEvent.click(strip.getByRole("button", { name: /Harnesses/ }));
     const badge = strip.getByLabelText(/rate limit limited/);
-    expect(badge.textContent).toBe("⛔ limited · resets in 2h");
+    expect(badge.textContent?.trim()).toBe("limited · resets in 2h");
     expect(badge.getAttribute("title")).toContain("5-hour limit");
     expect(strip.getAllByLabelText(/rate limit/)).toHaveLength(1);
   });

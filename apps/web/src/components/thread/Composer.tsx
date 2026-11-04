@@ -21,6 +21,7 @@ import { applyCompose } from "../../lib/cite.ts";
 import { interceptSide, useComposeEvent, useEscInterrupt, type ComposerScope } from "./composerScope.ts";
 import { Button } from "../ui/Button.tsx";
 import { Kbd } from "../ui/Kbd.tsx";
+import { Icon } from "../ui/Icon.tsx";
 import { AttachmentStrip, useAttachments } from "./Attachments.tsx";
 import { FileChips, ThreadContextChips, useFileAttachments } from "./FileAttachments.tsx";
 import { MentionPicker, useMentionMatches, type MentionItem } from "./MentionPicker.tsx";
@@ -277,7 +278,7 @@ export function Composer({ thread, scope = "main" }: { thread: Thread; scope?: C
           }}
         />
         <Button variant="quiet" title="Attach files" aria-label="Attach files…" onClick={() => picker.current?.click()}>
-          📎
+          <Icon name="link" size={14} />
         </Button>
         {running ? <FollowUpToggle followUp={followUp} provider={thread.provider} /> : null}
         <DraftsBar

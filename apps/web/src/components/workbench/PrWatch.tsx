@@ -1,6 +1,7 @@
 import type { PullRequest, Thread } from "@tide/contracts";
 import { watchPr } from "../../lib/turnActions.ts";
 import { Checkbox } from "../ui/Choice.tsx";
+import { Icon } from "../ui/Icon.tsx";
 import styles from "./PrWatch.module.css";
 
 const CHECKS = {
@@ -28,12 +29,12 @@ export function PrWatch({ thread, pr }: { thread: Thread; pr: PullRequest }) {
       )}
       {pr.comments === undefined ? null : (
         <span className={styles.muted} title="comments on the PR" aria-label={`${pr.comments} comments`}>
-          💬 {pr.comments}
+          <Icon name="chat" size={12} /> {pr.comments}
         </span>
       )}
       {pr.mergeable === false ? (
         <span className={styles.failure} title="The PR has merge conflicts" aria-label="merge conflict">
-          ⚠ conflict
+          <Icon name="warning" size={12} /> conflict
         </span>
       ) : null}
     </span>

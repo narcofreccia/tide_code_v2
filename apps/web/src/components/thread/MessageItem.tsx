@@ -12,6 +12,7 @@ import { TAIL_WORDS, advanceScan, emptyScan, endsInOpenFence, splitStreamingTail
 import { Button } from "../ui/Button.tsx";
 import { Popover } from "../ui/Popover.tsx";
 import { Pill } from "../ui/Pill.tsx";
+import { Icon } from "../ui/Icon.tsx";
 import { observeVisibleAnimation } from "../../lib/visibleAnimation.ts";
 import { LiveLabel } from "./LiveLabel.tsx";
 import { Chevron } from "./Chevron.tsx";
@@ -140,7 +141,7 @@ function Attachments({ message }: { message: Message }) {
       {list.map((attachment, i) =>
         attachment.path === undefined ? (
           <Pill key={`${attachment.mediaType}-${i}`}>
-            🖼 {attachment.mediaType} · {formatBytes(attachment.bytes)}
+            <Icon name="image" size={12} /> {attachment.mediaType} · {formatBytes(attachment.bytes)}
           </Pill>
         ) : (
           <button
@@ -150,7 +151,7 @@ function Attachments({ message }: { message: Message }) {
             title={`Open ${attachment.path}`}
             onClick={() => open(attachment)}
           >
-            📄 {attachment.name ?? attachment.path.slice(attachment.path.lastIndexOf("/") + 1)} · {formatBytes(attachment.bytes)}
+            <Icon name="file" size={12} /> {attachment.name ?? attachment.path.slice(attachment.path.lastIndexOf("/") + 1)} · {formatBytes(attachment.bytes)}
           </button>
         ),
       )}

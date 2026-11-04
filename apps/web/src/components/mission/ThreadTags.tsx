@@ -1,4 +1,5 @@
 import type { Thread } from "@tide/contracts";
+import { Icon } from "../ui/Icon.tsx";
 import { prWatchLabel } from "./prWatch.ts";
 import styles from "./Limited.module.css";
 
@@ -17,6 +18,7 @@ export function ThreadTags({ thread }: { thread: Thread }) {
           className={`${styles.prPill} ${thread.pr?.checks === "failure" ? styles.bad : ""}`}
           title="Tide is watching this pull request"
         >
+          <Icon name="eye" size={12} />
           {pr}
           {thread.pr?.mergeable === false ? <span className={styles.conflict}> · conflict</span> : null}
         </span>

@@ -59,6 +59,8 @@ export const ICONS = {
   link: "M10 14a4 4 0 0 0 5.7 0l3-3a4 4 0 0 0-5.7-5.7l-1 1M14 10a4 4 0 0 0-5.7 0l-3 3a4 4 0 0 0 5.7 5.7l1-1",
   warning: "M12 4 2.5 20h19zM12 10v4.5M12 17.5h.01",
   sidebar: "M4 5h16v14H4zM9.5 5v14",
+  eye: `M2.5 12S6 5.5 12 5.5 21.5 12 21.5 12 18 18.5 12 18.5 2.5 12 2.5 12z${circle(12, 12, 3)}`,
+  ban: `${circle(12, 12, 8.5)}M6 6l12 12`,
 } as const satisfies Record<string, string>;
 
 export type IconName = keyof typeof ICONS;

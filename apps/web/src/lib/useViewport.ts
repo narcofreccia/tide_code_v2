@@ -31,6 +31,11 @@ function snapshot(): Viewport {
   return cached;
 }
 
+/** Non-hook read of the same phone query, for code outside React (stores, actions). */
+export function isPhoneViewport(): boolean {
+  return matcher()?.matches ?? false;
+}
+
 /** `{ phone, width }` from `matchMedia("(max-width: 720px)")`; desktop when matchMedia is unavailable. */
 export function useViewport(): Viewport {
   return useSyncExternalStore(subscribe, snapshot, snapshot);

@@ -20,7 +20,7 @@ describe("Icon", () => {
   });
 
   it("covers the set the shell needs", () => {
-    for (const name of ["menu", "inbox", "settings", "merge", "sun", "moon", "keyboard"]) {
+    for (const name of ["menu", "inbox", "settings", "merge", "sun", "moon", "keyboard", "eye", "ban", "warning", "image", "file", "chat", "link"]) {
       expect(NAMES).toContain(name);
     }
   });

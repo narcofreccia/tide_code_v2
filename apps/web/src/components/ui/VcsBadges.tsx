@@ -1,5 +1,7 @@
 import { isThreadMerged } from "@tide/client";
+import type { ReactNode } from "react";
 import type { PullRequest, Thread } from "@tide/contracts";
+import { Icon } from "./Icon.tsx";
 import styles from "./VcsBadges.module.css";
 
 const PR_GLYPH: Record<PullRequest["state"], string> = { open: "⇡", merged: "✓", closed: "✕" };
@@ -47,11 +49,11 @@ export function PrBadge({ pr }: { pr: PullRequest }) {
  */
 export function MergeGlyph({ thread }: { thread: Thread }) {
   const status = thread.merge?.status;
-  let glyph: string;
+  let glyph: ReactNode;
   let text: string;
   let tone: string | undefined;
   if (status === "merging") [glyph, text, tone] = ["⟳", "merging", styles.merging];
-  else if (status === "conflicted") [glyph, text, tone] = ["⚠", "conflicted", styles.conflicted];
+  else if (status === "conflicted") [glyph, text, tone] = [<Icon name="warning" size={12} />, "conflicted", styles.conflicted];
   else if (status === "error") [glyph, text, tone] = ["✕", "merge failed", styles.closed];
   else if (isThreadMerged(thread) && thread.pr?.state !== "merged") [glyph, text, tone] = ["✓", "merged", styles.merged];
   else return null;

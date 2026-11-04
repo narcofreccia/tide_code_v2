@@ -305,7 +305,7 @@ describe("ThreadHeader glass-box and merge state", () => {
     const resetsAt = Date.now() + 2 * 3600 * 1000;
     mount({ rateLimit: { status: "limited", resetsAt, note: "5-hour limit reached", at: 1 } });
     const badge = screen.getByLabelText(/rate limit limited/);
-    expect(badge.textContent).toBe("⛔ limited · resets in 2h");
+    expect(badge.textContent?.trim()).toBe("limited · resets in 2h");
     expect(badge.getAttribute("title")).toContain("5-hour limit reached");
   });
 
@@ -325,7 +325,7 @@ describe("ThreadHeader glass-box and merge state", () => {
   it("flags a conflicted merge", () => {
     mockRpc({ "thread.terminalCommand": () => ({}) });
     mount({ branch: "tide/t1", merge: { status: "conflicted", strategy: "merge", files: ["a"], at: 5 } });
-    expect(screen.getByLabelText("conflicted").textContent).toBe("⚠ conflicted");
+    expect(screen.getByLabelText("conflicted").textContent?.trim()).toBe("conflicted");
   });
 });
 
