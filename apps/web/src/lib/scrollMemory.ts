@@ -8,6 +8,8 @@ export interface ScrollPosition {
   entryId: string;
   offsetWithinEntry: number;
   atEnd: boolean;
+  /** `data-row-key` of the row to land on (palette message hits); wins over `entryId` */
+  rowKey?: string;
 }
 
 export const SCROLL_MEMORY_LIMIT = 100;

@@ -1,7 +1,7 @@
 import { createElement, useRef } from "react";
 import { afterEach, beforeEach, describe, expect, it, vi } from "vitest";
 import { act, cleanup, fireEvent, render, screen } from "@testing-library/react";
-import { forgetAllScroll } from "../../lib/scrollMemory.ts";
+import { forgetAllScroll, rememberScroll } from "../../lib/scrollMemory.ts";
 import { PILL_DELAY_MS, SWITCH_GRACE_MS, useStreamScroll } from "./useStreamScroll.ts";
 
 /**
@@ -91,7 +91,7 @@ function Harness({ threadId, heights }: { threadId: string; heights: number[] })
     createElement(
       "ol",
       { ref, "data-testid": "list" },
-      heights.map((h, i) => createElement("li", { key: i, "data-h": h }, `row ${i}`)),
+      heights.map((h, i) => createElement("li", { key: i, "data-h": h, "data-row-key": `m${i}` }, `row ${i}`)),
     ),
     showNew ? createElement("button", { type: "button", onClick: jumpToEnd }, "New text") : null,
   );
@@ -250,5 +250,20 @@ describe("useStreamScroll", () => {
     view.rerender(harness("a", rowsOf(21)));
     tick(SWITCH_GRACE_MS - 40);
     expect(screen.queryByText("New text")).toBeNull();
+  });
+
+  it("restores to a remembered rowKey before the index", () => {
+    rememberScroll("a", { entryId: "0", rowKey: "m10", offsetWithinEntry: 0, atEnd: false });
+    render(harness("a", rowsOf(20)));
+    expect(list().scrollTop).toBe(1000);
+  });
+
+  it("tide:scroll-to scrolls the keyed row into view and releases following", () => {
+    const view = render(harness("a", rowsOf(20)));
+    expect(list().scrollTop).toBe(1600);
+    act(() => void window.dispatchEvent(new CustomEvent("tide:scroll-to", { detail: { threadId: "a", rowKey: "m3" } })));
+    expect(list().scrollTop).toBe(300);
+    view.rerender(harness("a", rowsOf(22)));
+    expect(list().scrollTop).toBe(300);
   });
 });

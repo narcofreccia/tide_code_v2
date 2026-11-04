@@ -1,4 +1,5 @@
 import { create } from "zustand";
+import { recordThreadOpen } from "../lib/threadRecency.ts";
 import { persist } from "zustand/middleware";
 import { useModel } from "./model.ts";
 
@@ -187,8 +188,10 @@ export const useUi = create<UiState>()(
           return { projectFilter, selectedProjectId: projectFilter.length === 1 ? (projectFilter[0] ?? null) : null };
         }),
       clearProjectFilter: () => set({ projectFilter: [], selectedProjectId: null }),
-      selectThread: (selectedThreadId) =>
-        set(selectedThreadId ? { selectedThreadId, view: "thread" } : { selectedThreadId: null, view: "mission" }),
+      selectThread: (selectedThreadId) => {
+        if (selectedThreadId) recordThreadOpen(selectedThreadId);
+        set(selectedThreadId ? { selectedThreadId, view: "thread" } : { selectedThreadId: null, view: "mission" });
+      },
       selectExpertsSession: (selectedExpertsSessionId) =>
         set((s) =>
           selectedExpertsSessionId === null

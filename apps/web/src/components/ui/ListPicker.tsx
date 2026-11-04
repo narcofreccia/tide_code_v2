@@ -89,9 +89,12 @@ export function ListPicker<T>({
   before,
   after,
   empty,
+  onQueryChange,
 }: {
   items: readonly T[];
   itemKey: (item: T) => string;
+  /** called with the raw query on every edit */
+  onQueryChange?: (q: string) => void;
   /** the string fuzzy-matched against the query (ignored when `rank` is given) */
   text?: (item: T) => string;
   rank?: (query: string, items: readonly T[]) => T[];
@@ -134,6 +137,7 @@ export function ListPicker<T>({
         value={query}
         onChange={(e) => {
           setQuery(e.target.value);
+          onQueryChange?.(e.target.value);
           setCursor(0);
         }}
         onKeyDown={(e) => {

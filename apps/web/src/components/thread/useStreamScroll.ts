@@ -8,6 +8,9 @@ export const PILL_DELAY_MS = 150;
 /** No pill this long after a thread switch (the restored view is not news). */
 export const SWITCH_GRACE_MS = 300;
 
+/** Same-thread jump: `detail` is `{ threadId, rowKey }` (see `openThreadAt`). */
+export const SCROLL_TO_EVENT = "tide:scroll-to";
+
 type Follow = "following" | "released";
 type Cancel = () => void;
 
@@ -154,8 +157,11 @@ function createController(threadId: string, setShowNew: (value: boolean) => void
     });
   };
 
+  const findRow = (key: string): Element | undefined =>
+    el?.querySelector(`[data-row-key="${key.replace(/["\\]/g, "\\$&")}"]`) ?? undefined;
+
   const applyMemory = (memory: ScrollPosition): void => {
-    const row = el?.children[Number(memory.entryId)];
+    const row = memory.rowKey !== undefined ? findRow(memory.rowKey) : memory.entryId === "" ? undefined : el?.children[Number(memory.entryId)];
     if (!el || !row) {
       mode = "following";
       pin();
@@ -171,6 +177,15 @@ function createController(threadId: string, setShowNew: (value: boolean) => void
       compensate();
       if (rowsChanged) scheduleNew();
     }
+  };
+
+  const onScrollTo = (e: Event): void => {
+    const d = (e as CustomEvent<{ threadId: string; rowKey: string }>).detail;
+    if (!el || d.threadId !== threadId || !findRow(d.rowKey)) return;
+    touched = true;
+    mode = "released";
+    applyMemory({ entryId: "", rowKey: d.rowKey, offsetWithinEntry: 0, atEnd: false });
+    scheduleSave();
   };
 
   const listeners = {
@@ -206,6 +221,7 @@ function createController(threadId: string, setShowNew: (value: boolean) => void
   return {
     attach(node: HTMLElement): Cancel {
       el = node;
+      window.addEventListener(SCROLL_TO_EVENT, onScrollTo);
       for (const [type, fn] of Object.entries(listeners)) node.addEventListener(type, fn as EventListener, { passive: true });
       if (typeof ResizeObserver !== "undefined") {
         observer = new ResizeObserver(() => onContentChange(false));
@@ -213,6 +229,7 @@ function createController(threadId: string, setShowNew: (value: boolean) => void
         observed.add(node);
       }
       return () => {
+        window.removeEventListener(SCROLL_TO_EVENT, onScrollTo);
         for (const [type, fn] of Object.entries(listeners)) node.removeEventListener(type, fn as EventListener);
         observer?.disconnect();
         observed.clear();

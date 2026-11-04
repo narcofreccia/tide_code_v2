@@ -1,6 +1,6 @@
 import { afterEach, describe, expect, it } from "vitest";
 import type { ReadModel } from "@tide/contracts";
-import { buildPaletteItems, rankPaletteItems } from "./paletteItems.ts";
+import { buildPaletteItems, rankPaletteItems, type PaletteItem } from "./paletteItems.ts";
 import { attachFakeStore, makePlan, makeThread, modelWith, resetUi, makeExpertsSession } from "../testHarness.ts";
 import { useUi } from "../state/ui.ts";
 
@@ -160,5 +160,20 @@ describe("settle items", () => {
     expect(fake.dispatch).toHaveBeenLastCalledWith({ type: "thread.unsettle", threadId: "t1" });
     expect(ids(null)).not.toContain("action:undo-settle");
     resetSettleUndo();
+  });
+});
+
+describe("rankPaletteItems recency", () => {
+  const t = (id: string): PaletteItem => ({ id: `thread:${id}`, label: `Fix ${id}`, group: "Go to", run: () => {} });
+  const action: PaletteItem = { id: "a", label: "Action", group: "Actions", run: () => {} };
+
+  it("orders thread targets newest-opened first with no query", () => {
+    const out = rankPaletteItems("", [t("x"), action, t("y"), t("z")], [], { y: 30, z: 10 });
+    expect(out.map((i) => i.id)).toEqual(["thread:y", "a", "thread:z", "thread:x"]);
+  });
+
+  it("nudges a recently opened thread over an equal match", () => {
+    const out = rankPaletteItems("fix", [t("x"), t("y")], [], { y: 10 });
+    expect(out[0]!.id).toBe("thread:y");
   });
 });

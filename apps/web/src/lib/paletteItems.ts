@@ -23,7 +23,7 @@ import { canUndoSettle, undoLastSettle } from "./inboxActions.ts";
 import { environmentName, setPrimaryEnvironment, useEnvironments } from "../state/environments.ts";
 import { openAddMachine } from "../components/fleet/fleetUi.ts";
 
-export type PaletteGroup = "Actions" | "Go to" | "Thread";
+export type PaletteGroup = "Actions" | "Go to" | "Thread" | "In messages";
 
 export interface PaletteItem {
   id: string;
@@ -277,19 +277,41 @@ export function buildPaletteItems({ model, selectedThreadId, selectedProjectId }
 
 const searchKey = (item: PaletteItem): string => `${item.label} ${item.detail ?? ""}`;
 
+const RECENCY_NUDGE_TOP = 20;
+const isThreadTarget = (item: PaletteItem): boolean => item.group === "Go to" && item.id.startsWith("thread:");
+
+/** Thread targets reordered newest-opened first, in the slots thread targets already occupy. */
+function threadsByRecency(items: PaletteItem[], recency: Record<string, number>): PaletteItem[] {
+  const opened = (item: PaletteItem): number => recency[item.id.slice("thread:".length)] ?? 0;
+  const sorted = items.filter(isThreadTarget).sort((a, b) => opened(b) - opened(a));
+  let next = 0;
+  return items.map((item) => (isThreadTarget(item) ? sorted[next++]! : item));
+}
+
 /**
- * Ranks items for the query. With no query the recents lead in recency order;
- * with one, fuzzy score decides and a recent item gets a small nudge.
+ * Ranks items for the query. With no query the recents lead in recency order, then
+ * thread targets newest-opened first; with one, fuzzy score decides and a recent item
+ * or recently opened thread gets a small nudge.
  */
-export function rankPaletteItems(query: string, items: PaletteItem[], recents: string[] = []): PaletteItem[] {
+export function rankPaletteItems(
+  query: string,
+  items: PaletteItem[],
+  recents: string[] = [],
+  recency: Record<string, number> = {},
+): PaletteItem[] {
   const rank = new Map(recents.map((id, index) => [id, recents.length - index]));
   if (query.trim() === "") {
     const recent = recents.map((id) => items.find((i) => i.id === id)).filter((i): i is PaletteItem => !!i);
     const seen = new Set(recent.map((i) => i.id));
-    return [...recent, ...items.filter((i) => !seen.has(i.id))];
+    return [...recent, ...threadsByRecency(items.filter((i) => !seen.has(i.id)), recency)];
   }
+  const newest = Object.entries(recency)
+    .sort((a, b) => b[1] - a[1])
+    .slice(0, RECENCY_NUDGE_TOP)
+    .map(([id]) => `thread:${id}`);
+  const opened = new Map(newest.map((id, index) => [id, newest.length - index]));
   return fuzzyRank(query, items, searchKey, 60)
-    .map((r) => ({ item: r.item, score: r.score + (rank.get(r.item.id) ?? 0) * 0.5 }))
+    .map((r) => ({ item: r.item, score: r.score + (rank.get(r.item.id) ?? 0) * 0.5 + (opened.get(r.item.id) ?? 0) * 0.25 }))
     .sort((a, b) => b.score - a.score)
     .map((r) => r.item);
 }

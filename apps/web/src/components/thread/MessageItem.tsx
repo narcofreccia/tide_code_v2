@@ -195,6 +195,7 @@ export const MessageItem = memo(function MessageItem({ message, turn, showMeta, 
     isUser && turn && SETTLED.includes(turn.status) && message.steer !== true && !rolledBack ? turn : undefined;
   return (
     <li
+      data-row-key={message.id}
       className={`${isUser ? styles.user : styles.assistant} ${rolledBack ? styles.rolledBack : ""}`}
       {...(rolledBack ? { "data-rolled-back": "true" } : {})}
       {...(!isUser ? { "data-cite-label": citeLabel ?? "" } : {})}

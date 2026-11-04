@@ -1,6 +1,9 @@
-import { useCallback, useMemo } from "react";
+import { useCallback, useEffect, useMemo } from "react";
 import { closePalette, loadRecents, runPaletteItem } from "../../lib/commands.ts";
 import { buildPaletteItems, rankPaletteItems, type PaletteItem } from "../../lib/paletteItems.ts";
+import { messageHitItems } from "../../lib/paletteMessages.ts";
+import { threadRecency } from "../../lib/threadRecency.ts";
+import { resetPaletteSearch, setPaletteQuery, usePaletteSearch } from "../../state/paletteSearch.ts";
 import { useModel } from "../../state/model.ts";
 import { useUi } from "../../state/ui.ts";
 import { Dialog } from "../ui/Dialog.tsx";
@@ -9,6 +12,7 @@ import { ListPicker } from "../ui/ListPicker.tsx";
 import styles from "./CommandPalette.module.css";
 
 const LIMIT = 60;
+const MESSAGE_LIMIT = 20;
 
 function PaletteRow({ item }: { item: PaletteItem }) {
   return (
@@ -32,9 +36,16 @@ export function CommandPalette() {
     () => buildPaletteItems({ model, selectedThreadId, selectedProjectId }),
     [model, selectedThreadId, selectedProjectId],
   );
+  const recency = useMemo(() => threadRecency(), []);
+  const hits = usePaletteSearch((s) => s.hits);
+  const messageItems = useMemo(() => messageHitItems(model, hits), [model, hits]);
+  useEffect(() => resetPaletteSearch, []);
   const rank = useCallback(
-    (query: string, all: readonly PaletteItem[]) => rankPaletteItems(query, [...all], recents),
-    [recents],
+    (query: string, all: readonly PaletteItem[]) => {
+      const ranked = rankPaletteItems(query, [...all], recents, recency);
+      return query.trim() === "" ? ranked : [...ranked.slice(0, LIMIT), ...messageItems];
+    },
+    [recents, recency, messageItems],
   );
 
   return (
@@ -43,7 +54,8 @@ export function CommandPalette() {
         items={items}
         itemKey={(item) => item.id}
         rank={rank}
-        limit={LIMIT}
+        limit={LIMIT + MESSAGE_LIMIT}
+        onQueryChange={setPaletteQuery}
         renderItem={(item) => <PaletteRow item={item} />}
         onPick={runPaletteItem}
         onClose={closePalette}
