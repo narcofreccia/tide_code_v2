@@ -85,7 +85,9 @@ export function mergeActivity(previous: Activity | undefined, activity: DriverAc
       return {
         ...shared,
         kind: "child",
-        childKey: activity.childKey || (prev?.childKey ?? ""),
+        // a row keeps the key it was opened with: a later report may only match by taskId
+        childKey: prev?.childKey || activity.childKey,
+        ...opt("taskId", activity.taskId ?? prev?.taskId),
         name: activity.name || (prev?.name ?? ""),
         status: activity.status,
         ...opt("description", activity.description ?? prev?.description),

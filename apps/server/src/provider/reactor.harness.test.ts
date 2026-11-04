@@ -17,6 +17,8 @@ interface Harness {
   threadId: string;
   events: DomainEvent[];
   logs: string[];
+  /** a server restart for the reactor: stops it and starts a new one (empty in-memory state) over the same engine */
+  rebuild(): void;
   close(): void;
 }
 
@@ -70,19 +72,26 @@ async function harness(caps: { steer?: boolean } = {}): Promise<Harness> {
   });
   reactor = new ProviderReactor({ engine, sessions, log });
   reactor.start();
+  const started = reactor;
   const events: DomainEvent[] = [];
   engine.subscribe((r) => void events.push(r.event));
   const project = first((await engine.dispatch({ type: "project.create", title: "T", rootPath: "/repo" })).events.map((r) => r.event), "project.created");
   const thread = first((await engine.dispatch({ type: "thread.create", projectId: project.project.id, provider: "claude" })).events.map((r) => r.event), "thread.created");
   const h: Harness = {
     engine,
-    reactor,
+    reactor: started,
     control,
     threadId: thread.thread.id,
     events,
     logs,
+    rebuild: () => {
+      reactor?.stop();
+      reactor = new ProviderReactor({ engine, sessions, log });
+      reactor.start();
+      h.reactor = reactor;
+    },
     close: () => {
-      reactor.stop();
+      h.reactor.stop();
       store.close();
     },
   };
@@ -162,6 +171,52 @@ describe("ProviderReactor: harness-initiated turns", () => {
     expect(subBash?.turnId).toBe(firstTurn);
     const harnessTurn = all(h.events, "turn.requested")[1]!.turn.id;
     expect(assistantTexts(model, harnessTurn)).toEqual(["The audit is in."]);
+  });
+
+  /** Turn 1 launches child `agent-1` (task `t1`); then the reactor restarts with an empty child map. */
+  async function launchThenRestart(h: Harness): Promise<{ session: FakeSession; firstTurn: string; childId: string }> {
+    h.control.script(
+      emit({ type: "session", nativeSessionId: "sess-1" }),
+      emit({ type: "activity", activity: { kind: "child", childKey: "agent-1", taskId: "t1", name: "Audit feature gaps", status: "running" } }),
+      emit({ type: "settled", status: "completed" }),
+    );
+    await h.engine.dispatch({ type: "turn.request", threadId: h.threadId, text: "audit in the background" });
+    await h.reactor.drain();
+    const firstTurn = all(h.events, "turn.requested")[0]!.turn.id;
+    const childId = Object.values(h.engine.getModel().activities).find((a) => a.kind === "child")!.id;
+    h.rebuild();
+    return { session: h.control.sessionFor(h.threadId)!, firstTurn, childId };
+  }
+
+  async function reportInHarnessTurn(h: Harness, session: FakeSession, report: { childKey: string; taskId?: string }): Promise<void> {
+    const { drained } = session.emitHarnessTurn('sub-agent "Audit feature gaps" reported', [
+      { type: "activity", activity: { kind: "child", ...report, name: "Audit feature gaps", status: "done", report: "3 gaps found" } },
+      { type: "assistant.delta", messageKey: "m0", delta: "The audit is in." },
+      { type: "settled", status: "completed" },
+    ]);
+    await h.reactor.drain();
+    await drained;
+  }
+
+  it("after a restart, a report with the launching childKey settles the original row and turn", async () => {
+    const h = await harness();
+    const { session, firstTurn, childId } = await launchThenRestart(h);
+    await reportInHarnessTurn(h, session, { childKey: "agent-1", taskId: "t1" });
+    const children = Object.values(h.engine.getModel().activities).filter((a) => a.kind === "child");
+    expect(children).toHaveLength(1);
+    expect(children[0]).toMatchObject({ id: childId, turnId: firstTurn, status: "done", taskId: "t1", report: "3 gaps found" });
+    expect(all(h.events, "turn.settled")).toHaveLength(2);
+  });
+
+  it("after a restart, a report matching only by taskId settles the original row and turn", async () => {
+    const h = await harness();
+    const { session, firstTurn, childId } = await launchThenRestart(h);
+    await reportInHarnessTurn(h, session, { childKey: "t1", taskId: "t1" });
+    const children = Object.values(h.engine.getModel().activities).filter((a) => a.kind === "child");
+    expect(children).toHaveLength(1);
+    expect(children[0]).toMatchObject({ id: childId, turnId: firstTurn, status: "done", childKey: "agent-1" });
+    const timeline = h.engine.getModel().threadTimeline[h.threadId]!.filter((e) => e.id === childId);
+    expect(timeline).toHaveLength(1);
   });
 
   it("a question asked inside a harness turn needs the user like in any turn, and the answer reaches the harness", async () => {

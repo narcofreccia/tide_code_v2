@@ -125,6 +125,16 @@ function tagText(text: string, tag: string): string | undefined {
   return match?.[1]?.trim();
 }
 
+/** The quoted name in the CLI's `Agent "<name>" finished` summary. */
+function summaryName(summary: string | undefined): string | undefined {
+  return /"([^"]+)"/.exec(summary ?? "")?.[1];
+}
+
+/** The agent id a background `Task`/`Agent` placeholder result carries (`agentId: <id>`). */
+function placeholderAgentId(text: string): string | undefined {
+  return /\bagentId:\s*([A-Za-z0-9_-]+)/.exec(text)?.[1];
+}
+
 /** Text of a user message: a plain string or its text blocks. */
 function userText(content: string | ContentBlock[] | undefined): string {
   if (typeof content === "string") return content;
@@ -206,7 +216,7 @@ export class ClaudeNormalizer {
     const taskId = tagText(text, "task-id");
     const childKey = (taskId !== undefined ? this.#taskChild.get(taskId) : undefined) ?? tagText(text, "tool-use-id");
     const known = childKey !== undefined ? this.#children.get(childKey)?.name : undefined;
-    return known ?? /"([^"]+)"/.exec(tagText(text, "summary") ?? "")?.[1] ?? "background task";
+    return known ?? summaryName(tagText(text, "summary")) ?? "background task";
   }
 
   /** Marks the turn as user-interrupted so the terminal `result` settles as `interrupted`. */
@@ -299,7 +309,7 @@ export class ClaudeNormalizer {
         backgrounded: message.is_backgrounded === true || (known?.backgrounded ?? false),
         summarised: known?.summarised ?? false,
       });
-      return [{ type: "activity", activity: { kind: "child", childKey, name, status: "running", ...(description ? { description } : {}) } }];
+      return [{ type: "activity", activity: { kind: "child", childKey, taskId, name, status: "running", ...(description ? { description } : {}) } }];
     }
 
     const tracked = this.#tasks.get(taskId);
@@ -340,13 +350,21 @@ export class ClaudeNormalizer {
     if (message.ambient === true || message.skip_transcript === true) return [];
     const taskId = message.task_id;
     if (taskId === undefined) return this.#unknown(message, "system", message.subtype);
+    // the launching tool_use_id is the row's key; the task id alone (a fresh normalizer after a
+    // reset or restart) is carried as taskId so the server still finds the original row
     const childKey = this.#taskChild.get(taskId) ?? message.tool_use_id ?? taskId;
     this.#tasks.delete(taskId);
-    return this.#settleChild(childKey, message.status === "completed" ? "done" : "error", { ...(message.summary !== undefined ? { summary: message.summary } : {}), weak: true });
+    const name = summaryName(message.summary);
+    return this.#settleChild(childKey, message.status === "completed" ? "done" : "error", {
+      ...(message.summary !== undefined ? { summary: message.summary } : {}),
+      weak: true,
+      taskId,
+      ...(name !== undefined ? { fallbackName: name } : {}),
+    });
   }
 
   /** The final child update: status, optional report, and a summary only when none was shown. */
-  #settleChild(childKey: string, status: "done" | "error", fields: { summary?: string; weak?: boolean; report?: string; parentToolUseId?: string | null; fallbackName?: string }): NormalizedEvent[] {
+  #settleChild(childKey: string, status: "done" | "error", fields: { summary?: string; weak?: boolean; report?: string; parentToolUseId?: string | null; fallbackName?: string; taskId?: string }): NormalizedEvent[] {
     const child = this.#children.get(childKey);
     if (child) child.settled = true;
     const name = child?.name ?? fields.fallbackName ?? "Background task";
@@ -359,6 +377,7 @@ export class ClaudeNormalizer {
         activity: {
           kind: "child",
           childKey,
+          ...(fields.taskId !== undefined ? { taskId: fields.taskId } : {}),
           name,
           status,
           ...(child?.description ? { description: child.description } : {}),
@@ -378,14 +397,22 @@ export class ClaudeNormalizer {
   #notificationMessage(text: string): NormalizedEvent[] {
     const toolUseId = tagText(text, "tool-use-id");
     const taskId = tagText(text, "task-id");
-    const childKey = (taskId !== undefined ? this.#taskChild.get(taskId) : undefined) ?? toolUseId;
-    if (childKey === undefined || !this.#children.has(childKey)) return [];
+    // an unknown child (fresh normalizer after a reset or restart) still settles: keyed by the
+    // launching tool_use_id with taskId, the server lands it on the row the launch opened
+    const childKey = (taskId !== undefined ? this.#taskChild.get(taskId) : undefined) ?? toolUseId ?? taskId;
+    if (childKey === undefined) return [];
     const result = tagText(text, "result");
     const report = result ? capReport(result) : undefined;
     const statusText = tagText(text, "status");
     const status = statusText === undefined || statusText === "completed" ? "done" : "error";
     const summary = report ? firstLine(report) : tagText(text, "summary");
-    return this.#settleChild(childKey, status, { ...(summary !== undefined ? { summary } : {}), ...(report ? { report } : {}) });
+    const name = summaryName(tagText(text, "summary"));
+    return this.#settleChild(childKey, status, {
+      ...(summary !== undefined ? { summary } : {}),
+      ...(report ? { report } : {}),
+      ...(taskId !== undefined ? { taskId } : {}),
+      ...(name !== undefined ? { fallbackName: name } : {}),
+    });
   }
 
   #newId(): string {
@@ -581,7 +608,25 @@ export class ClaudeNormalizer {
     const child = this.#children.get(childKey);
     if (status !== "error" && (child?.backgrounded === true || BACKGROUND_PLACEHOLDER.test(full.slice(0, 400)))) {
       if (child) child.backgrounded = true;
-      return [];
+      const taskId = placeholderAgentId(full);
+      if (taskId === undefined) return [];
+      // the agent id is what its later task_notification names: record it on the row
+      this.#taskChild.set(taskId, childKey);
+      const name = child?.name ?? tracked.childName ?? "Background task";
+      return [
+        {
+          type: "activity",
+          activity: {
+            kind: "child",
+            childKey,
+            taskId,
+            name,
+            status: "running",
+            ...(child?.description ? { description: child.description } : {}),
+            ...(tracked.parentToolUseId ? { parentToolUseId: tracked.parentToolUseId } : {}),
+          },
+        },
+      ];
     }
     const report = full.trim() === "" ? undefined : capReport(full);
     const summary = report ? firstLine(report) : undefined;

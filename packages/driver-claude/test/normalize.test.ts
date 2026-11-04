@@ -137,7 +137,7 @@ describe("normalizer over recorded fixtures", () => {
     // background tasks become a child row keyed by the spawning tool call
     const children = events.flatMap((event) => (event.type === "activity" && event.activity.kind === "child" ? [event.activity] : []));
     expect(children).toEqual([
-      { kind: "child", childKey: "toolu_bg", name: "Watch the build", status: "running", description: "Explore" },
+      { kind: "child", childKey: "toolu_bg", taskId: "task_1", name: "Watch the build", status: "running", description: "Explore" },
       { kind: "child", childKey: "toolu_bg", name: "Watch the build", status: "running", description: "Explore", summary: "Running Bash" },
       { kind: "child", childKey: "toolu_bg", name: "Watch the build", status: "done", description: "Explore" },
     ]);

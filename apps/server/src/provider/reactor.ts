@@ -17,6 +17,7 @@ import { isUsageLimitError } from "../orchestration/limits.ts";
 import { attachmentFooter } from "../workspace/attachments.ts";
 import { activityKey, mergeActivity } from "./activities.ts";
 import { inlinePrompt, planHandoffDelivery, type DeliveryPlan } from "./handoffDelivery.ts";
+import { ownerChildRow, rememberChild } from "./children.ts";
 import { dismissHarnessTurn, HarnessTurnQueue, SteerRetargets } from "./harnessTurns.ts";
 import { instanceIdOf, type HarnessTurn, type SessionDirectory } from "./sessions.ts";
 
@@ -28,7 +29,7 @@ interface ThreadState {
   /** `${turnId}:${messageKey}` -> message id, so deltas assemble into one message */
   messageIds: Map<string, string>;
   /**
-   * childKey -> the sub-agent's row and the turn it was launched in, kept across turns: a
+   * childKey (and `task:<taskId>`) -> the sub-agent's row and the turn it was launched in, kept across turns: a
    * background sub-agent reports in a later (harness-initiated) turn, and its row must settle
    * in place rather than appear twice. Its own tool rows join that turn too.
    */
@@ -210,7 +211,7 @@ export class ProviderReactor {
   #idleTurnOf(threadId: string, state: ThreadState, event: NormalizedEvent): string | undefined {
     if (event.type === "activity") {
       const activity = event.activity;
-      const owner = activity.kind === "child" ? state.children.get(activity.childKey) : activity.parentToolUseId ? state.children.get(activity.parentToolUseId) : undefined;
+      const owner = ownerChildRow(state.children, this.#engine.getModel(), threadId, activity);
       if (owner !== undefined) return owner.turnId;
     }
     return this.#engine.getModel().threads[threadId]?.latestTurnId;
@@ -669,15 +670,16 @@ export class ProviderReactor {
         // scoped to the turn: Codex request ids restart at 0 per process, tool ids may repeat
         const native = activityKey(event.activity);
         const key = native === undefined ? undefined : `${turnId}:${native}`;
-        const child = event.activity.kind === "child" ? state.children.get(event.activity.childKey) : undefined;
-        const parentKey = event.activity.kind === "child" ? undefined : event.activity.parentToolUseId ?? undefined;
-        const parent = parentKey === undefined ? undefined : state.children.get(parentKey);
+        // a restart empties state.children: the lookup falls back to the thread's timeline
+        const owner = ownerChildRow(state.children, this.#engine.getModel(), threadId, event.activity);
+        const child = event.activity.kind === "child" ? owner : undefined;
+        const parent = event.activity.kind === "child" ? undefined : owner;
         let id = event.activity.id ?? child?.id ?? (key !== undefined ? state.activityIds.get(key) : undefined);
         id ??= this.#newId();
         if (key !== undefined) state.activityIds.set(key, id);
         // a child settling later lands on its own row and turn; its tool rows follow it
         const ownerTurnId = child?.turnId ?? parent?.turnId ?? turnId;
-        if (event.activity.kind === "child" && child === undefined) state.children.set(event.activity.childKey, { id, turnId });
+        if (event.activity.kind === "child") rememberChild(state.children, event.activity.childKey, event.activity.taskId, child ?? { id, turnId });
         const at = this.#now();
         const previous = this.#engine.getModel().activities[id];
         const activity = mergeActivity(previous, event.activity, { id, threadId, turnId: ownerTurnId, createdAt: at, updatedAt: at });

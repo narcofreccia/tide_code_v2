@@ -161,6 +161,30 @@ describe("ClaudeSession harness-initiated turns", () => {
     expect(h.queries).toHaveLength(1);
   });
 
+  it("a report arriving after the query was reset still settles the launching row (by tool_use_id and taskId)", async () => {
+    const h = harness();
+    const [first, second] = runs();
+    const launched = await userTurn(h, "spin up some subagents", first!);
+    // the placeholder result names the agent id the later task-notification reports under
+    expect(launched).toContainEqual({ type: "activity", activity: expect.objectContaining({ kind: "child", childKey: PARENT, taskId: "afc30cd96551cf947", status: "running" }) });
+
+    // the CLI stream ends between turns: the query is reset with a fresh normalizer
+    const old = h.query();
+    old.messages.close();
+    while (!h.idle.some((event) => event.type === "activity" && event.activity.kind === "child" && event.activity.status === "error")) await tick();
+
+    await userTurn(h, "carry on", [{ type: "result", subtype: "success", session_id: "s", is_error: false, usage: {} } as ClaudeMessage]);
+    expect(h.query()).not.toBe(old);
+    h.query().push(...second!);
+    const turn = await h.nextHarnessTurn();
+    expect(turn.reason).toBe('sub-agent "Audit feature gaps" reported');
+    const events = await collect(turn.events);
+    expect(events[0]).toMatchObject({
+      type: "activity",
+      activity: { kind: "child", childKey: PARENT, taskId: "afc30cd96551cf947", status: "done", name: "Audit feature gaps", summary: "TideReel: feature gaps for a solo short-form creator" },
+    });
+  });
+
   it("hasBackgroundWork stays true until the last backgrounded child has reported", async () => {
     const h = harness();
     const [first, second] = runs();
