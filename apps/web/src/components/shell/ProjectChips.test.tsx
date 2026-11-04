@@ -1,5 +1,5 @@
 import { afterEach, describe, expect, it } from "vitest";
-import { cleanup, fireEvent, render, screen, within } from "@testing-library/react";
+import { act, cleanup, fireEvent, render, screen, within } from "@testing-library/react";
 import { Rail } from "./Rail.tsx";
 import { attachFakeStore, makeThread, modelWith, resetUi } from "../../testHarness.ts";
 import { useUi } from "../../state/ui.ts";
@@ -7,6 +7,7 @@ import { useUi } from "../../state/ui.ts";
 afterEach(() => {
   cleanup();
   resetUi();
+  useUi.setState({ projectFilter: [] });
 });
 
 const project = (id: string, title: string) => ({ id, title, rootPath: `/src/${id}`, createdAt: 1, updatedAt: 1 });
@@ -58,5 +59,45 @@ describe("ProjectChips", () => {
     fireEvent.click(screen.getByText("All"));
     expect(useUi.getState().selectedProjectId).toBeNull();
     expect(screen.getByText("Tide work")).toBeDefined();
+  });
+
+  it("cmd-click toggles a project into the filter; a plain click is exclusive", () => {
+    attachFakeStore(
+      modelWith({
+        projects: { p1: project("p1", "Tide"), p2: project("p2", "Atlas"), p3: project("p3", "Zed") },
+        threads: { t1: makeThread("t1", { projectId: "p1", title: "Tide work" }), t2: makeThread("t2", { projectId: "p2", title: "Atlas work" }), t3: makeThread("t3", { projectId: "p3", title: "Zed work" }) },
+      }),
+    );
+    render(<Rail />);
+    fireEvent.click(screen.getByText("Atlas"));
+    fireEvent.click(screen.getByText("Tide"), { metaKey: true });
+    expect(useUi.getState().projectFilter).toEqual(["p2", "p1"]);
+    expect(useUi.getState().selectedProjectId).toBeNull();
+    expect(screen.queryByText("Zed work")).toBeNull();
+    expect(screen.getByText("Tide work")).toBeDefined();
+    expect(screen.getByText("Atlas work")).toBeDefined();
+    fireEvent.click(screen.getByText("Atlas"), { ctrlKey: true });
+    expect(useUi.getState().selectedProjectId).toBe("p1");
+    fireEvent.click(screen.getByText("Zed"));
+    expect(useUi.getState().projectFilter).toEqual(["p3"]);
+    fireEvent.click(screen.getByText("All"));
+    expect(useUi.getState().projectFilter).toEqual([]);
+  });
+
+  it("lists pinned projects first with a pin, and the menu pins / unpins", async () => {
+    const fake = attachFakeStore(
+      modelWith({
+        projects: { p1: project("p1", "Atlas"), p2: { ...project("p2", "Zed"), pinned: true } },
+        threads: { t1: makeThread("t1", { projectId: "p1" }) },
+      }),
+    );
+    render(<Rail />);
+    const chips = within(screen.getByRole("list", { name: "Projects" }));
+    const names = chips.getAllByRole("listitem").map((li) => li.querySelector("button")?.textContent);
+    expect(names[1]).toContain("Zed");
+    expect(document.querySelector("[data-chip-pinned]")).not.toBeNull();
+    fireEvent.click(screen.getByRole("button", { name: "Actions for Zed" }));
+    await act(async () => fireEvent.click(screen.getByRole("menuitem", { name: "Unpin" })));
+    expect(fake.dispatch).toHaveBeenCalledWith(expect.objectContaining({ type: "project.update", projectId: "p2", pinned: false }));
   });
 });

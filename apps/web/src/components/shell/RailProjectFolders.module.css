@@ -1,0 +1,42 @@
+.folder { display: flex; flex-direction: column; }
+.head { display: flex; align-items: center; padding: 0 var(--sp-1); }
+.toggle {
+  flex: 1;
+  min-width: 0;
+  display: flex;
+  align-items: center;
+  gap: var(--sp-1);
+  height: 24px;
+  padding: 0 var(--sp-1);
+  border: 0;
+  border-radius: var(--radius-sm);
+  background: transparent;
+  color: var(--text-2);
+  cursor: pointer;
+}
+.toggle:hover { color: var(--text); }
+.icon { display: inline-flex; }
+.icon > * { width: 14px; height: 14px; }
+.title { overflow: hidden; text-overflow: ellipsis; white-space: nowrap; font-size: var(--fs-sm); font-weight: var(--fw-semibold); }
+.pin { color: var(--muted); display: inline-flex; }
+.count { margin-left: auto; color: var(--muted); font-size: var(--fs-xs); font-variant-numeric: tabular-nums; }
+.dot { width: 6px; height: 6px; border-radius: 50%; background: var(--st-needs); }
+.running { display: inline-flex; transform: scale(0.75); }
+.more {
+  display: none;
+  align-items: center;
+  justify-content: center;
+  width: 20px;
+  height: 20px;
+  padding: 0;
+  border: 0;
+  border-radius: var(--radius-sm);
+  background: transparent;
+  color: var(--muted);
+  cursor: pointer;
+}
+.head:hover .more,
+.head:focus-within .more { display: inline-flex; }
+.more:hover { color: var(--text); background: var(--surface-hover); }
+.list { list-style: none; margin: 0; padding: 0; }
+.pinned { display: flex; flex-direction: column; }

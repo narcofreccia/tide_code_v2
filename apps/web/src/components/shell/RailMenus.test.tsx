@@ -207,6 +207,7 @@ describe("rail project menu", () => {
     expect(within(menu).getAllByRole("menuitem").map((n) => n.textContent)).toEqual([
       "New thread…",
       "New Experts session…",
+      "Pin",
       "Rename…",
       "Project icon…",
       "Linked repositories…",

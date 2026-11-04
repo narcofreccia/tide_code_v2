@@ -50,6 +50,8 @@ export interface NewThreadRequest {
 interface UiState {
   view: View;
   selectedProjectId: string | null;
+  /** the rail's project filter (empty = All); `selectedProjectId` mirrors it when exactly one is chosen */
+  projectFilter: string[];
   selectedThreadId: string | null;
   /** the Experts session whose board fills the Thread column (view === "experts") */
   selectedExpertsSessionId: string | null;
@@ -94,6 +96,9 @@ interface UiState {
   /** the view Settings was opened from, so Esc goes back */
   settingsReturnTo: View;
   selectProject: (projectId: string | null) => void;
+  /** adds or removes one project from the filter (⌘-click on a chip) */
+  toggleProjectFilter: (projectId: string) => void;
+  clearProjectFilter: () => void;
   selectThread: (threadId: string | null) => void;
   selectExpertsSession: (sessionId: string | null) => void;
   closeExperts: () => void;
@@ -143,6 +148,7 @@ export const useUi = create<UiState>()(
     (set) => ({
       view: "mission",
       selectedProjectId: null,
+      projectFilter: [],
       selectedThreadId: null,
       selectedExpertsSessionId: null,
       expertsReturnTo: "mission",
@@ -167,7 +173,16 @@ export const useUi = create<UiState>()(
       fileListCollapsed: false,
       settingsSection: "providers",
       settingsReturnTo: "mission",
-      selectProject: (selectedProjectId) => set({ selectedProjectId }),
+      selectProject: (selectedProjectId) =>
+        set({ selectedProjectId, projectFilter: selectedProjectId === null ? [] : [selectedProjectId] }),
+      toggleProjectFilter: (projectId) =>
+        set((s) => {
+          const projectFilter = s.projectFilter.includes(projectId)
+            ? s.projectFilter.filter((id) => id !== projectId)
+            : [...s.projectFilter, projectId];
+          return { projectFilter, selectedProjectId: projectFilter.length === 1 ? (projectFilter[0] ?? null) : null };
+        }),
+      clearProjectFilter: () => set({ projectFilter: [], selectedProjectId: null }),
       selectThread: (selectedThreadId) =>
         set(selectedThreadId ? { selectedThreadId, view: "thread" } : { selectedThreadId: null, view: "mission" }),
       selectExpertsSession: (selectedExpertsSessionId) =>

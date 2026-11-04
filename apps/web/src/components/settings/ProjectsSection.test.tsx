@@ -40,6 +40,13 @@ describe("Settings › Projects", () => {
     expect(screen.queryByText("Old app")).toBeNull();
   });
 
+  it("pins a project from its menu", async () => {
+    const fake = setup();
+    openMenu("Tide");
+    await act(async () => fireEvent.click(screen.getByRole("menuitem", { name: "Pin" })));
+    expect(fake.dispatch).toHaveBeenCalledWith(expect.objectContaining({ type: "project.update", projectId: "p1", pinned: true }));
+  });
+
   it("archives with an Undo toast that unarchives", async () => {
     const fake = setup();
     openMenu("Tide");

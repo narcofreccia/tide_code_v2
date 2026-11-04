@@ -16,7 +16,7 @@ export const RAIL_GROUP_LABELS: Record<RailGroupKey, string> = {
 };
 
 /** Settled and Archived start folded; the user's choice then sticks (see railGroupState). */
-export const COLLAPSED_BY_DEFAULT: ReadonlySet<RailGroupKey> = new Set(["settled", "archived"]);
+export const COLLAPSED_BY_DEFAULT: ReadonlySet<string> = new Set(["settled", "archived"]);
 
 export interface RailGroup {
   key: RailGroupKey;

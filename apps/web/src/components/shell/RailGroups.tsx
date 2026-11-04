@@ -7,7 +7,7 @@ import { Icon } from "../ui/Icon.tsx";
 import { StateGlyph } from "../ui/StatusGlyph.tsx";
 import { ExpertsGroup } from "./ExpertsGroup.tsx";
 import { RailThreadRow } from "./RailThreadRow.tsx";
-import { RAIL_GROUP_LABELS } from "./railGroupModel.ts";
+import { RAIL_GROUP_LABELS, type RailGroupKey } from "./railGroupModel.ts";
 import { isGroupCollapsed, useGroupFolds } from "./railGroupState.ts";
 import { useRailFlip } from "./railMotion.ts";
 import { useRailGroups, type RailGroupView } from "./useRailGroups.ts";
@@ -57,7 +57,16 @@ const GroupBody = memo(function GroupBody({
  * folds its group, and the fold is remembered. It re-renders only when the groups'
  * inputs change (see `useRailGroups`), never on streaming text.
  */
-export function RailGroups({ projectIds, showProject }: { projectIds: readonly string[]; showProject: boolean }) {
+export function RailGroups({
+  projectIds,
+  showProject,
+  only,
+}: {
+  projectIds: readonly string[];
+  showProject: boolean;
+  /** draw just these groups (project mode keeps Snoozed / Settled / Archived here) */
+  only?: readonly RailGroupKey[];
+}) {
   const now = useTicker(60_000);
   const workingSection = useServerSettings((s) => s.settings.inbox.workingSection);
   const { folds, toggle } = useGroupFolds();
@@ -77,6 +86,7 @@ export function RailGroups({ projectIds, showProject }: { projectIds: readonly s
     <div ref={rootRef} className={styles.groups}>
       {views.map((view) => {
         const { group } = view;
+        if (only !== undefined && !only.includes(group.key)) return null;
         const count = group.threads.length;
         if (count === 0 && group.sessions.length === 0) return null;
         const label = RAIL_GROUP_LABELS[group.key];

@@ -15,6 +15,7 @@ import {
   unarchiveThread,
   unsettleThread,
 } from "../../lib/threadActions.ts";
+import { setProjectPinned } from "../../lib/projectActions.ts";
 import { openThreadTerminal } from "../../lib/openInTerminal.ts";
 import { snoozeThread, tomorrowMorning } from "../../lib/turnActions.ts";
 import { useUi } from "../../state/ui.ts";
@@ -125,12 +126,22 @@ export function threadMenu(
   ];
 }
 
+function pinItem(project: Project): MenuItem {
+  return { label: project.pinned ? "Unpin" : "Pin", onSelect: () => setProjectPinned(project.id, project.pinned !== true) };
+}
+
+/** Right-click / ⋯ on a rail project folder header. */
+export function projectFolderMenu(project: Project): MenuItem[] {
+  return [{ label: "New thread in project", onSelect: () => useUi.getState().openNewThread({ projectId: project.id }) }, pinItem(project)];
+}
+
 /** Right-click / ⋯ on a project row. */
 export function projectMenu(project: Project): MenuItem[] {
   const ui = useUi.getState();
   return [
     { label: "New thread…", onSelect: () => ui.openNewThread({ projectId: project.id }) },
     { label: "New Experts session…", onSelect: () => ui.setNewExpertsProject(project.id) },
+    pinItem(project),
     { label: "Rename…", onSelect: () => ui.setProjectDialog({ kind: "rename", projectId: project.id }) },
     { label: "Project icon…", onSelect: () => ui.setProjectDialog({ kind: "icon", projectId: project.id }) },
     { label: "Linked repositories…", onSelect: () => ui.setLinksProject(project.id) },

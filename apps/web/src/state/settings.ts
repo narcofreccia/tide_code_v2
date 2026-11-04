@@ -5,6 +5,7 @@ import { DEFAULT_FONTS, applyCustomTheme, applyFonts, type CustomTheme, type Fon
 
 export type Theme = "system" | "dark" | "light";
 export type Density = "comfortable" | "compact";
+export type RailGroupBy = "status" | "project";
 
 export const THEMES: Theme[] = ["system", "dark", "light"];
 export const DENSITIES: Density[] = ["comfortable", "compact"];
@@ -15,6 +16,9 @@ interface SettingsState {
   /** an imported VS Code theme laid over the stock tokens; per device */
   customTheme?: CustomTheme;
   fonts: FontSettings;
+  /** the rail's grouping: by status (default) or one folder per project */
+  railGroupBy: RailGroupBy;
+  setRailGroupBy: (by: RailGroupBy) => void;
   setTheme: (theme: Theme) => void;
   setDensity: (density: Density) => void;
   setCustomTheme: (theme: CustomTheme | undefined) => void;
@@ -33,6 +37,8 @@ export const useSettings = create<SettingsState>()(
       theme: "dark",
       density: "comfortable",
       fonts: DEFAULT_FONTS,
+      railGroupBy: "status",
+      setRailGroupBy: (railGroupBy) => set({ railGroupBy }),
       setTheme: (theme) => set({ theme }),
       setDensity: (density) => set({ density }),
       setCustomTheme: (customTheme) =>
@@ -53,6 +59,7 @@ export const useSettings = create<SettingsState>()(
         theme: s.theme,
         density: s.density,
         fonts: s.fonts,
+        railGroupBy: s.railGroupBy,
         ...(s.customTheme ? { customTheme: s.customTheme } : {}),
       }), },
   ),
@@ -99,6 +106,6 @@ useSettings.subscribe(sync);
 
 export function resetSettings(): void {
   const { customTheme: _drop, ...rest } = useSettings.getState();
-  useSettings.setState({ ...rest, theme: "dark", density: "comfortable", fonts: DEFAULT_FONTS }, true);
+  useSettings.setState({ ...rest, theme: "dark", density: "comfortable", fonts: DEFAULT_FONTS, railGroupBy: "status" }, true);
   resetServerSettings();
 }

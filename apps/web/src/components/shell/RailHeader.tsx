@@ -1,5 +1,6 @@
 import { useState } from "react";
 import type { Project } from "@tide/contracts";
+import { useSettings } from "../../state/settings.ts";
 import { useUi } from "../../state/ui.ts";
 import { Icon } from "../ui/Icon.tsx";
 import { ContextMenu, type MenuItem, type MenuPosition } from "../ui/Menu.tsx";
@@ -34,8 +35,18 @@ export function newMenuItems(projects: readonly Project[], scoped: Project | und
 /** Search field and the one `New` split button: the main half starts a thread, the chevron offers the rest. */
 export function RailHeader({ projects, scoped }: { projects: readonly Project[]; scoped: Project | undefined }) {
   const [menu, setMenu] = useState<{ at: MenuPosition; items: MenuItem[] } | undefined>(undefined);
-  const items = newMenuItems(projects, scoped);
-  const thread = items[0];
+  const groupBy = useSettings((s) => s.railGroupBy);
+  const newItems = newMenuItems(projects, scoped);
+  const items: MenuItem[] = [
+    ...newItems,
+    {
+      label: "Group by project",
+      separatorBefore: true,
+      checked: groupBy === "project",
+      onSelect: () => useSettings.getState().setRailGroupBy(groupBy === "project" ? "status" : "project"),
+    },
+  ];
+  const thread = newItems[0];
   const openAt = (el: HTMLElement, list: MenuItem[]): void => {
     const rect = el.getBoundingClientRect();
     setMenu({ at: { x: rect.left, y: rect.bottom }, items: list });

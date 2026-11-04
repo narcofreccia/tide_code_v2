@@ -60,3 +60,4 @@
 .chip:hover .more,
 .chip:focus-within .more { display: inline-flex; }
 .more:hover { color: var(--text); background: var(--surface-hover); }
+.pin { display: inline-flex; color: var(--muted); }

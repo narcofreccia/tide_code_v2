@@ -1,6 +1,7 @@
 import { useState } from "react";
 import { selectProjects, selectThreadsByProject } from "@tide/client";
 import type { Project } from "@tide/contracts";
+import { pinnedFirst } from "../../lib/projectActions.ts";
 import { useModel } from "../../state/model.ts";
 import { useMultiEnv } from "../fleet/envView.ts";
 import { AddProjectForm } from "../shell/AddProjectForm.tsx";
@@ -25,7 +26,7 @@ export function ProjectsSection() {
   const [adding, setAdding] = useState(false);
   const [iconFor, setIconFor] = useState<string | null>(null);
   const [runFor, setRunFor] = useState<string | null>(null);
-  const live = selectProjects(model);
+  const live = pinnedFirst(selectProjects(model));
   const archived = Object.values(model.projects)
     .filter((p): p is Project & { archivedAt: number } => p.archivedAt !== undefined)
     .sort((a, b) => b.archivedAt - a.archivedAt || a.title.localeCompare(b.title));

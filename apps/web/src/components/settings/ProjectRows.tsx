@@ -1,7 +1,7 @@
 import { useState } from "react";
 import type { Project } from "@tide/contracts";
 import { plural } from "../../lib/format.ts";
-import { archiveProject, renameProject, unarchiveProject } from "../../lib/projectActions.ts";
+import { archiveProject, renameProject, setProjectPinned, unarchiveProject } from "../../lib/projectActions.ts";
 import { relativeTime } from "../../lib/relativeTime.ts";
 import { copyText } from "../../lib/threadActions.ts";
 import { envOfProject } from "../../state/environments.ts";
@@ -72,6 +72,7 @@ export function ProjectRow({
   const [renaming, setRenaming] = useState(false);
   const [menu, setMenu] = useState<MenuPosition | undefined>(undefined);
   const items: MenuItem[] = [
+    { label: project.pinned ? "Unpin" : "Pin", onSelect: () => setProjectPinned(project.id, project.pinned !== true) },
     { label: "Rename", onSelect: () => setRenaming(true) },
     { label: "Icon…", onSelect: onIcon },
     { label: "Linked repositories…", onSelect: () => useUi.getState().setLinksProject(project.id) },
@@ -89,6 +90,7 @@ export function ProjectRow({
           ) : (
             <span className={styles.name}>{project.title}</span>
           )}
+          {project.pinned === true ? <Icon name="pin" size={12} /> : null}
           {multiEnv ? <EnvTag envId={envOfProject(project.id)} /> : null}
         </span>
       }

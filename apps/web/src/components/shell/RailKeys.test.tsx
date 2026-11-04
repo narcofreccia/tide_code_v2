@@ -7,6 +7,7 @@ import { ToastHost } from "../ui/Toast.tsx";
 import { attachFakeStore, makeThread, modelWith, resetUi } from "../../testHarness.ts";
 import { defaultUserSettings, useServerSettings } from "../../state/serverSettings.ts";
 import { clearRailSelection, useRailSelection } from "../../state/railSelection.ts";
+import { useSettings } from "../../state/settings.ts";
 import { useUi } from "../../state/ui.ts";
 
 afterEach(() => {
@@ -124,5 +125,34 @@ describe("rail keys", () => {
     fireEvent.keyDown(input, { key: "e" });
     expect(document.activeElement).toBe(input);
     expect(fake.dispatch).not.toHaveBeenCalled();
+  });
+});
+
+describe("j/k across project folders", () => {
+  it("walks rows across folders and skips a collapsed one", () => {
+    useSettings.setState({ railGroupBy: "project" });
+    attachFakeStore(
+      modelWith({
+        projects: { p1: { ...project, id: "p1", title: "Atlas" }, p2: { ...project, id: "p2", title: "Mid" }, p3: { ...project, id: "p3", title: "Tide" } },
+        threads: {
+          a: makeThread("a", { projectId: "p1" }),
+          b: makeThread("b", { projectId: "p2" }),
+          c: makeThread("c", { projectId: "p3" }),
+        },
+      }),
+    );
+    render(<Rail />);
+    key("j");
+    expect(focusedThread()).toBe("a");
+    key("j");
+    expect(focusedThread()).toBe("b");
+    key("j");
+    expect(focusedThread()).toBe("c");
+    cleanup();
+    window.localStorage.setItem("tide.rail.groups", JSON.stringify({ "project:p2": true }));
+    render(<Rail />);
+    key("j");
+    key("j");
+    expect(focusedThread()).toBe("c");
   });
 });

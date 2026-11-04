@@ -43,6 +43,18 @@ describe("Settings › Appearance", () => {
   });
 });
 
+describe("Settings › Appearance › rail grouping", () => {
+  it("toggles grouping the rail by project", () => {
+    render(<AppearanceSection />);
+    const toggle = screen.getByRole("switch", { name: "Group rail by project" });
+    expect(useSettings.getState().railGroupBy).toBe("status");
+    fireEvent.click(toggle);
+    expect(useSettings.getState().railGroupBy).toBe("project");
+    fireEvent.click(toggle);
+    expect(useSettings.getState().railGroupBy).toBe("status");
+  });
+});
+
 describe("Settings › Appearance › custom theme and fonts", () => {
   it("imports a VS Code theme, previews it, applies and clears it", async () => {
     render(<AppearanceSection />);

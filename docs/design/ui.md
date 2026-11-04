@@ -25,7 +25,7 @@ Rail toggle `⌘B`. Terminal drawer `` ⌘` ``. Palette `⌘K`.
 ### Rail anatomy
 
 **Projects are a filter, not a tree.** The rail is one flat list of threads for the current scope
-(All, or one project); there is no project node to expand.
+(All, or one project); there is no project node to expand. Chips filter: click is exclusive, ⌘/ctrl-click adds or removes a project, pinned projects lead. An optional per-device mode (Settings › Appearance, or the New menu's chevron) groups the rail by project instead: pinned threads, one folder per project, then Snoozed · Settled · Archived.
 
 1. **Header**: search field (`search` icon, "Search threads"; `/` focuses it, Esc clears) and one `New`
    split button: the main half starts a thread in the scoped project (or asks which project when the

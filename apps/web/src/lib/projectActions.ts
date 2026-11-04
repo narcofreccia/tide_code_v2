@@ -12,6 +12,16 @@ export function renameProject(projectId: string, title: string): void {
   dispatchOrToast("Renaming the project", { type: "project.update", projectId, title });
 }
 
+/** Pinned projects lead the chips, Settings › Projects and the rail's folders. */
+export function setProjectPinned(projectId: string, pinned: boolean): void {
+  dispatchOrToast(pinned ? "Pinning the project" : "Unpinning the project", { type: "project.update", projectId, pinned });
+}
+
+/** Pinned first, then by title: the order of chips, Settings rows and rail folders. */
+export function pinnedFirst<T extends Pick<Project, "pinned" | "title">>(projects: readonly T[]): T[] {
+  return [...projects].sort((a, b) => Number(b.pinned === true) - Number(a.pinned === true) || a.title.localeCompare(b.title));
+}
+
 /** Brings an archived project (and its threads) back into the rail and Mission Control. */
 export function unarchiveProject(projectId: string): void {
   dispatchOrToast("Restoring the project", { type: "project.unarchive", projectId });

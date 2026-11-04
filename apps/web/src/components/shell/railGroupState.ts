@@ -1,10 +1,11 @@
 import { useCallback, useState } from "react";
-import { COLLAPSED_BY_DEFAULT, type RailGroupKey } from "./railGroupModel.ts";
+import { COLLAPSED_BY_DEFAULT } from "./railGroupModel.ts";
 
 /** Which rail groups the user folded or opened, persisted per group in localStorage. */
 export const RAIL_GROUPS_KEY = "tide.rail.groups";
 
-type Folds = Partial<Record<RailGroupKey, boolean>>;
+/** keyed by a `RailGroupKey` or `project:<id>` */
+type Folds = Record<string, boolean | undefined>;
 
 function read(): Folds {
   try {
@@ -16,14 +17,14 @@ function read(): Folds {
   }
 }
 
-export function isGroupCollapsed(folds: Folds, key: RailGroupKey): boolean {
+export function isGroupCollapsed(folds: Folds, key: string): boolean {
   return folds[key] ?? COLLAPSED_BY_DEFAULT.has(key);
 }
 
 /** The rail's folds: read once on mount, written through on every toggle. */
-export function useGroupFolds(): { folds: Folds; toggle: (key: RailGroupKey) => void } {
+export function useGroupFolds(): { folds: Folds; toggle: (key: string) => void } {
   const [folds, setFolds] = useState<Folds>(read);
-  const toggle = useCallback((key: RailGroupKey) => {
+  const toggle = useCallback((key: string) => {
     setFolds((current) => {
       const next = { ...current, [key]: !isGroupCollapsed(current, key) };
       try {
