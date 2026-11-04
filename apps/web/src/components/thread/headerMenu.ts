@@ -8,6 +8,7 @@ import { useUi } from "../../state/ui.ts";
 import type { MenuItem } from "../ui/Menu.tsx";
 import { copyItems, latestSettledTurnId, settleItems } from "../shell/railMenus.ts";
 import { addressThreadPrComments } from "../prs/prActions.ts";
+import { startSideChat } from "./useSideChat.ts";
 
 /** "Link a PR…" always (relinking replaces it); "Address review comments" when the open PR has comments. */
 export function prItems(thread: Thread): MenuItem[] {
@@ -79,6 +80,8 @@ export function headerMenu(
   return [
     ...folded,
     { label: "New child thread", onSelect: () => createChild(thread) },
+    // R16: side chats do not nest
+    ...(thread.role === "side" ? [] : [{ label: "Side chat…", hint: "/side", onSelect: () => startSideChat(thread.id) }]),
     {
       label: "Roll back last turn…",
       disabled: lastTurn === undefined || thread.rollback?.status === "rolling",

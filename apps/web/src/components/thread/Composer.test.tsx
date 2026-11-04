@@ -1,4 +1,6 @@
 import { afterEach, describe, expect, it } from "vitest";
+import { activeTab } from "../../state/workbench.ts";
+import { COMPOSE_EVENT } from "../../lib/cite.ts";
 import { act, cleanup, fireEvent, render, screen, waitFor } from "@testing-library/react";
 import { Composer } from "./Composer.tsx";
 import { attachFakeStore, makeThread, modelWith, resetUi } from "../../testHarness.ts";
@@ -298,5 +300,69 @@ describe("Composer drafts", () => {
     setDraft("t1", { text: "from store" });
     render(<Composer thread={makeThread("t1")} />);
     expect((screen.getByLabelText("Message") as HTMLTextAreaElement).value).toBe("from store");
+  });
+});
+
+describe("Composer / R16 side chats", () => {
+  const side = makeThread("s1", { title: "Side: t1", role: "side", parentThreadId: "t1" });
+
+  it("`/side x` asks a side chat instead of sending to this thread", async () => {
+    const fake = attachFakeStore(modelWith({}));
+    fake.dispatch.mockImplementation(async (command: { type: string }) =>
+      command.type === "thread.side" ? { seq: 1, events: [{ seq: 1, ts: 1, event: { type: "thread.created", thread: side } }] } : { seq: 0, events: [] },
+    );
+    render(<Composer thread={makeThread("t1")} />);
+    const input = screen.getByLabelText("Message") as HTMLTextAreaElement;
+    fireEvent.change(input, { target: { value: "/side why is X?" } });
+    fireEvent.keyDown(input, { key: "Enter" });
+    await waitFor(() => expect(fake.dispatch).toHaveBeenCalledTimes(2));
+    expect(fake.dispatch.mock.calls[0]?.[0]).toMatchObject({ type: "thread.side", threadId: "t1" });
+    expect(fake.dispatch.mock.calls[1]?.[0]).toMatchObject({ type: "turn.request", threadId: "s1", text: "why is X?" });
+    expect(fake.dispatch).not.toHaveBeenCalledWith(expect.objectContaining({ type: "turn.request", threadId: "t1" }));
+    expect(input.value).toBe("");
+    expect(activeTab("t1")).toEqual({ kind: "side", threadId: "s1" });
+  });
+
+  it("a side composer refuses to nest side chats", () => {
+    const fake = attachFakeStore(modelWith({}));
+    render(<Composer thread={side} scope="side" />);
+    const input = screen.getByLabelText("Message") as HTMLTextAreaElement;
+    fireEvent.change(input, { target: { value: "/btw nested?" } });
+    fireEvent.keyDown(input, { key: "Enter" });
+    expect(fake.dispatch).not.toHaveBeenCalled();
+    expect(useToasts.getState().toasts.map((t) => t.text)).toContain("Side chats do not nest: ask in the main thread");
+    expect(input.value).toBe("/btw nested?");
+  });
+
+  it("takes only the compose events meant for it", () => {
+    attachFakeStore(modelWith({}));
+    render(
+      <>
+        <Composer thread={makeThread("t1")} />
+        <Composer thread={side} scope="side" />
+      </>,
+    );
+    const [main, sideInput] = screen.getAllByLabelText("Message") as HTMLTextAreaElement[];
+    act(() => {
+      window.dispatchEvent(new CustomEvent(COMPOSE_EVENT, { detail: { text: "unscoped", mode: "replace" } }));
+    });
+    expect(main?.value).toBe("unscoped");
+    expect(sideInput?.value).toBe("");
+    act(() => {
+      window.dispatchEvent(new CustomEvent(COMPOSE_EVENT, { detail: { text: "for the side", mode: "replace", threadId: "s1" } }));
+    });
+    expect(sideInput?.value).toBe("for the side");
+    expect(main?.value).toBe("unscoped");
+  });
+
+  it("a side composer owns Esc only while it holds the focus", () => {
+    const fake = attachFakeStore(modelWith({}));
+    render(<Composer thread={{ ...side, status: "running" }} scope="side" />);
+    fireEvent.keyDown(window, { key: "Escape" });
+    expect(fake.dispatch).not.toHaveBeenCalled();
+    const input = screen.getByLabelText("Message");
+    input.focus();
+    fireEvent.keyDown(input, { key: "Escape" });
+    expect(fake.dispatch).toHaveBeenCalledWith({ type: "turn.interrupt", threadId: "s1" });
   });
 });

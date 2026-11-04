@@ -1,6 +1,6 @@
-import { useState } from "react";
+import { useMemo, useState } from "react";
 import type { SlashCommandInfo, Thread } from "@tide/contracts";
-import { applySlash, commandName, filterCommands, findSlashQuery, SOURCE_LABELS, unknownCommand, type SlashQuery } from "../../lib/slash.ts";
+import { applySlash, commandName, filterCommands, findSlashQuery, SOURCE_LABELS, TIDE_COMMANDS, unknownCommand, type SlashQuery } from "../../lib/slash.ts";
 import { providerIdOf } from "../../lib/vocab.ts";
 import { useSlashCommands } from "../../state/slashCommands.ts";
 import { ListPickerList, PickerNote } from "../ui/ListPicker.tsx";
@@ -25,12 +25,15 @@ export interface SlashState {
 /**
  * The composer's `/` picker state for a thread. `listsCommands` is the harness's
  * `caps.commands`: without it nothing is fetched and nothing is flagged — the
- * text goes through as typed.
+ * text goes through as typed. Tide's own commands (`/side`, `/btw`) lead the list
+ * unless `tideCommands` is off (a side chat's composer: side chats do not nest).
  */
-export function useSlash(thread: Thread, text: string, listsCommands: boolean): SlashState {
+export function useSlash(thread: Thread, text: string, listsCommands: boolean, tideCommands = true): SlashState {
   const [query, setQuery] = useState<SlashState["query"]>(undefined);
   const active = text.startsWith("/") || query !== undefined;
-  const { commands, loaded, loading } = useSlashCommands(thread.id, providerIdOf(thread), listsCommands, active);
+  const harness = useSlashCommands(thread.id, providerIdOf(thread), listsCommands, active);
+  const { loaded, loading } = harness;
+  const commands = useMemo(() => (tideCommands ? [...TIDE_COMMANDS, ...harness.commands] : harness.commands), [tideCommands, harness.commands]);
   const matches = query === undefined ? [] : filterCommands(commands, query.query);
   return {
     query,

@@ -8,6 +8,8 @@ export type ComposeMode = "replace" | "append";
 export interface ComposeDetail {
   text: string;
   mode: ComposeMode;
+  /** R16: only this thread's composer takes it; without one, the main composer does */
+  threadId?: string;
 }
 
 export const CITE_LIMIT = 2_000;
@@ -15,14 +17,20 @@ export const CITE_LIMIT = 2_000;
 export function readComposeDetail(detail: unknown): ComposeDetail | undefined {
   if (typeof detail === "string") return { text: detail, mode: "replace" };
   if (typeof detail !== "object" || detail === null) return undefined;
-  const { text, mode } = detail as { text?: unknown; mode?: unknown };
+  const { text, mode, threadId } = detail as { text?: unknown; mode?: unknown; threadId?: unknown };
   if (typeof text !== "string") return undefined;
-  return { text, mode: mode === "append" ? "append" : "replace" };
+  return { text, mode: mode === "append" ? "append" : "replace", ...(typeof threadId === "string" ? { threadId } : {}) };
 }
 
-/** Puts text in the composer (it does not send). */
-export function compose(text: string, mode: ComposeMode = "replace"): void {
-  window.dispatchEvent(new CustomEvent<ComposeDetail>(COMPOSE_EVENT, { detail: { text, mode } }));
+/** Whether a composer of `threadId` takes `detail`: its own thread's, or an unscoped one when it is the main composer. */
+export function composeIsFor(detail: ComposeDetail, threadId: string, main: boolean): boolean {
+  return detail.threadId === undefined ? main : detail.threadId === threadId;
+}
+
+/** Puts text in the composer (it does not send); `threadId` scopes it to that thread's composer. */
+export function compose(text: string, mode: ComposeMode = "replace", threadId?: string): void {
+  const detail: ComposeDetail = threadId === undefined ? { text, mode } : { text, mode, threadId };
+  window.dispatchEvent(new CustomEvent<ComposeDetail>(COMPOSE_EVENT, { detail }));
 }
 
 /** Appends after a blank line, or replaces. */

@@ -5,8 +5,6 @@ import type { Thread } from "@tide/contracts";
 import { interruptTurn } from "../../lib/threadActions.ts";
 import { useFollowUp } from "../../lib/followUp.ts";
 import { threadProviderStatus, useProviders, useThreadHarnessLabel } from "../../state/providers.ts";
-import { useUi } from "../../state/ui.ts";
-import { useWorkbench } from "../../state/workbench.ts";
 import { registerComposerFocus } from "../../lib/composerFocus.ts";
 import {
   THREAD_DRAG_TYPE,
@@ -19,7 +17,8 @@ import {
   threadMentionIds,
 } from "../../lib/mentions.ts";
 import { filesOf, splitFiles, transferHasFiles } from "../../lib/attachments.ts";
-import { COMPOSE_EVENT, applyCompose, readComposeDetail } from "../../lib/cite.ts";
+import { applyCompose } from "../../lib/cite.ts";
+import { interceptSide, useComposeEvent, useEscInterrupt, type ComposerScope } from "./composerScope.ts";
 import { Button } from "../ui/Button.tsx";
 import { Kbd } from "../ui/Kbd.tsx";
 import { AttachmentStrip, useAttachments } from "./Attachments.tsx";
@@ -39,39 +38,8 @@ import styles from "./Composer.module.css";
 const MIN_ROWS = 2;
 const MAX_ROWS = 12;
 
-/** Any layer that owns Escape ahead of the thread: dialog, popover, palette, picker. */
-function anOverlayIsOpen(): boolean {
-  const ui = useUi.getState();
-  if (
-    ui.paletteOpen ||
-    ui.threadDialog !== null ||
-    ui.projectDialog !== null ||
-    ui.newProjectOpen ||
-    ui.newThreadProjectId !== null ||
-    ui.linksProjectId !== null ||
-    ui.newExpertsProjectId !== null ||
-    useWorkbench.getState().quickOpen
-  ) {
-    return true;
-  }
-  // Popover panels and modals are portalled and both carry role="dialog"
-  return typeof document !== "undefined" && document.querySelector('[role="dialog"]') !== null;
-}
-
-/**
- * True while focus sits in the composer or anywhere else in the thread column.
- * Focus nowhere in particular counts too, so Esc still stops the turn before the
- * user has clicked anything; focus in the workbench or a side surface does not.
- */
-function threadColumnHasFocus(composer: HTMLElement | null): boolean {
-  if (typeof document === "undefined") return false;
-  const active = document.activeElement;
-  if (active === null || active === document.body) return true;
-  if (!(active instanceof Element)) return false;
-  return composer?.contains(active) === true || active.closest("[data-thread-column]") !== null;
-}
-
-export function Composer({ thread }: { thread: Thread }) {
+/** `scope="side"`: a side chat's composer in the workbench (R16; see composerScope.ts). */
+export function Composer({ thread, scope = "main" }: { thread: Thread; scope?: ComposerScope }) {
   const [mention, setMention] = useState<{ start: number; query: string; caret: number } | undefined>(undefined);
   const [cursor, setCursor] = useState(0);
   const input = useRef<HTMLTextAreaElement>(null);
@@ -92,10 +60,10 @@ export function Composer({ thread }: { thread: Thread }) {
   const interrupting = thread.interrupting === true;
   const matches = useMentionMatches(thread.id, mention?.query, thread.projectId);
   const listsCommands = status?.caps.commands === true;
-  const slash = useSlash(thread, text, listsCommands);
+  const slash = useSlash(thread, text, listsCommands, scope === "main");
   const harness = useThreadHarnessLabel(thread);
   const files = fileAttachments.files;
-  const { send, busy, uploading } = useComposerSend({
+  const { send: sendNow, busy, uploading } = useComposerSend({
     thread,
     text,
     images: attachments.images,
@@ -107,37 +75,20 @@ export function Composer({ thread }: { thread: Thread }) {
     },
   });
 
-  useEffect(() => registerComposerFocus(() => input.current?.focus()), []);
+  useEffect(() => (scope === "main" ? registerComposerFocus(() => input.current?.focus()) : undefined), [scope]);
 
-  // "Try an example", Cite and Quote fill the composer; they never send
-  useEffect(() => {
-    const onCompose = (e: Event): void => {
-      const detail = readComposeDetail((e as CustomEvent<unknown>).detail);
-      if (!detail) return;
-      const next = applyCompose(getDraft(thread.id)?.text ?? "", detail);
-      setText(next);
-      setMention(undefined);
-      slash.close();
-      placeCaret(next.length);
-    };
-    window.addEventListener(COMPOSE_EVENT, onCompose);
-    return () => window.removeEventListener(COMPOSE_EVENT, onCompose);
-  }, [thread.id, setText]);
+  useComposeEvent(thread.id, scope, (detail) => {
+    const next = applyCompose(getDraft(thread.id)?.text ?? "", detail);
+    setText(next);
+    setMention(undefined);
+    slash.close();
+    placeCaret(next.length);
+  });
+  useEscInterrupt(root, thread.id, scope, running && !interrupting);
 
-  // Esc is also "close" for dialogs, popovers, the palette and Settings; stopping
-  // the turn is only what it means while the thread column itself owns the focus.
-  useEffect(() => {
-    if (!running || interrupting) return undefined;
-    const onKey = (e: KeyboardEvent): void => {
-      if (e.key !== "Escape" || e.defaultPrevented) return;
-      if (anOverlayIsOpen()) return;
-      if (!threadColumnHasFocus(root.current)) return;
-      e.preventDefault();
-      interruptTurn(thread.id);
-    };
-    window.addEventListener("keydown", onKey);
-    return () => window.removeEventListener("keydown", onKey);
-  }, [running, interrupting, thread.id]);
+  const send = async (...args: Parameters<typeof sendNow>): Promise<void> => {
+    if (!interceptSide(thread, scope, text, attachments.images.length + files.length > 0, () => setText(""))) await sendNow(...args);
+  };
 
   /** Images ride inline when the harness takes them; everything else is uploaded on send. */
   const attach = (picked: File[]): void => {

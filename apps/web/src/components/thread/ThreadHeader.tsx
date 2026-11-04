@@ -7,6 +7,7 @@ import { useModel } from "../../state/model.ts";
 import { useUi } from "../../state/ui.ts";
 import { LimitedBadge, LineageChip, RollbackPill } from "./ThreadChips.tsx";
 import { DelegatedBy, DelegatesPopover } from "./Delegates.tsx";
+import { SideChatsPopover, selectSideChats } from "./SideChatsList.tsx";
 import { headerMenu } from "./headerMenu.ts";
 import { TeamStrip } from "./TeamStrip.tsx";
 import { ThreadTitle } from "./ThreadTitle.tsx";
@@ -87,7 +88,7 @@ export function ThreadHeader({ thread }: { thread: Thread }) {
   const state = threadStateKey(thread, now, background);
   const word = threadStateLabel(thread, now, background);
   const forkTurn = useModel((s) => selectLatestSettledTurnId(s.model, thread.id));
-  const delegates = useModel((s) => selectDelegates(s.model, thread.id).length);
+  const delegates = useModel((s) => selectDelegates(s.model, thread.id).length + selectSideChats(s.model, thread.id).length);
   const [menu, setMenu] = useState<MenuPosition | undefined>(undefined);
   const mainRef = useRef<HTMLDivElement>(null);
   const narrow = useNarrow(mainRef);
@@ -154,6 +155,7 @@ export function ThreadHeader({ thread }: { thread: Thread }) {
           <MergeGlyph thread={thread} />
           {thread.delegatedBy ? <DelegatedBy parentThreadId={thread.delegatedBy} /> : null}
           <DelegatesPopover threadId={thread.id} />
+          <SideChatsPopover threadId={thread.id} />
           <LineageChip thread={thread} />
           <LimitedBadge thread={thread} />
           <RollbackPill thread={thread} />

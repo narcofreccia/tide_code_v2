@@ -1,6 +1,7 @@
 import { afterEach, describe, expect, it, vi } from "vitest";
 import { act, cleanup, fireEvent, render, screen } from "@testing-library/react";
-import { resetUi } from "../../testHarness.ts";
+import { attachFakeStore, makeThread, modelWith, resetUi } from "../../testHarness.ts";
+import { openSideTab } from "../../state/workbench.ts";
 import { editDoc, useDocs } from "../../state/docs.ts";
 import { activeTab, openFileTab, setActiveTab, tabKey, threadTabs, useActiveTab, useThreadTabs } from "../../state/workbench.ts";
 import { TabStrip } from "./TabStrip.tsx";
@@ -114,5 +115,17 @@ describe("TabStrip", () => {
         HTMLElement.prototype.scrollIntoView = original;
       }
     });
+  });
+});
+
+describe("TabStrip / R16 side chats", () => {
+  it("labels a side tab with its thread's title; closing an unused one deletes it", () => {
+    const fake = attachFakeStore(modelWith({ threads: { s1: makeThread("s1", { title: "Side: Parent", role: "side", parentThreadId: "t1" }) } }));
+    openSideTab("t1", "s1");
+    render(<Harness />);
+    expect(screen.getAllByRole("tab").map((t) => t.textContent)).toEqual(["Changes", "⋯Side: Parent"]);
+    fireEvent.click(screen.getByRole("button", { name: "Close Side: Parent" }));
+    expect(fake.dispatch).toHaveBeenCalledWith({ type: "thread.delete", threadId: "s1" });
+    expect(screen.getAllByRole("tab")).toHaveLength(1);
   });
 });

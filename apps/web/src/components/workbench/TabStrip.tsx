@@ -1,5 +1,7 @@
 import { useEffect, useRef, useState } from "react";
 import { useIsDirty } from "../../state/docs.ts";
+import { useModel } from "../../state/model.ts";
+import { closeSideChat } from "../thread/useSideChat.ts";
 import { fileGlyph } from "../../lib/fileIcons.ts";
 import {
   closeTab,
@@ -20,6 +22,7 @@ function label(tab: WorkbenchTab): string {
   if (tab.kind === "search") return "Search";
   if (tab.kind === "experts") return "Board";
   if (tab.kind === "preview") return "Preview";
+  if (tab.kind === "side") return "Side chat";
   return tab.path.slice(tab.path.lastIndexOf("/") + 1);
 }
 
@@ -67,6 +70,31 @@ function FileTabButton({
         {dirty ? <span className={styles.dot} aria-label="unsaved changes" /> : null}
       </button>
       <Button variant="quiet" className={styles.close} aria-label={`Close ${label(tab)}`} onClick={() => closeTab(threadId, tab)}>
+        <Icon name="close" size={12} />
+      </Button>
+    </span>
+  );
+}
+
+/** R16: a side chat, labelled with its thread's title; closing an unused one deletes it. */
+function SideTabButton({ threadId, tab, active }: { threadId: string; tab: Extract<WorkbenchTab, { kind: "side" }>; active: boolean }) {
+  const title = useModel((s) => s.model.threads[tab.threadId]?.title) ?? label(tab);
+  return (
+    <span className={styles.tabWrap}>
+      <button
+        type="button"
+        role="tab"
+        aria-selected={active}
+        title={`Side chat: ${title}`}
+        className={`${styles.tab} ${active ? styles.active : ""}`}
+        onClick={() => setActiveTab(threadId, tab)}
+      >
+        <span className={styles.glyph} aria-hidden="true">
+          ⋯
+        </span>
+        {title}
+      </button>
+      <Button variant="quiet" className={styles.close} aria-label={`Close ${title}`} onClick={() => closeSideChat(threadId, tab.threadId)}>
         <Icon name="close" size={12} />
       </Button>
     </span>
@@ -121,6 +149,8 @@ export function TabStrip({
                 setDragging(null);
               }}
             />
+          ) : tab.kind === "side" ? (
+            <SideTabButton key={tabKey(tab)} threadId={threadId} tab={tab} active={tabKey(tab) === activeKey} />
           ) : (
             <span key={tabKey(tab)} className={styles.tabWrap}>
               <button

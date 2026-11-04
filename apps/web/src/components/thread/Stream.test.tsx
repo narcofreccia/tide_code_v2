@@ -181,3 +181,14 @@ describe("Stream", () => {
     expect(screen.getByText("one").closest("li")?.hasAttribute("data-turn-start")).toBe(false);
   });
 });
+
+describe("Stream hotkeys", () => {
+  it("hotkeys={false}: the live approval takes no y / n and shows no hint", () => {
+    const fake = attachFakeStore(modelWithTimeline(thread, [makeApproval("a2")]));
+    render(<Stream threadId="t1" provider="claude" hotkeys={false} />);
+    expect(screen.getByText("Allow")).toBeDefined();
+    expect(screen.queryByText("y")).toBeNull();
+    fireEvent.keyDown(window, { key: "y" });
+    expect(fake.dispatch).not.toHaveBeenCalled();
+  });
+});

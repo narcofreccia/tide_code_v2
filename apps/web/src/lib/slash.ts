@@ -54,3 +54,24 @@ export const SOURCE_LABELS: Record<SlashCommandInfo["source"], string> = {
   custom: "custom",
   skill: "skill",
 };
+
+/** R16: Tide's own commands, listed in the `/` picker beside the harness's. */
+export const TIDE_COMMANDS: readonly SlashCommandInfo[] = [
+  { name: "side", description: "Side chat (Tide)", argumentHint: "<question>", source: "builtin" },
+  { name: "btw", description: "Side chat (Tide)", argumentHint: "<question>", source: "builtin" },
+];
+
+/** True for a name Tide handles itself (`/side`, `/btw`), never sent to the harness. */
+export function isTideCommand(name: string): boolean {
+  return TIDE_COMMANDS.some((c) => c.name === name);
+}
+
+/**
+ * `/side <prompt>` / `/btw <prompt>`: the whole message asks a side chat. The bare command
+ * opens an empty one (`prompt: ""`); anything else (`/sidebar`, prose) is undefined.
+ */
+export function parseSideCommand(text: string): { prompt: string } | undefined {
+  const match = /^\/(side|btw)(?:\s+([\s\S]*))?$/.exec(text.trim());
+  if (!match) return undefined;
+  return { prompt: (match[2] ?? "").trim() };
+}

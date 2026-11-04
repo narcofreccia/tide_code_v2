@@ -17,6 +17,7 @@ import { TerminalDrawer } from "./terminal/TerminalDrawer.tsx";
 import { AddMenu } from "./AddMenu.tsx";
 import { PreviewMenu } from "./preview/PreviewMenu.tsx";
 import { PreviewTab } from "./preview/PreviewTab.tsx";
+import { SidePane } from "../thread/SidePane.tsx";
 import styles from "./Workbench.module.css";
 
 function WorkbenchFor({ threadId, expertsSessionId }: { threadId: string; expertsSessionId?: string }) {
@@ -70,6 +71,7 @@ function WorkbenchFor({ threadId, expertsSessionId }: { threadId: string; expert
           ) : null}
           {active.kind === "file" ? <FileTab key={active.path} threadId={threadId} path={active.path} /> : null}
           {active.kind === "preview" ? <PreviewTab threadId={threadId} url={active.url} /> : null}
+          {active.kind === "side" ? <SidePane key={active.threadId} parentId={threadId} sideId={active.threadId} /> : null}
         </div>
       </div>
 

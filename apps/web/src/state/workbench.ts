@@ -10,12 +10,15 @@ export type WorkbenchTab =
   | { kind: "experts" }
   | { kind: "file"; path: string; pinned?: boolean }
   /** R11: a dev server in an iframe; one per thread, its URL editable in place */
-  | { kind: "preview"; url: string };
+  | { kind: "preview"; url: string }
+  /** R16: a side chat of this thread, beside it in the workbench */
+  | { kind: "side"; threadId: string };
 
 export const CHANGES_TAB: WorkbenchTab = { kind: "changes" };
 
 export function tabKey(tab: WorkbenchTab): string {
-  return tab.kind === "file" ? `file:${tab.path}` : tab.kind;
+  if (tab.kind === "file") return `file:${tab.path}`;
+  return tab.kind === "side" ? `side:${tab.threadId}` : tab.kind;
 }
 
 export interface RevealTarget {
@@ -156,6 +159,18 @@ export function openPreviewTab(threadId: string, url: string): void {
     ? tabs.map((t) => (t.kind === "preview" ? { kind: "preview" as const, url } : t))
     : [...tabs, { kind: "preview" as const, url }];
   write(threadId, next, "preview");
+}
+
+/** R16: opens (or focuses) a side chat's tab in its parent's workbench. */
+export function openSideTab(parentId: string, sideId: string): void {
+  const tabs = threadTabs(parentId);
+  const next = tabs.some((t) => t.kind === "side" && t.threadId === sideId) ? tabs : [...tabs, { kind: "side" as const, threadId: sideId }];
+  write(parentId, next, `side:${sideId}`);
+}
+
+/** R16: closes a side chat's tab; the side thread itself is left alone. */
+export function closeSideTab(parentId: string, sideId: string): void {
+  closeTab(parentId, { kind: "side", threadId: sideId });
 }
 
 export function openSearchTab(threadId: string): void {

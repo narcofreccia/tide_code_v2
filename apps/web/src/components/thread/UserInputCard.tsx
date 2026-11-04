@@ -3,6 +3,7 @@ import type { ActivityOf } from "@tide/contracts";
 import { respondUserInput } from "../../lib/threadActions.ts";
 import { Button } from "../ui/Button.tsx";
 import { Checkbox } from "../ui/Choice.tsx";
+import { RequestFrom, type RequestOrigin } from "./RequestFrom.tsx";
 import styles from "./Card.module.css";
 
 type Answer = string | string[];
@@ -13,8 +14,8 @@ function answered(question: Question, answer: Answer | undefined): boolean {
   return Array.isArray(answer) ? answer.length > 0 : answer.trim() !== "";
 }
 
-/** A harness question (AskUserQuestion / codex user-input) rendered 1:1. */
-export const UserInputCard = memo(function UserInputCard({ activity }: { activity: ActivityOf<"user-input"> }) {
+/** A harness question (AskUserQuestion / codex user-input) rendered 1:1; `from`: a child's, answered from its parent (R16). */
+export const UserInputCard = memo(function UserInputCard({ activity, from }: { activity: ActivityOf<"user-input">; from?: RequestOrigin }) {
   const [answers, setAnswers] = useState<Record<string, Answer>>({});
   const questions = activity.questions;
   const single = questions.length === 1 && questions[0]?.multi !== true && (questions[0]?.options?.length ?? 0) > 0;
@@ -58,6 +59,7 @@ export const UserInputCard = memo(function UserInputCard({ activity }: { activit
   return (
     <li>
       <section className={`${styles.card} ${styles.attention}`} aria-label="Question">
+        {from ? <RequestFrom what="Question" from={from} /> : null}
         {questions.map((question) => (
           <div key={question.id} className={styles.question}>
             <span className={styles.questionText}>{question.text}</span>

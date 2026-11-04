@@ -1,4 +1,5 @@
 import { afterEach, describe, expect, it } from "vitest";
+import { parseSideCommand } from "../../lib/slash.ts";
 import { cleanup, fireEvent, render, screen, waitFor } from "@testing-library/react";
 import type { SlashCommandInfo } from "@tide/contracts";
 import { attachFakeStore, makeThread, mockRpc, modelWith, resetUi } from "../../testHarness.ts";
@@ -88,5 +89,30 @@ describe("Composer / picker", () => {
     await waitFor(() => expect(screen.queryByRole("listbox", { name: "Slash commands" })).toBeNull());
     expect(screen.queryByText(/Unknown command/)).toBeNull();
     expect(rpc).not.toHaveBeenCalled();
+  });
+});
+
+describe("R16: /side and /btw", () => {
+  it("parses a whole-message side command", () => {
+    expect(parseSideCommand("/side why is X?")).toEqual({ prompt: "why is X?" });
+    expect(parseSideCommand("  /btw  two\nlines ")).toEqual({ prompt: "two\nlines" });
+    expect(parseSideCommand("/side")).toEqual({ prompt: "" });
+    expect(parseSideCommand("/sidebar x")).toBeUndefined();
+    expect(parseSideCommand("see /side x")).toBeUndefined();
+  });
+
+  it("lists side and btw in the picker, even when the harness lists nothing", async () => {
+    const { input } = mount(false);
+    type(input, "/");
+    expect((await screen.findByRole("option", { name: /\/side/ })).textContent).toContain("Side chat (Tide)");
+    expect(screen.getByRole("option", { name: /\/btw/ })).toBeDefined();
+  });
+
+  it("keeps the unknown-command hint quiet for them", async () => {
+    const { input } = mount(true);
+    type(input, "/zzz what now");
+    expect(await screen.findByText(/Unknown command/)).toBeDefined();
+    type(input, "/side what now");
+    expect(screen.queryByText(/Unknown command/)).toBeNull();
   });
 });

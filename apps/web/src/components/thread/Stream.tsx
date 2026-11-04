@@ -87,7 +87,7 @@ function buildRows(items: readonly TimelineItem[], turns: readonly Turn[], prev:
   return { rows, lists };
 }
 
-function renderRow(row: Row, provider: ProviderKind) {
+function renderRow(row: Row, provider: ProviderKind, hotkeys: boolean) {
   switch (row.kind) {
     case "group":
       return <ActivityGroup key={row.key} activities={row.activities} />;
@@ -106,7 +106,7 @@ function renderRow(row: Row, provider: ProviderKind) {
     case "plan":
       return <PlanCard key={row.key} plan={row.plan} provider={provider} />;
     case "approval":
-      return <ApprovalCard key={row.key} activity={row.activity} active={row.active} />;
+      return <ApprovalCard key={row.key} activity={row.activity} active={hotkeys && row.active} />;
     case "input":
       return <UserInputCard key={row.key} activity={row.activity} />;
     case "child":
@@ -124,12 +124,14 @@ function renderRow(row: Row, provider: ProviderKind) {
  * The thread's stream. Subscribes to this thread's timeline and turns only (stable
  * selectors), so another thread's delta renders nothing here; rows read their own slice.
  * Keyed by thread so each visit starts with fresh scroll state and restores its position.
+ * `hotkeys={false}` (a side chat's pane, R16): its approvals take no `y` / `n`, which stay
+ * with the thread column's own prompt.
  */
-export const Stream = memo(function Stream({ threadId, provider }: { threadId: string; provider: ProviderKind }) {
-  return <ThreadStream key={threadId} threadId={threadId} provider={provider} />;
+export const Stream = memo(function Stream({ threadId, provider, hotkeys = true }: { threadId: string; provider: ProviderKind; hotkeys?: boolean }) {
+  return <ThreadStream key={threadId} threadId={threadId} provider={provider} hotkeys={hotkeys} />;
 });
 
-function ThreadStream({ threadId, provider }: { threadId: string; provider: ProviderKind }) {
+function ThreadStream({ threadId, provider, hotkeys }: { threadId: string; provider: ProviderKind; hotkeys: boolean }) {
   const items = useModel((s) => selectTimelineStable(s.model, threadId));
   const turns = useModel((s) => selectThreadTurnsStable(s.model, threadId));
   const thread = useModel((s) => s.model.threads[threadId]);
@@ -151,7 +153,7 @@ function ThreadStream({ threadId, provider }: { threadId: string; provider: Prov
   return (
     <div className={styles.wrap}>
       <ol className={styles.stream} ref={scroller}>
-        {rows.map((row) => renderRow(row, provider))}
+        {rows.map((row) => renderRow(row, provider, hotkeys))}
       </ol>
       <CiteButton root={scroller} />
       {showNew ? (

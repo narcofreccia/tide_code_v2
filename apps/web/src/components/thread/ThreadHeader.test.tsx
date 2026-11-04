@@ -4,6 +4,7 @@ import { ThreadHeader } from "./ThreadHeader.tsx";
 import { attachFakeStore, makeThread, makeTurn, mockRpc, modelWith, resetUi } from "../../testHarness.ts";
 import { useTerminals } from "../../state/terminals.ts";
 import { useUi } from "../../state/ui.ts";
+import { COMPOSE_EVENT } from "../../lib/cite.ts";
 
 afterEach(() => {
   cleanup();
@@ -161,6 +162,7 @@ describe("ThreadHeader", () => {
     const names = screen.getAllByRole("menuitem").map((n) => n.textContent);
     expect(names).toEqual([
       "New child thread",
+      "Side chat…/side",
       "Roll back last turn…no finished turn",
       "Settle",
       "Snooze",
@@ -173,6 +175,22 @@ describe("ThreadHeader", () => {
       "Archive thread…",
       "Delete thread",
     ]);
+  });
+
+  it("R16: Side chat… puts `/side ` in this thread's composer; a side chat offers none", () => {
+    mockRpc({ "thread.terminalCommand": () => ({}) });
+    const seen = vi.fn();
+    const listener = (e: Event): void => seen((e as CustomEvent<unknown>).detail);
+    window.addEventListener(COMPOSE_EVENT, listener);
+    mount();
+    fireEvent.click(screen.getByRole("button", { name: "More actions" }));
+    fireEvent.click(screen.getByRole("menuitem", { name: /Side chat/ }));
+    window.removeEventListener(COMPOSE_EVENT, listener);
+    expect(seen).toHaveBeenCalledWith({ text: "/side ", mode: "replace", threadId: "t1" });
+    cleanup();
+    mount({ role: "side", parentThreadId: "t0" });
+    fireEvent.click(screen.getByRole("button", { name: "More actions" }));
+    expect(screen.queryByRole("menuitem", { name: /Side chat/ })).toBeNull();
   });
 
   it("New child thread opens the new-thread form with the parent prefilled", () => {

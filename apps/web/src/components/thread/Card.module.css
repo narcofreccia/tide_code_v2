@@ -74,3 +74,14 @@
 .meta { color: var(--muted); }
 .context { color: var(--text); }
 .stats { color: var(--muted); font-variant-numeric: tabular-nums; }
+/* R16: a child's card answered from the parent: whose request it is */
+.from {
+  display: flex;
+  align-items: center;
+  gap: var(--sp-1);
+  min-width: 0;
+  color: var(--muted);
+  font-size: var(--fs-sm);
+}
+.fromText { min-width: 0; overflow: hidden; text-overflow: ellipsis; white-space: nowrap; }
+.fromTitle { color: var(--text); }

@@ -2,10 +2,12 @@ import { afterEach, describe, expect, it } from "vitest";
 import {
   activeTab,
   closeActiveTab,
+  closeSideTab,
   closeTab,
   moveTab,
   openFileTab,
   openSearchTab,
+  openSideTab,
   setActiveTab,
   tabKey,
   threadTabs,
@@ -92,5 +94,24 @@ describe("workbench tabs", () => {
     const stored = JSON.parse(window.localStorage.getItem(WORKBENCH_STORAGE_KEY) ?? "{}");
     expect(stored.state.tabs.t1).toEqual([{ kind: "changes" }, { kind: "file", path: "src/a.ts" }]);
     expect(stored.state).not.toHaveProperty("reveal");
+  });
+});
+
+describe("R16 side tabs", () => {
+  it("opens a side chat's tab once, focused, and closes it", () => {
+    openSideTab("t1", "s1");
+    openSideTab("t1", "s1");
+    expect(threadTabs("t1")).toEqual([{ kind: "changes" }, { kind: "side", threadId: "s1" }]);
+    expect(activeTab("t1")).toEqual({ kind: "side", threadId: "s1" });
+    closeSideTab("t1", "s1");
+    expect(threadTabs("t1")).toEqual([{ kind: "changes" }]);
+    expect(activeTab("t1")).toEqual({ kind: "changes" });
+  });
+
+  it("persists side tabs beside the older tab kinds", () => {
+    openSideTab("t1", "s1");
+    const stored = Object.keys(window.localStorage).filter((k) => k.startsWith(WORKBENCH_STORAGE_KEY));
+    const raw = stored.map((k) => window.localStorage.getItem(k) ?? "").join("");
+    expect(raw).toContain('"kind":"side","threadId":"s1"');
   });
 });

@@ -7,6 +7,7 @@ import { respondApproval } from "../../lib/threadActions.ts";
 import { Button } from "../ui/Button.tsx";
 import { Pill } from "../ui/Pill.tsx";
 import { Kbd } from "../ui/Kbd.tsx";
+import { RequestFrom, type RequestOrigin } from "./RequestFrom.tsx";
 import styles from "./Card.module.css";
 
 const DECISION_LABEL: Record<ApprovalDecision, string> = {
@@ -45,9 +46,18 @@ function DiffPreview({ diff }: { diff: string }) {
 
 /**
  * A harness permission prompt, mapped 1:1. `y` / `n` answer the card that is
- * currently the thread's live prompt.
+ * currently the thread's live prompt. `from` marks a child thread's card answered
+ * from its parent (R16); those pass `active={false}`: no hotkeys, no hints.
  */
-export const ApprovalCard = memo(function ApprovalCard({ activity, active }: { activity: ActivityOf<"approval">; active: boolean }) {
+export const ApprovalCard = memo(function ApprovalCard({
+  activity,
+  active,
+  from,
+}: {
+  activity: ActivityOf<"approval">;
+  active: boolean;
+  from?: RequestOrigin;
+}) {
   const pending = activity.status === "pending";
   const low = useServerSettings((s) => s.settings.decisions.grayZone.low);
   const judged = activity.judge?.label !== undefined && activity.judge.confidence >= low ? activity.judge : undefined;
@@ -83,6 +93,7 @@ export const ApprovalCard = memo(function ApprovalCard({ activity, active }: { a
   return (
     <li>
       <section className={`${styles.card} ${styles.attention}`} aria-label={`Approval: ${activity.toolName}`}>
+        {from ? <RequestFrom what="Approval needed" from={from} /> : null}
         <div className={styles.head}>
           <span className={styles.title}>{activity.title ?? activity.toolName}</span>
           {judged ? (
