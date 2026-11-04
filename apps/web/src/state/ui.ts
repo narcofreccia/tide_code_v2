@@ -86,6 +86,8 @@ interface UiState {
   railWidth: number;
   /** R12: thread whose rail merge-back waits on a confirmation, null when none */
   mergeConfirmThreadId: string | null;
+  /** bulk merge-back from the rail selection bar: threads awaiting confirmation, null when none */
+  mergeConfirmThreadIds: string[] | null;
   /** thread column share of the split, 0.2–0.8 */
   splitRatio: number;
   /** Changes tab: side-by-side diff when true, unified when false (⌘⇧D) */
@@ -128,6 +130,7 @@ interface UiState {
   toggleRail: () => void;
   setRailWidth: (width: number) => void;
   setMergeConfirm: (threadId: string | null) => void;
+  setMergeConfirmMany: (threadIds: string[] | null) => void;
   setSplitRatio: (ratio: number) => void;
   toggleDiffSideBySide: () => void;
   toggleFileList: () => void;
@@ -168,6 +171,7 @@ export const useUi = create<UiState>()(
       railCollapsed: false,
       railWidth: RAIL_WIDTH.initial,
       mergeConfirmThreadId: null,
+      mergeConfirmThreadIds: null,
       splitRatio: 0.45,
       diffSideBySide: true,
       fileListCollapsed: false,
@@ -228,7 +232,8 @@ export const useUi = create<UiState>()(
       setFocusMode: (focusMode) => set({ focusMode }),
       toggleRail: () => set((s) => ({ railCollapsed: !s.railCollapsed })),
       setRailWidth: (width) => set({ railWidth: clampRailWidth(width) }),
-      setMergeConfirm: (mergeConfirmThreadId) => set({ mergeConfirmThreadId }),
+      setMergeConfirm: (mergeConfirmThreadId) => set({ mergeConfirmThreadId, mergeConfirmThreadIds: null }),
+      setMergeConfirmMany: (mergeConfirmThreadIds) => set({ mergeConfirmThreadIds, mergeConfirmThreadId: null }),
       setSplitRatio: (ratio) => set({ splitRatio: Math.min(0.8, Math.max(0.2, ratio)) }),
       toggleDiffSideBySide: () => set((s) => ({ diffSideBySide: !s.diffSideBySide })),
       toggleFileList: () => set((s) => ({ fileListCollapsed: !s.fileListCollapsed })),

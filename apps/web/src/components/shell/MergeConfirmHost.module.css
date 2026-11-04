@@ -1,0 +1,6 @@
+.list {
+  margin: var(--sp-2) 0 0;
+  padding-left: var(--sp-4);
+  font-family: var(--font-mono);
+  font-size: var(--fs-sm);
+}

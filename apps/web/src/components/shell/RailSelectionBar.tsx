@@ -1,7 +1,8 @@
 import { useState } from "react";
-import { regenerateTitles, settleThreads, snoozeThreads } from "../../lib/inboxActions.ts";
+import { mergeableOf, mergeSkipSummary, regenerateTitles, settleThreads, snoozeThreads } from "../../lib/inboxActions.ts";
 import { tomorrowMorning } from "../../lib/turnActions.ts";
 import { useModel } from "../../state/model.ts";
+import { useUi } from "../../state/ui.ts";
 import { clearRailSelection, useRailSelection } from "../../state/railSelection.ts";
 import { Button } from "../ui/Button.tsx";
 import { ContextMenu, type MenuPosition } from "../ui/Menu.tsx";
@@ -17,6 +18,9 @@ export function RailSelectionBar() {
   const [snooze, setSnooze] = useState<MenuPosition | undefined>(undefined);
   const [busy, setBusy] = useState(false);
   const list = ids === "" ? [] : ids.split("\n");
+  const mergeable = useModel((s) => mergeableOf(s.model, list).map((t) => t.id).join("\n"));
+  const skipped = useModel((s) => mergeSkipSummary(s.model, list));
+  const mergeIds = mergeable === "" ? [] : mergeable.split("\n");
   if (list.length === 0) return null;
 
   const run = (action: (ids: string[]) => Promise<void>, clear = true): void => {
@@ -51,6 +55,21 @@ export function RailSelectionBar() {
         onClick={() => run(regenerateTitles, false)}
       >
         {busy ? "Working…" : "Regenerate titles"}
+      </Button>
+      <Button
+        variant="quiet"
+        disabled={busy || mergeIds.length === 0}
+        title={
+          skipped === ""
+            ? "Merge each selected branch into its base, one after another"
+            : `Skipped: ${skipped}`
+        }
+        onClick={() => {
+          useUi.getState().setMergeConfirmMany(mergeIds);
+          clearRailSelection();
+        }}
+      >
+        Merge back ({mergeIds.length})
       </Button>
       <button type="button" className={styles.close} aria-label="Clear selection" title="Clear selection (Esc)" onClick={clearRailSelection}>
         ✕

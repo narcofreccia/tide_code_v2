@@ -1,7 +1,10 @@
+import type { ReadModel, Thread } from "@tide/contracts";
 import { call, dispatch, useModel } from "../state/model.ts";
 import { isToastLive, showToast } from "../state/toast.ts";
 import { errorText } from "./dispatchOrToast.ts";
 import { plural } from "./format.ts";
+import { mergeBlockedReason } from "./merge.ts";
+import { canMergeBack } from "./threadActions.ts";
 import { formatUntil } from "./turnActions.ts";
 
 /** The Undo toast after a settle stays up this long. */
@@ -147,4 +150,48 @@ export async function regenerateTitles(ids: readonly string[]): Promise<void> {
   } else {
     showToast(`Regenerated ${plural(ok, "title")}, ${failures.length} failed — ${failures[0]}`);
   }
+}
+
+/** Threads among `ids` that a bulk merge-back can send: own branch, a worktree, not running or merged. */
+export function mergeableOf(model: Pick<ReadModel, "threads">, ids: readonly string[]): Thread[] {
+  const out: Thread[] = [];
+  for (const id of ids) {
+    const thread = model.threads[id];
+    if (thread === undefined) continue;
+    if (canMergeBack(thread) && thread.worktreePath !== undefined && mergeBlockedReason(thread, false) === undefined) {
+      out.push(thread);
+    }
+  }
+  return out;
+}
+
+/**
+ * Merges the threads back one after another (the vcs reactor serialises per repo, and a
+ * parallel burst would race on the base branch). Outcome toasts come from useMergeOutcomeToasts;
+ * only a refused dispatch is reported here.
+ */
+export async function mergeBackThreads(ids: readonly string[]): Promise<void> {
+  for (const threadId of ids) {
+    try {
+      await dispatch({ type: "thread.merge", threadId });
+    } catch (error) {
+      showToast(`Merge refused: ${titleOf(threadId)} — ${errorText(error)}`);
+    }
+  }
+}
+
+/** "2 running · 1 without a worktree": why selected threads are left out of a bulk merge-back. */
+export function mergeSkipSummary(model: Pick<ReadModel, "threads">, ids: readonly string[]): string {
+  const skipped = new Set(mergeableOf(model, ids).map((t) => t.id));
+  const counts = { running: 0, merged: 0, "without a worktree": 0, "without a branch": 0, "not mergeable": 0 };
+  for (const id of ids) {
+    const t = model.threads[id];
+    if (t === undefined || skipped.has(id)) continue;
+    if (t.status === "running") counts.running++;
+    else if (t.mergedAt !== undefined) counts.merged++;
+    else if (t.branch === undefined) counts["without a branch"]++;
+    else if (t.worktreePath === undefined) counts["without a worktree"]++;
+    else counts["not mergeable"]++;
+  }
+  return Object.entries(counts).filter(([, n]) => n > 0).map(([k, n]) => `${n} ${k}`).join(" · ");
 }
