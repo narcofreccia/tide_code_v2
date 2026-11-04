@@ -25,6 +25,8 @@ export const ProjectUpdate = Type.Object({
   icon: Type.Optional(Type.Union([ProjectIcon, Type.Null()])),
   /** R16 */
   pinned: Type.Optional(Type.Boolean()),
+  /** R16: null clears it */
+  titleInstructions: Type.Optional(Type.Union([Type.String({ maxLength: 500 }), Type.Null()])),
 });
 export const ProjectLinkAdd = Type.Object({
   type: Type.Literal("project.link.add"), commandId: CommandId,

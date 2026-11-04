@@ -42,4 +42,17 @@ describe("backgroundChildren", () => {
   it("is empty for an unknown thread", () => {
     expect(backgroundChildren(emptyReadModel(), "nope")).toEqual([]);
   });
+
+  it("R16: a late report upserts the original row by id — same turn, no new timeline entry", () => {
+    const m = apply(emptyReadModel(), thread, ...turn("u1", 5), child("c1", "u1", "running"), settle("u1", 20), ...turn("u2", 30));
+    const before = m.threadTimeline["t1"]?.length;
+    const late: DomainEvent = {
+      type: "activity.upserted",
+      activity: { id: "c1", threadId: "t1", turnId: "u1", kind: "child", childKey: "c1", taskId: "agent-9", name: "c1", status: "done", report: "found it", createdAt: 10, updatedAt: 40 } as Activity,
+    };
+    const after = apply(m, late);
+    expect(after.threadTimeline["t1"]?.length).toBe(before);
+    expect(after.activities["c1"]).toMatchObject({ turnId: "u1", status: "done", taskId: "agent-9", report: "found it" });
+    expect(hasBackgroundChildren(after, "t1")).toBe(false);
+  });
 });

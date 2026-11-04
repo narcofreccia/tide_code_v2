@@ -296,6 +296,8 @@ export const Project = Type.Object({
   runStack: Type.Optional(RunStack),
   /** R16: pinned projects lead every project list and the rail's project folders */
   pinned: Type.Optional(Type.Boolean()),
+  /** R16: free text appended to the auto-title prompt for this project's threads (overrides the user setting) */
+  titleInstructions: Type.Optional(Type.String({ maxLength: 500 })),
   createdAt: Type.Number(),
   updatedAt: Type.Number(),
   archivedAt: Type.Optional(Type.Number()),
@@ -526,6 +528,8 @@ export const AttachmentRef = Type.Object({
   path: Type.String({ minLength: 1 }),
   mediaType: Type.String(),
   bytes: Type.Number(),
+  /** R16: line count for text attachments (the "Pasted text · 48 lines" chip) */
+  lines: Type.Optional(Type.Number()),
 });
 export type AttachmentRef = Static<typeof AttachmentRef>;
 
@@ -792,12 +796,20 @@ export const UserInputActivity = Type.Object({
   questions: Type.Array(UserInputQuestion),
   status: Type.Union([Type.Literal("pending"), Type.Literal("resolved")]),
   answers: Type.Optional(Type.Record(Type.String(), Type.Unknown())),
+  /**
+   * R16: raised by tide_request_secret. The card shows a masked input; the value goes to the
+   * server over `secret.provide` and is handed to the tool once — it never enters an event,
+   * `answers` holds only `{ decided: "provided" | "declined" }`.
+   */
+  secret: Type.Optional(Type.Boolean()),
 });
 /** a harness-native sub-agent / collab child */
 export const ChildActivity = Type.Object({
   ...ActivityBase,
   kind: Type.Literal("child"),
   childKey: Type.String(),
+  /** R16: the harness's own task/agent id, so a report that lands after the launching key is gone still finds this row */
+  taskId: Type.Optional(Type.String()),
   name: Type.String(),
   description: Type.Optional(Type.String()),
   status: Type.Union([Type.Literal("running"), Type.Literal("done"), Type.Literal("error")]),
@@ -846,6 +858,8 @@ export const Schedule = Type.Union([
    * request body is appended to the prompt as a fenced block (≤ 8 KB) so the agent sees the payload.
    */
   Type.Object({ kind: Type.Literal("webhook"), hookId: Type.String({ minLength: 8, maxLength: 64 }), secret: Type.Optional(Type.String()) }),
+  /** R16: fires once at `at` (ms); a server that was down then fires it on its first tick, then the task disables itself */
+  Type.Object({ kind: Type.Literal("once"), at: Type.Number({ minimum: 0 }) }),
   Type.Object({ kind: Type.Literal("fixed"), times: Type.Array(Type.String({ pattern: "^([01][0-9]|2[0-3]):[0-5][0-9]$" }), { minItems: 1, maxItems: 24 }), weekdays: Type.Array(Type.Number({ minimum: 0, maximum: 6 }), { minItems: 1, maxItems: 7 }) }),
 ]);
 export type Schedule = Static<typeof Schedule>;
@@ -874,6 +888,8 @@ export const ScheduledTask = Type.Object({
   lastRunAt: Type.Optional(Type.Number()),
   lastRunThreadId: Type.Optional(Type.String()),
   nextRunAt: Type.Optional(Type.Number()),
+  /** R16: set when a `once` schedule fired; the task is disabled from then on */
+  completedAt: Type.Optional(Type.Number()),
   runs: Type.Number(),
   createdAt: Type.Number(),
   updatedAt: Type.Number(),

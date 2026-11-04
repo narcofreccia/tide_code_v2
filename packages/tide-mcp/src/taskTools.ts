@@ -149,7 +149,11 @@ export async function callTaskTool(backend: AgentBackend, name: string, args: Re
       if (tasks.length === 0) return ok("No automations on this project.");
       const lines = tasks.map((t) => {
         const s = t.schedule;
-        const when = s.kind === "interval" ? `every ${Math.round(s.everyMs / 60000)} min` : s.kind === "webhook" ? `webhook /hook/${s.hookId}` : `${s.times.join(",")} on days ${s.weekdays.join(",")}`;
+        const when =
+          s.kind === "interval" ? `every ${Math.round(s.everyMs / 60000)} min`
+          : s.kind === "webhook" ? `webhook /hook/${s.hookId}`
+          : s.kind === "once" ? `once at ${new Date(s.at).toISOString()}`
+          : `${s.times.join(",")} on days ${s.weekdays.join(",")}`;
         const target = t.threadId !== undefined ? `thread ${t.threadId}` : `new thread${t.provider !== undefined ? ` on ${t.provider}` : ""}`;
         return `${t.id} | ${t.title} | ${when} | ${target} | ${t.enabled ? "enabled" : "paused"} | runs=${t.runs}${t.nextRunAt !== undefined ? ` | next=${new Date(t.nextRunAt).toISOString()}` : ""}`;
       });

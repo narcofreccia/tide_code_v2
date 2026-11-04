@@ -21,6 +21,7 @@ export function describeSchedule(schedule: Schedule): string {
     if (mins >= 60 && mins % 60 === 0) return `every ${mins / 60 === 1 ? "hour" : `${mins / 60} h`}`;
     return `every ${mins} min`;
   }
+  if (schedule.kind === "once") return `once on ${new Date(schedule.at).toLocaleString()}`;
   const times = [...schedule.times].sort().join(", ");
   const d = days(schedule.weekdays);
   return d === "every day" ? `every day at ${times}` : `${d} at ${times}`;

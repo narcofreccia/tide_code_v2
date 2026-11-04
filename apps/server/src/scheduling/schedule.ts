@@ -10,6 +10,8 @@ const DAY_LOOKAHEAD = 8;
 export function nextFireAt(schedule: Schedule, now: number): number | undefined {
   if (schedule.kind === "webhook") return undefined; // fired by POST /hook/<id>, never by the clock
   if (schedule.kind === "interval") return now + schedule.everyMs;
+  // R16: a missed `once` still fires on the next tick (the fire's commandId keeps it idempotent); 3B disables it after the fire
+  if (schedule.kind === "once") return schedule.at;
   const times = [...new Set(schedule.times)].sort().map((t) => {
     const [h, m] = t.split(":");
     return { h: Number(h), m: Number(m) };

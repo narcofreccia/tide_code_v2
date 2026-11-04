@@ -166,9 +166,11 @@ export function applyEvent(model: ReadModel, event: DomainEvent): ReadModel {
         ...(event.title !== undefined ? { title: event.title } : {}),
         ...(event.icon !== undefined ? { icon: event.icon } : {}),
         ...(event.pinned !== undefined ? { pinned: event.pinned } : {}),
+        ...(event.titleInstructions !== undefined ? { titleInstructions: event.titleInstructions } : {}),
         updatedAt: event.updatedAt,
       };
       if (event.clearIcon) delete next.icon;
+      if (event.clearTitleInstructions) delete next.titleInstructions;
       return { ...model, projects: { ...model.projects, [p.id]: next } };
     }
     case "project.link.added":

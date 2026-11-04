@@ -16,6 +16,8 @@ export const ProjectUpdated = evt("project.updated", {
   clearIcon: Type.Optional(Type.Boolean()),
   /** R16 */
   pinned: Type.Optional(Type.Boolean()),
+  titleInstructions: Type.Optional(Type.String()),
+  clearTitleInstructions: Type.Optional(Type.Boolean()),
   updatedAt: Type.Number(),
 });
 export const ProjectArchived = evt("project.archived", { projectId: Type.String(), archivedAt: Type.Number() });

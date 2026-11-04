@@ -189,6 +189,18 @@ export const DiffResult = Type.Object({
 });
 export type DiffResult = Static<typeof DiffResult>;
 
+/** R16: one local commit, for the Changes pane's Commits source. */
+export const CommitSummary = Type.Object({
+  sha: Type.String(),
+  shortSha: Type.String(),
+  subject: Type.String(),
+  author: Type.String(),
+  /** ms */
+  at: Type.Number(),
+  parents: Type.Array(Type.String()),
+});
+export type CommitSummary = Static<typeof CommitSummary>;
+
 export const VcsStatus = Type.Object({
   cwd: Type.String(),
   isRepo: Type.Boolean(),
@@ -296,6 +308,8 @@ export const InboxSettings = Type.Object({
   autoSettleOnMerge: Type.Boolean(),
   /** rail: hide running threads in a collapsed "Working" group unless pinned */
   workingSection: Type.Boolean(),
+  /** R16: snooze menu entries — durations (`2h`, `1d`, `45m`) or a time on a day (`tomorrow 09:00`, `fri 18:00`); ≤ 8 */
+  snoozeOptions: Type.Optional(Type.Array(Type.String({ minLength: 2, maxLength: 32 }), { maxItems: 8 })),
 });
 export type InboxSettings = Static<typeof InboxSettings>;
 
@@ -355,6 +369,8 @@ export const UserSettings = Type.Object({
    * later commit messages / PR bodies) via the one-shot `complete()`. Absent = the first harness with `oneShot`.
    */
   textModel: Type.Optional(Type.Object({ provider: ProviderKind, model: Type.Optional(Type.String()) })),
+  /** R16: free text appended to the auto-title prompt ("start with the ticket id", "≤ 5 words", …); a project's own instructions win */
+  titleInstructions: Type.Optional(Type.String({ maxLength: 500 })),
 });
 export type UserSettings = Static<typeof UserSettings>;
 export const UserSettingsPatch = Type.Object({
@@ -386,6 +402,8 @@ export const UserSettingsPatch = Type.Object({
   relay: Type.Optional(Type.Union([Type.Object({ url: Type.String(), key: Type.Optional(Type.String()) }), Type.Null()])),
   /** null clears it (back to "first harness with oneShot") */
   textModel: Type.Optional(Type.Union([Type.Object({ provider: ProviderKind, model: Type.Optional(Type.String()) }), Type.Null()])),
+  /** null clears it */
+  titleInstructions: Type.Optional(Type.Union([Type.String({ maxLength: 500 }), Type.Null()])),
 });
 export type UserSettingsPatch = Static<typeof UserSettingsPatch>;
 
@@ -536,6 +554,13 @@ export const rpcMethods = {
   "vcs.turnDiff": unary(Type.Object({ threadId: Type.String(), turnId: Type.String() }), DiffResult),
   /** everything this thread changed: first checkpoint (or base branch) → working tree */
   "vcs.threadDiff": unary(Type.Object({ threadId: Type.String() }), DiffResult),
+  /** R16: newest commits on the thread's branch (or the project's current branch when the thread has no worktree) */
+  "vcs.commits": unary(
+    Type.Object({ threadId: Type.Optional(Type.String()), projectId: Type.Optional(Type.String()), limit: Type.Optional(Type.Number({ minimum: 1, maximum: 200 })) }),
+    Type.Object({ branch: Type.Optional(Type.String()), commits: Type.Array(CommitSummary) }),
+  ),
+  /** R16: one commit's diff against its first parent (the empty tree for a root commit); same shape as a turn diff */
+  "vcs.commitDiff": unary(Type.Object({ threadId: Type.Optional(Type.String()), projectId: Type.Optional(Type.String()), sha: Type.String({ minLength: 4 }) }), DiffResult),
   /** W1: discard working-tree changes in one linked repo (never touches anything outside it) */
   "vcs.linkedRevert": unary(
     Type.Object({ threadId: Type.String(), linkId: Type.String(), files: Type.Optional(Type.Array(Type.String())) }),
@@ -546,6 +571,13 @@ export const rpcMethods = {
   "fs.read": unary(
     Type.Object({ threadId: Type.String(), path: Type.String() }),
     Type.Object({ content: Type.Optional(Type.String()), binary: Type.Boolean(), size: Type.Number(), mtime: Type.Number() }),
+  ),
+  /** R16: the user's answer to a secret card; the value stays in server memory until the waiting tool call takes it */
+  "secret.provide": unary(Type.Object({ threadId: Type.String(), requestId: Type.String(), value: Type.String({ minLength: 1, maxLength: 65536 }) }), Type.Object({ ok: Type.Boolean() })),
+  /** R16: raw bytes for an image preview (base64, capped server-side at 8 MB → invalid-params) */
+  "fs.readBinary": unary(
+    Type.Object({ threadId: Type.String(), path: Type.String(), maxBytes: Type.Optional(Type.Number({ minimum: 1 })) }),
+    Type.Object({ data: Type.String(), mediaType: Type.String(), size: Type.Number(), mtime: Type.Number() }),
   ),
   /** optimistic concurrency: when `ifMtime` is given and the file changed since, returns conflict */
   "fs.write": unary(
@@ -676,6 +708,21 @@ export const rpcMethods = {
   ),
   /** the caller's project's automations (archived ones excluded) */
   "agent.task.list": unary(Type.Object({}), Type.Object({ tasks: Type.Array(ScheduledTask) })),
+  /**
+   * R16: tide_request_secret — raises a masked card on the caller's turn and waits for the user.
+   * `value` is returned once and never stored in an event; `kind: "file"` instead writes it to
+   * `<TIDE_HOME>/secrets/<threadId>/<name>` (0600) and returns `path`. Decline, timeout and a
+   * settled turn resolve `declined`.
+   */
+  "agent.secret.request": unary(
+    Type.Object({
+      name: Type.String({ pattern: "^[A-Z0-9_]{1,64}$" }),
+      purpose: Type.String({ minLength: 1, maxLength: 500 }),
+      kind: Type.Optional(Type.Union([Type.Literal("value"), Type.Literal("file")])),
+      timeoutMs: Type.Optional(Type.Number({ minimum: 1000, maximum: 3_600_000 })),
+    }),
+    Type.Object({ decided: Type.Union([Type.Literal("provided"), Type.Literal("declined")]), value: Type.Optional(Type.String()), path: Type.Optional(Type.String()) }),
+  ),
   /** full contents of a file at a ref (or the working tree when ref is "WORKTREE"), for side-by-side views */
   "vcs.fileAt": unary(
     Type.Object({ threadId: Type.String(), ref: Type.String(), path: Type.String() }),

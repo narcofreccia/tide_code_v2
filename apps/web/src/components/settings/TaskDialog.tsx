@@ -52,7 +52,8 @@ function initial(task: ScheduledTask | undefined): Draft {
   return {
     title: task?.title ?? "",
     prompt: task?.prompt ?? "",
-    kind: s?.kind ?? "interval",
+    // R16: the "once" kind gets its own radio in slice 3B; until then it edits as an interval
+    kind: s?.kind === "once" ? "interval" : (s?.kind ?? "interval"),
     hookId: s?.kind === "webhook" ? s.hookId : randomHookId(),
     secret: s?.kind === "webhook" ? (s.secret ?? "") : "",
     amount: String(hours ? everyMin / 60 : everyMin),

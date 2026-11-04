@@ -73,6 +73,24 @@ describe("projection", () => {
     expect(unpinned.projects["p1"]?.pinned).toBe(false);
     const titled = applyRecord(unpinned, rec(6, { type: "project.updated", projectId: "p1", title: "T2", updatedAt: 6 }));
     expect(titled.projects["p1"]).toMatchObject({ title: "T2", pinned: false });
+    const instructed = applyRecord(titled, rec(7, { type: "project.updated", projectId: "p1", titleInstructions: "ticket first", updatedAt: 7 }));
+    expect(instructed.projects["p1"]?.titleInstructions).toBe("ticket first");
+    expect(applyRecord(instructed, rec(8, { type: "project.updated", projectId: "p1", clearTitleInstructions: true, updatedAt: 8 })).projects["p1"]?.titleInstructions).toBeUndefined();
+  });
+  it("R16: a secret card resolves with a decision only — the value never reaches the model", () => {
+    const m = replay(emptyReadModel(), [
+      rec(1, { type: "project.created", project: { id: "p1", title: "T", rootPath: "/x", createdAt: 1, updatedAt: 1 } }),
+      rec(2, { type: "thread.created", thread: { id: "t1", projectId: "p1", title: "A", provider: "claude", mode: "approval-required", interaction: "default", status: "idle", createdAt: 2, updatedAt: 2 } }),
+      rec(3, { type: "turn.requested", turn: { id: "u1", threadId: "t1", status: "requested", requestedAt: 3 }, userMessage: { id: "m1", threadId: "t1", turnId: "u1", role: "user", text: "hi", createdAt: 3 } }),
+      rec(4, { type: "activity.upserted", activity: { id: "s1", kind: "user-input", threadId: "t1", turnId: "u1", requestId: "secret:1", secret: true, questions: [{ id: "GITHUB_TOKEN", text: "to open the PR" }], status: "pending", createdAt: 4, updatedAt: 4 } }),
+    ]);
+    expect(m.threads["t1"]?.attention).toBe("question");
+    expect(m.activities["s1"]).toMatchObject({ secret: true, status: "pending" });
+    const done = applyRecord(m, rec(5, { type: "user-input.responded", threadId: "t1", requestId: "secret:1", activityId: "s1", answers: { decided: "provided" }, at: 5 }));
+    const a = done.activities["s1"];
+    expect(a?.kind === "user-input" ? a.answers : undefined).toEqual({ decided: "provided" });
+    expect(JSON.stringify(done)).not.toContain("value");
+    expect(done.threads["t1"]?.attention).toBeUndefined();
   });
   it("ignores already-applied seqs", () => {
     const base = replay(emptyReadModel(), [rec(1, { type: "project.created", project: { id: "p1", title: "T", rootPath: "/x", createdAt: 1, updatedAt: 1 } })]);
