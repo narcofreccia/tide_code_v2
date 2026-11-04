@@ -1,7 +1,7 @@
 import type { ReadModel, Thread } from "@tide/contracts";
 import { useServerSettings } from "../../state/serverSettings.ts";
 import { createChild, deleteNeedsConfirm, isEmptyThread, requestArchive, requestDelete, updateThread } from "../../lib/threadActions.ts";
-import { snoozeThread, tomorrowMorning } from "../../lib/turnActions.ts";
+import { snoozeItems } from "../shell/railMenus.ts";
 import { runInThreadTerminal } from "../../lib/openInTerminal.ts";
 import { EDITOR_LABELS, editorBlockedReason, editorUrl, launchEditorUrl, threadEditorTarget, type EditorApp } from "../../lib/openInEditor.ts";
 import { useUi } from "../../state/ui.ts";
@@ -27,7 +27,6 @@ export function prItems(thread: Thread): MenuItem[] {
   return items;
 }
 
-const HOUR = 3_600_000;
 
 /** "Open in VS Code" / "Open in Cursor": local folders directly, remote ones over Remote-SSH. */
 export function editorItems(model: ReadModel, thread: Thread): MenuItem[] {
@@ -93,10 +92,7 @@ export function headerMenu(
     ...settleItems(thread),
     {
       label: "Snooze",
-      submenu: [
-        { label: "1 hour", onSelect: () => snoozeThread(thread.id, now + HOUR) },
-        { label: "Until tomorrow 09:00", onSelect: () => snoozeThread(thread.id, tomorrowMorning(now)) },
-      ],
+      submenu: snoozeItems(thread.id, now),
     },
     {
       label: "Auto-allow routine approvals (this thread)",

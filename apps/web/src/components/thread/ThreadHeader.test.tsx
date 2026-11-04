@@ -221,7 +221,7 @@ describe("ThreadHeader", () => {
     const fake = mount();
     fireEvent.click(screen.getByRole("button", { name: "More actions" }));
     fireEvent.click(screen.getByRole("menuitem", { name: /Snooze/ }));
-    fireEvent.click(screen.getByRole("menuitem", { name: "1 hour" }));
+    fireEvent.click(screen.getByRole("menuitem", { name: "1 h" }));
     expect(fake.dispatch).toHaveBeenCalledWith(expect.objectContaining({ type: "thread.snooze", threadId: "t1" }));
   });
 
