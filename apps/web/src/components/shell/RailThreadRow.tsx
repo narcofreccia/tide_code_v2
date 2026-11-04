@@ -35,6 +35,7 @@ const ROLE_GLYPH: Record<NonNullable<Thread["role"]>, string> = {
   expert: "◆",
   lead: "★",
   delegate: "↳",
+  side: "⋯",
 };
 
 /** Rail tags stay short; the tooltip carries the full role. */

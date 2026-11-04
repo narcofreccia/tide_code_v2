@@ -28,7 +28,7 @@ function latestNotification(model: ReadModel, thread: Thread): string | undefine
 }
 
 /** Every pending approval / question and proposed plan of a thread, in timeline order. */
-function waitingOn(model: ReadModel, thread: Thread): InboxItem[] {
+export function selectWaitingOn(model: ReadModel, thread: Thread): InboxItem[] {
   const out: InboxItem[] = [];
   for (const entry of model.threadTimeline[thread.id] ?? []) {
     if (entry.kind === "plan") {
@@ -67,7 +67,7 @@ export function selectInbox(model: ReadModel, projectId?: string, now: number = 
   const out: InboxItem[] = [];
   for (const thread of selectThreadsNeedingAttention(model, projectId, now)) {
     const note = latestNotification(model, thread);
-    const items = waitingOn(model, thread).map((i) => (note === undefined ? i : { ...i, notification: note }));
+    const items = selectWaitingOn(model, thread).map((i) => (note === undefined ? i : { ...i, notification: note }));
     if (items.length > 0) out.push(...items);
     else if (thread.attention !== undefined) {
       out.push({

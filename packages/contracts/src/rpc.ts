@@ -399,6 +399,8 @@ export const SearchHit = Type.Object({
   field: Type.Union([Type.Literal("title"), Type.Literal("message")]),
   /** ms of the matched message, else the thread's last activity */
   at: Type.Number(),
+  /** R16: the matched message, when the snippet came from one (the palette scrolls to it) */
+  messageId: Type.Optional(Type.String()),
 });
 export type SearchHit = Static<typeof SearchHit>;
 

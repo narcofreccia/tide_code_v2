@@ -8,6 +8,8 @@ export {
   type TideAuth,
   type TideConnectionOptions,
 } from "./connection.ts";
+export { childThreadsOf, selectChildAttention, selectChildRequests } from "./childRequests.ts";
+export { selectWaitingOn } from "./inboxSelectors.ts";
 export {
   createModelStore,
   type ModelStore,
@@ -63,6 +65,7 @@ export {
   selectRailGroups,
   selectSettled,
   isSettled,
+  isListedThread,
   type RailGroups,
   type RailGroupOptions,
   selectPrWatch,

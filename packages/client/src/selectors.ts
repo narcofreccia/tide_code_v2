@@ -181,6 +181,11 @@ export function selectSettled(model: ReadModel, projectId?: string): Thread[] {
  * settled, settled over pinned, pinned over working; each group keeps
  * `compareByAttention` order except settled (newest settle first).
  */
+/** R16: side chats live under their parent (thread header, side pane), never as rail or palette rows. */
+export function isListedThread(thread: Thread): boolean {
+  return thread.role !== "side";
+}
+
 export function selectRailGroups(
   model: ReadModel,
   projectId: string,
@@ -189,7 +194,7 @@ export function selectRailGroups(
 ): RailGroups {
   const groups: RailGroups = { pinned: [], threads: [], working: [], snoozed: [], settled: [], archived: [] };
   for (const thread of Object.values(model.threads)) {
-    if (thread.projectId !== projectId) continue;
+    if (thread.projectId !== projectId || !isListedThread(thread)) continue;
     if (thread.archivedAt !== undefined) groups.archived.push(thread);
     else if (isSnoozed(thread, now)) groups.snoozed.push(thread);
     else if (isSettled(thread)) groups.settled.push(thread);

@@ -23,6 +23,8 @@ export const ProjectUpdate = Type.Object({
   title: Type.Optional(Type.String({ minLength: 1 })),
   /** R11: null clears the icon */
   icon: Type.Optional(Type.Union([ProjectIcon, Type.Null()])),
+  /** R16 */
+  pinned: Type.Optional(Type.Boolean()),
 });
 export const ProjectLinkAdd = Type.Object({
   type: Type.Literal("project.link.add"), commandId: CommandId,
@@ -202,6 +204,17 @@ export const TurnReorder = Type.Object({ type: Type.Literal("turn.reorder"), com
 /** Send a queued turn into the running one as a steer instead of waiting. */
 export const TurnPromote = Type.Object({ type: Type.Literal("turn.promote"), commandId: CommandId, turnId: Type.String() });
 /** New thread that continues this one from a settled turn (native fork when the harness can, portable handoff otherwise). */
+/**
+ * R16: a side chat — a quick question asked beside the running thread. The decider forks
+ * the parent at its latest settled turn (or starts an empty child when there is none),
+ * on the parent's checkout, same harness/model/mode. Role `side`; never listed in the rail.
+ */
+export const ThreadSide = Type.Object({
+  type: Type.Literal("thread.side"),
+  commandId: CommandId,
+  threadId: Type.String(),
+  title: Type.Optional(Type.String({ minLength: 1 })),
+});
 export const ThreadFork = Type.Object({
   type: Type.Literal("thread.fork"),
   commandId: CommandId,
@@ -296,7 +309,7 @@ export const ClientCommand = Type.Union([
   ApprovalRespond, UserInputRespond,
   PlanImplement, PlanDismiss,
   ThreadPublish, ThreadMerge, WorktreeDetach,
-  TurnSteer, TurnEdit, TurnReorder, TurnPromote, ThreadFork, ThreadRollback, ThreadSnooze, ThreadResume, ThreadLimitPolicy, PrWatch, ThreadSettle, ThreadUnsettle,
+  TurnSteer, TurnEdit, TurnReorder, TurnPromote, ThreadFork, ThreadSide, ThreadRollback, ThreadSnooze, ThreadResume, ThreadLimitPolicy, PrWatch, ThreadSettle, ThreadUnsettle,
   TaskCreate, TaskUpdate, TaskDelete, TaskRunNow, TeamRun,
   ExpertsCreate, ExpertsStart, ExpertsPost, ExpertsSetPhase, ExpertsArchive,
 ]);

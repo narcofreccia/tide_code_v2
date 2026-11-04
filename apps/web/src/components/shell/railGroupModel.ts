@@ -1,4 +1,4 @@
-import { compareByAttention, selectExpertsSessions, selectInbox, selectRailGroups } from "@tide/client";
+import { compareByAttention, isListedThread, selectExpertsSessions, selectInbox, selectRailGroups } from "@tide/client";
 import type { ExpertsSession, ReadModel, Thread } from "@tide/contracts";
 import { sessionThreadIds } from "./ExpertsGroup.tsx";
 
@@ -37,7 +37,7 @@ export function railNeedsOrder(model: ReadModel, projectIds: readonly string[], 
   const ids: string[] = [];
   const seen = new Set<string>();
   for (const item of selectInbox(model, undefined, now)) {
-    if (!scope.has(item.thread.projectId) || seen.has(item.thread.id)) continue;
+    if (!scope.has(item.thread.projectId) || seen.has(item.thread.id) || !isListedThread(item.thread)) continue;
     seen.add(item.thread.id);
     ids.push(item.thread.id);
   }

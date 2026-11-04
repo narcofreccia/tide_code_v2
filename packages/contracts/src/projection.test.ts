@@ -60,6 +60,20 @@ describe("projection", () => {
     expect(m.threads["t1"]?.updatedAt).toBe(8);
     expect(applyRecord(m, rec(9, { type: "handoff.refined", handoffId: "nope", threadId: "t1", text: "x", coveredTurnIds: [], omittedTurnIds: [], judge: { kept: 0, dropped: 0, source: "none", confidence: 0, at: 9 }, at: 9 })).handoffs).toEqual(m.handoffs);
   });
+  it("R16: project.updated pins and unpins; thread.created keeps the side role", () => {
+    const m = replay(emptyReadModel(), [
+      rec(1, { type: "project.created", project: { id: "p1", title: "T", rootPath: "/x", createdAt: 1, updatedAt: 1 } }),
+      rec(2, { type: "project.updated", projectId: "p1", pinned: true, updatedAt: 2 }),
+      rec(3, { type: "thread.created", thread: { id: "t1", projectId: "p1", title: "Main", provider: "claude", mode: "approval-required", interaction: "default", status: "idle", createdAt: 3, updatedAt: 3 } }),
+      rec(4, { type: "thread.created", thread: { id: "s1", projectId: "p1", parentThreadId: "t1", role: "side", title: "Side", provider: "claude", mode: "approval-required", interaction: "default", status: "idle", createdAt: 4, updatedAt: 4 } }),
+    ]);
+    expect(m.projects["p1"]).toMatchObject({ pinned: true, updatedAt: 2 });
+    expect(m.threads["s1"]).toMatchObject({ role: "side", parentThreadId: "t1" });
+    const unpinned = applyRecord(m, rec(5, { type: "project.updated", projectId: "p1", pinned: false, updatedAt: 5 }));
+    expect(unpinned.projects["p1"]?.pinned).toBe(false);
+    const titled = applyRecord(unpinned, rec(6, { type: "project.updated", projectId: "p1", title: "T2", updatedAt: 6 }));
+    expect(titled.projects["p1"]).toMatchObject({ title: "T2", pinned: false });
+  });
   it("ignores already-applied seqs", () => {
     const base = replay(emptyReadModel(), [rec(1, { type: "project.created", project: { id: "p1", title: "T", rootPath: "/x", createdAt: 1, updatedAt: 1 } })]);
     const again = applyRecord(base, rec(1, { type: "project.archived", projectId: "p1", archivedAt: 9 }));

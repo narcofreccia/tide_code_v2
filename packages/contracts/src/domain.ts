@@ -294,6 +294,8 @@ export const Project = Type.Object({
   links: Type.Optional(Type.Array(ProjectLink)),
   /** R13 */
   runStack: Type.Optional(RunStack),
+  /** R16: pinned projects lead every project list and the rail's project folders */
+  pinned: Type.Optional(Type.Boolean()),
   createdAt: Type.Number(),
   updatedAt: Type.Number(),
   archivedAt: Type.Optional(Type.Number()),
@@ -583,8 +585,11 @@ export const Thread = Type.Object({
   model: Type.Optional(Type.String()),
   mode: RuntimeMode,
   interaction: InteractionMode,
-  /** set when the thread belongs to an Experts session or was delegated by another thread */
-  role: Type.Optional(Type.Union([Type.Literal("expert"), Type.Literal("lead"), Type.Literal("delegate")])),
+  /**
+   * set when the thread belongs to an Experts session, was delegated by another thread, or
+   * (R16) is a side chat: a quick question forked beside its parent, listed only under it
+   */
+  role: Type.Optional(Type.Union([Type.Literal("expert"), Type.Literal("lead"), Type.Literal("delegate"), Type.Literal("side")])),
   expertsSessionId: Type.Optional(Type.String()),
   /** thread that created this one via tide_delegate */
   delegatedBy: Type.Optional(Type.String()),

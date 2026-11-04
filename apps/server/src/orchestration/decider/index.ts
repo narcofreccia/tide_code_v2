@@ -71,6 +71,9 @@ export function decide(model: ReadModel, command: Command, ctx: DecideContext): 
     case "rollback.report":
       return decideLineage(model, command, ctx);
 
+    case "thread.side":
+      return fail("invalid-command", "side chats are not available on this server yet");
+
     case "activity.upsert":
     case "approval.respond":
     case "user-input.respond":

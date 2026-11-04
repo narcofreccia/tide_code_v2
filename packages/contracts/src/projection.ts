@@ -161,7 +161,13 @@ export function applyEvent(model: ReadModel, event: DomainEvent): ReadModel {
     case "project.updated": {
       const p = model.projects[event.projectId];
       if (!p) return model;
-      const next: Project = { ...p, ...(event.title !== undefined ? { title: event.title } : {}), ...(event.icon !== undefined ? { icon: event.icon } : {}), updatedAt: event.updatedAt };
+      const next: Project = {
+        ...p,
+        ...(event.title !== undefined ? { title: event.title } : {}),
+        ...(event.icon !== undefined ? { icon: event.icon } : {}),
+        ...(event.pinned !== undefined ? { pinned: event.pinned } : {}),
+        updatedAt: event.updatedAt,
+      };
       if (event.clearIcon) delete next.icon;
       return { ...model, projects: { ...model.projects, [p.id]: next } };
     }
