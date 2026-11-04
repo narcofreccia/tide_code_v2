@@ -125,4 +125,13 @@ describe("Settings › Automations", () => {
       }),
     );
   });
+
+  it("shows a finished one-time task as Done and locks its switch", () => {
+    const at = new Date(2026, 10, 6, 14, 30).getTime();
+    setup([task("o", { schedule: { kind: "once", at }, enabled: false, completedAt: at, nextRunAt: at, runs: 1 })]);
+    expect(screen.getByText(/^once on 6 Nov, 14:30$|^once on 6 Nov \d{4}, 14:30$/)).toBeDefined();
+    expect(screen.getByText(/^Done · 6 Nov(?: \d{4})?, 14:30$/)).toBeDefined();
+    expect(screen.queryByText("paused")).toBeNull();
+    expect((screen.getByRole("switch", { name: "Enable Task o" }) as HTMLInputElement).disabled).toBe(true);
+  });
 });

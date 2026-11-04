@@ -35,6 +35,8 @@ interface StoredSettings {
   glassBox?: Partial<UserSettings["glassBox"]>;
   /** R11 */
   keybindings?: Record<string, string>;
+  /** R16: appended to the title prompt */
+  titleInstructions?: string;
 }
 
 const DEFAULT_GIT: GitSettings = { mergeStrategy: "squash", deleteBranchOnMerge: true, confirmMergeBack: true };
@@ -66,7 +68,20 @@ function assertProviderInstances(list: ProviderInstanceConfig[]): void {
   }
 }
 
-export const DEFAULT_INBOX: InboxSettings = { autoSettleAfterDays: 3, autoSettleOnMerge: true, workingSection: false };
+export const DEFAULT_SNOOZE_OPTIONS: string[] = ["1h", "tomorrow 09:00"];
+export const DEFAULT_INBOX: InboxSettings = { autoSettleAfterDays: 3, autoSettleOnMerge: true, workingSection: false, snoozeOptions: DEFAULT_SNOOZE_OPTIONS };
+export const MAX_SNOOZE_OPTIONS = 8;
+export const MAX_TITLE_INSTRUCTIONS = 500;
+const SNOOZE_OPTION = /^(?:[1-9]\d*[mhd]|(?:mon|tue|wed|thu|fri|sat|sun|tomorrow) (?:[01]\d|2[0-3]):[0-5]\d)$/;
+
+/** Lowercased, trimmed, deduplicated snooze entries, or the first offending entry's message. */
+function snoozeOptionsOf(list: readonly string[]): { options: string[] } | { problem: string } {
+  const options = [...new Set(list.map((s) => s.trim().toLowerCase()))];
+  if (options.length > MAX_SNOOZE_OPTIONS) return { problem: `inbox.snoozeOptions takes at most ${MAX_SNOOZE_OPTIONS} entries (got ${options.length})` };
+  const bad = options.find((o) => !SNOOZE_OPTION.test(o));
+  if (bad !== undefined) return { problem: `inbox.snoozeOptions: "${bad}" is not a duration (2h, 45m, 1d) or a time on a day (tomorrow 09:00, fri 18:00)` };
+  return { options };
+}
 
 function loadInbox(raw: unknown): Partial<InboxSettings> {
   const r = (typeof raw === "object" && raw !== null ? raw : {}) as Record<string, unknown>;
@@ -74,6 +89,10 @@ function loadInbox(raw: unknown): Partial<InboxSettings> {
   if (typeof r["autoSettleAfterDays"] === "number" && r["autoSettleAfterDays"] >= 0) out.autoSettleAfterDays = r["autoSettleAfterDays"];
   if (typeof r["autoSettleOnMerge"] === "boolean") out.autoSettleOnMerge = r["autoSettleOnMerge"];
   if (typeof r["workingSection"] === "boolean") out.workingSection = r["workingSection"];
+  if (Array.isArray(r["snoozeOptions"]) && r["snoozeOptions"].every((o) => typeof o === "string")) {
+    const checked = snoozeOptionsOf(r["snoozeOptions"] as string[]);
+    if ("options" in checked && checked.options.length > 0) out.snoozeOptions = checked.options;
+  }
   return out;
 }
 
@@ -190,7 +209,7 @@ export class SettingsStore {
   }
 
   get(): UserSettings {
-    const { decisions, continueAfterRestart, followUpMode, limitPolicy, teams, inbox, git, textModel, providerInstances, environment, relay, glassBox, keybindings, ...rest } = this.#state;
+    const { decisions, continueAfterRestart, followUpMode, limitPolicy, teams, inbox, git, textModel, providerInstances, environment, relay, glassBox, keybindings, titleInstructions, ...rest } = this.#state;
     return {
       ...rest,
       keybindings: { ...(keybindings ?? {}) },
@@ -201,6 +220,7 @@ export class SettingsStore {
       git: { ...DEFAULT_GIT, ...git },
       providerInstances: structuredClone(providerInstances ?? []),
       ...(textModel !== undefined ? { textModel: { ...textModel } } : {}),
+      ...(titleInstructions !== undefined ? { titleInstructions } : {}),
       decisions: decisionsDto(decisions),
       continueAfterRestart: continueAfterRestart ?? false,
       followUpMode: followUpMode ?? "steer",
@@ -227,6 +247,13 @@ export class SettingsStore {
     if (patch.inbox?.autoSettleAfterDays !== undefined && !(Number.isFinite(patch.inbox.autoSettleAfterDays) && patch.inbox.autoSettleAfterDays >= 0)) {
       throw new SettingsError(`inbox.autoSettleAfterDays must be ≥ 0 (got ${patch.inbox.autoSettleAfterDays})`);
     }
+    if (patch.inbox?.snoozeOptions !== undefined) {
+      const checked = snoozeOptionsOf(patch.inbox.snoozeOptions);
+      if ("problem" in checked) throw new SettingsError(checked.problem);
+    }
+    if (typeof patch.titleInstructions === "string" && patch.titleInstructions.trim().length > MAX_TITLE_INSTRUCTIONS) {
+      throw new SettingsError(`titleInstructions must be at most ${MAX_TITLE_INSTRUCTIONS} characters`);
+    }
     const next: StoredSettings = {
       providerDefaults: patch.providerDefaults ?? this.#state.providerDefaults,
       worktreeByDefault: patch.worktreeByDefault ?? this.#state.worktreeByDefault,
@@ -243,7 +270,11 @@ export class SettingsStore {
       keybindings: patch.keybindings !== undefined ? Object.fromEntries(Object.entries(patch.keybindings).filter(([, v]) => v !== "")) : { ...(this.#state.keybindings ?? {}) },
       glassBox: { ...this.#state.glassBox, ...(patch.glassBox?.limitsInStatusBar !== undefined ? { limitsInStatusBar: patch.glassBox.limitsInStatusBar } : {}), ...(patch.glassBox?.readHarnessLogs !== undefined ? { readHarnessLogs: patch.glassBox.readHarnessLogs } : {}) },
       ...(this.#state.textModel !== undefined ? { textModel: this.#state.textModel } : {}),
+      ...(this.#state.titleInstructions !== undefined ? { titleInstructions: this.#state.titleInstructions } : {}),
     };
+    if (patch.inbox?.snoozeOptions !== undefined && patch.inbox.snoozeOptions.length === 0) delete next.inbox?.snoozeOptions; // empty = back to the defaults
+    if (patch.titleInstructions === null || (typeof patch.titleInstructions === "string" && patch.titleInstructions.trim() === "")) delete next.titleInstructions;
+    else if (typeof patch.titleInstructions === "string") next.titleInstructions = patch.titleInstructions.trim();
     if (patch.environment !== undefined) {
       const env = { ...(next.environment ?? {}) };
       if (patch.environment.name !== undefined) env.name = patch.environment.name.trim();
@@ -300,6 +331,7 @@ export class SettingsStore {
       teams: Array.isArray(r.teams) ? r.teams.filter((t): t is Team => Check(Team, t)) : [],
       inbox: loadInbox(r.inbox),
       git: loadGit(r.git),
+      ...(typeof r.titleInstructions === "string" && r.titleInstructions.trim() !== "" ? { titleInstructions: r.titleInstructions.trim().slice(0, MAX_TITLE_INSTRUCTIONS) } : {}),
       ...(textModel !== undefined ? { textModel } : {}),
       providerInstances: Array.isArray(r.providerInstances) ? r.providerInstances.filter((p): p is ProviderInstanceConfig => Check(ProviderInstanceConfig, p)) : [],
       ...(typeof r.environment === "object" && r.environment !== null ? { environment: {

@@ -47,6 +47,31 @@ describe("Settings › Projects", () => {
     expect(fake.dispatch).toHaveBeenCalledWith(expect.objectContaining({ type: "project.update", projectId: "p1", pinned: true }));
   });
 
+  it("sets and clears a project's own title instructions from its menu", async () => {
+    const fake = setup();
+    openMenu("Tide");
+    await act(async () => fireEvent.click(screen.getByRole("menuitem", { name: "Title instructions…" })));
+    const field = screen.getByLabelText("Title instructions for Tide");
+    fireEvent.change(field, { target: { value: " ticket id first " } });
+    await act(async () => fireEvent.blur(field));
+    expect(fake.dispatch).toHaveBeenCalledWith(expect.objectContaining({ type: "project.update", projectId: "p1", titleInstructions: "ticket id first" }));
+  });
+
+  it("clearing a project's saved instructions sends null", async () => {
+    const fake = attachFakeStore(modelWith({ projects: { p1: { ...tide, titleInstructions: "five words max" } }, threads: {} }));
+    render(<ProjectsSection />);
+    const field = screen.getByLabelText("Title instructions for Tide");
+    fireEvent.change(field, { target: { value: "  " } });
+    await act(async () => fireEvent.blur(field));
+    expect(fake.dispatch).toHaveBeenCalledWith(expect.objectContaining({ type: "project.update", projectId: "p1", titleInstructions: null }));
+  });
+
+  it("shows a project's saved title instructions without opening the menu", () => {
+    attachFakeStore(modelWith({ projects: { p1: { ...tide, titleInstructions: "five words max" } }, threads: {} }));
+    render(<ProjectsSection />);
+    expect((screen.getByLabelText("Title instructions for Tide") as HTMLTextAreaElement).value).toBe("five words max");
+  });
+
   it("archives with an Undo toast that unarchives", async () => {
     const fake = setup();
     openMenu("Tide");

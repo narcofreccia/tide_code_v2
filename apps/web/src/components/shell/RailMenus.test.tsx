@@ -6,11 +6,13 @@ import { ProjectDialogHost } from "./ProjectDialogs.tsx";
 import { ToastHost } from "../ui/Toast.tsx";
 import { attachFakeStore, makeThread, makeTurn, modelWith, resetUi } from "../../testHarness.ts";
 import { useUi } from "../../state/ui.ts";
+import { defaultUserSettings, useServerSettings } from "../../state/serverSettings.ts";
 
 afterEach(() => {
   cleanup();
   resetUi();
   vi.useRealTimers();
+  useServerSettings.setState({ settings: defaultUserSettings() });
 });
 
 const project = { id: "p1", title: "Tide", rootPath: "/src/tide", createdAt: 1, updatedAt: 1 };
@@ -120,12 +122,28 @@ describe("rail thread menu", () => {
     expect(useUi.getState().threadDialog).toEqual({ kind: "fork", threadId: "t1", turnId: "u1" });
   });
 
+  it("lists the snooze options from Settings, in order, and snoozes to the picked one", async () => {
+    vi.useFakeTimers({ toFake: ["Date"] });
+    vi.setSystemTime(new Date(2026, 10, 4, 10, 0, 0)); // Wed 4 Nov 2026
+    const settings = defaultUserSettings();
+    useServerSettings.setState({ settings: { ...settings, inbox: { ...settings.inbox, snoozeOptions: ["45m", "fri 18:00", "nope"] } } });
+    const fake = mount([makeThread("t1", { title: "Router" })]);
+    const menu = openMenu("Router");
+    choose(menu, /Snooze/);
+    const labels = within(screen.getByRole("menu")).getAllByRole("menuitem").map((el) => el.textContent).slice(1); // the first item is the submenu's back row
+    expect(labels).toEqual(["45 min", "Fri 18:00"]);
+    await act(async () => {
+      choose(screen.getByRole("menu"), "Fri 18:00");
+    });
+    expect(fake.dispatch).toHaveBeenCalledWith(expect.objectContaining({ type: "thread.snooze", threadId: "t1", until: new Date(2026, 10, 6, 18, 0, 0).getTime() }));
+  });
+
   it("snoozes for an hour from the submenu and offers Undo", async () => {
     const fake = mount([makeThread("t1", { title: "Router" })]);
     const menu = openMenu("Router");
     choose(menu, /Snooze/);
     await act(async () => {
-      choose(screen.getByRole("menu"), "1 hour");
+      choose(screen.getByRole("menu"), "1 h");
     });
     expect(fake.dispatch).toHaveBeenCalledWith(expect.objectContaining({ type: "thread.snooze", threadId: "t1" }));
     expect(screen.getByText(/^Snoozed until /)).toBeDefined();

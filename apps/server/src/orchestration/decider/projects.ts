@@ -19,6 +19,13 @@ type ProjectCommand =
  */
 export const normalizeLinkPath = (path: string): string => resolve(path);
 
+/** null or blank clears the project's override (back to the global instructions); text is trimmed. */
+function titleInstructionsPatch(value: string | null | undefined): { titleInstructions?: string; clearTitleInstructions?: true } {
+  if (value === undefined) return {};
+  const text = value?.trim() ?? "";
+  return text === "" ? { clearTitleInstructions: true } : { titleInstructions: text };
+}
+
 export function decideProject(model: ReadModel, command: ProjectCommand, ctx: DecideContext): DecideResult {
   switch (command.type) {
     case "project.create": {
@@ -43,6 +50,7 @@ export function decideProject(model: ReadModel, command: ProjectCommand, ctx: De
         ...(command.title !== undefined ? { title: command.title } : {}),
         ...(command.icon === null ? { clearIcon: true } : command.icon !== undefined ? { icon: command.icon } : {}),
         ...(command.pinned !== undefined ? { pinned: command.pinned } : {}),
+        ...titleInstructionsPatch(command.titleInstructions),
         updatedAt: ctx.now,
       });
     }

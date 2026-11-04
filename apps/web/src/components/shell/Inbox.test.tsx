@@ -148,7 +148,7 @@ describe("rail multi-select", () => {
     const fake = mount(three);
     fireEvent.click(screen.getByText("Charlie"), { metaKey: true });
     fireEvent.click(screen.getByRole("button", { name: "Snooze ▾" }));
-    fireEvent.click(screen.getByRole("menuitem", { name: "1 hour" }));
+    fireEvent.click(screen.getByRole("menuitem", { name: "1 h" }));
     await flush();
     expect(fake.dispatch).toHaveBeenCalledWith(
       expect.objectContaining({ type: "thread.snooze", threadId: "c", until: expect.any(Number) }),

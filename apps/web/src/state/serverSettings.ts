@@ -179,6 +179,12 @@ export function setContinueAfterRestart(continueAfterRestart: boolean): Promise<
   return patchServerSettings({ continueAfterRestart });
 }
 
+/** Blank clears the instructions. */
+export function setTitleInstructions(text: string): Promise<void> {
+  const trimmed = text.trim();
+  return patchServerSettings({ titleInstructions: trimmed === "" ? null : trimmed });
+}
+
 export function setFollowUpDefault(followUpMode: UserSettings["followUpMode"]): Promise<void> {
   return patchServerSettings({ followUpMode });
 }

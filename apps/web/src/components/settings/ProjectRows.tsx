@@ -5,6 +5,7 @@ import { archiveProject, renameProject, setProjectPinned, unarchiveProject } fro
 import { relativeTime } from "../../lib/relativeTime.ts";
 import { copyText } from "../../lib/threadActions.ts";
 import { envOfProject } from "../../state/environments.ts";
+import { dispatchOrToast } from "../../lib/dispatchOrToast.ts";
 import { useUi } from "../../state/ui.ts";
 import { EnvTag } from "../fleet/FleetBits.tsx";
 import { Button } from "../ui/Button.tsx";
@@ -12,6 +13,7 @@ import { Icon } from "../ui/Icon.tsx";
 import { ContextMenu, type MenuItem, type MenuPosition } from "../ui/Menu.tsx";
 import { ProjectIcon } from "../ui/ProjectIcon.tsx";
 import { SettingRow } from "./ui/SettingRow.tsx";
+import { SettingText } from "./ui/SettingText.tsx";
 import ui from "./ui/settings.module.css";
 import styles from "./Projects.module.css";
 
@@ -71,10 +73,12 @@ export function ProjectRow({
 }) {
   const [renaming, setRenaming] = useState(false);
   const [menu, setMenu] = useState<MenuPosition | undefined>(undefined);
+  const [titling, setTitling] = useState(false);
   const items: MenuItem[] = [
     { label: project.pinned ? "Unpin" : "Pin", onSelect: () => setProjectPinned(project.id, project.pinned !== true) },
     { label: "Rename", onSelect: () => setRenaming(true) },
     { label: "Icon…", onSelect: onIcon },
+    { label: "Title instructions…", onSelect: () => setTitling(true) },
     { label: "Linked repositories…", onSelect: () => useUi.getState().setLinksProject(project.id) },
     { label: "Copy path", onSelect: () => void copyText(project.rootPath, "path") },
     { label: "Archive", separatorBefore: true, onSelect: () => archiveProject(project.id) },
@@ -95,6 +99,24 @@ export function ProjectRow({
         </span>
       }
       help={<MiddlePath path={project.rootPath} />}
+      extra={
+        titling || project.titleInstructions !== undefined ? (
+          <SettingText
+            multiline
+            label={`Title instructions for ${project.title}`}
+            maxLength={500}
+            placeholder="Uses the instructions from Settings › General"
+            value={project.titleInstructions ?? ""}
+            onCommit={(text) =>
+              dispatchOrToast("Saving the title instructions", {
+                type: "project.update",
+                projectId: project.id,
+                titleInstructions: text.trim() === "" ? null : text.trim(),
+              })
+            }
+          />
+        ) : undefined
+      }
       control={
         <>
           <span className={styles.count}>{plural(threads, "thread")}</span>

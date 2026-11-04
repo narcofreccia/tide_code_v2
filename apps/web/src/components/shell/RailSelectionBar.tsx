@@ -1,6 +1,7 @@
 import { useState } from "react";
 import { mergeableOf, mergeSkipSummary, regenerateTitles, settleThreads, snoozeThreads } from "../../lib/inboxActions.ts";
-import { tomorrowMorning } from "../../lib/turnActions.ts";
+import { resolveSnoozeOptions } from "../../lib/snooze.ts";
+import { useServerSettings } from "../../state/serverSettings.ts";
 import { useModel } from "../../state/model.ts";
 import { useUi } from "../../state/ui.ts";
 import { clearRailSelection, useRailSelection } from "../../state/railSelection.ts";
@@ -8,14 +9,13 @@ import { Button } from "../ui/Button.tsx";
 import { ContextMenu, type MenuPosition } from "../ui/Menu.tsx";
 import styles from "./RailSelectionBar.module.css";
 
-const HOUR = 3_600_000;
-
 /** "3 selected · Settle · Snooze ▾ · Regenerate titles · ✕": bulk actions over the rail's selection. */
 export function RailSelectionBar() {
   const picked = useRailSelection((s) => s.ids);
   // a selected thread that was deleted meanwhile drops out
   const ids = useModel((s) => picked.filter((id) => s.model.threads[id] !== undefined).join("\n"));
   const [snooze, setSnooze] = useState<MenuPosition | undefined>(undefined);
+  const snoozeOptions = useServerSettings((st) => st.settings.inbox.snoozeOptions);
   const [busy, setBusy] = useState(false);
   const list = ids === "" ? [] : ids.split("\n");
   const mergeable = useModel((s) => mergeableOf(s.model, list).map((t) => t.id).join("\n"));
@@ -79,10 +79,7 @@ export function RailSelectionBar() {
           position={snooze}
           label="Snooze selected"
           onClose={() => setSnooze(undefined)}
-          items={[
-            { label: "1 hour", onSelect: () => run((xs) => snoozeThreads(xs, Date.now() + HOUR)) },
-            { label: "Until tomorrow 09:00", onSelect: () => run((xs) => snoozeThreads(xs, tomorrowMorning())) },
-          ]}
+          items={resolveSnoozeOptions(snoozeOptions).map((o) => ({ label: o.label, onSelect: () => run((xs) => snoozeThreads(xs, o.until())) }))}
         />
       ) : null}
     </div>

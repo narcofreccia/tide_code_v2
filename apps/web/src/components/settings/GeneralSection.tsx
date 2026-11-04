@@ -3,6 +3,7 @@ import {
   setContinueAfterRestart,
   setFollowUpDefault,
   setLimitPolicyDefault,
+  setTitleInstructions,
   useServerSettings,
 } from "../../state/serverSettings.ts";
 import type { SectionMeta } from "./search.ts";
@@ -10,6 +11,7 @@ import { SettingNote, SettingsGroup } from "./ui/SettingsGroup.tsx";
 import { SettingsPage } from "./ui/SettingsPage.tsx";
 import { SettingRow } from "./ui/SettingRow.tsx";
 import { SettingSelect } from "./ui/SettingSelect.tsx";
+import { SettingText } from "./ui/SettingText.tsx";
 import { SettingToggle } from "./ui/SettingToggle.tsx";
 
 type FollowUpMode = UserSettings["followUpMode"];
@@ -27,7 +29,7 @@ const LIMIT: { value: LimitPolicy; label: string }[] = [
 export const META: SectionMeta = {
   title: "General",
   blurb: "How threads behave when you write mid-turn, hit a usage limit or restart the server.",
-  keywords: ["Follow-up default", "When a provider reports its usage limit", "Continue threads after a restart", "steer", "queue", "handoff"],
+  keywords: ["Follow-up default", "When a provider reports its usage limit", "Continue threads after a restart", "steer", "queue", "handoff", "Title instructions", "titles"],
 };
 
 /** Follow-up, usage-limit and restart defaults; server-side, so every client agrees. */
@@ -60,6 +62,22 @@ export function GeneralSection() {
           Switching a thread to another harness carries a budgeted excerpt of its history, not the full session:
           handoffs are lossy.
         </SettingNote>
+      </SettingsGroup>
+      <SettingsGroup title="Titles">
+        <SettingRow
+          label="Title instructions"
+          help="Added to the prompt that names threads, e.g. “start with the ticket id” or “at most 5 words”. A project can set its own in Settings › Projects."
+          control={
+            <SettingText
+              multiline
+              label="Title instructions"
+              maxLength={500}
+              placeholder="None"
+              value={settings.titleInstructions ?? ""}
+              onCommit={setTitleInstructions}
+            />
+          }
+        />
       </SettingsGroup>
     </SettingsPage>
   );

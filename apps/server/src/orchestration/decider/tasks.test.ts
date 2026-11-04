@@ -154,3 +154,45 @@ describe("decide: webhook schedules (R9)", () => {
     expect(requested.userMessage.notification?.summary).toBe("webhook: Nightly");
   });
 });
+
+describe("decide: once schedules (R16)", () => {
+  const onceIn = (ms: number) => ({ kind: "once" as const, at: ctx.now + ms });
+
+  it("creates with nextRunAt = at; refuses a time that is not in the future", () => {
+    const f = base();
+    const schedule = onceIn(60_000);
+    const { model, taskId } = created(f, { schedule });
+    expect(model.scheduledTasks[taskId]).toMatchObject({ enabled: true, nextRunAt: schedule.at });
+    expect(tryRun(f.model, { type: "task.create", projectId: f.projectId, title: "x", prompt: "p", schedule: onceIn(-1) })).toMatchObject({ ok: false, error: { code: "invalid-command" } });
+    expect(tryRun(f.model, { type: "task.create", projectId: f.projectId, title: "x", prompt: "p", schedule: onceIn(0) })).toMatchObject({ ok: false });
+    expect(tryRun(model, { type: "task.update", taskId, schedule: onceIn(-5) })).toMatchObject({ ok: false, error: { code: "invalid-command" } });
+  });
+
+  it("a scheduled fire completes and disables the task; the fire still produces its turn", () => {
+    const f = base();
+    const schedule = onceIn(60_000);
+    const t = created(f, { schedule });
+    const fired = run(t.model, { type: "task.fire", commandId: "c", taskId: t.taskId, nextRunAt: schedule.at, useWorktreeDefault: false });
+    expect(fired.events.map((e) => e.type)).toEqual(["thread.created", "turn.requested", "task.fired", "task.updated"]);
+    expect(fired.model.scheduledTasks[t.taskId]).toMatchObject({ runs: 1, enabled: false, completedAt: ctx.now });
+    expect(tryRun(fired.model, { type: "task.fire", commandId: "c2", taskId: t.taskId })).toEqual({ ok: true, events: [] });
+  });
+
+  it("run-now leaves a pending once task armed", () => {
+    const f = base();
+    const t = created(f, { schedule: onceIn(60_000) });
+    const now = run(t.model, { type: "task.run-now", taskId: t.taskId });
+    expect(now.model.scheduledTasks[t.taskId]).toMatchObject({ enabled: true, runs: 1 });
+    expect(now.model.scheduledTasks[t.taskId]?.completedAt).toBeUndefined();
+  });
+
+  it("a finished task cannot be re-enabled as is, but a new time arms it again", () => {
+    const f = base();
+    const t = created(f, { schedule: onceIn(60_000) });
+    const done = run(t.model, { type: "task.fire", commandId: "c", taskId: t.taskId, useWorktreeDefault: false }).model;
+    expect(tryRun(done, { type: "task.update", taskId: t.taskId, enabled: true })).toMatchObject({ ok: false, error: { code: "invalid-command" } });
+    const again = onceIn(120_000);
+    const armed = run(done, { type: "task.update", taskId: t.taskId, schedule: again });
+    expect(armed.model.scheduledTasks[t.taskId]).toMatchObject({ enabled: true, nextRunAt: again.at });
+  });
+});

@@ -1,6 +1,7 @@
 import type { ProviderKind } from "@tide/contracts";
 import { patchServerSettings, useServerSettings } from "../../state/serverSettings.ts";
 import { modelChoiceValue, modelChoices, providerStatus, useProviderRoster } from "../../state/providers.ts";
+import { DEFAULT_SNOOZE_OPTIONS, snoozeFieldProblem, splitSnoozeField } from "../../lib/snooze.ts";
 import { PROVIDER_LABELS } from "../../lib/vocab.ts";
 import type { SelectOption } from "../ui/Select.tsx";
 import type { SectionMeta } from "./search.ts";
@@ -23,6 +24,8 @@ export const META: SectionMeta = {
     "Group running threads under “Working”",
     "Text generation model",
     "titles",
+    "Snooze options",
+    "snooze",
   ],
 };
 
@@ -103,6 +106,22 @@ export function InboxSection() {
           Pinned threads, threads that are running or waiting on you, and threads with auto-settle turned off (thread
           menu) are never settled automatically.
         </SettingNote>
+      </SettingsGroup>
+      <SettingsGroup title="Snooze">
+        <SettingRow
+          label="Snooze options"
+          help="Comma-separated: a duration (2h, 45m, 1d) or a time on a day (tomorrow 09:00, fri 18:00). Up to 8; shown in every snooze menu."
+          control={
+            <SettingText
+              label="Snooze options"
+              mono
+              value={(inbox.snoozeOptions ?? DEFAULT_SNOOZE_OPTIONS).join(", ")}
+              normalize={(text) => splitSnoozeField(text).join(", ")}
+              validate={snoozeFieldProblem}
+              onCommit={(text) => patchServerSettings({ inbox: { snoozeOptions: splitSnoozeField(text) } })}
+            />
+          }
+        />
       </SettingsGroup>
       <SettingsGroup title="Titles">
         <SettingRow

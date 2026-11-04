@@ -3,7 +3,7 @@ import { selectProjects, selectScheduledTasks, selectThreadsByProject } from "@t
 import type { ScheduledTask } from "@tide/contracts";
 import { dispatchOrToast, runOrToast } from "../../lib/dispatchOrToast.ts";
 import { relativeTime, relativeUntil } from "../../lib/relativeTime.ts";
-import { describeSchedule } from "../../lib/schedule.ts";
+import { describeSchedule, formatOnce } from "../../lib/schedule.ts";
 import { createTask, deleteTask, runTaskNow, updateTask, type TaskFields } from "../../lib/taskActions.ts";
 import { useModel } from "../../state/model.ts";
 import { useUi } from "../../state/ui.ts";
@@ -33,6 +33,8 @@ function TaskRow({
   const model = useModel((s) => s.model);
   const selectThread = useUi((s) => s.selectThread);
   const target = task.threadId === undefined ? `new thread on ${task.provider ?? "default harness"}` : (model.threads[task.threadId]?.title ?? "thread (gone)");
+  // a one-time task that ran disabled itself; a new time arms it again (enabled) even though completedAt stays
+  const done = task.completedAt !== undefined && !task.enabled;
   const last = task.lastRunAt === undefined ? "never run" : `last ${relativeTime(task.lastRunAt)} ago`;
   return (
     <SettingRow
@@ -42,7 +44,7 @@ function TaskRow({
         <span className={styles.meta}>
           <span>{describeSchedule(task.schedule)}</span>
           <span>{target}</span>
-          <span>{task.enabled ? (task.nextRunAt === undefined ? "no next run" : `next ${relativeUntil(task.nextRunAt)}`) : "paused"}</span>
+          <span>{done ? `Done · ${formatOnce(task.completedAt as number)}` : task.enabled ? (task.nextRunAt === undefined ? "no next run" : `next ${relativeUntil(task.nextRunAt)}`) : "paused"}</span>
           {task.lastRunThreadId !== undefined ? (
             <Button variant="link" onClick={() => selectThread(task.lastRunThreadId ?? null)}>{last}</Button>
           ) : (
@@ -59,6 +61,7 @@ function TaskRow({
           <SettingToggle
             label={`Enable ${task.title}`}
             checked={task.enabled}
+            disabled={done}
             onChange={(enabled) => dispatchOrToast("Updating the automation", { type: "task.update", taskId: task.id, enabled })}
           />
         </>

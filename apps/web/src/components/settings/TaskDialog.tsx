@@ -21,7 +21,7 @@ const TIME = /^([01][0-9]|2[0-3]):[0-5][0-9]$/;
 interface Draft {
   title: string;
   prompt: string;
-  kind: "interval" | "fixed" | "webhook";
+  kind: "interval" | "fixed" | "once" | "webhook";
   /** webhook: the id in POST /hook/<hookId>; generated once per draft */
   hookId: string;
   /** webhook: optional HMAC secret; "" sends none */
@@ -31,6 +31,8 @@ interface Draft {
   times: string[];
   timeInput: string;
   weekdays: number[];
+  /** once: `datetime-local` value, local time ("2026-11-06T14:30") */
+  onceAt: string;
   target: "new" | "thread";
   provider: ProviderKind;
   model: string;
@@ -45,6 +47,22 @@ function randomHookId(): string {
   return Array.from(bytes, (b) => b.toString(16).padStart(2, "0")).join("");
 }
 
+const pad = (n: number): string => String(n).padStart(2, "0");
+
+/** ms epoch → the `datetime-local` input's value, in local time. */
+export function toLocalInput(ms: number): string {
+  const d = new Date(ms);
+  return `${d.getFullYear()}-${pad(d.getMonth() + 1)}-${pad(d.getDate())}T${pad(d.getHours())}:${pad(d.getMinutes())}`;
+}
+
+/** `datetime-local` value (local time) → ms epoch; NaN when empty or malformed. */
+export function fromLocalInput(value: string): number {
+  return /^\d{4}-\d{2}-\d{2}T\d{2}:\d{2}$/.test(value) ? new Date(value).getTime() : Number.NaN;
+}
+
+/** The next full hour, a sensible default for "once". */
+const nextHour = (now: number): number => Math.floor(now / 3_600_000) * 3_600_000 + 3_600_000;
+
 function initial(task: ScheduledTask | undefined): Draft {
   const s = task?.schedule;
   const everyMin = s?.kind === "interval" ? Math.round(s.everyMs / 60_000) : 30;
@@ -52,26 +70,27 @@ function initial(task: ScheduledTask | undefined): Draft {
   return {
     title: task?.title ?? "",
     prompt: task?.prompt ?? "",
-    // R16: the "once" kind gets its own radio in slice 3B; until then it edits as an interval
-    kind: s?.kind === "once" ? "interval" : (s?.kind ?? "interval"),
+    kind: s?.kind ?? "interval",
     hookId: s?.kind === "webhook" ? s.hookId : randomHookId(),
     secret: s?.kind === "webhook" ? (s.secret ?? "") : "",
     amount: String(hours ? everyMin / 60 : everyMin),
     unit: hours ? "hours" : "minutes",
     times: s?.kind === "fixed" ? [...s.times] : [],
     timeInput: "09:00",
+    onceAt: toLocalInput(s?.kind === "once" ? s.at : nextHour(Date.now())),
     weekdays: s?.kind === "fixed" ? [...s.weekdays] : [1, 2, 3, 4, 5],
     target: task?.threadId === undefined ? "new" : "thread",
     provider: task?.provider ?? "claude",
     model: task?.model ?? "",
     threadId: task?.threadId ?? "",
     useWorktree: task?.useWorktree ?? true,
-    enabled: task?.enabled ?? true,
+    // a one-time task that already ran comes back armed when it gets a new time
+    enabled: task?.completedAt !== undefined && !task.enabled ? true : (task?.enabled ?? true),
   };
 }
 
 /** Returns the first problem with the draft, or the fields to send. */
-export function validateDraft(d: Draft): { error: string } | { fields: TaskFields } {
+export function validateDraft(d: Draft, now: number = Date.now()): { error: string } | { fields: TaskFields } {
   if (d.title.trim() === "") return { error: "Give the automation a title." };
   if (d.prompt.trim() === "") return { error: "Write the prompt to send." };
   const amount = Number(d.amount);
@@ -79,6 +98,9 @@ export function validateDraft(d: Draft): { error: string } | { fields: TaskField
   if (d.kind === "interval" && (!Number.isFinite(amount) || everyMs < 60_000)) return { error: "The interval must be at least 1 minute." };
   if (d.kind === "fixed" && d.times.length === 0) return { error: "Add at least one time." };
   if (d.kind === "fixed" && d.weekdays.length === 0) return { error: "Pick at least one weekday." };
+  const onceAt = fromLocalInput(d.onceAt);
+  if (d.kind === "once" && Number.isNaN(onceAt)) return { error: "Pick the date and time to run." };
+  if (d.kind === "once" && onceAt <= now) return { error: "Pick a time in the future." };
   if (d.target === "thread" && d.threadId === "") return { error: "Pick the thread to send into." };
   return {
     fields: {
@@ -86,6 +108,7 @@ export function validateDraft(d: Draft): { error: string } | { fields: TaskField
       prompt: d.prompt.trim(),
       schedule:
         d.kind === "interval" ? { kind: "interval", everyMs: Math.round(everyMs) }
+        : d.kind === "once" ? { kind: "once", at: onceAt }
         : d.kind === "webhook" ? { kind: "webhook", hookId: d.hookId, ...(d.secret.trim() === "" ? {} : { secret: d.secret.trim() }) }
         : { kind: "fixed", times: [...d.times].sort(), weekdays: d.weekdays },
       enabled: d.enabled,
@@ -146,12 +169,23 @@ export function TaskDialog({
           <div className={styles.row}>
             <Radio name="kind" checked={d.kind === "interval"} onChange={() => set({ kind: "interval" })}>Every</Radio>
             <Radio name="kind" checked={d.kind === "fixed"} onChange={() => set({ kind: "fixed" })}>At fixed times</Radio>
+            <Radio name="kind" checked={d.kind === "once"} onChange={() => set({ kind: "once" })}>Once at</Radio>
             <Radio name="kind" checked={d.kind === "webhook"} onChange={() => set({ kind: "webhook" })}>On a webhook</Radio>
           </div>
           {d.kind === "interval" ? (
             <div className={styles.row}>
               <input className={`${styles.input} ${styles.num}`} type="number" min={1} aria-label="Interval" value={d.amount} onChange={(e) => set({ amount: e.target.value })} />
               <Select label="Interval unit" value={d.unit} options={UNITS} onSelect={(unit) => set({ unit })} variant="field" size="md" />
+            </div>
+          ) : d.kind === "once" ? (
+            <div className={styles.row}>
+              <input
+                className={styles.input}
+                type="datetime-local"
+                aria-label="Run at"
+                value={d.onceAt}
+                onChange={(e) => set({ onceAt: e.target.value })}
+              />
             </div>
           ) : d.kind === "webhook" ? (
             <>

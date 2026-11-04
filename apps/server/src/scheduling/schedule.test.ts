@@ -28,4 +28,9 @@ describe("nextFireAt", () => {
     const s = { kind: "fixed" as const, times: ["09:00"], weekdays: [5] };
     expect(nextFireAt(s, at(2026, 10, 16, 9, 0))).toBe(at(2026, 10, 23, 9, 0));
   });
+
+  it("once: the stored time, future or already past (a missed slot still fires on the next tick)", () => {
+    expect(nextFireAt({ kind: "once", at: at(2026, 11, 6, 14, 30) }, at(2026, 11, 4, 9, 0))).toBe(at(2026, 11, 6, 14, 30));
+    expect(nextFireAt({ kind: "once", at: at(2026, 11, 1, 8, 0) }, at(2026, 11, 4, 9, 0))).toBe(at(2026, 11, 1, 8, 0));
+  });
 });

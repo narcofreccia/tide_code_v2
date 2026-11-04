@@ -53,4 +53,20 @@ describe("General settings", () => {
     expect(screen.getByRole("combobox", { name: "Usage limit policy" }).textContent).toContain("Resume at reset");
     expect(screen.getByText(/handoffs are lossy/)).toBeDefined();
   });
+
+  it("saves the title instructions on blur, trimmed, and clears them with null", async () => {
+    const rpc = serve();
+    render(<GeneralSection />);
+    const field = screen.getByLabelText("Title instructions") as HTMLTextAreaElement;
+    expect(field.value).toBe("");
+    fireEvent.change(field, { target: { value: "  start with the ticket id\nmax 5 words " } });
+    fireEvent.blur(field);
+    await act(async () => undefined);
+    expect(rpc).toHaveBeenCalledWith("settings.set", { patch: { titleInstructions: "start with the ticket id\nmax 5 words" } });
+    expect(useServerSettings.getState().settings.titleInstructions).toBe("start with the ticket id\nmax 5 words");
+    fireEvent.change(field, { target: { value: "   " } });
+    fireEvent.blur(field);
+    await act(async () => undefined);
+    expect(rpc).toHaveBeenCalledWith("settings.set", { patch: { titleInstructions: null } });
+  });
 });

@@ -17,11 +17,12 @@ import {
 } from "../../lib/threadActions.ts";
 import { setProjectPinned } from "../../lib/projectActions.ts";
 import { openThreadTerminal } from "../../lib/openInTerminal.ts";
-import { snoozeThread, tomorrowMorning } from "../../lib/turnActions.ts";
+import { resolveSnoozeOptions } from "../../lib/snooze.ts";
+import { snoozeThread } from "../../lib/turnActions.ts";
+import { useServerSettings } from "../../state/serverSettings.ts";
 import { useUi } from "../../state/ui.ts";
 import type { MenuItem } from "../ui/Menu.tsx";
 
-const HOUR = 3_600_000;
 export const NO_SESSION_HINT = "no session yet";
 
 /** The newest turn that finished one way or another: what Fork… starts from. */
@@ -71,12 +72,12 @@ export function archivedThreadMenu(thread: Thread): MenuItem[] {
   ];
 }
 
-/** The snooze choices, shared by the row menu's submenu and the rail's `s` key. */
+/** The snooze choices (Settings › Inbox), shared by the row menu's submenu and the rail's `s` key. */
 export function snoozeItems(threadId: string, now: number = Date.now()): MenuItem[] {
-  return [
-    { label: "1 hour", onSelect: () => snoozeThread(threadId, now + HOUR) },
-    { label: "Until tomorrow 09:00", onSelect: () => snoozeThread(threadId, tomorrowMorning(now)) },
-  ];
+  return resolveSnoozeOptions(useServerSettings.getState().settings.inbox.snoozeOptions).map((o) => ({
+    label: o.label,
+    onSelect: () => snoozeThread(threadId, o.until(now)),
+  }));
 }
 
 /** Right-click / ⋯ on a live thread in the rail. */

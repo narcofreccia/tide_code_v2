@@ -9,10 +9,11 @@ const ok = (value: string): TextResult => ({ content: [{ type: "text", text: val
 
 const SCHEDULE_SCHEMA = {
   description:
-    'When to run: {kind:"interval", everyMinutes} (minimum 1) or {kind:"fixed", times:["HH:MM",...], weekdays:[0-6]} with 0 = Sunday, server time zone.',
+    'When to run: {kind:"interval", everyMinutes} (minimum 1) or {kind:"fixed", times:["HH:MM",...], weekdays:[0-6]} with 0 = Sunday, server time zone, or {kind:"once", at} to run a single time (at = ISO 8601 date-time such as "2026-11-06T14:30" in server local time, or epoch milliseconds; must be in the future; the automation disables itself after it runs).',
   type: "object",
   properties: {
-    kind: { type: "string", enum: ["interval", "fixed"] },
+    kind: { type: "string", enum: ["interval", "fixed", "once"] },
+    at: { description: "once: ISO 8601 date-time or epoch milliseconds.", oneOf: [{ type: "string" }, { type: "number" }] },
     everyMinutes: { type: "number" },
     times: { type: "array", items: { type: "string" } },
     weekdays: { type: "array", items: { type: "number" } },
@@ -109,7 +110,13 @@ export function parseSchedule(raw: unknown): Schedule {
     }
     return { kind: "fixed", times: times as string[], weekdays: weekdays as number[] };
   }
-  throw new Error('`schedule.kind` must be "interval" or "fixed"');
+  if (s["kind"] === "once") {
+    const raw = s["at"];
+    const at = typeof raw === "number" ? raw : typeof raw === "string" && raw.trim() !== "" ? Date.parse(raw) : Number.NaN;
+    if (!Number.isFinite(at) || at < 0) throw new Error("`schedule.at` must be an ISO 8601 date-time or epoch milliseconds");
+    return { kind: "once", at: Math.round(at) };
+  }
+  throw new Error('`schedule.kind` must be "interval", "fixed" or "once"');
 }
 
 function targetFields(args: Record<string, unknown>) {

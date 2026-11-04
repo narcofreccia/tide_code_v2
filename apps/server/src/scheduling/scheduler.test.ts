@@ -85,4 +85,32 @@ describe("Scheduler", () => {
     sched.stop();
     expect(timers[0]?.cancelled).toBe(true);
   });
+
+  it("once: fires at its time, runs a single turn, then disables itself", async () => {
+    const s = await setup(1_000_000);
+    await s.engine.dispatch({ type: "task.create", projectId: s.projectId, title: "Once", prompt: "go", schedule: { kind: "once", at: 1_060_000 } });
+    const taskId = Object.keys(s.engine.getModel().scheduledTasks)[0] as string;
+    expect(await s.scheduler.tick()).toEqual([]);
+    s.set(1_060_000);
+    expect(await s.scheduler.tick()).toEqual([taskId]);
+    expect(s.engine.getModel().scheduledTasks[taskId]).toMatchObject({ runs: 1, enabled: false, completedAt: 1_060_000 });
+    s.advance(3_600_000);
+    expect(await s.scheduler.tick()).toEqual([]);
+    expect(s.engine.getModel().scheduledTasks[taskId]?.runs).toBe(1);
+    expect(Object.keys(s.engine.getModel().threads)).toHaveLength(1);
+  });
+
+  it("once: a time missed while the server was down fires on the first tick; a replayed commandId does not double-fire", async () => {
+    const s = await setup(1_000_000);
+    await s.engine.dispatch({ type: "task.create", projectId: s.projectId, title: "Once", prompt: "go", schedule: { kind: "once", at: 1_060_000 } });
+    const taskId = Object.keys(s.engine.getModel().scheduledTasks)[0] as string;
+    s.set(9_000_000);
+    expect(await s.scheduler.tick()).toEqual([taskId]);
+    // the same fire arriving again (a restart re-dispatching the slot) is a receipt replay
+    const seq = s.engine.getModel().seq;
+    await s.engine.dispatch({ type: "task.fire", commandId: `scheduled:${taskId}:1060000`, taskId, nextRunAt: 1_060_000, useWorktreeDefault: false });
+    expect(s.engine.getModel().seq).toBe(seq);
+    expect(s.engine.getModel().scheduledTasks[taskId]?.runs).toBe(1);
+    expect(Object.keys(s.engine.getModel().threads)).toHaveLength(1);
+  });
 });

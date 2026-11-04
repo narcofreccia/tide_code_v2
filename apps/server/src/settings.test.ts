@@ -109,3 +109,38 @@ describe("R12 git settings", () => {
     expect(store.set({ git: { confirmMergeBack: false } }).git).toEqual({ mergeStrategy: "rebase", deleteBranchOnMerge: true, confirmMergeBack: false });
   });
 });
+
+describe("R16 snooze options and title instructions", () => {
+  it("defaults, normalizes, validates and persists the snooze options", () => {
+    const path = join(mkdtempSync(join(tmpdir(), "tide-settings-")), "settings.json");
+    const store = new SettingsStore({ path });
+    expect(store.get().inbox.snoozeOptions).toEqual(["1h", "tomorrow 09:00"]);
+    expect(store.set({ inbox: { snoozeOptions: [" 2H ", "Fri 18:00", "2h"] } }).inbox.snoozeOptions).toEqual(["2h", "fri 18:00"]);
+    expect(new SettingsStore({ path }).get().inbox.snoozeOptions).toEqual(["2h", "fri 18:00"]);
+    for (const bad of ["soon", "0h", "2", "fri 24:00", "tomorrow 9:00", "1h 30m"]) {
+      expect(() => store.set({ inbox: { snoozeOptions: [bad] } }), bad).toThrow(SettingsError);
+    }
+    expect(() => store.set({ inbox: { snoozeOptions: Array.from({ length: 9 }, (_, i) => `${i + 1}h`) } })).toThrow(/at most 8/);
+    expect(store.get().inbox.snoozeOptions).toEqual(["2h", "fri 18:00"]); // a refused patch changes nothing
+    expect(store.set({ inbox: { snoozeOptions: [] } }).inbox.snoozeOptions).toEqual(["1h", "tomorrow 09:00"]);
+  });
+
+  it("drops malformed stored snooze options on load", () => {
+    const path = join(mkdtempSync(join(tmpdir(), "tide-settings-")), "settings.json");
+    writeFileSync(path, JSON.stringify({ inbox: { snoozeOptions: ["nope"] } }));
+    expect(new SettingsStore({ path }).get().inbox.snoozeOptions).toEqual(["1h", "tomorrow 09:00"]);
+  });
+
+  it("stores trimmed title instructions, clears on null or blank, caps at 500", () => {
+    const path = join(mkdtempSync(join(tmpdir(), "tide-settings-")), "settings.json");
+    const store = new SettingsStore({ path });
+    expect(store.get().titleInstructions).toBeUndefined();
+    expect(store.set({ titleInstructions: "  start with the ticket id  " }).titleInstructions).toBe("start with the ticket id");
+    expect(new SettingsStore({ path }).get().titleInstructions).toBe("start with the ticket id");
+    expect(store.set({ worktreeByDefault: false }).titleInstructions).toBe("start with the ticket id");
+    expect(store.set({ titleInstructions: null }).titleInstructions).toBeUndefined();
+    store.set({ titleInstructions: "x" });
+    expect(store.set({ titleInstructions: "   " }).titleInstructions).toBeUndefined();
+    expect(() => store.set({ titleInstructions: "y".repeat(501) })).toThrow(SettingsError);
+  });
+});

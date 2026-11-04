@@ -23,7 +23,7 @@ export interface TitleDeps {
 const clip = (text: string): string => (text.length <= CLIP ? text : `${text.slice(0, CLIP - 1)}…`);
 
 /** First user prompt and latest assistant reply of a thread, each clipped to 600 chars. */
-export function titlePrompt(model: ReadModel, threadId: string): string {
+export function titlePrompt(model: ReadModel, threadId: string, instructions?: string): string {
   const messages: Message[] = Object.values(model.messages)
     .filter((m) => m.threadId === threadId && m.notification === undefined)
     .sort((a, b) => a.createdAt - b.createdAt);
@@ -32,7 +32,16 @@ export function titlePrompt(model: ReadModel, threadId: string): string {
   const parts = [`Write a title of at most ${TITLE_MAX_CHARS} characters for this conversation. Imperative mood, no quotes, no trailing period.`];
   if (first) parts.push(`First request:\n${clip(first.text.trim())}`);
   if (last) parts.push(`Latest reply:\n${clip(last.text.trim())}`);
+  const extra = instructions?.trim();
+  if (extra) parts.push(`Extra instructions from the user:\n${extra}`);
   return parts.join("\n\n");
+}
+
+/** A project's own instructions win over the global ones; a blank project value counts as unset. */
+export function titleInstructionsFor(model: ReadModel, threadId: string, settings: Pick<SettingsStore, "get">): string | undefined {
+  const projectId = model.threads[threadId]?.projectId;
+  const own = projectId === undefined ? undefined : model.projects[projectId]?.titleInstructions?.trim();
+  return own || settings.get().titleInstructions?.trim() || undefined;
 }
 
 /** Model output to a single clean title: first line, quotes and trailing period removed, ≤ 60 chars. */
@@ -72,7 +81,7 @@ export async function regenerateTitle(deps: TitleDeps, threadId: string): Promis
     }
     result = await instance.complete({
       system: TITLE_SYSTEM,
-      prompt: titlePrompt(model, threadId),
+      prompt: titlePrompt(model, threadId, titleInstructionsFor(model, threadId, deps.settings)),
       ...(pick.model !== undefined ? { model: pick.model } : {}),
       // the SDK counts the whole reply incl. preamble; 64 was hit live on haiku, like the R6 fallback
       maxOutputTokens: 256,

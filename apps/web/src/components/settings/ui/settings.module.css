@@ -302,6 +302,15 @@
   width: 240px;
 }
 
+.multiline {
+  width: 320px;
+  height: auto;
+  min-height: 60px;
+  padding: var(--sp-1) var(--sp-2);
+  resize: vertical;
+  line-height: 1.4;
+}
+
 .mono {
   font-family: var(--font-mono);
 }

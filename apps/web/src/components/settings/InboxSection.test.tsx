@@ -69,4 +69,20 @@ describe("Settings › Inbox", () => {
     expect(rpc).toHaveBeenCalledWith("settings.set", { patch: { textModel: null } });
     await waitFor(() => expect(screen.queryByRole("combobox", { name: "Text generation model" })).toBeNull());
   });
+
+  it("edits the snooze options, trims and lowercases them, and blocks a bad entry", async () => {
+    const rpc = echo();
+    setProvidersForTest(ONE_SHOT);
+    render(<InboxSection />);
+    const field = screen.getByLabelText("Snooze options") as HTMLInputElement;
+    expect(field.value).toBe("1h, tomorrow 09:00");
+    fireEvent.change(field, { target: { value: "2h,  Fri 18:00 ," } });
+    fireEvent.blur(field);
+    expect(rpc).toHaveBeenCalledWith("settings.set", { patch: { inbox: { snoozeOptions: ["2h", "fri 18:00"] } } });
+    rpc.mockClear();
+    fireEvent.change(field, { target: { value: "2h, soon" } });
+    fireEvent.blur(field);
+    expect(screen.getByRole("alert").textContent).toMatch(/“soon”/);
+    expect(rpc).not.toHaveBeenCalledWith("settings.set", expect.anything());
+  });
 });

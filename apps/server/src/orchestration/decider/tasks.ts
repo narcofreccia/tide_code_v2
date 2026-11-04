@@ -17,7 +17,8 @@ const HOOK_ID = /^[A-Za-z0-9_-]{8,64}$/;
  * R9: a webhook's id is its URL (`POST /hook/<hookId>`), which carries no project, so it is unique
  * across every live task on this server (stricter than per project, and routing stays unambiguous).
  */
-function scheduleProblem(model: ReadModel, schedule: Schedule, selfId?: string): string | undefined {
+function scheduleProblem(model: ReadModel, schedule: Schedule, now: number, selfId?: string): string | undefined {
+  if (schedule.kind === "once") return schedule.at > now ? undefined : "a one-time schedule must be in the future";
   if (schedule.kind === "webhook") {
     if (!HOOK_ID.test(schedule.hookId)) return "webhook hookId must be 8-64 characters of A-Z a-z 0-9 _ -";
     const taken = Object.values(model.scheduledTasks).some(
@@ -51,7 +52,7 @@ export function decideTask(model: ReadModel, command: TaskCommand, ctx: DecideCo
         const checked = checkThread(model, project.id, command.threadId);
         if ("ok" in checked) return checked;
       }
-      const problem = scheduleProblem(model, command.schedule);
+      const problem = scheduleProblem(model, command.schedule, ctx.now);
       if (problem !== undefined) return fail("invalid-command", problem);
       const nextRunAt = nextFireAt(command.schedule, ctx.now);
       const task: ScheduledTask = {
@@ -84,7 +85,7 @@ export function decideTask(model: ReadModel, command: TaskCommand, ctx: DecideCo
         if ("ok" in checked) return checked;
       }
       if (command.schedule !== undefined) {
-        const problem = scheduleProblem(model, command.schedule, task.id);
+        const problem = scheduleProblem(model, command.schedule, ctx.now, task.id);
         if (problem !== undefined) return fail("invalid-command", problem);
       }
       const patch: TaskPatch = {
@@ -98,6 +99,12 @@ export function decideTask(model: ReadModel, command: TaskCommand, ctx: DecideCo
         ...(command.useWorktree !== undefined ? { useWorktree: command.useWorktree } : {}),
         ...(command.enabled !== undefined ? { enabled: command.enabled } : {}),
       };
+      const rearmed = task.completedAt !== undefined && !task.enabled;
+      if (rearmed && command.enabled === true && command.schedule === undefined && task.schedule.kind === "once") {
+        return fail("invalid-command", "this one-time task already ran; pick a new time to run it again");
+      }
+      // a finished one-time task is armed again by giving it a new time
+      if (rearmed && command.schedule?.kind === "once" && command.enabled === undefined) patch.enabled = true;
       // a new schedule, or switching a paused task back on, must not fire off a stale slot
       const reschedule = command.schedule !== undefined || (command.enabled === true && !task.enabled);
       if (reschedule) {
@@ -118,7 +125,7 @@ export function decideTask(model: ReadModel, command: TaskCommand, ctx: DecideCo
       const task = model.scheduledTasks[command.taskId];
       if (!task) return fail("not-found", `unknown task ${command.taskId}`);
       if (isArchived(task)) return fail("conflict", `task ${task.id} is deleted`);
-      return fire(model, task, ctx, undefined, undefined, undefined);
+      return fire(model, task, ctx, undefined, undefined, undefined, false);
     }
 
     case "task.fire": {
@@ -127,7 +134,7 @@ export function decideTask(model: ReadModel, command: TaskCommand, ctx: DecideCo
       if (isArchived(task)) return fail("conflict", `task ${task.id} is deleted`);
       // the scheduler may race an update that paused the task
       if (!task.enabled) return ok();
-      return fire(model, task, ctx, command.nextRunAt, command.useWorktreeDefault, command.promptSuffix);
+      return fire(model, task, ctx, command.nextRunAt, command.useWorktreeDefault, command.promptSuffix, true);
     }
   }
 }
@@ -139,6 +146,8 @@ function fire(
   nextRunAt: number | undefined,
   useWorktreeDefault: boolean | undefined,
   promptSuffix: string | undefined,
+  /** a clock/webhook fire, as opposed to "Run now" */
+  scheduled: boolean,
 ): DecideResult {
   const notification = { source: "schedule" as const, summary: `${task.schedule.kind === "webhook" ? "webhook" : "scheduled"}: ${task.title}` };
   const events: DomainEvent[] = [];
@@ -186,13 +195,16 @@ function fire(
     ...(handoffId !== undefined ? { handoffId } : {}),
   };
   events.push({ ...requested, turn });
+  const once = scheduled && task.schedule.kind === "once";
   events.push({
     type: "task.fired",
     taskId: task.id,
     threadId,
     turnId: turn.id,
-    ...(nextRunAt !== undefined ? { nextRunAt } : {}),
+    ...(nextRunAt !== undefined && !once ? { nextRunAt } : {}),
     at: ctx.now,
   });
+  // a one-time task is done after its fire; nextRunAt keeps the slot it fired for (clearing a key does not survive the event log)
+  if (once) events.push({ type: "task.updated", taskId: task.id, patch: { enabled: false, completedAt: ctx.now }, updatedAt: ctx.now });
   return ok(...events);
 }

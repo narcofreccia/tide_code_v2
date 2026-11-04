@@ -21,6 +21,8 @@ export function SettingText({
   inputMode,
   min,
   step,
+  multiline = false,
+  maxLength,
 }: {
   id?: string;
   value: string;
@@ -36,6 +38,9 @@ export function SettingText({
   inputMode?: "numeric" | "text";
   min?: number;
   step?: number;
+  /** a textarea: Enter adds a line, ⌘/Ctrl+Enter or blur commits */
+  multiline?: boolean;
+  maxLength?: number;
 }) {
   const [text, setText] = useState(value);
   const [error, setError] = useState<string | undefined>(undefined);
@@ -50,6 +55,33 @@ export function SettingText({
     if (problem !== undefined || next === value) return;
     track(() => onCommit(next));
   };
+
+  if (multiline) {
+    return (
+      <span className={styles.field}>
+        <textarea
+          id={id}
+          className={[styles.input, styles.multiline, mono ? styles.mono : ""].filter(Boolean).join(" ")}
+          rows={3}
+          maxLength={maxLength}
+          aria-label={label}
+          aria-invalid={error !== undefined}
+          placeholder={placeholder}
+          value={text}
+          onChange={(e) => setText(e.target.value)}
+          onBlur={commit}
+          onKeyDown={(e) => {
+            if (e.key === "Enter" && (e.metaKey || e.ctrlKey)) commit();
+          }}
+        />
+        {error === undefined ? null : (
+          <span className={styles.fieldError} role="alert">
+            {error}
+          </span>
+        )}
+      </span>
+    );
+  }
 
   return (
     <span className={styles.field}>

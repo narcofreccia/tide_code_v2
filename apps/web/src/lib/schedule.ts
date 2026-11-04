@@ -13,15 +13,24 @@ function days(weekdays: readonly number[]): string {
   return WEEKDAY_ORDER.filter((d) => set.has(d)).map(weekdayName).join(", ");
 }
 
+const MONTHS = ["Jan", "Feb", "Mar", "Apr", "May", "Jun", "Jul", "Aug", "Sep", "Oct", "Nov", "Dec"];
+
+/** "6 Nov, 14:30"; the year joins when it is not the current one. */
+export function formatOnce(at: number, now: number = Date.now()): string {
+  const d = new Date(at);
+  const year = d.getFullYear() === new Date(now).getFullYear() ? "" : ` ${d.getFullYear()}`;
+  return `${d.getDate()} ${MONTHS[d.getMonth()]}${year}, ${String(d.getHours()).padStart(2, "0")}:${String(d.getMinutes()).padStart(2, "0")}`;
+}
+
 /** "every 30 min", "every 2 h", "Mon–Fri at 09:00", "every day at 09:00, 17:30". */
-export function describeSchedule(schedule: Schedule): string {
+export function describeSchedule(schedule: Schedule, now: number = Date.now()): string {
   if (schedule.kind === "webhook") return `on webhook /hook/${schedule.hookId}`;
   if (schedule.kind === "interval") {
     const mins = Math.round(schedule.everyMs / 60_000);
     if (mins >= 60 && mins % 60 === 0) return `every ${mins / 60 === 1 ? "hour" : `${mins / 60} h`}`;
     return `every ${mins} min`;
   }
-  if (schedule.kind === "once") return `once on ${new Date(schedule.at).toLocaleString()}`;
+  if (schedule.kind === "once") return `once on ${formatOnce(schedule.at, now)}`;
   const times = [...schedule.times].sort().join(", ");
   const d = days(schedule.weekdays);
   return d === "every day" ? `every day at ${times}` : `${d} at ${times}`;

@@ -57,6 +57,26 @@ describe("titles", () => {
     expect(prompt).toContain("Latest reply:\nDone: fixed the login redirect.");
   });
 
+  it("appends the user's instructions; a project's own win over the global ones", async () => {
+    const { deps, engine, threadId, requests } = await rig({ complete: () => answer("T") });
+    expect(titlePrompt(engine.getModel(), threadId)).not.toContain("Extra instructions");
+    expect(titlePrompt(engine.getModel(), threadId, "  ticket id first ")).toMatch(/\n\nExtra instructions from the user:\nticket id first$/);
+
+    (deps.settings as SettingsStore).set({ titleInstructions: "global rule" });
+    await regenerateTitle(deps, threadId);
+    expect(requests[0]?.prompt).toContain("Extra instructions from the user:\nglobal rule");
+
+    const projectId = engine.getModel().threads[threadId]!.projectId;
+    await engine.dispatch({ type: "project.update", projectId, titleInstructions: "project rule" });
+    await regenerateTitle(deps, threadId);
+    expect(requests[1]?.prompt).toContain("Extra instructions from the user:\nproject rule");
+    expect(requests[1]?.prompt).not.toContain("global rule");
+
+    await engine.dispatch({ type: "project.update", projectId, titleInstructions: null });
+    await regenerateTitle(deps, threadId);
+    expect(requests[2]?.prompt).toContain("global rule");
+  });
+
   it("asks the first one-shot harness, applies the title through the engine", async () => {
     const { deps, engine, threadId, requests } = await rig({ complete: () => answer('"Fix login redirect."') });
     const out = await regenerateTitle(deps, threadId);
