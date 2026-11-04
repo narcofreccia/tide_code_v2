@@ -5,6 +5,7 @@ import { affectsQuiet, agentStatus, isQuiescent } from "../orchestration/backgro
 import { lastAssistantText, type DelegateWaits } from "../orchestration/delegation.ts";
 import type { DriverRegistry } from "../provider/registry.ts";
 import { instanceIdOf } from "../provider/sessions.ts";
+import { pendingSecret as pendingSecretCard } from "./agentSecrets.ts";
 import { RpcException, type RpcCallContext, type RpcRouter } from "./router.ts";
 
 export type CancelTimer = () => void;
@@ -293,7 +294,8 @@ export function registerAgentThreadHandlers(router: RpcRouter, deps: AgentThread
     const questions = (model.threadTimeline[target.id] ?? []).flatMap((entry) => {
       if (entry.kind !== "activity") return [];
       const a = model.activities[entry.id];
-      if (a?.kind !== "user-input" || a.status !== "pending") return [];
+      // a secret card is the user's alone: no agent lists or answers it
+      if (a?.kind !== "user-input" || a.status !== "pending" || a.secret === true) return [];
       return [{ requestId: a.requestId, activityId: a.id, questions: a.questions, askedAt: a.createdAt }];
     });
     return { questions };
@@ -313,6 +315,7 @@ export function registerAgentThreadHandlers(router: RpcRouter, deps: AgentThread
     const caller = callerThread(model, ctx);
     const target = reachable(model, caller, input.threadId);
     requireNoBroader(caller, target);
+    if (pendingSecretCard(model, target.id, input.requestId)) throw new RpcException("forbidden", "that request is a secret card only the user can answer");
     await dispatch(engine, { type: "user-input.respond", threadId: target.id, requestId: input.requestId, answers: input.answers });
     return { ok: true };
   });

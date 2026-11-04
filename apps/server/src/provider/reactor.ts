@@ -13,6 +13,7 @@ import {
   type TurnInput,
 } from "@tide/contracts";
 import type { Engine } from "../orchestration/engine.ts";
+import { isSecretResponse } from "./secretInput.ts";
 import { isUsageLimitError } from "../orchestration/limits.ts";
 import { attachmentFooter } from "../workspace/attachments.ts";
 import { activityKey, mergeActivity } from "./activities.ts";
@@ -252,6 +253,7 @@ export class ProviderReactor {
         );
         return;
       case "user-input.responded":
+        if (isSecretResponse(this.#engine.getModel(), event)) return;
         this.#withSession(
           event.threadId,
           (s) => s.respondUserInput(event.requestId, event.answers),

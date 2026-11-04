@@ -2,7 +2,7 @@ import { describe, expect, it } from "vitest";
 import { Client } from "@modelcontextprotocol/sdk/client/index.js";
 import { InMemoryTransport } from "@modelcontextprotocol/sdk/inMemory.js";
 import type { AgentCommand } from "@tide/contracts";
-import type { AgentBackend, AgentContext, AgentDispatchResult, AgentThreadStatus, PendingRespondInput, ThreadDiffInput, ThreadDiffResult, ThreadListInput, ThreadReadInput, ThreadSendInput, ThreadWaitInput, ThreadWaitResult } from "./backend.ts";
+import type { AgentBackend, AgentContext, AgentDispatchResult, AgentThreadStatus, PendingRespondInput, SecretRequestInput, SecretRequestResult, ThreadDiffInput, ThreadDiffResult, ThreadListInput, ThreadReadInput, ThreadSendInput, ThreadWaitInput, ThreadWaitResult } from "./backend.ts";
 import { createTideMcpServer } from "./server.ts";
 import { TOOL_DEFINITIONS } from "./tools.ts";
 import { formatWait, THREAD_TOOLS_HINT } from "./threadTools.ts";
@@ -110,6 +110,10 @@ class FakeBackend implements AgentBackend {
   pendingRespond(i: PendingRespondInput) {
     return this.#rec("pendingRespond", i, { ok: true });
   }
+  secretResult: SecretRequestResult = { decided: "declined" };
+  secretRequest(i: SecretRequestInput) {
+    return this.#rec("secret", i, this.secretResult);
+  }
 
   close(): void {
     /* nothing to release */
@@ -155,6 +159,7 @@ describe("tide-mcp server", () => {
       "tide_update_scheduled_task",
       "tide_delete_scheduled_task",
       "tide_run_scheduled_task_now",
+      "tide_request_secret",
     ]);
     for (const tool of tools) {
       expect(tool.description?.length ?? 0).toBeGreaterThan(20);
@@ -463,5 +468,51 @@ describe("formatWait", () => {
     expect(text).toContain("status: working (1 background sub-agent: architect)");
     expect(text).toContain("Its background sub-agents are still working; it is not stuck.");
     expect(formatWait({ status: "running", settled: false, timedOut: true })).not.toContain("background");
+  });
+});
+
+describe("R16: tide_request_secret", () => {
+  const call = async (backend: FakeBackend, args: Record<string, unknown>) => {
+    const client = await connect(backend);
+    const result = await client.callTool({ name: "tide_request_secret", arguments: args });
+    await client.close();
+    return result;
+  };
+
+  it("is listed with its schema and the never-in-chat rule", () => {
+    const tool = TOOL_DEFINITIONS.find((t) => t.name === "tide_request_secret");
+    expect(tool?.description).toContain("Never ask for secrets in chat");
+    expect(tool?.inputSchema.required).toEqual(["name", "purpose"]);
+    expect(Object.keys(tool?.inputSchema.properties ?? {})).toEqual(["name", "purpose", "kind"]);
+    expect(THREAD_TOOLS_HINT).toContain("Need an API key or token? Call tide_request_secret");
+  });
+
+  it("returns the provided value once", async () => {
+    const backend = new FakeBackend();
+    backend.secretResult = { decided: "provided", value: "ghp_secret" };
+    const result = await call(backend, { name: "GITHUB_TOKEN", purpose: "push the branch" });
+    expect(backend.threadCalls).toEqual([["secret", { name: "GITHUB_TOKEN", purpose: "push the branch" }]]);
+    expect(firstText(result)).toContain("ghp_secret");
+  });
+
+  it("returns only the path for kind file", async () => {
+    const backend = new FakeBackend();
+    backend.secretResult = { decided: "provided", path: "/home/.tide/secrets/t1/API_KEY" };
+    const result = await call(backend, { name: "API_KEY", purpose: "call the API", kind: "file" });
+    expect(backend.threadCalls[0]?.[1]).toEqual({ name: "API_KEY", purpose: "call the API", kind: "file" });
+    expect(firstText(result)).toContain("/home/.tide/secrets/t1/API_KEY");
+  });
+
+  it("tells the agent not to ask in chat on decline", async () => {
+    const result = await call(new FakeBackend(), { name: "GITHUB_TOKEN", purpose: "push" });
+    expect(firstText(result)).toBe("The user declined to provide GITHUB_TOKEN. Do not ask for it in chat; continue without it or explain what it would unlock.");
+    expect(result.isError).toBeFalsy();
+  });
+
+  it("rejects a malformed name without calling the server", async () => {
+    const backend = new FakeBackend();
+    const result = await call(backend, { name: "github token", purpose: "push" });
+    expect(result.isError).toBe(true);
+    expect(backend.threadCalls).toEqual([]);
   });
 });

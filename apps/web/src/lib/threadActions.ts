@@ -278,6 +278,25 @@ export function respondUserInput(
   dispatchOrToast("Answering the question", { type: "user-input.respond", threadId, requestId, answers });
 }
 
+/**
+ * R16: answers a secret card. The value goes straight to `secret.provide` and nowhere else —
+ * no draft, no store, no toast text; the server records only `{ decided: "provided" }`.
+ */
+export async function provideSecret(threadId: string, requestId: string, value: string): Promise<boolean> {
+  try {
+    await call("secret.provide", { threadId, requestId, value });
+    return true;
+  } catch (error) {
+    showToast(`Providing the secret failed: ${errorText(error)}`);
+    return false;
+  }
+}
+
+/** R16: closes a secret card without a value; the waiting tool call resolves `declined`. */
+export function declineSecret(threadId: string, requestId: string): void {
+  respondUserInput(threadId, requestId, { decided: "declined" });
+}
+
 export interface ImplementInNewThreadOptions {
   provider: ProviderKind;
   model?: string;

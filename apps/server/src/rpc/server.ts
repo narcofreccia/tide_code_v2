@@ -22,6 +22,7 @@ import { AgentTokenStore } from "./agentTickets.ts";
 import { registerAgentHandlers } from "./agent.ts";
 import { registerAgentDiffHandler } from "./agentDiff.ts";
 import { registerAgentThreadHandlers } from "./agentThreads.ts";
+import { registerAgentSecretHandlers } from "./agentSecrets.ts";
 import type { DelegateWaits } from "../orchestration/delegation.ts";
 import { registerHandlers } from "./handlers.ts";
 import { registerProviderHandlers } from "./providers.ts";
@@ -166,6 +167,7 @@ export async function startServer(deps: ServerDeps): Promise<ServerHandle> {
     ...(deps.delegateWaits !== undefined ? { waits: deps.delegateWaits } : {}),
     ...(deps.settings !== undefined ? { grayZone: () => (deps.settings as SettingsStore).get().decisions.grayZone } : {}),
   });
+  registerAgentSecretHandlers(router, { engine, tideHome: config.tideHome });
   const checkpoints = deps.checkpoints ?? new CheckpointService();
   registerAgentDiffHandler(router, { engine, checkpoints });
   registerVcsHandlers(router, {

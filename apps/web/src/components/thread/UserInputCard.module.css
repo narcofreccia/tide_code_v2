@@ -1,0 +1,9 @@
+.input {
+  width: 100%;
+  background: var(--bg);
+  border: 1px solid var(--border);
+  border-radius: var(--radius);
+  padding: var(--sp-2);
+  font-family: var(--font-mono);
+}
+.name { font-family: var(--font-mono); color: var(--muted); }

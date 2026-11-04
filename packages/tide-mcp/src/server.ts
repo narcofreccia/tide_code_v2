@@ -5,6 +5,7 @@ import type { AgentBackend } from "./backend.ts";
 import { TOOL_DEFINITIONS } from "./tools.ts";
 import { callThreadTool, describeRpcError, formatWait, isThreadTool } from "./threadTools.ts";
 import { callTaskTool, isTaskTool } from "./taskTools.ts";
+import { callSecretTool, isSecretTool } from "./secretTools.ts";
 
 /** The SDK's own result shape, so handlers stay assignable without a cast. */
 export type ToolResult = CallToolResult;
@@ -68,6 +69,13 @@ export async function callTool(
   if (isTaskTool(name)) {
     try {
       return await callTaskTool(backend, name, rawArgs);
+    } catch (err) {
+      return failure(describeRpcError(err));
+    }
+  }
+  if (isSecretTool(name)) {
+    try {
+      return await callSecretTool(backend, rawArgs);
     } catch (err) {
       return failure(describeRpcError(err));
     }

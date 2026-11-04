@@ -225,7 +225,8 @@ export class DelegationReactor {
       }
       case "activity.upserted": {
         const a = event.activity;
-        if (a.kind !== "user-input" || a.status !== "pending" || this.#questions.has(a.id)) return;
+        // secret cards stay with the user; the parent agent is never asked to relay one
+        if (a.kind !== "user-input" || a.status !== "pending" || a.secret === true || this.#questions.has(a.id)) return;
         const model = this.#engine.getModel();
         const child = model.threads[a.threadId];
         const parent = child?.delegatedBy === undefined ? undefined : model.threads[child.delegatedBy];

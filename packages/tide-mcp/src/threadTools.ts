@@ -34,6 +34,7 @@ export const THREAD_TOOLS_HINT = [
   "get \"Delegate ... asks\" with the threadId and requestId to answer via tide_pending_respond (or ask the user).",
   "tide_schedule_task (with tide_update_scheduled_task, tide_delete_scheduled_task, tide_run_scheduled_task_now) sets up an automation:",
   "a prompt Tide sends on an interval or at fixed times, into a thread or as a new thread each run, within your project only.",
+  "Need an API key or token? Call tide_request_secret — never ask for secrets in chat.",
 ].join(" ");
 
 export const THREAD_TOOL_DEFINITIONS: ToolDef[] = [
