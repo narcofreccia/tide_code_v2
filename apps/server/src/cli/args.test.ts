@@ -29,6 +29,9 @@ describe("parseCli", () => {
     expect(parseCli(["service", "status"])).toEqual({ cmd: "service", action: "status", serveArgs: [] });
     expect(() => parseCli(["service", "install", "--log", "/x"])).toThrow(CliError);
     expect(() => parseCli(["service", "restart"])).toThrow(CliError);
+    expect(parseCli(["update"])).toEqual({ cmd: "update", check: false, yes: false });
+    expect(parseCli(["update", "--check", "--yes"])).toEqual({ cmd: "update", check: true, yes: true });
+    expect(() => parseCli(["update", "--force"])).toThrow(/unknown argument --force/);
     expect(parseCli(["--version"])).toEqual({ cmd: "version" });
     expect(parseCli(["help"])).toEqual({ cmd: "help" });
     expect(() => parseCli(["frobnicate"])).toThrow(/unknown command/);

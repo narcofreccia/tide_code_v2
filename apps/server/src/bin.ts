@@ -50,6 +50,27 @@ async function main(): Promise<number | undefined> {
       console.log(result.text);
       return result.code;
     }
+    case "update": {
+      const { runUpdate, platformTriple } = await import("./cli/update.ts");
+      const { realExec, selfCommand } = await import("./cli/service.ts");
+      const { tideHomeOf } = await import("./cli/runtime.ts");
+      const { askYesNo } = await import("./cli/prompt.ts");
+      return runUpdate(
+        { check: command.check, yes: command.yes },
+        {
+          fetch: (url) => fetch(url),
+          version: VERSION,
+          tideHome: tideHomeOf(),
+          platformTriple: platformTriple(),
+          execPath: process.execPath,
+          exec: realExec,
+          isCompiled: selfCommand().length === 1,
+          log: (line) => console.log(line),
+          confirm: askYesNo,
+          ...(process.env["TIDE_UPDATE_BASE"] ? { baseUrl: process.env["TIDE_UPDATE_BASE"] } : {}),
+        },
+      );
+    }
   }
 }
 

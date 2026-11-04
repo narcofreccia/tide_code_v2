@@ -9,7 +9,8 @@ export type CliCommand =
   | { cmd: "pair"; port?: number; host?: string; qr: boolean }
   | { cmd: "doctor"; port?: number }
   | { cmd: "triage"; issue: boolean; noAgent: boolean; port?: number }
-  | { cmd: "service"; action: "install" | "uninstall" | "status"; serveArgs: string[] };
+  | { cmd: "service"; action: "install" | "uninstall" | "status"; serveArgs: string[] }
+  | { cmd: "update"; check: boolean; yes: boolean };
 
 export class CliError extends Error {}
 
@@ -24,6 +25,8 @@ export const USAGE = `usage:
              write a redacted diagnostics report to <TIDE_HOME>/triage/<time>.md; prints the command to hand it to your harness, or a GitHub issue body with --issue
   tide service install [serve flags] | uninstall | status
              run \`tide serve\` at login (launchd on macOS, systemd --user on Linux)
+  tide update [--check] [--yes]
+             update a headless install (binary + web/) to the latest release and restart the service
   tide --version
   tide --mcp  (internal: the Tide MCP stdio server)
 
@@ -95,6 +98,15 @@ export function parseCli(argv: string[]): CliCommand {
       if (action !== "install" && serveArgs.length > 0) throw new CliError(`tide service ${action} takes no arguments`);
       if (serveArgs.includes("--log") || serveArgs.includes("--dev")) throw new CliError("a service always logs to <TIDE_HOME>/logs/server.log and never runs in --dev");
       return { cmd: "service", action, serveArgs: validate(serveArgs) };
+    }
+    case "update": {
+      const out: { cmd: "update"; check: boolean; yes: boolean } = { cmd: "update", check: false, yes: false };
+      for (const arg of rest) {
+        if (arg === "--check") out.check = true;
+        else if (arg === "--yes" || arg === "-y") out.yes = true;
+        else throw new CliError(`unknown argument ${arg} for tide update`);
+      }
+      return out;
     }
     default:
       // flags without a subcommand: the original `tide-server --port … --host …` form

@@ -24,6 +24,11 @@ export function selfCommand(execPath: string = process.execPath, script: string 
   return isBun ? [execPath, resolve(script)] : [execPath, "--experimental-strip-types", "--no-warnings=ExperimentalWarning", resolve(script)];
 }
 
+/** Where `tide service install` puts the launchd plist / systemd unit. */
+export function serviceFile(platform: "darwin" | "linux", home: string): string {
+  return platform === "darwin" ? join(home, "Library", "LaunchAgents", `${LAUNCHD_LABEL}.plist`) : join(home, ".config", "systemd", "user", SYSTEMD_UNIT);
+}
+
 export function serviceSpec(input: {
   platform: NodeJS.Platform;
   home: string;
@@ -36,10 +41,7 @@ export function serviceSpec(input: {
 }): ServiceSpec {
   if (input.platform !== "darwin" && input.platform !== "linux") throw new Error(`tide service supports macOS (launchd) and Linux (systemd); this is ${input.platform}`);
   const logPath = defaultLogPath(input.tideHome);
-  const file =
-    input.platform === "darwin"
-      ? join(input.home, "Library", "LaunchAgents", `${LAUNCHD_LABEL}.plist`)
-      : join(input.home, ".config", "systemd", "user", SYSTEMD_UNIT);
+  const file = serviceFile(input.platform, input.home);
   return {
     platform: input.platform,
     file,
@@ -104,7 +106,7 @@ WantedBy=default.target
 
 export type Exec = (file: string, args: string[]) => Promise<{ code: number; out: string }>;
 
-const realExec: Exec = (file, args) =>
+export const realExec: Exec = (file, args) =>
   new Promise((done) => {
     execFile(file, args, { timeout: 20_000 }, (err, stdout, stderr) => {
       const code = err === null ? 0 : typeof (err as { code?: unknown }).code === "number" ? ((err as { code: number }).code) : 1;

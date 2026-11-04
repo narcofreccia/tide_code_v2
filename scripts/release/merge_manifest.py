@@ -10,7 +10,15 @@ scripts/release/build_release.sh (darwin-aarch64) and scripts/release/publish_wi
 
 Usage:
   merge_manifest.py --manifest FILE --platform KEY --version V \
-                    --signature SIG --url URL [--out FILE]
+                    --signature SIG --url URL [--out FILE] \
+                    [--server-triple TRIPLE --server-url URL --server-sha256 HEX] \
+                    [--web-url URL --web-sha256 HEX]
+
+Headless artifacts (`tide update`, docs/internals/remote.md): `server` maps a Rust
+target triple to the tide-server tarball, `web` is the one web-client tarball.
+Same rule as platforms: a call writes ONLY the triple it names (and `web` only
+when given). Each entry records the version it was built at, so `tide update`
+ignores an entry left behind by an older release.
 
 The manifest FILE may be missing or empty (fresh bucket) — a new manifest is
 created. Warns on stderr when the version changes (other platforms must ship
@@ -30,8 +38,12 @@ from __future__ import annotations
 import argparse
 import datetime
 import json
+import re
 import sys
 from pathlib import Path
+
+TRIPLE_RE = re.compile(r"^[a-z0-9_]+-[a-z0-9_]+-[a-z0-9_]+(-[a-z0-9_]+)?$")
+SHA_RE = re.compile(r"^[0-9a-f]{64}$")
 
 VALID_PLATFORMS = {"darwin-aarch64", "darwin-x86_64", "windows-x86_64", "linux-x86_64"}
 
@@ -67,7 +79,23 @@ def main() -> int:
         action="store_true",
         help="permit lowering the manifest version (deliberate rollback only)",
     )
+    ap.add_argument("--server-triple", help="rust target triple of the headless server tarball")
+    ap.add_argument("--server-url")
+    ap.add_argument("--server-sha256")
+    ap.add_argument("--web-url", help="headless web-client tarball")
+    ap.add_argument("--web-sha256")
     args = ap.parse_args()
+
+    server_args = (args.server_triple, args.server_url, args.server_sha256)
+    if any(server_args) and not all(server_args):
+        ap.error("--server-triple, --server-url and --server-sha256 go together")
+    if args.server_triple and not TRIPLE_RE.match(args.server_triple):
+        ap.error(f"--server-triple {args.server_triple!r} is not a target triple")
+    if bool(args.web_url) != bool(args.web_sha256):
+        ap.error("--web-url and --web-sha256 go together")
+    for sha in (args.server_sha256, args.web_sha256):
+        if sha and not SHA_RE.match(sha.strip().lower()):
+            ap.error(f"{sha!r} is not a sha256 hex digest")
 
     path = Path(args.manifest)
     try:
@@ -105,6 +133,19 @@ def main() -> int:
         "url": args.url,
     }
 
+    if args.server_triple:
+        server = data.get("server")
+        if not isinstance(server, dict):
+            server = {}
+        server[args.server_triple] = {
+            "url": args.server_url,
+            "sha256": args.server_sha256.strip().lower(),
+            "version": args.version,
+        }
+        data["server"] = server
+    if args.web_url:
+        data["web"] = {"url": args.web_url, "sha256": args.web_sha256.strip().lower(), "version": args.version}
+
     data["version"] = args.version
     data["notes"] = f"v{args.version}"
     data["pub_date"] = datetime.datetime.now(datetime.timezone.utc).strftime("%Y-%m-%dT%H:%M:%SZ")
@@ -112,7 +153,12 @@ def main() -> int:
 
     out = Path(args.out) if args.out else path
     out.write_text(json.dumps(data, indent=2) + "\n", encoding="utf-8")
-    print(f"merged {args.platform} into {out} (platforms: {', '.join(sorted(platforms))})")
+    extra = ""
+    if args.server_triple:
+        extra += f" + server[{args.server_triple}]"
+    if args.web_url:
+        extra += " + web"
+    print(f"merged {args.platform}{extra} into {out} (platforms: {', '.join(sorted(platforms))})")
     return 0
 
 

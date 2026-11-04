@@ -12,6 +12,7 @@ tide pair [--port <n>] [--host <h>] [--no-qr]
 tide doctor [--port <n>]
 tide triage [--issue] [--no-agent] [--port <n>]
 tide service install [serve flags] | uninstall | status
+tide update [--check] [--yes]
 tide --version
 ```
 
@@ -45,6 +46,52 @@ tide --version
   keeps it running after logout.
 - The MCP server handed to provider sessions always dials loopback
   (`ws://127.0.0.1:<port>/ws`), whatever the bind address.
+
+## Headless install
+
+A machine without the desktop app runs the bun-compiled `tide-server` plus the `web/`
+folder beside it (the server serves `<binaryDir>/web`). Both come from the release bucket:
+
+```sh
+BASE=https://pub-7b3e5bbd605d43adbeb4601a962d84bd.r2.dev/tidecode
+TRIPLE=aarch64-apple-darwin          # or x86_64-unknown-linux-gnu, once published
+mkdir -p ~/.local/bin && cd ~/.local/bin
+curl -fsSLO "$BASE/server/$TRIPLE/tide-server.tar.gz" && curl -fsSLO "$BASE/server/$TRIPLE/tide-server.tar.gz.sha256"
+curl -fsSLO "$BASE/web/web.tar.gz" && curl -fsSLO "$BASE/web/web.tar.gz.sha256"
+shasum -a 256 -c tide-server.tar.gz.sha256 web.tar.gz.sha256   # sha256sum -c on Linux
+tar -xzf tide-server.tar.gz && tar -xzf web.tar.gz           # -> tide-server, web/
+rm tide-server.tar.gz* web.tar.gz*
+tide-server service install --host 0.0.0.0
+tide-server pair
+```
+
+The tarballs appear with the next release; until then the
+manifest has no `server`/`web` keys (layout: `docs/RELEASING.md`). Only the mac release
+script builds them so far; Linux needs the same step in the Linux publish path.
+
+### `tide update`
+
+`tide-server update` reads `<base>/latest.json` (`TIDE_UPDATE_BASE` overrides the base) and
+compares its `version` with the running one; it prints `Tide x.y.z → a.b.c` and the
+manifest `notes`. `--check` stops there (exit 0, also when up to date). Then:
+
+- a source checkout (not compiled) prints `dev checkout: git pull && pnpm install`;
+- a binary inside a desktop install (`*.app/Contents/MacOS/`, or next to `Tide.exe` /
+  `tide-desktop`) is left to the app: "update from the app (Settings › About)";
+- no `server[<rust-triple>]` entry at the manifest's version: "no headless artifact for
+  this platform yet".
+
+Otherwise it prints the plan and asks `y/N` (`--yes` skips it; without a TTY and without
+`--yes` it cancels with exit 1). It downloads both tarballs to
+`<TIDE_HOME>/updates/<version>/`, checks each `sha256` from the manifest, extracts them with
+`tar -xzf`, then swaps: the binary moves to `tide-server.old` and the new one takes its
+place (mode 755); `web/` is replaced the same way. The new binary must answer `--version`
+with the new version, or both are rolled back. On any failure the old files are restored
+and the staged downloads stay for inspection; on success the stage is removed and
+`tide-server.old` is kept for a manual rollback. With a service installed it restarts it
+(`launchctl kickstart -k gui/<uid>/com.tide.server`, `systemctl --user restart
+tide-server.service`); otherwise it says `restart tide-server to use a.b.c`. Code:
+`apps/server/src/cli/update.ts`.
 
 ## HTTP routes (`apps/server/src/rpc/http.ts`)
 

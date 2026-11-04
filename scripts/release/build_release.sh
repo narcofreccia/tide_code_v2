@@ -3,8 +3,9 @@
 # Tide v2 macOS release pipeline (runs locally on the dev Mac).
 #
 #   preflight -> quality gate -> sidecar -> web -> tauri build (app,dmg,updater)
-#   -> entitlements guard -> notarize + staple -> upload to R2 mac/ -> merge
-#   latest.json (darwin-aarch64 only) -> verify updater end to end -> git tag
+#   -> entitlements guard -> notarize + staple -> headless tarballs -> upload to
+#   R2 mac/ + server/<triple>/ + web/ -> merge latest.json (darwin-aarch64,
+#   server[<host triple>], web) -> verify updater + headless end to end -> git tag
 #
 # House distribution rules (docs/RELEASING.md):
 #   * fixed artifact names — the download links are permanent, overwrite in place
@@ -31,6 +32,10 @@ UPDATER_KEY_DEFAULT="$HOME/.tauri/tidecode2.key"
 # Fixed names under mac/ — permanent download links (see docs/RELEASING.md).
 MAC_ARCHIVE_NAME="tide.app.tar.gz"
 MAC_DMG_NAME="tide.dmg"
+# Headless install / `tide update` (docs/internals/remote.md): fixed names too.
+SERVER_TARBALL_NAME="tide-server.tar.gz"
+WEB_TARBALL_NAME="web.tar.gz"
+HEADLESS_DIR="$BUNDLE_DIR/headless"
 
 DRY_RUN=0
 MANIFEST_ONLY=0
@@ -184,10 +189,11 @@ if [[ "$DRY_RUN" -eq 1 ]]; then
   4. bundle    tauri build --bundles app,dmg,updater
   5. guard     entitlements on every Mach-O in Contents/MacOS/
   6. notarize  xcrun notarytool submit --wait + stapler staple $([[ "$SKIP_NOTARIZE" -eq 1 ]] && echo "(skipped)")
-  7. upload    ${R2_RELEASE_BUCKET:-<unset>}/mac/{$MAC_DMG_NAME,$MAC_ARCHIVE_NAME} + prune $([[ "$SKIP_UPLOAD" -eq 1 ]] && echo "(skipped)")
-  8. manifest  merge_manifest.py --platform $PLATFORM --version $VERSION
-  9. verify    curl the published manifest + the artifact URL
- 10. tag       git tag -a v$VERSION
+  7. headless $SERVER_TARBALL_NAME (signed Contents/MacOS/tide-server) + $WEB_TARBALL_NAME, each with .sha256
+  8. upload    ${R2_RELEASE_BUCKET:-<unset>}/mac/{$MAC_DMG_NAME,$MAC_ARCHIVE_NAME}, server/$HOST_TRIPLE/, web/ + prune $([[ "$SKIP_UPLOAD" -eq 1 ]] && echo "(skipped)")
+  9. manifest  merge_manifest.py --platform $PLATFORM --version $VERSION --server-triple $HOST_TRIPLE --web-url …
+ 10. verify    curl the published manifest + the updater and headless artifact URLs
+ 11. tag       git tag -a v$VERSION
 
 no mutations performed
 EOF
@@ -196,6 +202,10 @@ fi
 
 APP_BUNDLE=""
 APP_TAR_GZ=""
+SERVER_TARBALL=""
+WEB_TARBALL=""
+SERVER_SHA=""
+WEB_SHA=""
 
 if [[ "$MANIFEST_ONLY" -eq 0 ]]; then
   need_cmd pnpm
@@ -295,8 +305,31 @@ if [[ "$MANIFEST_ONLY" -eq 0 ]]; then
     die "entitlements guard failed — check bundle.macOS.entitlements in tauri.conf.json (expects scripts/release/entitlements.plist)"
   fi
 
+  # --- Headless artifacts (`tide update`, headless install) ---------------
+  # The server binary comes from the signed bundle (hardened + entitled, checked
+  # above); the web tarball holds a top-level web/ so it unpacks beside the binary.
+  step "Step 7: Headless tarballs (server $HOST_TRIPLE + web)"
+  need_cmd shasum
+  rm -rf "$HEADLESS_DIR" && mkdir -p "$HEADLESS_DIR/server"
+  SERVER_BIN="$APP_BUNDLE/Contents/MacOS/tide-server"
+  [[ -f "$SERVER_BIN" ]] || SERVER_BIN="$SRC_TAURI_DIR/binaries/tide-server-$HOST_TRIPLE"
+  [[ -f "$SERVER_BIN" ]] || die "no tide-server binary for the headless tarball"
+  cp "$SERVER_BIN" "$HEADLESS_DIR/server/tide-server"
+  chmod 755 "$HEADLESS_DIR/server/tide-server"
+  [[ -f "$SRC_TAURI_DIR/binaries/web/index.html" ]] || die "binaries/web is missing — the web step did not run"
+  SERVER_TARBALL="$HEADLESS_DIR/$SERVER_TARBALL_NAME"
+  WEB_TARBALL="$HEADLESS_DIR/$WEB_TARBALL_NAME"
+  COPYFILE_DISABLE=1 tar -czf "$SERVER_TARBALL" -C "$HEADLESS_DIR/server" tide-server
+  COPYFILE_DISABLE=1 tar -czf "$WEB_TARBALL" -C "$SRC_TAURI_DIR/binaries" web
+  SERVER_SHA="$(shasum -a 256 "$SERVER_TARBALL" | awk '{print $1}')"
+  WEB_SHA="$(shasum -a 256 "$WEB_TARBALL" | awk '{print $1}')"
+  echo "$SERVER_SHA  $SERVER_TARBALL_NAME" > "$SERVER_TARBALL.sha256"
+  echo "$WEB_SHA  $WEB_TARBALL_NAME" > "$WEB_TARBALL.sha256"
+  echo "  $SERVER_TARBALL_NAME $SERVER_SHA"
+  echo "  $WEB_TARBALL_NAME $WEB_SHA"
+
   if [[ "$SKIP_UPLOAD" -eq 0 ]]; then
-    step "Step 7: Upload artifacts to R2 mac/ (fixed names, no-cache)"
+    step "Step 8: Upload artifacts to R2 mac/, server/$HOST_TRIPLE/, web/ (fixed names, no-cache)"
     [[ -n "${R2_RELEASE_ENDPOINT_URL:-}" && -n "${R2_RELEASE_BUCKET:-}" ]] \
       || die "R2_RELEASE_ENDPOINT_URL / R2_RELEASE_BUCKET unset — cannot upload"
     need_cmd aws
@@ -316,15 +349,44 @@ if [[ "$MANIFEST_ONLY" -eq 0 ]]; then
       echo "    rm mac/$obj"
       "${AWS[@]}" s3 rm "$R2_RELEASE_BUCKET/mac/$obj"
     done
+
+    # headless: artifact + .sha256 per folder, then prune the folder to those two
+    upload_headless() {
+      local folder="$1" file="$2" name
+      name="$(basename "$file")"
+      "${AWS[@]}" s3 cp "$file" "$R2_RELEASE_BUCKET/$folder/$name" --cache-control "no-cache"
+      "${AWS[@]}" s3 cp "$file.sha256" "$R2_RELEASE_BUCKET/$folder/$name.sha256" \
+        --content-type text/plain --cache-control "no-cache"
+      ("${AWS[@]}" s3 ls "$R2_RELEASE_BUCKET/$folder/" || true) | awk '{print $NF}' | while read -r obj; do
+        [[ -z "$obj" || "$obj" == "$name" || "$obj" == "$name.sha256" ]] && continue
+        echo "    rm $folder/$obj"
+        "${AWS[@]}" s3 rm "$R2_RELEASE_BUCKET/$folder/$obj"
+      done
+    }
+    upload_headless "server/$HOST_TRIPLE" "$SERVER_TARBALL"
+    upload_headless "web" "$WEB_TARBALL"
   else
-    step "Step 7: Upload SKIPPED (--skip-upload)"
+    step "Step 8: Upload SKIPPED (--skip-upload)"
   fi
+fi
+
+# Headless keys go into the manifest only when this run built them; --manifest-only
+# leaves the live server/web entries alone (their own "version" tells `tide update` they lag).
+HEADLESS_FLAGS=()
+if [[ -n "$SERVER_SHA" && -n "$WEB_SHA" && -n "$PUBLIC_BASE" ]]; then
+  HEADLESS_FLAGS=(
+    --server-triple "$HOST_TRIPLE"
+    --server-url "${PUBLIC_BASE%/}/server/$HOST_TRIPLE/$SERVER_TARBALL_NAME"
+    --server-sha256 "$SERVER_SHA"
+    --web-url "${PUBLIC_BASE%/}/web/$WEB_TARBALL_NAME"
+    --web-sha256 "$WEB_SHA"
+  )
 fi
 
 [[ -n "$SIGNATURE" ]] || die "no updater signature (pass --signature, or build the artifacts)"
 [[ -n "$URL" ]] || die "no artifact URL (pass --url, or set R2_RELEASE_PUBLIC_URL)"
 
-step "Step 8: Merge $PLATFORM into latest.json"
+step "Step 9: Merge $PLATFORM (+ headless server/web) into latest.json"
 # Start from the LIVE manifest so the windows/linux keys written by CI survive.
 MANIFEST_STAGE="$(mktemp -d)/latest.json"
 if [[ -n "$PUBLIC_BASE" ]] && curl -fsS --max-time 15 "${PUBLIC_BASE%/}/latest.json" -o "$MANIFEST_STAGE" 2>/dev/null; then
@@ -340,13 +402,14 @@ python3 "$SCRIPT_DIR/merge_manifest.py" \
   --version "$VERSION" \
   --signature "$SIGNATURE" \
   --url "$URL" \
+  ${HEADLESS_FLAGS[@]+"${HEADLESS_FLAGS[@]}"} \
   ${DOWNGRADE_FLAG[@]+"${DOWNGRADE_FLAG[@]}"}
 
 # The repo copy is the reviewable record of what is live.
 cp "$MANIFEST_STAGE" "$LATEST_JSON"
 
 if [[ "$SKIP_UPLOAD" -eq 0 && -n "${R2_RELEASE_ENDPOINT_URL:-}" && -n "${R2_RELEASE_BUCKET:-}" ]]; then
-  step "Step 9: Upload latest.json"
+  step "Step 9b: Upload latest.json"
   need_cmd aws
   AWS=(aws --endpoint-url "$R2_RELEASE_ENDPOINT_URL")
   [[ -z "${R2_RELEASE_PROFILE:-}" ]] || AWS+=(--profile "$R2_RELEASE_PROFILE")
@@ -354,7 +417,7 @@ if [[ "$SKIP_UPLOAD" -eq 0 && -n "${R2_RELEASE_ENDPOINT_URL:-}" && -n "${R2_RELE
     --content-type application/json --cache-control "no-cache"
 
   if [[ -n "$PUBLIC_BASE" ]]; then
-    step "Step 10: Verify the updater path end to end"
+    step "Step 10: Verify the updater and headless paths end to end"
     CHECK="$(curl -fsS --max-time 20 "${PUBLIC_BASE%/}/latest.json" | python3 -c "
 import json, sys
 try:
@@ -363,13 +426,26 @@ except Exception:
     print('unparseable'); print(''); raise SystemExit
 entry = (data.get('platforms') or {}).get('$PLATFORM') or {}
 ok = data.get('version') == '$VERSION' and entry.get('url') and entry.get('signature')
+headless = '$HOST_TRIPLE' if ${#HEADLESS_FLAGS[@]} else ''
+server = (data.get('server') or {}).get(headless) or {} if headless else {}
+web = (data.get('web') or {}) if headless else {}
+if headless:
+    ok = ok and server.get('version') == '$VERSION' and server.get('sha256') == '$SERVER_SHA' and web.get('sha256') == '$WEB_SHA'
 print('ok' if ok else 'mismatch')
 print(entry.get('url', ''))
-" || printf 'unparseable\n\n')"
+print(server.get('url', ''))
+print(web.get('url', ''))
+" || printf 'unparseable\n\n\n\n')"
     [[ "$(echo "$CHECK" | head -n1)" == "ok" ]] || die "published latest.json failed verification — the updater is broken"
     CHECK_URL="$(echo "$CHECK" | sed -n 2p)"
     curl -fsIL --max-time 30 "$CHECK_URL" >/dev/null || die "artifact URL is not reachable: $CHECK_URL"
     echo "Updater verified: $PLATFORM v$VERSION -> $CHECK_URL"
+    for HEADLESS_URL in "$(echo "$CHECK" | sed -n 3p)" "$(echo "$CHECK" | sed -n 4p)"; do
+      [[ -n "$HEADLESS_URL" ]] || continue
+      curl -fsIL --max-time 30 "$HEADLESS_URL" >/dev/null || die "headless artifact URL is not reachable: $HEADLESS_URL"
+      curl -fsIL --max-time 30 "$HEADLESS_URL.sha256" >/dev/null || die "headless checksum is not reachable: $HEADLESS_URL.sha256"
+      echo "Headless verified: $HEADLESS_URL"
+    done
   fi
 fi
 

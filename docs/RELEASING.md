@@ -19,7 +19,25 @@ s3://storage/tidecode/mac/tide.app.tar.gz      updater artifact (signed, fixed n
 s3://storage/tidecode/windows/tide-setup.exe   NSIS installer = updater artifact
 s3://storage/tidecode/linux/tide.deb           installer — PERMANENT download link
 s3://storage/tidecode/linux/tide.rpm           installer — PERMANENT download link
+s3://storage/tidecode/server/<rust-triple>/tide-server.tar.gz         headless server binary
+s3://storage/tidecode/server/<rust-triple>/tide-server.tar.gz.sha256  its checksum
+s3://storage/tidecode/web/web.tar.gz           headless web client (a top-level web/)
+s3://storage/tidecode/web/web.tar.gz.sha256    its checksum
 ```
+
+The `server/` and `web/` tarballs are the headless install and what `tide update` pulls
+(`docs/internals/remote.md`). `latest.json` lists them next to the Tauri keys:
+
+```json
+"server": { "aarch64-apple-darwin": { "url": "…/server/aarch64-apple-darwin/tide-server.tar.gz", "sha256": "…", "version": "0.9.0" } },
+"web":    { "url": "…/web/web.tar.gz", "sha256": "…", "version": "0.9.0" }
+```
+
+Only `build_release.sh` writes them today, so only `aarch64-apple-darwin` gets a server
+tarball. Linux/Windows headless tarballs need `publish_linux.sh` / `publish_windows.sh` to
+pass the same `--server-triple`/`--server-url`/`--server-sha256` flags to
+`merge_manifest.py`. Until a platform has an entry at the current version, `tide update`
+there says "no headless artifact for this platform yet".
 
 Public base: `https://pub-7b3e5bbd605d43adbeb4601a962d84bd.r2.dev/tidecode`. The updater
 endpoint baked into `tauri.conf.json` is `{public}/latest.json` — **it never moves**.
@@ -36,7 +54,13 @@ endpoint baked into `tauri.conf.json` is `{public}/latest.json` — **it never m
   non-zero — do not announce the release.
 - **One key per platform.** `latest.json` is shared, so every path merges only its own
   `platforms[...]` key through `scripts/release/merge_manifest.py`. A mac release never
-  clobbers the Windows entry.
+  clobbers the Windows entry. The same holds for `server[<rust-triple>]`: a release writes
+  only its host triple. `web` is one key; whoever ships it writes it whole.
+- **Headless entries carry their version.** Each `server[...]` / `web` entry records the
+  version it was built at; `tide update` ignores an entry whose version is not the
+  manifest's, so a `--manifest-only` run or a lagging platform never installs an older binary
+  under a newer label. The tarball's `sha256` in the manifest is what `tide update` checks; the
+  `.sha256` sibling is for people installing by hand.
 - **Versions only go up.** `build_release.sh` checks the live manifest before building and
   stops on a lower version (`ALLOW_DOWNGRADE=1` overrides), and `merge_manifest.py` refuses a merge that would lower the
   manifest version (exit 2) — that once un-published a newer release for every platform.
@@ -69,8 +93,10 @@ pnpm release:mac                               # or: bash scripts/release/build_
 (+ copy of `apps/web/dist` to `binaries/web`, bundled via `bundle.resources` so the packaged
 server can serve the web client to phones and other computers; the shell passes `--web`) →
 `tauri build --bundles app,dmg,updater` → **entitlements guard** → notarize + staple →
-upload `mac/` with pruning → merge `darwin-aarch64` into `latest.json` → verify the updater
-path → `git tag -a v<version>`.
+headless tarballs (the signed `Contents/MacOS/tide-server` and `binaries/web`, each with a
+`.sha256`) → upload `mac/`, `server/<host triple>/` and `web/` with pruning → merge
+`darwin-aarch64`, `server[<host triple>]` and `web` into `latest.json` → verify the updater
+and headless URLs → `git tag -a v<version>`.
 
 Flags: `--dry-run` (print the plan, change nothing) · `--manifest-only` ·
 `--skip-notarize` · `--skip-upload` · `--skip-tests` · `--platform <key>` ·
