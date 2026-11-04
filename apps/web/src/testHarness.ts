@@ -109,6 +109,7 @@ export function resetUi(): void {
   useUi.setState({
     view: "mission",
     selectedProjectId: null,
+    projectFilter: [],
     selectedThreadId: null,
     selectedExpertsSessionId: null,
     expertsReturnTo: "mission",
