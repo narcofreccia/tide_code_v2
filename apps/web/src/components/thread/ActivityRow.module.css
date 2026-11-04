@@ -119,3 +119,16 @@
 .copy { flex: none; }
 /* raw JSON payloads: monospace at the small size, pretty-printed */
 .prePayload { font-size: var(--fs-sm); }
+/* quiet "View diff" affordance beside an edit row's path */
+.diffLink {
+  display: inline-flex;
+  align-items: center;
+  flex: 0 0 auto;
+  background: none;
+  border: none;
+  padding: 0 var(--sp-1);
+  color: var(--muted);
+  cursor: pointer;
+  opacity: 0.6;
+}
+.diffLink:hover, .diffLink:focus-visible { color: var(--accent); opacity: 1; }

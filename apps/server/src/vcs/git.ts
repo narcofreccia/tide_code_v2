@@ -2,11 +2,13 @@ import { execFile } from "node:child_process";
 import { mkdtemp, readFile, rm } from "node:fs/promises";
 import { tmpdir } from "node:os";
 import { join } from "node:path";
-import type { DiffFile } from "@tide/contracts";
+import type { CommitSummary, DiffFile } from "@tide/contracts";
 import { parseNameStatus, parseNumstat, type RawDiffEntry } from "./diffParse.ts";
 
 /** Sentinel `head` meaning "the working tree" (tracked changes + untracked files). */
 export const WORKTREE = "WORKTREE";
+/** git's well-known empty tree: the base a root commit is diffed against. */
+export const EMPTY_TREE = "4b825dc642cb6eb9a060e54bf8d69288fbee4904";
 /** Per-file patches above this are cut; the marker is appended to the patch text. */
 export const MAX_PATCH_BYTES = 200 * 1024;
 const MAX_BUFFER = 64 * 1024 * 1024;
@@ -345,6 +347,43 @@ export class Git {
 
   async push(branch: string, remote = "origin"): Promise<void> {
     await this.run(["push", "-u", remote, branch]);
+  }
+
+  // ---- history ----
+
+  /** Newest `limit` commits reachable from `ref`; empty for an unborn branch or unknown ref. */
+  async log(ref: string, limit: number): Promise<CommitSummary[]> {
+    // -z separates commits with NUL, fields use US (0x1f) so a subject can never split a record
+    const format = "%H%x1f%h%x1f%s%x1f%an%x1f%ct%x1f%P";
+    const r = await this.tryRun(["log", `--format=${format}`, "-z", "-n", String(Math.max(1, Math.floor(limit))), ref, "--"]);
+    if (r.code !== 0) return [];
+    const commits: CommitSummary[] = [];
+    for (const record of r.stdout.split("\0")) {
+      const [sha, shortSha, subject, author, ct, parents] = record.replace(/^\n/, "").split("\x1f");
+      if (!sha || shortSha === undefined || subject === undefined || author === undefined || ct === undefined) continue;
+      commits.push({
+        sha,
+        shortSha,
+        subject,
+        author,
+        at: Number(ct) * 1000,
+        parents: (parents ?? "").split(" ").filter((p) => p !== ""),
+      });
+    }
+    return commits;
+  }
+
+  /** First parent of a commit; undefined for a root commit (or an unknown sha). */
+  async firstParent(sha: string): Promise<string | undefined> {
+    const r = await this.tryRun(["rev-parse", "--verify", "--quiet", `${sha}^1`]);
+    const out = r.stdout.trim();
+    return r.code === 0 && out !== "" ? out : undefined;
+  }
+
+  /** The full sha of a commit-ish, or undefined when it is not a commit. */
+  async resolveCommit(sha: string): Promise<string | undefined> {
+    const r = await this.tryRun(["rev-parse", "--verify", "--quiet", "--end-of-options", `${sha}^{commit}`]);
+    return r.code === 0 && r.stdout.trim() !== "" ? r.stdout.trim() : undefined;
   }
 
   // ---- read / diff ----

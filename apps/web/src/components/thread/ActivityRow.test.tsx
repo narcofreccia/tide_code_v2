@@ -4,7 +4,9 @@ import type { Activity } from "@tide/contracts";
 import { ActivityRow } from "./ActivityRow.tsx";
 import { setProvidersForTest } from "../../state/providers.ts";
 import { useUi } from "../../state/ui.ts";
-import { attachFakeStore, makeThread, makeTool, modelWith, resetUi } from "../../testHarness.ts";
+import { activeTab, resetWorkbench } from "../../state/workbench.ts";
+import { resetVcs, useVcs } from "../../state/vcs.ts";
+import { attachFakeStore, makeThread, makeTool, makeTurn, modelWith, modelWithTurns, resetUi } from "../../testHarness.ts";
 import { LOGGED_OUT, PROVIDER_FIXTURE } from "../settings/fixtures.ts";
 
 function errorActivity(text: string): Activity {
@@ -18,6 +20,8 @@ function setup(): void {
 afterEach(() => {
   cleanup();
   resetUi();
+  resetVcs();
+  resetWorkbench();
 });
 
 describe("error activities", () => {
@@ -142,3 +146,34 @@ describe("tool rows", () => {
   });
 });
 
+
+describe("edit rows — View diff", () => {
+  it("opens the turn's diff in Changes when it has a checkpoint, leaving the path link for the editor", () => {
+    const model = modelWithTurns(makeThread("t1"), [makeTurn("u1", { checkpoint: { before: "a", after: "b" } })], []);
+    attachFakeStore(model);
+    render(
+      <ul>
+        <ActivityRow activity={makeTool("a1", { toolName: "Edit", input: { file_path: "src/a.ts" }, status: "ok" })} />
+      </ul>,
+    );
+    fireEvent.click(screen.getByLabelText(/View diff of/));
+    expect(useVcs.getState().selection.t1).toBe("u1");
+    expect(useVcs.getState().pickedFile.t1).toBe("src/a.ts");
+    expect(activeTab("t1").kind).toBe("changes");
+    fireEvent.click(screen.getByTitle("Open src/a.ts"));
+    expect(activeTab("t1")).toMatchObject({ kind: "file", path: "src/a.ts" });
+  });
+
+  it("falls back to the editor without a checkpoint, and is absent on non-edit tools", () => {
+    attachFakeStore(modelWithTurns(makeThread("t1"), [makeTurn("u1", { status: "completed" })], []));
+    render(
+      <ul>
+        <ActivityRow activity={makeTool("a1", { toolName: "Edit", input: { file_path: "src/a.ts" }, status: "ok" })} />
+        <ActivityRow activity={makeTool("a2", { toolName: "Read", input: { file_path: "src/b.ts" }, status: "ok" })} />
+      </ul>,
+    );
+    expect(screen.getAllByLabelText(/View diff of/)).toHaveLength(1);
+    fireEvent.click(screen.getByLabelText(/View diff of/));
+    expect(activeTab("t1")).toMatchObject({ kind: "file", path: "src/a.ts" });
+  });
+});

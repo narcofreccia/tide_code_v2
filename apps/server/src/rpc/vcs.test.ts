@@ -229,3 +229,32 @@ describe("rpc vcs.fileAt", () => {
     }
   });
 });
+
+describe("rpc vcs.commits / vcs.commitDiff", () => {
+  it("lists commits and diffs one against its first parent; a root commit against the empty tree", async () => {
+    const s = await setup();
+    await s.repo.write("a.txt", "a\n");
+    await s.repo.commit("add a");
+    const { result } = await s.call<{ branch?: string; commits: { sha: string; subject: string }[] }>("vcs.commits", { threadId: s.threadId, limit: 5 });
+    expect(result?.branch).toBe("main");
+    expect(result?.commits.map((c) => c.subject)).toEqual(["add a", "init"]);
+
+    const tip = await s.call<DiffResult>("vcs.commitDiff", { threadId: s.threadId, sha: result?.commits[0]?.sha });
+    expect(tip.result?.files.map((f) => f.path)).toEqual(["a.txt"]);
+    expect(tip.result?.base).toBe(result?.commits[1]?.sha);
+
+    const root = await s.call<DiffResult>("vcs.commitDiff", { threadId: s.threadId, sha: result?.commits[1]?.sha });
+    expect(root.result?.base).toBe("4b825dc642cb6eb9a060e54bf8d69288fbee4904");
+    expect(root.result?.files.map((f) => f.path)).toEqual(["README.md"]);
+  });
+
+  it("reads by projectId when no thread is given, and rejects unknowns", async () => {
+    const s = await setup();
+    const projectId = Object.keys(s.engine.getModel().projects)[0];
+    const { result } = await s.call<{ commits: unknown[] }>("vcs.commits", { projectId });
+    expect(result?.commits).toHaveLength(1);
+    expect((await s.call("vcs.commits", { projectId: "nope" })).error?.code).toBe("not-found");
+    expect((await s.call("vcs.commits", {})).error?.code).toBe("invalid-params");
+    expect((await s.call("vcs.commitDiff", { projectId, sha: "deadbeef" })).error?.code).toBe("not-found");
+  });
+});

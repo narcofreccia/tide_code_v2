@@ -1,4 +1,4 @@
-import { useEffect, useState } from "react";
+import { useEffect } from "react";
 import { selectActiveTurn, selectCheckpointTurns, selectThreadMessages } from "@tide/client";
 import type { ReadModel, Thread } from "@tide/contracts";
 import { revertLinkedChanges } from "../../lib/linkActions.ts";
@@ -12,7 +12,7 @@ import {
 import { useSelectedThread } from "../../state/hooks.ts";
 import { useModel } from "../../state/model.ts";
 import { useUi } from "../../state/ui.ts";
-import { ALL_CHANGES, resolveSelection, selectTurn, useTurnDiff, useVcs } from "../../state/vcs.ts";
+import { ALL_CHANGES, isCommitSelection, pickFile, resolveSelection, selectTurn, useCommits, useTurnDiff, useVcs, commitSelection } from "../../state/vcs.ts";
 import { Button } from "../ui/Button.tsx";
 import { DiffHeader } from "./DiffHeader.tsx";
 import { DiffPane } from "./DiffPane.tsx";
@@ -50,16 +50,25 @@ function ChangesFor({ thread }: { thread: Thread }) {
   const explicit = useVcs((s) => s.selection[thread.id]);
   const collapsed = useUi((s) => s.fileListCollapsed);
   const toggleFileList = useUi((s) => s.toggleFileList);
-  const [picked, setPicked] = useState<string | undefined>(undefined);
+  const picked = useVcs((s) => s.pickedFile[thread.id]);
+  const commits = useCommits(thread.id).data?.commits;
 
   const turns = selectCheckpointTurns(model, thread.id);
   const selection = resolveSelection(model, thread.id, explicit);
   const running = selectActiveTurn(model, thread.id) !== undefined;
-  const selectedTurn = selection && selection !== ALL_CHANGES ? model.turns[selection] : undefined;
+  const selectedTurn = selection && selection !== ALL_CHANGES && !isCommitSelection(selection) ? model.turns[selection] : undefined;
 
   const diff = useTurnDiff(thread.id, selection);
 
   useTurnStepper((delta) => {
+    if (isCommitSelection(selection)) {
+      // the list is newest first, so "next" (]) moves to a lower index
+      const list = commits ?? [];
+      const at = list.findIndex((c) => commitSelection(c.sha) === selection);
+      const next = list[Math.min(list.length - 1, Math.max(0, at - delta))];
+      if (next) selectTurn(thread.id, commitSelection(next.sha));
+      return;
+    }
     if (turns.length === 0) return;
     const at = turns.findIndex((t) => t.id === selection);
     const next = turns[Math.min(turns.length - 1, Math.max(0, (at === -1 ? turns.length - 1 : at) + delta))];
@@ -83,7 +92,7 @@ function ChangesFor({ thread }: { thread: Thread }) {
 
   const nothing = files.length === 0 && linked.length === 0;
 
-  if (turns.length === 0 && selection === undefined) {
+  if (turns.length === 0 && selection === undefined && (commits ?? []).length === 0) {
     return <p className={styles.empty}>{EMPTY}</p>;
   }
 
@@ -112,7 +121,7 @@ function ChangesFor({ thread }: { thread: Thread }) {
         </p>
       ) : null}
       {diff.data && nothing && !diff.error ? (
-        <p className={styles.empty}>{selectedTurn ? EMPTY_TURN : EMPTY}</p>
+        <p className={styles.empty}>{selectedTurn || isCommitSelection(selection) ? EMPTY_TURN : EMPTY}</p>
       ) : null}
       {nothing ? null : (
         <div className={styles.body}>
@@ -120,7 +129,7 @@ function ChangesFor({ thread }: { thread: Thread }) {
             files={files}
             linked={linked}
             selected={selectedKey}
-            onSelect={setPicked}
+            onSelect={(path) => pickFile(thread.id, path)}
             onRevertLinked={revertLinked}
             collapsed={collapsed}
             onToggle={toggleFileList}

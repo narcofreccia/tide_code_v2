@@ -4,7 +4,7 @@ import { isAbsolute, relative, resolve } from "node:path";
 import { resolveLinkedDirs } from "../provider/links.ts";
 import { threadCwd } from "../provider/sessions.ts";
 import type { CheckpointService } from "../vcs/checkpoints.ts";
-import { Git, GitError, WORKTREE } from "../vcs/git.ts";
+import { EMPTY_TREE, Git, GitError, WORKTREE } from "../vcs/git.ts";
 import { Gh, type GhLike } from "../vcs/gh.ts";
 import { safeRelativePath } from "../workspace/paths.ts";
 import { RpcException, type RpcRouter } from "./router.ts";
@@ -84,6 +84,33 @@ export function registerVcsHandlers(router: RpcRouter, deps: VcsHandlerDeps): vo
     const turns = Object.values(model.turns).filter((t) => t.threadId === thread.id);
     return { thread, project, cwd: threadCwd(thread, project), turns, links: resolveLinkedDirs(thread, project) };
   };
+
+  /** Commits can be read for a project's own checkout too, when no thread (worktree) is involved. */
+  const contextForProject = (projectId: string): { cwd: string } => {
+    const project = deps.engine.getModel().projects[projectId];
+    if (!project) throw new RpcException("not-found", `unknown project ${projectId}`);
+    return { cwd: project.rootPath };
+  };
+  const commitCwd = (input: { threadId?: string | undefined; projectId?: string | undefined }): string => {
+    if (input.threadId !== undefined) return context(input.threadId).cwd;
+    if (input.projectId !== undefined) return contextForProject(input.projectId).cwd;
+    throw new RpcException("invalid-params", "threadId or projectId is required");
+  };
+
+  router.register("vcs.commits", async (input) => {
+    const repo = git(commitCwd(input));
+    if (!(await repo.isRepo())) return { commits: [] };
+    const [branch, commits] = await Promise.all([repo.currentBranch(), repo.log("HEAD", input.limit ?? 50)]);
+    return { ...(branch !== undefined ? { branch } : {}), commits };
+  });
+
+  router.register("vcs.commitDiff", async (input) => {
+    const repo = git(commitCwd(input));
+    const sha = await repo.resolveCommit(input.sha);
+    if (sha === undefined) throw new RpcException("not-found", `unknown commit ${input.sha}`);
+    const base = (await repo.firstParent(sha)) ?? EMPTY_TREE;
+    return { base, head: sha, files: await goneAsNotFound(() => repo.diff(base, sha)) };
+  });
 
   router.register("vcs.status", async (input) => {
     const ctx = context(input.threadId);

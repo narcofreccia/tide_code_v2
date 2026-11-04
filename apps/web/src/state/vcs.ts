@@ -1,14 +1,31 @@
 import { useEffect } from "react";
 import { create } from "zustand";
 import { selectCheckpointTurns, selectThreadTurns } from "@tide/client";
-import type { DiffResult, ReadModel, VcsStatus } from "@tide/contracts";
+import type { CommitSummary, DiffResult, ReadModel, VcsStatus } from "@tide/contracts";
 import { call, useModel } from "./model.ts";
 import { showToast } from "./toast.ts";
 import { diffTotals, type DiffTotals } from "../lib/diffStats.ts";
+import { CHANGES_TAB, openFileTab, setActiveTab } from "./workbench.ts";
 
-/** `"all"` means the whole-thread diff (`vcs.threadDiff`). */
+/** `"all"` means the whole-thread diff (`vcs.threadDiff`); `commit:<sha>` a commit (`vcs.commitDiff`). */
 export type TurnSelection = string;
 export const ALL_CHANGES = "all";
+const COMMIT_PREFIX = "commit:";
+
+export function commitSelection(sha: string): TurnSelection {
+  return `${COMMIT_PREFIX}${sha}`;
+}
+export function isCommitSelection(selection: TurnSelection | undefined): boolean {
+  return selection !== undefined && selection.startsWith(COMMIT_PREFIX) && selection.length > COMMIT_PREFIX.length;
+}
+export function commitSha(selection: TurnSelection): string | undefined {
+  return isCommitSelection(selection) ? selection.slice(COMMIT_PREFIX.length) : undefined;
+}
+
+export interface CommitList {
+  branch?: string;
+  commits: CommitSummary[];
+}
 
 export interface Entry<T> {
   data?: T;
@@ -22,9 +39,13 @@ interface VcsState {
   statuses: Record<string, Entry<VcsStatus>>;
   /** explicit turn choice per thread; absent means "follow the latest checkpoint" */
   selection: Record<string, TurnSelection | undefined>;
+  commits: Record<string, Entry<CommitList>>;
+  /** the file the Changes tab shows, per thread; absent means "the first one" */
+  pickedFile: Record<string, string | undefined>;
 }
 
-export const useVcs = create<VcsState>(() => ({ diffs: {}, statuses: {}, selection: {} }));
+const INITIAL: VcsState = { diffs: {}, statuses: {}, selection: {}, commits: {}, pickedFile: {} };
+export const useVcs = create<VcsState>(() => INITIAL);
 
 export function diffKey(threadId: string, turnId: TurnSelection): string {
   return `${threadId}:${turnId}`;
@@ -51,10 +72,13 @@ async function loadDiff(threadId: string, turnId: TurnSelection): Promise<void> 
   const generation = generationOf(threadId);
   patchDiff(key, { loading: true });
   try {
+    const sha = commitSha(turnId);
     const data =
-      turnId === ALL_CHANGES
-        ? await call("vcs.threadDiff", { threadId })
-        : await call("vcs.turnDiff", { threadId, turnId });
+      sha !== undefined
+        ? await call("vcs.commitDiff", { threadId, sha })
+        : turnId === ALL_CHANGES
+          ? await call("vcs.threadDiff", { threadId })
+          : await call("vcs.turnDiff", { threadId, turnId });
     if (generation !== generationOf(threadId)) return;
     patchDiff(key, { loading: false, data });
   } catch (error) {
@@ -76,6 +100,8 @@ async function loadStatus(threadId: string): Promise<void> {
   patchStatus(threadId, { loading: true });
   try {
     patchStatus(threadId, { loading: false, data: await call("vcs.status", { threadId }) });
+    // a refreshed status means git moved (commit, merge, checkout): the commit list is stale too
+    if (useVcs.getState().commits[threadId] !== undefined) ensureCommits(threadId, true);
   } catch (error) {
     const text = message(error);
     patchStatus(threadId, { loading: false, error: text });
@@ -87,6 +113,24 @@ export function ensureStatus(threadId: string, force = false): void {
   const entry = useVcs.getState().statuses[threadId];
   if (!force && entry && (entry.loading || entry.data !== undefined || entry.error !== undefined)) return;
   void loadStatus(threadId);
+}
+
+async function loadCommits(threadId: string): Promise<void> {
+  const patch = (entry: Entry<CommitList>): void =>
+    useVcs.setState((s) => ({ commits: { ...s.commits, [threadId]: entry } }));
+  const previous = useVcs.getState().commits[threadId]?.data;
+  patch({ loading: true, ...(previous === undefined ? {} : { data: previous }) });
+  try {
+    patch({ loading: false, data: await call("vcs.commits", { threadId, limit: 50 }) });
+  } catch (error) {
+    patch({ loading: false, error: message(error) });
+  }
+}
+
+export function ensureCommits(threadId: string, force = false): void {
+  const entry = useVcs.getState().commits[threadId];
+  if (!force && entry && (entry.loading || entry.data !== undefined || entry.error !== undefined)) return;
+  void loadCommits(threadId);
 }
 
 /** Drops every cached diff of a thread so the next read refetches. */
@@ -105,8 +149,29 @@ export function selectTurn(threadId: string, turnId: TurnSelection | undefined):
   useVcs.setState((s) => ({ selection: { ...s.selection, [threadId]: turnId } }));
 }
 
+export function pickFile(threadId: string, path: string | undefined): void {
+  useVcs.setState((s) => ({ pickedFile: { ...s.pickedFile, [threadId]: path } }));
+}
+
+/**
+ * "View diff" on an edit row: the turn's own diff with the file picked in the Changes tab when
+ * the turn has a checkpoint (or is still running, so Changes follows it live); otherwise the
+ * best available is the file itself in the editor.
+ */
+export function openChangesForFile(threadId: string, turnId: string, path: string): void {
+  const turn = useModel.getState().model.turns[turnId];
+  const live = turn !== undefined && (turn.status === "requested" || turn.status === "running");
+  if (turn === undefined || (turn.checkpoint === undefined && !live)) {
+    openFileTab(threadId, path);
+    return;
+  }
+  selectTurn(threadId, turnId);
+  pickFile(threadId, path);
+  setActiveTab(threadId, CHANGES_TAB);
+}
+
 export function resetVcs(): void {
-  useVcs.setState({ diffs: {}, statuses: {}, selection: {} });
+  useVcs.setState(INITIAL);
   signatures.clear();
   generations.clear();
 }
@@ -121,7 +186,7 @@ export function resolveSelection(
   explicit: TurnSelection | undefined,
 ): TurnSelection | undefined {
   const turns = selectThreadTurns(model, threadId);
-  if (explicit === ALL_CHANGES) return ALL_CHANGES;
+  if (explicit === ALL_CHANGES || isCommitSelection(explicit)) return explicit;
   if (explicit !== undefined && turns.some((t) => t.id === explicit)) return explicit;
   const checkpoints = selectCheckpointTurns(model, threadId);
   const latest = checkpoints[checkpoints.length - 1] ?? turns[turns.length - 1];
@@ -198,12 +263,32 @@ export function useVcsStatus(threadId: string | undefined): StatusQuery {
   };
 }
 
+export interface CommitsQuery extends Entry<CommitList> {
+  refresh: () => void;
+}
+
+/** The thread branch's newest commits; fetched when first asked for, then kept fresh by status refreshes. */
+export function useCommits(threadId: string | undefined, enabled = true): CommitsQuery {
+  const entry = useVcs((s) => (threadId ? s.commits[threadId] : undefined));
+  useEffect(() => {
+    if (threadId && enabled) ensureCommits(threadId);
+  }, [threadId, enabled, entry === undefined]);
+  return {
+    loading: entry?.loading ?? Boolean(threadId && enabled),
+    ...(entry?.data === undefined ? {} : { data: entry.data }),
+    ...(entry?.error === undefined ? {} : { error: entry.error }),
+    refresh: () => {
+      if (threadId) ensureCommits(threadId, true);
+    },
+  };
+}
+
 /** `+n −m` for the turn the Changes tab is showing; read-only, never fetches. */
 export function useSelectedDiffStats(threadId: string | undefined): DiffTotals | undefined {
   const explicit = useVcs((s) => (threadId ? s.selection[threadId] : undefined));
   // narrow subscriptions: a string and one turn, both stable across streaming deltas
   const selection = useModel((s) => (threadId ? resolveSelection(s.model, threadId, explicit) : undefined));
-  const turn = useModel((s) => (selection === undefined || selection === ALL_CHANGES ? undefined : s.model.turns[selection]));
+  const turn = useModel((s) => (selection === undefined || selection === ALL_CHANGES || isCommitSelection(selection) ? undefined : s.model.turns[selection]));
   const entry = useVcs((s) => (threadId && selection ? s.diffs[diffKey(threadId, selection)] : undefined));
   if (!threadId || selection === undefined) return undefined;
   return diffTotals(turn, entry?.data);

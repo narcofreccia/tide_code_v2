@@ -226,3 +226,36 @@ describe("Git — refs, commit, show", () => {
     expect((await r.git.show(WORKTREE, "README.md")).content).toBe("# temp\n");
   });
 });
+
+describe("Git — history", () => {
+  it("logs newest first with parsed fields, including a root commit", async () => {
+    const r = await repo();
+    await r.write("a.txt", "a\n");
+    await r.commit("feat: add a | with\ttab");
+    const commits = await r.git.log("HEAD", 10);
+    expect(commits.map((c) => c.subject)).toEqual(["feat: add a | with\ttab", "init"]);
+    expect(commits[0]).toMatchObject({ author: "Tide Test", parents: [commits[1]?.sha] });
+    expect(commits[0]?.shortSha).toBe(commits[0]?.sha.slice(0, commits[0].shortSha.length));
+    expect(commits[0]?.at).toBe(Date.parse("2026-01-01T00:00:00Z"));
+    expect(commits[1]?.parents).toEqual([]);
+    expect(await r.git.firstParent(commits[1]?.sha ?? "")).toBeUndefined();
+    expect(await r.git.log("HEAD", 1)).toHaveLength(1);
+    expect(await r.git.log("refs/heads/nope", 5)).toEqual([]);
+  });
+
+  it("takes the first parent of a merge commit as its base", async () => {
+    const r = await repo();
+    await r.git.run(["checkout", "-q", "-b", "side"]);
+    await r.write("side.txt", "s\n");
+    await r.commit("side work");
+    await r.git.run(["checkout", "-q", "main"]);
+    await r.write("main.txt", "m\n");
+    const mainTip = await r.commit("main work");
+    await r.git.run(["merge", "--no-ff", "-q", "-m", "merge side", "side"]);
+    const merge = (await r.git.log("HEAD", 1))[0];
+    expect(merge?.parents).toHaveLength(2);
+    expect(await r.git.firstParent(merge?.sha ?? "")).toBe(mainTip);
+    const files = await r.git.diff(mainTip, merge?.sha ?? "");
+    expect(files.map((f) => f.path)).toEqual(["side.txt"]);
+  });
+});

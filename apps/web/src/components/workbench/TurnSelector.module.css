@@ -20,3 +20,5 @@
 .stats { font-size: var(--fs-sm); font-variant-numeric: tabular-nums; white-space: nowrap; }
 .add { color: var(--ok); }
 .del { color: var(--danger); }
+.segment { display: flex; gap: var(--sp-3); padding: var(--sp-1) var(--sp-2) var(--sp-2); border-bottom: 1px solid var(--border); }
+.empty { padding: var(--sp-2); color: var(--muted); font-size: var(--fs-sm); }

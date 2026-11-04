@@ -96,3 +96,24 @@ export function formatPayload(value: unknown): string {
 export function toolFilePath(input: unknown): string | undefined {
   return firstString(input, PATH_KEYS);
 }
+
+const EDIT_TOOL = /^(edit|write|multiedit|patch|apply_patch)$/i;
+
+/** Tools that change a file (the same family as the "edited N files" summary). */
+export function isEditTool(toolName: string): boolean {
+  return EDIT_TOOL.test(toolName);
+}
+
+const PATCH_FILE = /^\*\*\* (?:Update|Add|Delete) File:\s*(.+?)\s*$/gm;
+
+/**
+ * Every file path a tool call touched: the usual path keys, else the files named by a
+ * Codex `apply_patch` body (`*** Update File: <path>` / `*** Add File:`), in patch order.
+ */
+export function toolFilePaths(activity: { toolName: string; input?: unknown }): string[] {
+  const direct = toolFilePath(activity.input);
+  if (direct !== undefined) return [direct];
+  const patch = firstString(activity.input, ["patch", "input"]);
+  if (patch === undefined) return [];
+  return [...patch.matchAll(PATCH_FILE)].map((m) => m[1]).filter((p): p is string => p !== undefined);
+}

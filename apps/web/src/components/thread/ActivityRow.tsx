@@ -1,10 +1,11 @@
 import { memo, useState } from "react";
 import type { Activity } from "@tide/contracts";
-import { formatDuration, formatPayload, shortenPath, toolFilePath, toolGlyph, toolTarget } from "../../lib/activity.ts";
+import { formatDuration, formatPayload, isEditTool, shortenPath, toolFilePaths, toolGlyph, toolTarget } from "../../lib/activity.ts";
 import { resolveLoginCommand, runOrCopy } from "../../lib/providerLogin.ts";
 import { useModel } from "../../state/model.ts";
 import { providerStatus, useProviders } from "../../state/providers.ts";
 import { useUi } from "../../state/ui.ts";
+import { openChangesForFile } from "../../state/vcs.ts";
 import { openFileTab } from "../../state/workbench.ts";
 import { normalizePastedPath } from "../../lib/mentions.ts";
 import { summarizeToolResult } from "../../lib/toolSummary.ts";
@@ -140,7 +141,7 @@ export const ActivityRow = memo(function ActivityRow({ activity, ownerRunning = 
   }
   if (activity.kind !== "tool") return null;
 
-  const raw = toolFilePath("input" in activity ? activity.input : undefined);
+  const raw = toolFilePaths(activity)[0];
   const filePath = raw === undefined ? undefined : normalizePastedPath(raw, cwd);
   const target = toolTarget(activity.input);
   // the whole command (all lines) or path, for the tooltip of the one-line target
@@ -193,6 +194,17 @@ export const ActivityRow = memo(function ActivityRow({ activity, ownerRunning = 
             {shortenPath(filePath)}
           </button>
         )}
+        {filePath !== undefined && isEditTool(activity.toolName) ? (
+          <button
+            type="button"
+            className={styles.diffLink}
+            title="View diff in Changes"
+            aria-label={`View diff of ${shortenPath(filePath)}`}
+            onClick={() => openChangesForFile(activity.threadId, activity.turnId, filePath)}
+          >
+            <Icon name="merge" size={12} />
+          </button>
+        ) : null}
         {line && filePath !== undefined ? (
           <span className={styles.resultLine} title={line}>
             {line}

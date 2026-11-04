@@ -9,7 +9,7 @@ import { PrWatch } from "./PrWatch.tsx";
 import { MERGE_STRATEGIES } from "../../lib/merge.ts";
 import { MergeAction } from "./MergeAction.tsx";
 import { publishThread } from "../../lib/threadActions.ts";
-import { ALL_CHANGES, ensureStatus, type TurnSelection } from "../../state/vcs.ts";
+import { ALL_CHANGES, ensureStatus, isCommitSelection, commitSha, useCommits, type TurnSelection } from "../../state/vcs.ts";
 import { useUi } from "../../state/ui.ts";
 import { openFileTab } from "../../state/workbench.ts";
 import { firstChangedLine } from "../../lib/diff.ts";
@@ -186,7 +186,9 @@ export function DiffHeader({
     onRefresh();
     ensureStatus(thread.id, true);
   };
-  const total = diffTotals(selection === ALL_CHANGES ? undefined : selectedTurn, diff);
+  const commits = useCommits(thread.id);
+  const commit = selection === undefined ? undefined : commitSha(selection);
+  const total = diffTotals(selection === ALL_CHANGES || isCommitSelection(selection) ? undefined : selectedTurn, diff);
 
   return (
     <div className={styles.header}>
@@ -196,6 +198,7 @@ export function DiffHeader({
         turns={turns}
         selection={selection}
         onSelect={onSelect}
+        commits={commits.data?.commits ?? []}
       />
       {total ? (
         <span className={styles.stats}>
@@ -204,6 +207,11 @@ export function DiffHeader({
         </span>
       ) : null}
       {selection === ALL_CHANGES ? <span className={styles.hint}>whole thread</span> : null}
+      {commit !== undefined ? (
+        <span className={styles.hint} title={commit}>
+          commit {commit.slice(0, 7)}
+        </span>
+      ) : null}
 
       <div className={styles.actions}>
         <Button
@@ -225,8 +233,8 @@ export function DiffHeader({
         >
           Open in editor
         </Button>
-        <TurnActions thread={thread} turn={selectedTurn} running={running} />
-        {thread.worktreePath === undefined ? (
+        {commit !== undefined ? null : <TurnActions thread={thread} turn={selectedTurn} running={running} />}
+        {commit !== undefined ? null : thread.worktreePath === undefined ? (
           <span className={styles.hint} title="Runs in the main checkout — PR needs a worktree">
             Runs in the main checkout — PR needs a worktree
           </span>
@@ -246,7 +254,7 @@ export function DiffHeader({
             />
           </>
         )}
-        <MergeAction thread={thread} running={running} />
+        {commit !== undefined ? null : <MergeAction thread={thread} running={running} />}
         <Button variant="quiet" onClick={refresh} title="Re-read the diff and git status">
           Refresh
         </Button>
