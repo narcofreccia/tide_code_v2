@@ -1,6 +1,7 @@
 import type { CommandOf, ReadModel, Thread, Turn, TurnStatus } from "@tide/contracts";
 import { handoffTurns } from "../handoff/select.ts";
 import { recordHandoff } from "./handoff.ts";
+import { inheritedFrom } from "./vcs.ts";
 import { fail, isArchived, ok, type DecideContext, type DecideResult } from "./types.ts";
 
 type LineageCommand =
@@ -95,6 +96,9 @@ export function decideLineage(model: ReadModel, command: LineageCommand, ctx: De
       const { turn } = found;
       if (command.restoreFiles) {
         if (thread.worktreePath === undefined) return fail("conflict", `thread ${thread.id} ${NEEDS_WORKTREE}`);
+        // restoring files rewrites a checkout this thread only borrows (side chat, inheriting delegate)
+        const owner = inheritedFrom(model, thread);
+        if (owner) return fail("invalid-command", `thread ${thread.id} shares the worktree of "${owner.title}" (${owner.id}); roll back without restoring files`);
         if (turn.checkpoint?.before === undefined) return fail("conflict", `turn ${turn.id} has no before-checkpoint`);
       }
       return ok({

@@ -53,7 +53,7 @@ export function searchThreads(model: ReadModel, params: SearchParams): SearchHit
     const found = new Set<string>();
     for (const t of terms) if (title.includes(t)) found.add(t);
     const titleHit = found.size > 0;
-    let best: { text: string; at: number } | undefined;
+    let best: { id: string; text: string; at: number } | undefined;
     const ids = model.threadMessages[thread.id] ?? [];
     for (let i = ids.length - 1; i >= 0; i--) {
       const m = model.messages[ids[i] as string];
@@ -61,12 +61,12 @@ export function searchThreads(model: ReadModel, params: SearchParams): SearchHit
       const text = m.text.toLowerCase();
       let any = false;
       for (const t of terms) if (text.includes(t)) { found.add(t); any = true; }
-      if (any && best === undefined) best = { text: m.text, at: m.createdAt };
+      if (any && best === undefined) best = { id: m.id, text: m.text, at: m.createdAt };
       if (found.size === terms.length && best !== undefined) break;
     }
     if (found.size < terms.length) continue;
     if (titleHit) hits.push({ threadId: thread.id, projectId: thread.projectId, title: thread.title, snippet: snippetOf(thread.title, terms), field: "title", at: thread.updatedAt });
-    else if (best) hits.push({ threadId: thread.id, projectId: thread.projectId, title: thread.title, snippet: snippetOf(best.text, terms), field: "message", at: best.at });
+    else if (best) hits.push({ threadId: thread.id, projectId: thread.projectId, title: thread.title, snippet: snippetOf(best.text, terms), field: "message", messageId: best.id, at: best.at });
   }
   return hits.sort((a, b) => b.at - a.at).slice(0, limit);
 }

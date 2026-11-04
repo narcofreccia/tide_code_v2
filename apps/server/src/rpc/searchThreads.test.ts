@@ -37,6 +37,16 @@ describe("searchThreads", () => {
     expect(hits[1]).toMatchObject({ threadId: "b", field: "message", snippet: "newer deploy note", at: 30 });
   });
 
+  it("names the message a message hit came from; a title hit carries none", () => {
+    const m = build([
+      { id: "a", title: "Deploy script", msgs: [["deploy now", 10]] },
+      { id: "b", title: "Chat", msgs: [["old deploy note", 10], ["newer deploy note", 30], ["unrelated", 40]] },
+    ]);
+    const hits = searchThreads(m, { q: "deploy" });
+    expect(hits.find((h) => h.threadId === "b")?.messageId).toBe("b-m1");
+    expect(hits.find((h) => h.threadId === "a")?.messageId).toBeUndefined();
+  });
+
   it("excludes archived threads unless the query starts with archived:", () => {
     const m = build([{ id: "a", title: "old thing", archived: true }, { id: "b", title: "thing" }]);
     expect(searchThreads(m, { q: "thing" }).map((h) => h.threadId)).toEqual(["b"]);

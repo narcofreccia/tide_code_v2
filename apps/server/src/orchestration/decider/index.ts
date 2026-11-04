@@ -6,6 +6,7 @@ import { decideJudge } from "./judge.ts";
 import { decidePlan } from "./plans.ts";
 import { decideLineage } from "./lineage.ts";
 import { decideProject } from "./projects.ts";
+import { decideSide } from "./side.ts";
 import { decideSteer } from "./steer.ts";
 import { decideTask } from "./tasks.ts";
 import { decideTeam } from "./team.ts";
@@ -72,7 +73,7 @@ export function decide(model: ReadModel, command: Command, ctx: DecideContext): 
       return decideLineage(model, command, ctx);
 
     case "thread.side":
-      return fail("invalid-command", "side chats are not available on this server yet");
+      return decideSide(model, command, ctx);
 
     case "activity.upsert":
     case "approval.respond":

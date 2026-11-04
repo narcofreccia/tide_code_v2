@@ -3,6 +3,7 @@ import { handoffTurns } from "../handoff/select.ts";
 import { DEFAULT_THREAD_TITLE } from "./autoTitle.ts";
 import { descendantsOf } from "./descendants.ts";
 import { recordHandoff } from "./handoff.ts";
+import { inheritedFrom } from "./vcs.ts";
 import { fail, instanceKey, isArchived, ok, resolveInstance, turnRequested, type DecideContext, type DecideResult } from "./types.ts";
 
 type ThreadLink = { linkId: string; access: LinkAccess };
@@ -133,14 +134,19 @@ export function decideThread(model: ReadModel, command: ThreadCommand, ctx: Deci
         const refused = deleteRefusal(model, t, ids);
         if (refused !== undefined) return fail("conflict", refused);
       }
-      return ok(...doomed.map((t): DomainEvent => ({
-        type: "thread.deleted",
-        threadId: t.id,
-        projectId: t.projectId,
-        ...(t.worktreePath !== undefined ? { worktreePath: t.worktreePath } : {}),
-        ...(t.branch !== undefined ? { branch: t.branch } : {}),
-        at: ctx.now,
-      })));
+      return ok(...doomed.map((t): DomainEvent => {
+        // a thread on a borrowed checkout (side chat, inheriting delegate) owns neither the
+        // worktree nor the branch: its event names neither, so the vcs reactor leaves both alone
+        const owns = inheritedFrom(model, t) === undefined;
+        return {
+          type: "thread.deleted",
+          threadId: t.id,
+          projectId: t.projectId,
+          ...(owns && t.worktreePath !== undefined ? { worktreePath: t.worktreePath } : {}),
+          ...(owns && t.branch !== undefined ? { branch: t.branch } : {}),
+          at: ctx.now,
+        };
+      }));
     }
 
     case "thread.limited": {
@@ -236,8 +242,9 @@ function childrenMessage(thread: Thread, descendants: Thread[]): string {
 /** Why `thread` cannot be deleted along with the threads in `deleting`, if anything stops it. */
 function deleteRefusal(model: ReadModel, thread: Thread, deleting: Set<string>): string | undefined {
   // same rule as vcs/restore.ts `sharingThread`: removing the worktree would pull it from under a
-  // live thread; a thread deleted in the same cascade (a delegate on the lead's checkout) does not count
-  if (thread.worktreePath !== undefined && Object.values(model.threads).some((t) =>
+  // live thread; a thread deleted in the same cascade (a delegate on the lead's checkout) does not count.
+  // A non-owner (side chat, inheriting delegate) only borrows the checkout and may always go.
+  if (thread.worktreePath !== undefined && inheritedFrom(model, thread) === undefined && Object.values(model.threads).some((t) =>
     !deleting.has(t.id) && t.archivedAt === undefined && t.worktreePath === thread.worktreePath)) {
     return `another live thread shares the worktree of thread ${thread.id}; archive it first`;
   }

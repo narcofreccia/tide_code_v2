@@ -173,7 +173,7 @@ describe("decide: thread.delete cascade", () => {
     });
   });
 
-  it("deletes a delegate that inherited the lead's worktree along with the lead", () => {
+  it("deletes a delegate that inherited the lead's worktree along with the lead, or on its own", () => {
     const f = withThread("claude", true);
     const d = run(f.model, { type: "thread.delegate", fromThreadId: f.threadId, provider: "codex", prompt: "review", inheritWorktreeFrom: f.threadId });
     const delegateId = eventOf(d.events, "thread.created").thread.id;
@@ -182,8 +182,12 @@ describe("decide: thread.delete cascade", () => {
     const deleted = run(model, { type: "thread.delete", threadId: f.threadId, cascade: true });
     const projectId = model.threads[f.threadId]?.projectId;
     expect(deleted.events).toEqual([
-      { type: "thread.deleted", threadId: delegateId, projectId, worktreePath: "/wt/thread", branch: "tide/login", at: ctx.now },
+      // the delegate only borrowed the checkout: its event leaves worktree and branch to the owner's
+      { type: "thread.deleted", threadId: delegateId, projectId, at: ctx.now },
       { type: "thread.deleted", threadId: f.threadId, projectId, worktreePath: "/wt/thread", branch: "tide/login", at: ctx.now },
+    ]);
+    expect(run(model, { type: "thread.delete", threadId: delegateId }).events).toEqual([
+      { type: "thread.deleted", threadId: delegateId, projectId, at: ctx.now },
     ]);
   });
 

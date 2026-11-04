@@ -42,6 +42,7 @@ export function decideProject(model: ReadModel, command: ProjectCommand, ctx: De
         projectId: project.id,
         ...(command.title !== undefined ? { title: command.title } : {}),
         ...(command.icon === null ? { clearIcon: true } : command.icon !== undefined ? { icon: command.icon } : {}),
+        ...(command.pinned !== undefined ? { pinned: command.pinned } : {}),
         updatedAt: ctx.now,
       });
     }
