@@ -2,6 +2,7 @@ import { create } from "zustand";
 import { call } from "./model.ts";
 import { showToast } from "./toast.ts";
 import { subscribeWatch } from "./files.ts";
+import { isImagePath } from "../lib/imagePaths.ts";
 
 export const MAX_EDITABLE_BYTES = 5 * 1024 * 1024;
 
@@ -15,6 +16,8 @@ export interface Doc {
   mtime?: number;
   size?: number;
   binary?: boolean;
+  /** `data:` URL for an image file; set only for previewable images */
+  imageSrc?: string;
   tooLarge?: boolean;
   saving?: boolean;
   /** disk moved under a dirty buffer, or `fs.write` came back `conflict` */
@@ -69,8 +72,18 @@ async function read(threadId: string, path: string, keepBuffer: boolean): Promis
     const result = await call("fs.read", { threadId, path });
     const tooLarge = result.size > MAX_EDITABLE_BYTES;
     const content = result.binary || tooLarge ? undefined : (result.content ?? "");
+    let imageSrc: string | undefined;
+    if (result.binary && isImagePath(path)) {
+      try {
+        const img = await call("fs.readBinary", { threadId, path });
+        imageSrc = `data:${img.mediaType};base64,${img.data}`;
+      } catch {
+        // fall back to the binary notice
+      }
+    }
     patch(key, {
       loading: false,
+      imageSrc,
       binary: result.binary,
       tooLarge,
       size: result.size,

@@ -153,3 +153,29 @@ describe("FileService create / rename / delete", () => {
     await expect(files.delete(THREAD, "gone.ts")).rejects.toMatchObject({ code: "not-found" });
   });
 });
+
+describe("FileService.readBinary", () => {
+  it("round-trips bytes as base64 with a media type", async () => {
+    const { repo, files } = await setup();
+    const bytes = Buffer.from([0x89, 0x50, 0x4e, 0x47, 0, 1, 2, 255]);
+    await writeFile(join(repo.dir, "a.PNG"), bytes);
+    const res = await files.readBinary(THREAD, "a.PNG");
+    expect(Buffer.from(res.data, "base64").equals(bytes)).toBe(true);
+    expect(res.mediaType).toBe("image/png");
+    expect(res.size).toBe(8);
+    await writeFile(join(repo.dir, "x.bin"), bytes);
+    expect((await files.readBinary(THREAD, "x.bin")).mediaType).toBe("application/octet-stream");
+  });
+
+  it("enforces the cap", async () => {
+    const { repo, files } = await setup();
+    await writeFile(join(repo.dir, "a.png"), Buffer.alloc(10));
+    await expect(files.readBinary(THREAD, "a.png", 5)).rejects.toMatchObject({ code: "invalid-params" });
+    await expect(files.readBinary(THREAD, "a.png", 10)).resolves.toBeDefined();
+  });
+
+  it("refuses escaping paths", async () => {
+    const { files } = await setup();
+    await expect(files.readBinary(THREAD, "../../etc/passwd")).rejects.toThrow(/escapes/);
+  });
+});

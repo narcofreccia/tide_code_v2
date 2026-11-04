@@ -9,6 +9,26 @@ import { resolveInside } from "./paths.ts";
 
 /** Files at or above this are reported as binary without being read. */
 export const MAX_TEXT_BYTES = 5 * 1024 * 1024;
+/** Hard cap for `readBinary` (image previews). */
+export const MAX_BINARY_BYTES = 8 * 1024 * 1024;
+
+const MEDIA_TYPES: Record<string, string> = {
+  png: "image/png",
+  jpg: "image/jpeg",
+  jpeg: "image/jpeg",
+  gif: "image/gif",
+  webp: "image/webp",
+  svg: "image/svg+xml",
+  bmp: "image/bmp",
+  ico: "image/x-icon",
+  avif: "image/avif",
+};
+
+export function mediaTypeOf(path: string): string {
+  const ext = path.slice(path.lastIndexOf(".") + 1).toLowerCase();
+  return path.includes(".") ? (MEDIA_TYPES[ext] ?? "application/octet-stream") : "application/octet-stream";
+}
+
 /** A NUL in this prefix means "binary". */
 export const BINARY_SNIFF_BYTES = 8 * 1024;
 
@@ -128,6 +148,32 @@ export class FileService {
     }
     if (isBinaryBuffer(buf)) return { binary: true, size: buf.length, mtime };
     return { content: buf.toString("utf8"), binary: false, size: buf.length, mtime };
+  }
+
+  /** Raw bytes (base64) for an image preview, capped at 8 MiB. */
+  async readBinary(
+    threadId: string,
+    path: string,
+    maxBytes?: number,
+  ): Promise<{ data: string; mediaType: string; size: number; mtime: number }> {
+    const cwd = this.#cwdFor(threadId);
+    const { abs } = await resolveInside(cwd, path);
+    let st;
+    try {
+      st = await stat(abs);
+    } catch (err) {
+      mapFsError(err, path);
+    }
+    if (st.isDirectory()) throw new RpcException("invalid-params", `${path} is a directory`);
+    const cap = Math.min(maxBytes ?? MAX_BINARY_BYTES, MAX_BINARY_BYTES);
+    if (st.size > cap) throw new RpcException("invalid-params", `${path} is larger than ${cap} bytes`);
+    let buf: Buffer;
+    try {
+      buf = await readFile(abs);
+    } catch (err) {
+      mapFsError(err, path);
+    }
+    return { data: buf.toString("base64"), mediaType: mediaTypeOf(path), size: buf.length, mtime: mtimeOf(st.mtimeMs) };
   }
 
   /** Atomic: writes a sibling temp file and renames it over the target. */

@@ -149,6 +149,10 @@ export function registerWorkspaceHandlers(router: RpcRouter, services: Workspace
     };
   });
 
+  router.register("fs.readBinary", async (input) =>
+    files.readBinary(input.threadId, input.path, input.maxBytes),
+  );
+
   router.register("fs.write", async (input) =>
     files.write(input.threadId, input.path, input.content, input.ifMtime),
   );

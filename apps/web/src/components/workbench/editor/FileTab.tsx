@@ -13,6 +13,7 @@ import {
   useDoc,
 } from "../../../state/docs.ts";
 import { clearEditorStatus, setEditorStatus, useWorkbench } from "../../../state/workbench.ts";
+import { ImagePreview } from "./ImagePreview.tsx";
 import { Breadcrumbs } from "./Breadcrumbs.tsx";
 import styles from "./FileTab.module.css";
 
@@ -84,9 +85,11 @@ export function FileTab({ threadId, path }: { threadId: string; path: string }) 
       ) : null}
 
       {doc?.error ? <Notice>{doc.error}</Notice> : null}
-      {doc?.binary ? <Notice>Binary file — not shown.</Notice> : null}
+      {doc?.binary && doc.imageSrc === undefined ? <Notice>Binary file — not shown.</Notice> : null}
       {doc?.tooLarge && !doc.binary ? <Notice>File is larger than 5 MB — not opened in the editor.</Notice> : null}
       {doc?.loading && doc.content === undefined ? <Notice>Loading…</Notice> : null}
+
+      {doc?.imageSrc !== undefined ? <ImagePreview src={doc.imageSrc} path={path} size={doc.size} /> : null}
 
       {editable ? (
         <div className={styles.editor}>

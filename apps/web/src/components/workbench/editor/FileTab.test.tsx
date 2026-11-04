@@ -37,6 +37,28 @@ describe("FileTab", () => {
     expect(await screen.findByText("Binary file — not shown.")).toBeTruthy();
   });
 
+  it("previews an image through fs.readBinary", async () => {
+    mockRpc({
+      "fs.read": () => ({ binary: true, size: 43008, mtime: 1 }),
+      "fs.readBinary": () => ({ data: "AAEC", mediaType: "image/png", size: 43008, mtime: 1 }),
+    });
+    render(<FileTab threadId="t1" path="assets/logo.png" />);
+    const img = (await screen.findByRole("img")) as HTMLImageElement;
+    expect(img.getAttribute("src")).toBe("data:image/png;base64,AAEC");
+    expect(screen.queryByText("Binary file — not shown.")).toBeNull();
+    Object.defineProperty(img, "naturalWidth", { value: 128 });
+    Object.defineProperty(img, "naturalHeight", { value: 96 });
+    fireEvent.load(img);
+    expect(await screen.findByText("logo.png · 128×96 · 42 KB")).toBeTruthy();
+  });
+
+  it("keeps the notice for a pdf", async () => {
+    const rpc = mockRpc({ "fs.read": () => ({ binary: true, size: 12, mtime: 1 }) });
+    render(<FileTab threadId="t1" path="doc.pdf" />);
+    expect(await screen.findByText("Binary file — not shown.")).toBeTruthy();
+    expect(rpc).not.toHaveBeenCalledWith("fs.readBinary", expect.anything());
+  });
+
   it("shows a notice past 5 MB", async () => {
     mockRpc({ "fs.read": () => ({ content: "x", binary: false, size: 6_000_000, mtime: 1 }) });
     render(<FileTab threadId="t1" path="big.log" />);
