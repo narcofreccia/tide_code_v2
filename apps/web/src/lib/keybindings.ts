@@ -33,6 +33,15 @@ export function normalizeEvent(event: Pick<KeyboardEvent, "key" | "code" | "meta
   return parts.join("+");
 }
 
+/** A two-key sequence like `g m`: space-separated bare keys, no modifiers. */
+export function isChord(binding: string): boolean {
+  return /^\S+ \S+$/.test(binding);
+}
+
+export function parseChord(binding: string): string[] {
+  return binding.split(" ").filter(Boolean);
+}
+
 export function parseBinding(binding: string): { mod: boolean; shift: boolean; alt: boolean; key: string } {
   const parts = binding.split("+");
   // a literal "+" key serialises as "mod++"
@@ -48,6 +57,9 @@ const KEY_LABEL: Record<string, string> = {
 
 /** `⌘⇧R` on macOS, `Ctrl+Shift+R` elsewhere. */
 export function formatBinding(binding: string, mac: boolean = isMac()): string {
+  if (isChord(binding)) {
+    return parseChord(binding).map((key) => formatBinding(key, mac)).join(" then ");
+  }
   const { mod, shift, alt, key } = parseBinding(binding);
   const label = KEY_LABEL[key] ?? (key.length === 1 ? key.toUpperCase() : key[0]?.toUpperCase() + key.slice(1));
   if (mac) return `${mod ? "⌘" : ""}${shift ? "⇧" : ""}${alt ? "⌥" : ""}${label}`;
@@ -70,12 +82,20 @@ export interface BindingEntry {
   isDefault: boolean;
 }
 
+/** Same keystroke, or a bare key that is the first key of a chord (`g` swallows `g m`). */
+function bindingsClash(a: string, b: string): boolean {
+  if (a === b) return true;
+  if (isChord(a) && !isChord(b)) return parseChord(a)[0] === b;
+  if (isChord(b) && !isChord(a)) return parseChord(b)[0] === a;
+  return false;
+}
+
 /** Other entries that would fight `entry` for the same chord in an overlapping scope. */
 export function findConflicts(entry: BindingEntry, all: BindingEntry[]): BindingEntry[] {
   return all.filter(
     (other) =>
       other.id !== entry.id &&
-      other.binding === entry.binding &&
+      bindingsClash(other.binding, entry.binding) &&
       scopesOverlap(entry.when, other.when) &&
       !(entry.isDefault && other.isDefault),
   );

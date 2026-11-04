@@ -3,6 +3,7 @@ import type { ProposedPlan, ReadModel, Thread } from "@tide/contracts";
 import { fuzzyRank } from "./fuzzy.ts";
 import { runOrToast } from "./dispatchOrToast.ts";
 import { providerIdOf } from "./vocab.ts";
+import { useServerSettings } from "../state/serverSettings.ts";
 import { SHORTCUTS, scopeApplies, shortcutKeys } from "./shortcuts.ts";
 import { openThreadTerminal } from "./openInTerminal.ts";
 import { useUi } from "../state/ui.ts";
@@ -179,7 +180,7 @@ function shortcutItems(): PaletteItem[] {
     label: s.label,
     group: "Actions" as const,
     detail: s.group,
-    kbd: shortcutKeys(s),
+    kbd: shortcutKeys(s, useServerSettings.getState().settings.keybindings ?? {}),
     run: () => {
       s.run?.();
     },

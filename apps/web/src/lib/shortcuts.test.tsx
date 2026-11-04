@@ -29,7 +29,7 @@ describe("shortcuts registry", () => {
     );
     for (const shortcut of SHORTCUTS) {
       const row = rows.find((r) => r.getAttribute("data-shortcut") === shortcut.id);
-      expect(row?.textContent).toContain(shortcutKeys(shortcut));
+      expect(row?.textContent).toContain(shortcutKeys(shortcut).replace(" then ", ""));
       expect(row?.textContent).toContain(shortcut.label);
     }
   });

@@ -7,3 +7,4 @@
 @media (max-width: 720px) {
   .actions { white-space: normal; }
 }
+.sequence { display: inline-flex; gap: var(--sp-1); align-items: center; }

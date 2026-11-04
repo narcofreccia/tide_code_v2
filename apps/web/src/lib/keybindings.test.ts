@@ -1,5 +1,5 @@
 import { describe, expect, it } from "vitest";
-import { findConflicts, formatBinding, normalizeEvent, parseBinding, scopesOverlap, type BindingEntry } from "./keybindings.ts";
+import { findConflicts, formatBinding, isChord, parseChord, normalizeEvent, parseBinding, scopesOverlap, type BindingEntry } from "./keybindings.ts";
 
 const ev = (init: Partial<KeyboardEvent> & { key: string }) =>
   ({ code: "", metaKey: false, ctrlKey: false, shiftKey: false, altKey: false, ...init }) as KeyboardEvent;
@@ -34,5 +34,22 @@ describe("keybindings", () => {
     expect(findConflicts(a, [a, b, c]).map((e) => e.id)).toEqual(["b"]);
     const d: BindingEntry = { ...a, id: "d", isDefault: true };
     expect(findConflicts(d, [d, b])).toEqual([]);
+  });
+
+  it("parses and formats two-key chords", () => {
+    expect(isChord("g m")).toBe(true);
+    expect(isChord("mod+k")).toBe(false);
+    expect(isChord("j")).toBe(false);
+    expect(parseChord("g m")).toEqual(["g", "m"]);
+    expect(formatBinding("g m")).toBe("G then M");
+  });
+
+  it("flags a bare key equal to a chord's first key", () => {
+    const chord: BindingEntry = { id: "goto", label: "Go", binding: "g m", isDefault: true };
+    const bare: BindingEntry = { id: "rail", label: "Rail g", binding: "g", isDefault: false };
+    const other: BindingEntry = { id: "x", label: "X", binding: "g t", isDefault: false };
+    expect(findConflicts(bare, [bare, chord]).map((e) => e.id)).toEqual(["goto"]);
+    expect(findConflicts(chord, [bare, chord]).map((e) => e.id)).toEqual(["rail"]);
+    expect(findConflicts(other, [other, chord])).toEqual([]);
   });
 });

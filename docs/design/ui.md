@@ -384,8 +384,16 @@ traffic-light inset.
 `⌘P` open file in worktree · `⌘S` save · `⌘⇧D` toggle unified/split diff · `[` `]` prev/next turn ·
 `⌘⇧L` toggle light/dark.
 
+Go-to chords (two bare keys in sequence, `g` then a letter within 1 s; never while a text field has
+focus; rebindable to any `g x` in Settings › Keyboard, ids `goto.*` in `lib/shortcuts.ts`): `g m` Mission Control ·
+`g t` the selected thread, else the most recent · `g p` pull requests · `g u` usage · `g s` settings ·
+`g c` Changes (opens Split focus + the Changes tab). The chord matcher (`lib/chords.ts`) runs in the capture
+phase, so the second key never reaches the rail's single-key handler. A bare key that equals a chord's first
+key (`g`) is flagged as a conflict.
+
 Rail keys (single keys, never while a text field has focus; rebindable through
 `UserSettings.keybindings`, ids in `lib/keybindings.ts` `RAIL_BINDINGS`): `/` search (`rail.search`) ·
 `j`/`k` next/previous row (`rail.next`, `rail.prev`) · `↵` open (`rail.open`) · `e` settle / unsettle
 (`rail.settle`) · `s` snooze menu (`rail.snooze`) · `m` merge back (`rail.merge`) · `x` toggle selection
-(`rail.select`) · `Esc` clears the search, then the selection.
+(`rail.select`) · `Esc` clears the search, then the selection. Settings › Keyboard accepts a bare key when
+rebinding a rail entry (other entries still need ⌘/Ctrl/⌥).

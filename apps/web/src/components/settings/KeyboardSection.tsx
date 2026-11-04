@@ -21,26 +21,74 @@ function save(all: Record<string, string>, id: string, chord: string): void {
   void patchServerSettings({ keybindings: { ...all, [id]: chord } });
 }
 
+type CaptureMode = "modified" | "bare" | "sequence";
+
+const SEQUENCE_WINDOW_MS = 1000;
+
+/** What an armed entry accepts: rail keys take a bare key, "Go to" a two-key sequence, the rest ⌘/Ctrl/⌥ chords. */
+function captureMode(shortcut: Shortcut): CaptureMode {
+  if (shortcut.group === "Go to") return "sequence";
+  return shortcut.when === "rail" ? "bare" : "modified";
+}
+
 /**
  * Captures the next chord while `id` is armed. Runs in the capture phase and stops the
  * event so neither the global key map nor Settings' own Esc handler sees it.
  */
-function useChordCapture(id: string | null, onChord: (chord: string | "cancel" | "reset") => void): void {
+function useChordCapture(id: string | null, mode: CaptureMode, onChord: (chord: string | "cancel" | "reset") => void): void {
   useEffect(() => {
     if (id === null) return;
+    let first: string | null = null;
+    let timer: ReturnType<typeof setTimeout> | undefined;
+    const clear = (): void => {
+      if (timer !== undefined) clearTimeout(timer);
+      timer = undefined;
+      first = null;
+    };
     const onKeyDown = (event: KeyboardEvent): void => {
       event.preventDefault();
       event.stopPropagation();
       if (event.key === "Escape") return onChord("cancel");
       if (event.key === "Backspace") return onChord("reset");
       const chord = normalizeEvent(event);
-      // a bare letter would hijack typing; shortcuts need ⌘/Ctrl or ⌥
-      if (chord === null || !(event.metaKey || event.ctrlKey || event.altKey)) return;
-      onChord(chord);
+      if (chord === null) return;
+      const modified = event.metaKey || event.ctrlKey || event.altKey;
+      if (mode === "modified") {
+        // a bare letter would hijack typing; shortcuts need ⌘/Ctrl or ⌥
+        if (modified) onChord(chord);
+        return;
+      }
+      if (modified) return;
+      if (mode === "bare") return onChord(chord);
+      // sequence: first key arms, second saves "g x" within the window
+      if (first === null) {
+        first = chord;
+        timer = setTimeout(clear, SEQUENCE_WINDOW_MS);
+        return;
+      }
+      const done = `${first} ${chord}`;
+      clear();
+      onChord(done);
     };
     window.addEventListener("keydown", onKeyDown, true);
-    return () => window.removeEventListener("keydown", onKeyDown, true);
-  }, [id, onChord]);
+    return () => {
+      clear();
+      window.removeEventListener("keydown", onKeyDown, true);
+    };
+  }, [id, mode, onChord]);
+}
+
+/** `G then M` renders as two keys; everything else as one. */
+function Keys({ label }: { label: string }) {
+  const parts = label.split(" then ");
+  if (parts.length < 2) return <Kbd>{label}</Kbd>;
+  return (
+    <span className={styles.sequence}>
+      {parts.map((part, i) => (
+        <Kbd key={i}>{part}</Kbd>
+      ))}
+    </span>
+  );
 }
 
 /** Rendered from the same registry `useKeyboardMap` dispatches from; bindings sync through the server's settings. */
@@ -50,7 +98,8 @@ export function KeyboardSection() {
   const [pending, setPending] = useState<{ id: string; chord: string } | null>(null);
   const entries = bindingEntries(overrides);
 
-  useChordCapture(armed, (result) => {
+  const armedShortcut = SHORTCUTS.find((x) => x.id === armed);
+  useChordCapture(armed, armedShortcut ? captureMode(armedShortcut) : "modified", (result) => {
     const id = armed;
     if (id === null) return;
     if (result === "cancel") {
@@ -76,7 +125,7 @@ export function KeyboardSection() {
     <SettingsPage title={META.title} blurb={META.blurb}>
       <SettingsGroup
         title="Shortcuts"
-        help="Rebind captures the next chord: Esc cancels, Backspace restores the default."
+        help="Rebind captures the next chord (Go to: two keys within a second). Esc cancels, Backspace restores the default."
         actions={
           <Button
             variant="quiet"
@@ -108,7 +157,7 @@ export function KeyboardSection() {
                       {armed === shortcut.id ? (
                         <span className={styles.listening}>Press keys…</span>
                       ) : (
-                        <Kbd>{shortcutKeys(shortcut, overrides)}</Kbd>
+                        <Keys label={shortcutKeys(shortcut, overrides)} />
                       )}
                     </td>
                     <td>

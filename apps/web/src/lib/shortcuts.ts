@@ -1,7 +1,7 @@
 import { applyStash, getDraft, stashDraft } from "../state/drafts.ts";
 import { useModel } from "../state/model.ts";
 import { useUi } from "../state/ui.ts";
-import { closeActiveTab, openSearchTab, setQuickOpen, toggleTree } from "../state/workbench.ts";
+import { CHANGES_TAB, closeActiveTab, openSearchTab, setActiveTab, setQuickOpen, toggleTree } from "../state/workbench.ts";
 import { setDrawerOpen, toggleDrawer } from "../state/terminals.ts";
 import { toggleTheme } from "../state/settings.ts";
 import { effortsOf, nextEffort, threadProviderStatus, useProvidersStore } from "../state/providers.ts";
@@ -24,7 +24,7 @@ export interface Shortcut {
   /** display form, e.g. `⌘⇧D` */
   keys: string;
   label: string;
-  group: "Navigation" | "View" | "Thread" | "Workbench" | "Rail";
+  group: "Navigation" | "Go to" | "View" | "Thread" | "Workbench" | "Rail";
   /** `KeyboardEvent.key` (lowercased) this binds to; omitted when another surface owns it */
   key?: string;
   /** shift requirement; undefined means "don't care" */
@@ -139,6 +139,39 @@ const RAIL_SHORTCUTS: Shortcut[] = RAIL_BINDINGS.map((entry) => ({
   run: () => false,
 }));
 
+/** The thread `g t` opens: the selected one, else the most recently updated live one. */
+function gotoThread(): boolean {
+  const state = ui();
+  if (state.selectedThreadId !== null) {
+    state.selectThread(state.selectedThreadId);
+    return true;
+  }
+  const latest = Object.values(useModel.getState().model.threads)
+    .filter((t) => t.archivedAt === undefined)
+    .sort((a, b) => b.updatedAt - a.updatedAt)[0];
+  if (!latest) return false;
+  state.selectThread(latest.id);
+  return true;
+}
+
+/** `g` then a letter: two-key go-to chords, rebindable to any `g x` in Settings › Keyboard. */
+const GOTO_SHORTCUTS: Shortcut[] = [
+  { id: "goto.mission", keys: "G then M", binding: "g m", label: "Go to Mission Control", group: "Go to", when: "always", run: () => ui().showMission() },
+  { id: "goto.thread", keys: "G then T", binding: "g t", label: "Go to thread", group: "Go to", when: "always", run: gotoThread },
+  { id: "goto.prs", keys: "G then P", binding: "g p", label: "Go to pull requests", group: "Go to", when: "always", run: () => ui().showPrs() },
+  { id: "goto.usage", keys: "G then U", binding: "g u", label: "Go to usage", group: "Go to", when: "always", run: () => ui().showUsage() },
+  { id: "goto.settings", keys: "G then S", binding: "g s", label: "Go to settings", group: "Go to", when: "always", run: () => ui().showSettings() },
+  {
+    id: "goto.changes", keys: "G then C", binding: "g c", label: "Go to changes", group: "Go to", when: "always",
+    run: () => {
+      const id = threadId();
+      if (!id) return false;
+      if (ui().focusMode === "thread") ui().setFocusMode("split");
+      setActiveTab(id, CHANGES_TAB);
+    },
+  },
+];
+
 /**
  * Single source of truth for the keyboard map: `handleShortcut` dispatches from it
  * and Settings › Keyboard renders it. Entries without `run` are owned by a surface
@@ -173,6 +206,7 @@ export const SHORTCUTS: Shortcut[] = [
   },
   { id: "mission", keys: "⌘0", label: "Mission Control", group: "Navigation", key: "0", when: "always", run: () => ui().showMission() },
   { id: "settings", keys: "⌘,", label: "Settings", group: "Navigation", key: ",", when: "always", run: () => ui().showSettings() },
+  ...GOTO_SHORTCUTS,
   { id: "focus-thread", keys: "⌘1", label: "Focus: thread", group: "View", key: "1", when: "thread", run: () => ui().setFocusMode("thread") },
   { id: "focus-split", keys: "⌘2", label: "Focus: split", group: "View", key: "2", when: "thread", run: () => ui().setFocusMode("split") },
   { id: "focus-workbench", keys: "⌘3", label: "Focus: workbench", group: "View", key: "3", when: "thread", run: () => ui().setFocusMode("workbench") },
@@ -248,7 +282,7 @@ export const SHORTCUTS: Shortcut[] = [
   ...RAIL_SHORTCUTS,
 ];
 
-export const SHORTCUT_GROUPS: Shortcut["group"][] = ["Navigation", "View", "Thread", "Workbench", "Rail"];
+export const SHORTCUT_GROUPS: Shortcut["group"][] = ["Navigation", "Go to", "View", "Thread", "Workbench", "Rail"];
 
 /** Runs the shortcut bound to this event (⌘/^, ⌥ for the browser alternates, or the user's own chord); returns whether it was handled. */
 export function handleShortcut(event: KeyboardEvent): boolean {

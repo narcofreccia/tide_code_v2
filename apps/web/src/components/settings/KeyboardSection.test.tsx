@@ -1,4 +1,4 @@
-import { afterEach, describe, expect, it } from "vitest";
+import { afterEach, describe, expect, it, vi } from "vitest";
 import { cleanup, fireEvent, render, screen, waitFor, within } from "@testing-library/react";
 import { KeyboardSection } from "./KeyboardSection.tsx";
 import { resetUi } from "../../testHarness.ts";
@@ -73,5 +73,48 @@ describe("Settings › Keyboard rebinding", () => {
     render(<KeyboardSection />);
     fireEvent.click(screen.getByRole("button", { name: "Reset all" }));
     await waitFor(() => expect(sent).toEqual([{ palette: "", rail: "" }]));
+  });
+
+  it("accepts a bare key for a rail entry", async () => {
+    const sent = mockSettingsSet();
+    render(<KeyboardSection />);
+    fireEvent.click(within(row("rail.next")).getByRole("button", { name: /Rebind/ }));
+    fireEvent.keyDown(document.body, { key: "l" });
+    await waitFor(() => expect(sent).toEqual([{ "rail.next": "l" }]));
+  });
+
+  it("still rejects a bare key for a non-rail entry", () => {
+    const sent = mockSettingsSet();
+    render(<KeyboardSection />);
+    fireEvent.click(within(row("palette")).getByRole("button", { name: /Rebind/ }));
+    fireEvent.keyDown(document.body, { key: "l" });
+    expect(within(row("palette")).getByText("Press keys…")).toBeTruthy();
+    expect(sent).toEqual([]);
+  });
+
+  it("shows go-to chords as two keys and rebinds with a two-key sequence", async () => {
+    const sent = mockSettingsSet();
+    render(<KeyboardSection />);
+    expect(Array.from(row("goto.prs").querySelectorAll("kbd")).map((k) => k.textContent)).toEqual(["G", "P"]);
+    fireEvent.click(within(row("goto.prs")).getByRole("button", { name: /Rebind/ }));
+    fireEvent.keyDown(document.body, { key: "g" });
+    expect(sent).toEqual([]);
+    fireEvent.keyDown(document.body, { key: "r" });
+    await waitFor(() => expect(sent).toEqual([{ "goto.prs": "g r" }]));
+  });
+
+  it("drops a half-typed sequence after a second", () => {
+    vi.useFakeTimers();
+    try {
+      const sent = mockSettingsSet();
+      render(<KeyboardSection />);
+      fireEvent.click(within(row("goto.prs")).getByRole("button", { name: /Rebind/ }));
+      fireEvent.keyDown(document.body, { key: "g" });
+      vi.advanceTimersByTime(1100);
+      fireEvent.keyDown(document.body, { key: "r" });
+      expect(sent).toEqual([]);
+    } finally {
+      vi.useRealTimers();
+    }
   });
 });
