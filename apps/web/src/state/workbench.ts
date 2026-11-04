@@ -45,6 +45,13 @@ export function treeLayoutOf(mode: FocusMode): TreeLayout {
   return mode === "workbench" ? "code" : "split";
 }
 
+/** The file tree's width in px: dragged on its right edge, persisted, reset on double-click. */
+export const TREE_WIDTH = { min: 160, max: 480, default: 220 } as const;
+
+export function clampTreeWidth(width: number): number {
+  return Math.round(Math.min(TREE_WIDTH.max, Math.max(TREE_WIDTH.min, width)));
+}
+
 interface WorkbenchState {
   /** threadId → ordered tabs; index 0 is always Changes */
   tabs: Record<string, WorkbenchTab[]>;
@@ -57,6 +64,7 @@ interface WorkbenchState {
   /** `threadId:path` → where the next editor mount should jump */
   reveal: Record<string, RevealTarget>;
   editorStatus: EditorStatus | null;
+  treeWidth: number;
 }
 
 export const WORKBENCH_STORAGE_KEY = "tide.workbench";
@@ -71,13 +79,14 @@ export const useWorkbench = create<WorkbenchState>()(
       quickOpen: false,
       reveal: {},
       editorStatus: null,
+      treeWidth: TREE_WIDTH.default,
     }),
     {
       name: WORKBENCH_STORAGE_KEY,
       // R9: per-thread tabs live under the owning environment's key (`tide.workbench@<envId>`)
       storage: createJSONStorage(() => scopedStateStorage),
       // paths only — no file contents, no scroll state
-      partialize: (s) => ({ tabs: s.tabs, active: s.active, treeVisible: s.treeVisible, treeByMode: s.treeByMode }),
+      partialize: (s) => ({ tabs: s.tabs, active: s.active, treeVisible: s.treeVisible, treeByMode: s.treeByMode, treeWidth: s.treeWidth }),
     },
   ),
 );
@@ -237,6 +246,10 @@ const currentLayout = (): TreeLayout => treeLayoutOf(useUi.getState().focusMode)
 /** Shows or hides the tree in the current layout; the choice sticks to that layout. */
 export function setTreeVisible(visible: boolean, layout: TreeLayout = currentLayout()): void {
   useWorkbench.setState((s) => ({ treeVisible: visible, treeByMode: { ...s.treeByMode, [layout]: visible } }));
+}
+
+export function setTreeWidth(width: number): void {
+  useWorkbench.setState({ treeWidth: clampTreeWidth(width) });
 }
 
 export function toggleTree(): void {

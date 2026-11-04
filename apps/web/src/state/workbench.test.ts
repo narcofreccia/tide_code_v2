@@ -8,6 +8,7 @@ import {
   openFileTab,
   openSearchTab,
   openSideTab,
+  setTreeWidth,
   setActiveTab,
   tabKey,
   threadTabs,
@@ -113,5 +114,28 @@ describe("R16 side tabs", () => {
     const stored = Object.keys(window.localStorage).filter((k) => k.startsWith(WORKBENCH_STORAGE_KEY));
     const raw = stored.map((k) => window.localStorage.getItem(k) ?? "").join("");
     expect(raw).toContain('"kind":"side","threadId":"s1"');
+  });
+});
+
+describe("tree width", () => {
+  afterEach(() => setTreeWidth(220));
+
+  it("defaults to 220px", () => {
+    expect(useWorkbench.getState().treeWidth).toBe(220);
+  });
+
+  it("clamps to 160–480 at both ends and rounds", () => {
+    setTreeWidth(50);
+    expect(useWorkbench.getState().treeWidth).toBe(160);
+    setTreeWidth(900);
+    expect(useWorkbench.getState().treeWidth).toBe(480);
+    setTreeWidth(301.6);
+    expect(useWorkbench.getState().treeWidth).toBe(302);
+  });
+
+  it("persists the width in the stored partial", () => {
+    setTreeWidth(350);
+    const stored = JSON.parse(window.localStorage.getItem(WORKBENCH_STORAGE_KEY) ?? "{}");
+    expect(stored.state.treeWidth).toBe(350);
   });
 });

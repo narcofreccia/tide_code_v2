@@ -1,0 +1,10 @@
+.resize {
+  position: absolute;
+  top: 0;
+  right: 0;
+  bottom: 0;
+  width: 6px;
+  cursor: col-resize;
+  z-index: 1;
+}
+.resize:hover { background: var(--accent-soft); }

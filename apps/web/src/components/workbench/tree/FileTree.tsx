@@ -18,8 +18,9 @@ import {
   useFiles,
   useFsWatch,
 } from "../../../state/files.ts";
-import { openFileTab } from "../../../state/workbench.ts";
+import { openFileTab, useWorkbench } from "../../../state/workbench.ts";
 import { TreeRow, type TreeRowModel } from "./TreeRow.tsx";
+import { TreeResizeHandle } from "./TreeResizeHandle.tsx";
 import styles from "./FileTree.module.css";
 
 type Pending =
@@ -49,10 +50,16 @@ export function FileTree({ threadId }: { threadId: string }) {
   const selected = useFiles((s) => s.selected[threadId]);
   const [menu, setMenu] = useState<{ position: MenuPosition; path: string; kind: FsEntry["kind"] } | null>(null);
   const [pending, setPending] = useState<Pending | null>(null);
+  const width = useWorkbench((s) => s.treeWidth);
+  const treeRef = useRef<HTMLDivElement>(null);
 
   useEffect(() => {
     ensureDir(threadId, "");
   }, [threadId]);
+  // a custom property, not a style object: the CSS owns the layout
+  useEffect(() => {
+    treeRef.current?.style.setProperty("--tree-w", `${width}px`);
+  }, [width]);
   useFsWatch(threadId);
 
   const rows = useMemo(() => {
@@ -124,7 +131,8 @@ export function FileTree({ threadId }: { threadId: string }) {
   };
 
   return (
-    <div className={styles.tree}>
+    <div ref={treeRef} className={styles.tree}>
+      <TreeResizeHandle />
       <div className={styles.head}>
         <span className={styles.heading}>Files</span>
         <Button

@@ -2,7 +2,7 @@ import { afterEach, describe, expect, it, vi } from "vitest";
 import { act, cleanup, fireEvent, render, screen, waitFor } from "@testing-library/react";
 import type { FsEntry } from "@tide/contracts";
 import { mockRpc, mockStream, resetUi } from "../../../testHarness.ts";
-import { threadTabs } from "../../../state/workbench.ts";
+import { setTreeWidth, threadTabs } from "../../../state/workbench.ts";
 import { FileTree } from "./FileTree.tsx";
 
 afterEach(() => {
@@ -107,5 +107,18 @@ describe("FileTree", () => {
     act(() => streams[0]?.push({ path: "NEW.md", kind: "created", at: 1 }));
     await screen.findByText("NEW.md");
     expect(rpc).toHaveBeenCalledTimes(2);
+  });
+});
+
+describe("FileTree width", () => {
+  it("sets --tree-w from the store and follows resizes", async () => {
+    mockRpc({ "fs.list": listing() });
+    mockStream();
+    const { container } = render(<FileTree threadId="t1" />);
+    const root = container.firstElementChild as HTMLElement;
+    expect(root.style.getPropertyValue("--tree-w")).toBe("220px");
+    act(() => setTreeWidth(300));
+    expect(root.style.getPropertyValue("--tree-w")).toBe("300px");
+    act(() => setTreeWidth(220));
   });
 });

@@ -1,7 +1,8 @@
 .tree {
+  position: relative;
   display: flex;
   flex-direction: column;
-  width: 220px;
+  width: var(--tree-w, 220px);
   min-width: 140px;
   flex: 0 0 auto;
   border-right: 1px solid var(--border);
