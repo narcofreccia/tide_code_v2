@@ -33,10 +33,10 @@ The `server/` and `web/` tarballs are the headless install and what `tide update
 "web":    { "url": "…/web/web.tar.gz", "sha256": "…", "version": "0.9.0" }
 ```
 
-Only `build_release.sh` writes them today, so only `aarch64-apple-darwin` gets a server
-tarball. Linux/Windows headless tarballs need `publish_linux.sh` / `publish_windows.sh` to
-pass the same `--server-triple`/`--server-url`/`--server-sha256` flags to
-`merge_manifest.py`. Until a platform has an entry at the current version, `tide update`
+`build_release.sh` writes `server[aarch64-apple-darwin]` and `web`; `publish_linux.sh`
+writes `server[x86_64-unknown-linux-gnu]` (a headless-only merge: no `--platform`, so the
+Tauri keys are untouched). Windows has no headless tarball: `publish_windows.sh` would need
+the same `--server-*` flags. Until a platform has an entry at the current version, `tide update`
 there says "no headless artifact for this platform yet".
 
 Public base: `https://pub-7b3e5bbd605d43adbeb4601a962d84bd.r2.dev/tidecode`. The updater
@@ -135,7 +135,8 @@ Tauri cannot cross-compile, so these build on GitHub-hosted runners:
   --port 3799`, `curl /health`) → `scripts/release/publish_windows.sh`.
 - `.github/workflows/release-linux.yml` — `ubuntu-latest` with
   `libwebkit2gtk-4.1-dev libappindicator3-dev librsvg2-dev patchelf` →
-  `--bundles deb,rpm` → `scripts/release/publish_linux.sh`. Linux has no updater entry
+  `--bundles deb,rpm` → `scripts/release/publish_linux.sh` (deb/rpm, then the headless
+  server tarball + its `server[...]` manifest key). Linux has no Tauri updater entry
   yet: AppImage (the verified Linux updater format) fails while linuxdeploy processes the
   bun sidecar, so Linux users reinstall the package by hand.
 

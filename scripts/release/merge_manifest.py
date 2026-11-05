@@ -9,10 +9,13 @@ scripts/release/build_release.sh (darwin-aarch64) and scripts/release/publish_wi
 (windows-x86_64); linux-x86_64 rides the same path via scripts/release/publish_linux.sh.
 
 Usage:
-  merge_manifest.py --manifest FILE --platform KEY --version V \
-                    --signature SIG --url URL [--out FILE] \
+  merge_manifest.py --manifest FILE --version V [--out FILE] \
+                    [--platform KEY --signature SIG --url URL] \
                     [--server-triple TRIPLE --server-url URL --server-sha256 HEX] \
                     [--web-url URL --web-sha256 HEX]
+
+A call must carry a platform entry, a server entry, or both. A headless-only call (Linux:
+no Tauri updater key yet) leaves every `platforms` entry exactly as it is.
 
 Headless artifacts (`tide update`, docs/internals/remote.md): `server` maps a Rust
 target triple to the tide-server tarball, `web` is the one web-client tarball.
@@ -69,10 +72,10 @@ def main() -> int:
         return 0 if version_tuple(sys.argv[3]) >= version_tuple(sys.argv[2]) else 1
     ap = argparse.ArgumentParser()
     ap.add_argument("--manifest", required=True, help="existing latest.json (may be empty/missing)")
-    ap.add_argument("--platform", required=True, choices=sorted(VALID_PLATFORMS))
+    ap.add_argument("--platform", choices=sorted(VALID_PLATFORMS), help="Tauri updater key to write (omit for a headless-only merge)")
     ap.add_argument("--version", required=True)
-    ap.add_argument("--signature", required=True)
-    ap.add_argument("--url", required=True)
+    ap.add_argument("--signature")
+    ap.add_argument("--url")
     ap.add_argument("--out", help="output path (default: overwrite --manifest)")
     ap.add_argument(
         "--allow-downgrade",
@@ -86,6 +89,11 @@ def main() -> int:
     ap.add_argument("--web-sha256")
     args = ap.parse_args()
 
+    platform_args = (args.platform, args.signature, args.url)
+    if any(platform_args) and not all(platform_args):
+        ap.error("--platform, --signature and --url go together")
+    if not args.platform and not args.server_triple:
+        ap.error("nothing to merge: give --platform/--signature/--url and/or --server-triple/--server-url/--server-sha256")
     server_args = (args.server_triple, args.server_url, args.server_sha256)
     if any(server_args) and not all(server_args):
         ap.error("--server-triple, --server-url and --server-sha256 go together")
@@ -128,10 +136,11 @@ def main() -> int:
             file=sys.stderr,
         )
 
-    platforms[args.platform] = {
-        "signature": args.signature.strip(),
-        "url": args.url,
-    }
+    if args.platform:
+        platforms[args.platform] = {
+            "signature": args.signature.strip(),
+            "url": args.url,
+        }
 
     if args.server_triple:
         server = data.get("server")
@@ -158,7 +167,7 @@ def main() -> int:
         extra += f" + server[{args.server_triple}]"
     if args.web_url:
         extra += " + web"
-    print(f"merged {args.platform}{extra} into {out} (platforms: {', '.join(sorted(platforms))})")
+    print(f"merged {args.platform or 'no platform key'}{extra} into {out} (platforms: {', '.join(sorted(platforms))})")
     return 0
 
 

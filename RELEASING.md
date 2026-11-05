@@ -111,10 +111,15 @@ gh workflow run release-linux.yml --ref main -f version=0.1.1
 gh run watch
 ```
 
-Uploads `linux/tide.deb` and `linux/tide.rpm`. Linux has **no auto-update** yet: Linux
-users reinstall the new package by hand. The manifest is not touched.
+Uploads `linux/tide.deb` and `linux/tide.rpm`, then the headless server tarball
+`server/x86_64-unknown-linux-gnu/tide-server.tar.gz` (+ `.sha256`) and merges only that
+`server[...]` key into `latest.json` (the `platforms` keys and `web` are untouched). The
+desktop app on Linux has **no auto-update**: Linux desktop users reinstall the package by
+hand. A headless Linux server updates with `tide-server update`.
 
-You can start Linux right after Windows without waiting for it.
+You can start Linux right after Windows without waiting for it, but only after macOS: the
+merge refuses to lower the manifest version, and the mac release ships the `web` tarball
+that a Linux `tide update` pulls.
 
 ## 6. Check the release
 

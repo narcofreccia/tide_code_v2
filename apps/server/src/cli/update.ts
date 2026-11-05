@@ -120,8 +120,13 @@ export async function runUpdate(opts: { check: boolean; yes: boolean }, deps: Up
   }
 
   const next = manifest.version;
-  if (compareVersions(next, deps.version) <= 0) {
-    log(`Tide ${deps.version} is up to date (latest release: ${next}).`);
+  const cmp = compareVersions(next, deps.version);
+  if (cmp === 0) {
+    log(`Tide ${deps.version} is up to date.`);
+    return 0;
+  }
+  if (cmp < 0) {
+    log(`Tide ${deps.version} is ahead of the latest release (${next}); nothing to do.`);
     return 0;
   }
   log(`Tide ${deps.version} → ${next}`);
