@@ -81,11 +81,29 @@ jobs:
           rm -rf apps/desktop/src-tauri/binaries/web
           cp -R apps/web/dist apps/desktop/src-tauri/binaries/web
 
+      # Tauri's bundler downloads NSIS from github.com/tauri-apps/binary-releases into
+      # %LOCALAPPDATA%\tauri on first use. Run 41998429042 (2026-11-05) lost a finished 6-minute
+      # Rust build to a 504 on that download, so the folder is cached across runs …
+      - name: Cache Tauri's bundler downloads (NSIS)
+        uses: actions/cache@v4
+        with:
+          path: ~\AppData\Local\tauri
+          key: tauri-bundler-nsis-${{ runner.os }}-v1
+
+      # … and the bundle step retries: cargo artifacts stay in target/, so a retry after a
+      # failed download costs seconds, not another compile.
       - name: Build the Tauri app (NSIS + updater signature)
         env:
           TAURI_SIGNING_PRIVATE_KEY: ${{ secrets.TAURI_SIGNING_PRIVATE_KEY }}
           TAURI_SIGNING_PRIVATE_KEY_PASSWORD: ${{ secrets.TAURI_SIGNING_PRIVATE_KEY_PASSWORD }}
-        run: pnpm --filter @tide/desktop exec tauri build --bundles nsis
+        run: |
+          set -euo pipefail
+          for attempt in 1 2 3; do
+            if pnpm --filter @tide/desktop exec tauri build --bundles nsis; then exit 0; fi
+            echo "tauri build failed (attempt $attempt of 3)"
+            [ "$attempt" = 3 ] && exit 1
+            sleep 30
+          done
 
       # Smoke test: install silently, then prove the bundled sidecar actually runs.
       - name: Smoke test the installed build
