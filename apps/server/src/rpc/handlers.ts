@@ -13,6 +13,7 @@ import { JudgeLedger } from "../decisions/ledger.ts";
 import { detectRepoIdentity } from "../vcs/repoIdentity.ts";
 import { RpcException, type RpcRouter } from "./router.ts";
 import { regenerateTitle } from "./titles.ts";
+import { registerProjectEnsure } from "./projectEnsure.ts";
 import { createDeltaCoalescer, type CoalesceTimer } from "./coalesce.ts";
 
 export interface HandlerDeps {
@@ -181,6 +182,8 @@ export function registerHandlers(router: RpcRouter, deps: HandlerDeps): void {
       throw err;
     }
   });
+
+  registerProjectEnsure(router, { engine: deps.engine, ...(deps.settings !== undefined ? { settings: deps.settings } : {}), ...(deps.git !== undefined ? { git: deps.git } : {}) });
 
   router.register("thread.regenerateTitle", async (input) => {
     if (!deps.settings) throw new RpcException("internal", "settings store not configured");

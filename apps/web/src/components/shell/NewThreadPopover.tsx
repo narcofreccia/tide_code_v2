@@ -1,6 +1,6 @@
-import { useState } from "react";
+import { useEffect, useState } from "react";
 import type { InteractionMode, RuntimeMode, Thread } from "@tide/contracts";
-import { createThread } from "../../lib/threadActions.ts";
+import { createThread, type NewThreadOptions } from "../../lib/threadActions.ts";
 import { runOrToast } from "../../lib/dispatchOrToast.ts";
 import {
   INTERACTION_HINTS,
@@ -20,8 +20,11 @@ import { HarnessFields, useThreadDraft } from "../thread/ProviderPicker.tsx";
 import { useModel } from "../../state/model.ts";
 import { useUi, type NewThreadTab } from "../../state/ui.ts";
 import { NewTeamFields } from "./NewTeamFields.tsx";
-import { envOfProject, environmentName } from "../../state/environments.ts";
-import { useMultiEnv } from "../fleet/envView.ts";
+import { environmentName } from "../../state/environments.ts";
+import { call } from "../../state/model.ts";
+import { envOpt, useMultiEnv } from "../fleet/envView.ts";
+import { EnvSelect } from "../fleet/EnvSelect.tsx";
+import { useRunOn } from "./useRunOn.ts";
 import { Checkbox } from "../ui/Choice.tsx";
 import { Dialog } from "../ui/Dialog.tsx";
 import { DialogFrame, FrameField, PrimaryField } from "../ui/DialogFrame.tsx";
@@ -38,10 +41,19 @@ const MODE_OPTIONS: SelectOption<RuntimeMode>[] = RUNTIME_MODES.map((mode) => ({
   title: RUNTIME_MODE_HINTS[mode],
 }));
 
-function InteractionSwitch({ value, onChange }: { value: InteractionMode; onChange: (mode: InteractionMode) => void }) {
+function InteractionSwitch({
+  value,
+  onChange,
+  planMode,
+}: {
+  value: InteractionMode;
+  onChange: (mode: InteractionMode) => void;
+  /** the chosen harness has a native plan mode; Plan is offered only then */
+  planMode: boolean;
+}) {
   return (
     <div className={styles.segmented} role="radiogroup" aria-label="Interaction">
-      {INTERACTION_MODES.map((mode) => (
+      {INTERACTION_MODES.filter((mode) => planMode || mode !== "plan").map((mode) => (
         <button
           key={mode}
           type="button"
@@ -100,34 +112,76 @@ function ThreadFields({
   );
   const [title, setTitle] = useState("");
   const [interaction, setInteraction] = useState<InteractionMode>("default");
+  const [busy, setBusy] = useState<string | undefined>(undefined);
   const linkChoices = useLinkChoices(projectId);
   const project = useProjectTitle(projectId);
+  const projectRecord = useModel((s) => (projectId === undefined ? undefined : s.model.projects[projectId]));
   const mode = draft.mode ?? FALLBACK_MODE;
   const providers = useProviders();
   const harness = instanceLabel(providers, draft.providerId);
-  const efforts = effortsOf(providerStatus(providers, draft.providerId)?.models ?? [], draft.model);
   const multiEnv = useMultiEnv();
-  const envId = projectId === undefined ? undefined : envOfProject(projectId);
+  const runOn = useRunOn(parent === undefined ? projectId : undefined);
+  const envId = parent === undefined ? runOn.target : runOn.owner;
+  const status = providerStatus(providers, draft.providerId, envId) ?? providerStatus(providers, draft.providerId);
+  const efforts = effortsOf(status?.models ?? [], draft.model);
+  // C1: Plan only where the harness has a native plan mode; an unknown (still loading) roster keeps it
+  const planMode = status === undefined || status.caps.planMode === true;
+  useEffect(() => {
+    if (!planMode) setInteraction("default");
+  }, [planMode]);
+  const chosenInteraction: InteractionMode = planMode ? interaction : "default";
   const create = (): void => {
-    onDone();
-    if (!projectId) return;
+    if (!projectId || busy !== undefined) return;
     const trimmed = title.trim();
-    runOrToast("Creating the thread", () =>
-      createThread(projectId, draft.provider, {
-        ...(parent === undefined ? {} : { parentThreadId: parent.id }),
-        ...(trimmed === "" ? {} : { title: trimmed }),
-        ...(draft.model === "" ? {} : { model: draft.model }),
-        ...(draft.providerId === draft.provider ? {} : { providerId: draft.providerId }),
-        ...(draft.effort === "" || !efforts.some((e) => e.id === draft.effort) ? {} : { effort: draft.effort }),
-        ...(draft.mode === undefined ? {} : { mode: draft.mode }),
-        ...(interaction === "default" ? {} : { interaction }),
-        useWorktree: draft.useWorktree,
-        ...(linkChoices.payload === undefined ? {} : { links: linkChoices.payload }),
-      }),
-    );
+    const options: NewThreadOptions = {
+      ...(parent === undefined ? {} : { parentThreadId: parent.id }),
+      ...(trimmed === "" ? {} : { title: trimmed }),
+      ...(draft.model === "" ? {} : { model: draft.model }),
+      ...(draft.providerId === draft.provider ? {} : { providerId: draft.providerId }),
+      ...(draft.effort === "" || !efforts.some((e) => e.id === draft.effort) ? {} : { effort: draft.effort }),
+      ...(draft.mode === undefined ? {} : { mode: draft.mode }),
+      ...(chosenInteraction === "default" ? {} : { interaction: chosenInteraction }),
+      useWorktree: draft.useWorktree,
+    };
+    const plan = runOn.plan;
+    if (plan.kind === "own") {
+      onDone();
+      const links = linkChoices.payload === undefined ? {} : { links: linkChoices.payload };
+      runOrToast("Creating the thread", () => createThread(projectId, draft.provider, { ...options, ...links }));
+      return;
+    }
+    const target = runOn.target;
+    if (target === undefined) return;
+    // R17 B3: another machine — its own clone of the repo (reused, adopted or cloned on the spot);
+    // the project links belong to this checkout, so they stay behind
+    if (plan.kind === "sibling") {
+      onDone();
+      runOrToast("Creating the thread", () => createThread(plan.project.id, draft.provider, { ...options, envId: target }));
+      return;
+    }
+    const project = projectRecord;
+    if (project === undefined) return;
+    setBusy(`Cloning onto ${runOn.machine}…`);
+    runOrToast("Creating the thread", async () => {
+      try {
+        const ensured = await call(
+          "project.ensure",
+          {
+            repo: { remoteUrl: plan.repo.remoteUrl, cloneUrl: plan.repo.cloneUrl, defaultBranch: plan.repo.defaultBranch },
+            title: project.title,
+            ...(project.icon === undefined ? {} : { icon: project.icon }),
+          },
+          envOpt(target),
+        );
+        await createThread(ensured.projectId, draft.provider, { ...options, envId: target });
+        onDone();
+      } finally {
+        setBusy(undefined);
+      }
+    });
   };
   const outcome =
-    interaction === "plan"
+    chosenInteraction === "plan"
       ? `Opens a thread on ${harness} in Plan mode: your first message gets a plan back, and nothing changes until you approve it.`
       : `Opens an idle thread on ${harness}; nothing runs until you send the first message.`;
   return (
@@ -136,8 +190,9 @@ function ThreadFields({
       {...(parent ? { context: `Child of “${parent.title}”` } : {})}
       {...(toolbar === undefined ? {} : { toolbar })}
       outcome={outcome}
-      primaryLabel={parent ? "Create child thread" : "Create thread"}
+      primaryLabel={busy ?? (parent ? "Create child thread" : "Create thread")}
       onPrimary={create}
+      busy={busy !== undefined}
       blockedReason={projectId === undefined ? "Add a project first" : undefined}
       onCancel={onDone}
     >
@@ -151,7 +206,24 @@ function ThreadFields({
         onEnter={create}
       />
       <div className={styles.rows}>
-        {multiEnv && envId !== undefined ? (
+        {parent === undefined && runOn.pickable ? (
+          <FrameField
+            label="Runs on"
+            caption={
+              runOn.note === undefined ? (
+                runOn.caption
+              ) : (
+                <>
+                  {runOn.caption}
+                  <br />
+                  {runOn.note}
+                </>
+              )
+            }
+          >
+            <EnvSelect label="Run on" value={runOn.target} onSelect={runOn.setTarget} />
+          </FrameField>
+        ) : multiEnv && envId !== undefined ? (
           <FrameField label="Runs on" caption="A thread runs on the machine that holds its project">
             <span className={styles.machine}>{environmentName(envId)}</span>
           </FrameField>
@@ -193,8 +265,8 @@ function ThreadFields({
             className={styles.narrow}
           />
         </FrameField>
-        <FrameField label="Mode" caption={INTERACTION_HINTS[interaction]}>
-          <InteractionSwitch value={interaction} onChange={setInteraction} />
+        <FrameField label="Mode" caption={INTERACTION_HINTS[chosenInteraction]}>
+          <InteractionSwitch value={chosenInteraction} onChange={setInteraction} planMode={planMode} />
         </FrameField>
         <FrameField
           label="Checkout"
@@ -213,7 +285,9 @@ function ThreadFields({
           </Checkbox>
         </FrameField>
       </div>
-      <ThreadLinkPicker links={linkChoices.links} choices={linkChoices.choices} onChange={linkChoices.setChoices} />
+      {runOn.plan.kind === "own" ? (
+        <ThreadLinkPicker links={linkChoices.links} choices={linkChoices.choices} onChange={linkChoices.setChoices} />
+      ) : null}
     </DialogFrame>
   );
 }

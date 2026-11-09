@@ -1,14 +1,30 @@
-import { afterEach, describe, expect, it } from "vitest";
+import { afterEach, describe, expect, it, vi } from "vitest";
 import { act, cleanup, fireEvent, render, screen, waitFor } from "@testing-library/react";
+
+vi.mock("../../state/environments.ts", async () => (await import("../fleet/testEnvironments.ts")).fakeEnvironmentsModule());
+
+import type { ProviderStatusDto } from "@tide/contracts";
+import * as envs from "../../state/environments.ts";
+import { twoMachines } from "../fleet/testEnvironments.ts";
 import { NewThreadDialogHost } from "./NewThreadPopover.tsx";
-import { attachFakeStore, chooseOption, makeThread, modelWith, resetUi } from "../../testHarness.ts";
+import { attachFakeStore, chooseOption, makeThread, mockRpc, modelWith, resetUi } from "../../testHarness.ts";
 import { useUi } from "../../state/ui.ts";
-import { useServerSettings } from "../../state/serverSettings.ts";
+import { defaultUserSettings, resetServerSettings, useServerSettings } from "../../state/serverSettings.ts";
+import { setDispatcher, type DispatchResult } from "../../state/model.ts";
+import { setProvidersForTest } from "../../state/providers.ts";
+import { PROVIDER_FIXTURE } from "../settings/fixtures.ts";
 import { createChild } from "../../lib/threadActions.ts";
+
+const projectEnvs = (envs as unknown as { projectEnvs: Record<string, string> }).projectEnvs;
 
 afterEach(() => {
   cleanup();
   resetUi();
+  resetServerSettings();
+  setDispatcher(undefined);
+  envs.useEnvironments.setState({ environments: [], statuses: {}, primaryId: undefined });
+  for (const key of Object.keys(projectEnvs)) delete projectEnvs[key];
+  vi.clearAllMocks();
 });
 
 const project = { id: "p1", title: "Tide", rootPath: "/src/tide", createdAt: 1, updatedAt: 1 };
@@ -117,5 +133,106 @@ describe("new thread form", () => {
     attachFakeStore(modelWith({ projects: { p1: project }, threads: { t1: makeThread("t1") } }));
     useUi.getState().openNewThread({ parentThreadId: "t1" });
     expect(useUi.getState().newThreadProjectId).toBe("p1");
+  });
+});
+
+const repo = { remoteUrl: "github.com/acme/tide", cloneUrl: "git@github.com:acme/tide.git", defaultBranch: "main", detectedAt: 1 };
+
+/** p1 (with its repo) lives on the laptop; `extra` adds projects on other machines. */
+function openRunOn(extra: Record<string, typeof project & { repo?: typeof repo }> = {}, withRepo = true) {
+  envs.useEnvironments.setState(twoMachines());
+  projectEnvs["p1"] = "env-a";
+  const projects = { p1: { ...project, ...(withRepo ? { repo } : {}) }, ...extra };
+  attachFakeStore(modelWith({ projects, threads: {} }));
+  const dispatch = vi.fn(async (): Promise<DispatchResult> => ({ seq: 1, events: [] }));
+  setDispatcher(dispatch);
+  render(<NewThreadDialogHost />);
+  act(() => useUi.getState().openNewThread({ projectId: "p1" }));
+  return dispatch;
+}
+
+describe("new thread form · run on another machine", () => {
+  it("keeps the read-only line without a repo, offers the picker with a repo and two machines", () => {
+    openRunOn({}, false);
+    expect(screen.queryByRole("combobox", { name: "Run on" })).toBeNull();
+    expect(screen.getByText("laptop")).toBeDefined();
+    cleanup();
+    openRunOn();
+    expect(screen.getByRole("combobox", { name: "Run on" }).textContent).toContain("laptop");
+    expect(screen.getByText("Runs on this machine's checkout")).toBeDefined();
+  });
+
+  it("no picker with one connected machine", () => {
+    openRunOn();
+    cleanup();
+    envs.useEnvironments.setState((s) => ({ statuses: { ...s.statuses, "env-b": { connection: "offline" as const } } }));
+    render(<NewThreadDialogHost />);
+    expect(screen.queryByRole("combobox", { name: "Run on" })).toBeNull();
+  });
+
+  it("uses the clone another machine already has", async () => {
+    const dispatch = openRunOn({ p2: { ...project, id: "p2", title: "tide (box)", rootPath: "/home/me/tide", repo } });
+    projectEnvs["p2"] = "env-b";
+    chooseOption("Run on", /^box/);
+    expect(screen.getByText("Uses tide (box) on box")).toBeDefined();
+    fireEvent.click(screen.getByText("Create thread"));
+    await waitFor(() => expect(dispatch).toHaveBeenCalled());
+    expect(dispatch.mock.calls[0]).toEqual([expect.objectContaining({ type: "thread.create", projectId: "p2" }), { envId: "env-b" }]);
+  });
+
+  it("clones onto the chosen machine, then creates the thread there", async () => {
+    useServerSettings.setState({ byEnv: { "env-b": { settings: { ...defaultUserSettings(), environment: { name: "box", projectsDir: "/srv/repos" } }, loaded: true } } });
+    let finish: (value: { projectId: string; rootPath: string; cloned: boolean }) => void = () => undefined;
+    const caller = mockRpc({ "project.ensure": () => new Promise((resolve) => (finish = resolve)) });
+    const dispatch = openRunOn();
+    chooseOption("Run on", /^box/);
+    expect(screen.getByText(/Clones acme\/tide onto box into \/srv\/repos/)).toBeDefined();
+    expect(screen.getByText(/Linked repositories are not carried over/)).toBeDefined();
+    fireEvent.click(screen.getByText("Create thread"));
+    const busy = await screen.findByRole("button", { name: "Cloning onto box…" });
+    expect((busy as HTMLButtonElement).disabled).toBe(true);
+    expect(caller).toHaveBeenCalledWith(
+      "project.ensure",
+      { repo: { remoteUrl: repo.remoteUrl, cloneUrl: repo.cloneUrl, defaultBranch: "main" }, title: "Tide" },
+      { envId: "env-b" },
+    );
+    expect(dispatch).not.toHaveBeenCalled();
+    await act(async () => finish({ projectId: "p9", rootPath: "/srv/repos/tide", cloned: true }));
+    await waitFor(() => expect(dispatch).toHaveBeenCalled());
+    expect(dispatch.mock.calls[0]).toEqual([expect.objectContaining({ type: "thread.create", projectId: "p9" }), { envId: "env-b" }]);
+    await waitFor(() => expect(useUi.getState().newThreadProjectId).toBeNull());
+  });
+
+  it("omits the clone folder until that machine's settings have loaded", () => {
+    openRunOn();
+    chooseOption("Run on", /^box/);
+    const caption = screen.getByText(/Clones acme\/tide onto box/);
+    expect(caption.textContent).not.toContain(" into ");
+  });
+});
+
+describe("new thread form · plan mode (C1)", () => {
+  const acp: ProviderStatusDto = {
+    id: "acp-gemini",
+    kind: "acp",
+    label: "Gemini",
+    installed: true,
+    loggedIn: true,
+    models: [],
+    caps: { planMode: false, subagents: false, mcp: true, images: false, resume: false, contextUsage: false, openInTerminal: false },
+  };
+
+  it("hides Plan for a harness without plan mode and resets to Build", async () => {
+    setProvidersForTest([...PROVIDER_FIXTURE, acp]);
+    const fake = open(undefined, {});
+    fireEvent.click(screen.getByRole("radio", { name: "Plan" }));
+    expect(screen.getByRole("radio", { name: "Plan" }).getAttribute("aria-checked")).toBe("true");
+    chooseOption("Thread provider", /^Gemini/);
+    expect(screen.queryByRole("radio", { name: "Plan" })).toBeNull();
+    expect(screen.getByRole("radio", { name: "Build" }).getAttribute("aria-checked")).toBe("true");
+    chooseOption("Thread provider", /^Claude Code/);
+    expect(screen.getByRole("radio", { name: "Build" }).getAttribute("aria-checked")).toBe("true");
+    fireEvent.click(screen.getByText("Create thread"));
+    expect((await created(fake))["interaction"]).toBeUndefined();
   });
 });

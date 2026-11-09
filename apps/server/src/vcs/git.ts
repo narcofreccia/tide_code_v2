@@ -79,6 +79,11 @@ export class Git {
     return new Git(cwd, { env: this.#env, timeoutMs: this.#timeoutMs });
   }
 
+  /** Same env, another timeout (a clone can outlast the default 120 s). */
+  withTimeout(timeoutMs: number): Git {
+    return new Git(this.cwd, { env: this.#env, timeoutMs });
+  }
+
   /** Runs git and never throws; inspect `code`. */
   tryRun(args: string[], env?: NodeJS.ProcessEnv): Promise<GitRun> {
     return new Promise((resolve) => {

@@ -24,6 +24,7 @@ export function DialogFrame({
   blockedReason,
   onCancel,
   bodyTestId,
+  busy = false,
 }: {
   /** the outcome as a sentence, not a noun */
   heading: React.ReactNode;
@@ -40,6 +41,8 @@ export function DialogFrame({
   blockedReason?: string | undefined;
   onCancel?: () => void;
   bodyTestId?: string;
+  /** work started by the primary is still running: the primary is disabled, its label says what runs */
+  busy?: boolean;
 }) {
   const captionId = useId();
   const blocked = blockedReason !== undefined;
@@ -47,7 +50,7 @@ export function DialogFrame({
     if (!isSubmitChord(e)) return;
     e.preventDefault();
     e.stopPropagation();
-    if (!blocked) onPrimary();
+    if (!blocked && !busy) onPrimary();
   };
   return (
     <div className={styles.frame} onKeyDown={onKeyDown}>
@@ -79,7 +82,8 @@ export function DialogFrame({
           <Button
             variant="primary"
             className={styles.primary}
-            disabled={blocked}
+            disabled={blocked || busy}
+            {...(busy ? { "aria-busy": true } : {})}
             {...(blocked ? { "aria-describedby": captionId } : {})}
             onClick={onPrimary}
           >

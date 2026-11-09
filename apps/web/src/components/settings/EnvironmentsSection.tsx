@@ -8,6 +8,7 @@ import { RelayPanel } from "../fleet/RelayPanel.tsx";
 import { ThisMachine } from "../fleet/ThisMachine.tsx";
 import fleet from "../fleet/Environments.module.css";
 import type { SectionMeta } from "./search.ts";
+import { ProjectsDirGroup } from "./ProjectsDirRow.tsx";
 import { SettingBlock, SettingNote, SettingsGroup } from "./ui/SettingsGroup.tsx";
 import { SettingsPage } from "./ui/SettingsPage.tsx";
 
@@ -15,7 +16,7 @@ export const META: SectionMeta = {
   title: "Environments",
   blurb:
     "Every machine running tide-server that this window drives. This machine is the primary: its settings are the ones these pages edit.",
-  keywords: ["This machine", "Machine name", "SSH host", "Other machines", "Add machine", "Pair another device", "Paired devices", "Relay", "remote"],
+  keywords: ["This machine", "Machine name", "SSH host", "Other machines", "Add machine", "Pair another device", "Paired devices", "Relay", "remote", "Projects folder", "Cloned repositories", "tide-projects"],
 };
 
 /**
@@ -34,6 +35,7 @@ export function EnvironmentsSection() {
   return (
     <SettingsPage title={META.title} blurb={META.blurb}>
       <ThisMachine info={info} envId={primaryId} />
+      <ProjectsDirGroup />
 
       <SettingsGroup
         title="Other machines"
