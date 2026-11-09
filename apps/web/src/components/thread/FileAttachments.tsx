@@ -1,9 +1,11 @@
 import { memo, useCallback } from "react";
 import { admitFiles, fileBytesAvailable, forgetFiles, isPastedName, pastedLabel, pendingLines, rememberFile, type DraftFile } from "../../lib/attachments.ts";
 import { formatBytes } from "../../lib/images.ts";
-import { threadMentionIds, removeThreadMention } from "../../lib/mentions.ts";
+import { delegateMentionIds, removeDelegateMention, threadMentionIds, removeThreadMention } from "../../lib/mentions.ts";
 import { setDraft, useDrafts } from "../../state/drafts.ts";
 import { useModel } from "../../state/model.ts";
+import { useProvidersSnapshot } from "../../state/providers.ts";
+import { instanceLabel } from "../../lib/vocab.ts";
 import { showToast } from "../../state/toast.ts";
 import { Icon } from "../ui/Icon.tsx";
 import styles from "./Attachments.module.css";
@@ -100,6 +102,34 @@ export function ThreadContextChips({ text, onChange }: { text: string; onChange:
           </button>
         </li>
       ))}
+    </ul>
+  );
+}
+
+/** R17: the `@delegate:<providerId>[/<model>]` targets in the text; × takes the token out. */
+export function DelegateChips({ text, onChange }: { text: string; onChange: (text: string) => void }) {
+  const providers = useProvidersSnapshot();
+  const targets = delegateMentionIds(text);
+  if (targets.length === 0) return null;
+  return (
+    <ul className={styles.strip} aria-label="Delegate to">
+      {targets.map((t) => {
+        const name = `${instanceLabel(providers, t.providerId)}${t.model === undefined ? "" : ` (${t.model})`}`;
+        return (
+          <li key={`${t.providerId}/${t.model ?? ""}`} className={`${styles.item} ${styles.file}`} title={`Delegate to ${name}`}>
+            <Icon name="inbox" size={12} className={`${styles.kind}`} />
+            <span className={styles.name}>{name}</span>
+            <button
+              type="button"
+              className={styles.remove}
+              aria-label={`Remove delegate ${name}`}
+              onClick={() => onChange(removeDelegateMention(text, t))}
+            >
+              <Icon name="close" size={12} />
+            </button>
+          </li>
+        );
+      })}
     </ul>
   );
 }

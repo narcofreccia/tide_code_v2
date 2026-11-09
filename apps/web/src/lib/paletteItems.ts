@@ -1,5 +1,6 @@
 import { selectExpertsSessions, selectProjects, selectThreadsByProject } from "@tide/client";
 import type { ProposedPlan, ReadModel, Thread } from "@tide/contracts";
+import { compose } from "./cite.ts";
 import { fuzzyRank } from "./fuzzy.ts";
 import { runOrToast } from "./dispatchOrToast.ts";
 import { providerIdOf } from "./vocab.ts";
@@ -58,6 +59,13 @@ function latestPlan(model: ReadModel, threadId: string): ProposedPlan | undefine
 function threadItems(model: ReadModel, thread: Thread): PaletteItem[] {
   const ui = useUi.getState();
   const items: PaletteItem[] = [
+    {
+      id: "thread:delegate-to",
+      label: "Delegate this to…",
+      group: "Thread",
+      detail: "Pick a harness; the agent hands that part to it with tide_delegate",
+      run: () => compose("@delegate:", "append", thread.id),
+    },
     { id: "thread:terminal", label: "Open in terminal", group: "Thread", run: () => void openThreadTerminal(thread.id) },
     thread.settledAt === undefined
       ? { id: "thread:settle", label: "Settle thread", group: "Thread", detail: "Close it from the inbox; the worktree stays", run: () => settleThread(thread.id) }

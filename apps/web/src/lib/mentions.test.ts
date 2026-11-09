@@ -1,6 +1,10 @@
 import { describe, expect, it } from "vitest";
 import {
   applyMention,
+  delegateMention,
+  delegateMentionIds,
+  expandDelegateMentions,
+  removeDelegateMention,
   expandMentions,
   expandThreadMentions,
   findMentionQuery,
@@ -72,5 +76,44 @@ describe("thread mentions", () => {
   it("inserts a token at the caret with spacing", () => {
     expect(insertAt("ab", 1, "@thread:x")).toEqual({ text: "a @thread:x b", caret: 12 });
     expect(insertAt("", 0, "@thread:x")).toEqual({ text: "@thread:x ", caret: 10 });
+  });
+});
+
+describe("@delegate mentions", () => {
+  const labelOf = (id: string) =>
+    id === "codex" ? { label: "Codex", kind: "codex" as const } : id === "codex-work" ? { label: "Codex · work", kind: "codex" as const } : undefined;
+
+  it("builds and parses tokens", () => {
+    expect(delegateMention("codex")).toBe("@delegate:codex");
+    expect(delegateMention("opencode", "zai/glm-4.6")).toBe("@delegate:opencode/zai/glm-4.6");
+    expect(delegateMentionIds("a @delegate:codex/gpt-5.1 b @delegate:codex/gpt-5.1 @delegate:codex-work")).toEqual([
+      { providerId: "codex", model: "gpt-5.1" },
+      { providerId: "codex-work" },
+    ]);
+    expect(delegateMentionIds("mail@delegate:codex")).toEqual([]);
+  });
+
+  it("is not treated as a file mention", () => {
+    expect(expandMentions("@delegate:codex/gpt-5 @src/a.ts")).toBe("@delegate:codex/gpt-5 `src/a.ts`");
+  });
+
+  it("expands in place and appends one line per target", () => {
+    expect(expandDelegateMentions("have @delegate:codex/gpt-5 review it, @delegate:codex/gpt-5 again", labelOf)).toBe(
+      'have Codex (gpt-5) review it, Codex (gpt-5) again\n\nDelegate to: use tide_delegate with provider "codex", providerId "codex", model "gpt-5" for the part of this request addressed to it.',
+    );
+    const two = expandDelegateMentions("@delegate:codex-work and @delegate:codex", labelOf);
+    expect(two).toContain("Codex · work and Codex\n\n");
+    expect(two.split("\n").filter((l) => l.startsWith("Delegate to:"))).toHaveLength(2);
+    expect(two).toContain('providerId "codex-work"');
+  });
+
+  it("leaves text without tokens alone and survives unknown ids", () => {
+    expect(expandDelegateMentions("plain", labelOf)).toBe("plain");
+    expect(expandDelegateMentions("@delegate:gone", labelOf)).toContain('provider "gone", providerId "gone"');
+  });
+
+  it("removes a token and its trailing space", () => {
+    expect(removeDelegateMention("a @delegate:opencode/zai/glm-4.6 b", { providerId: "opencode", model: "zai/glm-4.6" })).toBe("a b");
+    expect(removeDelegateMention("@delegate:codex x @delegate:codex/m", { providerId: "codex" })).toBe("x @delegate:codex/m");
   });
 });

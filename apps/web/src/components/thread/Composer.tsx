@@ -10,6 +10,7 @@ import {
   THREAD_DRAG_TYPE,
   THREAD_PREFIX,
   applyMention,
+  delegateMention,
   findMentionQuery,
   insertAt,
   normalizePastedPath,
@@ -23,7 +24,7 @@ import { Button } from "../ui/Button.tsx";
 import { Kbd } from "../ui/Kbd.tsx";
 import { Icon } from "../ui/Icon.tsx";
 import { AttachmentStrip, useAttachments } from "./Attachments.tsx";
-import { FileChips, ThreadContextChips, useFileAttachments } from "./FileAttachments.tsx";
+import { FileChips, DelegateChips, ThreadContextChips, useFileAttachments } from "./FileAttachments.tsx";
 import { MentionPicker, useMentionMatches, type MentionItem } from "./MentionPicker.tsx";
 import { useComposerSend } from "./useComposerSend.ts";
 import { SlashPicker, useSlash } from "./SlashPicker.tsx";
@@ -136,7 +137,12 @@ export function Composer({ thread, scope = "main" }: { thread: Thread; scope?: C
 
   const pick = (item: MentionItem | undefined): void => {
     if (!mention || !item) return;
-    const token = item.kind === "file" ? item.path : `${THREAD_PREFIX}${item.id}`;
+    const token =
+      item.kind === "file"
+        ? item.path
+        : item.kind === "thread"
+          ? `${THREAD_PREFIX}${item.id}`
+          : delegateMention(item.providerId, item.model).slice(1);
     const next = applyMention(text, mention, mention.caret, token);
     setText(next.text);
     setMention(undefined);
@@ -262,6 +268,7 @@ export function Composer({ thread, scope = "main" }: { thread: Thread; scope?: C
         onKeyDown={onKeyDown}
       />
       <ThreadContextChips text={text} onChange={setText} />
+      <DelegateChips text={text} onChange={setText} />
       {slash.unknown === undefined ? null : (
         <p className={styles.switchHint} role="status">
           Unknown command for {harness}; it will be sent as text

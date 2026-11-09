@@ -3,6 +3,8 @@
  * every harness resolves relative paths from there — and are sent in backticks
  * so the model reads them as literals rather than prose.
  */
+import type { ProviderKind } from "@tide/contracts";
+
 export interface MentionQuery {
   /** index of the `@` in the text */
   start: number;
@@ -39,11 +41,12 @@ export function applyMention(text: string, mention: MentionQuery, caret: number,
 
 const MENTION = /(^|\s)@([^\s`"']+)/g;
 export const THREAD_PREFIX = "thread:";
+export const DELEGATE_PREFIX = "delegate:";
 
 /** `@src/foo.ts` → `` `src/foo.ts` `` just before the turn is dispatched; `@thread:<id>` is left alone. */
 export function expandMentions(text: string): string {
   return text.replace(MENTION, (whole: string, lead: string, path: string) =>
-    path.startsWith(THREAD_PREFIX) ? whole : `${lead}\`${path}\``,
+    path.startsWith(THREAD_PREFIX) || path.startsWith(DELEGATE_PREFIX) ? whole : `${lead}\`${path}\``,
   );
 }
 
@@ -88,6 +91,61 @@ export function expandThreadMentions(text: string, titleOf: (id: string) => stri
   const title = (id: string): string => titleOf(id) ?? id;
   const body = text.replace(THREAD_MENTION, (_, lead: string, id: string) => `${lead}"${title(id)}"`);
   return `${body}\n\n${ids.map((id) => threadContextLine(id, title(id))).join("\n")}`;
+}
+
+// ---- R17: @delegate:<providerId>[/<model>] cross-harness delegation ----
+
+const DELEGATE_MENTION = /(^|\s)@delegate:([0-9A-Za-z_.-]+(?::[0-9A-Za-z_.-]+)*)(?:\/([^\s`"'(),;]+))?/g;
+
+export interface DelegateTarget {
+  providerId: string;
+  model?: string;
+}
+
+export function delegateMention(providerId: string, model?: string): string {
+  return `@${DELEGATE_PREFIX}${providerId}${model === undefined || model === "" ? "" : `/${model}`}`;
+}
+
+/** Distinct delegate targets in the text, in order of first appearance. */
+export function delegateMentionIds(text: string): DelegateTarget[] {
+  const found: DelegateTarget[] = [];
+  for (const match of text.matchAll(DELEGATE_MENTION)) {
+    const providerId = match[2] ?? "";
+    const model = match[3];
+    if (providerId === "") continue;
+    if (found.some((t) => t.providerId === providerId && t.model === model)) continue;
+    found.push(model === undefined ? { providerId } : { providerId, model });
+  }
+  return found;
+}
+
+/** Drops one `@delegate:…` token (every occurrence, plus one following space). */
+export function removeDelegateMention(text: string, token: DelegateTarget): string {
+  const escaped = delegateMention(token.providerId, token.model).replace(/[.*+?^${}()|[\]\\/-]/g, "\\$&");
+  return text.replace(new RegExp(`(^|\\s)${escaped}(?![^\\s\`"'(),;])(?: )?`, "g"), "$1");
+}
+
+export function delegateLine(kind: string, providerId: string, model: string | undefined): string {
+  const modelPart = model === undefined ? "" : `, model "${model}"`;
+  return `Delegate to: use tide_delegate with provider "${kind}", providerId "${providerId}"${modelPart} for the part of this request addressed to it.`;
+}
+
+/**
+ * Each `@delegate:…` token becomes `<Label>[ (<model>)]` in place, and one `Delegate to:` line per
+ * distinct target is appended, so every harness gets the same unambiguous `tide_delegate` instruction.
+ */
+export function expandDelegateMentions(
+  text: string,
+  labelOf: (providerId: string) => { label: string; kind: ProviderKind } | undefined,
+): string {
+  const targets = delegateMentionIds(text);
+  if (targets.length === 0) return text;
+  const body = text.replace(DELEGATE_MENTION, (_, lead: string, providerId: string, model: string | undefined) => {
+    const label = labelOf(providerId)?.label ?? providerId;
+    return `${lead}${label}${model === undefined ? "" : ` (${model})`}`;
+  });
+  const lines = targets.map((t) => delegateLine(labelOf(t.providerId)?.kind ?? t.providerId, t.providerId, t.model));
+  return `${body}\n\n${lines.join("\n")}`;
 }
 
 /** Inserts `text` at the caret with spaces around it as needed; returns the new caret. */

@@ -1,13 +1,14 @@
 import { useRef, useState } from "react";
-import type { AttachmentRef, Thread } from "@tide/contracts";
+import type { AttachmentRef, ProviderKind, Thread } from "@tide/contracts";
 import { newId } from "@tide/contracts";
 import { forgetFiles, uploadFiles, type DraftFile } from "../../lib/attachments.ts";
 import { errorText } from "../../lib/dispatchOrToast.ts";
 import type { FollowUp, FollowUpMode } from "../../lib/followUp.ts";
-import { expandMentions, expandThreadMentions } from "../../lib/mentions.ts";
+import { expandDelegateMentions, expandMentions, expandThreadMentions } from "../../lib/mentions.ts";
 import { sendTurn, turnRequestLanded } from "../../lib/threadActions.ts";
 import { steerTurn } from "../../lib/turnActions.ts";
 import { useModel } from "../../state/model.ts";
+import { useProvidersStore } from "../../state/providers.ts";
 import { showToast } from "../../state/toast.ts";
 import { useUi } from "../../state/ui.ts";
 import type { PendingImage } from "../../lib/images.ts";
@@ -29,10 +30,16 @@ export interface ComposerSendInput {
   onSent: () => void;
 }
 
+const delegateLabelOf = (id: string): { label: string; kind: ProviderKind } | undefined => {
+  const p = useProvidersStore.getState().providers.find((x) => x.id === id);
+  return p === undefined ? undefined : { label: p.label, kind: p.kind };
+};
+
 /** The prompt as the harness gets it: `@path` backticked, `@thread:<id>` expanded to context lines. */
 export function promptOf(text: string, hasImages: boolean, hasFiles: boolean): string {
   const titleOf = (id: string): string | undefined => useModel.getState().model.threads[id]?.title;
-  const prompt = expandThreadMentions(expandMentions(text.trim()), titleOf);
+  const threadsExpanded = expandThreadMentions(expandMentions(text.trim()), titleOf);
+  const prompt = expandDelegateMentions(threadsExpanded, delegateLabelOf);
   if (prompt !== "") return prompt;
   // the turn needs some text; the server lists file paths under it
   if (hasFiles) return "See the attached files.";

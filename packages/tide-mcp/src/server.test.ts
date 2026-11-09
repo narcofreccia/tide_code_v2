@@ -485,6 +485,7 @@ describe("R16: tide_request_secret", () => {
     expect(tool?.inputSchema.required).toEqual(["name", "purpose"]);
     expect(Object.keys(tool?.inputSchema.properties ?? {})).toEqual(["name", "purpose", "kind"]);
     expect(THREAD_TOOLS_HINT).toContain("Need an API key or token? Call tide_request_secret");
+    expect(THREAD_TOOLS_HINT).toContain('"Delegate to:" line naming a provider, providerId and optional model');
   });
 
   it("returns the provided value once", async () => {

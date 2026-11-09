@@ -1,11 +1,12 @@
 import { useMemo } from "react";
 import { fuzzyRank } from "../../lib/fuzzy.ts";
-import { THREAD_PREFIX } from "../../lib/mentions.ts";
+import { DELEGATE_PREFIX, THREAD_PREFIX } from "../../lib/mentions.ts";
 import { useFileIndex } from "../../state/files.ts";
 import { useModel } from "../../state/model.ts";
 import { ListPickerList, PickerNote } from "../ui/ListPicker.tsx";
 import { PathRow } from "../ui/PathRow.tsx";
 import { Icon } from "../ui/Icon.tsx";
+import { DelegateSection, useDelegateMatches, type DelegateMatch } from "./DelegateSection.tsx";
 import styles from "./MentionPicker.module.css";
 
 const LIMIT = 8;
@@ -16,13 +17,18 @@ export interface ThreadMatch {
   title: string;
 }
 
-export type MentionItem = { kind: "file"; path: string } | ({ kind: "thread" } & ThreadMatch);
+export type MentionItem =
+  | { kind: "file"; path: string }
+  | ({ kind: "thread" } & ThreadMatch)
+  | ({ kind: "delegate" } & DelegateMatch);
 
 export interface MentionMatches {
   paths: string[];
   /** R11: live threads of the same project, matched by title */
   threads: ThreadMatch[];
-  /** files first, then threads: what ↑/↓ walk through */
+  /** R17: harness instances to delegate to */
+  delegates: DelegateMatch[];
+  /** files, then threads, then delegates: what ↑/↓ walk through */
   items: MentionItem[];
   indexing: boolean;
 }
@@ -45,18 +51,23 @@ function useThreadMatches(threadId: string, projectId: string | undefined, query
 /** Candidates for the composer's `@` picker: the thread's file index plus sibling threads. */
 export function useMentionMatches(threadId: string, query: string | undefined, projectId?: string): MentionMatches {
   const onlyThreads = query?.startsWith(THREAD_PREFIX) === true;
-  const index = useFileIndex(query === undefined || onlyThreads ? undefined : threadId);
+  const onlyDelegates = query?.startsWith(DELEGATE_PREFIX) === true;
+  const narrowed = onlyThreads || onlyDelegates;
+  const index = useFileIndex(query === undefined || narrowed ? undefined : threadId);
   const paths = index.data?.paths ?? [];
   const files = useMemo(() => {
-    if (query === undefined || onlyThreads) return [];
+    if (query === undefined || narrowed) return [];
     return query === "" ? paths.slice(0, LIMIT) : fuzzyRank(query, paths, (p) => p, LIMIT).map((r) => r.item);
-  }, [query, paths, onlyThreads]);
-  const threads = useThreadMatches(threadId, projectId, query);
+  }, [query, paths, narrowed]);
+  const threads = useThreadMatches(threadId, projectId, onlyDelegates ? undefined : query);
+  const delegates = useDelegateMatches(threadId, onlyThreads ? undefined : query);
   const items = useMemo<MentionItem[]>(
-    () => [...files.map((path) => ({ kind: "file" as const, path })), ...threads.map((t) => ({ kind: "thread" as const, ...t }))],
-    [files, threads],
+    () => [...files.map((path) => ({ kind: "file" as const, path })), ...threads.map((t) => ({ kind: "thread" as const, ...t })),
+      ...delegates.map((d) => ({ kind: "delegate" as const, ...d })),
+    ],
+    [files, threads, delegates],
   );
-  return { paths: files, threads, items, indexing: !onlyThreads && index.loading && paths.length === 0 };
+  return { paths: files, threads, delegates, items, indexing: !narrowed && index.loading && paths.length === 0 };
 }
 
 /** The `@` picker floating above the composer; the composer owns the caret and cursor. */
@@ -69,8 +80,8 @@ export function MentionPicker({
   cursor: number;
   onPick: (item: MentionItem) => void;
 }) {
-  const { paths, threads } = matches;
-  if (paths.length === 0 && threads.length === 0) {
+  const { paths, threads, delegates } = matches;
+  if (paths.length === 0 && threads.length === 0 && delegates.length === 0) {
     return matches.indexing ? (
       <div className={styles.picker}>
         <PickerNote>Indexing…</PickerNote>
@@ -113,6 +124,12 @@ export function MentionPicker({
           />
         </>
       ) : null}
+      <DelegateSection
+        matches={delegates}
+        offset={paths.length + threads.length}
+        cursor={cursor}
+        onPick={(d) => onPick({ kind: "delegate", ...d })}
+      />
     </div>
   );
 }
