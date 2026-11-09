@@ -68,7 +68,31 @@ describe("TaskDialog › once", () => {
   });
 
   it("validateDraft takes the clock as a parameter", () => {
-    const result = validateDraft({ title: "t", prompt: "p", kind: "once", onceAt: "2026-11-04T10:00", target: "new", provider: "claude", model: "", useWorktree: true, enabled: true, hookId: "", secret: "", amount: "30", unit: "minutes", times: [], timeInput: "", weekdays: [], threadId: "" }, NOW);
+    const result = validateDraft({ title: "t", prompt: "p", kind: "once", onceAt: "2026-11-04T10:00", mode: "new_thread", provider: "claude", model: "", useWorktree: true, enabled: true, hookId: "", secret: "", amount: "30", unit: "minutes", times: [], timeInput: "", weekdays: [], threadId: "" }, NOW);
     expect(result).toEqual({ error: "Pick a time in the future." });
+  });
+});
+
+describe("TaskDialog › thread mode", () => {
+  const draft = { title: "t", prompt: "p", kind: "once" as const, onceAt: "2026-11-05T10:00", provider: "claude" as const, model: "", useWorktree: true, enabled: true, hookId: "", secret: "", amount: "30", unit: "minutes" as const, times: [], timeInput: "", weekdays: [] };
+
+  it("sends threadMode and requires a thread for the two existing-thread modes", () => {
+    const base = { ...draft, threadId: "" };
+    expect(validateDraft({ ...base, mode: "new_thread" }, NOW)).toMatchObject({ fields: { threadMode: "new_thread" } });
+    expect(validateDraft({ ...base, mode: "continue" }, NOW)).toEqual({ error: "Pick the thread to send into." });
+    expect(validateDraft({ ...base, mode: "fresh_session" }, NOW)).toEqual({ error: "Pick the thread to send into." });
+    expect(validateDraft({ ...base, mode: "fresh_session", threadId: "t9" }, NOW)).toMatchObject({
+      fields: { threadMode: "fresh_session", threadId: "t9" },
+    });
+    const fresh = validateDraft({ ...base, mode: "new_thread", threadId: "stale" }, NOW);
+    expect("fields" in fresh && fresh.fields.threadId).toBeFalsy();
+  });
+
+  it("offers the three targets", () => {
+    mount();
+    expect(screen.getByLabelText("A new thread each run")).toBeDefined();
+    expect(screen.getByLabelText("Continue an existing thread")).toBeDefined();
+    fireEvent.click(screen.getByLabelText("Fresh session in an existing thread"));
+    expect(screen.getByRole("combobox", { name: "Thread" })).toBeDefined();
   });
 });

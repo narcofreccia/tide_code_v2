@@ -7,6 +7,7 @@ import { attachFakeStore, makeThread, modelWith, resetUi } from "../../testHarne
 import { PROVIDER_FIXTURE } from "../settings/fixtures.ts";
 import { setProvidersForTest } from "../../state/providers.ts";
 import { useToasts } from "../../state/toast.ts";
+import { isFreshSessionArmed, useFreshSession } from "../../state/freshSession.ts";
 import { useUi } from "../../state/ui.ts";
 import { getDraft, resetDrafts, setDraft, useDrafts } from "../../state/drafts.ts";
 
@@ -22,6 +23,7 @@ function pasteFiles(files: File[]): void {
 }
 
 afterEach(() => {
+  useFreshSession.setState({ armed: {} });
   resetDrafts();
   cleanup();
   resetUi();
@@ -364,5 +366,60 @@ describe("Composer / R16 side chats", () => {
     input.focus();
     fireEvent.keyDown(input, { key: "Escape" });
     expect(fake.dispatch).toHaveBeenCalledWith({ type: "turn.interrupt", threadId: "s1" });
+  });
+
+  describe("/clear", () => {
+    const type = (value: string): HTMLElement => {
+      const input = screen.getByLabelText("Message");
+      fireEvent.change(input, { target: { value } });
+      return input;
+    };
+
+    it("bare /clear only arms, shows a notice, and the next send carries freshSession then disarms", async () => {
+      const fake = attachFakeStore(modelWith({}));
+      render(<Composer thread={makeThread("t1")} />);
+      fireEvent.keyDown(type("/clear "), { key: "Enter" });
+      expect(fake.dispatch).not.toHaveBeenCalled();
+      expect((screen.getByLabelText("Message") as HTMLTextAreaElement).value).toBe("");
+      expect(screen.getByRole("status").textContent).toBe("Next message starts a new session · Esc to cancel");
+      expect(isFreshSessionArmed("t1")).toBe(true);
+
+      fireEvent.keyDown(type("hello"), { key: "Enter" });
+      await waitFor(() =>
+        expect(fake.dispatch).toHaveBeenCalledWith(expect.objectContaining({ type: "turn.request", text: "hello", freshSession: true })),
+      );
+      await waitFor(() => expect(isFreshSessionArmed("t1")).toBe(false));
+      expect(screen.queryByText(/Next message starts a new session/)).toBeNull();
+    });
+
+    it("Esc cancels the armed session", () => {
+      const fake = attachFakeStore(modelWith({}));
+      render(<Composer thread={makeThread("t1")} />);
+      fireEvent.keyDown(type("/clear "), { key: "Enter" });
+      fireEvent.keyDown(screen.getByLabelText("Message"), { key: "Escape" });
+      expect(isFreshSessionArmed("t1")).toBe(false);
+      fireEvent.keyDown(type("plain"), { key: "Enter" });
+      expect(fake.dispatch).toHaveBeenCalledWith(expect.not.objectContaining({ freshSession: true }));
+    });
+
+    it("/clear <prompt> arms and sends at once with the flag", async () => {
+      const fake = attachFakeStore(modelWith({}));
+      render(<Composer thread={makeThread("t1")} />);
+      fireEvent.keyDown(type("/clear start over"), { key: "Enter" });
+      await waitFor(() =>
+        expect(fake.dispatch).toHaveBeenCalledWith(expect.objectContaining({ type: "turn.request", text: "start over", freshSession: true })),
+      );
+      await waitFor(() => expect(isFreshSessionArmed("t1")).toBe(false));
+    });
+
+    it("toasts and does nothing while the thread runs", () => {
+      useToasts.setState({ toasts: [] });
+      const fake = attachFakeStore(modelWith({}));
+      render(<Composer thread={makeThread("t1", { status: "running" })} />);
+      fireEvent.keyDown(type("/clear "), { key: "Enter" });
+      expect(fake.dispatch).not.toHaveBeenCalled();
+      expect(isFreshSessionArmed("t1")).toBe(false);
+      expect(useToasts.getState().toasts.map((t) => t.text)).toEqual(["Wait for the turn to settle, then /clear"]);
+    });
   });
 });

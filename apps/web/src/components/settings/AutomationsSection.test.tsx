@@ -60,10 +60,15 @@ describe("Settings › Automations", () => {
     expect(screen.getByText("every 30 min")).toBeDefined();
     expect(screen.getByText("Mon–Fri at 09:00")).toBeDefined();
     expect(screen.getByText("new thread on codex")).toBeDefined();
-    expect(screen.getByText("Nightly thread")).toBeDefined();
+    expect(screen.getByText("continues Nightly thread")).toBeDefined();
     expect(screen.getByText("next in 3h")).toBeDefined();
     expect(screen.getByText("last 10m ago")).toBeDefined();
     expect(screen.getAllByText("3 runs")).toHaveLength(2);
+  });
+
+  it("says a fresh-session task starts over in its thread", () => {
+    setup([task("c", { threadId: "t1", threadMode: "fresh_session" })]);
+    expect(screen.getByText("fresh session in Nightly thread")).toBeDefined();
   });
 
   it("toggles enabled, runs now and deletes after confirming", () => {
@@ -114,7 +119,7 @@ describe("Settings › Automations", () => {
     expect(screen.getByRole("alert").textContent).toContain("09:00");
     fireEvent.change(screen.getByLabelText("Time"), { target: { value: "08:30" } });
     fireEvent.click(screen.getByText("Add time"));
-    fireEvent.click(screen.getByLabelText("An existing thread"));
+    fireEvent.click(screen.getByLabelText("Continue an existing thread"));
     chooseOption("Thread", "Nightly thread");
     fireEvent.click(screen.getByText("Create"));
     expect(fake.dispatch).toHaveBeenCalledWith(

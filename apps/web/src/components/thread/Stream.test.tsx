@@ -191,4 +191,18 @@ describe("Stream hotkeys", () => {
     fireEvent.keyDown(window, { key: "y" });
     expect(fake.dispatch).not.toHaveBeenCalled();
   });
+
+  it("renders a session boundary divider with the turn's harness", () => {
+    const model = modelWithTurns(thread, [makeTurn("u1", { provider: "codex" })], [makeMessage("p1", { text: "after clear" })]);
+    model.threadTimeline[thread.id] = [
+      { kind: "message", id: "p1" },
+      { kind: "boundary", id: "u1" },
+    ];
+    attachFakeStore(model);
+    const { container } = render(<Stream threadId="t1" provider="claude" />);
+    expect(screen.getByText("New session · Codex")).toBeDefined();
+    // the divider sits above the message that opened the session
+    const rows = [...container.querySelectorAll("ol > li")];
+    expect(rows[0]?.hasAttribute("data-session-boundary")).toBe(true);
+  });
 });

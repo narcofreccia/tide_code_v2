@@ -7,6 +7,7 @@ import type { FollowUp, FollowUpMode } from "../../lib/followUp.ts";
 import { expandDelegateMentions, expandMentions, expandThreadMentions } from "../../lib/mentions.ts";
 import { sendTurn, turnRequestLanded } from "../../lib/threadActions.ts";
 import { steerTurn } from "../../lib/turnActions.ts";
+import { disarmFreshSession, isFreshSessionArmed } from "../../state/freshSession.ts";
 import { useModel } from "../../state/model.ts";
 import { useProvidersStore } from "../../state/providers.ts";
 import { showToast } from "../../state/toast.ts";
@@ -57,11 +58,14 @@ export function useComposerSend({ thread, text, images, files, followUp, onSent 
   const pending = useRef<Pending | undefined>(undefined);
   const running = thread.status === "running";
 
-  const send = async (how?: FollowUpMode, background = false): Promise<void> => {
-    if ((text.trim() === "" && images.length === 0 && files.length === 0) || busy) return;
-    const steer = running && (how ?? followUp.mode) === "steer" && followUp.canSteer;
+  /** `override` replaces the draft text (`/clear <prompt>` sends the prompt after the command). */
+  const send = async (how?: FollowUpMode, background = false, override?: { text: string; fresh?: boolean }): Promise<void> => {
+    const body = override?.text ?? text;
+    if ((body.trim() === "" && images.length === 0 && files.length === 0) || busy) return;
+    const fresh = override?.fresh === true || isFreshSessionArmed(thread.id);
+    const steer = !fresh && running && (how ?? followUp.mode) === "steer" && followUp.canSteer;
     const imageInputs = images.map((image) => ({ mediaType: image.mediaType, data: image.data }));
-    const prompt = promptOf(text, images.length > 0, files.length > 0);
+    const prompt = promptOf(body, images.length > 0, files.length > 0);
     const fileKey = files.map((f) => f.id).join(",");
     if (pending.current?.text !== prompt || pending.current.fileKey !== fileKey) {
       pending.current = { text: prompt, fileKey, requestId: newId() };
@@ -69,6 +73,7 @@ export function useComposerSend({ thread, text, images, files, followUp, onSent 
     const current = pending.current;
     const sent = (): void => {
       pending.current = undefined;
+      if (fresh) disarmFreshSession(thread.id);
       forgetFiles(files.map((f) => f.id));
       onSent();
       if (background) useUi.getState().showMission();
@@ -90,7 +95,7 @@ export function useComposerSend({ thread, text, images, files, followUp, onSent 
       try {
         await (steer
           ? steerTurn(thread.id, prompt, imageInputs, current.requestId, refs)
-          : sendTurn(thread.id, prompt, imageInputs, current.requestId, refs));
+          : sendTurn(thread.id, prompt, imageInputs, current.requestId, refs, fresh ? { freshSession: true } : {}));
         sent();
       } catch (error: unknown) {
         // the first attempt landed before the socket dropped: the retry was refused, not lost

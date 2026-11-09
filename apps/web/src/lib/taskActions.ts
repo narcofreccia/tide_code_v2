@@ -3,7 +3,7 @@ import { newId } from "@tide/contracts";
 import { dispatch, type DispatchResult } from "../state/model.ts";
 
 export type TaskFields = Pick<ScheduledTask, "title" | "prompt" | "schedule"> &
-  Partial<Pick<ScheduledTask, "threadId" | "provider" | "model" | "mode" | "useWorktree" | "enabled">>;
+  Partial<Pick<ScheduledTask, "threadId" | "provider" | "model" | "mode" | "useWorktree" | "enabled" | "threadMode">>;
 
 type Send = (command: ClientCommand) => Promise<DispatchResult>;
 

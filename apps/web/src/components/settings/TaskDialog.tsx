@@ -1,5 +1,5 @@
 import { useState } from "react";
-import type { ProviderKind, ScheduledTask, Thread } from "@tide/contracts";
+import type { ProviderKind, ScheduledTask, TaskThreadMode, Thread } from "@tide/contracts";
 import { WEEKDAY_ORDER, weekdayName } from "../../lib/schedule.ts";
 import type { TaskFields } from "../../lib/taskActions.ts";
 import { HarnessFields } from "../thread/ProviderPicker.tsx";
@@ -33,7 +33,7 @@ interface Draft {
   weekdays: number[];
   /** once: `datetime-local` value, local time ("2026-11-06T14:30") */
   onceAt: string;
-  target: "new" | "thread";
+  mode: TaskThreadMode;
   provider: ProviderKind;
   model: string;
   threadId: string;
@@ -79,7 +79,7 @@ function initial(task: ScheduledTask | undefined): Draft {
     timeInput: "09:00",
     onceAt: toLocalInput(s?.kind === "once" ? s.at : nextHour(Date.now())),
     weekdays: s?.kind === "fixed" ? [...s.weekdays] : [1, 2, 3, 4, 5],
-    target: task?.threadId === undefined ? "new" : "thread",
+    mode: task?.threadMode ?? (task?.threadId === undefined ? "new_thread" : "continue"),
     provider: task?.provider ?? "claude",
     model: task?.model ?? "",
     threadId: task?.threadId ?? "",
@@ -101,7 +101,7 @@ export function validateDraft(d: Draft, now: number = Date.now()): { error: stri
   const onceAt = fromLocalInput(d.onceAt);
   if (d.kind === "once" && Number.isNaN(onceAt)) return { error: "Pick the date and time to run." };
   if (d.kind === "once" && onceAt <= now) return { error: "Pick a time in the future." };
-  if (d.target === "thread" && d.threadId === "") return { error: "Pick the thread to send into." };
+  if (d.mode !== "new_thread" && d.threadId === "") return { error: "Pick the thread to send into." };
   return {
     fields: {
       title: d.title.trim(),
@@ -112,7 +112,8 @@ export function validateDraft(d: Draft, now: number = Date.now()): { error: stri
         : d.kind === "webhook" ? { kind: "webhook", hookId: d.hookId, ...(d.secret.trim() === "" ? {} : { secret: d.secret.trim() }) }
         : { kind: "fixed", times: [...d.times].sort(), weekdays: d.weekdays },
       enabled: d.enabled,
-      ...(d.target === "thread"
+      threadMode: d.mode,
+      ...(d.mode !== "new_thread"
         ? { threadId: d.threadId }
         : { provider: d.provider, ...(d.model === "" ? {} : { model: d.model }), useWorktree: d.useWorktree }),
     },
@@ -235,10 +236,11 @@ export function TaskDialog({
         <fieldset className={styles.field}>
           <span className={styles.label}>Target</span>
           <div className={styles.row}>
-            <Radio name="target" checked={d.target === "new"} onChange={() => set({ target: "new" })}>A new thread each run</Radio>
-            <Radio name="target" checked={d.target === "thread"} onChange={() => set({ target: "thread" })}>An existing thread</Radio>
+            <Radio name="target" checked={d.mode === "new_thread"} onChange={() => set({ mode: "new_thread" })}>A new thread each run</Radio>
+            <Radio name="target" checked={d.mode === "continue"} onChange={() => set({ mode: "continue" })}>Continue an existing thread</Radio>
+            <Radio name="target" checked={d.mode === "fresh_session"} onChange={() => set({ mode: "fresh_session" })}>Fresh session in an existing thread</Radio>
           </div>
-          {d.target === "new" ? (
+          {d.mode === "new_thread" ? (
             <>
               <HarnessFields name="Automation" provider={d.provider} model={d.model} onChange={(patch) => set({ ...(patch.provider === undefined ? {} : { provider: patch.provider }), ...(patch.model === undefined ? {} : { model: patch.model }) })} />
               <Checkbox checked={d.useWorktree} onChange={(e) => set({ useWorktree: e.target.checked })}>Use a worktree</Checkbox>

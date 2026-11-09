@@ -4,6 +4,7 @@ import type { Turn } from "@tide/contracts";
 function turnOf(entry: TimelineItem): string {
   if (entry.kind === "message") return entry.message.turnId;
   if (entry.kind === "activity") return entry.activity.turnId;
+  if (entry.kind === "boundary") return entry.turnId;
   return entry.plan.turnId;
 }
 
@@ -20,7 +21,8 @@ export function orderByTurn(entries: readonly TimelineItem[], turns: readonly Tu
   for (const entry of entries) {
     const key = turnOf(entry);
     const bucket = buckets.get(key);
-    if (bucket) bucket.push(entry);
+    // the divider sits above the message that opened the new session
+    if (bucket) entry.kind === "boundary" ? bucket.unshift(entry) : bucket.push(entry);
     else buckets.set(key, [entry]);
   }
   let last = -1;

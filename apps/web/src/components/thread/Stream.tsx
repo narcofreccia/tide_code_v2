@@ -8,6 +8,7 @@ import { ActivityGroup } from "./ActivityGroup.tsx";
 import { ActivityRow } from "./ActivityRow.tsx";
 import { ApprovalCard } from "./ApprovalCard.tsx";
 import { ChildGroup } from "./ChildGroup.tsx";
+import { SessionBoundary } from "./SessionBoundary.tsx";
 import { CompactionNotice } from "./CompactionNotice.tsx";
 import { compactionOf, type Compaction } from "../../lib/compaction.ts";
 import { EmptyThread } from "./EmptyThread.tsx";
@@ -32,6 +33,7 @@ type Row =
   | { kind: "input"; key: string; activity: ActivityOf<"user-input"> }
   | { kind: "child"; key: string; child: ActivityOf<"child">; activities: Activity[] }
   | { kind: "harness"; key: string; activities: Note[] }
+  | { kind: "boundary"; key: string; turnId: string }
   | { kind: "compaction"; key: string; activity: Activity; compaction: Compaction }
   | { kind: "activity"; key: string; activity: Activity };
 
@@ -68,6 +70,8 @@ function buildRows(items: readonly TimelineItem[], turns: readonly Turn[], prev:
         turnNumber: turnNumber.get(turnId),
         conclusion: showMeta ? stable(`turn:${turnId}`, turnActivities.get(turnId) ?? []) : undefined,
       });
+    } else if (node.kind === "boundary") {
+      rows.push({ kind: "boundary", key: `boundary:${node.turnId}`, turnId: node.turnId });
     } else if (node.kind === "plan") {
       rows.push({ kind: "plan", key: node.plan.id, plan: node.plan });
     } else {
@@ -113,6 +117,8 @@ function renderRow(row: Row, provider: ProviderKind, hotkeys: boolean) {
       return <ChildGroup key={row.key} child={row.child} activities={row.activities} />;
     case "harness":
       return <HarnessEvents key={row.key} activities={row.activities} />;
+    case "boundary":
+      return <SessionBoundary key={row.key} turnId={row.turnId} />;
     case "compaction":
       return <CompactionNotice key={row.key} activity={row.activity} compaction={row.compaction} />;
     case "activity":

@@ -7,6 +7,7 @@ import { providerIdOf } from "./vocab.ts";
 import { useServerSettings } from "../state/serverSettings.ts";
 import { SHORTCUTS, scopeApplies, shortcutKeys } from "./shortcuts.ts";
 import { openThreadTerminal } from "./openInTerminal.ts";
+import { armFreshSession } from "../state/freshSession.ts";
 import { useUi } from "../state/ui.ts";
 import { showHowTideWorks } from "../components/shell/HowTideWorks.tsx";
 import {
@@ -65,6 +66,13 @@ function threadItems(model: ReadModel, thread: Thread): PaletteItem[] {
       group: "Thread",
       detail: "Pick a harness; the agent hands that part to it with tide_delegate",
       run: () => compose("@delegate:", "append", thread.id),
+    },
+    {
+      id: "thread:fresh-session",
+      label: "New session for next message",
+      group: "Thread",
+      detail: "The harness forgets the conversation; the thread keeps its history",
+      run: () => armFreshSession(thread.id),
     },
     { id: "thread:terminal", label: "Open in terminal", group: "Thread", run: () => void openThreadTerminal(thread.id) },
     thread.settledAt === undefined

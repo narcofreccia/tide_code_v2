@@ -18,6 +18,9 @@ import {
   threadMentionIds,
 } from "../../lib/mentions.ts";
 import { bigPasteFile, filesOf, splitFiles, transferHasFiles } from "../../lib/attachments.ts";
+import { parseClearCommand } from "../../lib/slash.ts";
+import { armFreshSession, disarmFreshSession, useArmed } from "../../state/freshSession.ts";
+import { showToast } from "../../state/toast.ts";
 import { applyCompose } from "../../lib/cite.ts";
 import { interceptSide, useComposeEvent, useEscInterrupt, type ComposerScope } from "./composerScope.ts";
 import { Button } from "../ui/Button.tsx";
@@ -88,7 +91,25 @@ export function Composer({ thread, scope = "main" }: { thread: Thread; scope?: C
   });
   useEscInterrupt(root, thread.id, scope, running && !interrupting);
 
+  const armed = useArmed(thread.id);
+
+  /** `/clear` arms a new native session for the next message; `/clear <prompt>` sends it at once. */
+  const interceptClear = async (args: Parameters<typeof sendNow>): Promise<boolean> => {
+    const clear = parseClearCommand(text);
+    if (!clear) return false;
+    if (running) {
+      showToast("Wait for the turn to settle, then /clear");
+      return true;
+    }
+    armFreshSession(thread.id);
+    if (clear.rest === "") setText("");
+    else await sendNow(args[0], args[1], { text: clear.rest, fresh: true });
+    return true;
+  };
+
   const send = async (...args: Parameters<typeof sendNow>): Promise<void> => {
+    // synchronous unless the text is a /clear, so a plain send dispatches in the same tick
+    if (parseClearCommand(text) && (await interceptClear(args))) return;
     if (!interceptSide(thread, scope, text, attachments.images.length + files.length > 0, () => setText(""))) await sendNow(...args);
   };
 
@@ -176,6 +197,11 @@ export function Composer({ thread, scope = "main" }: { thread: Thread; scope?: C
   };
 
   const onDefaultKey = (e: React.KeyboardEvent<HTMLTextAreaElement>): void => {
+    if (e.key === "Escape" && armed) {
+      disarmFreshSession(thread.id);
+      e.preventDefault();
+      return;
+    }
     if (e.key !== "Enter" || e.nativeEvent.isComposing) return;
     // ↵ / ⌘↵ send and stay (running: in the selected follow-up mode); ⇧↵ newline;
     // ⌥↵ the other follow-up mode; ⌘⇧↵ send and go back to Mission Control.
@@ -269,6 +295,11 @@ export function Composer({ thread, scope = "main" }: { thread: Thread; scope?: C
       />
       <ThreadContextChips text={text} onChange={setText} />
       <DelegateChips text={text} onChange={setText} />
+      {armed ? (
+        <p className={styles.switchHint} role="status">
+          Next message starts a new session · Esc to cancel
+        </p>
+      ) : null}
       {slash.unknown === undefined ? null : (
         <p className={styles.switchHint} role="status">
           Unknown command for {harness}; it will be sent as text

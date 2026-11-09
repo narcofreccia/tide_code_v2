@@ -39,25 +39,35 @@ function Slot({ caption, hint, children }: { caption: string; hint?: string; chi
 function InteractionToggle({
   value,
   onChange,
+  planMode,
+  harness,
 }: {
   value: InteractionMode;
   onChange: (mode: InteractionMode) => void;
+  /** the harness has a native plan mode; without it Plan is hidden (or disabled when the thread is already in it) */
+  planMode: boolean;
+  harness: string;
 }) {
+  const hidden = !planMode && value !== "plan";
   return (
     <div className={styles.segmented} role="radiogroup" aria-label="Interaction">
-      {INTERACTION_MODES.map((mode) => (
+      {INTERACTION_MODES.filter((mode) => mode !== "plan" || !hidden).map((mode) => {
+        const noPlan = mode === "plan" && !planMode;
+        return (
         <button
           key={mode}
           type="button"
           role="radio"
           aria-checked={value === mode}
-          title={INTERACTION_HINTS[mode]}
+          disabled={noPlan}
+          title={noPlan ? `${harness} has no plan mode` : INTERACTION_HINTS[mode]}
           className={`${styles.segment} ${value === mode ? styles.active : ""}`}
           onClick={() => value !== mode && onChange(mode)}
         >
           {INTERACTION_LABELS[mode]}
         </button>
-      ))}
+        );
+      })}
     </div>
   );
 }
@@ -148,7 +158,12 @@ export const ThreadPills = memo(function ThreadPills({ thread }: { thread: Threa
         />
       </Slot>
       <Slot caption="Mode" hint={INTERACTION_HINTS[thread.interaction]}>
-        <InteractionToggle value={thread.interaction} onChange={(interaction) => applyNextTurn({ interaction })} />
+        <InteractionToggle
+          value={thread.interaction}
+          onChange={(interaction) => applyNextTurn({ interaction })}
+          planMode={providerStatus(providers, id)?.caps.planMode !== false}
+          harness={instanceLabel(providers, id)}
+        />
       </Slot>
     </div>
   );

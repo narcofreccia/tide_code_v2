@@ -1,5 +1,6 @@
 import { afterEach, describe, expect, it } from "vitest";
 import type { ReadModel } from "@tide/contracts";
+import { isFreshSessionArmed, useFreshSession } from "../state/freshSession.ts";
 import { buildPaletteItems, rankPaletteItems, type PaletteItem } from "./paletteItems.ts";
 import { attachFakeStore, makePlan, makeThread, modelWith, resetUi, makeExpertsSession } from "../testHarness.ts";
 import { useUi } from "../state/ui.ts";
@@ -175,5 +176,14 @@ describe("rankPaletteItems recency", () => {
   it("nudges a recently opened thread over an equal match", () => {
     const out = rankPaletteItems("fix", [t("x"), t("y")], [], { y: 10 });
     expect(out[0]!.id).toBe("thread:y");
+  });
+
+  it("arms a fresh session for the next message from the palette", () => {
+    const item = buildPaletteItems({ model: fixture(), selectedThreadId: "t1" }).find((i) => i.id === "thread:fresh-session");
+    expect(item?.label).toBe("New session for next message");
+    expect(item?.group).toBe("Thread");
+    item?.run();
+    expect(isFreshSessionArmed("t1")).toBe(true);
+    useFreshSession.setState({ armed: {} });
   });
 });

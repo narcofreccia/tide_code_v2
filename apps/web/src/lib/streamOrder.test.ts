@@ -15,7 +15,7 @@ const turn = (id: string, requestedAt: number, settledAt?: number): Turn =>
   ({ id, threadId: "t1", status: "completed", requestedAt, ...(settledAt === undefined ? {} : { settledAt }) }) as Turn;
 
 const ids = (entries: TimelineItem[]): string[] =>
-  entries.map((e) => (e.kind === "message" ? e.message.id : e.kind === "activity" ? e.activity.id : e.plan.id));
+  entries.map((e) => (e.kind === "message" ? e.message.id : e.kind === "activity" ? e.activity.id : e.kind === "boundary" ? `boundary:${e.turnId}` : e.plan.id));
 
 describe("orderByTurn", () => {
   it("moves a message queued mid-turn after that turn's later activities", () => {

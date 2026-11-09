@@ -32,7 +32,13 @@ function TaskRow({
 }) {
   const model = useModel((s) => s.model);
   const selectThread = useUi((s) => s.selectThread);
-  const target = task.threadId === undefined ? `new thread on ${task.provider ?? "default harness"}` : (model.threads[task.threadId]?.title ?? "thread (gone)");
+  const title = task.threadId === undefined ? undefined : (model.threads[task.threadId]?.title ?? "thread (gone)");
+  const target =
+    task.threadId === undefined
+      ? `new thread on ${task.provider ?? "default harness"}`
+      : task.threadMode === "fresh_session"
+        ? `fresh session in ${title}`
+        : `continues ${title}`;
   // a one-time task that ran disabled itself; a new time arms it again (enabled) even though completedAt stays
   const done = task.completedAt !== undefined && !task.enabled;
   const last = task.lastRunAt === undefined ? "never run" : `last ${relativeTime(task.lastRunAt)} ago`;

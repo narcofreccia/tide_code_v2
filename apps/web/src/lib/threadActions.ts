@@ -202,6 +202,8 @@ export interface NewThreadOptions {
   useWorktree?: boolean;
   /** per-thread link overrides; omit to inherit every project link at its default access */
   links?: { linkId: string; access: LinkAccess }[];
+  /** R17: route to this machine explicitly (a project `project.ensure` just made there) */
+  envId?: string;
 }
 
 /** Creates a thread (optionally as a child) and selects it. */
@@ -223,7 +225,7 @@ export async function createThread(
     ...(options.interaction === undefined ? {} : { interaction: options.interaction }),
     ...(options.useWorktree === undefined ? {} : { useWorktree: options.useWorktree }),
     ...(options.links === undefined ? {} : { links: options.links }),
-  });
+  }, options.envId === undefined ? undefined : { envId: options.envId });
   selectCreatedThread(result);
 }
 
@@ -239,12 +241,14 @@ export async function sendTurn(
   images?: ImageInput[],
   requestId: string = newId(),
   attachments?: AttachmentRef[],
+  options: { freshSession?: true } = {},
 ): Promise<void> {
   await dispatch({
     type: "turn.request",
     threadId,
     text,
     requestId,
+    ...(options.freshSession === true ? { freshSession: true as const } : {}),
     ...(images === undefined || images.length === 0 ? {} : { images }),
     ...(attachments === undefined || attachments.length === 0 ? {} : { attachments }),
   });

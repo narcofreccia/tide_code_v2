@@ -18,4 +18,4 @@
 }
 .segment + .segment { border-left: 1px solid var(--border-strong); }
 .segment:hover:not(.active) { color: var(--text); }
-.active { background: var(--accent-soft); color: var(--accent); }
+.segment:disabled { opacity: 0.45; cursor: not-allowed; }.active { background: var(--accent-soft); color: var(--accent); }

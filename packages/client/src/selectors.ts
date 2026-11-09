@@ -48,7 +48,9 @@ export function selectThreadMessages(model: ReadModel, threadId: string): Messag
 export type TimelineItem =
   | { kind: "message"; message: Message }
   | { kind: "activity"; activity: Activity }
-  | { kind: "plan"; plan: ProposedPlan };
+  | { kind: "plan"; plan: ProposedPlan }
+  /** R17: a new native session began with this turn (`/clear`, fresh-session task) */
+  | { kind: "boundary"; turnId: string };
 
 /**
  * The thread's chronological stream (messages, activities, plans) with dangling
@@ -68,6 +70,8 @@ export function selectTimeline(model: ReadModel, threadId: string): TimelineItem
     } else if (entry.kind === "activity") {
       const activity = model.activities[entry.id];
       if (activity) out.push({ kind: "activity", activity });
+    } else if (entry.kind === "boundary") {
+      out.push({ kind: "boundary", turnId: entry.id });
     } else {
       const plan = model.plans[entry.id];
       if (plan) out.push({ kind: "plan", plan });
@@ -655,6 +659,14 @@ function planItem(plan: ProposedPlan): TimelineItem {
   return item;
 }
 
+const boundaryItems = new Map<string, TimelineItem>();
+
+function boundaryItem(turnId: string): TimelineItem {
+  let item = boundaryItems.get(turnId);
+  if (item === undefined) boundaryItems.set(turnId, (item = { kind: "boundary", turnId }));
+  return item;
+}
+
 const lastTimeline = new Map<string, TimelineItem[]>();
 
 /**
@@ -691,6 +703,8 @@ export function selectTimelineStable(model: ReadModel, threadId: string): Timeli
       } else if (entry.kind === "activity") {
         const activity = model.activities[entry.id];
         if (activity) push(activityItem(activity));
+      } else if (entry.kind === "boundary") {
+        push(boundaryItem(entry.id));
       } else {
         const plan = model.plans[entry.id];
         if (plan) push(planItem(plan));

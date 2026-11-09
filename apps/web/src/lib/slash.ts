@@ -59,6 +59,7 @@ export const SOURCE_LABELS: Record<SlashCommandInfo["source"], string> = {
 export const TIDE_COMMANDS: readonly SlashCommandInfo[] = [
   { name: "side", description: "Side chat (Tide)", argumentHint: "<question>", source: "builtin" },
   { name: "btw", description: "Side chat (Tide)", argumentHint: "<question>", source: "builtin" },
+  { name: "clear", description: "Next message starts a new harness session (Tide)", source: "builtin" },
 ];
 
 /** True for a name Tide handles itself (`/side`, `/btw`), never sent to the harness. */
@@ -74,4 +75,11 @@ export function parseSideCommand(text: string): { prompt: string } | undefined {
   const match = /^\/(side|btw)(?:\s+([\s\S]*))?$/.exec(text.trim());
   if (!match) return undefined;
   return { prompt: (match[2] ?? "").trim() };
+}
+
+/** `/clear` arms a fresh session; `/clear <prompt>` also sends the prompt in it. Anything else is undefined. */
+export function parseClearCommand(text: string): { rest: string } | undefined {
+  const match = /^\/clear(?:\s+([\s\S]*))?$/.exec(text.trim());
+  if (!match) return undefined;
+  return { rest: (match[1] ?? "").trim() };
 }

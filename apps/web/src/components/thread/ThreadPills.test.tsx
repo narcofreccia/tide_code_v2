@@ -100,3 +100,31 @@ describe("ThreadPills", () => {
     expect(fake.dispatch).toHaveBeenCalledWith({ type: "thread.update", threadId: "t1", interaction: "plan" });
   });
 });
+
+describe("ThreadPills › plan mode", () => {
+  const withPlan = (planMode: boolean): void => {
+    setProvidersForTest([{ ...PROVIDER_FIXTURE[0]!, caps: { ...PROVIDER_FIXTURE[0]!.caps, planMode } }, ...PROVIDER_FIXTURE.slice(1)]);
+    attachFakeStore(modelWith({}));
+  };
+
+  it("offers Plan when the harness has a plan mode", () => {
+    withPlan(true);
+    render(<ThreadPills thread={makeThread("t1")} />);
+    expect(screen.getByRole("radio", { name: "Plan" })).toBeDefined();
+  });
+
+  it("hides Plan when it does not", () => {
+    withPlan(false);
+    render(<ThreadPills thread={makeThread("t1")} />);
+    expect(screen.queryByRole("radio", { name: "Plan" })).toBeNull();
+    expect(screen.getByRole("radio", { name: "Build" })).toBeDefined();
+  });
+
+  it("keeps a thread already in plan mode visible, disabled, with a reason", () => {
+    withPlan(false);
+    render(<ThreadPills thread={makeThread("t1", { interaction: "plan" })} />);
+    const plan = screen.getByRole("radio", { name: "Plan" }) as HTMLButtonElement;
+    expect(plan.disabled).toBe(true);
+    expect(plan.title).toBe("Claude Code has no plan mode");
+  });
+});
