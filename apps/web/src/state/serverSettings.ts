@@ -42,7 +42,7 @@ export function defaultInboxSettings(): UserSettings["inbox"] {
 }
 
 export function defaultGitSettings(): UserSettings["git"] {
-  return { mergeStrategy: "squash", deleteBranchOnMerge: true, confirmMergeBack: true };
+  return { mergeStrategy: "squash", deleteBranchOnMerge: true, confirmMergeBack: true, pushThreadBranches: "never", syncBaseWithRemote: true, generateMessages: true };
 }
 
 export function defaultUserSettings(): UserSettings {

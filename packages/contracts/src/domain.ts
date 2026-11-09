@@ -286,11 +286,27 @@ export const RunStack = Type.Object({
 });
 export type RunStack = Static<typeof RunStack>;
 
+/**
+ * R17: which repository a project is a checkout of, so the same repo on several machines is one
+ * logical repo in the client. `remoteUrl` is the normalized key (`host/owner/name`, see
+ * `repoIdentity.ts`); `cloneUrl` is the origin URL as configured where it was detected.
+ */
+export const RepoIdentity = Type.Object({
+  remoteUrl: Type.String({ minLength: 1 }),
+  cloneUrl: Type.String({ minLength: 1 }),
+  defaultBranch: Type.String({ minLength: 1 }),
+  headSha: Type.Optional(Type.String()),
+  detectedAt: Type.Number(),
+});
+export type RepoIdentity = Static<typeof RepoIdentity>;
+
 export const Project = Type.Object({
   id: Type.String(),
   title: Type.String(),
   rootPath: Type.String(),
   icon: Type.Optional(ProjectIcon),
+  /** R17: absent when the root has no `origin` remote (or is not a repo) */
+  repo: Type.Optional(RepoIdentity),
   links: Type.Optional(Type.Array(ProjectLink)),
   /** R13 */
   runStack: Type.Optional(RunStack),
@@ -516,6 +532,8 @@ export const KnownEnvironment = Type.Object({
   token: Type.Optional(Type.String()),
   /** `user@host` for "Open in VS Code" over SSH when the client is elsewhere */
   sshHost: Type.Optional(Type.String()),
+  /** R17: id of this client's per-device token on that server (for "this device" in the paired list) */
+  clientId: Type.Optional(Type.String()),
   addedAt: Type.Number(),
   lastConnectedAt: Type.Optional(Type.Number()),
 });
@@ -638,6 +656,14 @@ export const Thread = Type.Object({
   providerSessions: Type.Optional(Type.Record(Type.String(), Type.Object({ nativeSessionId: Type.String(), lastTurnId: Type.Optional(Type.String()) }))),
   /** a handoff waiting for the next turn to carry it to the harness */
   pendingHandoffId: Type.Optional(Type.String()),
+  /**
+   * R17: the newest `session.boundary` (a `/clear` / fresh-session turn). Native sessions older
+   * than it are gone; a rollback cannot reach past it.
+   */
+  sessionBoundaryTurnId: Type.Optional(Type.String()),
+  /** R17: the thread's branch as pushed to `origin` (`branch.pushed`), for review and merge from another machine */
+  remoteBranch: Type.Optional(Type.String()),
+  pushedSha: Type.Optional(Type.String()),
   rollback: Type.Optional(RollbackState),
   limited: Type.Optional(Limited),
   /** hidden from the Inbox / Now strip until then; cleared by activity that needs the user */
@@ -742,6 +768,8 @@ export const Turn = Type.Object({
   rolledBack: Type.Optional(Type.Boolean()),
   /** queued because the harness refused it as a steer (the message was meant for the running turn) */
   steerFallback: Type.Optional(Type.Object({ reason: Type.String() })),
+  /** R17: this turn opened a brand-new native session (the previous one was released, Tide history kept) */
+  freshSession: Type.Optional(Type.Boolean()),
 });
 export type Turn = Static<typeof Turn>;
 
@@ -844,7 +872,8 @@ export type ProposedPlan = Static<typeof ProposedPlan>;
 
 /** One entry of a thread's chronological stream. */
 export const TimelineEntry = Type.Object({
-  kind: Type.Union([Type.Literal("message"), Type.Literal("activity"), Type.Literal("plan")]),
+  /** `boundary` (R17): a new native session started here; `id` is the turn that opened it */
+  kind: Type.Union([Type.Literal("message"), Type.Literal("activity"), Type.Literal("plan"), Type.Literal("boundary")]),
   id: Type.String(),
 });
 export type TimelineEntry = Static<typeof TimelineEntry>;
@@ -869,11 +898,20 @@ export type Schedule = Static<typeof Schedule>;
  * interrupting) or as a new thread on the project. Missed fixed times are skipped, never fired late;
  * an overdue interval catches up once. Fires are idempotent (`scheduled:<id>:<epoch>` command ids).
  */
+/**
+ * R17: where a scheduled task's prompt goes. `continue` queues into `threadId`; `fresh_session`
+ * also drops that thread's native session first (each run starts clean, Tide history kept);
+ * `new_thread` creates a thread per fire. Absent = `continue` when `threadId` is set, else `new_thread`.
+ */
+export const TaskThreadMode = Type.Union([Type.Literal("new_thread"), Type.Literal("continue"), Type.Literal("fresh_session")]);
+export type TaskThreadMode = Static<typeof TaskThreadMode>;
+
 export const ScheduledTask = Type.Object({
   id: Type.String(),
   projectId: Type.String(),
   /** send into this thread; absent = a new thread per fire */
   threadId: Type.Optional(Type.String()),
+  threadMode: Type.Optional(TaskThreadMode),
   title: Type.String(),
   prompt: Type.String(),
   schedule: Schedule,

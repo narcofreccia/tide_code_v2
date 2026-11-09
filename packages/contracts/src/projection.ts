@@ -167,10 +167,12 @@ export function applyEvent(model: ReadModel, event: DomainEvent): ReadModel {
         ...(event.icon !== undefined ? { icon: event.icon } : {}),
         ...(event.pinned !== undefined ? { pinned: event.pinned } : {}),
         ...(event.titleInstructions !== undefined ? { titleInstructions: event.titleInstructions } : {}),
+        ...(event.repo !== undefined ? { repo: event.repo } : {}),
         updatedAt: event.updatedAt,
       };
       if (event.clearIcon) delete next.icon;
       if (event.clearTitleInstructions) delete next.titleInstructions;
+      if (event.clearRepo) delete next.repo;
       return { ...model, projects: { ...model.projects, [p.id]: next } };
     }
     case "project.link.added":
@@ -267,6 +269,20 @@ export function applyEvent(model: ReadModel, event: DomainEvent): ReadModel {
     }
     case "turn.interrupt-requested":
       return withThread(model, event.threadId, { interrupting: true, updatedAt: event.at });
+    case "branch.pushed":
+      return withThread(model, event.threadId, { remoteBranch: event.remoteBranch, pushedSha: event.sha, updatedAt: event.at });
+    case "session.boundary": {
+      const t = model.threads[event.threadId];
+      if (!t) return model;
+      const key = event.providerId ?? t.providerId ?? t.provider;
+      const sessions = { ...(t.providerSessions ?? {}) };
+      delete sessions[key];
+      const patched: Thread = { ...t, providerSessions: sessions, sessionBoundaryTurnId: event.turnId, updatedAt: event.at };
+      delete patched.nativeSessionId;
+      const turn = model.turns[event.turnId];
+      const next: ReadModel = turn ? { ...model, turns: { ...model.turns, [turn.id]: { ...turn, freshSession: true } } } : model;
+      return appendTimeline({ ...next, threads: { ...next.threads, [t.id]: patched } }, t.id, { kind: "boundary", id: event.turnId });
+    }
     case "publish.requested":
     case "worktree.detach-requested":
       return model; // reactor-facing intents; outcomes arrive as their own events
@@ -529,6 +545,8 @@ export function applyEvent(model: ReadModel, event: DomainEvent): ReadModel {
       if (survivor) patched.latestTurnId = survivor.id;
       else delete patched.latestTurnId;
       delete patched.planProgress;
+      // rolling back the boundary turn itself removes the boundary (the divider goes with it)
+      if (patched.sessionBoundaryTurnId !== undefined && gone.has(patched.sessionBoundaryTurnId)) delete patched.sessionBoundaryTurnId;
       // the harness that did the rollback keeps its session (under its possibly new id); any other
       // harness whose last-seen turn is gone still remembers it, so a switch back must start fresh
       if (t.providerSessions) {

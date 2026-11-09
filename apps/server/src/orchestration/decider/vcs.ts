@@ -8,7 +8,8 @@ type VcsCommand =
   | CommandOf<"worktree.attach">
   | CommandOf<"worktree.detach">
   | CommandOf<"checkpoint.record">
-  | CommandOf<"pr.update">;
+  | CommandOf<"pr.update">
+  | CommandOf<"branch.pushed">;
 
 /**
  * Git-facing decisions. The decider only records *intent* (publish/merge) and the
@@ -135,6 +136,14 @@ export function decideVcs(model: ReadModel, command: VcsCommand, ctx: DecideCont
       const thread = model.threads[command.threadId];
       if (!thread) return fail("not-found", `unknown thread ${command.threadId}`);
       return ok({ type: "pr.updated", threadId: thread.id, pr: command.pr });
+    }
+
+    /** R17: the vcs reactor pushed the thread's branch; idempotent when nothing moved */
+    case "branch.pushed": {
+      const thread = model.threads[command.threadId];
+      if (!thread) return fail("not-found", `unknown thread ${command.threadId}`);
+      if (thread.remoteBranch === command.remoteBranch && thread.pushedSha === command.sha) return ok();
+      return ok({ type: "branch.pushed", threadId: thread.id, remoteBranch: command.remoteBranch, sha: command.sha, at: ctx.now });
     }
   }
 }

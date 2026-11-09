@@ -11,3 +11,6 @@ apps/desktop/src-tauri/binaries
 .env.build
 !.env.build.example
 .claude/worktrees/
+
+# packaging artefacts
+*.deb

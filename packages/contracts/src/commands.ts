@@ -1,5 +1,5 @@
 import { Type, type Static } from "typebox";
-import { Activity, ApprovalDecision, CheckpointStats, ExpertSpec, ExpertsPhase, ImageInput, InteractionMode, Limited, LinkAccess, MergeStrategy, ProviderKind, PullRequest, RateLimit, RuntimeMode, Schedule, SettleReason, Team, Triage, TurnUsage, HandoffJudge, Verdict, AttachmentRef, ProjectIcon, RunStack } from "./domain.ts";
+import { Activity, ApprovalDecision, CheckpointStats, ExpertSpec, ExpertsPhase, ImageInput, InteractionMode, Limited, LinkAccess, MergeStrategy, ProviderKind, PullRequest, RateLimit, RuntimeMode, Schedule, SettleReason, Team, Triage, TurnUsage, HandoffJudge, Verdict, AttachmentRef, ProjectIcon, RunStack, RepoIdentity, TaskThreadMode } from "./domain.ts";
 
 // Commands = validated intents. ClientCommand may arrive over RPC; InternalCommand is
 // issued only by server reactors (driver ingestion) and is rejected at the RPC boundary.
@@ -16,6 +16,9 @@ export const ProjectCreate = Type.Object({
   type: Type.Literal("project.create"), commandId: CommandId,
   title: Type.String({ minLength: 1 }),
   rootPath: Type.String({ minLength: 1 }),
+  /** R17: filled by the server at dispatch when absent (origin remote of rootPath) */
+  repo: Type.Optional(RepoIdentity),
+  icon: Type.Optional(ProjectIcon),
 });
 export const ProjectUpdate = Type.Object({
   type: Type.Literal("project.update"), commandId: CommandId,
@@ -27,6 +30,8 @@ export const ProjectUpdate = Type.Object({
   pinned: Type.Optional(Type.Boolean()),
   /** R16: null clears it */
   titleInstructions: Type.Optional(Type.Union([Type.String({ maxLength: 500 }), Type.Null()])),
+  /** R17: re-detected identity; null clears it */
+  repo: Type.Optional(Type.Union([RepoIdentity, Type.Null()])),
 });
 export const ProjectLinkAdd = Type.Object({
   type: Type.Literal("project.link.add"), commandId: CommandId,
@@ -132,6 +137,11 @@ export const TurnRequest = Type.Object({
   requestId: Type.Optional(Type.String({ minLength: 1 })),
   /** server-authored wake-ups (delegate done, child question, PR change, restart) are marked so the UI can render them as notices */
   notification: Type.Optional(Type.Object({ source: Type.Union([Type.Literal("delegate"), Type.Literal("child-question"), Type.Literal("pr"), Type.Literal("restart"), Type.Literal("system"), Type.Literal("schedule"), Type.Literal("webhook"), Type.Literal("harness")]), summary: Type.String() })),
+  /**
+   * R17 (`/clear`): start this turn on a brand-new native session — the harness's own context is
+   * dropped, Tide's history stays. Refused with `conflict` while the thread is running.
+   */
+  freshSession: Type.Optional(Type.Literal(true)),
 });
 export const TurnInterrupt = Type.Object({ type: Type.Literal("turn.interrupt"), commandId: CommandId, threadId: Type.String() });
 /** Drops a turn that is still queued (never sent to the harness). */
@@ -254,6 +264,8 @@ export const PrWatch = Type.Object({ type: Type.Literal("pr.watch"), commandId: 
 // ---- R4: scheduled tasks (client, and agents through agent.dispatch on their own project) ----
 const taskFields = {
   threadId: Type.Optional(Type.String()),
+  /** R17: see TaskThreadMode; must agree with threadId */
+  threadMode: Type.Optional(TaskThreadMode),
   title: Type.String({ minLength: 1, maxLength: 120 }),
   prompt: Type.String({ minLength: 1 }),
   schedule: Schedule,
@@ -380,6 +392,8 @@ export const CheckpointRecord = Type.Object({
 export const PrUpdate = Type.Object({ type: Type.Literal("pr.update"), threadId: Type.String(), pr: PullRequest });
 /** vcs reactor reports that a thread's worktree directory is gone */
 export const WorktreeDetachedReport = Type.Object({ type: Type.Literal("worktree.detached"), threadId: Type.String() });
+/** R17: vcs reactor reports that the thread's branch reached `origin` */
+export const BranchPushed = Type.Object({ type: Type.Literal("branch.pushed"), threadId: Type.String(), remoteBranch: Type.String(), sha: Type.String() });
 /** vcs reactor reports how a thread.merge ended */
 export const MergeReport = Type.Object({
   type: Type.Literal("merge.report"),
@@ -460,7 +474,7 @@ export type AgentCommand = Static<typeof AgentCommand>;
 
 export const InternalCommand = Type.Union([
   TurnStart, AssistantAppend, AssistantReasoningAppend, ActivityUpsert, PlanPropose, PlanProgressReport, UsageReport, TurnSettle,
-  WorktreeAttach, CheckpointRecord, PrUpdate, WorktreeDetachedReport, MergeReport, ThreadTriage,
+  WorktreeAttach, CheckpointRecord, PrUpdate, WorktreeDetachedReport, MergeReport, ThreadTriage, BranchPushed,
   SteerFallback, RollbackReport, ThreadLimited, HandoffDelivered, TaskFire,
   ExpertsExpertStatus, JudgeRecord, HandoffRefine,
 ]);

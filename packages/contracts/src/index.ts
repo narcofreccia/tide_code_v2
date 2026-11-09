@@ -5,4 +5,5 @@ export * from "./events.ts";
 export * from "./projection.ts";
 export * from "./background.ts";
 export * from "./rpc.ts";
+export * from "./repoIdentity.ts";
 export * from "./driver.ts";

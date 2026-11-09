@@ -93,6 +93,7 @@ export function decide(model: ReadModel, command: Command, ctx: DecideContext): 
     case "worktree.attach":
     case "checkpoint.record":
     case "pr.update":
+    case "branch.pushed":
       return decideVcs(model, command, ctx);
 
     case "experts.create":

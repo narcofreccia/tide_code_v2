@@ -1,5 +1,5 @@
 import { Type, type Static } from "typebox";
-import { Activity, ApprovalDecision, CheckpointStats, ExpertsFinding, ExpertsMessage, ExpertsPhase, ExpertsSession, Handoff, ImageInput, Limited, MergeStrategy, Message, Project, ProjectLink, ProposedPlan, ProviderKind, PullRequest, RateLimit, ScheduledTask, SettleReason, Thread, Triage, Turn, TurnUsage, HandoffJudge, Verdict, ProjectIcon, RunStack } from "./domain.ts";
+import { Activity, ApprovalDecision, CheckpointStats, ExpertsFinding, ExpertsMessage, ExpertsPhase, ExpertsSession, Handoff, ImageInput, Limited, MergeStrategy, Message, Project, ProjectLink, ProposedPlan, ProviderKind, PullRequest, RateLimit, ScheduledTask, SettleReason, Thread, Triage, Turn, TurnUsage, HandoffJudge, Verdict, ProjectIcon, RunStack, RepoIdentity } from "./domain.ts";
 
 // Events = persisted facts. Payloads are self-contained so the projector
 // never needs to look anything up outside the event.
@@ -18,6 +18,9 @@ export const ProjectUpdated = evt("project.updated", {
   pinned: Type.Optional(Type.Boolean()),
   titleInstructions: Type.Optional(Type.String()),
   clearTitleInstructions: Type.Optional(Type.Boolean()),
+  /** R17 */
+  repo: Type.Optional(RepoIdentity),
+  clearRepo: Type.Optional(Type.Boolean()),
   updatedAt: Type.Number(),
 });
 export const ProjectArchived = evt("project.archived", { projectId: Type.String(), archivedAt: Type.Number() });
@@ -135,6 +138,13 @@ export const MergeConflicted = evt("merge.conflicted", { threadId: Type.String()
 export const MergeFailed = evt("merge.failed", { threadId: Type.String(), strategy: MergeStrategy, error: Type.String(), at: Type.Number() });
 export const ThreadTriaged = evt("thread.triaged", { threadId: Type.String(), triage: Triage });
 export const PrUpdated = evt("pr.updated", { threadId: Type.String(), pr: PullRequest });
+/** R17: the thread's branch was pushed to `origin` (another machine can fetch, review and merge it) */
+export const BranchPushedEvt = evt("branch.pushed", { threadId: Type.String(), remoteBranch: Type.String(), sha: Type.String(), at: Type.Number() });
+/**
+ * R17: a fresh-session turn. The native session of `providerId` (instance key, default = kind) is
+ * released: the next open resumes nothing and `turn.started` brings the new id. Shown as a divider.
+ */
+export const SessionBoundaryRecorded = evt("session.boundary", { threadId: Type.String(), turnId: Type.String(), providerId: Type.Optional(Type.String()), at: Type.Number() });
 export const ExpertsCreated = evt("experts.created", { session: ExpertsSession });
 export const ExpertsThreadsBoundEvt = evt("experts.threads-bound", {
   sessionId: Type.String(),
@@ -259,6 +269,8 @@ export const DomainEvent = Type.Union([
   MergeFailed,
   ThreadTriaged,
   PrUpdated,
+  BranchPushedEvt,
+  SessionBoundaryRecorded,
   ExpertsCreated,
   ExpertsThreadsBoundEvt,
   ExpertsPhaseChanged,

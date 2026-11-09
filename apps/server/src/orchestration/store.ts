@@ -74,6 +74,8 @@ export function aggregateIdOf(event: DomainEvent): string | null {
     case "thread.resumed":
     case "pr.watch-changed":
     case "handoff.refined":
+    case "branch.pushed":
+    case "session.boundary":
       return event.threadId;
     case "judge.recorded":
       return event.target.id;

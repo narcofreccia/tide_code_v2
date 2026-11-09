@@ -28,7 +28,7 @@ interface StoredSettings {
   /** R8: user-added harness instances; the bundled defaults are implicit */
   providerInstances?: ProviderInstanceConfig[];
   /** R9: this machine's name / ssh host as other clients see it */
-  environment?: { name?: string; sshHost?: string };
+  environment?: { name?: string; sshHost?: string; lanBind?: boolean; projectsDir?: string };
   /** R9: self-hosted relay this server dials out to; the key stays here, never on the wire */
   relay?: { url: string; key?: string };
   /** R10 */
@@ -39,7 +39,7 @@ interface StoredSettings {
   titleInstructions?: string;
 }
 
-const DEFAULT_GIT: GitSettings = { mergeStrategy: "squash", deleteBranchOnMerge: true, confirmMergeBack: true };
+const DEFAULT_GIT: GitSettings = { mergeStrategy: "squash", deleteBranchOnMerge: true, confirmMergeBack: true, pushThreadBranches: "never", syncBaseWithRemote: true, generateMessages: true };
 
 function loadGit(raw: unknown): Partial<GitSettings> {
   if (typeof raw !== "object" || raw === null) return {};
@@ -48,6 +48,9 @@ function loadGit(raw: unknown): Partial<GitSettings> {
     ...(r.mergeStrategy === "merge" || r.mergeStrategy === "squash" || r.mergeStrategy === "rebase" ? { mergeStrategy: r.mergeStrategy } : {}),
     ...(typeof r.deleteBranchOnMerge === "boolean" ? { deleteBranchOnMerge: r.deleteBranchOnMerge } : {}),
     ...(typeof r.confirmMergeBack === "boolean" ? { confirmMergeBack: r.confirmMergeBack } : {}),
+    ...(r.pushThreadBranches === "never" || r.pushThreadBranches === "on-checkpoint" || r.pushThreadBranches === "on-merge-request" ? { pushThreadBranches: r.pushThreadBranches } : {}),
+    ...(typeof r.syncBaseWithRemote === "boolean" ? { syncBaseWithRemote: r.syncBaseWithRemote } : {}),
+    ...(typeof r.generateMessages === "boolean" ? { generateMessages: r.generateMessages } : {}),
   };
 }
 
@@ -214,7 +217,12 @@ export class SettingsStore {
       ...rest,
       keybindings: { ...(keybindings ?? {}) },
       glassBox: { ...DEFAULT_GLASS_BOX, ...glassBox },
-      environment: { name: environment?.name ?? hostname(), ...(environment?.sshHost !== undefined ? { sshHost: environment.sshHost } : {}) },
+      environment: {
+        name: environment?.name ?? hostname(),
+        ...(environment?.sshHost !== undefined ? { sshHost: environment.sshHost } : {}),
+        ...(environment?.lanBind !== undefined ? { lanBind: environment.lanBind } : {}),
+        ...(environment?.projectsDir !== undefined ? { projectsDir: environment.projectsDir } : {}),
+      },
       ...(relay !== undefined ? { relay: { url: relay.url, hasKey: typeof relay.key === "string" && relay.key.length > 0 } } : {}),
       inbox: { ...DEFAULT_INBOX, ...inbox },
       git: { ...DEFAULT_GIT, ...git },
@@ -280,6 +288,9 @@ export class SettingsStore {
       if (patch.environment.name !== undefined) env.name = patch.environment.name.trim();
       if (patch.environment.sshHost === null) delete env.sshHost;
       else if (patch.environment.sshHost !== undefined) env.sshHost = patch.environment.sshHost.trim();
+      if (patch.environment.lanBind !== undefined) env.lanBind = patch.environment.lanBind;
+      if (patch.environment.projectsDir === null) delete env.projectsDir;
+      else if (patch.environment.projectsDir !== undefined) env.projectsDir = patch.environment.projectsDir.trim();
       next.environment = env;
     }
     if (patch.relay === null) delete next.relay;
@@ -337,6 +348,8 @@ export class SettingsStore {
       ...(typeof r.environment === "object" && r.environment !== null ? { environment: {
         ...(typeof r.environment.name === "string" ? { name: r.environment.name } : {}),
         ...(typeof r.environment.sshHost === "string" ? { sshHost: r.environment.sshHost } : {}),
+        ...(typeof r.environment.lanBind === "boolean" ? { lanBind: r.environment.lanBind } : {}),
+        ...(typeof r.environment.projectsDir === "string" && r.environment.projectsDir !== "" ? { projectsDir: r.environment.projectsDir } : {}),
       } } : {}),
       ...(typeof r.relay === "object" && r.relay !== null && typeof r.relay.url === "string" ? { relay: { url: r.relay.url, ...(typeof r.relay.key === "string" ? { key: r.relay.key } : {}) } } : {}),
       ...(typeof r.keybindings === "object" && r.keybindings !== null ? { keybindings: Object.fromEntries(Object.entries(r.keybindings).filter(([, v]) => typeof v === "string" && v !== "")) as Record<string, string> } : {}),

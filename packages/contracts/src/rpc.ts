@@ -1,7 +1,7 @@
 import { Type, type Static, type TSchema } from "typebox";
 import { AgentCommand, ClientCommand } from "./commands.ts";
 import { EventRecord } from "./events.ts";
-import { AttachmentRef, JudgeSite, JudgeSource, MergeStrategy, ProjectIcon, ProviderInstanceConfig, ProviderKind, PullRequest, ReadModel, RuntimeMode, ScheduledTask, SlashCommandInfo, Team, RunPlan, RunProfile, RunRepo, RunServiceStatus, RunSession } from "./domain.ts";
+import { AttachmentRef, JudgeSite, JudgeSource, MergeStrategy, ProjectIcon, ProviderInstanceConfig, ProviderKind, PullRequest, ReadModel, RepoIdentity, RuntimeMode, ScheduledTask, SlashCommandInfo, Team, RunPlan, RunProfile, RunRepo, RunServiceStatus, RunSession } from "./domain.ts";
 
 // ---- wire envelope ----
 // client -> server
@@ -141,8 +141,14 @@ export type UsageSummary = Static<typeof UsageSummary>;
  */
 export const EnvProbe = Type.Object({ environmentId: Type.String(), name: Type.String(), version: Type.String(), protocol: Type.Number() });
 export type EnvProbe = Static<typeof EnvProbe>;
-export const PairResponse = Type.Object({ environmentId: Type.String(), name: Type.String(), token: Type.String() });
+export const PairResponse = Type.Object({ environmentId: Type.String(), name: Type.String(), token: Type.String(), /** R17: id of the per-device token that was minted */ clientId: Type.Optional(Type.String()) });
 export type PairResponse = Static<typeof PairResponse>;
+/** R17: a device that paired with this server (its token is never returned; `tide pair --list`, Settings › Environments) */
+export const PairedClient = Type.Object({ id: Type.String(), name: Type.String(), createdAt: Type.Number(), lastSeenAt: Type.Optional(Type.Number()), lastAddress: Type.Optional(Type.String()) });
+export type PairedClient = Static<typeof PairedClient>;
+/** R17: another tide-server seen on the LAN through mDNS (`_tide._tcp`); pairing still needs its code */
+export const DiscoveredPeer = Type.Object({ environmentId: Type.String(), name: Type.String(), version: Type.String(), protocol: Type.Number(), host: Type.String(), port: Type.Number(), urls: Type.Array(Type.String()) });
+export type DiscoveredPeer = Static<typeof DiscoveredPeer>;
 
 /** R8: an entry of the public ACP registry, plus whether this machine can launch it. */
 export const AcpRegistryAgent = Type.Object({
@@ -170,6 +176,8 @@ export const DiffFile = Type.Object({
   /** unified patch for this file; absent for binary */
   patch: Type.Optional(Type.String()),
   binary: Type.Optional(Type.Boolean()),
+  /** R17: `patch` was cut at the server's size cap (a marker line says so too) */
+  truncated: Type.Optional(Type.Boolean()),
 });
 export type DiffFile = Static<typeof DiffFile>;
 /** W1: uncommitted changes in a write-access linked repo, alongside the main repo's diff. */
@@ -278,7 +286,7 @@ export const ServerInfo = Type.Object({
   /** tools detected on the server host */
   tools: Type.Optional(Type.Object({ git: Type.Boolean(), gh: Type.Boolean(), rg: Type.Boolean(), /** R10: `gh auth status` says logged in */ ghAuth: Type.Optional(Type.Boolean()) })),
   /** how clients reach this server; pairingUrl embeds the token — show only to the local user */
-  remote: Type.Optional(Type.Object({ host: Type.String(), port: Type.Number(), lanUrls: Type.Array(Type.String()), pairingUrl: Type.Optional(Type.String()) })),
+  remote: Type.Optional(Type.Object({ host: Type.String(), port: Type.Number(), lanUrls: Type.Array(Type.String()), pairingUrl: Type.Optional(Type.String()), /** R17: mDNS advertisement state */ discovery: Type.Optional(Type.Object({ advertising: Type.Boolean() })) })),
 });
 export type ServerInfo = Static<typeof ServerInfo>;
 
@@ -320,6 +328,12 @@ export const GitSettings = Type.Object({
   deleteBranchOnMerge: Type.Boolean(),
   /** ask before merging back from the rail (`m`, hover action, bulk); the thread header button always confirms */
   confirmMergeBack: Type.Boolean(),
+  /** R17: push `tide/*` thread branches to origin — never, after every checkpoint, or once when a merge back is requested */
+  pushThreadBranches: Type.Union([Type.Literal("never"), Type.Literal("on-checkpoint"), Type.Literal("on-merge-request")]),
+  /** R17: before a merge back fetch + fast-forward the base from origin; after it push the base (one repo on several machines) */
+  syncBaseWithRemote: Type.Boolean(),
+  /** R17: merge-back squash subjects and publish commit / PR text come from `textModel` (fallback `tide: <title>`) */
+  generateMessages: Type.Boolean(),
 });
 export type GitSettings = Static<typeof GitSettings>;
 
@@ -346,8 +360,8 @@ export const UserSettings = Type.Object({
   inbox: InboxSettings,
   /** R12: merge-back defaults */
   git: GitSettings,
-  /** R9: this machine as seen by other clients */
-  environment: Type.Object({ name: Type.String(), sshHost: Type.Optional(Type.String()) }),
+  /** R9: this machine as seen by other clients. R17: `lanBind` = the desktop sidecar binds 0.0.0.0 (restart); `projectsDir` = where `project.ensure` clones */
+  environment: Type.Object({ name: Type.String(), sshHost: Type.Optional(Type.String()), lanBind: Type.Optional(Type.Boolean()), projectsDir: Type.Optional(Type.String()) }),
   /** R11: user keybindings by shortcut id (display string like "⌘⇧E" normalised to `mod+shift+e`); absent = default. Synced across this server's clients. */
   keybindings: Type.Record(Type.String(), Type.String()),
   /** R10: glass-box toggles */
@@ -394,7 +408,7 @@ export const UserSettingsPatch = Type.Object({
   git: Type.Optional(Type.Partial(GitSettings)),
   /** replaces the whole list; ids must be unique and must not shadow a bundled kind */
   providerInstances: Type.Optional(Type.Array(ProviderInstanceConfig)),
-  environment: Type.Optional(Type.Object({ name: Type.Optional(Type.String({ minLength: 1, maxLength: 64 })), sshHost: Type.Optional(Type.Union([Type.String(), Type.Null()])) })),
+  environment: Type.Optional(Type.Object({ name: Type.Optional(Type.String({ minLength: 1, maxLength: 64 })), sshHost: Type.Optional(Type.Union([Type.String(), Type.Null()])), lanBind: Type.Optional(Type.Boolean()), /** null clears it */ projectsDir: Type.Optional(Type.Union([Type.String({ minLength: 1 }), Type.Null()])) })),
   glassBox: Type.Optional(Type.Object({ limitsInStatusBar: Type.Optional(Type.Boolean()), readHarnessLogs: Type.Optional(Type.Boolean()) })),
   /** replaces the whole map; an empty string value resets that id to its default */
   keybindings: Type.Optional(Type.Record(Type.String(), Type.String())),
@@ -495,6 +509,18 @@ export const rpcMethods = {
     Type.Object({ parentPath: Type.String({ minLength: 1 }), name: Type.String({ minLength: 1, maxLength: 128 }), title: Type.Optional(Type.String({ minLength: 1 })) }),
     Type.Object({ projectId: Type.String(), rootPath: Type.String() }),
   ),
+  /**
+   * R17: make this repo exist on this machine. An existing live project with the same `remoteUrl`
+   * is reused (an archived one restored); a folder at `<projectsDir>/<name>` whose origin matches is
+   * adopted; otherwise `git clone --branch <defaultBranch> <cloneUrl>` into `projectsDir`
+   * (settings.environment.projectsDir, default `~/tide-projects`). Links are not carried over.
+   */
+  "project.ensure": unary(
+    Type.Object({ repo: Type.Object({ remoteUrl: Type.String({ minLength: 1 }), cloneUrl: Type.String({ minLength: 1 }), defaultBranch: Type.String({ minLength: 1 }) }), title: Type.String({ minLength: 1 }), icon: Type.Optional(ProjectIcon), parentDir: Type.Optional(Type.String({ minLength: 1 })) }),
+    Type.Object({ projectId: Type.String(), rootPath: Type.String(), cloned: Type.Boolean() }),
+  ),
+  /** R17: re-read the project's origin remote and record it (`project.update {repo}`) */
+  "project.detectRepo": unary(Type.Object({ projectId: Type.String() }), Type.Object({ repo: Type.Optional(RepoIdentity) })),
   /** installed/logged-in state + models per harness instance (cached server-side) */
   "providers.list": unary(Type.Object({ refresh: Type.Optional(Type.Boolean()) }), Type.Array(ProviderStatusDto)),
   /** R8: slash commands + skills the thread's harness accepts in its worktree (for the composer's `/` picker) */
@@ -504,6 +530,11 @@ export const rpcMethods = {
    * server exchanges for the token — what `tide pair` prints and what the Environments UI shows.
    */
   "env.pairingCode": unary(Type.Object({}), Type.Object({ code: Type.String(), expiresAt: Type.Number(), urls: Type.Array(Type.String()) })),
+  /** R17: browse the LAN for other tide-servers (mDNS `_tide._tcp`); `enabled: false` when this server cannot multicast */
+  "env.discover": unary(Type.Object({ timeoutMs: Type.Optional(Type.Number({ minimum: 200, maximum: 5000 })) }), Type.Object({ peers: Type.Array(DiscoveredPeer), enabled: Type.Boolean() })),
+  /** R17: devices holding a per-device token for this server; revoking closes their sockets with 4401 */
+  "env.clients.list": unary(Type.Object({}), Type.Object({ clients: Type.Array(PairedClient) })),
+  "env.clients.revoke": unary(Type.Object({ id: Type.String() }), Type.Object({ ok: Type.Boolean() })),
   /** R9: run the harness CLIs' own update commands on this machine (streamed log lines) */
   "env.updateHarnesses": stream(Type.Object({ kinds: Type.Optional(Type.Array(ProviderKind)) }), Type.Object({ kind: Type.Optional(ProviderKind), line: Type.String(), done: Type.Optional(Type.Boolean()), ok: Type.Optional(Type.Boolean()) })),
   // ---- R10: PR tab ----
@@ -550,6 +581,10 @@ export const rpcMethods = {
   "unsubscribe": unary(Type.Object({ id: Type.String() }), Type.Object({ ok: Type.Boolean() })),
   /** git state of the thread's cwd (worktree or project root) */
   "vcs.status": unary(Type.Object({ threadId: Type.String() }), VcsStatus),
+  /** R17: the project's base branch against `origin` (fetch throttled server-side; `fetchedAt` says how fresh) */
+  "vcs.baseStatus": unary(Type.Object({ projectId: Type.String(), refresh: Type.Optional(Type.Boolean()) }), Type.Object({ branch: Type.String(), ahead: Type.Optional(Type.Number()), behind: Type.Optional(Type.Number()), dirty: Type.Boolean(), hasRemote: Type.Boolean(), fetchedAt: Type.Optional(Type.Number()) })),
+  /** R17: fast-forward the project's base checkout to `origin/<base>`; `conflict` when dirty or diverged */
+  "vcs.pullBase": unary(Type.Object({ projectId: Type.String() }), Type.Object({ ok: Type.Boolean(), sha: Type.Optional(Type.String()), error: Type.Optional(Type.String()) })),
   /** diff produced by one turn (before → after checkpoint); `after` falls back to the working tree while running */
   "vcs.turnDiff": unary(Type.Object({ threadId: Type.String(), turnId: Type.String() }), DiffResult),
   /** everything this thread changed: first checkpoint (or base branch) → working tree */
@@ -683,7 +718,7 @@ export const rpcMethods = {
   ),
   /** `auto` steers a running turn when the harness can, else queues; `queue` always waits; `steer` fails when nothing runs */
   "agent.thread.send": unary(
-    Type.Object({ threadId: Type.String(), text: Type.String({ minLength: 1 }), mode: Type.Optional(Type.Union([Type.Literal("auto"), Type.Literal("queue"), Type.Literal("steer")])), commandId: Type.Optional(Type.String({ minLength: 1 })) }),
+    Type.Object({ threadId: Type.String(), text: Type.String({ minLength: 1 }), mode: Type.Optional(Type.Union([Type.Literal("auto"), Type.Literal("queue"), Type.Literal("steer")])), commandId: Type.Optional(Type.String({ minLength: 1 })), /** R17: start the target on a brand-new native session (not with mode steer) */ freshSession: Type.Optional(Type.Boolean()) }),
     Type.Object({ turnId: Type.Optional(Type.String()), messageId: Type.Optional(Type.String()), delivered: Type.Union([Type.Literal("started"), Type.Literal("queued"), Type.Literal("steered")]) }),
   ),
   /** resolves when the thread's live turn settles (or at once when idle); a timeout never cancels anything */

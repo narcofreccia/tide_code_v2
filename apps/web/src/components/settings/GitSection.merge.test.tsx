@@ -26,7 +26,7 @@ describe("Settings › Git merge-back defaults", () => {
   it("shows the server's values", () => {
     serve();
     useServerSettings.setState({
-      settings: { ...defaultUserSettings(), git: { mergeStrategy: "rebase", deleteBranchOnMerge: false, confirmMergeBack: true } },
+      settings: { ...defaultUserSettings(), git: { mergeStrategy: "rebase", deleteBranchOnMerge: false, confirmMergeBack: true, pushThreadBranches: "never", syncBaseWithRemote: true, generateMessages: true } },
     });
     render(<GitSection />);
     expect(screen.getByRole("combobox", { name: "Merge back strategy" }).textContent).toContain("Rebase");
@@ -45,7 +45,7 @@ describe("Settings › Git merge-back defaults", () => {
     expect(rpc).toHaveBeenCalledWith("settings.set", { patch: { git: { deleteBranchOnMerge: false } } });
     await act(async () => fireEvent.click(screen.getByRole("switch", { name: "Ask before merging back from the inbox" })));
     expect(rpc).toHaveBeenCalledWith("settings.set", { patch: { git: { confirmMergeBack: false } } });
-    expect(useServerSettings.getState().settings.git).toEqual({ mergeStrategy: "merge", deleteBranchOnMerge: false, confirmMergeBack: false });
+    expect(useServerSettings.getState().settings.git).toEqual({ mergeStrategy: "merge", deleteBranchOnMerge: false, confirmMergeBack: false, pushThreadBranches: "never", syncBaseWithRemote: true, generateMessages: true });
     expect(screen.getByText("Saved")).toBeDefined();
   });
 });

@@ -219,6 +219,19 @@ describe("decide: worktree.detach", () => {
   });
 });
 
+describe("decide: branch.pushed (R17)", () => {
+  it("records the remote branch once and is idempotent for the same sha", () => {
+    const f = withThread(true);
+    const first = run(f.model, { type: "branch.pushed", threadId: f.threadId, remoteBranch: "tide/x", sha: "abc" });
+    expect(first.events[0]).toMatchObject({ type: "branch.pushed", threadId: f.threadId, remoteBranch: "tide/x", sha: "abc" });
+    expect(first.model.threads[f.threadId]).toMatchObject({ remoteBranch: "tide/x", pushedSha: "abc" });
+    const again = run(first.model, { type: "branch.pushed", threadId: f.threadId, remoteBranch: "tide/x", sha: "abc" });
+    expect(again.events).toEqual([]);
+    const missing = decide(f.model, { type: "branch.pushed", threadId: "nope", remoteBranch: "tide/x", sha: "abc" }, ctx);
+    expect(missing.ok).toBe(false);
+  });
+});
+
 describe("decide: worktree.detached", () => {
   it("clears the worktree path and is a no-op once detached", () => {
     const f = withAttachedWorktree();

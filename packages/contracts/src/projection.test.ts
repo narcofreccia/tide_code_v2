@@ -380,3 +380,73 @@ describe("projection — R4 steer, queue editing, handoff, rollback, limits", ()
     expect(applyRecord(m, rec(8, { type: "pr.watch-changed", threadId: "t1", enabled: false, at: 8 })).threads["t1"]?.prWatch).toBeUndefined();
   });
 });
+
+describe("projection — R17 repo identity, branch pushed, session boundary", () => {
+  const repo = { remoteUrl: "github.com/o/r", cloneUrl: "git@github.com:o/r.git", defaultBranch: "main", detectedAt: 1 };
+  const base = replay(emptyReadModel(), [
+    rec(1, { type: "project.created", project: { id: "p1", title: "T", rootPath: "/x", createdAt: 1, updatedAt: 1 } }),
+    rec(2, { type: "thread.created", thread: { id: "t1", projectId: "p1", title: "New", provider: "claude", mode: "auto", interaction: "default", status: "idle", createdAt: 2, updatedAt: 2 } }),
+    rec(3, { type: "turn.requested", turn: { id: "u1", threadId: "t1", status: "requested", requestedAt: 3 }, userMessage: { id: "m1", threadId: "t1", turnId: "u1", role: "user", text: "first", createdAt: 3 } }),
+    rec(4, { type: "turn.started", turnId: "u1", threadId: "t1", provider: "claude", nativeSessionId: "c-1", startedAt: 4 }),
+    rec(5, { type: "turn.settled", turnId: "u1", threadId: "t1", status: "completed", settledAt: 5 }),
+  ]);
+
+  it("project.updated sets and clears the repo identity", () => {
+    const m = applyRecord(base, rec(6, { type: "project.updated", projectId: "p1", repo, updatedAt: 6 }));
+    expect(m.projects["p1"]?.repo).toEqual(repo);
+    const m2 = applyRecord(m, rec(7, { type: "project.updated", projectId: "p1", clearRepo: true, updatedAt: 7 }));
+    expect(m2.projects["p1"]?.repo).toBeUndefined();
+    expect(m2.projects["p1"]?.updatedAt).toBe(7);
+  });
+
+  it("branch.pushed records the remote branch and sha on the thread", () => {
+    const m = applyRecord(base, rec(6, { type: "branch.pushed", threadId: "t1", remoteBranch: "tide/new", sha: "abc", at: 6 }));
+    expect(m.threads["t1"]).toMatchObject({ remoteBranch: "tide/new", pushedSha: "abc", updatedAt: 6 });
+  });
+
+  it("session.boundary releases that provider's native session only, marks the turn and adds a divider", () => {
+    const withCodex = replay(base, [
+      rec(6, { type: "thread.updated", threadId: "t1", patch: { provider: "codex" }, clearNativeSession: true, updatedAt: 6 }),
+      rec(7, { type: "turn.requested", turn: { id: "u2", threadId: "t1", status: "requested", requestedAt: 7 }, userMessage: { id: "m2", threadId: "t1", turnId: "u2", role: "user", text: "go", createdAt: 7 } }),
+      rec(8, { type: "turn.started", turnId: "u2", threadId: "t1", provider: "codex", nativeSessionId: "x-1", startedAt: 8 }),
+      rec(9, { type: "turn.settled", turnId: "u2", threadId: "t1", status: "completed", settledAt: 9 }),
+    ]);
+    const m = replay(withCodex, [
+      rec(10, { type: "turn.requested", turn: { id: "u3", threadId: "t1", status: "requested", requestedAt: 10 }, userMessage: { id: "m3", threadId: "t1", turnId: "u3", role: "user", text: "again", createdAt: 10 } }),
+      rec(11, { type: "session.boundary", threadId: "t1", turnId: "u3", providerId: "codex", at: 11 }),
+    ]);
+    expect(m.threads["t1"]?.providerSessions).toEqual({ claude: { nativeSessionId: "c-1", lastTurnId: "u1" } });
+    expect(m.threads["t1"]?.nativeSessionId).toBeUndefined();
+    expect(m.threads["t1"]?.sessionBoundaryTurnId).toBe("u3");
+    expect(m.turns["u3"]?.freshSession).toBe(true);
+    expect(m.threadTimeline["t1"]?.slice(-2)).toEqual([{ kind: "message", id: "m3" }, { kind: "boundary", id: "u3" }]);
+    // the new native id arrives with turn.started as usual
+    const m2 = applyRecord(m, rec(12, { type: "turn.started", turnId: "u3", threadId: "t1", provider: "codex", nativeSessionId: "x-2", startedAt: 12 }));
+    expect(m2.threads["t1"]?.providerSessions?.["codex"]).toEqual({ nativeSessionId: "x-2" });
+    expect(m2.threads["t1"]?.nativeSessionId).toBe("x-2");
+  });
+
+  it("session.boundary without providerId falls back to the thread's current instance", () => {
+    const m = replay(base, [
+      rec(6, { type: "turn.requested", turn: { id: "u2", threadId: "t1", status: "requested", requestedAt: 6 }, userMessage: { id: "m2", threadId: "t1", turnId: "u2", role: "user", text: "x", createdAt: 6 } }),
+      rec(7, { type: "session.boundary", threadId: "t1", turnId: "u2", at: 7 }),
+    ]);
+    expect(m.threads["t1"]?.providerSessions).toEqual({});
+  });
+
+  it("rolling back the boundary turn removes the boundary; rolling back a later turn keeps it", () => {
+    const m = replay(base, [
+      rec(6, { type: "turn.requested", turn: { id: "u2", threadId: "t1", status: "requested", requestedAt: 6 }, userMessage: { id: "m2", threadId: "t1", turnId: "u2", role: "user", text: "x", createdAt: 6 } }),
+      rec(7, { type: "session.boundary", threadId: "t1", turnId: "u2", at: 7 }),
+      rec(8, { type: "turn.started", turnId: "u2", threadId: "t1", provider: "claude", nativeSessionId: "c-2", startedAt: 8 }),
+      rec(9, { type: "turn.settled", turnId: "u2", threadId: "t1", status: "completed", settledAt: 9 }),
+      rec(10, { type: "turn.requested", turn: { id: "u3", threadId: "t1", status: "requested", requestedAt: 10 }, userMessage: { id: "m3", threadId: "t1", turnId: "u3", role: "user", text: "y", createdAt: 10 } }),
+      rec(11, { type: "turn.started", turnId: "u3", threadId: "t1", provider: "claude", nativeSessionId: "c-2", startedAt: 11 }),
+      rec(12, { type: "turn.settled", turnId: "u3", threadId: "t1", status: "completed", settledAt: 12 }),
+    ]);
+    const later = applyRecord(m, rec(13, { type: "rollback.completed", threadId: "t1", turnId: "u3", turnIds: ["u3"], provider: "claude", at: 13 }));
+    expect(later.threads["t1"]?.sessionBoundaryTurnId).toBe("u2");
+    const toBoundary = applyRecord(m, rec(13, { type: "rollback.completed", threadId: "t1", turnId: "u2", turnIds: ["u2", "u3"], provider: "claude", at: 13 }));
+    expect(toBoundary.threads["t1"]?.sessionBoundaryTurnId).toBeUndefined();
+  });
+});
