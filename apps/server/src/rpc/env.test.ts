@@ -161,3 +161,47 @@ describe("env.updateHarnesses", () => {
     }
   });
 });
+
+describe("env.discover (R17)", () => {
+  const PEER = { environmentId: "env-nas", name: "nas", version: "1.2.3", protocol: 1, host: "192.168.1.30", port: 3777, urls: ["http://192.168.1.30:3777"] };
+
+  async function withBrowse(browse: (timeoutMs: number) => Promise<(typeof PEER)[]>, run: (client: WsTestClient) => Promise<void>): Promise<void> {
+    const store = new EventStore(await openDatabase(":memory:"));
+    const handle = await startServer({ engine: new Engine({ store }), store, config, discovery: { browse } });
+    const client = await WsTestClient.open(`ws://127.0.0.1:${handle.port}/ws?token=${TOKEN}`);
+    try {
+      await run(client);
+    } finally {
+      client.close();
+      await handle.close();
+      store.close();
+    }
+  }
+
+  it("returns the peers the LAN browse found, waiting 1.5 s unless asked otherwise", async () => {
+    const waits: number[] = [];
+    await withBrowse(
+      async (ms) => {
+        waits.push(ms);
+        return [PEER];
+      },
+      async (client) => {
+        expect(await client.call("env.discover", {})).toEqual({ peers: [PEER], enabled: true });
+        expect(await client.call("env.discover", { timeoutMs: 5000 })).toEqual({ peers: [PEER], enabled: true });
+        await expect(client.call("env.discover", { timeoutMs: 60_000 })).rejects.toMatchObject({ code: "invalid-params" });
+      },
+    );
+    expect(waits).toEqual([1500, 5000]);
+  });
+
+  it("reports enabled: false when this host cannot open a multicast socket", async () => {
+    await withBrowse(
+      async () => {
+        throw new Error("EADDRNOTAVAIL");
+      },
+      async (client) => {
+        expect(await client.call("env.discover", {})).toEqual({ peers: [], enabled: false });
+      },
+    );
+  });
+});
