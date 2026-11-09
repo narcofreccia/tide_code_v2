@@ -201,4 +201,32 @@ describe("runUpdate", () => {
     expect(mac.calls).toContainEqual(["launchctl", "kickstart", "-k", "gui/501/com.tide.server"]);
     expect(mac.text()).toMatch(/the service restarted on 0\.9\.0/);
   });
+
+  it("windows: no chmod, the running exe is kept as .old, the task is restarted via schtasks", async () => {
+    const WIN = "x86_64-pc-windows-msvc";
+    const tideHome = join(root, "tide-home");
+    mkdirSync(tideHome, { recursive: true });
+    writeFileSync(join(tideHome, "service.cmd"), "");
+    writeFileSync(`${execPath}.old`, "STALE OLD");
+    const t = setup(manifest({ server: { [WIN]: { url: `${UPDATE_BASE}/server/${WIN}/tide-server.tar.gz`, sha256: sha(SERVER_BYTES) } } }), { platform: "win32", platformTriple: WIN });
+    // the fake tar writes the unix name; the real tarball carries tide-server.exe
+    const tar = t.deps.exec;
+    t.deps.exec = async (file, args) => {
+      const r = await tar(file, args);
+      if (file === "tar") {
+        const into = args[3] ?? "";
+        if (existsSync(join(into, "tide-server"))) writeFileSync(join(into, "tide-server.exe"), "NEW BINARY");
+      }
+      return r;
+    };
+    expect(await runUpdate({ check: false, yes: true }, t.deps)).toBe(0);
+    expect(readFileSync(execPath, "utf8")).toBe("NEW BINARY");
+    expect(readFileSync(`${execPath}.old`, "utf8")).toBe("OLD BINARY");
+    expect(t.calls).toContainEqual(["tar", "-xzf", join(tideHome, "updates", "0.9.0", "tide-server.tar.gz"), "-C", join(tideHome, "updates", "0.9.0", "server")]);
+    expect(t.calls.filter((c) => c[0] === "schtasks")).toEqual([
+      ["schtasks", "/End", "/TN", "Tide\\Server"],
+      ["schtasks", "/Run", "/TN", "Tide\\Server"],
+    ]);
+    expect(t.text()).toMatch(/the service restarted on 0\.9\.0/);
+  });
 });

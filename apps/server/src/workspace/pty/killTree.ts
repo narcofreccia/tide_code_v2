@@ -8,7 +8,16 @@ export interface KillTreeDeps {
   kill?: (pid: number, signal: TreeSignal) => void;
   /** `ps -axo pid=,ppid=` output, undefined when ps is unavailable */
   ps?: () => Promise<string | undefined>;
+  /** override process.platform */
+  platform?: NodeJS.Platform;
+  /** Windows: runs `taskkill` */
+  exec?: (file: string, args: string[]) => Promise<void>;
 }
+
+const systemExec = (file: string, args: string[]): Promise<void> =>
+  new Promise((resolve) => {
+    execFile(file, args, { timeout: 10_000, windowsHide: true }, () => resolve()); // an already-gone pid is not an error
+  });
 
 const systemPs = (): Promise<string | undefined> =>
   new Promise((resolve) => {
@@ -48,6 +57,11 @@ export function descendants(root: number, parents: Map<number, number>): number[
  * ESRCH/EPERM is not an error: the walk covers it.
  */
 export async function killProcessTree(pid: number, signal: TreeSignal, deps: KillTreeDeps = {}): Promise<void> {
+  if ((deps.platform ?? process.platform) === "win32") {
+    // no process groups or signals on Windows: /T walks the tree, /F because there is no graceful variant
+    await (deps.exec ?? systemExec)("taskkill", ["/PID", String(pid), "/T", "/F"]);
+    return;
+  }
   const kill = deps.kill ?? ((target: number, sig: TreeSignal) => process.kill(target, sig));
   const tryKill = (target: number): void => {
     try {

@@ -2,7 +2,7 @@ import { mkdtempSync, readFileSync, rmSync, existsSync } from "node:fs";
 import { tmpdir } from "node:os";
 import { join } from "node:path";
 import { afterEach, describe, expect, it } from "vitest";
-import { launchdPlist, runService, selfCommand, serviceSpec, systemdUnit, type Exec } from "./service.ts";
+import { launchdPlist, runService, selfCommand, serviceSpec, systemdUnit, windowsWrapper, type Exec } from "./service.ts";
 
 const dirs: string[] = [];
 afterEach(() => {
@@ -36,7 +36,7 @@ describe("service files", () => {
     expect(unit).toContain('ExecStart="/usr/bin/node" "--experimental-strip-types" "/src/bin.ts" "serve" "--log" "/srv/tide 1/logs/server.log" "--port" "3800"');
     expect(unit).toContain('Environment="TIDE_HOME=/srv/tide 1"');
     expect(unit).toContain("WantedBy=default.target");
-    expect(() => serviceSpec({ ...base, platform: "win32" })).toThrow(/macOS/);
+    expect(() => serviceSpec({ ...base, platform: "freebsd" })).toThrow(/macOS/);
   });
 
   it("selfCommand re-runs the entry script under node, or the compiled binary alone", () => {
@@ -74,5 +74,49 @@ describe("runService", () => {
     expect(status.code).toBe(0);
     expect(status.text).toContain("running (pid 4242)");
     expect(status.text).toContain("not installed");
+  });
+});
+
+describe("windows (Task Scheduler)", () => {
+  const winBase = { ...base, platform: "win32" as const, home: "C:\\Users\\me", tideHome: "C:\\Users\\me\\.tide", command: ["C:\\Tide\\tide-server.exe"], path: "C:\\Windows" };
+
+  it("wrapper sets TIDE_HOME and runs serve with --log", () => {
+    const spec = serviceSpec(winBase);
+    expect(spec.file).toBe("C:\\Users\\me\\.tide\\service.cmd");
+    const cmd = windowsWrapper(spec);
+    expect(cmd).toContain('set "TIDE_HOME=C:\\Users\\me\\.tide"');
+    expect(cmd).toContain('"C:\\Tide\\tide-server.exe" "serve" "--log" "C:\\Users\\me\\.tide\\logs\\server.log" "--port" "3800"');
+    expect(cmd.startsWith("@echo off\r\n")).toBe(true);
+  });
+
+  it("install creates and runs the task; uninstall ends, deletes and removes the wrapper; status parses Status:", async () => {
+    const tideHome = tmp();
+    const calls: string[][] = [];
+    let queryOut = "Folder: \\Tide\nTaskName: \\Tide\\Server\nStatus:       Running\n";
+    const exec: Exec = async (file, args) => {
+      calls.push([file, ...args]);
+      return { code: 0, out: args[0] === "/Query" ? queryOut : "" };
+    };
+    const deps = { exec, env: { TIDE_HOME: tideHome, PATH: "C:\\Windows" }, platform: "win32" as const, home: tideHome, command: ["C:\\Tide\\tide-server.exe"] };
+    const wrapper = join(tideHome, "service.cmd");
+    const installed = await runService("install", [], deps);
+    expect(installed.code).toBe(0);
+    expect(existsSync(wrapper)).toBe(true);
+    const task = "Tide\\Server";
+    expect(calls).toContainEqual(["schtasks", "/Create", "/SC", "ONLOGON", "/TN", task, "/TR", `"${wrapper}"`, "/RL", "LIMITED", "/F"]);
+    expect(calls).toContainEqual(["schtasks", "/Run", "/TN", task]);
+
+    const running = await runService("status", [], deps);
+    expect(calls).toContainEqual(["schtasks", "/Query", "/TN", task, "/FO", "LIST", "/V"]);
+    expect(running.code).toBe(0);
+    expect(running.text).toContain("state: running");
+    queryOut = "Status:       Ready\n";
+    expect((await runService("status", [], deps)).code).toBe(3);
+
+    calls.length = 0;
+    const removed = await runService("uninstall", [], deps);
+    expect(removed.code).toBe(0);
+    expect(calls).toEqual([["schtasks", "/End", "/TN", task], ["schtasks", "/Delete", "/TN", task, "/F"]]);
+    expect(existsSync(wrapper)).toBe(false);
   });
 });

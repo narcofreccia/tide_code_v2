@@ -25,7 +25,7 @@ export const USAGE = `usage:
   tide triage [--issue] [--no-agent] [--port <n>]
              write a redacted diagnostics report to <TIDE_HOME>/triage/<time>.md; prints the command to hand it to your harness, or a GitHub issue body with --issue
   tide service install [serve flags] | uninstall | status
-             run \`tide serve\` at login (launchd on macOS, systemd --user on Linux)
+             run \`tide serve\` at login (launchd on macOS, systemd --user on Linux, Task Scheduler on Windows)
   tide update [--check] [--yes]
              update a headless install (binary + web/) to the latest release and restart the service
   tide --version

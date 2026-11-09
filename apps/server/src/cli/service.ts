@@ -1,16 +1,18 @@
 import { execFile } from "node:child_process";
 import { existsSync, mkdirSync, rmSync, writeFileSync } from "node:fs";
 import { homedir, userInfo } from "node:os";
-import { dirname, join, resolve } from "node:path";
+import { dirname, join, resolve, win32 } from "node:path";
 import { defaultLogPath } from "./logFile.ts";
 import { tideHomeOf } from "./runtime.ts";
 
 export const LAUNCHD_LABEL = "com.tide.server";
 export const SYSTEMD_UNIT = "tide-server.service";
+/** per-user scheduled task (no admin): runs `service.cmd` at logon */
+export const WIN_TASK = "Tide\\Server";
 
 export interface ServiceSpec {
-  platform: "darwin" | "linux";
-  /** where the unit/plist goes */
+  platform: "darwin" | "linux" | "win32";
+  /** where the unit/plist/wrapper goes */
   file: string;
   /** full argv: the binary (and script), `serve`, `--log …`, the user's serve flags */
   argv: string[];
@@ -24,8 +26,16 @@ export function selfCommand(execPath: string = process.execPath, script: string 
   return isBun ? [execPath, resolve(script)] : [execPath, "--experimental-strip-types", "--no-warnings=ExperimentalWarning", resolve(script)];
 }
 
-/** Where `tide service install` puts the launchd plist / systemd unit. */
-export function serviceFile(platform: "darwin" | "linux", home: string): string {
+const isWinPath = (p: string): boolean => /^[A-Za-z]:|^\\\\/.test(p);
+
+/** The Windows task's wrapper script: scheduled tasks cannot set environment variables or redirect. */
+export function windowsWrapperFile(tideHome: string): string {
+  return isWinPath(tideHome) ? win32.join(tideHome, "service.cmd") : join(tideHome, "service.cmd");
+}
+
+/** Where `tide service install` puts the launchd plist / systemd unit / Windows wrapper (`tideHome` is for win32). */
+export function serviceFile(platform: "darwin" | "linux" | "win32", home: string, tideHome: string = join(home, ".tide")): string {
+  if (platform === "win32") return windowsWrapperFile(tideHome);
   return platform === "darwin" ? join(home, "Library", "LaunchAgents", `${LAUNCHD_LABEL}.plist`) : join(home, ".config", "systemd", "user", SYSTEMD_UNIT);
 }
 
@@ -39,15 +49,15 @@ export function serviceSpec(input: {
   /** TIDE_HOME set explicitly in this shell: the service must use the same one */
   explicitTideHome: boolean;
 }): ServiceSpec {
-  if (input.platform !== "darwin" && input.platform !== "linux") throw new Error(`tide service supports macOS (launchd) and Linux (systemd); this is ${input.platform}`);
-  const logPath = defaultLogPath(input.tideHome);
-  const file = serviceFile(input.platform, input.home);
+  if (input.platform !== "darwin" && input.platform !== "linux" && input.platform !== "win32") throw new Error(`tide service supports macOS (launchd), Linux (systemd) and Windows (Task Scheduler); this is ${input.platform}`);
+  const logPath = input.platform === "win32" && isWinPath(input.tideHome) ? win32.join(input.tideHome, "logs", "server.log") : defaultLogPath(input.tideHome);
+  const file = serviceFile(input.platform, input.home, input.tideHome);
   return {
     platform: input.platform,
     file,
     argv: [...input.command, "serve", "--log", logPath, ...input.serveArgs],
     // the harness CLIs live on the user's PATH (nvm, homebrew, ~/.local/bin): a login service has a bare one
-    env: { PATH: input.path, ...(input.explicitTideHome ? { TIDE_HOME: input.tideHome } : {}) },
+    env: { PATH: input.path, ...(input.explicitTideHome || input.platform === "win32" ? { TIDE_HOME: input.tideHome } : {}) },
     logPath,
   };
 }
@@ -104,6 +114,14 @@ WantedBy=default.target
 `;
 }
 
+const cmdQuote = (s: string): string => `"${s.replace(/%/g, "%%").replace(/"/g, '""')}"`;
+
+/** `service.cmd`: sets the environment, then runs the server (it writes its own rotated log via --log). */
+export function windowsWrapper(spec: ServiceSpec): string {
+  const env = Object.entries(spec.env).map(([k, v]) => `set ${cmdQuote(`${k}=${v}`)}`);
+  return ["@echo off", ...env, spec.argv.map(cmdQuote).join(" "), ""].join("\r\n");
+}
+
 export type Exec = (file: string, args: string[]) => Promise<{ code: number; out: string }>;
 
 export const realExec: Exec = (file, args) =>
@@ -145,6 +163,16 @@ export async function runService(action: "install" | "uninstall" | "status", ser
     return r;
   };
 
+  if (action === "status" && spec.platform === "win32") {
+    const installed = existsSync(spec.file);
+    const r = await exec("schtasks", ["/Query", "/TN", WIN_TASK, "/FO", "LIST", "/V"]);
+    const running = r.code === 0 && /^\s*Status:\s*Running\b/im.test(r.out);
+    return {
+      text: [`service file: ${spec.file} (${installed ? "installed" : "not installed"})`, `state: ${running ? "running" : "not running"}`, `log: ${spec.logPath}`].join("\n"),
+      code: running ? 0 : 3,
+    };
+  }
+
   if (action === "status") {
     const installed = existsSync(spec.file);
     const r = spec.platform === "darwin" ? await exec("launchctl", ["print", `${domain}/${LAUNCHD_LABEL}`]) : await exec("systemctl", ["--user", "status", SYSTEMD_UNIT, "--no-pager"]);
@@ -157,7 +185,10 @@ export async function runService(action: "install" | "uninstall" | "status", ser
   }
 
   if (action === "uninstall") {
-    if (spec.platform === "darwin") await run("launchctl", ["bootout", `${domain}/${LAUNCHD_LABEL}`]);
+    if (spec.platform === "win32") {
+      await run("schtasks", ["/End", "/TN", WIN_TASK]); // fails harmlessly when not running
+      await run("schtasks", ["/Delete", "/TN", WIN_TASK, "/F"]);
+    } else if (spec.platform === "darwin") await run("launchctl", ["bootout", `${domain}/${LAUNCHD_LABEL}`]);
     else {
       await run("systemctl", ["--user", "disable", "--now", SYSTEMD_UNIT]);
     }
@@ -168,13 +199,16 @@ export async function runService(action: "install" | "uninstall" | "status", ser
     return { text: out.join("\n"), code: 0 };
   }
 
-  const content = spec.platform === "darwin" ? launchdPlist(spec) : systemdUnit(spec);
+  const content = spec.platform === "darwin" ? launchdPlist(spec) : spec.platform === "win32" ? windowsWrapper(spec) : systemdUnit(spec);
   mkdirSync(dirname(spec.file), { recursive: true });
   mkdirSync(dirname(spec.logPath), { recursive: true, mode: 0o700 });
   writeFileSync(spec.file, content, { mode: 0o644 });
   out.push(`wrote ${spec.file}:`, "", content);
   let code = 0;
-  if (spec.platform === "darwin") {
+  if (spec.platform === "win32") {
+    code = (await run("schtasks", ["/Create", "/SC", "ONLOGON", "/TN", WIN_TASK, "/TR", `"${spec.file}"`, "/RL", "LIMITED", "/F"])).code;
+    if (code === 0) code = (await run("schtasks", ["/Run", "/TN", WIN_TASK])).code;
+  } else if (spec.platform === "darwin") {
     await exec("launchctl", ["bootout", `${domain}/${LAUNCHD_LABEL}`]); // replace a previous install; fails harmlessly when absent
     code = (await run("launchctl", ["bootstrap", domain, spec.file])).code;
   } else {

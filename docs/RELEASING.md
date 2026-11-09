@@ -35,9 +35,10 @@ The `server/` and `web/` tarballs are the headless install and what `tide update
 
 `build_release.sh` writes `server[aarch64-apple-darwin]` and `web`; `publish_linux.sh`
 writes `server[x86_64-unknown-linux-gnu]` (a headless-only merge: no `--platform`, so the
-Tauri keys are untouched). Windows has no headless tarball: `publish_windows.sh` would need
-the same `--server-*` flags. Until a platform has an entry at the current version, `tide update`
-there says "no headless artifact for this platform yet".
+Tauri keys are untouched). `publish_windows.sh` writes `server[x86_64-pc-windows-msvc]` in
+the same `merge_manifest.py` call as `windows-x86_64`; its tarball holds `tide-server.exe`
+(built from the sidecar `tide-server-x86_64-pc-windows-msvc.exe`). Until a platform has an
+entry at the current version, `tide update` there says "no headless artifact for this platform yet".
 
 Public base: `https://pub-7b3e5bbd605d43adbeb4601a962d84bd.r2.dev/tidecode`. The updater
 endpoint baked into `tauri.conf.json` is `{public}/latest.json` — **it never moves**.
@@ -132,7 +133,9 @@ Tauri cannot cross-compile, so these build on GitHub-hosted runners:
 - `.github/workflows/release-windows.yml` — `windows-latest`: node 22, pnpm 10, bun,
   Rust stable → sidecar (`--target windows-x64`) → web build → `tauri build --bundles nsis`
   → **smoke test** (silent `/S` NSIS install, run the installed `tide-server.exe --dev
-  --port 3799`, `curl /health`) → `scripts/release/publish_windows.sh`.
+  --port 3799`, `curl /health`) → `scripts/release/publish_windows.sh` (installer, then the
+  headless `server/x86_64-pc-windows-msvc/tide-server.tar.gz` + `.sha256` and its
+  `server[...]` manifest key, in one merge).
 - `.github/workflows/release-linux.yml` — `ubuntu-latest` with
   `libwebkit2gtk-4.1-dev libappindicator3-dev librsvg2-dev patchelf` →
   `--bundles deb,rpm` → `scripts/release/publish_linux.sh` (deb/rpm, then the headless

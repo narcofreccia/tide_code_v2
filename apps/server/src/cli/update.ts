@@ -1,7 +1,7 @@
 import { createHash } from "node:crypto";
 import { chmodSync, copyFileSync, cpSync, existsSync, mkdirSync, renameSync, rmSync, writeFileSync } from "node:fs";
 import { basename, dirname, join } from "node:path";
-import { LAUNCHD_LABEL, SYSTEMD_UNIT, serviceFile, type Exec } from "./service.ts";
+import { LAUNCHD_LABEL, SYSTEMD_UNIT, WIN_TASK, serviceFile, type Exec } from "./service.ts";
 
 /** Public base of the release bucket (docs/RELEASING.md); `latest.json` lives right under it. */
 export const UPDATE_BASE = "https://pub-7b3e5bbd605d43adbeb4601a962d84bd.r2.dev/tidecode";
@@ -152,18 +152,21 @@ export async function runUpdate(opts: { check: boolean; yes: boolean }, deps: Up
   const binDir = dirname(deps.execPath);
   const webDir = join(binDir, "web");
   const home = deps.home ?? process.env["HOME"] ?? "";
-  const svcPlatform = platform === "darwin" || platform === "linux" ? platform : undefined;
-  const serviceInstalled = svcPlatform !== undefined && home !== "" && existsSync(serviceFile(svcPlatform, home));
-  const restart: [string, string[]] | undefined = !serviceInstalled
+  const svcPlatform = platform === "darwin" || platform === "linux" || platform === "win32" ? platform : undefined;
+  const serviceInstalled = svcPlatform !== undefined && (svcPlatform === "win32" || home !== "") && existsSync(serviceFile(svcPlatform, home, deps.tideHome));
+  // Windows has no restart verb: stop the task (ends the old exe), then start it again
+  const restart: [string, string[]][] | undefined = !serviceInstalled
     ? undefined
     : svcPlatform === "darwin"
-      ? ["launchctl", ["kickstart", "-k", `gui/${deps.uid ?? process.getuid?.() ?? 0}/${LAUNCHD_LABEL}`]]
-      : ["systemctl", ["--user", "restart", SYSTEMD_UNIT]];
+      ? [["launchctl", ["kickstart", "-k", `gui/${deps.uid ?? process.getuid?.() ?? 0}/${LAUNCHD_LABEL}`]]]
+      : svcPlatform === "win32"
+        ? [["schtasks", ["/End", "/TN", WIN_TASK]], ["schtasks", ["/Run", "/TN", WIN_TASK]]]
+        : [["systemctl", ["--user", "restart", SYSTEMD_UNIT]]];
 
   for (const line of ["", "plan:", `  download ${server.url}`, web ? `  download ${web.url}` : "  (no web bundle in this release: the web client stays as it is)"]) log(line);
-  log(`  replace ${deps.execPath} (the current one is kept as ${basename(deps.execPath)}.old)`);
+  log(`  replace ${deps.execPath} (the current one is kept as ${basename(deps.execPath)}.old${platform === "win32" ? "; Windows keeps it locked until the server stops, the next update removes it" : ""})`);
   if (web) log(`  replace ${webDir}`);
-  log(restart ? `  restart the service: ${restart[0]} ${restart[1].join(" ")}` : "  no service installed: restart tide-server yourself afterwards");
+  log(restart ? `  restart the service: ${restart.map(([f, a]) => `${f} ${a.join(" ")}`).join(" && ")}` : "  no service installed: restart tide-server yourself afterwards");
   if (!opts.yes) {
     const ok = deps.confirm ? await deps.confirm(`Update to ${next}? [y/N] `) : false;
     if (!ok) {
@@ -196,8 +199,8 @@ export async function runUpdate(opts: { check: boolean; yes: boolean }, deps: Up
     // stage beside the target first so the swap is two renames on one filesystem
     const incoming = `${deps.execPath}.new`;
     copyFileSync(newBin, incoming);
-    chmodSync(incoming, 0o755);
-    rmSync(old, { force: true });
+    if (platform !== "win32") chmodSync(incoming, 0o755);
+    rmSync(old, { force: true }); // on Windows a stale .old from the previous update is unlocked by now
     renameSync(deps.execPath, old);
     swappedBin = true;
     renameSync(incoming, deps.execPath);
@@ -237,11 +240,14 @@ export async function runUpdate(opts: { check: boolean; yes: boolean }, deps: Up
     log(`restart tide-server to use ${next}`);
     return 0;
   }
-  const r = await deps.exec(restart[0], restart[1]);
-  log(`$ ${restart[0]} ${restart[1].join(" ")}${r.out ? `\n${r.out}` : ""}`);
-  if (r.code !== 0) {
-    log(`the service did not restart; restart tide-server to use ${next}`);
-    return 1;
+  for (const [file, args] of restart) {
+    const r = await deps.exec(file, args);
+    log(`$ ${file} ${args.join(" ")}${r.out ? `\n${r.out}` : ""}`);
+    // /End fails when the task is not running: only a failed start is an error
+    if (r.code !== 0 && (platform !== "win32" || args[0] === "/Run")) {
+      log(`the service did not restart; restart tide-server to use ${next}`);
+      return 1;
+    }
   }
   log(`the service restarted on ${next}`);
   return 0;

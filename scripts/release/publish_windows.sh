@@ -7,7 +7,7 @@
 #
 # Same distribution rules as macOS (docs/RELEASING.md): FIXED artifact name
 # (permanent download link), overwrite in place with no-cache, prune extras,
-# and mutate ONLY the windows-x86_64 key of the shared latest.json via
+# plus the headless server tarball (server/x86_64-pc-windows-msvc/), and mutate ONLY the windows-x86_64 key of the shared latest.json via
 # scripts/release/merge_manifest.py (mac/linux entries preserved). Ends with the same
 # updater end-to-end verification as the mac script.
 #
@@ -46,12 +46,26 @@ SIG_SRC="$SETUP_SRC.sig"
 
 SETUP_NAME="tide-setup.exe" # fixed — permanent download link
 PLATFORM_KEY="windows-x86_64"
+# Headless server tarball (`tide update`, headless installs): the sidecar built by
+# `scripts/build-server-sidecar.sh --target windows-x64`, renamed tide-server.exe inside the tarball.
+SERVER_TRIPLE="x86_64-pc-windows-msvc"
+SERVER_BIN="$ROOT/apps/desktop/src-tauri/binaries/tide-server-$SERVER_TRIPLE.exe"
+SERVER_TARBALL_NAME="tide-server.tar.gz"
+SERVER_URL="${TIDE_PUBLIC_BUCKET%/}/server/$SERVER_TRIPLE/$SERVER_TARBALL_NAME"
+[[ -f "$SERVER_BIN" ]] || die "no $SERVER_BIN — run scripts/build-server-sidecar.sh --target windows-x64 first"
 ARTIFACT_URL="${TIDE_PUBLIC_BUCKET%/}/windows/$SETUP_NAME"
 echo "==> v$VERSION · $PLATFORM_KEY · $(basename "$SETUP_SRC") → windows/$SETUP_NAME"
 
 STAGE="$(mktemp -d)"
 trap 'rm -rf "$STAGE"' EXIT
 if command -v cygpath >/dev/null 2>&1; then STAGE="$(cygpath -m "$STAGE")"; fi
+
+mkdir -p "$STAGE/server"
+cp "$SERVER_BIN" "$STAGE/server/tide-server.exe"
+tar -czf "$STAGE/$SERVER_TARBALL_NAME" -C "$STAGE/server" tide-server.exe
+SERVER_SHA="$(sha256sum "$STAGE/$SERVER_TARBALL_NAME" | awk '{print $1}')"
+echo "$SERVER_SHA  $SERVER_TARBALL_NAME" > "$STAGE/$SERVER_TARBALL_NAME.sha256"
+echo "==> headless $SERVER_TRIPLE $SERVER_SHA"
 
 # Start from the LIVE manifest so mac/linux keys are preserved.
 curl -fsS --max-time 15 "${TIDE_PUBLIC_BUCKET%/}/latest.json" -o "$STAGE/latest.json" 2>/dev/null || : > "$STAGE/latest.json"
@@ -61,12 +75,24 @@ curl -fsS --max-time 15 "${TIDE_PUBLIC_BUCKET%/}/latest.json" -o "$STAGE/latest.
   --platform "$PLATFORM_KEY" \
   --version "$VERSION" \
   --signature "$(tr -d '\n' < "$SIG_SRC")" \
-  --url "$ARTIFACT_URL"
+  --url "$ARTIFACT_URL" \
+  --server-triple "$SERVER_TRIPLE" \
+  --server-url "$SERVER_URL" \
+  --server-sha256 "$SERVER_SHA"
 
 # Artifact FIRST, manifest second — never point installed apps at a URL that
 # doesn't resolve yet.
 echo "==> Uploading artifact"
 "${AWS[@]}" s3 cp "$SETUP_SRC" "s3://$R2_BUCKET/windows/$SETUP_NAME" --cache-control "no-cache"
+
+echo "==> Uploading headless server tarball"
+"${AWS[@]}" s3 cp "$STAGE/$SERVER_TARBALL_NAME" "s3://$R2_BUCKET/server/$SERVER_TRIPLE/$SERVER_TARBALL_NAME" --cache-control "no-cache"
+"${AWS[@]}" s3 cp "$STAGE/$SERVER_TARBALL_NAME.sha256" "s3://$R2_BUCKET/server/$SERVER_TRIPLE/$SERVER_TARBALL_NAME.sha256" --content-type text/plain --cache-control "no-cache"
+("${AWS[@]}" s3 ls "s3://$R2_BUCKET/server/$SERVER_TRIPLE/" || true) | awk '{print $NF}' | while read -r obj; do
+  [[ -z "$obj" || "$obj" == "$SERVER_TARBALL_NAME" || "$obj" == "$SERVER_TARBALL_NAME.sha256" ]] && continue
+  echo "    rm server/$SERVER_TRIPLE/$obj"
+  "${AWS[@]}" s3 rm "s3://$R2_BUCKET/server/$SERVER_TRIPLE/$obj"
+done
 
 echo "==> Uploading manifest"
 "${AWS[@]}" s3 cp "$STAGE/latest.json" "s3://$R2_BUCKET/latest.json" \
@@ -83,5 +109,8 @@ echo "==> Verifying updater path"
 REMOTE_VERSION="$(curl -fsS --max-time 20 "${TIDE_PUBLIC_BUCKET%/}/latest.json" | "$PY" -c "import json,sys; d=json.load(sys.stdin); e=(d.get('platforms') or {}).get('$PLATFORM_KEY') or {}; print(d.get('version','') if e.get('url') and e.get('signature') else '')")"
 [[ "$REMOTE_VERSION" == "$VERSION" ]] || die "published manifest failed verification (got '$REMOTE_VERSION', want '$VERSION')"
 curl -fsIL --max-time 30 "$ARTIFACT_URL" >/dev/null || die "artifact URL not reachable: $ARTIFACT_URL"
+HEADLESS="$(curl -fsS --max-time 20 "${TIDE_PUBLIC_BUCKET%/}/latest.json" | "$PY" -c "import json,sys; d=json.load(sys.stdin); s=(d.get('server') or {}).get('$SERVER_TRIPLE') or {}; print('ok' if s.get('version') == '$VERSION' and s.get('sha256') == '$SERVER_SHA' else 'mismatch')")"
+[[ "$HEADLESS" == "ok" ]] || die "published latest.json failed the headless verification ($HEADLESS)"
+curl -fsIL --max-time 30 "$SERVER_URL" >/dev/null || die "headless artifact not reachable: $SERVER_URL"
 
 echo "==> Done — fixed download link: $ARTIFACT_URL"

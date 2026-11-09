@@ -102,7 +102,8 @@ Or in the browser: **Actions → release-windows → Run workflow**, version `0.
 
 The job fails on purpose if `package.json` on main is not that version. It builds the NSIS
 installer, installs it silently, starts the bundled server and checks `/health`, then uploads
-`windows/tide-setup.exe` and writes the Windows entry into `latest.json`.
+`windows/tide-setup.exe` and the headless `server/x86_64-pc-windows-msvc/tide-server.tar.gz`
+(+ `.sha256`), and writes the Windows entry and `server[x86_64-pc-windows-msvc]` into `latest.json`.
 
 ## 5. Linux — GitHub Actions (~15 min)
 
@@ -128,6 +129,7 @@ BASE=https://pub-7b3e5bbd605d43adbeb4601a962d84bd.r2.dev/tidecode
 curl -s $BASE/latest.json | python3 -m json.tool      # version + darwin-aarch64 + windows-x86_64
 curl -sI $BASE/mac/tide.dmg | head -1                 # 200
 curl -sI $BASE/windows/tide-setup.exe | head -1       # 200
+curl -sI $BASE/server/x86_64-pc-windows-msvc/tide-server.tar.gz | head -1   # 200
 curl -sI $BASE/linux/tide.deb | head -1               # 200
 ```
 
