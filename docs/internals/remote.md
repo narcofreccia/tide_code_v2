@@ -65,9 +65,11 @@ tide-server service install --host 0.0.0.0
 tide-server pair
 ```
 
-The tarballs appear with the next release; until then the
-manifest has no `server`/`web` keys (layout: `docs/RELEASING.md`). Only the mac release
-script builds them so far; Linux needs the same step in the Linux publish path.
+On Windows the triple is `x86_64-pc-windows-msvc` (`tide-server.tar.gz` under
+`server/x86_64-pc-windows-msvc/`; `publish_windows.sh` uploads it and merges the manifest key
+`server[x86_64-pc-windows-msvc]` together with the installer). The tarballs appear with the next
+release; until then the manifest has no `server`/`web` keys (layout: `docs/RELEASING.md`). The mac
+and Windows release scripts build them; Linux needs the same step in the Linux publish path.
 
 ### `tide update`
 
@@ -99,11 +101,11 @@ tide-server.service`); otherwise it says `restart tide-server to use a.b.c`. Cod
 |---|---|---|---|
 | `GET /health` | none | configured origins | `{ok, environmentId, version}` |
 | `GET /api/env` | none | `*` | `EnvProbe {environmentId, name, version, protocol}` |
-| `POST /api/auth/pair` `{code}` | pairing code | `*` | `PairResponse {environmentId, name, token}`; 400 bad body, 401 wrong/expired/used code, 429 rate-limited (`Retry-After: 60`) |
-| `POST /api/auth/ws-ticket` | `Authorization: Bearer <token>` | `*` | `{ticket, expiresAt}` (single use, 5 min) |
+| `POST /api/auth/pair` `{code, name?}` | pairing code | `*` | `PairResponse {environmentId, name, token}` (a per-device token); 400 bad body, 401 wrong/expired/used code, 429 rate-limited (`Retry-After: 60`) |
+| `POST /api/auth/ws-ticket` | `Authorization: Bearer <master or live device token>` | `*` | `{ticket, expiresAt}` (single use, 5 min) |
 | `POST /hook/<hookId>` | hook id, optional HMAC | none | fires a webhook task, see below |
 | `GET /pair` | none | none | static explainer that reads `#token=` from the fragment |
-| `GET /ws` (upgrade) | `wsTicket`, `agentToken`, or `token` (dev only) | n/a | the RPC socket |
+| `GET /ws` (upgrade) | `wsTicket`, `agentToken`, or `token` (master, `--dev` only) | n/a | the RPC socket |
 | anything else, GET | none | none | the web client, or a pairing-instructions page at `/` |
 
 **CORS stance.** Origins do not protect anything here. The token, a ticket, or a pairing code
@@ -127,13 +129,116 @@ map keys.
 3. `tide pair` prints a QR of `<first url>/#pair=<code>`. The code rides in the fragment, which
    browsers never send to the server. The page at that URL (the bundled web client, or the
    fallback page) can read it.
-4. The client posts `{code}` to `POST /api/auth/pair` on that base and stores the returned
-   `token` with the environment (`KnownEnvironment.token`, client-side only).
+4. The client posts `{code, name?}` to `POST /api/auth/pair` on that base and stores the returned
+   device token with the environment (`KnownEnvironment.token`, client-side only; see
+   Per-device tokens).
 5. To connect, the client exchanges the token for a ticket (`POST /api/auth/ws-ticket`) and opens
    `ws(s)://…/ws?wsTicket=<ticket>`.
 
 Brute force: attempts are limited to 5 per minute per remote address, and after 20 wrong guesses
 in total every outstanding code is burnt.
+
+## Discovery
+
+A server bound beyond loopback advertises itself as `_tide._tcp` over mDNS, so other Tide
+clients on the LAN can find it. The responder and browser are raw `node:dgram`
+(`apps/server/src/rpc/mdns/`, no dependency): PTR/SRV/TXT/A records with TXT keys `envId`, `name`,
+`version`, `protocol`, `port`, and a goodbye packet when the server stops. A loopback-only server
+advertises nothing. A host whose socket cannot join the multicast group logs once and runs with
+discovery off; `server.info.remote.discovery.advertising` says which.
+
+`env.discover` browses for peers from an ephemeral port and returns what answered. Settings ›
+Environments › Add machine shows them under "Found on your network"; picking one prefills the URL.
+Discovery only locates a machine: pairing stays code-based, so being on the LAN grants nothing.
+Verified on macOS with `dns-sd -B _tide._tcp` (add on start, remove on SIGTERM), including the
+bun-compiled sidecar.
+
+## Per-device tokens
+
+`POST /api/auth/pair {code, name?}` mints a token for that device: 32 random bytes, of which only
+the sha256 is stored, in `<TIDE_HOME>/clients.json` (mode 0600) with the device name and times.
+The master token in `server.json` is never handed out by pairing.
+
+- `ws-ticket` accepts the master token or a live device token; the ticket carries the `clientId`.
+- A raw `?token=` on the WebSocket stays master-only and works only with `--dev`.
+- `env.clients.list` returns the paired devices; `env.clients.revoke {id}` removes one and closes
+  its sockets with code 4401. The client shows "Pair again" for that machine, and the revoked
+  token gets 401 from `ws-ticket`.
+- CLI: `tide pair --list`, `tide pair --revoke <id>`. The UI is Settings › Environments › This
+  machine › Paired devices.
+- `tide triage` never includes `clients.json` in its bundle.
+- Devices paired before this change still hold the master token and do not appear in the list.
+
+## Desktop modes
+
+The Tauri shell keeps its mode in `<TIDE_HOME>/shell.json`: `local` (spawn the sidecar, the
+default), `attach`, or `remote`.
+
+- **Attach.** When the sidecar exits with code 75 (another server already holds `TIDE_HOME`), the
+  splash offers "Use that server". The shell reads `server.lock` / `server.json`, re-probes
+  `/health`, opens that server, and falls back to spawning if it is gone.
+- **Remote.** The splash can connect to another machine: URL + pairing code (device name "Tide
+  desktop"). The shell opens the bundled app with `?server=&token=&remote=1`; the web boot then
+  creates no local route and makes that machine the primary. Menu items switch between modes.
+- **LAN worker.** `environment.lanBind` makes the sidecar bind `0.0.0.0` after a restart (so it
+  advertises over mDNS and accepts pairing); the toggle is "Reachable on the LAN" under This
+  machine. Dev builds never bind beyond loopback. The CSP `connect-src` allows `http:`/`https:` so
+  the shell can reach other machines.
+
+## Settings per machine
+
+Per-environment settings sections (Environments, Git, Providers, Projects folder and the like) have
+a "Settings of" picker that selects which connected machine the page reads and writes. The
+composer and the rail keep using the primary environment's values.
+
+## One repo on several machines
+
+A project carries `Project.repo {key, cloneUrl, defaultBranch}`, detected from `origin` when the
+project is created (`detectRepoIdentity`; `RepoBackfill` fills it in for older projects at
+startup). The key is `normalizeRemoteUrl(origin)`, the same for https, ssh, scp and local
+forms, so two machines holding clones of one repo share an identity.
+
+**One repo, one entry.** The client groups projects by `repo.key`: one chip, one folder and one
+card per repo, a machine tag on each clone. Mission Control shows `RepoMachines` rows per clone
+with `vcs.baseStatus` (throttled fetch, ahead/behind the remote base, dirty) and a Pull button that
+calls `vcs.pullBase` (fast-forward only; a conflict is refused).
+
+**Run on.** With a repo identity and two or more connected machines, the new-thread dialog offers
+"Run on <machine>". If that machine already has a clone it is reused; otherwise `project.ensure`
+on that machine reuses a sibling clone, adopts an existing folder whose identity matches, or clones
+`cloneUrl` (default branch, 600 s) into `environment.projectsDir` (default `~/tide-projects`; set
+per machine under Settings › Environments). A foreign folder at the target is refused with
+`conflict`; concurrent calls are deduped. The thread is created on that project with an explicit
+`envId`. Linked repositories are not carried over.
+
+**Branch handoff.**
+- `git.pushThreadBranches` is `never`, `on-checkpoint` or `on-merge-request`. `on-checkpoint`
+  pushes `tide/*` after each checkpoint (committed work only; a failure posts one muted info);
+  `on-merge-request` pushes once when a merge is requested. Pushes never force.
+- `git.syncBaseWithRemote` (on by default; `pushThreadBranches` defaults to `never`) fetches and fast-forwards the base before a local merge
+  and pushes the base afterwards. A dirty base, a diverged base or an unreachable origin refuses
+  the merge with that reason in `merge.report`; turn the setting off to merge offline. A push
+  failure keeps the local merge and posts an error. The PR path (`gh pr`) skips both.
+- A merge runs on the thread's owner machine; the merge panel says where, and the toast offers
+  "Pull <base> here" to fast-forward the clone you are looking at.
+- With `git.generateMessages` on, the squash subject and the publish commit/PR text come from the
+  text model (`generateCommitMessage`: `--stat` plus a 4 KB patch, 5 s), falling back to
+  `tide: <title>`.
+
+Limits: `tide_delegate` is local to the machine (no cross-machine delegation yet); an ssh
+`cloneUrl` needs keys on the target machine; a pushed `tide/*` branch is not deleted on origin when
+the local one is; the clone folder is the last path segment of the remote key (a bare `origin.git`
+becomes `origin`).
+
+## Windows
+
+`tide service install` on Windows writes `<TIDE_HOME>\service.cmd` (the same `serve --log …`
+command, with `PATH` and `TIDE_HOME`) and registers a per-user Task Scheduler task with
+`schtasks /Create /SC ONLOGON`; the task is started right away (`/Run`); status, restart and uninstall go through
+`schtasks /Query`, `/End` + `/Run` and `/End` + `/Delete`. `tide update` skips `chmod`, keeps the locked `tide-server.old` beside the
+running exe, and restarts through the task. Process trees are stopped with `taskkill /T /F`. The
+headless tarball is `server[x86_64-pc-windows-msvc]`. This path has not been run on a real Windows
+machine.
 
 ## Webhooks
 

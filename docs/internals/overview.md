@@ -107,6 +107,10 @@ Reactors subscribe to events and issue further commands; they hold no business r
 - PR tab RPCs (`rpc/pr.ts`) — `pr.list/detail/diff/comment/review/merge/link` over the
   `ForgeResolver` (`vcs/forge/resolver.ts`, forge per checkout from `origin`, cached 10 min).
   `server.info.tools.ghAuth` reports `gh auth status`. See `forge.md`.
+- `RepoBackfill` — at startup, fills `Project.repo` (origin identity) for projects created before it existed.
+  Fresh-session boundary: `turn.request.freshSession` → `turn.requested` + `session.boundary` (the
+  provider's native session is released, the next turn opens a new one; refused `conflict` while a turn
+  runs); a native session id learned after `turn.started` is recorded as `turn.session-identified`.
 - `DelegationReactor` (`orchestration/delegation.ts`) — wakes the thread that ran `tide_delegate`.
   A delegate *finishes* when it is quiescent (`threadQuiet` in `orchestration/background.ts`): no
   turn queued, requested or running, and no sub-agent still `running` in the background

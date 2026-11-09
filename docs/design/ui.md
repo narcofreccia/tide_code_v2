@@ -140,6 +140,22 @@ Each settled user message has a per-turn **⋯** menu: `Fork from here…` and
 - Proposed plan: markdown, split button `Implement` (runs it in this thread: leaves plan mode, same worktree, planning context kept) with a `▾` for **In a new thread** (provider · model · worktree checkbox), then `Keep planning` · `Dismiss`. Never auto-executes.
 Composer: textarea, `@` mentions (worktree files), paste images, mode/provider/model pills mirror the top bar, `⌘↵` send, `Esc` stop.
 
+### Machines, devices and sessions
+
+- **Delegate-to chip.** In the composer, the `@` picker has a "Delegate to" section (ready instances other than
+  the thread's own, models after a `/`; the palette has "Delegate this to…"). Picking one inserts a chip,
+  `@delegate:<providerId>[/<model>]`; on send it becomes a line telling the agent to use `tide_delegate`
+  with that provider and model.
+- **`/clear`.** Starts the next message on a fresh harness session in the same thread: a "New session"
+  divider appears in the timeline at the boundary. Refused while a turn is running.
+- **Run on.** With a repo identity and two or more connected machines, the new-thread dialog has a
+  "Run on" row listing the machines; an absent clone is created there on submit.
+- **Repo-group chips.** The same repo cloned on several machines is one project chip, one Mission
+  Control card and one rail folder, with a machine tag per clone (rows show ahead/behind and Pull).
+- **Paired devices.** Settings › Environments › This machine lists paired devices with a Revoke
+  action; a revoked machine shows "Pair again". "Found on your network" in Add machine lists
+  discovered servers.
+
 ### Thread layout and type
 
 - **Column and measure.** Every stream item sits in one centred column `min(100%, 960px)` and shares its
