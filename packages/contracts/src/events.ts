@@ -78,6 +78,16 @@ export const TurnStarted = evt("turn.started", {
   nativeSessionId: Type.Optional(Type.String()),
   startedAt: Type.Number(),
 });
+/** R17: a native session id learned after `turn.started` (same projection as `turn.started.nativeSessionId`) */
+export const TurnSessionIdentified = evt("turn.session-identified", {
+  turnId: Type.String(),
+  threadId: Type.String(),
+  provider: ProviderKind,
+  providerId: Type.Optional(Type.String()),
+  model: Type.Optional(Type.String()),
+  nativeSessionId: Type.String(),
+  at: Type.Number(),
+});
 export const TurnInterruptRequested = evt("turn.interrupt-requested", { turnId: Type.String(), threadId: Type.String(), at: Type.Number() });
 export const ActivityUpserted = evt("activity.upserted", { activity: Activity });
 /** `activityId` pins the exact pending activity (requestIds repeat across harness processes). */
@@ -247,6 +257,7 @@ export const DomainEvent = Type.Union([
   TurnRequested,
   TurnDequeued,
   TurnStarted,
+  TurnSessionIdentified,
   TurnInterruptRequested,
   AssistantDelta,
   AssistantReasoningDelta,

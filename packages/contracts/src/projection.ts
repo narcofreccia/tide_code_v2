@@ -267,6 +267,15 @@ export function applyEvent(model: ReadModel, event: DomainEvent): ReadModel {
       const sessions = { ...(t?.providerSessions ?? {}), [sessionKey]: { ...(t?.providerSessions?.[sessionKey] ?? {}), nativeSessionId: event.nativeSessionId } };
       return withThread(next, event.threadId, { nativeSessionId: event.nativeSessionId, providerSessions: sessions, updatedAt: event.startedAt });
     }
+    case "turn.session-identified": {
+      const turn = model.turns[event.turnId];
+      if (!turn) return model;
+      const next: ReadModel = { ...model, turns: { ...model.turns, [turn.id]: { ...turn, ...(event.model !== undefined ? { model: event.model } : {}) } } };
+      const t = next.threads[event.threadId];
+      const sessionKey = event.providerId ?? event.provider;
+      const sessions = { ...(t?.providerSessions ?? {}), [sessionKey]: { ...(t?.providerSessions?.[sessionKey] ?? {}), nativeSessionId: event.nativeSessionId } };
+      return withThread(next, event.threadId, { nativeSessionId: event.nativeSessionId, providerSessions: sessions, updatedAt: event.at });
+    }
     case "turn.interrupt-requested":
       return withThread(model, event.threadId, { interrupting: true, updatedAt: event.at });
     case "branch.pushed":

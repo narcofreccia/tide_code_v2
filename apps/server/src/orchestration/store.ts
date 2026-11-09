@@ -38,6 +38,7 @@ export function aggregateIdOf(event: DomainEvent): string | null {
     case "turn.requested":
       return event.turn.threadId;
     case "turn.started":
+    case "turn.session-identified":
     case "turn.dequeued":
     case "turn.interrupt-requested":
     case "assistant.delta":

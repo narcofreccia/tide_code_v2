@@ -503,7 +503,11 @@ export class ProviderReactor {
 
     let started = false;
     const start = async (nativeSessionId?: string, modelId?: string): Promise<void> => {
-      if (started) return;
+      if (started) {
+        // R17: the harness named its session after an earlier event already started the turn
+        if (nativeSessionId !== undefined) await this.#dispatch({ type: "turn.session", turnId, nativeSessionId, ...(modelId !== undefined ? { model: modelId } : {}) });
+        return;
+      }
       started = true;
       await this.#dispatch({
         type: "turn.start",

@@ -53,6 +53,7 @@ export function decide(model: ReadModel, command: Command, ctx: DecideContext): 
     case "turn.dequeue":
     case "turn.interrupt":
     case "turn.start":
+    case "turn.session":
     case "assistant.append":
     case "assistant.reasoning.append":
     case "usage.report":

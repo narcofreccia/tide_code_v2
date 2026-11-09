@@ -338,6 +338,16 @@ export const TurnStart = Type.Object({
   providerId: Type.Optional(Type.String()),
   model: Type.Optional(Type.String()),
 });
+/**
+ * R17: the harness named its native session after the turn had already started (Claude sends a
+ * rate-limit status before `system/init`), so `turn.started` carried no id. Records it now.
+ */
+export const TurnSessionReport = Type.Object({
+  type: Type.Literal("turn.session"),
+  turnId: Type.String(),
+  nativeSessionId: Type.String({ minLength: 1 }),
+  model: Type.Optional(Type.String()),
+});
 export const AssistantAppend = Type.Object({
   type: Type.Literal("assistant.append"),
   turnId: Type.String(),
@@ -473,7 +483,7 @@ export const AgentCommand = Type.Union([ExpertsFindingPost, ExpertsMessageSend, 
 export type AgentCommand = Static<typeof AgentCommand>;
 
 export const InternalCommand = Type.Union([
-  TurnStart, AssistantAppend, AssistantReasoningAppend, ActivityUpsert, PlanPropose, PlanProgressReport, UsageReport, TurnSettle,
+  TurnStart, TurnSessionReport, AssistantAppend, AssistantReasoningAppend, ActivityUpsert, PlanPropose, PlanProgressReport, UsageReport, TurnSettle,
   WorktreeAttach, CheckpointRecord, PrUpdate, WorktreeDetachedReport, MergeReport, ThreadTriage, BranchPushed,
   SteerFallback, RollbackReport, ThreadLimited, HandoffDelivered, TaskFire,
   ExpertsExpertStatus, JudgeRecord, HandoffRefine,

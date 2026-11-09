@@ -7,6 +7,7 @@ type TurnCommand =
   | CommandOf<"turn.dequeue">
   | CommandOf<"turn.interrupt">
   | CommandOf<"turn.start">
+  | CommandOf<"turn.session">
   | CommandOf<"assistant.append">
   | CommandOf<"assistant.reasoning.append">
   | CommandOf<"usage.report">
@@ -87,6 +88,27 @@ export function decideTurn(model: ReadModel, command: TurnCommand, ctx: DecideCo
       // server-sent notification turn never does
       const titled = queued || command.notification !== undefined ? undefined : autoTitleEvent(thread, command.text, ctx.now);
       return titled !== undefined ? ok(titled, ...events) : ok(...events);
+    }
+
+    /** R17: the native id arrived after turn.started; idempotent when already known */
+    case "turn.session": {
+      const turn = model.turns[command.turnId];
+      if (!turn) return fail("not-found", `unknown turn ${command.turnId}`);
+      const thread = model.threads[turn.threadId];
+      if (!thread) return fail("not-found", `unknown thread ${turn.threadId}`);
+      if (turn.status !== "running") return fail("conflict", `turn ${turn.id} is ${turn.status}, not running`);
+      const key = turn.providerId ?? thread.providerId ?? turn.provider ?? thread.provider;
+      if (thread.providerSessions?.[key]?.nativeSessionId === command.nativeSessionId && thread.nativeSessionId === command.nativeSessionId) return ok();
+      return ok({
+        type: "turn.session-identified",
+        turnId: turn.id,
+        threadId: thread.id,
+        provider: turn.provider ?? thread.provider,
+        ...((turn.providerId ?? thread.providerId) !== undefined ? { providerId: turn.providerId ?? thread.providerId } : {}),
+        ...(command.model !== undefined ? { model: command.model } : {}),
+        nativeSessionId: command.nativeSessionId,
+        at: ctx.now,
+      });
     }
 
     case "turn.dequeue": {
