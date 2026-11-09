@@ -26,7 +26,16 @@ async function main(): Promise<number | undefined> {
     }
     case "pair": {
       const { runPair } = await import("./cli/pair.ts");
-      console.log(await runPair({ qr: command.qr, ansi: process.stdout.isTTY, ...(command.port !== undefined ? { port: command.port } : {}), ...(command.host !== undefined ? { host: command.host } : {}) }));
+      console.log(
+        await runPair({
+          qr: command.qr,
+          ansi: process.stdout.isTTY,
+          ...(command.port !== undefined ? { port: command.port } : {}),
+          ...(command.host !== undefined ? { host: command.host } : {}),
+          ...(command.list === true ? { list: true } : {}),
+          ...(command.revoke !== undefined ? { revoke: command.revoke } : {}),
+        }),
+      );
       return 0;
     }
     case "doctor": {

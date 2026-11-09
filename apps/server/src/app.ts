@@ -33,6 +33,7 @@ import { startRelayClient, type RelayClient } from "./relay/client.ts";
 import { SettingsStore } from "./settings.ts";
 import { startServer, type ServerHandle } from "./rpc/server.ts";
 import { PairingCodes } from "./rpc/pairing.ts";
+import { ClientTokenStore } from "./rpc/clientTokens.ts";
 import { localHostFor } from "./rpc/remote.ts";
 import { createWorkspaceServices, type WorkspaceServices } from "./rpc/workspace.ts";
 import { CheckpointService } from "./vcs/checkpoints.ts";
@@ -41,6 +42,7 @@ import { GitHubForge } from "./vcs/forge/github.ts";
 import { ForgeResolver } from "./vcs/forge/resolver.ts";
 import { PrWatcher } from "./vcs/prWatch.ts";
 import { VcsReactor } from "./vcs/reactor.ts";
+import { RepoBackfill } from "./vcs/repoBackfill.ts";
 import { WorktreeManager } from "./vcs/worktrees.ts";
 
 export interface AppOptions {
@@ -238,6 +240,9 @@ export async function createApp(options: AppOptions): Promise<App> {
   await recoverRollbacks(engine, { log });
   if (settings.get().continueAfterRestart) await continueAfterRestart(engine, recovered.threadIds, { log });
 
+  const repoBackfill = new RepoBackfill({ engine, log });
+  repoBackfill.start();
+
   // after recovery: turns settled as "interrupted" by a restart must not wake their parents
   const delegateWaits = new DelegateWaits();
   const delegation = new DelegationReactor({ engine, waits: delegateWaits, grayZone, log, ...(options.delegationSchedule !== undefined ? { schedule: options.delegationSchedule } : {}) });
@@ -249,6 +254,8 @@ export async function createApp(options: AppOptions): Promise<App> {
   scheduler.start();
 
   const pairing = new PairingCodes();
+  // R17: per-device tokens beside settings.json (in memory for `--data :memory:`)
+  const clientTokens = new ClientTokenStore({ ...(config.settingsPath === undefined ? {} : { path: ClientTokenStore.pathFor(config.settingsPath) }), log });
   const server =
     options.listen === false
       ? undefined
@@ -265,6 +272,7 @@ export async function createApp(options: AppOptions): Promise<App> {
           commands,
           acp,
           pairing,
+          clientTokens,
           relayState: () => relay?.state(),
           forges,
           ...(options.gh !== undefined ? { gh: options.gh } : {}),
@@ -313,6 +321,7 @@ export async function createApp(options: AppOptions): Promise<App> {
       triage.stop();
       handoffSite?.stop();
       vcs.stop();
+      repoBackfill.stop();
       rollback.stop();
       limits.stop();
       settlement.stop();

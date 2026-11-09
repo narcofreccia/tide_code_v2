@@ -15,7 +15,7 @@ export const META: SectionMeta = {
   title: "Environments",
   blurb:
     "Every machine running tide-server that this window drives. This machine is the primary: its settings are the ones these pages edit.",
-  keywords: ["This machine", "Machine name", "SSH host", "Other machines", "Add machine", "Pair another device", "Relay", "remote"],
+  keywords: ["This machine", "Machine name", "SSH host", "Other machines", "Add machine", "Pair another device", "Paired devices", "Relay", "remote"],
 };
 
 /**

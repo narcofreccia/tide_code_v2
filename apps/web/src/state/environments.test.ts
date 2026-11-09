@@ -205,15 +205,17 @@ describe("adding and pairing", () => {
     await expect(addEnvironment({ routes: [{ kind: "lan", url: "ws://10.0.0.9:1/ws", priority: 10 }] })).rejects.toThrow(/No route answered/);
   });
 
-  it("pairs with a code: POSTs it, stores the token and a route by host kind", async () => {
+  it("pairs with a code: POSTs it with this device's name, stores the token, its client id and a route by host kind", async () => {
     startEnvironments({ url: LOCAL_URL, token: "" });
-    const fetchImpl = probeFetch({}, { status: 200, body: { environmentId: "env-P", name: "laptop", token: "secret" } });
+    const fetchImpl = probeFetch({}, { status: 200, body: { environmentId: "env-P", name: "laptop", token: "secret", clientId: "dev-1" } });
     setEnvFetch(fetchImpl);
-    const id = await pairWithCode("http://192.168.1.20:3777", " 123456 ");
+    const id = await pairWithCode("http://192.168.1.20:3777", " 123456 ", "Firefox on Linux");
     expect(id).toBe("env-P");
-    expect(fetchImpl.posts).toEqual([{ url: "http://192.168.1.20:3777/api/auth/pair", body: JSON.stringify({ code: "123456" }) }]);
+    expect(fetchImpl.posts).toEqual([{ url: "http://192.168.1.20:3777/api/auth/pair", body: JSON.stringify({ code: "123456", name: "Firefox on Linux" }) }]);
     const env = useEnvironments.getState().environments.find((e) => e.id === "env-P");
-    expect(env).toMatchObject({ name: "laptop", token: "secret", routes: [{ kind: "lan", url: "ws://192.168.1.20:3777/ws" }] });
+    expect(env).toMatchObject({ name: "laptop", token: "secret", clientId: "dev-1", routes: [{ kind: "lan", url: "ws://192.168.1.20:3777/ws" }] });
+    // a paired device's token never goes raw on the socket, dev build or not
+    expect(fakes.byId("env-P").opts.authMode).toBe("ticket");
     expect(fakes.byId("env-P").opts.token).toBe("secret");
     expect(JSON.parse(window.localStorage.getItem(ENVIRONMENTS_KEY)!).environments.some((e: { id: string }) => e.id === "env-P")).toBe(true);
   });

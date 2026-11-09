@@ -6,7 +6,7 @@ export type CliCommand =
   | { cmd: "help" }
   /** `legacy`: no subcommand (the desktop sidecar and `pnpm dev`): loopback by default */
   | { cmd: "serve"; args: string[]; legacy: boolean }
-  | { cmd: "pair"; port?: number; host?: string; qr: boolean }
+  | { cmd: "pair"; port?: number; host?: string; qr: boolean; list?: boolean; revoke?: string }
   | { cmd: "doctor"; port?: number }
   | { cmd: "triage"; issue: boolean; noAgent: boolean; port?: number }
   | { cmd: "service"; action: "install" | "uninstall" | "status"; serveArgs: string[] }
@@ -17,8 +17,9 @@ export class CliError extends Error {}
 export const USAGE = `usage:
   tide serve [--host 0.0.0.0] [--port 3777] [--data <dir>] [--name <machine name>] [--web <dir>] [--log <file>]
              run the server headless (all interfaces by default) and print a pairing code
-  tide pair [--port <n>] [--host <h>] [--no-qr]
-             ask the running server for a one-time pairing code (6 digits, 5 minutes)
+  tide pair [--port <n>] [--host <h>] [--no-qr] [--list | --revoke <id>]
+             ask the running server for a one-time pairing code (6 digits, 5 minutes);
+             --list shows paired devices, --revoke <id> drops one (it must pair again)
   tide doctor [--port <n>]
              check node, git/gh/rg, harness CLIs, TIDE_HOME, the port and server.json
   tide triage [--issue] [--no-agent] [--port <n>]
@@ -63,7 +64,7 @@ export function parseCli(argv: string[]): CliCommand {
     case "serve":
       return { cmd: "serve", args: validate(rest), legacy: false };
     case "pair": {
-      const out: { cmd: "pair"; port?: number; host?: string; qr: boolean } = { cmd: "pair", qr: true };
+      const out: { cmd: "pair"; port?: number; host?: string; qr: boolean; list?: boolean; revoke?: string } = { cmd: "pair", qr: true };
       for (let i = 0; i < rest.length; i++) {
         const arg = rest[i];
         if (arg === "--port") out.port = portOf(rest[++i], "--port");
@@ -72,8 +73,14 @@ export function parseCli(argv: string[]): CliCommand {
           if (host === undefined) throw new CliError("--host needs a value");
           out.host = host;
         } else if (arg === "--no-qr") out.qr = false;
-        else throw new CliError(`unknown argument ${String(arg)} for tide pair`);
+        else if (arg === "--list") out.list = true;
+        else if (arg === "--revoke") {
+          const id = rest[++i];
+          if (id === undefined || id.startsWith("--")) throw new CliError("--revoke needs a device id (see tide pair --list)");
+          out.revoke = id;
+        } else throw new CliError(`unknown argument ${String(arg)} for tide pair`);
       }
+      if (out.list === true && out.revoke !== undefined) throw new CliError("tide pair: --list and --revoke are exclusive");
       return out;
     }
     case "doctor": {

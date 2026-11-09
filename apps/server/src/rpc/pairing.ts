@@ -22,7 +22,7 @@ export function safeEqual(a: string, b: string): boolean {
 
 /**
  * One-time pairing codes: 6 digits, 5 minutes, single use, kept in memory only (a restart forgets
- * them). Exchanging one returns the server's bearer token, so attempts are rate-limited per
+ * them). Exchanging one mints a per-device bearer token (clientTokens.ts), so attempts are rate-limited per
  * address and a code that collects too many wrong guesses is burnt.
  */
 export class PairingCodes {

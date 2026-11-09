@@ -1,5 +1,5 @@
 import WebSocket from "ws";
-import type { EnvProbe } from "@tide/contracts";
+import type { EnvProbe, PairedClient } from "@tide/contracts";
 import { localHostFor } from "../rpc/remote.ts";
 import { encodeQr, renderQr } from "./qr.ts";
 import { readRuntime, readToken, tideHomeOf } from "./runtime.ts";
@@ -10,7 +10,9 @@ export interface PairCode {
   urls: string[];
 }
 
-export class PairError extends Error {}
+export class PairError extends Error {
+  override name = "PairError";
+}
 
 /** What a pairing QR encodes: the first URL with the code in the fragment (never sent to a server). */
 export function pairLink(urls: string[], code: string): string | undefined {
@@ -47,6 +49,16 @@ function rpcOnce<T>(url: string, method: string, params: unknown): Promise<T> {
   });
 }
 
+const stamp = (ms: number | undefined): string => (ms === undefined ? "-" : new Date(ms).toISOString().slice(0, 16).replace("T", " "));
+
+/** `tide pair --list`: one row per paired device (times in UTC). */
+export function clientsTable(clients: PairedClient[]): string {
+  if (clients.length === 0) return "No paired devices. Run `tide pair` to pair one.";
+  const rows = [["ID", "NAME", "CREATED", "LAST SEEN", "LAST ADDRESS"], ...clients.map((c) => [c.id, c.name, stamp(c.createdAt), stamp(c.lastSeenAt), c.lastAddress ?? "-"])];
+  const widths = rows[0]!.map((_, i) => Math.max(...rows.map((r) => r[i]!.length)));
+  return rows.map((r) => r.map((cell, i) => (i === r.length - 1 ? cell : cell.padEnd(widths[i]!))).join("  ")).join("\n");
+}
+
 export interface PairOptions {
   port?: number;
   host?: string;
@@ -54,12 +66,16 @@ export interface PairOptions {
   env?: NodeJS.ProcessEnv;
   /** colour the QR (a TTY) */
   ansi?: boolean;
+  /** R17: list paired devices instead of issuing a code */
+  list?: boolean;
+  /** R17: revoke this paired device's token (its open sockets close) */
+  revoke?: string;
 }
 
 /**
  * `tide pair`: talks to the server running on this machine over loopback with the token from
  * `<TIDE_HOME>/server.json` (that file is the proof of being local), asks for a pairing code and
- * prints it with the URLs and a QR.
+ * prints it with the URLs and a QR. `--list` / `--revoke <id>` manage the paired devices.
  */
 export async function runPair(options: PairOptions): Promise<string> {
   const tideHome = tideHomeOf(options.env);
@@ -80,7 +96,14 @@ export async function runPair(options: PairOptions): Promise<string> {
     if (err instanceof PairError) throw err;
     throw new PairError(`no Tide server answering on ${base} — start one with \`tide serve\` (or pass --port)`);
   }
-  const code = await rpcOnce<PairCode>(`ws://${host}:${port}/ws?wsTicket=${ticket}`, "env.pairingCode", {});
+  const wsUrl = `ws://${host}:${port}/ws?wsTicket=${ticket}`;
+  if (options.list) return clientsTable((await rpcOnce<{ clients: PairedClient[] }>(wsUrl, "env.clients.list", {})).clients);
+  if (options.revoke !== undefined) {
+    const { ok } = await rpcOnce<{ ok: boolean }>(wsUrl, "env.clients.revoke", { id: options.revoke });
+    if (!ok) throw new PairError(`no paired device ${options.revoke} (see tide pair --list)`);
+    return `revoked ${options.revoke}; its open connections were closed and it must pair again`;
+  }
+  const code = await rpcOnce<PairCode>(wsUrl, "env.pairingCode", {});
   const link = pairLink(code.urls, code.code);
   let qr: string | undefined;
   if (options.qr && link !== undefined) {

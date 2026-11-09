@@ -32,6 +32,7 @@ import { SettingsStore } from "../settings.ts";
 import type { JudgeLedger } from "../decisions/ledger.ts";
 import { buildRemoteInfo, type Interfaces } from "./remote.ts";
 import { envInfo, registerEnvHandlers, type EnvDeps, type RelayState } from "./env.ts";
+import { ClientTokenStore } from "./clientTokens.ts";
 import { createHttpHandler } from "./http.ts";
 import { PairingCodes, safeEqual } from "./pairing.ts";
 import { registerRunStackHandlers } from "./runStack.ts";
@@ -90,6 +91,8 @@ export interface ServerDeps {
   runUpdate?: EnvDeps["runUpdate"];
   /** R10: forge detection shared with PR watch; a GitHub-only resolver when omitted */
   forges?: ForgeResolver;
+  /** R17: per-device tokens; in memory unless config.settingsPath says where clients.json lives */
+  clientTokens?: ClientTokenStore;
 }
 
 export interface ServerHandle {
@@ -97,7 +100,16 @@ export interface ServerHandle {
   host: string;
   url: string;
   pairing: PairingCodes;
+  clientTokens: ClientTokenStore;
+  /** R17: closes every socket a paired device opened (code 4401 "revoked"); returns how many */
+  closeClient(clientId: string): number;
   close(): Promise<void>;
+}
+
+/** What a socket may do: an agent socket speaks for a thread; a paired device's socket carries its client id. */
+interface Privileges {
+  agentThreadId?: string;
+  clientId?: string;
 }
 
 export async function startServer(deps: ServerDeps): Promise<ServerHandle> {
@@ -106,6 +118,19 @@ export async function startServer(deps: ServerDeps): Promise<ServerHandle> {
   const tickets = new TicketIssuer();
   const agentTokens = deps.agentTokens ?? new AgentTokenStore();
   const pairing = deps.pairing ?? new PairingCodes();
+  const clientTokens = deps.clientTokens ?? new ClientTokenStore(config.settingsPath !== undefined ? { path: ClientTokenStore.pathFor(config.settingsPath) } : {});
+  /** sockets opened with a paired device's ticket, so revoking the device drops them */
+  const clientSockets = new Map<WebSocket, string>();
+  const closeClient = (clientId: string): number => {
+    let closed = 0;
+    for (const [ws, id] of clientSockets) {
+      if (id !== clientId) continue;
+      clientSockets.delete(ws);
+      ws.close(4401, "revoked");
+      closed++;
+    }
+    return closed;
+  };
 
   const registry =
     deps.registry ?? new DriverRegistry({ env: { dataDir: config.dataDir, log: (msg, data) => (data === undefined ? console.error(msg) : console.error(msg, data)) } });
@@ -128,6 +153,7 @@ export async function startServer(deps: ServerDeps): Promise<ServerHandle> {
     registry,
     settings,
     pairing,
+    clients: { store: clientTokens, closeClient },
     remote,
     ...(deps.relayState !== undefined ? { relayState: deps.relayState } : {}),
     ...(deps.runUpdate !== undefined ? { runUpdate: deps.runUpdate } : {}),
@@ -194,6 +220,7 @@ export async function startServer(deps: ServerDeps): Promise<ServerHandle> {
       config,
       tickets,
       pairing,
+      clientTokens,
       remote,
       envName: () => settings.get().environment.name,
       webhook: { engine, settings },
@@ -204,14 +231,20 @@ export async function startServer(deps: ServerDeps): Promise<ServerHandle> {
   const alive = new WeakMap<WebSocket, boolean>();
 
   /** null = rejected; otherwise the connection's privileges. */
-  const authorize = (url: URL): { agentThreadId?: string } | null => {
+  const authorize = (url: URL): Privileges | null => {
     const agentToken = url.searchParams.get("agentToken");
     if (agentToken !== null) {
       const agentThreadId = agentTokens.resolve(agentToken);
       return agentThreadId === undefined ? null : { agentThreadId };
     }
     const ticket = url.searchParams.get("wsTicket");
-    if (ticket && tickets.consume(ticket)) return {};
+    const grant = ticket ? tickets.consume(ticket) : undefined;
+    if (grant !== undefined) {
+      // a ticket bought before its device was revoked dies with it
+      if (grant.clientId !== undefined && !clientTokens.has(grant.clientId)) return null;
+      return grant;
+    }
+    // raw tokens on the socket: the master token, and only in --dev; device tokens always go through a ticket
     const token = url.searchParams.get("token");
     return config.dev && token !== null && safeEqual(token, config.token) ? {} : null;
   };
@@ -233,14 +266,20 @@ export async function startServer(deps: ServerDeps): Promise<ServerHandle> {
     });
   });
 
-  wss.on("connection", (ws: WebSocket, _req: IncomingMessage, privileges: { agentThreadId?: string } = {}) => {
+  wss.on("connection", (ws: WebSocket, req: IncomingMessage, privileges: Privileges = {}) => {
     alive.set(ws, true);
+    const { clientId, ...options } = privileges;
+    if (clientId !== undefined) {
+      clientSockets.set(ws, clientId);
+      clientTokens.touch(clientId, req.socket.remoteAddress ?? "unknown");
+      ws.on("close", () => clientSockets.delete(ws));
+    }
     const connection = router.connection(
       newId(),
       (frame) => {
         if (ws.readyState === ws.OPEN) ws.send(JSON.stringify(frame));
       },
-      privileges,
+      options,
     );
     ws.on("pong", () => alive.set(ws, true));
     ws.on("message", (data) => {
@@ -279,8 +318,11 @@ export async function startServer(deps: ServerDeps): Promise<ServerHandle> {
     host: config.host,
     url: `ws://${config.host}:${port}/ws`,
     pairing,
+    clientTokens,
+    closeClient,
     async close() {
       clearInterval(keepalive);
+      clientTokens.flush();
       runStack.close();
       if (ownsWorkspace) workspace.close();
       for (const ws of wss.clients) ws.terminate();

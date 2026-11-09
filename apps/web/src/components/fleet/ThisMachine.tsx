@@ -8,6 +8,7 @@ import { SettingText } from "../settings/ui/SettingText.tsx";
 import { HostBars } from "./FleetBits.tsx";
 import { hostLine, harnessSummary, formatBytes } from "./envView.ts";
 import { PairDevice } from "./PairDevice.tsx";
+import { PairedDevices } from "./PairedDevices.tsx";
 import { UpdateHarnesses } from "./UpdateHarnesses.tsx";
 import styles from "./Environments.module.css";
 
@@ -96,6 +97,7 @@ export function ThisMachine({ info, envId }: { info: ServerInfo | undefined; env
         </SettingNote>
       )}
       <PairDevice envId={envId} />
+      <PairedDevices envId={envId} />
       <UpdateHarnesses />
     </SettingsGroup>
   );

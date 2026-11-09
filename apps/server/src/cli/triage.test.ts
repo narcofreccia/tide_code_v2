@@ -4,7 +4,7 @@ import { join } from "node:path";
 import { afterEach, describe, expect, it } from "vitest";
 import { CliError, parseCli } from "./args.ts";
 import type { DoctorProbes } from "./doctor.ts";
-import { buildReport, issueBody, redact, redactSettings, runTriage } from "./triage.ts";
+import { buildReport, issueBody, NEVER_INCLUDED, redact, redactSettings, runTriage } from "./triage.ts";
 
 const dirs: string[] = [];
 afterEach(() => {
@@ -61,6 +61,26 @@ describe("tide triage", () => {
     expect(issue.text).not.toContain("settings.json (redacted)");
     expect((await runTriage({ issue: false, noAgent: true }, input)).text).not.toContain("claude ");
     expect(issueBody("# Tide triage report\nx")).toContain("### Diagnostics");
+  });
+
+  it("never reads server.json or clients.json into the report", async () => {
+    const probes = home();
+    const hash = "f".repeat(64);
+    writeFileSync(join(probes.tideHome, "clients.json"), JSON.stringify({ version: 1, clients: [{ id: "dev1", name: "secret-phone", createdAt: 1, hash }] }));
+    const asked: string[] = [];
+    const readFile = (path: string): string | undefined => {
+      asked.push(path);
+      try {
+        return readFileSync(path, "utf8");
+      } catch {
+        return undefined;
+      }
+    };
+    const report = await buildReport({ probes, version: "1", binary: "/bin/tide", readFile });
+    expect(asked.some((p) => p.endsWith("clients.json") || p.endsWith("server.json"))).toBe(false);
+    expect(NEVER_INCLUDED.has("clients.json")).toBe(true);
+    expect(report).not.toContain(hash);
+    expect(report).not.toContain("secret-phone");
   });
 
   it("parses args", () => {

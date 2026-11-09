@@ -11,27 +11,29 @@ const TTL_MS = 5 * 60 * 1000;
 export class TicketIssuer {
   #ttlMs: number;
   #now: () => number;
-  #issued = new Map<string, { kind: string; expiresAt: number }>();
+  #issued = new Map<string, { kind: string; expiresAt: number; clientId?: string }>();
 
   constructor(options: { ttlMs?: number; now?: () => number } = {}) {
     this.#ttlMs = options.ttlMs ?? TTL_MS;
     this.#now = options.now ?? (() => Date.now());
   }
 
-  issue(kind: "websocket"): Ticket {
+  /** `clientId`: the paired device whose token bought the ticket (R17); omitted for the master token. */
+  issue(kind: "websocket", grant: { clientId?: string } = {}): Ticket {
     this.#sweep();
     const ticket = randomBytes(32).toString("hex");
     const expiresAt = this.#now() + this.#ttlMs;
-    this.#issued.set(ticket, { kind, expiresAt });
+    this.#issued.set(ticket, { kind, expiresAt, ...(grant.clientId !== undefined ? { clientId: grant.clientId } : {}) });
     return { ticket, expiresAt };
   }
 
-  /** Returns true exactly once per valid, unexpired ticket. */
-  consume(ticket: string): boolean {
+  /** The ticket's grant exactly once per valid, unexpired ticket; undefined otherwise. */
+  consume(ticket: string): { clientId?: string } | undefined {
     const entry = this.#issued.get(ticket);
-    if (!entry) return false;
+    if (!entry) return undefined;
     this.#issued.delete(ticket);
-    return entry.expiresAt > this.#now();
+    if (entry.expiresAt <= this.#now()) return undefined;
+    return entry.clientId !== undefined ? { clientId: entry.clientId } : {};
   }
 
   #sweep(): void {

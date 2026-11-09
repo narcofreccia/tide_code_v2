@@ -6,9 +6,12 @@ export class WsTestClient {
   #ws: WebSocket;
   #nextId = 0;
   #pending = new Map<string, { resolve: (v: unknown) => void; reject: (e: unknown) => void }>();
+  /** resolves with the close code and reason once the socket closes (from either side) */
+  readonly closed: Promise<{ code: number; reason: string }>;
 
   private constructor(ws: WebSocket) {
     this.#ws = ws;
+    this.closed = new Promise((resolve) => ws.once("close", (code, reason) => resolve({ code, reason: reason.toString() })));
     ws.on("message", (data) => this.#onFrame(JSON.parse(data.toString()) as RpcFrame));
     ws.on("close", () => {
       for (const p of this.#pending.values()) p.reject(new Error("socket closed"));

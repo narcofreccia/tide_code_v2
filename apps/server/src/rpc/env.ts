@@ -7,6 +7,7 @@ import { BUNDLED_KINDS, type DriverRegistry } from "../provider/registry.ts";
 import { instanceIdOf } from "../provider/sessions.ts";
 import type { SettingsStore } from "../settings.ts";
 import { cpuUsage, memAvailable } from "./hostLoad.ts";
+import type { ClientTokenStore } from "./clientTokens.ts";
 import type { PairingCodes } from "./pairing.ts";
 import type { RemoteInfo } from "./remote.ts";
 import { RpcException, type RpcRouter } from "./router.ts";
@@ -95,6 +96,8 @@ export interface EnvDeps {
   registry: DriverRegistry;
   settings?: Pick<SettingsStore, "get">;
   pairing: PairingCodes;
+  /** R17: paired devices and a way to drop their open sockets on revoke */
+  clients?: { store: ClientTokenStore; closeClient(clientId: string): number };
   remote: (options: { includePairing: boolean }) => RemoteInfo;
   /** the relay client's state (apps/server/src/relay) when one is configured */
   relayState?: () => RelayState | undefined;
@@ -122,6 +125,16 @@ export function registerEnvHandlers(router: RpcRouter, deps: EnvDeps): void {
   router.register("env.pairingCode", async () => {
     const { code, expiresAt } = deps.pairing.issue();
     return { code, expiresAt, urls: pairingUrls(deps.remote({ includePairing: false }), deps.relayState?.()) };
+  });
+
+  // agent sockets never reach env.* (the router keeps them to agent.*); a device may revoke itself
+  router.register("env.clients.list", async () => ({ clients: deps.clients?.store.list() ?? [] }));
+  router.register("env.clients.revoke", async ({ id }) => {
+    // ok: false = no such device (already revoked, or a typo)
+    const clients = deps.clients;
+    if (clients === undefined || !clients.store.revoke(id)) return { ok: false };
+    clients.closeClient(id);
+    return { ok: true };
   });
 
   let updating = false;

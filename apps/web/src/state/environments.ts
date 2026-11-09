@@ -14,6 +14,7 @@ import {
   setPrimary,
 } from "./envManager.ts";
 import { useEnvironments } from "./envStore.ts";
+import { thisDeviceName } from "./deviceName.ts";
 
 /**
  * R9: the environments (machines running tide-server) this client knows about.
@@ -33,6 +34,8 @@ export interface AddEnvironmentInput {
   name?: string;
   routes: EnvRoute[];
   token?: string;
+  /** R17: the per-device token's id on that server (pairing); omitted for a pasted master token */
+  clientId?: string;
   sshHost?: string;
 }
 
@@ -46,6 +49,7 @@ function upsertEnvironment(id: string, input: AddEnvironmentInput, fallbackName:
     routes: input.routes,
     addedAt: Date.now(),
     ...(input.token === undefined ? {} : { token: input.token }),
+    ...(input.clientId === undefined ? {} : { clientId: input.clientId }),
     ...(input.sshHost === undefined ? {} : { sshHost: input.sshHost }),
   };
   const record = mergeEnvRecords(incoming, existing, id);
@@ -84,11 +88,14 @@ function isPairResponse(value: unknown): value is PairResponse {
   return typeof v.environmentId === "string" && typeof v.token === "string";
 }
 
-/** `POST /api/auth/pair {code}` on `httpUrl`, then addEnvironment with the returned token. */
-export async function pairWithCode(httpUrl: string, code: string): Promise<string> {
+/**
+ * `POST /api/auth/pair {code, name}` on `httpUrl`, then addEnvironment with the returned per-device
+ * token. `name` is how this device shows in the server's paired-device list.
+ */
+export async function pairWithCode(httpUrl: string, code: string, name: string = thisDeviceName()): Promise<string> {
   const origin = httpOriginFor(httpUrl.includes("://") ? httpUrl : `http://${httpUrl}`);
   // no content-type header: a "simple" cross-origin request, no CORS preflight needed
-  const response = await envFetch()(`${origin}/api/auth/pair`, { method: "POST", body: JSON.stringify({ code: code.trim() }) });
+  const response = await envFetch()(`${origin}/api/auth/pair`, { method: "POST", body: JSON.stringify({ code: code.trim(), name }) });
   if (!response.ok) {
     if (response.status === 429) throw new Error("Too many pairing attempts; wait a minute and try again");
     throw new Error(response.status === 401 || response.status === 403 || response.status === 400
@@ -98,7 +105,8 @@ export async function pairWithCode(httpUrl: string, code: string): Promise<strin
   const body = await response.json();
   if (!isPairResponse(body)) throw new Error("Pairing failed: unexpected answer");
   const route = routeFor(wsUrlFor(origin));
-  return upsertEnvironment(body.environmentId, { name: body.name, routes: [route], token: body.token }, body.name);
+  const input: AddEnvironmentInput = { name: body.name, routes: [route], token: body.token, ...(body.clientId === undefined ? {} : { clientId: body.clientId }) };
+  return upsertEnvironment(body.environmentId, input, body.name);
 }
 
 /** Disconnects, drops its model, ownership and stored per-thread state. The local environment stays. */

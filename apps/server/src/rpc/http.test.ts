@@ -1,7 +1,9 @@
 import { mkdirSync, mkdtempSync, rmSync, writeFileSync } from "node:fs";
 import { tmpdir } from "node:os";
 import { join } from "node:path";
-import { afterAll, beforeAll, describe, expect, it } from "vitest";
+import { afterAll, afterEach, beforeAll, beforeEach, describe, expect, it } from "vitest";
+import type { PairResponse, PairedClient } from "@tide/contracts";
+import WebSocket from "ws";
 import type { ServerConfig } from "../config.ts";
 import { openDatabase } from "../db/sqlite.ts";
 import { Engine } from "../orchestration/engine.ts";
@@ -52,13 +54,26 @@ async function boot(overrides: Partial<ServerConfig> = {}, pairing?: PairingCode
   };
 }
 
-const pair = (base: string, code: unknown): Promise<Response> =>
-  fetch(`${base}/api/auth/pair`, { method: "POST", headers: { "content-type": "application/json", origin: "https://elsewhere.example" }, body: JSON.stringify({ code }) });
+const pair = (base: string, code: unknown, name?: unknown): Promise<Response> =>
+  fetch(`${base}/api/auth/pair`, {
+    method: "POST",
+    headers: { "content-type": "application/json", origin: "https://elsewhere.example" },
+    body: JSON.stringify(name === undefined ? { code } : { code, name }),
+  });
 
-async function wsClient(b: Booted): Promise<WsTestClient> {
-  const res = await fetch(`${b.base}/api/auth/ws-ticket`, { method: "POST", headers: { authorization: `Bearer ${TOKEN}` } });
-  const { ticket } = (await res.json()) as { ticket: string };
+const ticketFor = (b: Booted, token: string): Promise<Response> =>
+  fetch(`${b.base}/api/auth/ws-ticket`, { method: "POST", headers: { authorization: `Bearer ${token}` } });
+
+async function wsClient(b: Booted, token: string = TOKEN): Promise<WsTestClient> {
+  const { ticket } = (await (await ticketFor(b, token)).json()) as { ticket: string };
   return WsTestClient.open(`ws://127.0.0.1:${b.handle.port}/ws?wsTicket=${ticket}`);
+}
+
+/** Pairs a device through the HTTP route; resolves with the minted token and id. */
+async function pairDevice(b: Booted, name?: string): Promise<PairResponse> {
+  const res = await pair(b.base, b.handle.pairing.issue().code, name);
+  expect(res.status).toBe(200);
+  return (await res.json()) as PairResponse;
 }
 
 describe("GET /api/env", () => {
@@ -98,7 +113,7 @@ describe("GET /api/env", () => {
 });
 
 describe("pairing", () => {
-  it("issues a code over RPC and exchanges it once for the token", async () => {
+  it("issues a code over RPC and exchanges it once for a device token", async () => {
     const b = await boot();
     const client = await wsClient(b);
     try {
@@ -109,7 +124,10 @@ describe("pairing", () => {
       const ok = await pair(b.base, issued.code);
       expect(ok.status).toBe(200);
       expect(ok.headers.get("access-control-allow-origin")).toBe("*");
-      expect(await ok.json()).toMatchObject({ environmentId: "env-http", token: TOKEN });
+      const body = (await ok.json()) as PairResponse;
+      expect(body).toMatchObject({ environmentId: "env-http", clientId: expect.any(String) });
+      expect(body.token).not.toBe(TOKEN); // never the master token
+      expect(body.token).toMatch(/^[A-Za-z0-9_-]{43}$/);
       expect((await pair(b.base, issued.code)).status).toBe(401); // single use
     } finally {
       client.close();
@@ -148,6 +166,84 @@ describe("pairing", () => {
     } finally {
       await b.close();
     }
+  });
+});
+
+describe("paired devices (per-device tokens)", () => {
+  // a fresh server per test: pairing is rate-limited to 5 attempts a minute per address
+  let b: Booted;
+  beforeEach(async () => (b = await boot()));
+  afterEach(() => b.close());
+
+  it("names the device, defaults the name, and refuses a name over 64 characters", async () => {
+    const named = await pairDevice(b, "  Firefox on macOS  ");
+    const plain = await pairDevice(b);
+    expect((await pair(b.base, b.handle.pairing.issue().code, "x".repeat(65))).status).toBe(400);
+    expect((await pair(b.base, b.handle.pairing.issue().code, 7)).status).toBe(400);
+    const listed = b.handle.clientTokens.list();
+    expect(listed.find((c) => c.id === named.clientId)?.name).toBe("Firefox on macOS");
+    expect(listed.find((c) => c.id === plain.clientId)?.name).toBe("device");
+  });
+
+  it("a device token buys a ticket; the socket carries its client id; the master token still works", async () => {
+    const device = await pairDevice(b, "phone");
+    const res = await ticketFor(b, device.token);
+    expect(res.status).toBe(200);
+    const client = await wsClient(b, device.token);
+    const master = await wsClient(b);
+    try {
+      const { clients } = await client.call<{ clients: PairedClient[] }>("env.clients.list", {});
+      const me = clients.find((c) => c.id === device.clientId);
+      expect(me).toMatchObject({ name: "phone", lastAddress: expect.stringContaining("127.0.0.1") });
+      expect(clients.every((c) => !("hash" in c))).toBe(true);
+      expect((await master.call<{ clients: PairedClient[] }>("env.clients.list", {})).clients.length).toBe(clients.length);
+    } finally {
+      client.close();
+      master.close();
+    }
+  });
+
+  it("never accepts a device token raw on the socket, even in --dev", async () => {
+    const dev = await boot({ dev: true });
+    try {
+      const device = await pairDevice(dev);
+      const code = await new Promise<number>((resolve) => new WebSocket(`ws://127.0.0.1:${dev.handle.port}/ws?token=${device.token}`).once("close", resolve));
+      expect(code).toBe(4401);
+    } finally {
+      await dev.close();
+    }
+  });
+
+  it("revoking closes the device's live sockets with 4401 and its token buys no more tickets", async () => {
+    const device = await pairDevice(b, "lost phone");
+    const other = await pairDevice(b, "keeper");
+    const unused = (await (await ticketFor(b, device.token)).json()) as { ticket: string };
+    const live = await wsClient(b, device.token);
+    const bystander = await wsClient(b, other.token);
+    const admin = await wsClient(b);
+    try {
+      expect(await admin.call("env.clients.revoke", { id: device.clientId })).toEqual({ ok: true });
+      expect(await live.closed).toEqual({ code: 4401, reason: "revoked" });
+      expect((await ticketFor(b, device.token)).status).toBe(401);
+      // a ticket bought before the revoke dies with the device
+      const late = await new Promise<number>((resolve) => new WebSocket(`ws://127.0.0.1:${b.handle.port}/ws?wsTicket=${unused.ticket}`).once("close", resolve));
+      expect(late).toBe(4401);
+      expect(await admin.call("env.clients.revoke", { id: device.clientId })).toEqual({ ok: false });
+      // other devices are untouched
+      expect((await bystander.call<{ clients: PairedClient[] }>("env.clients.list", {})).clients.some((c) => c.id === other.clientId)).toBe(true);
+    } finally {
+      bystander.close();
+      admin.close();
+    }
+  });
+
+  it("lets a device revoke itself", async () => {
+    const device = await pairDevice(b, "self");
+    const live = await wsClient(b, device.token);
+    const revoked = live.call("env.clients.revoke", { id: device.clientId }).catch(() => "closed first");
+    expect(await live.closed).toEqual({ code: 4401, reason: "revoked" });
+    expect(["closed first", { ok: true }]).toContainEqual(await revoked);
+    expect(b.handle.clientTokens.has(device.clientId as string)).toBe(false);
   });
 });
 

@@ -23,6 +23,10 @@ describe("parseCli", () => {
     expect(parseCli(["pair"])).toEqual({ cmd: "pair", qr: true });
     expect(parseCli(["pair", "--port", "3800", "--host", "10.0.0.2", "--no-qr"])).toEqual({ cmd: "pair", port: 3800, host: "10.0.0.2", qr: false });
     expect(() => parseCli(["pair", "--port", "x"])).toThrow(/port number/);
+    expect(parseCli(["pair", "--list"])).toEqual({ cmd: "pair", qr: true, list: true });
+    expect(parseCli(["pair", "--revoke", "abc123"])).toEqual({ cmd: "pair", qr: true, revoke: "abc123" });
+    expect(() => parseCli(["pair", "--revoke"])).toThrow(/device id/);
+    expect(() => parseCli(["pair", "--list", "--revoke", "x"])).toThrow(/exclusive/);
     expect(parseCli(["doctor"])).toEqual({ cmd: "doctor" });
     expect(parseCli(["doctor", "--port", "4000"])).toEqual({ cmd: "doctor", port: 4000 });
     expect(parseCli(["service", "install", "--port", "3800", "--name", "box"])).toEqual({ cmd: "service", action: "install", serveArgs: ["--port", "3800", "--name", "box"] });

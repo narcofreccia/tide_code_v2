@@ -1,10 +1,12 @@
 import { mkdirSync, readFileSync, writeFileSync } from "node:fs";
 import { arch, platform, release } from "node:os";
-import { join } from "node:path";
+import { basename, join } from "node:path";
 import { formatChecks, hostProbes, runChecks, type DoctorProbes } from "./doctor.ts";
 import { readRuntime, readToken } from "./runtime.ts";
 
 const LOG_LINES = 200;
+/** Files under TIDE_HOME a report never reads: the master token and the paired-device token hashes. */
+export const NEVER_INCLUDED: ReadonlySet<string> = new Set(["server.json", "clients.json", "clients.json.tmp"]);
 
 /** Replaces every secret we know of, plus anything that looks like an API key or token. */
 export function redact(text: string, secrets: Array<string | undefined> = []): string {
@@ -67,7 +69,8 @@ function decisionsKey(settingsRaw: string | undefined): string | undefined {
 /** The redacted report as markdown. Pure over the inputs. */
 export async function buildReport(input: TriageInput): Promise<string> {
   const home = input.probes.tideHome;
-  const read = input.readFile ?? readOr;
+  const readAny = input.readFile ?? readOr;
+  const read = (path: string): string | undefined => (NEVER_INCLUDED.has(basename(path)) ? undefined : readAny(path));
   const settingsRaw = read(join(home, "settings.json"));
   const secrets = [readToken(home), decisionsKey(settingsRaw)];
   const checks = await runChecks(input.probes, input.port ?? readRuntime(home)?.port ?? 3777);

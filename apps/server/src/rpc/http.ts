@@ -3,6 +3,7 @@ import type { EnvProbe, PairResponse } from "@tide/contracts";
 import type { ServerConfig } from "../config.ts";
 import { handleWebhook, WEBHOOK_MAX_BODY, type WebhookDeps } from "../scheduling/webhooks.ts";
 import { PROTOCOL_VERSION } from "../version.ts";
+import type { ClientTokenStore } from "./clientTokens.ts";
 import { safeEqual, type PairingCodes } from "./pairing.ts";
 import { landingPage, pairPage, type RemoteInfo } from "./remote.ts";
 import { serveStatic } from "./static.ts";
@@ -12,6 +13,8 @@ export interface HttpContext {
   config: ServerConfig;
   tickets: TicketIssuer;
   pairing: PairingCodes;
+  /** R17: per-device tokens minted by pairing; they buy tickets like the master token */
+  clientTokens: ClientTokenStore;
   remote: (options: { includePairing: boolean }) => RemoteInfo;
   /** settings.environment.name, read per request (the user may rename the machine) */
   envName: () => string;
@@ -34,6 +37,17 @@ interface Route {
 }
 
 const PAIR_BODY_MAX = 1024;
+export const CLIENT_NAME_MAX = 64;
+const DEFAULT_CLIENT_NAME = "device";
+
+/** `{ clientId? }` for a valid bearer (master or a live client token), undefined otherwise. */
+function bearerGrant(ctx: HttpContext, header: string | undefined): { clientId?: string } | undefined {
+  const auth = header ?? "";
+  if (safeEqual(auth, `Bearer ${ctx.config.token}`)) return {};
+  const match = /^Bearer (\S+)$/.exec(auth);
+  const clientId = match?.[1] !== undefined ? ctx.clientTokens.resolve(match[1]) : undefined;
+  return clientId === undefined ? undefined : { clientId };
+}
 
 function json(res: ServerResponse, status: number, body: unknown): void {
   res.writeHead(status, { "content-type": "application/json" });
@@ -102,9 +116,9 @@ function routes(ctx: HttpContext): Route[] {
       path: "/api/auth/ws-ticket",
       cors: "any",
       handle: (req, res) => {
-        const auth = req.headers.authorization ?? "";
-        if (!safeEqual(auth, `Bearer ${config.token}`)) return json(res, 401, { error: "unauthorized" });
-        json(res, 200, ctx.tickets.issue("websocket"));
+        const grant = bearerGrant(ctx, req.headers.authorization);
+        if (grant === undefined) return json(res, 401, { error: "unauthorized" });
+        json(res, 200, ctx.tickets.issue("websocket", grant));
       },
     },
     {
@@ -115,19 +129,26 @@ function routes(ctx: HttpContext): Route[] {
         const raw = await readBody(req, PAIR_BODY_MAX);
         if (raw === "too-large") return json(res, 413, { error: "payload-too-large" });
         let code: unknown;
+        let name: unknown;
         try {
-          code = (JSON.parse(raw.toString("utf8")) as { code?: unknown }).code;
+          ({ code, name } = JSON.parse(raw.toString("utf8")) as { code?: unknown; name?: unknown });
         } catch {
-          return json(res, 400, { error: "invalid-params", message: "body must be JSON {code}" });
+          return json(res, 400, { error: "invalid-params", message: "body must be JSON {code, name?}" });
         }
         if (typeof code !== "string" || !/^\d{6}$/.test(code.trim())) return json(res, 400, { error: "invalid-params", message: "code must be 6 digits" });
-        const outcome = ctx.pairing.exchange(code.trim(), req.socket.remoteAddress ?? "unknown");
+        if (name !== undefined && (typeof name !== "string" || name.trim().length > CLIENT_NAME_MAX)) {
+          return json(res, 400, { error: "invalid-params", message: `name must be a string of at most ${CLIENT_NAME_MAX} characters` });
+        }
+        const address = req.socket.remoteAddress ?? "unknown";
+        const outcome = ctx.pairing.exchange(code.trim(), address);
         if (outcome === "rate-limited") {
           res.setHeader("Retry-After", "60");
           return json(res, 429, { error: "rate-limited" });
         }
         if (outcome === "invalid") return json(res, 401, { error: "invalid-code" });
-        const body: PairResponse = { environmentId: config.environmentId, name: ctx.envName(), token: config.token };
+        const deviceName = typeof name === "string" && name.trim() !== "" ? name.trim() : DEFAULT_CLIENT_NAME;
+        const minted = ctx.clientTokens.mint(deviceName, address);
+        const body: PairResponse = { environmentId: config.environmentId, name: ctx.envName(), token: minted.token, clientId: minted.id };
         json(res, 200, body);
       },
     },
