@@ -1,4 +1,4 @@
-import { afterEach, describe, expect, it } from "vitest";
+import { afterEach, describe, expect, it, vi } from "vitest";
 import { cleanup, fireEvent, render, screen } from "@testing-library/react";
 import { NO_SERVER, PreviewMenu, SERVER_HELP, manualPreviewUrl } from "./PreviewMenu.tsx";
 import { PreviewTab, normalizePreviewUrl, previewSandbox } from "./PreviewTab.tsx";
@@ -7,12 +7,23 @@ import { attachFakeStore, makeThread, mockRpc, mockStream, modelWith, resetUi } 
 import { useModel } from "../../../state/model.ts";
 import { resetRun } from "../../../state/run.ts";
 import { emptyReadModel } from "@tide/contracts";
+import { useEnvironments } from "../../../state/environments.ts";
+
+const owners = vi.hoisted(() => ({ projects: {} as Record<string, string>, threads: {} as Record<string, string> }));
+vi.mock("../../../state/environments.ts", async (importActual) => ({
+  ...(await importActual<typeof import("../../../state/environments.ts")>()),
+  envOfProject: (id: string) => owners.projects[id],
+  envOfThread: (id: string) => owners.threads[id],
+}));
 
 afterEach(() => {
   cleanup();
   resetRun();
   resetUi();
   useModel.setState({ model: emptyReadModel() });
+  owners.projects = {};
+  owners.threads = {};
+  useEnvironments.setState({ environments: [], statuses: {}, primaryId: undefined });
   resetWorkbench();
 });
 
@@ -41,6 +52,19 @@ describe("Preview", () => {
     fireEvent.submit(field.closest("form") as HTMLFormElement);
     expect(activeTab("t1")).toEqual({ kind: "preview", url: "http://localhost:4321" });
     expect(manualPreviewUrl("localhost:3000/x")).toBe("http://localhost:3000/x");
+  });
+
+  it("points ports and bare port numbers at the thread's remote host", async () => {
+    useEnvironments.setState({ environments: [{ id: "env-R", name: "R", routes: [{ kind: "lan", url: "ws://192.168.1.20:3777/ws", priority: 0 }], addedAt: 1 }] });
+    owners.projects = {};
+    owners.threads = { t1: "env-R" };
+    mockRpc({ "ports.list": () => ({ ports: [{ port: 5173, pid: 42, command: "vite", url: "http://127.0.0.1:5173" }] }) });
+    render(<PreviewMenu threadId="t1" />);
+    fireEvent.click(screen.getByRole("button", { name: "Preview" }));
+    expect(screen.getByLabelText("Preview a URL").getAttribute("placeholder")).toBe("http://192.168.1.20:3000");
+    fireEvent.click(await screen.findByRole("menuitem", { name: /5173/ }));
+    expect(activeTab("t1")).toEqual({ kind: "preview", url: "http://192.168.1.20:5173/" });
+    expect(manualPreviewUrl("4321", "env-R")).toBe("http://192.168.1.20:4321");
   });
 
   it("keeps one preview tab per thread and retargets it from the URL bar", () => {

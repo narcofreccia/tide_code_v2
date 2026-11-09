@@ -7,6 +7,10 @@ import { useEnvironments, type EnvConnection, type EnvStatus, type EnvironmentsS
  * state, and how to turn a route into the origin a browser or an editor can open.
  */
 
+import { activeRoute, envHttpOrigin, httpOriginOf } from "../../lib/envOrigin.ts";
+
+export { activeRoute, envHttpOrigin, httpOriginOf };
+
 export type HostFacts = NonNullable<ServerInfo["host"]>;
 
 export const ROUTE_KINDS: EnvRoute["kind"][] = ["local", "lan", "tailscale", "ssh", "relay", "custom"];
@@ -64,18 +68,6 @@ export const CONNECTION_TONE: Record<EnvConnection, "ok" | "pending" | "bad" | "
   offline: "off",
 };
 
-/** ws://host:3777/ws → http://host:3777; a page URL passes through as its origin. */
-export function httpOriginOf(url: string): string | undefined {
-  try {
-    const parsed = new URL(url);
-    if (parsed.protocol === "ws:" || parsed.protocol === "wss:") return httpOriginFor(url);
-    if (parsed.protocol === "http:" || parsed.protocol === "https:") return parsed.origin;
-  } catch {
-    /* not a URL */
-  }
-  return undefined;
-}
-
 /** What the user typed (page URL, host:port or socket URL) → the socket URL routes store. */
 export function toWsUrl(input: string): string | undefined {
   const raw = input.trim();
@@ -115,22 +107,6 @@ export function guessRouteKind(url: string): EnvRoute["kind"] {
   if (host.endsWith(".ts.net") || TAILNET_V4.test(host)) return "tailscale";
   if (PRIVATE_V4.test(host) || host.endsWith(".local")) return "lan";
   return "custom";
-}
-
-/** The route carrying the connection, else the preferred one. */
-export function activeRoute(env: KnownEnvironment | undefined, status: EnvStatus | undefined): EnvRoute | undefined {
-  if (status?.route) return status.route;
-  return [...(env?.routes ?? [])].sort((a, b) => a.priority - b.priority)[0];
-}
-
-/** The http origin a browser opens for an environment; the current server when none is known. */
-export function envHttpOrigin(envId: string | undefined, state: EnvironmentsState = useEnvironments.getState()): string | undefined {
-  if (envId !== undefined) {
-    const env = state.environments.find((e) => e.id === envId);
-    const route = activeRoute(env, state.statuses[envId]);
-    if (route) return httpOriginOf(route.url);
-  }
-  return httpOriginOf(resolveServerUrl());
 }
 
 /** Whether an environment is the machine this client runs on (reached over loopback). */

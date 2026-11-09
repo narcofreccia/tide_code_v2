@@ -3,6 +3,8 @@ import type { RpcOutput } from "@tide/contracts";
 import { call, useModel } from "../../../state/model.ts";
 import { errorText } from "../../../lib/dispatchOrToast.ts";
 import { openPreviewTab } from "../../../state/workbench.ts";
+import { envOfThread } from "../../../state/environments.ts";
+import { previewHostFor, previewUrlFor, rehostLoopback } from "../../../lib/previewUrls.ts";
 import { Button } from "../../ui/Button.tsx";
 import { Icon } from "../../ui/Icon.tsx";
 import { Popover } from "../../ui/Popover.tsx";
@@ -19,9 +21,9 @@ export const SERVER_HELP =
   "Start one in the terminal or ask the agent to run it; Tide finds servers whose working directory is this worktree. Or type any URL.";
 
 /** `3000` → `http://localhost:3000`; anything else as the URL bar takes it. */
-export function manualPreviewUrl(raw: string): string {
+export function manualPreviewUrl(raw: string, envId?: string): string {
   const trimmed = raw.trim();
-  return /^\d{1,5}$/.test(trimmed) ? `http://localhost:${trimmed}` : normalizePreviewUrl(trimmed);
+  return /^\d{1,5}$/.test(trimmed) ? previewUrlFor(envId, Number(trimmed)) : normalizePreviewUrl(trimmed);
 }
 
 /** Any URL the user types (a server Tide cannot see, another port), opened as the preview tab. */
@@ -33,7 +35,7 @@ function ManualUrl({ threadId, close }: { threadId: string; close: () => void })
       title={SERVER_HELP}
       onSubmit={(e) => {
         e.preventDefault();
-        const url = manualPreviewUrl(draft);
+        const url = manualPreviewUrl(draft, envOfThread(threadId));
         if (url === "") return;
         openPreviewTab(threadId, url);
         close();
@@ -42,7 +44,7 @@ function ManualUrl({ threadId, close }: { threadId: string; close: () => void })
       <input
         className={styles.url}
         aria-label="Preview a URL"
-        placeholder="http://localhost:3000"
+        placeholder={`http://${previewHostFor(envOfThread(threadId))}:3000`}
         value={draft}
         spellCheck={false}
         onChange={(e) => setDraft(e.target.value)}
@@ -131,7 +133,7 @@ function PortItems({ threadId, ports, close }: { threadId: string; ports: Port[]
           role="menuitem"
           title={`${port.command} (pid ${port.pid})`}
           onClick={() => {
-            openPreviewTab(threadId, port.url);
+            openPreviewTab(threadId, rehostLoopback(port.url, envOfThread(threadId)));
             close();
           }}
         >

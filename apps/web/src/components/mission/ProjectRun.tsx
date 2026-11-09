@@ -4,6 +4,8 @@ import { useModel } from "../../state/model.ts";
 import { useRunProfiles, useRunSession } from "../../state/run.ts";
 import { useUi } from "../../state/ui.ts";
 import { openPreviewTab } from "../../state/workbench.ts";
+import { envOfProject } from "../../state/environments.ts";
+import { previewUrlFor } from "../../lib/previewUrls.ts";
 import { Pill, type PillTone } from "../ui/Pill.tsx";
 import styles from "./ProjectRun.module.css";
 
@@ -16,12 +18,12 @@ const TONE: Record<RunServiceState, PillTone> = {
   external: "needs",
 };
 
-/** First listening port of the first service that is up, as a localhost URL. */
-function firstUrl(session: ReturnType<typeof useRunSession>): string | undefined {
+/** First listening port of the first service that is up, as a URL on the project's machine. */
+function firstUrl(session: ReturnType<typeof useRunSession>, envId: string | undefined): string | undefined {
   for (const status of Object.values(session?.services ?? {})) {
     if (status.state !== "ready" && status.state !== "running") continue;
     const port = previewPort(status.ports);
-    if (port !== undefined) return `http://localhost:${port}`;
+    if (port !== undefined) return previewUrlFor(envId, port);
   }
   return undefined;
 }
@@ -46,7 +48,7 @@ export function ProjectRun({ projectId }: { projectId: string }) {
     }
     ui.selectThread(thread.id);
     ui.setFocusMode("split");
-    const url = firstUrl(session);
+    const url = firstUrl(session, envOfProject(projectId));
     if (url !== undefined) openPreviewTab(thread.id, url);
   };
 

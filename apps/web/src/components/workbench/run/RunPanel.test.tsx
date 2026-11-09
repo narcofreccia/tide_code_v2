@@ -1,14 +1,22 @@
-import { afterEach, describe, expect, it } from "vitest";
+import { afterEach, describe, expect, it, vi } from "vitest";
 import { act, cleanup, fireEvent, render, screen, waitFor, within } from "@testing-library/react";
 import { attachFakeStore, makeThread, mockRpc, mockStream, modelWith, resetUi } from "../../../testHarness.ts";
 import { resetRun } from "../../../state/run.ts";
 import { activeTab } from "../../../state/workbench.ts";
 import { useTerminals } from "../../../state/terminals.ts";
 import { useUi } from "../../../state/ui.ts";
+import { useEnvironments } from "../../../state/environments.ts";
 import { RpcCallError } from "@tide/client";
 import { NO_PROFILES, RUN_UNSUPPORTED, RunPanel } from "./RunPanel.tsx";
 import { installCommand, relativeCwd, splitCommand } from "./RunRow.tsx";
 import { plan, planRow, project, repo, REPOS, session, status, svc } from "./fixtures.ts";
+
+const owners = vi.hoisted(() => ({ projects: {} as Record<string, string>, threads: {} as Record<string, string> }));
+vi.mock("../../../state/environments.ts", async (importActual) => ({
+  ...(await importActual<typeof import("../../../state/environments.ts")>()),
+  envOfProject: (id: string) => owners.projects[id],
+  envOfThread: (id: string) => owners.threads[id],
+}));
 
 afterEach(() => {
   cleanup();
@@ -132,6 +140,22 @@ describe("RunPanel", () => {
     fireEvent.click(screen.getByRole("button", { name: "Logs of web" }));
     await waitFor(() => expect(useTerminals.getState().active.t1).toBe("rp-web"));
     expect(useTerminals.getState().drawerOpen).toBe(true);
+  });
+
+  it("Preview uses the remote host when the thread lives on another machine", async () => {
+    useEnvironments.setState({ environments: [{ id: "env-R", name: "R", routes: [{ kind: "lan", url: "ws://192.168.1.20:3777/ws", priority: 0 }], addedAt: 1 }] });
+    owners.projects = {};
+    owners.threads = { t1: "env-R" };
+    try {
+      const { push } = setup();
+      await screen.findByRole("region", { name: "backend" });
+      push({ kind: "snapshot", session: session({ "frontend.web": status("running", { ports: { http: 8082 } }) }) });
+      fireEvent.click(screen.getByRole("button", { name: "Preview web" }));
+      expect(activeTab("t1")).toEqual({ kind: "preview", url: "http://192.168.1.20:8082" });
+    } finally {
+      owners.projects = {}; owners.threads = {};
+      useEnvironments.setState({ environments: [] });
+    }
   });
 
   it("starts, stops and restarts one service", async () => {

@@ -1,6 +1,8 @@
 import type { RunPlanRow, RunService, RunServiceStatus } from "@tide/contracts";
 import { isUp, previewPort, type StackService } from "@tide/client";
 import { openPreviewTab } from "../../../state/workbench.ts";
+import { envOfThread } from "../../../state/environments.ts";
+import { previewUrlFor } from "../../../lib/previewUrls.ts";
 import { restartService, showServiceLog, startStack, stopStack } from "../../../state/run.ts";
 import { Button } from "../../ui/Button.tsx";
 import { Checkbox } from "../../ui/Choice.tsx";
@@ -161,8 +163,8 @@ export function RunRow({
             <Button
               variant="quiet"
               aria-label={`Preview ${service.name}`}
-              title={`Preview http://localhost:${port}`}
-              onClick={() => openPreviewTab(threadId, `http://localhost:${port}`)}
+              title={`Preview ${previewUrlFor(envOfThread(threadId), port)}`}
+              onClick={() => openPreviewTab(threadId, previewUrlFor(envOfThread(threadId), port))}
             >
               <Icon name="external" size={14} />
             </Button>
