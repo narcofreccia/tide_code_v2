@@ -40,6 +40,11 @@ function sameSettings(a: SessionSettings, b: SessionSettings): boolean {
 export interface OpenHints {
   /** R4: open a new native session continuing this one (thread fork); replaces `resume` */
   forkFrom?: string;
+  /**
+   * R17: start a brand-new native session (the turn after a `session.boundary`): a live session is
+   * closed first and nothing is resumed. A fork wins when both are given.
+   */
+  fresh?: true;
 }
 
 export interface SessionDirectoryOptions {
@@ -181,6 +186,20 @@ export class SessionDirectory {
     return (await this.#registry.status(providerId)).caps;
   }
 
+  /**
+   * C4: whether the instance running the thread's live session declares `harnessTurns` (cached
+   * caps); undefined when nothing is known (no live session, no cached status).
+   */
+  declaresHarnessTurns(threadId: string): boolean | undefined {
+    const entry = this.#entries.get(threadId);
+    return entry === undefined ? undefined : this.#harnessTurnsOf(entry.providerId);
+  }
+
+  #harnessTurnsOf(providerId: string): boolean | undefined {
+    const caps = this.#registry.cachedCaps(providerId);
+    return caps === undefined ? undefined : caps.harnessTurns === true;
+  }
+
   /** R8: a session still runs on this instance object (the registry defers its disposal). */
   usesInstance(instance: ProviderInstance): boolean {
     for (const entry of this.#entries.values()) if (entry.instance === instance) return true;
@@ -190,6 +209,8 @@ export class SessionDirectory {
   /** `hints` only apply when a session has to be opened; a live one is returned as is. */
   async getOrOpen(thread: Thread, project: Project, hints: OpenHints = {}): Promise<ProviderSession> {
     const cwd = threadCwd(thread, project);
+    // R17: a fresh session never reuses the live one (closing it ends its background sub-agents too)
+    if (hints.fresh === true && hints.forkFrom === undefined && this.#entries.has(thread.id)) await this.close(thread.id);
     const existing = this.#entries.get(thread.id);
     if (existing) {
       if (existing.providerId === instanceIdOf(thread) && existing.cwd === cwd) {
@@ -228,7 +249,7 @@ export class SessionDirectory {
     const tideTools = hasTideTools ? THREAD_TOOLS_HINT : undefined;
     const harnesses = hasTideTools ? this.#harnessHint?.() : undefined;
     const systemPromptAppend = composeSystemPromptAppend(linkedRepoPreamble(project, linkedDirs), tideTools, harnesses);
-    const resume = hints.forkFrom !== undefined ? undefined : resumableSessionId(thread, this.#model?.());
+    const resume = hints.forkFrom !== undefined || hints.fresh === true ? undefined : resumableSessionId(thread, this.#model?.());
     const session = await instance.openSession({
       threadId: thread.id,
       cwd,
@@ -242,9 +263,13 @@ export class SessionDirectory {
       ...(linkedDirs.length > 0 ? { linkedDirs } : {}),
       ...(systemPromptAppend !== undefined ? { systemPromptAppend } : {}),
     });
-    // subscribed before the session is handed out, so no harness turn can start unobserved
+    // subscribed before the session is handed out, so no harness turn can start unobserved. C4: a
+    // driver method alone is not a promise; an instance whose cached caps lack `harnessTurns` is
+    // not subscribed. Caps not read yet are not fetched here (opening stays one driver call): the
+    // reactor checks them when a harness turn arrives, and idle activity is checked per event.
+    const harnessTurns = this.#harnessTurnsOf(providerId) !== false;
     const onHarnessTurn = this.#onHarnessTurn;
-    if (onHarnessTurn !== undefined && session.onHarnessTurn !== undefined) {
+    if (harnessTurns && onHarnessTurn !== undefined && session.onHarnessTurn !== undefined) {
       const threadId = thread.id;
       session.onHarnessTurn((turn) => {
         this.touch(threadId);
@@ -256,9 +281,10 @@ export class SessionDirectory {
       });
     }
     const onIdleActivity = this.#onIdleActivity;
-    if (onIdleActivity !== undefined && session.onIdleActivity !== undefined) {
+    if (harnessTurns && onIdleActivity !== undefined && session.onIdleActivity !== undefined) {
       const threadId = thread.id;
       session.onIdleActivity((event) => {
+        if (this.#harnessTurnsOf(providerId) === false) return;
         this.touch(threadId);
         try {
           onIdleActivity(threadId, event);

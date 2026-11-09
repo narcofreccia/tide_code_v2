@@ -68,6 +68,8 @@ export const ProviderStatusDto = Type.Object({
     oneShot: Type.Optional(Type.Boolean()),
     effort: Type.Optional(Type.Boolean()),
     commands: Type.Optional(Type.Boolean()),
+    /** R14/R17: the harness can start turns on its own (background sub-agent reports) and the server may subscribe to them */
+    harnessTurns: Type.Optional(Type.Boolean()),
   }),
 });
 

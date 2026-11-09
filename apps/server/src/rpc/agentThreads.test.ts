@@ -139,6 +139,21 @@ describe("agent thread tools: read / send / wait", () => {
     expect(await agent.call("agent.thread.wait", { threadId: target })).toMatchObject({ settled: true, status: "idle", lastAssistantText: "done later" });
   });
 
+  it("R17: freshSession starts the target on a new native session; refused with steer and while running", async () => {
+    const target = await thread("Fresh");
+    expect((await agent.expectError("agent.thread.send", { threadId: target, text: "x", mode: "steer", freshSession: true })).code).toBe("invalid-params");
+    control.scriptFor(target, emit({ type: "session", nativeSessionId: "fresh-1" }), awaitInterrupt(), emit({ type: "settled", status: "completed" }));
+    const running = waitFor((e) => e.type === "turn.started" && e.threadId === target);
+    const started = await agent.call<{ delivered: string; turnId: string }>("agent.thread.send", { threadId: target, text: "go", freshSession: true });
+    expect(started.delivered).toBe("started");
+    expect(app.engine.getModel().turns[started.turnId]?.freshSession).toBe(true);
+    expect(app.engine.getModel().threads[target]?.sessionBoundaryTurnId).toBe(started.turnId);
+    await running;
+    expect((await agent.expectError("agent.thread.send", { threadId: target, text: "again", freshSession: true })).code).toBe("conflict");
+    expect(await agent.call<{ ok: boolean }>("agent.thread.interrupt", { threadId: target })).toEqual({ ok: true });
+    await app.reactor.drain();
+  });
+
   it("returns the judge verdict when it is confident enough", async () => {
     const target = await thread("Judged");
     const verdict = (confidence: number) => ({ site: "delegates" as const, label: "done", confidence, source: "jev" as const, at: 1 });

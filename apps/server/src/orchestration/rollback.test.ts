@@ -109,6 +109,25 @@ describe("RollbackService", () => {
     expect(h.control.rollbacks.map((r) => r.turns)).toEqual([2]);
   });
 
+  it("R17: rolling back to a session boundary rewinds only the fresh native session", async () => {
+    const h = await harness(cleanups);
+    h.control.setCaps({ rollback: true });
+    const { threadId, t1 } = await twoTurns(h);
+    h.control.script(emit({ type: "session", nativeSessionId: "s-2" }), emit({ type: "settled", status: "completed" }));
+    const fresh = (await h.app.engine.dispatch({ type: "turn.request", threadId, text: "start clean", freshSession: true })).events.find((r) => r.event.type === "turn.requested")?.event;
+    if (fresh?.type !== "turn.requested") throw new Error("expected turn.requested");
+    await h.settle();
+    h.control.script(emit({ type: "settled", status: "completed" }));
+    await requestTurn(h, threadId, "more");
+    expect(h.control.opened.at(-1)?.resume).toBeUndefined();
+    // older than the boundary: fenced
+    await expect(h.app.engine.dispatch({ type: "thread.rollback", threadId, turnId: t1, restoreFiles: false })).rejects.toThrow(/session boundary/);
+    await h.app.engine.dispatch({ type: "thread.rollback", threadId, turnId: fresh.turn.id, restoreFiles: false });
+    await settleRollback(h);
+    expect(h.control.rollbacks).toEqual([{ threadId, turns: 2, nativeSessionId: "s-2" }]);
+    expect(h.model().threads[threadId]?.sessionBoundaryTurnId).toBeUndefined();
+  });
+
   it("recovery fails a rollback the previous process never finished", async () => {
     const h = await harness(cleanups);
     const { threadId, t2 } = await twoTurns(h);

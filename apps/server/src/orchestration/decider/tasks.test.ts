@@ -196,3 +196,44 @@ describe("decide: once schedules (R16)", () => {
     expect(armed.model.scheduledTasks[t.taskId]).toMatchObject({ enabled: true, nextRunAt: again.at });
   });
 });
+
+describe("decide: task threadMode (R17 T1)", () => {
+  it("validates threadMode against threadId on create and update", () => {
+    const f = base();
+    const create = (extra: Record<string, unknown>) => tryRun(f.model, { type: "task.create", projectId: f.projectId, title: "x", prompt: "p", schedule: interval, ...extra } as never);
+    expect(create({ threadMode: "continue" })).toMatchObject({ ok: false, error: { code: "invalid-command" } });
+    expect(create({ threadMode: "fresh_session" })).toMatchObject({ ok: false, error: { code: "invalid-command" } });
+    expect(create({ threadMode: "new_thread", threadId: f.threadId })).toMatchObject({ ok: false, error: { code: "invalid-command" } });
+    expect(create({ threadMode: "new_thread" })).toMatchObject({ ok: true });
+    const t = created(f, { threadId: f.threadId, threadMode: "fresh_session" });
+    expect(t.model.scheduledTasks[t.taskId]?.threadMode).toBe("fresh_session");
+    expect(tryRun(t.model, { type: "task.update", taskId: t.taskId, threadMode: "new_thread", threadId: f.threadId })).toMatchObject({ ok: false, error: { code: "invalid-command" } });
+    const toNew = run(t.model, { type: "task.update", taskId: t.taskId, threadMode: "new_thread" });
+    expect(eventOf(toNew.events, "task.updated").patch).toEqual({ threadMode: "new_thread" });
+    const plain = created(f);
+    expect(tryRun(plain.model, { type: "task.update", taskId: plain.taskId, threadMode: "continue" })).toMatchObject({ ok: false, error: { code: "invalid-command" } });
+  });
+
+  it("fresh_session fires the turn marked fresh plus a session boundary; busy while the thread runs", () => {
+    const f = base();
+    const t = created(f, { threadId: f.threadId, threadMode: "fresh_session" });
+    const fired = run(t.model, { type: "task.fire", commandId: "c", taskId: t.taskId });
+    expect(fired.events.map((e) => e.type)).toEqual(["turn.requested", "session.boundary", "task.fired"]);
+    const turn = eventOf(fired.events, "turn.requested").turn;
+    expect(turn.freshSession).toBe(true);
+    expect(eventOf(fired.events, "session.boundary")).toMatchObject({ threadId: f.threadId, turnId: turn.id, providerId: "codex" });
+    expect(fired.model.threads[f.threadId]?.sessionBoundaryTurnId).toBe(turn.id);
+    const live = startTurn(t.model, f.threadId, "work");
+    expect(tryRun(live.model, { type: "task.fire", commandId: "c2", taskId: t.taskId })).toMatchObject({ ok: false, error: { code: "busy" } });
+    expect(live.model.scheduledTasks[t.taskId]?.enabled).toBe(true);
+  });
+
+  it("continue is today's behaviour; new_thread ignores a stored threadId", () => {
+    const f = base();
+    const cont = created(f, { threadId: f.threadId, threadMode: "continue" });
+    expect(run(cont.model, { type: "task.fire", commandId: "c", taskId: cont.taskId }).events.map((e) => e.type)).toEqual(["turn.requested", "task.fired"]);
+    const toNew = run(cont.model, { type: "task.update", taskId: cont.taskId, threadMode: "new_thread" }).model;
+    const fired = run(toNew, { type: "task.fire", commandId: "c3", taskId: cont.taskId, useWorktreeDefault: false });
+    expect(fired.events.map((e) => e.type)).toEqual(["thread.created", "turn.requested", "task.fired"]);
+  });
+});

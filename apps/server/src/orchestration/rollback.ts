@@ -83,8 +83,10 @@ export class RollbackService {
         if (refused !== undefined) throw new Error(`files not restored: ${refused}`);
       }
 
-      // (a) only the rolled-back turns this harness actually ran are in its conversation
-      const harnessTurns = event.turnIds.filter((id) => {
+      // (a) only the rolled-back turns this harness actually ran are in its conversation, and of
+      // those only the ones at or after the session boundary (R17): older ones were never in this native session
+      const boundaryAt = thread.sessionBoundaryTurnId === undefined ? -1 : event.turnIds.indexOf(thread.sessionBoundaryTurnId);
+      const harnessTurns = event.turnIds.slice(Math.max(boundaryAt, 0)).filter((id) => {
         const turn = model.turns[id];
         return turn?.provider === thread.provider && turn.startedAt !== undefined;
       }).length;

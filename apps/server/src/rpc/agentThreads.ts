@@ -236,8 +236,11 @@ export function registerAgentThreadHandlers(router: RpcRouter, deps: AgentThread
     const target = reachable(model, caller, input.threadId);
     requireNoBroader(caller, target);
     const mode = input.mode ?? "auto";
+    const fresh = input.freshSession === true;
+    if (fresh && mode === "steer") throw new RpcException("invalid-params", "freshSession starts a new turn; it cannot steer a running one");
     let steer = mode === "steer";
-    if (mode === "auto" && target.status === "running" && deps.registry !== undefined) {
+    // a fresh session never steers: the decider refuses it while the target runs
+    if (!fresh && mode === "auto" && target.status === "running" && deps.registry !== undefined) {
       steer = (await deps.registry.status(instanceIdOf(target))).caps.steer === true;
     }
     const commandId = input.commandId !== undefined ? { commandId: input.commandId } : {};
@@ -257,6 +260,7 @@ export function registerAgentThreadHandlers(router: RpcRouter, deps: AgentThread
       threadId: target.id,
       text: input.text,
       notification: { source: "system", summary: `message from thread "${caller.title}"` },
+      ...(fresh ? { freshSession: true as const } : {}),
       ...commandId,
     });
     const requested = result.events.find((r) => r.event.type === "turn.requested")?.event;

@@ -492,3 +492,49 @@ describe("ProviderReactor: activity identity", () => {
     expect(new Set(rows.map((a) => a?.turnId)).size).toBe(2);
   });
 });
+
+describe("ProviderReactor: R17 fresh session and C4", () => {
+  it("a freshSession turn closes the live session and opens a new one without resume; turn.started carries the new id", async () => {
+    const h = await harness();
+    h.control.script(emit({ type: "session", nativeSessionId: "sess-1" }), emit({ type: "settled", status: "completed" }));
+    await h.engine.dispatch({ type: "turn.request", threadId: h.threadId, text: "first" });
+    await h.reactor.drain();
+    expect(h.engine.getModel().threads[h.threadId]?.nativeSessionId).toBe("sess-1");
+    const first = h.control.sessionFor(h.threadId);
+
+    h.control.script(emit({ type: "session", nativeSessionId: "sess-2" }), emit({ type: "settled", status: "completed" }));
+    const started = waitFor(h.engine, (e) => e.type === "turn.started");
+    const res = await h.engine.dispatch({ type: "turn.request", threadId: h.threadId, text: "start over", freshSession: true });
+    const turnId = pick(res.events, "turn.requested").turn.id;
+    expect(pick(res.events, "session.boundary").turnId).toBe(turnId);
+    await h.reactor.drain();
+
+    expect(first?.closed).toBe(true);
+    expect(h.control.opened).toHaveLength(2);
+    expect(h.control.opened[1]?.resume).toBeUndefined();
+    const model = h.engine.getModel();
+    expect(model.turns[turnId]).toMatchObject({ status: "completed", freshSession: true });
+    expect(await started).toMatchObject({ turnId, nativeSessionId: "sess-2" });
+    expect(model.threads[h.threadId]).toMatchObject({ nativeSessionId: "sess-2", sessionBoundaryTurnId: turnId });
+
+    // the turn after the fresh one resumes the new session as usual
+    h.control.script(emit({ type: "settled", status: "completed" }));
+    await h.engine.dispatch({ type: "turn.request", threadId: h.threadId, text: "next" });
+    await h.reactor.drain();
+    expect(h.control.opened).toHaveLength(2);
+  });
+
+  it("dismisses a harness turn from a session whose driver does not declare harnessTurns", async () => {
+    const h = await harness();
+    h.control.script(emit({ type: "settled", status: "completed" }));
+    await h.engine.dispatch({ type: "turn.request", threadId: h.threadId, text: "first" });
+    await h.reactor.drain();
+    const turnsBefore = Object.keys(h.engine.getModel().turns).length;
+    let dismissed = false;
+    async function* none(): AsyncGenerator<never> {}
+    h.reactor.attachHarnessTurn(h.threadId, { reason: "bg reported", key: "k1", events: none(), dismiss: () => void (dismissed = true) });
+    await h.reactor.drain();
+    expect(dismissed).toBe(true);
+    expect(Object.keys(h.engine.getModel().turns)).toHaveLength(turnsBefore);
+  });
+});

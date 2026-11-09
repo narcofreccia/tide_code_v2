@@ -101,12 +101,18 @@ export function decideLineage(model: ReadModel, command: LineageCommand, ctx: De
         if (owner) return fail("invalid-command", `thread ${thread.id} shares the worktree of "${owner.title}" (${owner.id}); roll back without restoring files`);
         if (turn.checkpoint?.before === undefined) return fail("conflict", `turn ${turn.id} has no before-checkpoint`);
       }
+      const turnIds = rolledBackTurnIds(model, turn);
+      // R17: the native session before the boundary is gone; the harness cannot forget turns it no longer holds
+      const boundary = thread.sessionBoundaryTurnId;
+      if (boundary !== undefined && boundary !== turn.id && turnIds.includes(boundary)) {
+        return fail("invalid-command", `turn ${turn.id} is before the current session boundary; roll back to the boundary or fork`);
+      }
       return ok({
         type: "rollback.requested",
         threadId: thread.id,
         turnId: turn.id,
         restoreFiles: command.restoreFiles,
-        turnIds: rolledBackTurnIds(model, turn),
+        turnIds,
         at: ctx.now,
       });
     }

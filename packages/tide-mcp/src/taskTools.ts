@@ -23,6 +23,12 @@ const SCHEDULE_SCHEMA = {
 
 const TARGET_PROPS = {
   threadId: str("Send into this existing thread (queued, never interrupting). Omit to start a new thread on every run."),
+  threadMode: {
+    type: "string",
+    enum: ["continue", "fresh_session", "new_thread"],
+    description:
+      "Where each run goes. continue (default with threadId): queue into threadId. fresh_session: run in threadId on a brand-new harness session (its native context is dropped, Tide history stays; a run is retried while the thread is busy). new_thread (default without threadId): a new thread per run; do not pass threadId.",
+  },
   provider: str("New-thread runs: claude | codex | opencode | pi. Defaults to the project's default."),
   model: str("New-thread runs: model id; defaults to the harness default."),
   useWorktree: { type: "boolean", description: "New-thread runs: use a git worktree (default true)." },
@@ -119,12 +125,18 @@ export function parseSchedule(raw: unknown): Schedule {
   throw new Error('`schedule.kind` must be "interval", "fixed" or "once"');
 }
 
+const THREAD_MODES = ["continue", "fresh_session", "new_thread"] as const;
+
 function targetFields(args: Record<string, unknown>) {
   const threadId = optStr(args, "threadId");
   const provider = optStr(args, "provider");
   const model = optStr(args, "model");
+  const rawMode = optStr(args, "threadMode");
+  const threadMode = THREAD_MODES.find((m) => m === rawMode);
+  if (rawMode !== undefined && threadMode === undefined) throw new Error("`threadMode` must be continue, fresh_session or new_thread");
   return {
     ...(threadId !== undefined ? { threadId } : {}),
+    ...(threadMode !== undefined ? { threadMode } : {}),
     ...(provider !== undefined ? { provider: provider as NonNullable<Extract<AgentCommand, { type: "task.create" }>["provider"]> } : {}),
     ...(model !== undefined ? { model } : {}),
     ...(typeof args["useWorktree"] === "boolean" ? { useWorktree: args["useWorktree"] } : {}),

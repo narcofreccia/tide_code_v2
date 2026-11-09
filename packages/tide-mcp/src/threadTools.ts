@@ -79,6 +79,10 @@ export const THREAD_TOOL_DEFINITIONS: ToolDef[] = [
         threadId: str("Target thread."),
         text: str("The message."),
         mode: { type: "string", enum: ["auto", "queue", "steer"], description: "Delivery mode. Default auto." },
+        freshSession: {
+          type: "boolean",
+          description: "Start the target on a brand-new harness session: its native context is dropped, Tide history stays. Refused while the target is running and with mode steer.",
+        },
         clientRequestId: str("Idempotency key."),
       },
       required: ["threadId", "text"],
@@ -242,6 +246,7 @@ export async function callThreadTool(backend: AgentBackend, name: string, args: 
         threadId: reqStr(args, "threadId"),
         text: reqStr(args, "text"),
         ...(mode === "auto" || mode === "queue" || mode === "steer" ? { mode } : {}),
+        ...(args["freshSession"] === true ? { freshSession: true } : {}),
         ...(clientRequestId !== undefined ? { commandId: clientRequestId } : {}),
       });
       const how = { started: "started a new turn", queued: "queued behind the running turn", steered: "steered the running turn" }[r.delivered];

@@ -1,4 +1,5 @@
 import type {
+  DriverCaps,
   DriverEnv,
   ProviderDriver,
   ProviderInstance,
@@ -241,6 +242,17 @@ export class DriverRegistry {
       ...missing.map((kind) => Promise.resolve(unusable({ id: kind, kind, label: KIND_LABELS[kind] }, new Error("driver not available in this build")))),
       ...listed.filter((e) => !BUNDLED_KINDS.includes(e.id as ProviderKind)).map((e) => this.status(e.id, refresh)),
     ]).then((dtos) => sortBundledFirst(dtos));
+  }
+
+  /**
+   * The capabilities from the last status read of `id`, whatever its age (caps do not change while
+   * an instance lives); undefined until one was read, or when the harness is not installed (its
+   * caps are then placeholders, not an answer). Synchronous, for the decider defaults.
+   */
+  cachedCaps(id: string): Partial<DriverCaps> | undefined {
+    const dto = this.#status.get(id)?.dto;
+    // the DTO spreads the driver's caps, so R14+ flags the wire schema does not list are still here
+    return dto === undefined || !dto.installed ? undefined : dto.caps;
   }
 
   async status(id: string, refresh = false): Promise<ProviderStatusDto> {

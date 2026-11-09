@@ -1,6 +1,6 @@
-import type { CommandOf, Message, ReadModel, Turn, TurnStatus } from "@tide/contracts";
+import type { CommandOf, DomainEvent, EventOf, Message, ReadModel, Thread, Turn, TurnStatus } from "@tide/contracts";
 import { autoTitleEvent } from "./autoTitle.ts";
-import { attachmentsOf, badAttachment, fail, isArchived, ok, type DecideContext, type DecideResult } from "./types.ts";
+import { attachmentsOf, badAttachment, fail, instanceKey, isArchived, ok, type DecideContext, type DecideResult } from "./types.ts";
 
 type TurnCommand =
   | CommandOf<"turn.request">
@@ -13,6 +13,28 @@ type TurnCommand =
   | CommandOf<"turn.settle">;
 
 const SETTLED: ReadonlySet<TurnStatus> = new Set<TurnStatus>(["completed", "interrupted", "error"]);
+
+/**
+ * R17: a turn that starts the thread on a brand-new native session (`/clear` that keeps Tide's
+ * history): the requested turn marked `freshSession`, then the `session.boundary` that releases the
+ * instance's native session. Refused while a turn runs: a queued fresh turn would close the live
+ * session under it. Returns the reason when refused.
+ */
+export function freshSessionEvents(
+  thread: Thread,
+  requested: EventOf<"turn.requested">,
+  ctx: Pick<DecideContext, "now">,
+): { events: [EventOf<"turn.requested">, EventOf<"session.boundary">] } | { refused: string } {
+  if (thread.status === "running") return { refused: "wait for the running turn to settle before starting a fresh session" };
+  const turn: Turn = { ...requested.turn, freshSession: true };
+  return {
+    events: [
+      { ...requested, turn },
+      { type: "session.boundary", threadId: thread.id, turnId: turn.id, providerId: instanceKey(thread), at: ctx.now },
+    ],
+  };
+}
+
 const INTERRUPTIBLE: ReadonlySet<TurnStatus> = new Set<TurnStatus>(["requested", "running"]);
 
 export function decideTurn(model: ReadModel, command: TurnCommand, ctx: DecideContext): DecideResult {
@@ -54,11 +76,17 @@ export function decideTurn(model: ReadModel, command: TurnCommand, ctx: DecideCo
         ...(command.notification !== undefined ? { notification: command.notification } : {}),
         createdAt: ctx.now,
       };
-      const requested = { type: "turn.requested" as const, turn, userMessage, ...(images.length > 0 ? { images } : {}) };
+      const requested: EventOf<"turn.requested"> = { type: "turn.requested", turn, userMessage, ...(images.length > 0 ? { images } : {}) };
+      let events: DomainEvent[] = [requested];
+      if (command.freshSession === true) {
+        const fresh = freshSessionEvents(thread, requested, ctx);
+        if ("refused" in fresh) return fail("conflict", fresh.refused);
+        events = fresh.events;
+      }
       // the first prompt a user types names an untitled thread; a queued follow-up or a
       // server-sent notification turn never does
       const titled = queued || command.notification !== undefined ? undefined : autoTitleEvent(thread, command.text, ctx.now);
-      return titled !== undefined ? ok(titled, requested) : ok(requested);
+      return titled !== undefined ? ok(titled, ...events) : ok(...events);
     }
 
     case "turn.dequeue": {

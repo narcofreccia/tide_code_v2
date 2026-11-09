@@ -75,6 +75,23 @@ describe("Scheduler", () => {
     expect(s.logs).toHaveLength(1);
   });
 
+  it("a busy fire (fresh session into a running thread) is retried on the next tick", async () => {
+    const s = await setup(1_000_000);
+    const th = (await s.engine.dispatch({ type: "thread.create", projectId: s.projectId, provider: "claude" })).events[0]?.event;
+    if (th?.type !== "thread.created") throw new Error("thread");
+    const threadId = th.thread.id;
+    await s.engine.dispatch({ type: "task.create", projectId: s.projectId, threadId, threadMode: "fresh_session", title: "T", prompt: "x", schedule: { kind: "interval", everyMs: 60_000 } });
+    const taskId = Object.keys(s.engine.getModel().scheduledTasks)[0] as string;
+    const req = (await s.engine.dispatch({ type: "turn.request", threadId, text: "work" })).events.find((r) => r.event.type === "turn.requested")?.event;
+    if (req?.type !== "turn.requested") throw new Error("turn");
+    await s.engine.dispatch({ type: "turn.start", turnId: req.turn.id, provider: "claude" });
+    s.advance(60_000);
+    expect(await s.scheduler.tick()).toEqual([]);
+    expect(s.logs).toHaveLength(0);
+    await s.engine.dispatch({ type: "turn.settle", turnId: req.turn.id, status: "completed" });
+    expect(await s.scheduler.tick()).toEqual([taskId]);
+  });
+
   it("start schedules one repeating timer, stop cancels it", async () => {
     const s = await setup(1);
     const timers: { ms: number; cancelled: boolean }[] = [];

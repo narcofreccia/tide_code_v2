@@ -293,6 +293,14 @@ describe("thread tools", () => {
     expect(b.threadCalls[0]).toEqual(["send", { threadId: "t1", text: "go", mode: "queue", commandId: "req-1" }]);
   });
 
+  it("forwards freshSession only when true", async () => {
+    const b = new FakeBackend();
+    await call(b, "tide_thread_send", { threadId: "t1", text: "go", freshSession: true });
+    await call(b, "tide_thread_send", { threadId: "t1", text: "go", freshSession: false });
+    expect(b.threadCalls[0]).toEqual(["send", { threadId: "t1", text: "go", freshSession: true }]);
+    expect(b.threadCalls[1]).toEqual(["send", { threadId: "t1", text: "go" }]);
+  });
+
   it("waits and reports the result", async () => {
     const b = new FakeBackend();
     const r = await call(b, "tide_thread_wait", { threadId: "t1", timeoutMs: 5000 });
@@ -394,6 +402,18 @@ describe("automation tools", () => {
     const tooFast = await call(b, "tide_schedule_task", { title: "t", prompt: "p", schedule: { kind: "interval", everyMinutes: 0 } });
     expect(tooFast.isError).toBe(true);
     expect(b.commands).toHaveLength(1);
+  });
+
+  it("forwards threadMode and rejects an unknown one", async () => {
+    const b = new FakeBackend();
+    await call(b, "tide_schedule_task", { title: "t", prompt: "p", threadId: "t1", threadMode: "fresh_session", schedule: { kind: "interval", everyMinutes: 60 } });
+    expect(b.commands[0]).toMatchObject({ type: "task.create", threadId: "t1", threadMode: "fresh_session" });
+    await call(b, "tide_update_scheduled_task", { taskId: "k1", threadMode: "new_thread" });
+    expect(b.commands[1]).toMatchObject({ type: "task.update", taskId: "k1", threadMode: "new_thread" });
+    const bad = await call(b, "tide_schedule_task", { title: "t", prompt: "p", threadMode: "sometimes", schedule: { kind: "interval", everyMinutes: 60 } });
+    expect(bad.isError).toBe(true);
+    expect(bad.text).toContain("threadMode");
+    expect(b.commands).toHaveLength(2);
   });
 
   it("updates, deletes and runs now", async () => {

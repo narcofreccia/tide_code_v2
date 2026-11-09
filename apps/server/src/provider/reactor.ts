@@ -20,7 +20,7 @@ import { activityKey, mergeActivity } from "./activities.ts";
 import { inlinePrompt, planHandoffDelivery, type DeliveryPlan } from "./handoffDelivery.ts";
 import { ownerChildRow, rememberChild } from "./children.ts";
 import { dismissHarnessTurn, HarnessTurnQueue, SteerRetargets } from "./harnessTurns.ts";
-import { instanceIdOf, type HarnessTurn, type SessionDirectory } from "./sessions.ts";
+import { instanceIdOf, type HarnessTurn, type OpenHints, type SessionDirectory } from "./sessions.ts";
 
 interface ThreadState {
   /** one turn at a time per thread; different threads run concurrently */
@@ -174,10 +174,17 @@ export class ProviderReactor {
    * Wire it as `new SessionDirectory({ ..., onHarnessTurn: (id, turn) => reactor.attachHarnessTurn(id, turn) })`.
    */
   attachHarnessTurn(threadId: string, turn: HarnessTurn): void {
+    // C4: a driver that does not declare `harnessTurns` never gets to open a turn of its own
+    const declared = this.#sessions.declaresHarnessTurns(threadId);
+    if (declared === false) {
+      this.#track(this.#releaseHarnessTurn(turn, "driver does not declare harnessTurns", threadId));
+      return;
+    }
     this.#harnessTurns.offer(threadId, turn);
     this.#track(
       (async () => {
         try {
+          if (declared === undefined && !(await this.#harnessTurnsDeclared(threadId))) throw new Error("driver does not declare harnessTurns");
           await this.#engine.dispatch({ type: "turn.request", threadId, text: turn.reason, notification: { source: "harness", summary: turn.reason } });
         } catch (err) {
           this.#log("[reactor] harness turn refused; discarding its events", err);
@@ -216,6 +223,12 @@ export class ProviderReactor {
       if (owner !== undefined) return owner.turnId;
     }
     return this.#engine.getModel().threads[threadId]?.latestTurnId;
+  }
+
+  /** C4: caps not cached yet when the session opened: one (cached) status read decides. */
+  async #harnessTurnsDeclared(threadId: string): Promise<boolean> {
+    const thread = this.#engine.getModel().threads[threadId];
+    return thread !== undefined && (await this.#sessions.caps(instanceIdOf(thread))).harnessTurns === true;
   }
 
   /** A harness turn that will never run: consume its events so the driver frees them. */
@@ -580,6 +593,8 @@ export class ProviderReactor {
    */
   async #openFor(thread: Thread, project: Project, turnId: string, input: TurnInput): Promise<{ session: ProviderSession; prompt: TurnInput }> {
     const handoffId = this.#engine.getModel().turns[turnId]?.handoffId;
+    // R17: the turn after a session boundary opens a brand-new native session (a native fork wins)
+    const hints: OpenHints = this.#engine.getModel().turns[turnId]?.freshSession === true ? { fresh: true } : {};
     if (handoffId !== undefined) await this.#awaitHandoff(handoffId);
     const model = this.#engine.getModel();
     const hasHandoff = handoffId !== undefined;
@@ -593,7 +608,7 @@ export class ProviderReactor {
       }
       plan = planHandoffDelivery(model, thread, turnId, caps);
     }
-    if (plan === undefined) return { session: await this.#sessions.getOrOpen(thread, project), prompt: input };
+    if (plan === undefined) return { session: await this.#sessions.getOrOpen(thread, project, hints), prompt: input };
     let delivery = plan.delivery;
     let session: ProviderSession | undefined;
     // a live session (should not exist on a fork's first turn) would ignore the fork request
@@ -612,7 +627,7 @@ export class ProviderReactor {
         delivery = "inline";
       }
     } else delivery = "inline";
-    session ??= await this.#sessions.getOrOpen(thread, project);
+    session ??= await this.#sessions.getOrOpen(thread, project, hints);
     await this.#dispatch({ type: "handoff.delivered", turnId, delivery });
     // re-read: a refine that landed while the session opened is the text to ship (later ones are refused)
     const handoff = this.#engine.getModel().handoffs[plan.handoff.id] ?? plan.handoff;

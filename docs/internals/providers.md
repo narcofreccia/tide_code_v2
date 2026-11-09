@@ -16,6 +16,27 @@ runs the user's installed CLI/SDK and their subscription.
 OpenCode `plan` agent; Pi = system-prompt + `tide_propose_plan` tool, and in plan mode shell
 commands go through a parsed read-only policy (`readonly-shell.ts`) instead of a regex allowlist.
 
+### Fresh session (R17)
+
+A turn requested with `freshSession` (composer `/clear`-style, `agent.thread.send {freshSession}`,
+a task with `threadMode: "fresh_session"`) records `turn.requested` (turn marked `freshSession`)
+then `session.boundary {providerId}`: the projector releases that instance's native session id,
+`SessionDirectory.getOrOpen(…, { fresh: true })` closes a live session and opens one with
+`resume` undefined, and the first `turn.started` records the new id. Tide's own history stays.
+Refused (`conflict`) while the thread runs; a scheduled fire is `busy` and retried next tick.
+A rollback may not drop a turn older than `Thread.sessionBoundaryTurnId` (fork instead).
+No driver code: every driver already opens a new native session when `resume` is absent.
+
+| Harness | "fresh" means |
+|---|---|
+| Claude | `query()` without `resume` (a new session id arrives on `system/init`) |
+| Codex | `thread/start` instead of `thread/resume` |
+| OpenCode | a new session (`POST /api/session`) instead of reusing the stored id |
+| Pi | spawn `pi --mode rpc` without `--session` |
+| ACP | `session/new` instead of `session/load` |
+
+Background sub-agents of the closed session end with it (`onClosed` marks them lost).
+
 ### Instances
 
 The registry (`apps/server/src/provider/registry.ts`) holds one entry per **instance**, keyed by

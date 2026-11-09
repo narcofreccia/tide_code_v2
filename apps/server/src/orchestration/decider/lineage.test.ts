@@ -221,3 +221,21 @@ describe("decide: thread.delegate role", () => {
     expect(eventOf(events, "thread.created").thread.delegateRole).toBe("review");
   });
 });
+
+describe("decide: thread.rollback across a session boundary (R17 T1)", () => {
+  it("refuses dropping a turn older than the boundary; rolling back to the boundary or after it is fine", () => {
+    const base = withThread("claude", true);
+    const t1 = completeTurn(base.model, base.threadId, "one", "a", "sess-1");
+    const req = run(t1.model, { type: "turn.request", threadId: base.threadId, text: "two", freshSession: true });
+    const boundary = eventOf(req.events, "turn.requested").turn.id;
+    let model = run(req.model, { type: "turn.start", turnId: boundary, provider: "claude", nativeSessionId: "sess-2" }).model;
+    model = run(model, { type: "turn.settle", turnId: boundary, status: "completed" }).model;
+    const t3 = completeTurn(model, base.threadId, "three", "c");
+    expect(t3.model.threads[base.threadId]?.sessionBoundaryTurnId).toBe(boundary);
+    const before = tryRun(t3.model, { type: "thread.rollback", threadId: base.threadId, turnId: t1.turnId, restoreFiles: false });
+    expect(before).toMatchObject({ ok: false, error: { code: "invalid-command" } });
+    if (!before.ok) expect(before.error.message).toContain("session boundary");
+    expect(tryRun(t3.model, { type: "thread.rollback", threadId: base.threadId, turnId: boundary, restoreFiles: false })).toMatchObject({ ok: true });
+    expect(tryRun(t3.model, { type: "thread.rollback", threadId: base.threadId, turnId: t3.turnId, restoreFiles: false })).toMatchObject({ ok: true });
+  });
+});

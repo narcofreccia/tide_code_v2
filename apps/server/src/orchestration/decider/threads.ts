@@ -4,7 +4,7 @@ import { DEFAULT_THREAD_TITLE } from "./autoTitle.ts";
 import { descendantsOf } from "./descendants.ts";
 import { recordHandoff } from "./handoff.ts";
 import { inheritedFrom } from "./vcs.ts";
-import { fail, instanceKey, isArchived, ok, resolveInstance, turnRequested, type DecideContext, type DecideResult } from "./types.ts";
+import { fail, instanceKey, isArchived, ok, planModeProblem, resolveInstance, turnRequested, type DecideContext, type DecideResult } from "./types.ts";
 
 type ThreadLink = { linkId: string; access: LinkAccess };
 
@@ -59,6 +59,10 @@ export function decideThread(model: ReadModel, command: ThreadCommand, ctx: Deci
         if (inst.kind !== undefined && inst.kind !== command.provider) {
           return fail("invalid-command", `provider instance ${command.providerId} is ${inst.kind}, not ${command.provider}`);
         }
+      }
+      if (command.interaction === "plan") {
+        const noPlan = planModeProblem(ctx, command.providerId ?? command.provider);
+        if (noPlan !== undefined) return fail("invalid-command", noPlan);
       }
       // the default instance is implicit: a thread only carries an id that differs from its kind
       const providerId = command.providerId !== undefined && command.providerId !== command.provider ? command.providerId : undefined;
@@ -283,6 +287,10 @@ function decideUpdate(model: ReadModel, command: CommandOf<"thread.update">, ctx
   }
   // naming only another kind means that kind's default instance
   const toKey = command.providerId ?? (toKind !== thread.provider ? toKind : fromKey);
+  if (command.interaction === "plan") {
+    const noPlan = planModeProblem(ctx, toKey);
+    if (noPlan !== undefined) return fail("invalid-command", noPlan);
+  }
   const patch: ThreadPatch = {
     ...(command.title !== undefined ? { title: command.title } : {}),
     ...(command.model !== undefined ? { model: command.model } : {}),

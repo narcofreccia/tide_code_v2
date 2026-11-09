@@ -31,7 +31,7 @@ import { instanceIdOf, SessionDirectory, threadCwd } from "./provider/sessions.t
 import { Scheduler } from "./scheduling/scheduler.ts";
 import { startRelayClient, type RelayClient } from "./relay/client.ts";
 import { SettingsStore } from "./settings.ts";
-import { startServer, type ServerHandle } from "./rpc/server.ts";
+import { startServer, type ServerDeps, type ServerHandle } from "./rpc/server.ts";
 import { PairingCodes } from "./rpc/pairing.ts";
 import { ClientTokenStore } from "./rpc/clientTokens.ts";
 import { localHostFor } from "./rpc/remote.ts";
@@ -70,6 +70,8 @@ export interface AppOptions {
   delegationSchedule?: (fn: () => void, ms: number) => CancelTimer;
   /** tests that restart an app on the same in-memory store */
   keepStoreOpen?: boolean;
+  /** R17: tests keep mDNS off the real network */
+  discovery?: ServerDeps["discovery"];
   log?: (msg: string, data?: unknown) => void;
 }
 
@@ -128,7 +130,8 @@ export async function createApp(options: AppOptions): Promise<App> {
 
   // One settings store for the engine (decider defaults), the RPC server and the decisions client.
   const settings = options.settings ?? new SettingsStore({ ...(config.settingsPath === undefined ? {} : { path: config.settingsPath }), log });
-  const engine = new Engine({ store, defaults: () => deciderDefaults(settings) });
+  // read per command, after `registry` below exists
+  const engine = new Engine({ store, defaults: () => deciderDefaults(settings, registry) });
   const registry = new DriverRegistry({ env: { dataDir: config.dataDir, log } });
   if (options.registerDrivers) await options.registerDrivers(registry);
   else await registerBundledDrivers(registry, config.providers, log);
@@ -177,6 +180,8 @@ export async function createApp(options: AppOptions): Promise<App> {
     gh,
     onDetach: (threadId, worktreePath) => workspace.teardown(threadId, worktreePath),
     onPrChange: (threadId) => void prWatch.refresh(threadId),
+    settings,
+    oneShot: { registry, settings, tideHome: config.tideHome },
     log,
   });
   vcs.start();
@@ -276,6 +281,7 @@ export async function createApp(options: AppOptions): Promise<App> {
           relayState: () => relay?.state(),
           forges,
           ...(options.gh !== undefined ? { gh: options.gh } : {}),
+          ...(options.discovery !== undefined ? { discovery: options.discovery } : {}),
           config: { ...config, environmentId },
         });
   // provider sessions on this machine reach the server over loopback, whatever the bind address
@@ -368,13 +374,21 @@ export async function createApp(options: AppOptions): Promise<App> {
 const DEFAULT_SHUTDOWN_TIMEOUT_MS = 5_000;
 
 /** The slice of the user settings the decider applies to threads the server builds itself. */
-function deciderDefaults(settings: SettingsStore): DecideDefaults {
+function deciderDefaults(settings: SettingsStore, registry: DriverRegistry): DecideDefaults {
   const s = settings.get();
+  // R17 C1: only instances whose status was read are checked (absent = unchecked)
+  const providerCaps: NonNullable<DecideDefaults["providerCaps"]> = {};
+  for (const id of registry.list()) {
+    const caps = registry.cachedCaps(id);
+    const label = registry.labelOf(id);
+    if (caps !== undefined) providerCaps[id] = { ...(caps.planMode !== undefined ? { planMode: caps.planMode } : {}), ...(label !== undefined ? { label } : {}) };
+  }
   return {
     limitPolicy: s.limitPolicy,
     worktreeByDefault: s.worktreeByDefault,
     providerDefaults: s.providerDefaults,
     providerInstances: s.providerInstances.map((p) => ({ id: p.id, kind: p.kind })),
+    providerCaps,
   };
 }
 

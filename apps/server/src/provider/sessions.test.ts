@@ -220,6 +220,7 @@ describe("SessionDirectory", () => {
     const clock = { t: 0 };
     const registry = new DriverRegistry({ env: { dataDir: ":memory:", log: () => undefined } });
     const claude = createFakeDriver("claude");
+    claude.control.setCaps({ harnessTurns: true });
     registry.register(claude.driver);
     const seen: { threadId: string; reason: string }[] = [];
     const sessions = new SessionDirectory({
@@ -274,5 +275,69 @@ describe("SessionDirectory: R4", () => {
     await sessions.getOrOpen(thread({ nativeSessionId: "x" }), project, { forkFrom: "src-1" });
     expect(claude.opened[0]).toMatchObject({ forkFrom: "src-1" });
     expect(claude.opened[0]?.resume).toBeUndefined();
+  });
+});
+
+describe("SessionDirectory: R17 fresh sessions and C4 harness-turn gate", () => {
+  it("fresh closes the live session and reopens without resume", async () => {
+    const { sessions, claude } = setup();
+    const t = thread({ nativeSessionId: "sess-9" });
+    const first = await sessions.getOrOpen(t, project);
+    expect(claude.opened[0]?.resume).toBe("sess-9");
+    const fresh = await sessions.getOrOpen(t, project, { fresh: true });
+    expect(fresh).not.toBe(first);
+    expect(claude.closed).toEqual(["t1"]);
+    expect(claude.opened).toHaveLength(2);
+    expect(claude.opened[1]?.resume).toBeUndefined();
+    expect(sessions.size).toBe(1);
+  });
+
+  it("fresh with no live session opens without resume; a fork wins over fresh", async () => {
+    const { sessions, claude } = setup();
+    await sessions.getOrOpen(thread({ nativeSessionId: "sess-9" }), project, { fresh: true });
+    expect(claude.opened[0]?.resume).toBeUndefined();
+    await sessions.close("t1");
+    await sessions.getOrOpen(thread({ nativeSessionId: "sess-9" }), project, { fresh: true, forkFrom: "src-1" });
+    expect(claude.opened[1]).toMatchObject({ forkFrom: "src-1" });
+  });
+
+  it("a thread whose native session was released resumes nothing", () => {
+    const t = thread({ providerSessions: {} });
+    expect(resumableSessionId(t, modelWith(t))).toBeUndefined();
+  });
+
+  async function gated(harnessTurns: boolean) {
+    const registry = new DriverRegistry({ env: { dataDir: ":memory:", log: () => undefined } });
+    const claude = createFakeDriver("claude");
+    claude.control.setCaps({ harnessTurns });
+    registry.register(claude.driver);
+    const turns: string[] = [];
+    const idle: string[] = [];
+    const sessions = new SessionDirectory({
+      registry,
+      autoReap: false,
+      onHarnessTurn: (threadId) => void turns.push(threadId),
+      onIdleActivity: (threadId) => void idle.push(threadId),
+    });
+    // the caps were read (the client lists providers); with nothing cached the reactor decides per turn
+    await registry.status("claude");
+    await sessions.getOrOpen(thread(), project);
+    const session = claude.control.sessionFor("t1");
+    if (!session) throw new Error("no session");
+    session.emitHarnessTurn("bg reported", []);
+    session.emitIdleActivity({ type: "activity", activity: { kind: "child", childKey: "bg", name: "Audit", status: "running" } } as never);
+    return { turns, idle, sessions };
+  }
+
+  it("subscribes to harness turns and idle activity only when the instance declares harnessTurns", async () => {
+    const off = await gated(false);
+    expect(off.turns).toEqual([]);
+    expect(off.idle).toEqual([]);
+    expect(off.sessions.declaresHarnessTurns("t1")).toBe(false);
+    const on = await gated(true);
+    expect(on.turns).toEqual(["t1"]);
+    expect(on.idle).toEqual(["t1"]);
+    expect(on.sessions.declaresHarnessTurns("t1")).toBe(true);
+    expect(on.sessions.declaresHarnessTurns("nope")).toBeUndefined();
   });
 });

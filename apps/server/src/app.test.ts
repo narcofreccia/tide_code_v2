@@ -6,6 +6,7 @@ import { continueAfterRestart, RESTART_ERROR } from "./orchestration/recovery.ts
 import { SettingsStore } from "./settings.ts";
 import { Engine } from "./orchestration/engine.ts";
 import { openEventStore, type EventStore } from "./orchestration/store.ts";
+import { fakeSocketFactory } from "./rpc/mdns/fakeSocket.ts";
 import { awaitApproval, createFakeDriver, emit } from "./provider/testing/fakeDriver.ts";
 
 const config: ServerConfig = {
@@ -314,7 +315,7 @@ describe("createApp — continue after restart", () => {
 
 describe("createApp: MCP url (R9)", () => {
   it("hands provider sessions a loopback URL even when bound to 0.0.0.0", async () => {
-    const app = await createApp({ config: { ...config, host: "0.0.0.0" }, log: () => undefined, registerDrivers: () => undefined });
+    const app = await createApp({ config: { ...config, host: "0.0.0.0" }, log: () => undefined, registerDrivers: () => undefined, discovery: { socketFactory: fakeSocketFactory() } });
     try {
       expect(app.mcp.url).toBe(`ws://127.0.0.1:${app.server?.port}/ws`);
     } finally {

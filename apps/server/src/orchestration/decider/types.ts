@@ -13,6 +13,11 @@ export interface DecideDefaults {
    * present, a command naming any other `providerId` is refused; absent (tests) = not checked.
    */
   providerInstances?: { id: string; kind: ProviderKind }[];
+  /**
+   * R17 C1: what each instance (by registry key) said it can do, from the registry's cached status.
+   * An instance missing here is not checked.
+   */
+  providerCaps?: Record<string, { planMode?: boolean; label?: string }>;
 }
 
 export interface DecideContext extends DecideDefaults {
@@ -32,6 +37,12 @@ const BUNDLED_KINDS: readonly string[] = ["claude", "codex", "opencode", "pi"];
 /** R8: the registry key of the instance running a thread (the kind for its default instance). */
 export function instanceKey(thread: { provider: ProviderKind; providerId?: string }): string {
   return thread.providerId ?? thread.provider;
+}
+
+/** R17 C1: why `instanceId` cannot run plan mode, when its cached caps say so. */
+export function planModeProblem(ctx: DecideContext, instanceId: string): string | undefined {
+  const caps = ctx.providerCaps?.[instanceId];
+  return caps?.planMode === false ? `${caps.label ?? instanceId} does not support plan mode` : undefined;
 }
 
 /**

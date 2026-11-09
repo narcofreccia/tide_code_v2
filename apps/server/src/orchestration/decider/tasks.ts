@@ -1,5 +1,6 @@
-import type { CommandOf, DomainEvent, EventOf, ReadModel, ScheduledTask, Schedule, Thread } from "@tide/contracts";
+import type { CommandOf, DomainEvent, EventOf, ReadModel, ScheduledTask, Schedule, TaskThreadMode, Thread } from "@tide/contracts";
 import { nextFireAt } from "../../scheduling/schedule.ts";
+import { freshSessionEvents } from "./turns.ts";
 import { fail, isArchived, ok, turnRequested, type DecideContext, type DecideResult } from "./types.ts";
 
 type TaskCommand =
@@ -42,12 +43,26 @@ function checkThread(model: ReadModel, projectId: string, threadId: string): Dec
   return thread;
 }
 
+/** R17: where a fire lands; absent = `continue` into the task's thread, else a new thread. */
+export function threadModeOf(task: { threadId?: string; threadMode?: TaskThreadMode }): TaskThreadMode {
+  return task.threadMode ?? (task.threadId !== undefined ? "continue" : "new_thread");
+}
+
+/** R17: `threadMode` must agree with `threadId` (`threadIdGiven`: the command named one itself). */
+function threadModeProblem(mode: TaskThreadMode | undefined, threadId: string | undefined, threadIdGiven: boolean): string | undefined {
+  if (mode === "new_thread" && threadIdGiven) return "threadMode new_thread creates a thread per run; do not pass threadId";
+  if ((mode === "continue" || mode === "fresh_session") && threadId === undefined) return `threadMode ${mode} needs a threadId`;
+  return undefined;
+}
+
 export function decideTask(model: ReadModel, command: TaskCommand, ctx: DecideContext): DecideResult {
   switch (command.type) {
     case "task.create": {
       const project = model.projects[command.projectId];
       if (!project) return fail("not-found", `unknown project ${command.projectId}`);
       if (isArchived(project)) return fail("conflict", `project ${project.id} is archived`);
+      const modeProblem = threadModeProblem(command.threadMode, command.threadId, command.threadId !== undefined);
+      if (modeProblem !== undefined) return fail("invalid-command", modeProblem);
       if (command.threadId !== undefined) {
         const checked = checkThread(model, project.id, command.threadId);
         if ("ok" in checked) return checked;
@@ -59,6 +74,7 @@ export function decideTask(model: ReadModel, command: TaskCommand, ctx: DecideCo
         id: ctx.newId(),
         projectId: project.id,
         ...(command.threadId !== undefined ? { threadId: command.threadId } : {}),
+        ...(command.threadMode !== undefined ? { threadMode: command.threadMode } : {}),
         title: command.title,
         prompt: command.prompt,
         schedule: command.schedule,
@@ -80,6 +96,9 @@ export function decideTask(model: ReadModel, command: TaskCommand, ctx: DecideCo
       const task = model.scheduledTasks[command.taskId];
       if (!task) return fail("not-found", `unknown task ${command.taskId}`);
       if (isArchived(task)) return fail("conflict", `task ${task.id} is deleted`);
+      // a stored threadId stays (a patch cannot clear it): `new_thread` then simply ignores it
+      const modeProblem = threadModeProblem(command.threadMode ?? task.threadMode, command.threadId ?? task.threadId, command.threadId !== undefined);
+      if (modeProblem !== undefined) return fail("invalid-command", modeProblem);
       if (command.threadId !== undefined) {
         const checked = checkThread(model, task.projectId, command.threadId);
         if ("ok" in checked) return checked;
@@ -90,6 +109,7 @@ export function decideTask(model: ReadModel, command: TaskCommand, ctx: DecideCo
       }
       const patch: TaskPatch = {
         ...(command.threadId !== undefined ? { threadId: command.threadId } : {}),
+        ...(command.threadMode !== undefined ? { threadMode: command.threadMode } : {}),
         ...(command.title !== undefined ? { title: command.title } : {}),
         ...(command.prompt !== undefined ? { prompt: command.prompt } : {}),
         ...(command.schedule !== undefined ? { schedule: command.schedule } : {}),
@@ -152,7 +172,8 @@ function fire(
   const notification = { source: "schedule" as const, summary: `${task.schedule.kind === "webhook" ? "webhook" : "scheduled"}: ${task.title}` };
   const events: DomainEvent[] = [];
   let thread: Thread | undefined;
-  if (task.threadId !== undefined) {
+  const mode = threadModeOf(task);
+  if (mode !== "new_thread" && task.threadId !== undefined) {
     const checked = checkThread(model, task.projectId, task.threadId);
     if ("ok" in checked) return checked;
     thread = checked;
@@ -194,7 +215,12 @@ function fire(
     ...(queued ? { status: "queued" as const } : {}),
     ...(handoffId !== undefined ? { handoffId } : {}),
   };
-  events.push({ ...requested, turn });
+  if (mode === "fresh_session" && thread) {
+    // busy, not conflict: the scheduler retries a busy fire on its next tick instead of skipping the slot
+    const fresh = freshSessionEvents(thread, { ...requested, turn }, ctx);
+    if ("refused" in fresh) return fail("busy", fresh.refused);
+    events.push(...fresh.events);
+  } else events.push({ ...requested, turn });
   const once = scheduled && task.schedule.kind === "once";
   events.push({
     type: "task.fired",

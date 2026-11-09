@@ -1,5 +1,5 @@
 import type { ScheduledTask } from "@tide/contracts";
-import type { Engine } from "../orchestration/engine.ts";
+import { CommandError, type Engine } from "../orchestration/engine.ts";
 import type { SettingsStore } from "../settings.ts";
 import { nextFireAt } from "./schedule.ts";
 
@@ -90,6 +90,8 @@ export class Scheduler {
         });
         if (result.events.length > 0) fired.push(task.id);
       } catch (err) {
+        // busy (a fresh-session fire into a running thread, a rollback in progress) passes: retried next tick
+        if (err instanceof CommandError && err.code === "busy") continue;
         this.#skipped.add(commandId);
         this.#log(`[scheduler] fire of task ${task.id} rejected`, err);
       }
