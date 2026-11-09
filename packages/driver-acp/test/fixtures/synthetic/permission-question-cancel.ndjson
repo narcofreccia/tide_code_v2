@@ -1,0 +1,5 @@
+{"_header": {"synthetic": true, "note": "a question-shaped session/request_permission (non-standard option kinds) the client answers cancelled", "schema": "ACP v1 (@agentclientprotocol/sdk 2.1.0 schema/v1)"}}
+{"_dir": "c2a", "jsonrpc": "2.0", "id": 2, "method": "session/prompt", "params": {"sessionId": "sess_1", "prompt": [{"type": "text", "text": "pick a style"}]}}
+{"jsonrpc": "2.0", "id": "perm-s", "method": "session/request_permission", "params": {"sessionId": "sess_1", "toolCall": {"toolCallId": "call_s", "title": "Pick a style"}, "options": [{"optionId": "tabs", "name": "Tabs", "kind": "choice"}, {"optionId": "spaces", "name": "Spaces", "kind": "choice"}]}}
+{"_dir": "c2a", "jsonrpc": "2.0", "id": "perm-s", "result": {"outcome": {"outcome": "cancelled"}}}
+{"jsonrpc": "2.0", "id": 2, "result": {"stopReason": "cancelled"}}

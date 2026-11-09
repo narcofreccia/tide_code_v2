@@ -1,4 +1,5 @@
 import type { DriverEnv, OpenSessionOptions, ProviderInstance, ProviderSession, ProviderStatus, SlashCommandInfo } from "@tide/contracts";
+import { readCommandsCache, writeCommandsCache } from "./commands-cache.ts";
 import { AcpSession } from "./session.ts";
 import { agentEnv } from "./spawn.ts";
 import { installHint, isNotFound, probeStatus, type AgentFacts } from "./status.ts";
@@ -37,7 +38,7 @@ export class AcpInstance implements ProviderInstance {
   async status(): Promise<ProviderStatus> {
     const cached = this.#status;
     if (cached && Date.now() - cached.at < STATUS_TTL_MS) return cached.value;
-    this.#statusInFlight ??= probeStatus(this.#config, this.#env, this.#deps, this.#label, this.#facts, CLIENT_VERSION)
+    this.#statusInFlight ??= probeStatus(this.#config, this.#env, this.#deps, this.#label, this.#facts, CLIENT_VERSION, (commands) => this.#setCommands(commands))
       .then(({ status, facts }) => {
         this.#facts = facts;
         this.#status = { at: Date.now(), value: status };
@@ -49,9 +50,21 @@ export class AcpInstance implements ProviderInstance {
     return this.#statusInFlight;
   }
 
-  /** The latest `available_commands_update` any session of this agent received. */
+  /**
+   * The latest `available_commands_update` any session (or the status probe) of this agent
+   * received; before one arrives in this run, the list cached on disk by an earlier one.
+   */
   async listCommands(_options: { cwd: string }): Promise<SlashCommandInfo[]> {
+    if (this.#commands.length === 0) {
+      const cached = await readCommandsCache(this.#env);
+      if (this.#commands.length === 0) this.#commands = cached;
+    }
     return this.#commands;
+  }
+
+  #setCommands(commands: SlashCommandInfo[]): void {
+    this.#commands = commands;
+    writeCommandsCache(this.#env, commands);
   }
 
   async openSession(options: OpenSessionOptions): Promise<ProviderSession> {
@@ -68,9 +81,7 @@ export class AcpInstance implements ProviderInstance {
         this.#facts = { ...this.#facts, init };
       },
       onAuthRequired: (hint) => this.#learn({ authHint: hint }),
-      onCommands: (commands) => {
-        this.#commands = commands;
-      },
+      onCommands: (commands) => this.#setCommands(commands),
     });
     try {
       await session.start(CLIENT_VERSION);

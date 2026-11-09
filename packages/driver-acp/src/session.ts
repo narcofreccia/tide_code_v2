@@ -4,6 +4,7 @@ import { FsPolicy } from "./fs.ts";
 import { AcpConnection, RpcError, rpcError } from "./jsonrpc.ts";
 import { AcpNormalizer, toolDiff, toolInput, toolName } from "./normalize.ts";
 import { decisionOption, planPermission } from "./permissions.ts";
+import { answerOption, isQuestionOptions, permissionQuestion, userInputQuestions, userInputResult, type AcpUserInputRequest, type UserInputQuestion } from "./questions.ts";
 import { AcpSettings } from "./settings.ts";
 import { toAcpMcpServers } from "./spawn.ts";
 import {
@@ -60,6 +61,11 @@ interface PendingApproval {
   answer: Deferred<string | undefined>;
 }
 
+/** A question waiting for `respondUserInput`; undefined answers = cancelled. */
+interface PendingInput {
+  answer: Deferred<Record<string, unknown> | undefined>;
+}
+
 export interface SessionContext {
   config: AcpConfig;
   env: DriverEnv;
@@ -84,6 +90,10 @@ export class AcpSession implements ProviderSession {
   #fs: FsPolicy;
   #mailbox: AsyncQueue<NormalizedEvent> | undefined;
   #approvals = new Map<string, PendingApproval>();
+  #inputs = new Map<string, PendingInput>();
+  #inputSeq = 0;
+  /** agent→client requests being answered; close() lets cancelled answers reach the agent */
+  #answering = new Set<Promise<unknown>>();
   #mode: OpenSessionOptions["mode"];
   #interaction: OpenSessionOptions["interaction"];
   #pendingCommands: SlashCommandInfo[] | undefined;
@@ -188,10 +198,23 @@ export class AcpSession implements ProviderSession {
     }
   }
 
-  async #request(method: string, params: unknown): Promise<unknown> {
+  #request(method: string, params: unknown): Promise<unknown> {
+    const work = this.#answer(method, params);
+    this.#answering.add(work);
+    const done = (): void => {
+      this.#answering.delete(work);
+    };
+    void work.then(done, done);
+    return work;
+  }
+
+  async #answer(method: string, params: unknown): Promise<unknown> {
     switch (method) {
       case "session/request_permission":
         return this.#permission(params as AcpPermissionRequest);
+      case "session/request_user_input":
+        // not in ACP v1; accepted early so an agent that ships it still reaches the user
+        return this.#userInput(params as AcpUserInputRequest);
       case "fs/read_text_file":
         return this.#fs.read(params);
       case "fs/write_text_file":
@@ -208,13 +231,19 @@ export class AcpSession implements ProviderSession {
     if (!call || !Array.isArray(request.options) || !this.#turnActive || this.#interrupted) return cancelled;
     const known = this.#normalizer.tool(call.toolCallId);
     const merged = { ...known, ...Object.fromEntries(Object.entries(call).filter(([, value]) => value !== undefined && value !== null)), toolCallId: call.toolCallId };
+    if (isQuestionOptions(request.options)) {
+      // a question, never auto-answered by the runtime mode
+      const requestId = this.#uniqueId(call.toolCallId);
+      const question = permissionQuestion(requestId, merged.title ?? toolName(merged), request.options);
+      const optionId = answerOption(request.options, question.id, await this.#ask(requestId, [question]));
+      return optionId === undefined ? cancelled : { outcome: { outcome: "selected", optionId } };
+    }
     const plan = planPermission(this.#mode, merged.kind, request.options);
     if (plan.kind === "auto") {
       if (plan.audit) this.#emit({ type: "activity", activity: { kind: "info", text: `auto-approved: ${merged.title ?? toolName(merged)}` } });
       return { outcome: { outcome: "selected", optionId: plan.optionId } };
     }
-    let requestId = call.toolCallId;
-    for (let n = 2; this.#approvals.has(requestId); n += 1) requestId = `${call.toolCallId}#${n}`;
+    const requestId = this.#uniqueId(call.toolCallId);
     const answer = deferred<string | undefined>();
     this.#approvals.set(requestId, { options: request.options, answer });
     const diff = toolDiff(merged.content);
@@ -235,9 +264,37 @@ export class AcpSession implements ProviderSession {
     return optionId === undefined ? cancelled : { outcome: { outcome: "selected", optionId } };
   }
 
+  async #userInput(request: AcpUserInputRequest): Promise<unknown> {
+    const questions = userInputQuestions(request);
+    if (questions.length === 0 || !this.#turnActive || this.#interrupted) return { outcome: { outcome: "cancelled" } };
+    this.#inputSeq += 1;
+    return userInputResult(questions, await this.#ask(this.#uniqueId(`input-${this.#inputSeq}`), questions));
+  }
+
+  /** Emit a `user-input` activity and wait for `respondUserInput` (undefined = cancelled). */
+  async #ask(requestId: string, questions: UserInputQuestion[]): Promise<Record<string, unknown> | undefined> {
+    const answer = deferred<Record<string, unknown> | undefined>();
+    this.#inputs.set(requestId, { answer });
+    this.#emit({ type: "activity", activity: { kind: "user-input", requestId, questions, status: "pending" } });
+    try {
+      return await answer.promise;
+    } finally {
+      this.#inputs.delete(requestId);
+    }
+  }
+
+  #uniqueId(base: string): string {
+    let requestId = base;
+    for (let n = 2; this.#approvals.has(requestId) || this.#inputs.has(requestId); n += 1) requestId = `${base}#${n}`;
+    return requestId;
+  }
+
+  /** Every unanswered permission or question is answered `cancelled`. */
   #cancelApprovals(): void {
     for (const pending of this.#approvals.values()) pending.answer.resolve(undefined);
     this.#approvals.clear();
+    for (const pending of this.#inputs.values()) pending.answer.resolve(undefined);
+    this.#inputs.clear();
   }
 
   #died(error: Error): void {
@@ -358,8 +415,10 @@ export class AcpSession implements ProviderSession {
     pending.answer.resolve(decisionOption(decision, pending.options));
   }
 
-  /** ACP v1 has no free-form user-input requests (elicitation is unstable); nothing to answer. */
-  async respondUserInput(_requestId: string, _answers: Record<string, unknown>): Promise<void> {}
+  /** Answers a question-shaped `session/request_permission` or a `session/request_user_input`. */
+  async respondUserInput(requestId: string, answers: Record<string, unknown>): Promise<void> {
+    this.#inputs.get(requestId)?.answer.resolve(answers);
+  }
 
   /** `session/cancel` is a notification; pending permission requests MUST be answered `cancelled`. */
   async interrupt(): Promise<void> {
@@ -383,6 +442,8 @@ export class AcpSession implements ProviderSession {
     this.#cancelApprovals();
     if (this.#turnActive) this.#mailbox?.push({ type: "settled", status: "interrupted" });
     this.#mailbox?.close();
+    // the agent gets its `cancelled` answers before the process is stopped
+    await Promise.allSettled([...this.#answering]);
     this.#conn.close();
   }
 }

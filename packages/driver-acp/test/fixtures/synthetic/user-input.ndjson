@@ -1,0 +1,5 @@
+{"_header": {"synthetic": true, "note": "session/request_user_input (not in ACP v1; Tide accepts it early) with one choice question and one free-text question", "schema": "speculative, not in @agentclientprotocol/sdk 2.1.0 schema/v1"}}
+{"_dir": "c2a", "jsonrpc": "2.0", "id": 2, "method": "session/prompt", "params": {"sessionId": "sess_1", "prompt": [{"type": "text", "text": "scaffold"}]}}
+{"jsonrpc": "2.0", "id": "ui-1", "method": "session/request_user_input", "params": {"sessionId": "sess_1", "questions": [{"id": "lang", "question": "Which language?", "options": [{"label": "TypeScript", "description": "strict"}, {"label": "Go"}]}, {"id": "name", "question": "Project name?"}]}}
+{"_dir": "c2a", "jsonrpc": "2.0", "id": "ui-1", "result": {"outcome": {"outcome": "answered", "answers": {"lang": "Go", "name": "tide"}}}}
+{"jsonrpc": "2.0", "id": 2, "result": {"stopReason": "end_turn"}}

@@ -1,0 +1,6 @@
+{"_header": {"synthetic": true, "note": "a question-shaped session/request_permission (two allow_once options), answered with the option named SQLite", "schema": "ACP v1 (@agentclientprotocol/sdk 2.1.0 schema/v1)"}}
+{"_dir": "c2a", "jsonrpc": "2.0", "id": 2, "method": "session/prompt", "params": {"sessionId": "sess_1", "prompt": [{"type": "text", "text": "set up storage"}]}}
+{"jsonrpc": "2.0", "id": "perm-q", "method": "session/request_permission", "params": {"sessionId": "sess_1", "toolCall": {"toolCallId": "call_q", "title": "Which database should I use?", "kind": "other"}, "options": [{"optionId": "pg", "name": "Postgres", "kind": "allow_once"}, {"optionId": "sqlite", "name": "SQLite", "kind": "allow_once"}]}}
+{"_dir": "c2a", "jsonrpc": "2.0", "id": "perm-q", "result": {"outcome": {"outcome": "selected", "optionId": "sqlite"}}}
+{"jsonrpc": "2.0", "method": "session/update", "params": {"sessionId": "sess_1", "update": {"sessionUpdate": "agent_message_chunk", "content": {"type": "text", "text": "Using SQLite."}}}}
+{"jsonrpc": "2.0", "id": 2, "result": {"stopReason": "end_turn"}}

@@ -113,7 +113,7 @@ Executing is per harness; a leading `/name` that the harness does not list is **
 | Claude | `Query.supportedCommands()` on an idle control query in `cwd` (~1 s). One merged list: Claude's own `builtin: true` rows -> `builtin`; user/project/plugin/MCP commands **and skills** -> `custom` (the SDK does not mark skills in this list; the `system/init` `skills` array only exists after a turn starts) | `builtin` / `custom` | plain prompt text `/name args` — the CLI resolves it |
 | Codex | `skills/list {cwds:[cwd]}` on a short-lived app-server; enabled skills only. The 0.162 bindings have **no custom-prompt listing**, so `~/.codex/prompts` are not offered | `skill` | a leading `/<listed skill>` becomes `UserInput {type:"skill", name, path}` + the remaining text as a `text` part (skills are resolved once per session via `skills/list`); unlisted `/x` is plain text |
 | OpenCode | `GET /api/command` (custom commands) + `GET /api/skill` (incl. the built-in `opencode` skill), each `[]` on failure | `custom` / `skill` | a listed command -> `POST /api/session/:id/command {name, text: args}` (instead of a prompt; 204, no message id); a listed skill -> `POST …/prompt` with `skills: [{id, mention}]` and the text unchanged; anything else a normal prompt |
-| ACP | the latest `available_commands_update` of any session of the instance (none before the first session) | `custom` | plain prompt text `/name args` — the agent resolves it |
+| ACP | the latest `available_commands_update` of any session (or the status probe's throwaway session) of the instance, cached at `<dataDir>/acp-commands/<instanceId>.json` (tmp + rename) and read from there before the first session of a run | `custom` | plain prompt text `/name args` — the agent resolves it |
 | Pi | `get_commands` on a short-lived `pi --mode rpc --no-session` rooted at `cwd`; Tide's own `/tide-config` is hidden | extension/prompt -> `custom`, `skill:` names -> `skill` | `prompt {message: "/name args"}` — pi resolves it (`disposition: "handled"` for extension commands) |
 
 ### Unknown events pass through
@@ -428,6 +428,17 @@ the protocol (a non-JSON line is logged and skipped), stderr is logged.
   `toolCallId`, diff from the tool's `diff` content), reply held until `respondApproval`:
   `accept` → `allow_once`, `acceptForSession`/`acceptAlways` → `allow_always` (fallback
   `allow_once`), `decline` → `reject_once` (fallback `reject_always`), `cancel` → `cancelled`.
+  An option set that is a question (an option `kind` outside `allow_once|allow_always|
+  reject_once|reject_always`, or two options of one kind) is never auto-answered: it becomes a
+  `user-input` activity with one question (`id = requestId = toolCallId`, `text = title`, one
+  option per `name`); `respondUserInput` selects the option whose `name` (else `optionId`)
+  equals the answer, the only option when there is one, otherwise `cancelled`.
+  `session/request_user_input {questions: [{id, question, options: [{label, description?}],
+  multiSelect?}]}` is not in ACP v1 (unverified shape, accepted early): it becomes a
+  `user-input` activity and is answered `{outcome: {outcome: "answered", answers: {<id>:
+  string | string[]}}}`, or `cancelled` with no answer. Interrupt, turn end and `close()`
+  answer every pending permission/question `cancelled` (close waits for those replies to be
+  written before it stops the process).
   `fs/read_text_file {path, line?, limit?}` / `fs/write_text_file {path, content}` are served with
   node fs inside the cwd and linked repos only (symlinks resolved first; writes need a `write`
   link); anything else is a JSON-RPC `-32602`. `terminal/*` (Tide advertises `terminal: false`)

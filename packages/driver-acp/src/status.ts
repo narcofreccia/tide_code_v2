@@ -1,8 +1,9 @@
 import { mkdirSync } from "node:fs";
 import { join } from "node:path";
-import type { DriverCaps, DriverEnv, ModelInfo, ProviderStatus } from "@tide/contracts";
+import type { DriverCaps, DriverEnv, ModelInfo, ProviderStatus, SlashCommandInfo } from "@tide/contracts";
 import { AcpConnection, rpcError } from "./jsonrpc.ts";
 import { modelSelector } from "./models.ts";
+import { toSlashCommands } from "./normalize.ts";
 import { modeSelector, planModeId } from "./permissions.ts";
 import { authHint, clientInitialize, INITIALIZE_TIMEOUT_MS, isAuthRequired } from "./session.ts";
 import { agentEnv } from "./spawn.ts";
@@ -69,8 +70,20 @@ export interface ProbeResult {
   facts: AgentFacts;
 }
 
-/** One probe. `facts` carries what earlier probes / sessions learned; the result merges into it. */
-export async function probeStatus(config: AcpConfig, env: DriverEnv, deps: AcpDeps, label: string, facts: AgentFacts, version: string): Promise<ProbeResult> {
+/**
+ * One probe. `facts` carries what earlier probes / sessions learned; the result merges into it.
+ * An `available_commands_update` the throwaway session sends before the probe closes goes to
+ * `onCommands`.
+ */
+export async function probeStatus(
+  config: AcpConfig,
+  env: DriverEnv,
+  deps: AcpDeps,
+  label: string,
+  facts: AgentFacts,
+  version: string,
+  onCommands?: (commands: SlashCommandInfo[]) => void,
+): Promise<ProbeResult> {
   const cwd = join(env.dataDir, "acp-probe");
   try {
     mkdirSync(cwd, { recursive: true });
@@ -86,7 +99,10 @@ export async function probeStatus(config: AcpConfig, env: DriverEnv, deps: AcpDe
   const conn = new AcpConnection(child, {
     label,
     log: (message) => env.log(message),
-    onNotification: () => undefined,
+    onNotification: (method, params) => {
+      const update = method === "session/update" ? (params as { update?: { sessionUpdate?: unknown; availableCommands?: unknown } } | null)?.update : undefined;
+      if (update?.sessionUpdate === "available_commands_update") onCommands?.(toSlashCommands(update.availableCommands));
+    },
     onRequest: (method) => {
       if (method === "session/request_permission") return { outcome: { outcome: "cancelled" } };
       throw rpcError(ACP_ERROR.methodNotFound, `Tide's status probe does not implement ${method}`);

@@ -1,0 +1,5 @@
+{"_header": {"synthetic": true, "note": "an agent→client request Tide does not implement is answered -32601", "schema": "ACP v1 (@agentclientprotocol/sdk 2.1.0 schema/v1)"}}
+{"_dir": "c2a", "jsonrpc": "2.0", "id": 2, "method": "session/prompt", "params": {"sessionId": "sess_1", "prompt": [{"type": "text", "text": "x"}]}}
+{"jsonrpc": "2.0", "id": "u-1", "method": "session/elicit_something", "params": {"sessionId": "sess_1"}}
+{"_dir": "c2a", "jsonrpc": "2.0", "id": "u-1", "error": {"code": -32601, "message": "Tide does not implement session/elicit_something"}}
+{"jsonrpc": "2.0", "id": 2, "result": {"stopReason": "end_turn"}}
