@@ -19,6 +19,9 @@ import { AboutSection, META as about } from "./AboutSection.tsx";
 import { GlassBoxSection, META as glassBox } from "./GlassBoxSection.tsx";
 import { searchSettings, type SectionMeta } from "./search.ts";
 import { rowId } from "./ui/saved.ts";
+import { MachineSlotContext } from "./ui/SettingsPage.tsx";
+import { EnvSelect } from "../fleet/EnvSelect.tsx";
+import { selectSettingsEnv } from "../../state/serverSettings.ts";
 import styles from "./SettingsView.module.css";
 
 /** The static search index: each section's header and row labels. */
@@ -96,6 +99,14 @@ export function SettingsView() {
   const [query, setQuery] = useState("");
   const [target, setTarget] = useState<string | null>(null);
   const content = useRef<HTMLDivElement>(null);
+  const [chosen, setChosen] = useState<string | undefined>(undefined);
+  const perEnvironment = SECTION_META[section].perEnvironment === true;
+  // the store's selection is live only while a per-environment section shows, so edits made
+  // elsewhere (appearance, keyboard, other views) never land on the chosen machine
+  useEffect(() => {
+    selectSettingsEnv(perEnvironment ? chosen : undefined);
+    return () => selectSettingsEnv(undefined);
+  }, [perEnvironment, chosen]);
   const match = useMemo(() => searchSettings(query, SETTINGS_SECTIONS, SECTION_META), [query]);
   const clearTarget = useMemo(() => () => setTarget(null), []);
   useScrollTarget(target, section, clearTarget);
@@ -181,7 +192,11 @@ export function SettingsView() {
         </div>
       </aside>
       <div className={styles.content} ref={content}>
-        <Body section={section} />
+        <MachineSlotContext.Provider
+          value={perEnvironment ? <EnvSelect label="Settings of" value={chosen} onSelect={setChosen} /> : null}
+        >
+          <Body section={section} />
+        </MachineSlotContext.Provider>
       </div>
     </section>
   );

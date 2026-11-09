@@ -1,5 +1,5 @@
 import { useState } from "react";
-import { patchServerSettings, useServerSettings } from "../../state/serverSettings.ts";
+import { patchServerSettings, useSelectedSettings } from "../../state/serverSettings.ts";
 import { Button } from "../ui/Button.tsx";
 import { DecisionsFallback } from "./DecisionsFallback.tsx";
 import { DecisionsSpend } from "./DecisionsSpend.tsx";
@@ -31,6 +31,7 @@ export const META: SectionMeta = {
     "Spend",
     "TypeSafe",
   ],
+  perEnvironment: true,
 };
 
 /** The key goes to the server once and is never read back: the client only learns `hasKey`. */
@@ -69,7 +70,7 @@ function KeyForm({ hasKey }: { hasKey: boolean }) {
 
 /** TypeSafe's Jev: the optional decision model behind Tide's small yes/no and label questions. */
 export function DecisionsSection() {
-  const decisions = useServerSettings((s) => s.settings.decisions);
+  const decisions = useSelectedSettings((s) => s.settings.decisions);
 
   return (
     <SettingsPage title={META.title} blurb={META.blurb}>

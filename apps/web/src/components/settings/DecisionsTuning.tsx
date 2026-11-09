@@ -1,5 +1,5 @@
 import type { UserSettings } from "@tide/contracts";
-import { patchServerSettings, useServerSettings } from "../../state/serverSettings.ts";
+import { patchServerSettings, useSelectedSettings } from "../../state/serverSettings.ts";
 import { SettingNote, SettingsGroup } from "./ui/SettingsGroup.tsx";
 import { SettingRow } from "./ui/SettingRow.tsx";
 import { SettingToggle } from "./ui/SettingToggle.tsx";
@@ -40,7 +40,7 @@ function Range({ id, label, value, onChange }: { id: string; label: string; valu
 
 /** Gray-zone thresholds, per-site switches and the experts auto-advance opt-in. */
 export function DecisionsTuning() {
-  const { grayZone, sites, expertsAutoAdvance } = useServerSettings((s) => s.settings.decisions);
+  const { grayZone, sites, expertsAutoAdvance } = useSelectedSettings((s) => s.settings.decisions);
   const { low, high } = grayZone;
 
   const setLow = (value: number): Promise<void> => {

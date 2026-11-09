@@ -1,5 +1,5 @@
 import type { ProviderKind } from "@tide/contracts";
-import { patchServerSettings, useServerSettings } from "../../state/serverSettings.ts";
+import { patchServerSettings, useSelectedSettings } from "../../state/serverSettings.ts";
 import { modelChoiceValue, modelChoices, providerStatus, useProviderRoster } from "../../state/providers.ts";
 import { DEFAULT_SNOOZE_OPTIONS, snoozeFieldProblem, splitSnoozeField } from "../../lib/snooze.ts";
 import { PROVIDER_LABELS } from "../../lib/vocab.ts";
@@ -27,6 +27,7 @@ export const META: SectionMeta = {
     "Snooze options",
     "snooze",
   ],
+  perEnvironment: true,
 };
 
 /** Whole days, never negative; anything unreadable keeps the current value. */
@@ -38,8 +39,8 @@ export function parseDays(text: string, current: number): number {
 
 /** Settings › Inbox: the settle rules, the Working group, and the model that writes titles. */
 export function InboxSection() {
-  const inbox = useServerSettings((s) => s.settings.inbox);
-  const textModel = useServerSettings((s) => s.settings.textModel);
+  const inbox = useSelectedSettings((s) => s.settings.inbox);
+  const textModel = useSelectedSettings((s) => s.settings.textModel);
   const { providers, loading } = useProviderRoster();
   const kind = textModel?.provider;
   // the chosen harness stays listed while the roster is still probing (or it logged out), so the

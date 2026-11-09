@@ -16,10 +16,21 @@ export interface ProviderDefault {
   mode?: RuntimeMode;
 }
 
-interface ServerSettingsState {
+interface SettingsEntry {
   settings: UserSettings;
   /** `settings.get` answered at least once on this connection */
   loaded: boolean;
+}
+
+/**
+ * `settings` / `loaded` are always the PRIMARY environment's, so everything outside the
+ * Settings page (composer, rail, shortcuts) keeps reading the primary. `byEnv` holds the other
+ * connected environments' answers; `selectedId` is the machine the open Settings page edits
+ * (SettingsView sets it only while a per-environment section is showing and clears it on leave).
+ */
+interface ServerSettingsState extends SettingsEntry {
+  byEnv: Record<string, SettingsEntry>;
+  selectedId: string | undefined;
 }
 
 /** R6: the decision layer's defaults; the server fills the informational fields from its client constants. */
@@ -66,17 +77,72 @@ export function defaultUserSettings(): UserSettings {
 export const useServerSettings = create<ServerSettingsState>(() => ({
   settings: defaultUserSettings(),
   loaded: false,
+  byEnv: {},
+  selectedId: undefined,
 }));
 
-/**
- * Read on every connect; a server without the method keeps the defaults. R9: the settings
- * shown are the primary environment's; an answer from an environment that is no longer
- * the primary is dropped.
- */
+const isPrimary = (envId: string | undefined): boolean => envId === undefined || envId === useEnvironments.getState().primaryId;
+
+/** The environment edits go to: the selected one, else the primary (`undefined`). */
+function targetEnv(envId: string | undefined, state: ServerSettingsState = useServerSettings.getState()): string | undefined {
+  const id = envId ?? state.selectedId;
+  return isPrimary(id) ? undefined : id;
+}
+
+function entryOf(state: ServerSettingsState, envId: string | undefined): SettingsEntry {
+  const id = targetEnv(envId, state);
+  return id === undefined ? { settings: state.settings, loaded: state.loaded } : (state.byEnv[id] ?? { settings: defaultUserSettings(), loaded: false });
+}
+
+function setEntry(envId: string | undefined, entry: SettingsEntry): void {
+  const id = targetEnv(envId);
+  if (id === undefined) useServerSettings.setState({ settings: entry.settings, loaded: entry.loaded });
+  else useServerSettings.setState((s) => ({ byEnv: { ...s.byEnv, [id]: entry } }));
+}
+
+/** The selected environment's settings (the primary's when none is selected). */
+export function useSelectedSettings<T>(selector: (entry: SettingsEntry) => T): T {
+  return useServerSettings((s) => selector(entryOf(s, undefined)));
+}
+
+export function selectedSettings(): UserSettings {
+  return entryOf(useServerSettings.getState(), undefined).settings;
+}
+
+export function selectSettingsEnv(envId: string | undefined): void {
+  useServerSettings.setState({ selectedId: envId });
+}
+
+// The primary moved: swap mirrors, so no environment's answer is lost or shown for another.
+// Environments that left (forgotten / disconnected) drop their entry and selection.
+let knownPrimary = useEnvironments.getState().primaryId;
+useEnvironments.subscribe((env) => {
+  const state = useServerSettings.getState();
+  let { settings, loaded, byEnv, selectedId } = state;
+  if (env.primaryId !== knownPrimary) {
+    const next = { ...byEnv };
+    if (knownPrimary !== undefined && loaded) next[knownPrimary] = { settings, loaded };
+    const incoming = env.primaryId === undefined ? undefined : next[env.primaryId];
+    if (env.primaryId !== undefined) delete next[env.primaryId];
+    settings = incoming?.settings ?? defaultUserSettings();
+    loaded = incoming?.loaded ?? false;
+    byEnv = next;
+    knownPrimary = env.primaryId;
+  }
+  const alive = (id: string): boolean => id === env.primaryId || env.statuses[id]?.connection === "connected";
+  const kept = Object.entries(byEnv).filter(([id]) => alive(id));
+  if (kept.length !== Object.keys(byEnv).length) byEnv = Object.fromEntries(kept);
+  if (selectedId !== undefined && !alive(selectedId)) selectedId = undefined;
+  if (settings !== state.settings || loaded !== state.loaded || byEnv !== state.byEnv || selectedId !== state.selectedId) {
+    useServerSettings.setState({ settings, loaded, byEnv, selectedId });
+  }
+});
+
+/** Read on every connect, for every environment; a server without the method keeps the defaults. */
 export async function loadServerSettings(envId?: string): Promise<void> {
   const settings = await (envId === undefined ? call("settings.get", {}) : call("settings.get", {}, { envId }));
-  if (envId !== undefined && envId !== useEnvironments.getState().primaryId) return;
-  useServerSettings.setState({ settings, loaded: true });
+  if (envId !== undefined && !isPrimary(envId) && useEnvironments.getState().statuses[envId]?.connection !== "connected") return;
+  setEntry(envId === undefined ? undefined : envId, { settings, loaded: true });
 }
 
 function clearFallback(d: UserSettings["decisions"], clear: boolean): UserSettings["decisions"] {
@@ -120,25 +186,18 @@ function applyPatch(settings: UserSettings, patch: UserSettingsPatch): UserSetti
 
 /**
  * Optimistic: the change shows at once, the server's answer replaces it, and a
- * refusal puts the previous settings back with a toast. R9: with an `envId` other than
- * the primary the patch goes to that environment only and the shown settings stay put.
+ * refusal puts the previous settings back with a toast. Goes to `envId`, else the
+ * environment the open Settings page selected, else the primary.
  */
 export async function patchServerSettings(patch: UserSettingsPatch, envId?: string): Promise<void> {
-  if (envId !== undefined && envId !== useEnvironments.getState().primaryId) {
-    try {
-      await call("settings.set", { patch }, { envId });
-    } catch (error) {
-      showToast(`Saving settings failed: ${errorText(error)}`);
-    }
-    return;
-  }
-  const previous = useServerSettings.getState().settings;
-  useServerSettings.setState({ settings: applyPatch(previous, patch) });
+  const target = targetEnv(envId);
+  const previous = entryOf(useServerSettings.getState(), target);
+  setEntry(target, { settings: applyPatch(previous.settings, patch), loaded: previous.loaded });
   try {
-    const settings = await call("settings.set", { patch });
-    useServerSettings.setState({ settings, loaded: true });
+    const settings = await (target === undefined ? call("settings.set", { patch }) : call("settings.set", { patch }, { envId: target }));
+    setEntry(target, { settings, loaded: true });
   } catch (error) {
-    useServerSettings.setState({ settings: previous });
+    setEntry(target, previous);
     showToast(`Saving settings failed: ${errorText(error)}`);
   }
 }
@@ -149,7 +208,7 @@ export async function patchServerSettings(patch: UserSettingsPatch, envId?: stri
  * its kind's defaults.
  */
 export function providerDefault(id: string): ProviderDefault {
-  const all = useServerSettings.getState().settings.providerDefaults;
+  const all = useServerSettings.getState().settings.providerDefaults; // the primary's: composers read it
   const own = all[id];
   if (own !== undefined) return own;
   const kind = id.split(":")[0] ?? id;
@@ -158,7 +217,7 @@ export function providerDefault(id: string): ProviderDefault {
 
 /** Merges into the instance's entry; the whole map is sent so the server never has to merge. */
 export function setProviderDefault(id: string, patch: ProviderDefault): Promise<void> {
-  const current = useServerSettings.getState().settings.providerDefaults;
+  const current = selectedSettings().providerDefaults;
   return patchServerSettings({ providerDefaults: { ...current, [id]: { ...current[id], ...patch } } });
 }
 
@@ -194,5 +253,5 @@ export function setLimitPolicyDefault(limitPolicy: UserSettings["limitPolicy"]):
 }
 
 export function resetServerSettings(): void {
-  useServerSettings.setState({ settings: defaultUserSettings(), loaded: false });
+  useServerSettings.setState({ settings: defaultUserSettings(), loaded: false, byEnv: {}, selectedId: undefined });
 }

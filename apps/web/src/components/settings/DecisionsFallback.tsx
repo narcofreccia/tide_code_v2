@@ -1,5 +1,5 @@
 import type { ProviderKind } from "@tide/contracts";
-import { patchServerSettings, useServerSettings } from "../../state/serverSettings.ts";
+import { patchServerSettings, useSelectedSettings } from "../../state/serverSettings.ts";
 import { modelChoiceValue, modelChoices, providerStatus, useProviderRoster } from "../../state/providers.ts";
 import { PROVIDER_LABELS } from "../../lib/vocab.ts";
 import type { SelectOption } from "../ui/Select.tsx";
@@ -11,7 +11,7 @@ const NONE = "none";
 
 /** The judge asked when Jev is unsure: one harness model on the user's own subscription, or none. */
 export function DecisionsFallback() {
-  const fallback = useServerSettings((s) => s.settings.decisions.fallback);
+  const fallback = useSelectedSettings((s) => s.settings.decisions.fallback);
   const { providers, loading } = useProviderRoster();
   // the fallback names a kind: only default instances (an account or ACP agent cannot be addressed)
   const eligible = providers.filter((p) => p.caps.oneShot === true && p.loggedIn && (p.id || p.kind) === p.kind);

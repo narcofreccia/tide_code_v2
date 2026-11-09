@@ -28,7 +28,7 @@ import {
 import { dropProvidersFor, loadProvidersFor, reorderProviders } from "./providers.ts";
 import { runReconnectHandlers } from "./reconnect.ts";
 import { routeEnv, type RouteContext } from "./routing.ts";
-import { loadServerSettings, resetServerSettings } from "./serverSettings.ts";
+import { loadServerSettings } from "./serverSettings.ts";
 
 /**
  * R9 connection manager: one EnvironmentConnection per known environment, their read
@@ -180,7 +180,7 @@ function onSnapshot(entry: Entry, snap: EnvConnectionSnapshot): void {
     entry.everConnected = true;
     patchEnv(id, { lastConnectedAt: Date.now() });
     // a server without settings.get keeps the defaults; nothing to tell the user
-    if (isPrimary) loadServerSettings(id).catch(() => undefined);
+    loadServerSettings(id).catch(() => undefined);
     loadProvidersFor(id);
     // the primary's re-subscribe runs from reconnect.ts (with the toast)
     if (reconnected && !isPrimary) runReconnectHandlers(id);
@@ -195,9 +195,9 @@ function onSnapshot(entry: Entry, snap: EnvConnectionSnapshot): void {
 
 // ---- lifecycle ----
 
-function authMode(): "token" | "ticket" {
-  // the server only accepts raw tokens on the socket in --dev
-  return import.meta.env.DEV ? "token" : "ticket";
+function authMode(env: KnownEnvironment): "token" | "ticket" {
+  // the server only accepts raw tokens on the socket in --dev, and never a paired device's token
+  return import.meta.env.DEV && env.clientId === undefined ? "token" : "ticket";
 }
 
 export function openEnvironment(env: KnownEnvironment): void {
@@ -207,7 +207,7 @@ export function openEnvironment(env: KnownEnvironment): void {
     verifyId: !isLocalEnv(env),
     routes: env.routes,
     ...(env.token === undefined ? {} : { token: env.token }),
-    authMode: authMode(),
+    authMode: authMode(env),
     ...(fetchOverride ? { fetchImpl: fetchOverride } : {}),
   });
   const entry: Entry = { id: env.id, conn, offs: [], everConnected: false };
@@ -249,6 +249,8 @@ function unionRoutes(a: readonly EnvRoute[], b: readonly EnvRoute[]): EnvRoute[]
 /** Merges two records of the same environment; `primary` wins field by field. */
 export function mergeEnvRecords(primary: KnownEnvironment, other: KnownEnvironment | undefined, id: string): KnownEnvironment {
   const token = primary.token ?? other?.token;
+  // the client id belongs to whichever token won
+  const clientId = primary.token !== undefined ? primary.clientId : other?.clientId;
   const sshHost = primary.sshHost ?? other?.sshHost;
   const lastConnectedAt = primary.lastConnectedAt ?? other?.lastConnectedAt;
   return {
@@ -257,6 +259,7 @@ export function mergeEnvRecords(primary: KnownEnvironment, other: KnownEnvironme
     routes: unionRoutes(primary.routes, other?.routes ?? []),
     addedAt: Math.min(primary.addedAt, other?.addedAt ?? primary.addedAt),
     ...(token === undefined ? {} : { token }),
+    ...(clientId === undefined ? {} : { clientId }),
     ...(sshHost === undefined ? {} : { sshHost }),
     ...(lastConnectedAt === undefined ? {} : { lastConnectedAt }),
   };
@@ -438,7 +441,6 @@ export function setPrimary(id: string): void {
   persist();
   mirrorPrimary();
   reorderProviders();
-  resetServerSettings();
   if (useEnvironments.getState().statuses[id]?.connection === "connected") loadServerSettings(id).catch(() => undefined);
 }
 

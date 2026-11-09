@@ -1,5 +1,5 @@
 import { Button } from "../ui/Button.tsx";
-import { patchServerSettings, useServerSettings } from "../../state/serverSettings.ts";
+import { patchServerSettings, useSelectedSettings } from "../../state/serverSettings.ts";
 import { useUi } from "../../state/ui.ts";
 import type { SectionMeta } from "./search.ts";
 import { SettingNote, SettingsGroup } from "./ui/SettingsGroup.tsx";
@@ -11,11 +11,12 @@ export const META: SectionMeta = {
   title: "Glass box",
   blurb: "Where the harness limits show, and whether the Usage page reads the harnesses' own logs.",
   keywords: ["Show the tightest harness limit in the status bar", "Read harness logs for usage outside Tide", "usage", "limits"],
+  perEnvironment: true,
 };
 
 /** R10: where the harness limits show and whether the usage page reads the harnesses' own logs. */
 export function GlassBoxSection() {
-  const glassBox = useServerSettings((s) => s.settings.glassBox);
+  const glassBox = useSelectedSettings((s) => s.settings.glassBox);
   const showUsage = useUi((s) => s.showUsage);
 
   return (

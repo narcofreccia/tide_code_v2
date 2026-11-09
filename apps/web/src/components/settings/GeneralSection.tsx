@@ -4,7 +4,7 @@ import {
   setFollowUpDefault,
   setLimitPolicyDefault,
   setTitleInstructions,
-  useServerSettings,
+  useSelectedSettings,
 } from "../../state/serverSettings.ts";
 import type { SectionMeta } from "./search.ts";
 import { SettingNote, SettingsGroup } from "./ui/SettingsGroup.tsx";
@@ -30,11 +30,12 @@ export const META: SectionMeta = {
   title: "General",
   blurb: "How threads behave when you write mid-turn, hit a usage limit or restart the server.",
   keywords: ["Follow-up default", "When a provider reports its usage limit", "Continue threads after a restart", "steer", "queue", "handoff", "Title instructions", "titles"],
+  perEnvironment: true,
 };
 
 /** Follow-up, usage-limit and restart defaults; server-side, so every client agrees. */
 export function GeneralSection() {
-  const settings = useServerSettings((s) => s.settings);
+  const settings = useSelectedSettings((s) => s.settings);
 
   return (
     <SettingsPage title={META.title} blurb={META.blurb}>

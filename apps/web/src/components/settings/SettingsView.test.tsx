@@ -6,6 +6,8 @@ import { attachFakeStore, makeThread, modelWith, resetUi } from "../../testHarne
 import { setProvidersForTest } from "../../state/providers.ts";
 import { PROVIDER_FIXTURE } from "./fixtures.ts";
 import { useUi } from "../../state/ui.ts";
+import { useEnvironments } from "../../state/envStore.ts";
+import { makeEnv } from "../fleet/testEnvironments.ts";
 
 afterEach(() => {
   cleanup();
@@ -89,5 +91,34 @@ describe("Settings view", () => {
     fireEvent.keyDown(screen.getByLabelText("Search settings"), { key: "Escape" });
     expect((screen.getByLabelText("Search settings") as HTMLInputElement).value).toBe("");
     expect(useUi.getState().view).not.toBe("thread");
+  });
+});
+
+describe("Settings view machine picker", () => {
+  const connect = (ids: string[]): void => {
+    useEnvironments.setState({
+      environments: ids.map((id) => makeEnv(id, id, `http://${id}`)),
+      statuses: Object.fromEntries(ids.map((id) => [id, { connection: "connected" as const }])),
+      primaryId: ids[0],
+    });
+  };
+  afterEach(() => useEnvironments.setState({ environments: [], statuses: {}, primaryId: undefined }));
+
+  it("shows on a per-environment section with two machines connected, not on Appearance", () => {
+    setProvidersForTest(PROVIDER_FIXTURE);
+    connect(["a", "b"]);
+    useUi.setState({ settingsSection: "general" });
+    render(<SettingsView />);
+    expect(screen.getByLabelText("Settings of")).toBeDefined();
+    fireEvent.click(within(screen.getByLabelText("Settings sections")).getByText("Appearance"));
+    expect(screen.queryByLabelText("Settings of")).toBeNull();
+  });
+
+  it("stays hidden with one machine", () => {
+    setProvidersForTest(PROVIDER_FIXTURE);
+    connect(["a"]);
+    useUi.setState({ settingsSection: "general" });
+    render(<SettingsView />);
+    expect(screen.queryByLabelText("Settings of")).toBeNull();
   });
 });

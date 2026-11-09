@@ -2,7 +2,7 @@ import { useState } from "react";
 import type { Team } from "@tide/contracts";
 import { runOrToast } from "../../lib/dispatchOrToast.ts";
 import { saveTeams, stageLabel } from "../../lib/teamActions.ts";
-import { useServerSettings } from "../../state/serverSettings.ts";
+import { useSelectedSettings } from "../../state/serverSettings.ts";
 import { Button } from "../ui/Button.tsx";
 import { ConfirmDialog } from "../ui/Dialog.tsx";
 import { TeamDialog } from "./TeamDialog.tsx";
@@ -20,11 +20,12 @@ export const META: SectionMeta = {
   blurb:
     "A team is an ordered list of roles on chosen harnesses. Stage 1 leads and delegates the later stages, each in its own worktree or in an earlier stage’s checkout.",
   keywords: ["New team", "Reset to presets", "stages", "roles", "pipeline"],
+  perEnvironment: true,
 };
 
 /** Settings › Teams: saved stage pipelines that "Start team run" offers. */
 export function TeamsSection() {
-  const teams = useServerSettings((s) => s.settings.teams);
+  const teams = useSelectedSettings((s) => s.settings.teams);
   const [editing, setEditing] = useState<Editing>(null);
   const [deleting, setDeleting] = useState<Team | null>(null);
   const [resetting, setResetting] = useState(false);

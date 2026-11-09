@@ -6,6 +6,8 @@ export interface SectionMeta {
   blurb: string;
   /** row labels (each row's DOM id derives from its label) plus extra search words */
   keywords: string[];
+  /** server-backed: the page offers a "Settings of <machine>" picker when several are connected */
+  perEnvironment?: boolean;
 }
 
 export interface SettingsMatch {

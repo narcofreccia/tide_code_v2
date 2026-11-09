@@ -2,7 +2,7 @@ import { useEffect } from "react";
 import type { UserSettings } from "@tide/contracts";
 import { useServerInfo } from "../../lib/useServerInfo.ts";
 import { DEFAULT_WORKTREE_ROOT } from "../../state/settings.ts";
-import { defaultGitSettings, patchServerSettings, setWorktreeByDefault, useServerSettings } from "../../state/serverSettings.ts";
+import { defaultGitSettings, patchServerSettings, setWorktreeByDefault, useSelectedSettings } from "../../state/serverSettings.ts";
 import { useUi } from "../../state/ui.ts";
 import { ensureStatus, useVcs } from "../../state/vcs.ts";
 import type { SectionMeta } from "./search.ts";
@@ -36,6 +36,7 @@ export const META: SectionMeta = {
     "rebase",
     "gh",
   ],
+  perEnvironment: true,
 };
 
 function ghNote(hasGh: boolean | undefined): string {
@@ -54,9 +55,9 @@ export function GitSection() {
   const threadId = useUi((s) => s.selectedThreadId);
   const status = useVcs((s) => (threadId ? s.statuses[threadId]?.data : undefined));
   const info = useServerInfo();
-  const worktreeByDefault = useServerSettings((s) => s.settings.worktreeByDefault);
+  const worktreeByDefault = useSelectedSettings((s) => s.settings.worktreeByDefault);
   // a server older than the merge-back settings answers without `git`
-  const git = useServerSettings((s) => s.settings.git) ?? defaultGitSettings();
+  const git = useSelectedSettings((s) => s.settings.git) ?? defaultGitSettings();
 
   useEffect(() => {
     if (threadId) ensureStatus(threadId);

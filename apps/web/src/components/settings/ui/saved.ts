@@ -1,5 +1,5 @@
 import { createContext, useContext } from "react";
-import { useServerSettings } from "../../../state/serverSettings.ts";
+import { selectedSettings } from "../../../state/serverSettings.ts";
 
 /** A control's change handler: a returned promise is a server patch whose outcome the group reports. */
 export type ChangeResult = void | Promise<unknown>;
@@ -16,12 +16,12 @@ export const SavedContext = createContext<Flash | null>(null);
 export function useTrackSave(): (run: () => ChangeResult) => void {
   const flash = useContext(SavedContext);
   return (run) => {
-    const before = useServerSettings.getState().settings;
+    const before = selectedSettings();
     const result = run();
     if (flash === null || !(result instanceof Promise)) return;
     void result.then(
       () => {
-        if (useServerSettings.getState().settings !== before) flash();
+        if (selectedSettings() !== before) flash();
       },
       () => undefined,
     );

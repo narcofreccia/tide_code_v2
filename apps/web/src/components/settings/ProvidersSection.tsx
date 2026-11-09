@@ -1,8 +1,9 @@
 import { useState } from "react";
 import type { ProviderInstanceConfig, ProviderKind, ProviderStatusDto } from "@tide/contracts";
 import { BUNDLED_PROVIDERS } from "../../lib/vocab.ts";
-import { loadProviders, orderedInstances, placeholderStatus, useProviders, useProvidersStore } from "../../state/providers.ts";
-import { setProviderInstances, useServerSettings } from "../../state/serverSettings.ts";
+import { loadProvidersFor, loadProviders, orderedInstances, placeholderStatus, providersOf, useProviders, useProvidersStore } from "../../state/providers.ts";
+import { useEnvironments } from "../../state/environments.ts";
+import { selectedSettings, setProviderInstances, useSelectedSettings, useServerSettings } from "../../state/serverSettings.ts";
 import { showToast } from "../../state/toast.ts";
 import { Button } from "../ui/Button.tsx";
 import { ConfirmDialog } from "../ui/Dialog.tsx";
@@ -37,13 +38,20 @@ export const META: SectionMeta = {
   blurb:
     "Tide drives the CLIs you already pay for. Log in with each tool’s own command; Tide never stores provider credentials.",
   keywords: ["Add ACP agent", "Add account", "default model", "default mode", "login", "Claude Code", "Codex", "OpenCode", "Pi"],
+  perEnvironment: true,
 };
 
 export function ProvidersSection() {
-  const providers = useProviders();
+  const roster = useProviders();
+  const selectedId = useServerSettings((s) => s.selectedId);
+  const primaryId = useEnvironments((s) => s.primaryId);
+  const envId = selectedId ?? primaryId;
+  const providers = providersOf(roster, envId);
+  /** Re-probes the machine whose settings are shown. */
+  const refresh = (): void => (envId === undefined ? loadProviders(true) : loadProvidersFor(envId, true));
   const loading = useProvidersStore((s) => s.loading);
   const error = useProvidersStore((s) => s.error);
-  const configured = useServerSettings((s) => s.settings.providerInstances);
+  const configured = useSelectedSettings((s) => s.settings.providerInstances);
   const [sheet, setSheet] = useState<Sheet>(null);
   const taken = configured.map((c) => c.id);
 
@@ -52,10 +60,10 @@ export function ProvidersSection() {
     setSheet(null);
     void setProviderInstances(next).then(() => {
       // a refusal already toasted and rolled back; only a stored list is announced
-      const stored = useServerSettings.getState().settings.providerInstances.map((c) => c.id).join("\n");
+      const stored = selectedSettings().providerInstances.map((c) => c.id).join("\n");
       if (stored !== next.map((c) => c.id).join("\n")) return;
       showToast(message);
-      loadProviders(true);
+      refresh();
     });
   };
   const upsert = (config: ProviderInstanceConfig): void => {
@@ -74,7 +82,7 @@ export function ProvidersSection() {
         actions={
           <>
             <Button onClick={() => setSheet({ type: "acp" })}>Add ACP agent…</Button>
-            <Button onClick={() => loadProviders(true)} disabled={loading}>
+            <Button onClick={refresh} disabled={loading}>
               {loading ? "Refreshing…" : "Refresh all"}
             </Button>
           </>

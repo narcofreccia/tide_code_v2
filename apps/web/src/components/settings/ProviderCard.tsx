@@ -2,7 +2,7 @@ import type { ProviderInstanceConfig, ProviderStatusDto } from "@tide/contracts"
 import { PROVIDER_LABELS, RUNTIME_MODES, RUNTIME_MODE_HINTS, RUNTIME_MODE_LABELS } from "../../lib/vocab.ts";
 import { resolveLoginCommand, runOrCopy } from "../../lib/providerLogin.ts";
 import { loadProviders, modelChoiceValue, modelChoices } from "../../state/providers.ts";
-import { setProviderDefault, useServerSettings } from "../../state/serverSettings.ts";
+import { setProviderDefault, useSelectedSettings } from "../../state/serverSettings.ts";
 import { useUi } from "../../state/ui.ts";
 import { Button } from "../ui/Button.tsx";
 import { Pill } from "../ui/Pill.tsx";
@@ -99,7 +99,7 @@ export function ProviderCard({
   const kind = status.kind;
   const id = status.id || kind;
   const name = status.label || PROVIDER_LABELS[kind];
-  const defaults = useServerSettings((s) => s.settings.providerDefaults[id]) ?? {};
+  const defaults = useSelectedSettings((s) => s.settings.providerDefaults[id]) ?? {};
   const threadId = useUi((s) => s.selectedThreadId);
   const { glyph, text, tone } = statusOf(status);
   const command = resolveLoginCommand(status);
