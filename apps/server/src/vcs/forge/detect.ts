@@ -1,3 +1,4 @@
+import { normalizeRemoteUrl } from "@tide/contracts";
 import { Git } from "../git.ts";
 import type { Forge, RemoteRef } from "./types.ts";
 
@@ -8,27 +9,13 @@ import type { Forge, RemoteRef } from "./types.ts";
  */
 export function parseRemoteUrl(raw: string): RemoteRef | undefined {
   const url = raw.trim();
-  if (url === "") return undefined;
-  let host: string;
-  let path: string;
-  const scp = /^(?:[^@/\s]+@)?([^:/\s]+):(?!\/\/)(.+)$/.exec(url);
-  if (/^[a-z][a-z0-9+.-]*:\/\//i.test(url)) {
-    let parsed: URL;
-    try {
-      parsed = new URL(url);
-    } catch {
-      return undefined;
-    }
-    host = parsed.hostname;
-    path = parsed.pathname;
-  } else if (scp !== null && scp[1] !== undefined && scp[2] !== undefined) {
-    host = scp[1];
-    path = scp[2];
-  } else return undefined;
-  const segments = path.replace(/\.git\/?$/, "").replace(/\/+$/, "").split("/").filter((s) => s !== "");
-  if (segments.length < 2 || host === "") return undefined;
+  if (url.startsWith("/") || url.startsWith("file://")) return undefined;
+  const key = normalizeRemoteUrl(url);
+  if (key === undefined) return undefined;
+  const segments = key.split("/");
+  const host = segments.shift() as string;
   const name = segments.pop() as string;
-  return { host: host.toLowerCase(), owner: segments.join("/"), name };
+  return { host, owner: segments.join("/"), name };
 }
 
 export interface DetectedForge {

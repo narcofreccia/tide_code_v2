@@ -206,6 +206,9 @@ export function DiffHeader({
           <span className={styles.del}>−{total.deletions}</span>
         </span>
       ) : null}
+      {file?.truncated === true ? (
+        <span className={styles.hint}>Patch truncated at 200 KB — open the file to see everything</span>
+      ) : null}
       {selection === ALL_CHANGES ? <span className={styles.hint}>whole thread</span> : null}
       {commit !== undefined ? (
         <span className={styles.hint} title={commit}>

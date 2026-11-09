@@ -2,6 +2,7 @@ import { readFile, stat } from "node:fs/promises";
 import { join } from "node:path";
 import type { ProjectIcon } from "@tide/contracts";
 import type { Engine } from "../orchestration/engine.ts";
+import { detectRepoIdentity } from "../vcs/repoIdentity.ts";
 import { RpcException, type RpcRouter } from "./router.ts";
 
 export const MAX_ICON_BYTES = 32 * 1024;
@@ -41,5 +42,14 @@ export function registerProjectIconHandlers(router: RpcRouter, deps: { engine: E
     const project = deps.engine.getModel().projects[input.projectId];
     if (!project) throw new RpcException("not-found", `unknown project ${input.projectId}`);
     return detectIcon(project.rootPath);
+  });
+
+  router.register("project.detectRepo", async (input) => {
+    const project = deps.engine.getModel().projects[input.projectId];
+    if (!project) throw new RpcException("not-found", `unknown project ${input.projectId}`);
+    const repo = await detectRepoIdentity(project.rootPath);
+    if (repo === undefined) return {};
+    await deps.engine.dispatch({ type: "project.update", projectId: project.id, repo });
+    return { repo };
   });
 }

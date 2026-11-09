@@ -41,3 +41,26 @@ describe("decide: project.update titleInstructions", () => {
     expect(blank.model.projects[projectId]?.titleInstructions).toBeUndefined();
   });
 });
+
+describe("decide: project repo identity", () => {
+  const repo = { remoteUrl: "github.com/acme/app", cloneUrl: "git@github.com:acme/app.git", defaultBranch: "main", detectedAt: 1 };
+  it("create copies repo and icon onto the project", () => {
+    const icon = { kind: "data", value: "data:image/png;base64,AA==" } as const;
+    const created = run(emptyReadModel(), { type: "project.create", title: "P", rootPath: "/repo-id", repo, icon });
+    const project = eventOf(created.events, "project.created").project;
+    expect(project).toMatchObject({ repo, icon });
+  });
+
+  it("update sets repo, null clears it, omitted leaves it", () => {
+    const created = run(emptyReadModel(), { type: "project.create", title: "P", rootPath: "/repo-id-2" });
+    const projectId = eventOf(created.events, "project.created").project.id;
+    const set = run(created.model, { type: "project.update", projectId, repo });
+    expect(eventOf(set.events, "project.updated")).toMatchObject({ repo });
+    expect(set.model.projects[projectId]?.repo).toEqual(repo);
+    const kept = run(set.model, { type: "project.update", projectId, title: "Q" });
+    expect(kept.model.projects[projectId]?.repo).toEqual(repo);
+    const cleared = run(set.model, { type: "project.update", projectId, repo: null });
+    expect(eventOf(cleared.events, "project.updated")).toMatchObject({ clearRepo: true });
+    expect(cleared.model.projects[projectId]?.repo).toBeUndefined();
+  });
+});

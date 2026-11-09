@@ -10,6 +10,7 @@ import type { RemoteInfo } from "./remote.ts";
 import { hostname } from "node:os";
 import { SettingsError, type SettingsStore } from "../settings.ts";
 import { JudgeLedger } from "../decisions/ledger.ts";
+import { detectRepoIdentity } from "../vcs/repoIdentity.ts";
 import { RpcException, type RpcRouter } from "./router.ts";
 import { regenerateTitle } from "./titles.ts";
 import { createDeltaCoalescer, type CoalesceTimer } from "./coalesce.ts";
@@ -149,6 +150,10 @@ export function registerHandlers(router: RpcRouter, deps: HandlerDeps): void {
       throw new RpcException("forbidden", `${type} is a server-internal command`);
     }
     let command: ClientCommand = input.command;
+    if (command.type === "project.create" && command.repo === undefined) {
+      const repo = await detectRepoIdentity(command.rootPath, (deps.git ?? ((cwd) => new Git(cwd)))(command.rootPath)).catch(() => undefined);
+      if (repo !== undefined) command = { ...command, repo };
+    }
     if (command.type === "project.link.add") command = { ...command, path: await resolveDir(command.path) };
     // R12: merge-back defaults live in settings; the decider stays settings-free, so fill them in here
     if (command.type === "thread.merge" && deps.settings) {

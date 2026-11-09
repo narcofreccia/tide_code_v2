@@ -35,6 +35,8 @@ export function decideProject(model: ReadModel, command: ProjectCommand, ctx: De
         id: ctx.newId(),
         title: command.title,
         rootPath: command.rootPath,
+        ...(command.icon !== undefined ? { icon: command.icon } : {}),
+        ...(command.repo !== undefined ? { repo: command.repo } : {}),
         createdAt: ctx.now,
         updatedAt: ctx.now,
       };
@@ -49,6 +51,7 @@ export function decideProject(model: ReadModel, command: ProjectCommand, ctx: De
         projectId: project.id,
         ...(command.title !== undefined ? { title: command.title } : {}),
         ...(command.icon === null ? { clearIcon: true } : command.icon !== undefined ? { icon: command.icon } : {}),
+        ...(command.repo === null ? { clearRepo: true } : command.repo !== undefined ? { repo: command.repo } : {}),
         ...(command.pinned !== undefined ? { pinned: command.pinned } : {}),
         ...titleInstructionsPatch(command.titleInstructions),
         updatedAt: ctx.now,

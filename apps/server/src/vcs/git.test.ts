@@ -146,6 +146,15 @@ describe("Git — diff", () => {
     await r.write("big.txt", lines);
     const files = await r.git.diff(base ?? "", WORKTREE);
     expect(files[0]?.patch).toContain("patch truncated");
+    expect(files[0]?.truncated).toBe(true);
+  });
+
+  it("leaves small patches unmarked", async () => {
+    const r = await repo();
+    const base = await r.git.revParse("HEAD");
+    await r.write("small.txt", "hi\n");
+    const files = await r.git.diff(base ?? "", WORKTREE);
+    expect(files[0]?.truncated).toBeUndefined();
   });
 });
 

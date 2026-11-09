@@ -81,6 +81,23 @@ describe("DiffHeader git actions", () => {
     expect(screen.getByText("Commit + push + update PR")).toBeDefined();
   });
 
+  it("notes a truncated patch for the selected file only", async () => {
+    setup(withWorktree);
+    const truncated = diff();
+    truncated.files[0] = { ...truncated.files[0]!, truncated: true };
+    mockRpc({ "vcs.turnDiff": () => truncated, "vcs.fileAt": () => ({ content: "x", binary: false, missing: false }) });
+    render(<ChangesTab />);
+    await waitFor(() => expect(screen.getByText(/Patch truncated at 200 KB/)).toBeDefined());
+  });
+
+  it("shows no truncation note for a complete patch", async () => {
+    setup(withWorktree);
+    mockRpc({ "vcs.turnDiff": () => diff(), "vcs.fileAt": () => ({ content: "x", binary: false, missing: false }) });
+    render(<ChangesTab />);
+    await waitFor(() => expect(screen.getByRole("option", { name: /a\.ts/ })).toBeDefined());
+    expect(screen.queryByText(/Patch truncated/)).toBeNull();
+  });
+
   it("Refresh re-reads the diff and the git status", async () => {
     setup({ ...withWorktree, ...pr });
     const rpc = mockRpc({

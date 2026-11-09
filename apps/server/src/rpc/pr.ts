@@ -145,7 +145,7 @@ export function registerPrHandlers(router: RpcRouter, deps: PrHandlerDeps): void
     withForge(input.projectId, async ({ forge }, root) => {
       const [text, pr] = await Promise.all([forge.prDiff(root, input.number), forge.prView(root, String(input.number))]);
       if (pr === undefined) throw new RpcException("not-found", `no pull request #${input.number}`);
-      return { base: pr.base ?? "base", head: pr.head ?? `#${input.number}`, files: parseUnifiedDiff(text, capPatch) };
+      return { base: pr.base ?? "base", head: pr.head ?? `#${input.number}`, files: parseUnifiedDiff(text, (p) => capPatch(p).patch) };
     }),
   );
 

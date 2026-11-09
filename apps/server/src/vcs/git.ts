@@ -436,14 +436,18 @@ export class Git {
     if (options.stat === true || e.binary) return file;
     const paths = e.oldPath !== undefined ? [e.oldPath, e.path] : [e.path];
     const patch = await this.tryRun(["diff", "--no-color", "-M", ...range, "--", ...paths]);
-    if (patch.code === 0 && patch.stdout !== "") file.patch = capPatch(patch.stdout);
+    if (patch.code === 0 && patch.stdout !== "") {
+      const capped = capPatch(patch.stdout);
+      file.patch = capped.patch;
+      if (capped.truncated) file.truncated = true;
+    }
     return file;
   }
 }
 
-export function capPatch(patch: string): string {
-  if (Buffer.byteLength(patch, "utf8") <= MAX_PATCH_BYTES) return patch;
-  return `${patch.slice(0, MAX_PATCH_BYTES)}\n… patch truncated at ${MAX_PATCH_BYTES} bytes …\n`;
+export function capPatch(patch: string): { patch: string; truncated: boolean } {
+  if (Buffer.byteLength(patch, "utf8") <= MAX_PATCH_BYTES) return { patch, truncated: false };
+  return { patch: `${patch.slice(0, MAX_PATCH_BYTES)}\n… patch truncated at ${MAX_PATCH_BYTES} bytes …\n`, truncated: true };
 }
 
 function isBinary(buf: Buffer): boolean {
