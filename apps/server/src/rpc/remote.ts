@@ -8,6 +8,8 @@ export interface RemoteInfo {
   lanUrls: string[];
   /** embeds the bearer token — only ever handed to a client socket, never to an agent one */
   pairingUrl?: string;
+  /** R17: whether this server advertises itself over mDNS (absent when it never tried) */
+  discovery?: { advertising: boolean };
 }
 
 const LOOPBACK: ReadonlySet<string> = new Set(["127.0.0.1", "::1", "localhost", "0:0:0:0:0:0:0:1"]);

@@ -4,6 +4,7 @@ import { errorText } from "../../lib/dispatchOrToast.ts";
 import { showToast } from "../../state/toast.ts";
 import { Dialog } from "../ui/Dialog.tsx";
 import { DialogFrame, FrameField } from "../ui/DialogFrame.tsx";
+import { DiscoveredList } from "./DiscoveredList.tsx";
 import { guessRouteKind, httpOriginOf, toWsUrl } from "./envView.ts";
 import { closeAddMachine, useFleetUi } from "./fleetUi.ts";
 import styles from "./Environments.module.css";
@@ -93,6 +94,16 @@ function AddMachineForm({ initialUrl }: { initialUrl: string }) {
       onCancel={closeAddMachine}
     >
       <div className={styles.sheetRows}>
+        <DiscoveredList
+          onPick={(picked) => {
+            setUrl(picked);
+            if (tab !== "code") {
+              setTab("code");
+              setSecret("");
+            }
+            setError(null);
+          }}
+        />
         <FrameField label="URL" caption="The address the other machine shows under Pair another device">
           <input
             className={styles.input}

@@ -3,7 +3,7 @@ import { delimiter, join } from "node:path";
 import { createServer, type IncomingMessage, type Server } from "node:http";
 import type { Duplex } from "node:stream";
 import { WebSocketServer, type WebSocket } from "ws";
-import { newId } from "@tide/contracts";
+import { newId, type DiscoveredPeer } from "@tide/contracts";
 import type { ServerConfig } from "../config.ts";
 import type { Engine } from "../orchestration/engine.ts";
 import type { EventStore } from "../orchestration/store.ts";
@@ -30,7 +30,11 @@ import { registerSearchHandlers } from "./search.ts";
 import { registerUsageHandlers } from "./usage.ts";
 import { SettingsStore } from "../settings.ts";
 import type { JudgeLedger } from "../decisions/ledger.ts";
-import { buildRemoteInfo, type Interfaces } from "./remote.ts";
+import { buildRemoteInfo, isLoopbackHost, lanIps, type Interfaces } from "./remote.ts";
+import { browse } from "./mdns/browser.ts";
+import { MdnsResponder } from "./mdns/responder.ts";
+import type { MdnsSocketFactory } from "./mdns/socket.ts";
+import { PROTOCOL_VERSION } from "../version.ts";
 import { envInfo, registerEnvHandlers, type EnvDeps, type RelayState } from "./env.ts";
 import { ClientTokenStore } from "./clientTokens.ts";
 import { createHttpHandler } from "./http.ts";
@@ -93,6 +97,8 @@ export interface ServerDeps {
   forges?: ForgeResolver;
   /** R17: per-device tokens; in memory unless config.settingsPath says where clients.json lives */
   clientTokens?: ClientTokenStore;
+  /** R17: LAN discovery over mDNS; tests hand in fake sockets */
+  discovery?: { socketFactory?: MdnsSocketFactory; browse?: (timeoutMs: number) => Promise<DiscoveredPeer[]> };
 }
 
 export interface ServerHandle {
@@ -103,6 +109,8 @@ export interface ServerHandle {
   clientTokens: ClientTokenStore;
   /** R17: closes every socket a paired device opened (code 4401 "revoked"); returns how many */
   closeClient(clientId: string): number;
+  /** R17: true while the mDNS responder advertises this server on the LAN */
+  readonly discovery: { readonly advertising: boolean };
   close(): Promise<void>;
 }
 
@@ -137,14 +145,18 @@ export async function startServer(deps: ServerDeps): Promise<ServerHandle> {
 
   // the real port is only known after listen(); every remote lookup reads it late
   let boundPort = config.port;
-  const remote = ({ includePairing }: { includePairing: boolean }) =>
-    buildRemoteInfo({
+  let responder: MdnsResponder | undefined;
+  const mdnsSockets = deps.discovery?.socketFactory !== undefined ? { socketFactory: deps.discovery.socketFactory } : {};
+  const remote = ({ includePairing }: { includePairing: boolean }) => ({
+    ...buildRemoteInfo({
       host: config.host,
       port: boundPort,
       token: config.token,
       includePairing,
       ...(deps.networkInterfaces !== undefined ? { interfaces: deps.networkInterfaces() } : {}),
-    });
+    }),
+    ...(responder !== undefined ? { discovery: { advertising: responder.enabled } } : {}),
+  });
 
   const router = new RpcRouter();
   const settings = deps.settings ?? new SettingsStore(config.dataDir === ":memory:" ? {} : { path: SettingsStore.pathFor(config.tideHome) });
@@ -155,6 +167,7 @@ export async function startServer(deps: ServerDeps): Promise<ServerHandle> {
     pairing,
     clients: { store: clientTokens, closeClient },
     remote,
+    discover: deps.discovery?.browse ?? ((timeoutMs) => browse({ timeoutMs, selfEnvironmentId: config.environmentId, ...mdnsSockets })),
     ...(deps.relayState !== undefined ? { relayState: deps.relayState } : {}),
     ...(deps.runUpdate !== undefined ? { runUpdate: deps.runUpdate } : {}),
   };
@@ -313,6 +326,22 @@ export async function startServer(deps: ServerDeps): Promise<ServerHandle> {
   const port = typeof address === "object" && address !== null ? address.port : config.port;
   boundPort = port;
 
+  // R17: a server other machines can reach says so on the LAN (`_tide._tcp`)
+  if (!isLoopbackHost(config.host)) {
+    const wildcard = config.host === "0.0.0.0" || config.host === "::" || config.host === "";
+    responder = new MdnsResponder({
+      environmentId: config.environmentId,
+      name: () => settings.get().environment.name,
+      version: config.version,
+      protocol: PROTOCOL_VERSION,
+      port,
+      ips: () => (wildcard ? lanIps(deps.networkInterfaces?.()) : [config.host]),
+      ...mdnsSockets,
+      log: (msg) => console.error(msg),
+    });
+    await responder.start();
+  }
+
   return {
     port,
     host: config.host,
@@ -320,8 +349,14 @@ export async function startServer(deps: ServerDeps): Promise<ServerHandle> {
     pairing,
     clientTokens,
     closeClient,
+    discovery: {
+      get advertising() {
+        return responder?.enabled ?? false;
+      },
+    },
     async close() {
       clearInterval(keepalive);
+      await responder?.stop();
       clientTokens.flush();
       runStack.close();
       if (ownsWorkspace) workspace.close();

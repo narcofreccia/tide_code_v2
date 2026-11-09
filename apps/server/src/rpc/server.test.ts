@@ -9,6 +9,8 @@ import { DriverRegistry } from "../provider/registry.ts";
 import { createFakeDriver, type FakeDriverControl } from "../provider/testing/fakeDriver.ts";
 import { PRESET_TEAMS } from "../teams/presets.ts";
 import type { Interfaces } from "./remote.ts";
+import { fakeSocketFactory } from "./mdns/fakeSocket.ts";
+import { parse, TYPE } from "./mdns/packet.ts";
 import { startServer, type ServerHandle } from "./server.ts";
 
 const TOKEN = "test-token";
@@ -343,10 +345,10 @@ describe("server.info remote", () => {
     en0: [{ address: "192.168.1.42", netmask: "255.255.255.0", family: "IPv4", mac: "00:00:00:00:00:00", internal: false, cidr: "192.168.1.42/24" }],
   } as unknown as Interfaces;
 
-  async function withServer(host: string, run: (client: TestClient, handle: ServerHandle) => Promise<void>): Promise<void> {
+  async function withServer(host: string, run: (client: TestClient, handle: ServerHandle) => Promise<void>, sockets = fakeSocketFactory()): Promise<void> {
     const s = new EventStore(await openDatabase(":memory:"));
     const e = new Engine({ store: s });
-    const handle = await startServer({ engine: e, store: s, config: { ...config, host }, networkInterfaces: () => INTERFACES });
+    const handle = await startServer({ engine: e, store: s, config: { ...config, host }, networkInterfaces: () => INTERFACES, discovery: { socketFactory: sockets } });
     const client = await TestClient.open(`ws://127.0.0.1:${handle.port}/ws?token=${TOKEN}`);
     try {
       await run(client, handle);
@@ -375,6 +377,46 @@ describe("server.info remote", () => {
       expect(info.remote.lanUrls).toEqual([`ws://192.168.1.42:${handle.port}/ws`]);
       expect(info.remote.pairingUrl).toBe(`http://192.168.1.42:${handle.port}/pair#token=${TOKEN}`);
     });
+  });
+
+  it("advertises over mDNS when reachable: the LAN address and the bound port, goodbye on close", async () => {
+    const sockets = fakeSocketFactory();
+    await withServer(
+      "0.0.0.0",
+      async (client, handle) => {
+        const info = (await client.call("server.info", {})) as { remote: { discovery?: { advertising: boolean } } };
+        expect(info.remote.discovery).toEqual({ advertising: true });
+        expect(handle.discovery.advertising).toBe(true);
+        const announce = parse(sockets.sockets[0]?.sent[0]?.msg ?? new Uint8Array());
+        expect(announce?.additionals.find((r) => r.type === TYPE.SRV)?.srv?.port).toBe(handle.port);
+        expect(announce?.additionals.find((r) => r.type === TYPE.A)?.address).toBe("192.168.1.42");
+      },
+      sockets,
+    );
+    expect(sockets.sockets[0]?.closed).toBe(true);
+    expect(parse(sockets.sockets[0]?.sent.at(-1)?.msg ?? new Uint8Array())?.answers[0]?.ttl).toBe(0);
+  });
+
+  it("stays quiet on a loopback bind; reports advertising: false when multicast is unavailable", async () => {
+    const sockets = fakeSocketFactory();
+    await withServer(
+      "127.0.0.1",
+      async (client, handle) => {
+        const info = (await client.call("server.info", {})) as { remote: { discovery?: unknown } };
+        expect(info.remote.discovery).toBeUndefined();
+        expect(handle.discovery.advertising).toBe(false);
+      },
+      sockets,
+    );
+    expect(sockets.sockets).toHaveLength(0);
+    await withServer(
+      "0.0.0.0",
+      async (client) => {
+        const info = (await client.call("server.info", {})) as { remote: { discovery?: unknown } };
+        expect(info.remote.discovery).toEqual({ advertising: false });
+      },
+      fakeSocketFactory({ fail: true }),
+    );
   });
 });
 

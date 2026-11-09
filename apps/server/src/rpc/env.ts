@@ -1,6 +1,6 @@
 import { spawn } from "node:child_process";
 import { arch, cpus, freemem, hostname, platform, totalmem } from "node:os";
-import type { ProviderKind, RpcOutput } from "@tide/contracts";
+import type { DiscoveredPeer, ProviderKind, RpcOutput } from "@tide/contracts";
 import { threadsWithBackgroundChildren } from "../orchestration/background.ts";
 import type { Engine } from "../orchestration/engine.ts";
 import { BUNDLED_KINDS, type DriverRegistry } from "../provider/registry.ts";
@@ -91,6 +91,10 @@ export function pairingUrls(remote: RemoteInfo, relay: RelayState | undefined): 
   return urls;
 }
 
+const DISCOVER_DEFAULT_MS = 1500;
+const DISCOVER_MIN_MS = 200;
+const DISCOVER_MAX_MS = 5000;
+
 export interface EnvDeps {
   engine: Engine;
   registry: DriverRegistry;
@@ -99,6 +103,8 @@ export interface EnvDeps {
   /** R17: paired devices and a way to drop their open sockets on revoke */
   clients?: { store: ClientTokenStore; closeClient(clientId: string): number };
   remote: (options: { includePairing: boolean }) => RemoteInfo;
+  /** R17: asks the LAN for other Tide servers (mDNS); rejects when no socket can be opened */
+  discover?: (timeoutMs: number) => Promise<DiscoveredPeer[]>;
   /** the relay client's state (apps/server/src/relay) when one is configured */
   relayState?: () => RelayState | undefined;
   runUpdate?: UpdateRunner;
@@ -125,6 +131,17 @@ export function registerEnvHandlers(router: RpcRouter, deps: EnvDeps): void {
   router.register("env.pairingCode", async () => {
     const { code, expiresAt } = deps.pairing.issue();
     return { code, expiresAt, urls: pairingUrls(deps.remote({ includePairing: false }), deps.relayState?.()) };
+  });
+
+  // R17: Tide servers on the LAN, for "Add machine"; enabled: false when this host cannot browse
+  router.register("env.discover", async ({ timeoutMs }) => {
+    if (deps.discover === undefined) return { peers: [], enabled: false };
+    const timeout = Math.min(DISCOVER_MAX_MS, Math.max(DISCOVER_MIN_MS, timeoutMs ?? DISCOVER_DEFAULT_MS));
+    try {
+      return { peers: await deps.discover(timeout), enabled: true };
+    } catch {
+      return { peers: [], enabled: false };
+    }
   });
 
   // agent sockets never reach env.* (the router keeps them to agent.*); a device may revoke itself

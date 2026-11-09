@@ -21,6 +21,8 @@ export interface BannerInput {
   token?: string;
   webDir?: string;
   logPath?: string;
+  /** R17: the mDNS responder is advertising this server */
+  advertised?: boolean;
 }
 
 /** What `tide serve` prints once it listens. Pure so the wording is tested. */
@@ -31,6 +33,7 @@ export function serveBanner(b: BannerInput): string {
   ];
   if (b.lanUrls.length > 0) for (const url of b.lanUrls) lines.push(`  reachable at ${url}`);
   else if (isLoopbackHost(b.host)) lines.push("  loopback only: other machines cannot connect (use --host 0.0.0.0)");
+  if (b.advertised === true) lines.push("  advertised on the LAN as _tide._tcp");
   lines.push(`  harnesses: ${b.providers.join(", ") || "none"}`);
   lines.push(`  web client: ${b.webDir ?? "not bundled (/ shows pairing instructions)"}`);
   if (b.logPath !== undefined) lines.push(`  log: ${b.logPath}`);
@@ -95,6 +98,7 @@ export async function runServe(args: string[], legacy: boolean): Promise<void> {
         ...(config.dev || config.printToken ? { token: config.token } : {}),
         ...(config.webDir !== undefined ? { webDir: config.webDir } : {}),
         ...(logPath !== undefined ? { logPath } : {}),
+        advertised: app.server?.discovery.advertising ?? false,
       }),
     );
   }
