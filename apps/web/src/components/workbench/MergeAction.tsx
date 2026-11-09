@@ -2,6 +2,7 @@ import { useState } from "react";
 import type { MergeStrategy, Thread } from "@tide/contracts";
 import { MERGE_STRATEGIES, mergeBlockedReason, mergeTarget } from "../../lib/merge.ts";
 import { mergeThread } from "../../lib/threadActions.ts";
+import { environmentName, envOfThread, useEnvironments } from "../../state/environments.ts";
 import { Button } from "../ui/Button.tsx";
 import { Checkbox, Radio } from "../ui/Choice.tsx";
 import { Icon } from "../ui/Icon.tsx";
@@ -16,6 +17,10 @@ export function MergeAction({ thread, running }: { thread: Thread; running: bool
   const [strategy, setStrategy] = useState<MergeStrategy>(thread.merge?.strategy ?? "squash");
   const [deleteBranch, setDeleteBranch] = useState(false);
   const blocked = mergeBlockedReason(thread, running);
+  const primaryId = useEnvironments((s) => s.primaryId);
+  const owner = envOfThread(thread.id);
+  // R17 B4: a remote thread merges on its own machine, which pushes the base to origin
+  const elsewhere = owner !== undefined && primaryId !== undefined && owner !== primaryId;
   return (
     <Popover
       label={
@@ -33,6 +38,11 @@ export function MergeAction({ thread, running }: { thread: Thread; running: bool
       {(close) => (
         <div className={styles.panel} aria-label="Merge options">
           <p className={styles.target}>{mergeTarget(thread)}</p>
+          {elsewhere && (
+            <p className={styles.elsewhere}>
+              Merges on {environmentName(owner)} and pushes {thread.baseBranch ?? "the base branch"}; pull on this machine afterwards
+            </p>
+          )}
           <div role="radiogroup" aria-label="Merge strategy" className={styles.strategies}>
             {MERGE_STRATEGIES.map((option) => (
               <Radio

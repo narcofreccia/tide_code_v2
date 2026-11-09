@@ -6,6 +6,7 @@ import { threadCwd } from "../provider/sessions.ts";
 import type { CheckpointService } from "../vcs/checkpoints.ts";
 import { EMPTY_TREE, Git, GitError, WORKTREE } from "../vcs/git.ts";
 import { Gh, type GhLike } from "../vcs/gh.ts";
+import { baseAheadBehind, fastForwardBase, fetchBase, hasOrigin } from "../vcs/remoteSync.ts";
 import { safeRelativePath } from "../workspace/paths.ts";
 import { RpcException, type RpcRouter } from "./router.ts";
 
@@ -20,6 +21,10 @@ export interface VcsHandlerDeps {
 
 /** How often one thread's pull request may be re-read from GitHub. */
 const PR_REFRESH_MS = 60_000;
+/** `vcs.baseStatus` fetches origin at most this often per project… */
+const BASE_FETCH_MS = 60_000;
+/** …or this often when the caller asks for a refresh */
+const BASE_REFRESH_MS = 10_000;
 
 interface ThreadContext {
   thread: Thread;
@@ -96,6 +101,67 @@ export function registerVcsHandlers(router: RpcRouter, deps: VcsHandlerDeps): vo
     if (input.projectId !== undefined) return contextForProject(input.projectId).cwd;
     throw new RpcException("invalid-params", "threadId or projectId is required");
   };
+
+  /** projectId -> last fetch attempt / last successful fetch of origin/<base> */
+  const baseFetchTried = new Map<string, number>();
+  const baseFetched = new Map<string, number>();
+
+  /** R17: the project root's base branch: the repo's default branch, else whatever the root has checked out. */
+  const baseOf = async (projectId: string): Promise<{ repo: Git; base: string }> => {
+    const project = deps.engine.getModel().projects[projectId];
+    if (!project) throw new RpcException("not-found", `unknown project ${projectId}`);
+    const repo = git(project.rootPath);
+    if (!(await repo.isRepo())) throw new RpcException("conflict", `${project.rootPath} is not a git repository`);
+    const base = project.repo?.defaultBranch ?? (await repo.currentBranch());
+    if (base === undefined) throw new RpcException("conflict", `${project.rootPath} has no branch checked out`);
+    return { repo, base };
+  };
+
+  const fetchProjectBase = async (projectId: string, repo: Git, base: string): Promise<string | undefined> => {
+    baseFetchTried.set(projectId, now());
+    const fetched = await fetchBase(repo, base);
+    if (!fetched.ok) return fetched.error;
+    baseFetched.set(projectId, now());
+    return undefined;
+  };
+
+  router.register("vcs.baseStatus", async (input) => {
+    const { repo, base } = await baseOf(input.projectId);
+    const [hasRemote, status] = await Promise.all([hasOrigin(repo), repo.status()]);
+    if (hasRemote) {
+      const last = baseFetchTried.get(input.projectId);
+      const gap = input.refresh === true ? BASE_REFRESH_MS : BASE_FETCH_MS;
+      if (last === undefined || now() - last >= gap) await fetchProjectBase(input.projectId, repo, base);
+    }
+    const counts = hasRemote ? await baseAheadBehind(repo, base) : undefined;
+    const fetchedAt = baseFetched.get(input.projectId);
+    return {
+      branch: base,
+      ...(counts !== undefined ? { ahead: counts.ahead, behind: counts.behind } : {}),
+      dirty: status.dirty > 0,
+      hasRemote,
+      ...(fetchedAt !== undefined ? { fetchedAt } : {}),
+    };
+  });
+
+  /** Fast-forward only: a dirty base checkout or a diverged base is the user's to resolve (`conflict`). */
+  router.register("vcs.pullBase", async (input) => {
+    const { repo, base } = await baseOf(input.projectId);
+    if (!(await hasOrigin(repo))) throw new RpcException("conflict", "this repository has no origin remote");
+    const fetchError = await fetchProjectBase(input.projectId, repo, base);
+    if (fetchError !== undefined) return { ok: false, error: `could not fetch ${base} from origin: ${fetchError}` };
+    const ff = await fastForwardBase(repo, base);
+    switch (ff.outcome) {
+      case "dirty":
+        throw new RpcException("conflict", `${ff.path} has uncommitted changes; commit or stash them, then pull ${base}`);
+      case "diverged":
+        throw new RpcException("conflict", `${base} has diverged from origin/${base} (${ff.ahead} local, ${ff.behind} remote commits)`);
+      case "missing":
+        throw new RpcException("not-found", `branch ${base} does not exist`);
+      default:
+        return { ok: true, ...(ff.sha !== undefined ? { sha: ff.sha } : {}) };
+    }
+  });
 
   router.register("vcs.commits", async (input) => {
     const repo = git(commitCwd(input));

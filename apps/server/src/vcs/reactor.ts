@@ -4,6 +4,7 @@ import {
   type Activity,
   type EventOf,
   type EventRecord,
+  type GitSettings,
   type InternalCommand,
   type MergeStrategy,
   type Project,
@@ -13,11 +14,15 @@ import {
 } from "@tide/contracts";
 import type { Engine } from "../orchestration/engine.ts";
 import type { SessionDirectory } from "../provider/sessions.ts";
+import type { OneShotDeps } from "../rpc/oneShot.ts";
+import type { SettingsStore } from "../settings.ts";
 import { threadCwd } from "../provider/sessions.ts";
 import { CheckpointService } from "./checkpoints.ts";
 import { Git } from "./git.ts";
 import { Gh, type GhLike } from "./gh.ts";
 import { MergeBack } from "./merge.ts";
+import { formatCommitMessage, generateCommitMessage } from "./messages.ts";
+import { hasOrigin, pushBase, pushThreadBranch, syncBase } from "./remoteSync.ts";
 import { sharingThread } from "./restore.ts";
 import { WorktreeManager } from "./worktrees.ts";
 
@@ -35,10 +40,20 @@ export interface VcsReactorOptions {
   onDetach?: (threadId: string, worktreePath: string) => void;
   /** a publish opened/updated the thread's PR or a merge landed: the PR watcher refreshes it */
   onPrChange?: (threadId: string) => void;
+  /** R17: `git.pushThreadBranches` / `syncBaseWithRemote` / `generateMessages`, read at event time; absent = all off */
+  settings?: Pick<SettingsStore, "get">;
+  /** R17 C5: harnesses for generated commit / PR text (`settings.git.generateMessages`) */
+  oneShot?: OneShotDeps;
   now?: () => number;
   newId?: () => string;
   log?: (msg: string, data?: unknown) => void;
 }
+
+const GIT_OFF: Pick<GitSettings, "pushThreadBranches" | "syncBaseWithRemote" | "generateMessages"> = {
+  pushThreadBranches: "never",
+  syncBaseWithRemote: false,
+  generateMessages: false,
+};
 
 /**
  * Git side of the orchestration loop. Reacts to domain events with real git work and reports
@@ -55,6 +70,10 @@ export class VcsReactor {
   #merge: MergeBack;
   #onDetach: ((threadId: string, worktreePath: string) => void) | undefined;
   #onPrChange: ((threadId: string) => void) | undefined;
+  #settings: Pick<SettingsStore, "get"> | undefined;
+  #oneShot: OneShotDeps | undefined;
+  /** threads whose last branch push failed: one activity per failure streak */
+  #pushMuted = new Set<string>();
   #now: () => number;
   #newId: () => string;
   #log: (msg: string, data?: unknown) => void;
@@ -76,11 +95,23 @@ export class VcsReactor {
     this.#now = options.now ?? (() => Date.now());
     this.#onDetach = options.onDetach;
     this.#onPrChange = options.onPrChange;
+    this.#settings = options.settings;
+    this.#oneShot = options.oneShot;
     this.#newId = options.newId ?? (() => defaultNewId());
     this.#log = options.log ?? ((msg, data) => (data === undefined ? console.error(msg) : console.error(msg, data)));
     this.#merge =
       options.merge ??
-      new MergeBack({ worktreeRoot: this.#worktrees.root, gh: this.#gh, git: this.#git, now: this.#now, log: this.#log });
+      new MergeBack({
+        worktreeRoot: this.#worktrees.root,
+        gh: this.#gh,
+        git: this.#git,
+        now: this.#now,
+        log: this.#log,
+        messageFor: async ({ git, title, range }) => {
+          const generated = await this.#generate({ git, threadTitle: title, kind: "commit", range });
+          return generated === undefined ? undefined : formatCommitMessage(generated);
+        },
+      });
   }
 
   start(): void {
@@ -129,6 +160,11 @@ export class VcsReactor {
         }
         return;
       }
+      case "checkpoint.recorded":
+        if (event.phase === "after" && this.#gitSettings().pushThreadBranches === "on-checkpoint") {
+          this.#enqueue(event.threadId, async () => void (await this.#pushBranch(event.threadId)));
+        }
+        return;
       case "thread.archived":
         // archiving frees the disk unless the user asked to keep the checkout; checkpoint refs
         // stay (unarchive needs them for diff/rollback/fork) and die only with the branch
@@ -236,7 +272,43 @@ export class VcsReactor {
     await this.#dispatch({ type: "activity.upsert", activity });
   }
 
+  #gitSettings(): Pick<GitSettings, "pushThreadBranches" | "syncBaseWithRemote" | "generateMessages"> {
+    return this.#settings?.get().git ?? GIT_OFF;
+  }
+
+  /** C5: generated text when the user wants it and a harness answers; undefined keeps the fallback. */
+  async #generate(input: Parameters<typeof generateCommitMessage>[1]): Promise<{ subject: string; body?: string } | undefined> {
+    if (this.#oneShot === undefined || !this.#gitSettings().generateMessages) return undefined;
+    return generateCommitMessage(this.#oneShot, input);
+  }
+
   // ---- handlers ----
+
+  /**
+   * B4: pushes the thread's `tide/*` branch to origin and records it (`branch.pushed`). Only what
+   * is committed on the branch travels. A failure is said once per failure streak (info), and the
+   * merge or checkpoint that asked for the push carries on. Returns true when origin has the branch.
+   */
+  async #pushBranch(threadId: string): Promise<boolean> {
+    const ctx = this.#context(threadId);
+    const branch = ctx?.thread.branch;
+    if (!ctx || branch === undefined || ctx.thread.worktreePath === undefined) return false;
+    const root = this.#git(ctx.project.rootPath);
+    if (!(await hasOrigin(root))) return false;
+    const sha = await root.revParse(`refs/heads/${branch}`);
+    if (sha !== undefined && ctx.thread.pushedSha === sha && ctx.thread.remoteBranch === branch) return true;
+    const pushed = await pushThreadBranch(root, branch);
+    if (pushed.ok) {
+      this.#pushMuted.delete(threadId);
+      await this.#dispatch({ type: "branch.pushed", threadId, remoteBranch: pushed.remoteBranch, sha: pushed.sha });
+      return true;
+    }
+    if (!this.#pushMuted.has(threadId)) {
+      this.#pushMuted.add(threadId);
+      await this.#info(threadId, "info", `Could not push ${branch} to origin: ${pushed.error}`);
+    }
+    return false;
+  }
 
   /**
    * Worktree creation happens before the thread has a turn, so a failure is remembered here and
@@ -442,6 +514,26 @@ export class VcsReactor {
     const ctx = this.#context(threadId);
     if (!ctx) return;
     const { thread, project } = ctx;
+    const gitSettings = this.#gitSettings();
+    const root = this.#git(project.rootPath);
+    const remote = (gitSettings.pushThreadBranches !== "never" || gitSettings.syncBaseWithRemote) && (await hasOrigin(root));
+    const local = !(await this.#merge.usesPr(thread));
+    if (remote && gitSettings.pushThreadBranches === "on-merge-request") {
+      await this.#merge.commitPending(thread).catch((err: unknown) => this.#log("[vcs] commit before push failed", err));
+      await this.#pushBranch(threadId);
+    }
+    const sync = remote && local && gitSettings.syncBaseWithRemote && thread.baseBranch !== undefined;
+    let synced: string | undefined;
+    if (sync && thread.baseBranch !== undefined) {
+      // a stale base is never merged into: fast-forward from origin first, or refuse
+      const before = await syncBase(root, thread.baseBranch);
+      if (!before.ok) {
+        await this.#dispatch({ type: "merge.report", threadId, outcome: "error", error: before.note });
+        await this.#info(threadId, "error", `Merge not started: ${before.note}`);
+        return;
+      }
+      synced = before.note;
+    }
     const result = await this.#merge.merge(project, thread, strategy, deleteBranch);
     if (result.outcome === "conflicted") {
       await this.#dispatch({ type: "merge.report", threadId, outcome: "conflicted", files: result.files });
@@ -469,7 +561,13 @@ export class VcsReactor {
     });
     this.#onPrChange?.(threadId);
     const where = result.pr !== undefined ? `via pull request #${result.pr.number}` : `(${strategy}${result.sha !== undefined ? ` ${result.sha.slice(0, 8)}` : ""})`;
-    await this.#info(threadId, "info", `Merged ${thread.branch ?? "branch"} into ${thread.baseBranch ?? "base"} ${where}${result.note !== undefined ? `. ${result.note}` : ""}`);
+    const notes = [synced, result.note].filter((n): n is string => n !== undefined).map((n) => `. ${n}`).join("");
+    await this.#info(threadId, "info", `Merged ${thread.branch ?? "branch"} into ${thread.baseBranch ?? "base"} ${where}${notes}`);
+    if (sync && thread.baseBranch !== undefined && result.pr === undefined) {
+      // the merge stands either way (settle already fired); a failed push is the user's to resolve
+      const pushed = await pushBase(root, thread.baseBranch);
+      if (!pushed.ok) await this.#info(threadId, "error", `${thread.baseBranch} merged locally but not pushed: ${pushed.error}`);
+    }
   }
 
   async #publish(
@@ -482,12 +580,13 @@ export class VcsReactor {
     const ctx = this.#context(threadId);
     if (!ctx) return;
     const git = this.#git(ctx.cwd);
-    const commitMessage = title ?? `tide: ${ctx.thread.title}`;
+    let commitMessage = title ?? `tide: ${ctx.thread.title}`;
     try {
       if (!(await git.isRepo())) {
         await this.#info(threadId, "error", `Publish failed: ${ctx.cwd} is not a git repository`);
         return;
       }
+      if (title === undefined) commitMessage = await this.#publishCommitMessage(git, ctx.thread, commitMessage);
       const sha = await git.commitAll(commitMessage);
       if (commitOnly) {
         await this.#info(threadId, "info", sha === undefined ? "Nothing to commit" : `Committed ${sha.slice(0, 8)}`);
@@ -503,7 +602,7 @@ export class VcsReactor {
         return;
       }
       await git.push(branch);
-      const pr = await this.#openOrUpdatePr(threadId, ctx.cwd, ctx.thread, branch, commitMessage, body);
+      const pr = await this.#openOrUpdatePr(threadId, ctx.cwd, ctx.thread, branch, title, body);
       if (pr !== undefined && mergeWhenGreen !== undefined) await this.#autoMerge(threadId, ctx.cwd, pr, mergeWhenGreen);
       if (pr !== undefined) this.#onPrChange?.(threadId);
     } catch (err) {
@@ -516,14 +615,24 @@ export class VcsReactor {
     cwd: string,
     thread: Thread,
     branch: string,
-    title: string,
-    body: string | undefined,
+    givenTitle: string | undefined,
+    givenBody: string | undefined,
   ): Promise<PullRequest | undefined> {
     if (!(await this.#gh.hasGh())) {
       await this.#info(threadId, "info", `Pushed ${branch}; install the GitHub CLI to open a pull request`);
       return undefined;
     }
     const existing = await this.#gh.prView(cwd, branch);
+    let title = givenTitle ?? `tide: ${thread.title}`;
+    let body = givenBody;
+    if (!existing && (givenTitle === undefined || givenBody === undefined)) {
+      const base = thread.baseBranch;
+      const generated = await this.#generate({ git: this.#git(cwd), threadTitle: thread.title, kind: "pr", range: [base !== undefined ? `${base}...HEAD` : "HEAD~1"] });
+      if (generated !== undefined) {
+        title = givenTitle ?? generated.subject;
+        body = givenBody ?? generated.body;
+      }
+    }
     const pr: PullRequest = existing
       ? { ...existing, updatedAt: this.#now() }
       : {
@@ -539,6 +648,14 @@ export class VcsReactor {
     await this.#dispatch({ type: "pr.update", threadId, pr });
     await this.#info(threadId, "info", `${existing ? "Updated" : "Opened"} pull request #${pr.number}`);
     return pr;
+  }
+
+  /** C5: the publish commit (no title given) described from everything the branch will carry. */
+  async #publishCommitMessage(git: Git, thread: Thread, fallback: string): Promise<string> {
+    if (this.#oneShot === undefined || !this.#gitSettings().generateMessages) return fallback;
+    await git.run(["add", "-A"]);
+    const generated = await this.#generate({ git, threadTitle: thread.title, kind: "commit", range: ["--cached"] });
+    return generated === undefined ? fallback : formatCommitMessage(generated);
   }
 
   /** publish's `mergeWhenGreen`: GitHub merges the PR once its required checks pass. */

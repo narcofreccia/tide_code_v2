@@ -1,7 +1,7 @@
 import { describe, expect, it } from "vitest";
-import type { MergeState } from "@tide/contracts";
+import type { MergeState, Project } from "@tide/contracts";
 import { makeThread, modelWith } from "../testHarness.ts";
-import { mergeOutcomeToasts } from "./mergeToasts.ts";
+import { mergeOutcomeToasts, mergeToastItems, type PullContext } from "./mergeToasts.ts";
 
 const merge = (status: MergeState["status"], at: number, patch: Partial<MergeState> = {}): MergeState => ({
   status,
@@ -34,5 +34,25 @@ describe("mergeOutcomeToasts", () => {
     const seen = new Map<string, MergeState | undefined>([["t1", settled]]);
     const model = modelWith({ threads: { t1: makeThread("t1", { merge: settled }) } });
     expect(mergeOutcomeToasts(seen, model)).toEqual([]);
+  });
+
+  it("offers to pull the base on the primary when the merge ran on another machine", () => {
+    const repo = { remoteUrl: "github.com/acme/app", cloneUrl: "git@github.com:acme/app.git", defaultBranch: "main", detectedAt: 1 };
+    const project = (id: string): Project => ({ id, title: id, rootPath: `/${id}`, repo, createdAt: 1, updatedAt: 1 }) as Project;
+    const owners: Record<string, string> = { "p-remote": "env-b", "p-here": "env-a", t1: "env-b" };
+    const ctx = (primaryId: string): PullContext => ({
+      primaryId,
+      envOfThread: (id) => owners[id],
+      envOfProject: (id) => owners[id],
+    });
+    const model = modelWith({
+      projects: { "p-remote": project("p-remote"), "p-here": project("p-here") },
+      threads: { t1: makeThread("t1", { title: "Fix", projectId: "p-remote", baseBranch: "main", merge: merge("merged", 2) }) },
+    });
+    expect(mergeToastItems(new Map([["t1", undefined]]), model, ctx("env-a"))).toEqual([
+      { text: "Merged Fix into main", pull: { projectId: "p-here", base: "main" } },
+    ]);
+    // merged on the primary itself: nothing to pull
+    expect(mergeToastItems(new Map([["t1", undefined]]), model, ctx("env-b"))).toEqual([{ text: "Merged Fix into main" }]);
   });
 });

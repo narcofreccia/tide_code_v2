@@ -49,3 +49,22 @@ describe("Settings › Git merge-back defaults", () => {
     expect(screen.getByText("Saved")).toBeDefined();
   });
 });
+
+describe("Settings › Git remote and messages (R17)", () => {
+  it("patches pushThreadBranches, syncBaseWithRemote and generateMessages", async () => {
+    const rpc = serve();
+    render(<GitSection />);
+    expect(screen.getByText("Thread branches stay on this machine until you publish")).toBeDefined();
+    chooseOption("Push thread branches to origin", /After every turn/);
+    await act(async () => undefined);
+    expect(rpc).toHaveBeenCalledWith("settings.set", { patch: { git: { pushThreadBranches: "on-checkpoint" } } });
+    expect(screen.getByText("Push the committed branch after each turn, for review elsewhere")).toBeDefined();
+    const sync = screen.getByRole("switch", { name: "Sync the base branch with origin" }) as HTMLInputElement;
+    expect(sync.checked).toBe(true);
+    await act(async () => fireEvent.click(sync));
+    expect(rpc).toHaveBeenCalledWith("settings.set", { patch: { git: { syncBaseWithRemote: false } } });
+    await act(async () => fireEvent.click(screen.getByRole("switch", { name: "Generate commit and PR messages" })));
+    expect(rpc).toHaveBeenCalledWith("settings.set", { patch: { git: { generateMessages: false } } });
+    expect(useServerSettings.getState().settings.git).toMatchObject({ pushThreadBranches: "on-checkpoint", syncBaseWithRemote: false, generateMessages: false });
+  });
+});

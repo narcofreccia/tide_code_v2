@@ -14,11 +14,18 @@ import { SettingToggle } from "./ui/SettingToggle.tsx";
 import styles from "./ui/settings.module.css";
 
 type MergeStrategy = UserSettings["git"]["mergeStrategy"];
+type PushThreadBranches = UserSettings["git"]["pushThreadBranches"];
 
 const STRATEGIES: { value: MergeStrategy; label: string }[] = [
   { value: "squash", label: "Squash" },
   { value: "merge", label: "Merge commit" },
   { value: "rebase", label: "Rebase" },
+];
+
+const PUSH_OPTIONS: { value: PushThreadBranches; label: string; description: string }[] = [
+  { value: "never", label: "Never", description: "Thread branches stay on this machine until you publish" },
+  { value: "on-checkpoint", label: "After every turn", description: "Push the committed branch after each turn, for review elsewhere" },
+  { value: "on-merge-request", label: "When merging back", description: "Commit and push the branch once, right before it merges" },
 ];
 
 export const META: SectionMeta = {
@@ -32,6 +39,12 @@ export const META: SectionMeta = {
     "Delete the branch after merging",
     "Ask before merging back from the inbox",
     "Pull requests",
+    "Push thread branches to origin",
+    "Sync the base branch with origin",
+    "Generate commit and PR messages",
+    "push",
+    "pull",
+    "origin",
     "squash",
     "rebase",
     "gh",
@@ -57,7 +70,9 @@ export function GitSection() {
   const info = useServerInfo();
   const worktreeByDefault = useSelectedSettings((s) => s.settings.worktreeByDefault);
   // a server older than the merge-back settings answers without `git`
-  const git = useSelectedSettings((s) => s.settings.git) ?? defaultGitSettings();
+  const stored = useSelectedSettings((s) => s.settings.git);
+  // R17 fields default for a server that predates them
+  const git = { ...defaultGitSettings(), ...stored };
 
   useEffect(() => {
     if (threadId) ensureStatus(threadId);
@@ -106,6 +121,44 @@ export function GitSection() {
               id={id}
               checked={git.confirmMergeBack}
               onChange={(confirmMergeBack) => patchGit({ confirmMergeBack })}
+            />
+          )}
+        />
+      </SettingsGroup>
+      <SettingsGroup title="Remote">
+        <SettingRow
+          label="Push thread branches to origin"
+          help={PUSH_OPTIONS.find((o) => o.value === git.pushThreadBranches)?.description}
+          control={
+            <SettingSelect
+              label="Push thread branches to origin"
+              value={git.pushThreadBranches}
+              options={PUSH_OPTIONS}
+              onSelect={(pushThreadBranches) => patchGit({ pushThreadBranches })}
+            />
+          }
+        />
+        <SettingRow
+          label="Sync the base branch with origin"
+          help="Before a merge back, fast-forward the base from origin (a stale or diverged base is refused); after it, push the base"
+          control={(id) => (
+            <SettingToggle
+              id={id}
+              checked={git.syncBaseWithRemote}
+              onChange={(syncBaseWithRemote) => patchGit({ syncBaseWithRemote })}
+            />
+          )}
+        />
+      </SettingsGroup>
+      <SettingsGroup title="Messages">
+        <SettingRow
+          label="Generate commit and PR messages"
+          help="Squash merges, and publishes without a title, get their commit and PR text from the text model; otherwise Tide uses the thread title"
+          control={(id) => (
+            <SettingToggle
+              id={id}
+              checked={git.generateMessages}
+              onChange={(generateMessages) => patchGit({ generateMessages })}
             />
           )}
         />

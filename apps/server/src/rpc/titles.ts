@@ -1,23 +1,18 @@
-import { mkdirSync } from "node:fs";
-import { tmpdir } from "node:os";
-import { join } from "node:path";
 import type { Message, ProviderKind, ReadModel } from "@tide/contracts";
 import type { Engine } from "../orchestration/engine.ts";
-import type { DriverRegistry } from "../provider/registry.ts";
 import type { SettingsStore } from "../settings.ts";
+import { completeOneShot, pickProvider, type OneShotDeps } from "./oneShot.ts";
 import { RpcException } from "./router.ts";
+
+export { pickProvider };
 
 export const TITLE_SYSTEM = "You write short titles for coding conversations. Answer with the title only.";
 export const TITLE_MAX_CHARS = 60;
 export const TITLE_TIMEOUT_MS = 25_000;
 const CLIP = 600;
 
-export interface TitleDeps {
+export interface TitleDeps extends OneShotDeps {
   engine: Pick<Engine, "getModel" | "dispatch">;
-  registry: Pick<DriverRegistry, "get" | "has" | "statusAll" | "status">;
-  settings: Pick<SettingsStore, "get">;
-  /** scratch cwd parent for the harness; the OS temp dir when absent */
-  tideHome?: string;
 }
 
 const clip = (text: string): string => (text.length <= CLIP ? text : `${text.slice(0, CLIP - 1)}…`);
@@ -52,54 +47,24 @@ export function cleanTitle(text: string): string {
   return t;
 }
 
-/** settings.textModel when installed, else the first harness that answers one-shot prompts. */
-export async function pickProvider(deps: Pick<TitleDeps, "registry" | "settings">): Promise<{ provider: ProviderKind; model?: string }> {
-  const chosen = deps.settings.get().textModel;
-  if (chosen !== undefined && deps.registry.has(chosen.provider)) {
-    return { provider: chosen.provider, ...(chosen.model !== undefined ? { model: chosen.model } : {}) };
-  }
-  for (const status of await deps.registry.statusAll()) {
-    if (status.caps.oneShot === true) return { provider: status.kind };
-  }
-  throw new RpcException("conflict", "no installed harness can answer one-shot prompts; pick one in settings");
-}
-
 export async function regenerateTitle(deps: TitleDeps, threadId: string): Promise<{ title: string; provider: ProviderKind; model?: string }> {
   const model = deps.engine.getModel();
   const thread = model.threads[threadId];
   if (!thread) throw new RpcException("not-found", `unknown thread ${threadId}`);
-  const pick = await pickProvider(deps);
-  let result;
-  try {
-    const instance = await deps.registry.get(pick.provider);
-    if (instance.complete === undefined) throw new RpcException("conflict", `${pick.provider} cannot answer one-shot prompts`);
-    const cwd = join(deps.tideHome ?? tmpdir(), "titles");
-    try {
-      mkdirSync(cwd, { recursive: true });
-    } catch {
-      /* the driver reports a missing cwd itself */
-    }
-    result = await instance.complete({
-      system: TITLE_SYSTEM,
-      prompt: titlePrompt(model, threadId, titleInstructionsFor(model, threadId, deps.settings)),
-      ...(pick.model !== undefined ? { model: pick.model } : {}),
-      // the SDK counts the whole reply incl. preamble; 64 was hit live on haiku, like the R6 fallback
-      maxOutputTokens: 256,
-      timeoutMs: TITLE_TIMEOUT_MS,
-      signal: AbortSignal.timeout(TITLE_TIMEOUT_MS),
-      cwd,
-    });
-  } catch (err) {
-    if (err instanceof RpcException) throw err;
-    throw new RpcException("internal", (err as Error)?.message ?? String(err));
-  }
+  // the SDK counts the whole reply incl. preamble; 64 was hit live on haiku, like the R6 fallback
+  const result = await completeOneShot(deps, {
+    system: TITLE_SYSTEM,
+    prompt: titlePrompt(model, threadId, titleInstructionsFor(model, threadId, deps.settings)),
+    maxOutputTokens: 256,
+    timeoutMs: TITLE_TIMEOUT_MS,
+    scratch: "titles",
+  });
   const title = cleanTitle(result.text);
-  if (title === "") throw new RpcException("internal", `${pick.provider} returned no title`);
+  if (title === "") throw new RpcException("internal", `${result.provider} returned no title`);
   try {
     await deps.engine.dispatch({ type: "thread.update", threadId, title });
   } catch (err) {
     throw new RpcException("internal", (err as Error)?.message ?? String(err));
   }
-  const used = result.model ?? pick.model;
-  return { title, provider: pick.provider, ...(used !== undefined ? { model: used } : {}) };
+  return { title, provider: result.provider, ...(result.model !== undefined ? { model: result.model } : {}) };
 }

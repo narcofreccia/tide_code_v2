@@ -67,6 +67,20 @@ Reactors subscribe to events and issue further commands; they hold no business r
   `gh pr merge`), teardown on detach/archive (terminals and watchers first; failures are posted
   as error activities), checkpoint-ref GC on archive. `exclusive(threadId, task)` lets other
   services run git work on a thread's queue.
+  **Origin handoff** (`vcs/remoteSync.ts`, settings `git.*` read per event, only when the root has
+  an `origin`): `pushThreadBranches` `on-checkpoint` pushes the committed `tide/*` branch after each
+  after-checkpoint, `on-merge-request` commits pending work and pushes once before the merge; each
+  push reports `branch.pushed`, a failure posts one info activity per failure streak. With
+  `syncBaseWithRemote` a local merge-back first fetches `origin/<base>` and fast-forwards the base
+  (clean checkout → `merge --ff-only`, no checkout → CAS `update-ref`); unreachable origin, a dirty
+  checkout or a diverged base answer `merge.report error` and nothing merges. After the merge the
+  base is pushed (`git push origin <base>`); a rejected push leaves the merge `merged` and posts an
+  error activity. Nothing is ever force-pushed. Network git runs with a 600 s timeout. A remote
+  thread merges on its owner machine; `vcs.baseStatus` / `vcs.pullBase` (ff-only) let another
+  machine see and pull the result. **Generated text** (`vcs/messages.ts`, `git.generateMessages`):
+  the squash subject, a publish commit without a title and a new PR's title/body come from
+  `textModel` via `rpc/oneShot.ts` (`git diff --stat` + 4 KB of patch, 5 s); any failure keeps
+  the thread-title fallback. Per-turn checkpoints never ask.
 - `RollbackService` (`orchestration/rollback.ts`) — on `rollback.requested`: checks a file restore
   is safe first (refused in the main checkout or a worktree another live thread shares, by
   realpath), then (a) `session.rollback(n)` with n = rolled-back turns the current harness ran,

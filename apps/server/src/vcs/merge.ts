@@ -20,6 +20,11 @@ export interface MergeBackOptions {
   pollAttempts?: number;
   pollIntervalMs?: number;
   log?: (msg: string, data?: unknown) => void;
+  /**
+   * R17 C5: the squash commit's message, from the change staged in `git` (`range` are `git diff`
+   * arguments); undefined keeps the thread title.
+   */
+  messageFor?: (input: { git: Git; title: string; range: string[] }) => Promise<string | undefined>;
 }
 
 /** Used only when the repo has no identity of its own, so a merge commit can always be written. */
@@ -51,6 +56,7 @@ export class MergeBack {
   #pollAttempts: number;
   #pollIntervalMs: number;
   #log: (msg: string, data?: unknown) => void;
+  #messageFor: MergeBackOptions["messageFor"];
 
   constructor(options: MergeBackOptions) {
     this.#worktreeRoot = options.worktreeRoot;
@@ -61,6 +67,7 @@ export class MergeBack {
     this.#pollAttempts = options.pollAttempts ?? 10;
     this.#pollIntervalMs = options.pollIntervalMs ?? 3_000;
     this.#log = options.log ?? (() => undefined);
+    this.#messageFor = options.messageFor;
   }
 
   tempPath(threadId: string): string {
@@ -74,7 +81,7 @@ export class MergeBack {
 
   async merge(project: Project, thread: Thread, strategy: MergeStrategy, deleteBranch: boolean): Promise<MergeResult> {
     try {
-      await this.#commitPending(thread);
+      await this.commitPending(thread);
       if (await this.usesPr(thread)) return await this.#viaPr(project, thread, strategy, deleteBranch);
       return await this.#local(project, thread, strategy);
     } catch (err) {
@@ -83,7 +90,7 @@ export class MergeBack {
   }
 
   /** The agent rarely commits its own work: whatever is in the worktree is what the user saw and wants merged. */
-  async #commitPending(thread: Thread): Promise<void> {
+  async commitPending(thread: Thread): Promise<void> {
     if (thread.worktreePath === undefined) return;
     const wt = this.#git(thread.worktreePath);
     if (!(await wt.isRepo()) || (await wt.status()).dirty === 0) return;
@@ -143,7 +150,8 @@ export class MergeBack {
       if (r.code !== 0) return this.#failed(work, r.stderr || r.stdout, ["reset", "--hard"]);
       // nothing staged: the base already has every change the branch carries
       if ((await work.tryRun(["diff", "--cached", "--quiet"])).code !== 0) {
-        await work.run([...id, "commit", "-q", "-m", names.title]);
+        const generated = await this.#messageFor?.({ git: work, title: names.title, range: ["--cached"] }).catch(() => undefined);
+        await work.run([...id, "commit", "-q", "-m", generated ?? names.title]);
       }
     } else {
       await work.run(["checkout", "-q", "--detach", names.headSha]);
