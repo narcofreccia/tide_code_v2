@@ -6,6 +6,7 @@ import {
   isDesktop,
   pairingPageUrl,
   platformOf,
+  resolveRemoteLaunch,
   resolveServerUrl,
   wsUrlFor,
 } from "./bootstrap.ts";
@@ -97,5 +98,30 @@ describe("server url", () => {
     window.history.replaceState(null, "", "/?server=ws%3A%2F%2Fquery%3A2%2Fws");
     expect(resolveServerUrl()).toBe("ws://query:2/ws");
     expect(window.localStorage.getItem("tide.serverUrl")).toBe("ws://query:2/ws");
+  });
+});
+
+describe("remote launch", () => {
+  afterEach(() => {
+    window.localStorage.clear();
+    window.history.replaceState(null, "", "/");
+  });
+
+  it("is not a remote launch without remote=1", () => {
+    window.history.replaceState(null, "", "/?server=ws%3A%2F%2F127.0.0.1%3A1%2Fws&token=t");
+    expect(resolveRemoteLaunch()).toBeNull();
+  });
+
+  it("hands the other machine over without touching the local url or dev token", () => {
+    window.localStorage.setItem("tide.serverUrl", "ws://127.0.0.1:3777/ws");
+    window.localStorage.setItem("tide.devToken", "local-tok");
+    window.history.replaceState(null, "", "/?token=dev-tok&server=ws%3A%2F%2F10.0.0.5%3A3777%2Fws&remote=1&clientId=c1");
+    expect(resolveServerUrl()).toBe("ws://10.0.0.5:3777/ws");
+    expect(resolveRemoteLaunch()).toEqual({ url: "ws://10.0.0.5:3777/ws", token: "dev-tok", clientId: "c1" });
+    expect(window.localStorage.getItem("tide.serverUrl")).toBe("ws://127.0.0.1:3777/ws");
+    expect(window.localStorage.getItem("tide.devToken")).toBe("local-tok");
+    // the token leaves the address bar; remote=1 stays so a reload still skips the local server
+    expect(window.location.search).toBe("?remote=1");
+    expect(resolveRemoteLaunch()).toEqual({ url: "", token: "" });
   });
 });

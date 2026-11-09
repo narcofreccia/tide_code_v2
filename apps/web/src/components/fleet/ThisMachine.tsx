@@ -1,10 +1,12 @@
 import type { ServerInfo } from "@tide/contracts";
 import { patchServerSettings, useServerSettings } from "../../state/serverSettings.ts";
 import { copyText } from "../../lib/threadActions.ts";
+import { isDesktop } from "../../lib/bootstrap.ts";
 import { Button } from "../ui/Button.tsx";
 import { SettingNote, SettingsGroup } from "../settings/ui/SettingsGroup.tsx";
 import { SettingRow } from "../settings/ui/SettingRow.tsx";
 import { SettingText } from "../settings/ui/SettingText.tsx";
+import { SettingToggle } from "../settings/ui/SettingToggle.tsx";
 import { HostBars } from "./FleetBits.tsx";
 import { hostLine, harnessSummary, formatBytes } from "./envView.ts";
 import { PairDevice } from "./PairDevice.tsx";
@@ -73,6 +75,19 @@ export function ThisMachine({ info, envId }: { info: ServerInfo | undefined; env
           />
         )}
       />
+      {isDesktop() ? (
+        <SettingRow
+          label="Reachable on the LAN"
+          help="Takes effect after Tide restarts"
+          control={(id) => (
+            <SettingToggle
+              id={id}
+              checked={settings.lanBind === true}
+              onChange={(lanBind) => patchServerSettings({ environment: { lanBind } })}
+            />
+          )}
+        />
+      ) : null}
       {lanUrls.length > 0 ? (
         <SettingRow
           label="LAN URLs"

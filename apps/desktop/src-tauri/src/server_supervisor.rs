@@ -19,6 +19,7 @@ use tauri::{AppHandle, Emitter, Manager};
 
 use crate::launcher::{free_port, resolve_launcher, tide_home};
 use crate::process::{self, LogSink};
+use crate::shell_config::{self, Mode};
 
 /// The splash page, embedded so it works identically in dev and in the bundle.
 pub const LOADING_HTML: &str = include_str!("../../loading.html");
@@ -36,6 +37,8 @@ const MAX_STARTS_IN_WINDOW: usize = 5;
 /// `tide-server` exits with this when another server already holds `TIDE_HOME/server.lock`
 /// (apps/server/src/homeLock.ts). Restarting cannot help, so the shell asks for a Retry.
 const HOME_IN_USE_EXIT_CODE: i32 = 75;
+/// Attach mode: how often the borrowed server's `/health` is checked.
+const ATTACH_POLL: Duration = Duration::from_secs(5);
 
 #[derive(Clone, Serialize)]
 pub struct Endpoint {
@@ -43,6 +46,18 @@ pub struct Endpoint {
     pub token: String,
     #[serde(rename = "environmentId")]
     pub environment_id: String,
+    /// extra web-app query (`&remote=1…`) for a server on another machine
+    #[serde(skip)]
+    pub query: String,
+}
+
+/// Why an idle wait (attach, remote, a failed state) ended.
+enum Idle {
+    Stop,
+    /// Retry, or a mode change from the splash / menu
+    Wake,
+    /// the attached server stopped answering
+    Lost,
 }
 
 #[derive(Clone, Serialize, Default)]
@@ -89,7 +104,18 @@ impl Supervisor {
         self.inner.lock().map(|i| i.status.clone()).unwrap_or_default()
     }
 
-    /// Splash "Retry" button: lets a gave-up supervisor start over.
+    /// Menu "Connect to another machine…": the splash with its pairing form open.
+    pub fn show_connect(&self) {
+        if let Ok(mut i) = self.inner.lock() {
+            i.navigated = None;
+        }
+        if let (Some(win), Ok(url)) = (self.app.get_webview_window("main"), format!("{SPLASH_URL}?connect=1").parse()) {
+            let _ = win.navigate(url);
+        }
+    }
+
+    /// Splash "Retry" button, and any `shell.json` mode change: the supervisor starts over,
+    /// stopping a running sidecar first.
     pub fn retry(&self) {
         if let Ok(mut i) = self.inner.lock() {
             i.retry = true;
@@ -164,6 +190,35 @@ fn supervise(app: AppHandle, inner: Shared) {
         if stopping(&inner) {
             return;
         }
+        // `shell.json` is re-read on every pass: the splash and the menu change it, then wake us.
+        if let Ok(home) = tide_home() {
+            let cfg = shell_config::load(&home);
+            let borrowed = match cfg.mode {
+                Mode::Remote => Some(remote_endpoint(&cfg).map(|ep| (ep, None))),
+                Mode::Attach => attach_endpoint(&home).map(|(ep, port)| Ok((ep, Some(port)))),
+                Mode::Local => None,
+            };
+            match borrowed {
+                Some(Ok((ep, port))) => {
+                    let what = if port.is_some() { "attached to" } else { "connected to" };
+                    go_live(&app, &inner, ep, what);
+                    match idle(&inner, port) {
+                        Idle::Stop => return,
+                        Idle::Wake => continue,
+                        Idle::Lost => set_status(&app, &inner, "restarting", Some("the attached server stopped; starting our own".into())),
+                    }
+                }
+                Some(Err(err)) => {
+                    show_splash(&app, &inner);
+                    set_status(&app, &inner, "failed", Some(format!("{err}\nUse the Tide menu to connect again or run the local server.")));
+                    if !wait_retry(&inner) {
+                        return;
+                    }
+                    continue;
+                }
+                None => {}
+            }
+        }
         let now = Instant::now();
         starts.retain(|t| now.duration_since(*t) < RESTART_WINDOW);
         if starts.len() >= MAX_STARTS_IN_WINDOW {
@@ -187,7 +242,8 @@ fn supervise(app: AppHandle, inner: Shared) {
             Err(err) if exit_code(&inner) == Some(HOME_IN_USE_EXIT_CODE) => {
                 eprintln!("[tide-shell] {err}");
                 show_splash(&app, &inner);
-                set_status(&app, &inner, "failed", Some(home_in_use_message()));
+                // the splash offers "Use that server" (attach) beside Retry for this state
+                set_status(&app, &inner, "in-use", Some(home_in_use_message()));
                 if !wait_retry(&inner) {
                     return;
                 }
@@ -199,6 +255,11 @@ fn supervise(app: AppHandle, inner: Shared) {
                 let code = wait_for_exit(&inner);
                 if stopping(&inner) {
                     return;
+                }
+                if code == SWITCHED {
+                    starts.clear();
+                    backoff = BACKOFF_MIN;
+                    continue;
                 }
                 if started_at.elapsed() >= STABLE_AFTER {
                     backoff = BACKOFF_MIN;
@@ -231,18 +292,61 @@ fn sleep_unless_stopping(inner: &Shared, total: Duration) -> bool {
 
 /// Blocks until the splash's Retry is pressed; `false` when the app is quitting instead.
 fn wait_retry(inner: &Shared) -> bool {
+    matches!(idle(inner, None), Idle::Wake)
+}
+
+/// Waits for quit or a wake-up; with `port`, also checks that server's `/health` every 5 s.
+fn idle(inner: &Shared, port: Option<u16>) -> Idle {
+    let mut next_probe = Instant::now() + ATTACH_POLL;
     loop {
         {
-            let Ok(mut i) = inner.lock() else { return false };
+            let Ok(mut i) = inner.lock() else { return Idle::Stop };
             if i.stopping {
-                return false;
+                return Idle::Stop;
             }
             if std::mem::take(&mut i.retry) {
-                return true;
+                return Idle::Wake;
             }
+        }
+        if let Some(p) = port.filter(|_| Instant::now() >= next_probe) {
+            if !health_ok(p) {
+                return Idle::Lost;
+            }
+            next_probe = Instant::now() + ATTACH_POLL;
         }
         std::thread::sleep(Duration::from_millis(250));
     }
+}
+
+/// The server already holding `TIDE_HOME`: its port from `server.lock`, the master token
+/// from `server.json`. `None` unless it answers `/health`.
+fn attach_endpoint(home: &Path) -> Option<(Endpoint, u16)> {
+    let lock: serde_json::Value = serde_json::from_str(&std::fs::read_to_string(home.join("server.lock")).ok()?).ok()?;
+    let port = u16::try_from(lock.get("port")?.as_u64()?).ok()?;
+    if !health_ok(port) {
+        return None;
+    }
+    let (token, environment_id) = read_identity(home).ok()?;
+    Some((Endpoint { url: format!("ws://127.0.0.1:{port}/ws"), token, environment_id, query: String::new() }, port))
+}
+
+/// Another machine paired from the splash; the web app tells it apart with `remote=1`.
+fn remote_endpoint(cfg: &shell_config::ShellConfig) -> Result<Endpoint, String> {
+    let remote = cfg.remote.as_ref().ok_or("no remote machine is paired")?;
+    let url = shell_config::ws_url_for(&remote.url)?;
+    let client = remote.client_id.as_deref().map(|c| format!("&clientId={}", urlencode(c))).unwrap_or_default();
+    Ok(Endpoint { url, token: remote.token.clone(), environment_id: String::new(), query: format!("&remote=1{client}") })
+}
+
+/// Records the endpoint, shows the web app on it and starts the update check.
+fn go_live(app: &AppHandle, inner: &Shared, endpoint: Endpoint, what: &str) {
+    if let Ok(mut i) = inner.lock() {
+        i.endpoint = Some(endpoint.clone());
+    }
+    set_status(app, inner, "ready", Some(format!("{what} {}", endpoint.url)));
+    open_web_app(app, inner, &endpoint);
+    // The app is usable now — look for a newer release without blocking it.
+    crate::updater::check_on_launch(app.clone());
 }
 
 /// Spawns one server generation and blocks until it is healthy and the webview points at it.
@@ -255,8 +359,10 @@ fn boot(app: &AppHandle, inner: &Shared, port: &mut Option<u16>) -> Result<Insta
     };
     let sink = LogSink::open(&home).map_err(|e| format!("cannot open the server log: {e}"))?;
 
+    // LAN worker (Settings → This machine): never in dev, where `--dev` takes raw tokens on the socket
+    let lan = !tauri::is_dev() && !cfg!(debug_assertions) && shell_config::lan_bind(&home);
     let mut cmd = launcher.command();
-    cmd.arg("--port").arg(port_no.to_string()).arg("--host").arg("127.0.0.1").env("TIDE_HOME", &home);
+    cmd.arg("--port").arg(port_no.to_string()).arg("--host").arg(if lan { "0.0.0.0" } else { "127.0.0.1" }).env("TIDE_HOME", &home);
     // The server shuts itself down once this pid is gone: a SIGKILLed or crashed shell runs
     // none of the stop code below, and an orphaned sidecar would keep writing to TIDE_HOME.
     cmd.env("TIDE_PARENT_PID", std::process::id().to_string());
@@ -291,12 +397,8 @@ fn boot(app: &AppHandle, inner: &Shared, port: &mut Option<u16>) -> Result<Insta
         }
         if health_ok(port_no) {
             let (token, environment_id) = read_identity(&home)?;
-            let endpoint = Endpoint { url: format!("ws://127.0.0.1:{port_no}/ws"), token, environment_id };
-            inner.lock().map_err(|_| "supervisor poisoned")?.endpoint = Some(endpoint.clone());
-            set_status(app, inner, "ready", Some(format!("connected to {}", endpoint.url)));
-            open_web_app(app, inner, &endpoint);
-            // The app is usable now — look for a newer release without blocking it.
-            crate::updater::check_on_launch(app.clone());
+            let endpoint = Endpoint { url: format!("ws://127.0.0.1:{port_no}/ws"), token, environment_id, query: String::new() };
+            go_live(app, inner, endpoint, "connected to");
             return Ok(started_at);
         }
         std::thread::sleep(HEALTH_INTERVAL);
@@ -343,13 +445,25 @@ fn exited(inner: &Shared) -> bool {
     }
 }
 
+const SWITCHED: &str = "switched";
+
 /// Polls the child rather than holding the mutex across `wait()`, so `shutdown()` can win.
+/// A wake-up (mode change) stops the child and returns [`SWITCHED`].
 fn wait_for_exit(inner: &Shared) -> String {
     loop {
         {
             let Ok(mut guard) = inner.lock() else { return "supervisor poisoned".into() };
             if guard.stopping {
                 return "stopping".into();
+            }
+            if std::mem::take(&mut guard.retry) {
+                guard.endpoint = None;
+                let child = guard.child.take();
+                drop(guard);
+                if let Some(mut child) = child {
+                    process::stop(&mut child);
+                }
+                return SWITCHED.into();
             }
             match guard.child.as_mut().map(|c| c.try_wait()) {
                 None => return "no child".into(),
@@ -394,7 +508,7 @@ fn show_splash(app: &AppHandle, inner: &Shared) {
 /// Skipped when the webview already shows this exact URL — its WS client reconnects itself.
 fn open_web_app(app: &AppHandle, inner: &Shared, endpoint: &Endpoint) {
     let base = if tauri::is_dev() { "http://localhost:5173" } else { "tauri://localhost" };
-    let target = format!("{base}/?token={}&server={}", urlencode(&endpoint.token), urlencode(&endpoint.url));
+    let target = format!("{base}/?token={}&server={}{}", urlencode(&endpoint.token), urlencode(&endpoint.url), endpoint.query);
     if inner.lock().map(|i| i.navigated.as_deref() == Some(target.as_str())).unwrap_or(false) {
         eprintln!("[tide-shell] webview already on the app URL; not navigating");
         return;

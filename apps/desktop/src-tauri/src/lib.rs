@@ -7,9 +7,11 @@
 mod launcher;
 mod process;
 mod server_supervisor;
+mod shell_config;
+mod splash;
 mod updater;
 
-use server_supervisor::{Supervisor, LOADING_HTML};
+use server_supervisor::Supervisor;
 use std::sync::atomic::{AtomicBool, Ordering};
 
 use tauri::{Manager, RunEvent, WindowEvent};
@@ -34,28 +36,12 @@ pub fn run() {
         .plugin(tauri_plugin_notification::init())
         .plugin(tauri_plugin_updater::Builder::new().build())
         .plugin(tauri_plugin_window_state::Builder::default().build())
-        .register_uri_scheme_protocol(LOADING_SCHEME, |ctx, req| {
-            let sup = ctx.app_handle().try_state::<Supervisor>();
-            let (mime, body) = match req.uri().path() {
-                "/status" => ("application/json", sup.map(|s| s.status()).and_then(|s| serde_json::to_vec(&s).ok()).unwrap_or_default()),
-                "/retry" => {
-                    if let Some(s) = sup {
-                        s.retry();
-                    }
-                    ("text/plain", Vec::new())
-                }
-                _ => {
-                    let version = ctx.app_handle().package_info().version.to_string();
-                    ("text/html; charset=utf-8", LOADING_HTML.replace("__TIDE_VERSION__", &version).into_bytes())
-                }
-            };
-            tauri::http::Response::builder()
-                .header("Content-Type", mime)
-                .body(body)
-                .expect("static response")
-        })
+        .register_uri_scheme_protocol(LOADING_SCHEME, splash::handle)
         .invoke_handler(tauri::generate_handler![server_endpoint])
         .setup(|app| {
+            if let Err(err) = splash::install_menu(app.handle()) {
+                eprintln!("[tide-shell] menu: {err}");
+            }
             app.manage(Supervisor::start(app.handle().clone()));
             Ok(())
         })

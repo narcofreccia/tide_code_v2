@@ -35,13 +35,24 @@
       .track { margin-top: 40px; width: 160px; height: 2px; border-radius: 9999px; overflow: hidden; background: var(--border); }
       .fill { height: 100%; width: 100%; background: var(--accent); transform-origin: left center; transform: scaleX(0.04); transition: transform 200ms linear, background-color 200ms ease-out; }
       .fill.indeterminate { width: 40%; transform: none; transition: none; animation: slide 1.2s linear infinite; }
-      body[data-state="failed"] .fill { background: var(--danger); }
+      body[data-state="failed"] .fill, body[data-state="in-use"] .fill { background: var(--danger); }
       .status { display: grid; margin-top: 14px; min-height: 16px; font-size: 12px; line-height: 16px; color: var(--label); max-width: 70ch; padding: 0 24px; }
       .status > span { grid-area: 1 / 1; text-align: center; animation: appear 200ms ease-out both; }
-      body[data-state="failed"] .status > span { color: var(--danger); white-space: pre-wrap; }
-      #retry { display: none; margin-top: 20px; font: inherit; font-size: 12px; color: var(--text); background: transparent; border: 1px solid var(--border); border-radius: 6px; padding: 4px 14px; cursor: pointer; }
-      #retry:hover { border-color: var(--accent); }
-      body[data-state="failed"] #retry { display: block; }
+      body[data-state="failed"] .status > span, body[data-state="in-use"] .status > span { color: var(--danger); white-space: pre-wrap; }
+      .actions { display: flex; gap: 8px; margin-top: 20px; }
+      button { display: none; font: inherit; font-size: 12px; color: var(--text); background: transparent; border: 1px solid var(--border); border-radius: 6px; padding: 4px 14px; cursor: pointer; }
+      button:hover { border-color: var(--accent); }
+      body[data-state="failed"] #retry, body[data-state="in-use"] #retry, body[data-state="in-use"] #attach,
+      body[data-state="failed"] #open-connect, body[data-state="in-use"] #open-connect, form button { display: block; }
+      /* "Connect to another machine": pair with a 6-digit code, the shell stores the token */
+      form { display: none; flex-direction: column; gap: 8px; margin-top: 24px; width: 260px; }
+      body.connect form { display: flex; }
+      body.connect .actions { display: none; }
+      form label { font-size: 11px; color: var(--label); display: flex; flex-direction: column; gap: 4px; }
+      input { font: inherit; color: var(--text); background: transparent; border: 1px solid var(--border); border-radius: 6px; padding: 4px 8px; -webkit-user-select: text; user-select: text; }
+      input:focus { outline: none; border-color: var(--accent); }
+      form .row { display: flex; gap: 8px; justify-content: flex-end; }
+      #connect-error { min-height: 16px; font-size: 12px; color: var(--danger); }
       .version { position: absolute; bottom: 20px; font-size: 11px; color: var(--label); font-variant-numeric: tabular-nums; opacity: 0.7; }
       @keyframes appear { from { opacity: 0; } to { opacity: 1; } }
       @keyframes slide { from { transform: translateX(-100%); } to { transform: translateX(250%); } }
@@ -64,13 +75,26 @@
     </div>
     <div class="track" role="progressbar" aria-valuemin="0" aria-valuemax="100"><div class="fill" id="fill"></div></div>
     <div class="status" id="status" aria-live="polite"><span>Starting the local server…</span></div>
-    <button id="retry" type="button">Retry</button>
+    <div class="actions">
+      <button id="retry" type="button">Retry</button>
+      <button id="attach" type="button">Use that server</button>
+      <button id="open-connect" type="button">Connect to another machine</button>
+    </div>
+    <form id="connect" autocomplete="off">
+      <label>Server URL<input id="connect-url" type="text" placeholder="http://192.168.1.20:3777" required spellcheck="false" /></label>
+      <label>Pairing code<input id="connect-code" type="text" inputmode="numeric" pattern="\d{6}" maxlength="6" placeholder="123456" required /></label>
+      <span id="connect-error" aria-live="polite"></span>
+      <div class="row">
+        <button id="connect-cancel" type="button">Cancel</button>
+        <button id="connect-submit" type="submit">Connect</button>
+      </div>
+    </form>
     <span class="version" id="version">v__TIDE_VERSION__</span>
     <script>
       // Desktop-only page. The shell pushes status into window.__tideStatus (see
       // server_supervisor.rs). Startup reports milestones, not percentages: each stage
       // eases toward a cap it never reaches, so the bar always moves and never rewinds.
-      var STAGES = { starting: { cap: 0.72, tau: 6000 }, restarting: { cap: 0.72, tau: 6000 }, ready: { cap: 1, tau: 1 } };
+      var STAGES = { connecting: { cap: 0.72, tau: 3000 }, starting: { cap: 0.72, tau: 6000 }, restarting: { cap: 0.72, tau: 6000 }, ready: { cap: 1, tau: 1 } };
       var fill = document.getElementById("fill");
       var bar = fill.parentNode;
       var progress = 0.04, floor = 0.04, since = performance.now(), state = "starting";
@@ -96,7 +120,7 @@
         setProgress(floor + (s.cap - floor) * (1 - Math.exp(-(performance.now() - since) / s.tau)));
       }, 120);
 
-      var LABELS = { starting: "Starting the local server…", restarting: "Restarting the local server…", ready: "Ready", closing: "Closing Tide…" };
+      var LABELS = { connecting: "Connecting…", starting: "Starting the local server…", restarting: "Restarting the local server…", ready: "Ready", closing: "Closing Tide…" };
       window.__tideStatus = function (next, message) {
         if (next !== state) { state = next; since = performance.now(); floor = progress; }
         document.body.dataset.state = next;
@@ -107,7 +131,7 @@
           bar.removeAttribute("aria-valuenow");
         } else if (next === "updating") {
           setProgress(Number(pct[1]) / 100);
-        } else if (next === "failed") {
+        } else if (next === "failed" || next === "in-use") {
           setProgress(1);
         }
         setText(next === "starting" || next === "ready" || next === "closing" ? LABELS[next] : (message || LABELS[next] || next));
@@ -118,6 +142,54 @@
         window.__tideStatus("starting");
         fetch("retry").catch(function () {});
       };
+      document.getElementById("attach").onclick = function () {
+        window.__tideStatus("starting");
+        fetch("attach").catch(function () {});
+      };
+
+      // Pairing runs here: the server's CORS is open, and the shell only stores {url, token}.
+      var form = document.getElementById("connect");
+      var connectError = document.getElementById("connect-error");
+      function showConnect(open) {
+        document.body.classList.toggle("connect", open);
+        connectError.textContent = "";
+        if (open) document.getElementById("connect-url").focus();
+      }
+      document.getElementById("open-connect").onclick = function () { showConnect(true); };
+      document.getElementById("connect-cancel").onclick = function () {
+        showConnect(false);
+        fetch("reopen").catch(function () {});
+      };
+      form.onsubmit = function (e) {
+        e.preventDefault();
+        var raw = document.getElementById("connect-url").value.trim();
+        var code = document.getElementById("connect-code").value.trim();
+        var origin;
+        try { origin = new URL(/^https?:\/\//i.test(raw) ? raw : "http://" + raw).origin; } catch (_) { connectError.textContent = "That is not a URL"; return; }
+        if (!/^\d{6}$/.test(code)) { connectError.textContent = "The code has 6 digits"; return; }
+        connectError.textContent = "";
+        document.getElementById("connect-submit").disabled = true;
+        // no content-type: a simple cross-origin request, no preflight
+        fetch(origin + "/api/auth/pair", { method: "POST", body: JSON.stringify({ code: code, name: "Tide desktop" }) })
+          .then(function (r) {
+            if (r.status === 429) throw new Error("Too many attempts; wait a minute");
+            if (!r.ok) throw new Error(r.status === 401 || r.status === 400 ? "The code was refused (wrong or expired)" : "Pairing failed: HTTP " + r.status);
+            return r.json();
+          })
+          .then(function (p) {
+            if (!p || typeof p.token !== "string") throw new Error("Pairing failed: unexpected answer");
+            var body = { url: origin, token: p.token };
+            if (typeof p.clientId === "string") body.clientId = p.clientId;
+            return fetch("remote", { method: "POST", body: JSON.stringify(body) }).then(function (r) {
+              if (!r.ok) return r.text().then(function (t) { throw new Error(t || "The shell refused it"); });
+            });
+          })
+          .then(function () { showConnect(false); window.__tideStatus("connecting"); })
+          .catch(function (err) { connectError.textContent = (err && err.message) || "Cannot reach that server"; })
+          .finally(function () { document.getElementById("connect-submit").disabled = false; });
+      };
+      if (/[?&]connect=1/.test(window.location.search)) showConnect(true);
+
       // Anything pushed before this page finished loading is fetched from the shell.
       fetch("status").then(function (r) { return r.json(); }).then(function (s) {
         if (s && s.state) window.__tideStatus(s.state, s.message);

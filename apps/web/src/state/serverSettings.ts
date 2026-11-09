@@ -178,6 +178,8 @@ function applyPatch(settings: UserSettings, patch: UserSettingsPatch): UserSetti
     environment: {
       name: patch.environment?.name ?? settings.environment.name,
       ...(patch.environment?.sshHost === null ? {} : patch.environment?.sshHost !== undefined ? { sshHost: patch.environment.sshHost } : settings.environment.sshHost !== undefined ? { sshHost: settings.environment.sshHost } : {}),
+      ...((patch.environment?.lanBind ?? settings.environment.lanBind) !== undefined ? { lanBind: patch.environment?.lanBind ?? settings.environment.lanBind } : {}),
+      ...(patch.environment?.projectsDir === null ? {} : patch.environment?.projectsDir !== undefined ? { projectsDir: patch.environment.projectsDir } : settings.environment.projectsDir !== undefined ? { projectsDir: settings.environment.projectsDir } : {}),
     },
     ...(patch.relay === null ? {} : patch.relay !== undefined ? { relay: { url: patch.relay.url, hasKey: patch.relay.key !== undefined || settings.relay?.hasKey === true } } : settings.relay !== undefined ? { relay: settings.relay } : {}),
     ...(patch.textModel === null ? {} : patch.textModel !== undefined ? { textModel: patch.textModel } : settings.textModel !== undefined ? { textModel: settings.textModel } : {}),

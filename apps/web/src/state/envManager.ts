@@ -1,6 +1,7 @@
 import {
   EnvironmentConnection,
   MergedModel,
+  routeFor,
   onPageHidden,
   scheduleFrame,
   type ConnectionStatus,
@@ -38,6 +39,13 @@ import { loadServerSettings } from "./serverSettings.ts";
 
 /** Id of the local environment until its server says who it is. */
 export const PROVISIONAL_LOCAL_ID = "local";
+/** R17: id of a machine the desktop shell opened with `?remote=1`, until it answers. */
+export const PROVISIONAL_REMOTE_ID = "remote";
+
+/** Records whose id is a placeholder: whoever answers on their route is adopted. */
+function adoptsAnswerer(env: KnownEnvironment | undefined): boolean {
+  return env?.id === PROVISIONAL_REMOTE_ID || isLocalEnv(env);
+}
 
 export type EnvConnectionLike = Pick<
   EnvironmentConnection,
@@ -146,7 +154,7 @@ export function mirrorPrimary(): void {
   const entry = primaryId === undefined ? undefined : entries.get(primaryId);
   const status = primaryId === undefined ? undefined : statuses[primaryId];
   useModel.setState({
-    environmentId: primaryId === undefined || primaryId === PROVISIONAL_LOCAL_ID ? null : primaryId,
+    environmentId: primaryId === undefined || primaryId === PROVISIONAL_LOCAL_ID || primaryId === PROVISIONAL_REMOTE_ID ? null : primaryId,
     status: toConnectionStatus(status?.connection, entry?.everConnected ?? false),
     lastError: status === undefined || status.connection === "connected" ? null : (status.error ?? null),
   });
@@ -165,7 +173,7 @@ function toEnvStatus(snap: EnvConnectionSnapshot): EnvStatus {
 function onSnapshot(entry: Entry, snap: EnvConnectionSnapshot): void {
   if (!entries.has(entry.id) || entries.get(entry.id) !== entry) return;
   // the local environment is whoever answers on its route: adopt the real id
-  if (snap.environmentId !== undefined && snap.environmentId !== entry.id && isLocalEnv(envById(entry.id))) {
+  if (snap.environmentId !== undefined && snap.environmentId !== entry.id && adoptsAnswerer(envById(entry.id))) {
     rekeyEnvironment(entry.id, snap.environmentId);
   }
   const id = entry.id;
@@ -204,7 +212,7 @@ export function openEnvironment(env: KnownEnvironment): void {
   if (entries.has(env.id)) return;
   const conn = factory({
     id: env.id,
-    verifyId: !isLocalEnv(env),
+    verifyId: !adoptsAnswerer(env),
     routes: env.routes,
     ...(env.token === undefined ? {} : { token: env.token }),
     authMode: authMode(env),
@@ -385,16 +393,20 @@ export interface LocalLaunch {
   /** the local server's socket URL (desktop sidecar `?server=`, VITE_TIDE_URL, page origin, default) */
   url: string;
   token: string;
+  /**
+   * R17: the desktop shell opened another machine (`?remote=1`): `url` / `token` name it, no
+   * local route is synthesised and it becomes the primary. An empty `url` (a reload, the
+   * hand-off already consumed) just restores the persisted list.
+   */
+  remote?: boolean;
+  /** the per-device token's id from pairing (remote launches) */
+  clientId?: string;
 }
 
-/**
- * Restores the persisted environment list, makes sure the local environment exists and
- * points at this launch's local URL / token (never touching the user's other
- * environments or their primary choice), and connects everything.
- */
-export function startEnvironments(local: LocalLaunch): () => void {
-  stopEnvironments();
-  const persisted = loadEnvironments();
+type Persisted = ReturnType<typeof loadEnvironments>;
+
+/** The local launch: the local environment exists and points at this URL / token. */
+function withLocal(persisted: Persisted, local: LocalLaunch): { environments: KnownEnvironment[]; localId: string } {
   const localRoute: EnvRoute = { kind: "local", url: local.url, priority: 0 };
   let environments = persisted?.environments ?? [];
   const existing = environments.find((e) => isLocalEnv(e));
@@ -412,10 +424,55 @@ export function startEnvironments(local: LocalLaunch): () => void {
     const env: KnownEnvironment = { id: localId, name: "", routes: [localRoute], addedAt: Date.now(), ...(local.token ? { token: local.token } : {}) };
     environments = [env, ...environments.filter((e) => e.id !== localId)];
   }
-  const primaryId = persisted?.primaryId !== undefined && environments.some((e) => e.id === persisted.primaryId) ? persisted.primaryId : localId;
+  return { environments, localId };
+}
+
+/** The remote launch: upserts the named machine (matched by route URL) and makes it the primary. */
+function withRemote(persisted: Persisted, launch: LocalLaunch): { environments: KnownEnvironment[]; primaryId: string | undefined } {
+  // a never-answered placeholder for the local server has nothing worth keeping
+  let environments = (persisted?.environments ?? []).filter((e) => e.id !== PROVISIONAL_LOCAL_ID);
+  let primaryId = persisted?.primaryId;
+  if (launch.url !== "") {
+    const auth = { token: launch.token, ...(launch.clientId === undefined ? {} : { clientId: launch.clientId }) };
+    const known = environments.find((e) => !isLocalEnv(e) && e.routes.some((r) => r.url === launch.url));
+    if (known) {
+      environments = environments.map((e) => {
+        if (e.id !== known.id) return e;
+        const { clientId: _old, ...rest } = e;
+        return { ...rest, ...auth };
+      });
+      primaryId = known.id;
+    } else {
+      const env: KnownEnvironment = { id: PROVISIONAL_REMOTE_ID, name: "", routes: [routeFor(launch.url)], addedAt: Date.now(), ...auth };
+      environments = [...environments.filter((e) => e.id !== PROVISIONAL_REMOTE_ID), env];
+      primaryId = env.id;
+    }
+  }
+  if (primaryId === undefined || !environments.some((e) => e.id === primaryId)) primaryId = environments[0]?.id;
+  return { environments, primaryId };
+}
+
+/**
+ * Restores the persisted environment list, makes sure the local environment exists and
+ * points at this launch's local URL / token (never touching the user's other
+ * environments or their primary choice), and connects everything. A remote launch
+ * (`local.remote`) skips the local environment and makes the named machine the primary.
+ */
+export function startEnvironments(local: LocalLaunch): () => void {
+  stopEnvironments();
+  const persisted = loadEnvironments();
+  let environments: KnownEnvironment[];
+  let primaryId: string | undefined;
+  if (local.remote) {
+    ({ environments, primaryId } = withRemote(persisted, local));
+  } else {
+    let localId: string;
+    ({ environments, localId } = withLocal(persisted, local));
+    primaryId = persisted?.primaryId !== undefined && environments.some((e) => e.id === persisted.primaryId) ? persisted.primaryId : localId;
+    migrateEnvStorage(localId);
+  }
   useEnvironments.setState({ environments, statuses: {}, primaryId });
   merged.seedOwnership(persisted?.ownership ?? { projects: {}, threads: {} });
-  migrateEnvStorage(localId);
   setRpcCaller(routedCall);
   setRpcStreamer(routedStream);
   setDispatcher(routedDispatch);

@@ -29,8 +29,11 @@ export function defaultServerUrl(
  * environment; the user's other environments live in `tide.environments.v1`.
  */
 export function resolveServerUrl(): string {
-  const fromQuery = new URL(window.location.href).searchParams.get("server");
+  const params = new URL(window.location.href).searchParams;
+  const fromQuery = params.get("server");
   const fallback = defaultServerUrl(window.location, import.meta.env);
+  // R17: a remote launch's `?server=` names another machine, never the local server
+  if (params.get("remote") === "1") return fromQuery ?? "";
   try {
     if (fromQuery) window.localStorage.setItem(URL_KEY, fromQuery);
     else return window.localStorage.getItem(URL_KEY) || fallback;
@@ -104,11 +107,30 @@ export async function connectTo(serverUrl: string, token: string): Promise<strin
 }
 
 /**
+ * R17: the desktop shell opened another machine (`?server=&token=&remote=1[&clientId=]`).
+ * Its token is that machine's per-device token, so it is not stored as the local dev token;
+ * the hand-off is stripped from history but `remote=1` stays, so a reload still skips the
+ * local server (the machine itself is persisted in the environment list).
+ */
+export function resolveRemoteLaunch(): { url: string; token: string; clientId?: string } | null {
+  const url = new URL(window.location.href);
+  if (url.searchParams.get("remote") !== "1") return null;
+  const launch = { url: resolveServerUrl(), token: url.searchParams.get("token") ?? "" };
+  const clientId = url.searchParams.get("clientId");
+  for (const key of ["server", "token", "clientId"]) url.searchParams.delete(key);
+  window.history.replaceState(null, "", url.pathname + url.search + url.hash);
+  return clientId ? { ...launch, clientId } : launch;
+}
+
+/**
  * Boots the environment manager: the legacy `?server=` / `?token=` / VITE_TIDE_URL /
  * stored URL resolve to the LOCAL environment's route and token; user-added
  * environments and the primary choice come from `tide.environments.v1` untouched.
+ * A remote launch (`?remote=1`) synthesises no local environment.
  */
 export function startClient(): () => void {
+  const remote = resolveRemoteLaunch();
+  if (remote) return startEnvironments({ ...remote, remote: true });
   return startEnvironments({ url: resolveServerUrl(), token: resolveDevToken() });
 }
 
