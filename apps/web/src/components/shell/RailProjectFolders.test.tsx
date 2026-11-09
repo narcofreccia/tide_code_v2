@@ -35,30 +35,49 @@ describe("RailProjectFolders", () => {
   it("draws one folder per project, pinned first, with rows inside", () => {
     mount();
     const folders = Array.from(document.querySelectorAll("[data-rail-group^='project:']")).map((n) => n.getAttribute("data-rail-group"));
-    expect(folders).toEqual(["project:p2", "project:p1"]);
-    const tide = within(document.querySelector("[data-rail-group='project:p1']") as HTMLElement);
+    expect(folders).toEqual(["project:path:p2", "project:path:p1"]);
+    const tide = within(document.querySelector("[data-rail-group='project:path:p1']") as HTMLElement);
     expect(tide.getByText("Tide work")).toBeDefined();
     expect(tide.getByText("Tide more")).toBeDefined();
   });
 
   it("collapsing hides rows, shows the needs dot and persists the fold", () => {
     mount();
-    const tide = document.querySelector("[data-rail-group='project:p1']") as HTMLElement;
+    const tide = document.querySelector("[data-rail-group='project:path:p1']") as HTMLElement;
     expect(tide.querySelector("[data-folder-needs]")).toBeNull();
     fireEvent.click(within(tide).getByRole("button", { expanded: true }));
     expect(screen.queryByText("Tide work")).toBeNull();
     expect(tide.querySelector("[data-folder-needs]")).not.toBeNull();
-    expect(window.localStorage.getItem("tide.rail.groups")).toContain("project:p1");
+    expect(window.localStorage.getItem("tide.rail.groups")).toContain("project:path:p1");
   });
 
   it("the header menu pins and opens a new thread", async () => {
     const fake = mount();
-    const tide = document.querySelector("[data-rail-group='project:p1']") as HTMLElement;
+    const tide = document.querySelector("[data-rail-group='project:path:p1']") as HTMLElement;
     fireEvent.contextMenu(within(tide).getByRole("button", { expanded: true }));
     await act(async () => fireEvent.click(screen.getByRole("menuitem", { name: "Pin" })));
     expect(fake.dispatch).toHaveBeenCalledWith(expect.objectContaining({ type: "project.update", projectId: "p1", pinned: true }));
     fireEvent.contextMenu(within(tide).getByRole("button", { expanded: true }));
     fireEvent.click(screen.getByRole("menuitem", { name: "New thread in project" }));
     expect(useUi.getState().newThreadProjectId).toBe("p1");
+  });
+
+  it("one folder holds the threads of every clone of a repo", () => {
+    useSettings.setState({ railGroupBy: "project" });
+    const repo = { remoteUrl: "github.com/acme/web", cloneUrl: "https://github.com/acme/web.git", defaultBranch: "main", detectedAt: 1 };
+    attachFakeStore(
+      modelWith({
+        projects: { p1: { ...project("p1", "web"), repo }, p2: { ...project("p2", "web"), repo } },
+        threads: { t1: makeThread("t1", { projectId: "p1", title: "On laptop" }), t2: makeThread("t2", { projectId: "p2", title: "On server" }) },
+      }),
+    );
+    render(<Rail />);
+    const folders = document.querySelectorAll("[data-rail-group^='project:']");
+    expect(folders).toHaveLength(1);
+    const folder = within(folders[0] as HTMLElement);
+    expect(folder.getByText("acme/web")).toBeDefined();
+    expect(folder.getByText("On laptop")).toBeDefined();
+    expect(folder.getByText("On server")).toBeDefined();
+    expect(document.querySelectorAll("[data-rail-thread]").length).toBeGreaterThanOrEqual(2);
   });
 });

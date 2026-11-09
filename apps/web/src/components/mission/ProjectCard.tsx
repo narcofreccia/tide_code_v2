@@ -1,5 +1,5 @@
 import { useState } from "react";
-import { selectPrCounts, selectProjectLinks, selectProjectTotals, selectRecentThreads } from "@tide/client";
+import { repoGroupOf, selectProjectLinks } from "@tide/client";
 import type { Project } from "@tide/contracts";
 import { threadHarnessLabel } from "../../lib/vocab.ts";
 import { useProvidersSnapshot } from "../../state/providers.ts";
@@ -20,6 +20,8 @@ import { ThreadTags } from "./ThreadTags.tsx";
 import { ProjectExperts } from "./ProjectExperts.tsx";
 import { ProjectAutomations } from "./ProjectAutomations.tsx";
 import { ProjectRun } from "./ProjectRun.tsx";
+import { RepoMachines } from "./RepoMachines.tsx";
+import { groupPrs, groupRecent, groupTotals } from "./groupStats.ts";
 import styles from "./MissionControl.module.css";
 import { plural } from "../../lib/format.ts";
 
@@ -70,30 +72,33 @@ function ProjectMenu({ project, onOpen }: { project: Project; onOpen: (dialog: P
 }
 
 /**
- * One repository: a header (icon, name, path, menu), one meta line, its three most
+ * One repository (every clone of it across machines, shown under its lead project): a header (icon, name, path, menu), one meta line, its three most
  * recent threads as rail-density rows, and a footer to start work. Cost and
  * automations sit behind Details. Flat — a hairline card on `--surface`.
  */
 export function ProjectCard({ project }: { project: Project }) {
   const providers = useProvidersSnapshot();
   const model = useModel((s) => s.model);
+  // a clone on another machine shares the card; a project without a detected repo is a group of one
+  const group = repoGroupOf(model, project.id) ?? { key: `path:${project.id}`, label: project.title, projects: [project], lead: project };
+  const ids = group.projects.map((p) => p.id);
   const selectThread = useUi((s) => s.selectThread);
   const showAllThreads = useUi((s) => s.showAllThreads);
   const setNewExpertsProject = useUi((s) => s.setNewExpertsProject);
   const setLinksProject = useUi((s) => s.setLinksProject);
   const [dialog, setDialog] = useState<ProjectDialog>(null);
   const [details, setDetails] = useState(false);
-  const totals = selectProjectTotals(model, project.id);
-  const prs = selectPrCounts(model, project.id);
-  const recent = selectRecentThreads(model, project.id, 3);
+  const totals = groupTotals(model, ids);
+  const prs = groupPrs(model, ids);
+  const recent = groupRecent(model, ids, 3);
   const links = selectProjectLinks(model, project.id);
   const lastActive = recent[0]?.updatedAt;
 
   return (
-    <article className={styles.card} aria-label={`Project ${project.title}`}>
+    <article className={styles.card} aria-label={`Project ${group.label}`}>
       <div className={styles.cardHead}>
         <ProjectIcon project={project} />
-        <h3 className={styles.cardTitle}>{project.title}</h3>
+        <h3 className={styles.cardTitle}>{group.label}</h3>
         <span className={styles.path} title={project.rootPath}>
           {middleEllipsis(project.rootPath)}
         </span>
@@ -139,6 +144,7 @@ export function ProjectCard({ project }: { project: Project }) {
           Details
         </button>
       </div>
+      <RepoMachines projects={group.projects} />
       {details ? (
         <div className={styles.detailsBody}>
           <div className={styles.costRow}>

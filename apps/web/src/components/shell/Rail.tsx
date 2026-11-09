@@ -74,7 +74,7 @@ function RailPanel() {
   else if (query.trim() !== "")
     body = <RailSearchResults query={query} projectId={scoped?.id ?? null} projectIds={projectIds} showProject={showProject} />;
   else if (!anyThread) body = <RailEmpty kind="threads" projectId={scoped?.id ?? projects[0]?.id ?? ""} />;
-  else if (groupBy === "project") body = <RailProjectFolders projects={projects} projectIds={projectIds} filter={filter} />;
+  else if (groupBy === "project") body = <RailProjectFolders projectIds={projectIds} filter={filter} />;
   else body = <RailGroups projectIds={projectIds} showProject={showProject} />;
 
   return (

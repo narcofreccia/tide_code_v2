@@ -99,6 +99,8 @@ interface UiState {
   /** the view Settings was opened from, so Esc goes back */
   settingsReturnTo: View;
   selectProject: (projectId: string | null) => void;
+  /** scope to several projects at once (a repo's clones across machines); the first becomes `selectedProjectId` */
+  selectProjects: (projectIds: string[]) => void;
   /** adds or removes one project from the filter (⌘-click on a chip) */
   toggleProjectFilter: (projectId: string) => void;
   clearProjectFilter: () => void;
@@ -180,6 +182,8 @@ export const useUi = create<UiState>()(
       settingsReturnTo: "mission",
       selectProject: (selectedProjectId) =>
         set({ selectedProjectId, projectFilter: selectedProjectId === null ? [] : [selectedProjectId] }),
+      selectProjects: (projectIds) =>
+        set({ projectFilter: [...projectIds], selectedProjectId: projectIds[0] ?? null }),
       toggleProjectFilter: (projectId) =>
         set((s) => {
           const projectFilter = s.projectFilter.includes(projectId)

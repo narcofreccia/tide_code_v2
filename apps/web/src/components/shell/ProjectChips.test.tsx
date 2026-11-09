@@ -100,4 +100,33 @@ describe("ProjectChips", () => {
     await act(async () => fireEvent.click(screen.getByRole("menuitem", { name: "Unpin" })));
     expect(fake.dispatch).toHaveBeenCalledWith(expect.objectContaining({ type: "project.update", projectId: "p2", pinned: false }));
   });
+
+  it("shows one chip per repo: clones on two machines scope together, counts sum", () => {
+    const repo = { remoteUrl: "github.com/acme/web", cloneUrl: "https://github.com/acme/web.git", defaultBranch: "main", detectedAt: 1 };
+    attachFakeStore(
+      modelWith({
+        projects: { p1: { ...project("p1", "web"), repo }, p2: { ...project("p2", "web"), repo, createdAt: 2 }, p3: project("p3", "Atlas") },
+        threads: {
+          t1: makeThread("t1", { projectId: "p1", title: "One" }),
+          t2: makeThread("t2", { projectId: "p2", title: "Two" }),
+          t3: makeThread("t3", { projectId: "p3", title: "Three" }),
+        },
+      }),
+    );
+    render(<Rail />);
+    const chips = within(screen.getByRole("list", { name: "Projects" }));
+    expect(chips.getAllByRole("listitem")).toHaveLength(3);
+    expect(chips.getByText("acme/web").closest("button")?.textContent).toContain("· 2");
+    fireEvent.click(chips.getByText("acme/web"));
+    expect(useUi.getState().projectFilter).toEqual(["p1", "p2"]);
+    expect(useUi.getState().selectedProjectId).toBe("p1");
+    expect(screen.queryByText("Three")).toBeNull();
+    expect(chips.getByText("acme/web").closest("button")?.getAttribute("aria-pressed")).toBe("true");
+    // cmd-click on the active repo removes the whole group
+    fireEvent.click(chips.getByText("acme/web"), { metaKey: true });
+    expect(useUi.getState().projectFilter).toEqual([]);
+    fireEvent.click(chips.getByText("Atlas"));
+    fireEvent.click(chips.getByText("acme/web"), { metaKey: true });
+    expect(useUi.getState().projectFilter).toEqual(["p3", "p1", "p2"]);
+  });
 });

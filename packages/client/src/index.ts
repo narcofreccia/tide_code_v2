@@ -10,6 +10,7 @@ export {
 } from "./connection.ts";
 export { childThreadsOf, selectChildAttention, selectChildRequests } from "./childRequests.ts";
 export { selectWaitingOn } from "./inboxSelectors.ts";
+export { repoGroupOf, selectRepoGroups, selectRepoSiblings, type RepoGroup } from "./repoSelectors.ts";
 export {
   createModelStore,
   type ModelStore,

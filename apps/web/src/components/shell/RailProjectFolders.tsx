@@ -1,7 +1,9 @@
 import { memo, useMemo, useState } from "react";
-import { selectChildAttention } from "@tide/client";
-import type { Project, Thread } from "@tide/contracts";
+import { selectChildAttention, selectRepoGroups } from "@tide/client";
+import type { Thread } from "@tide/contracts";
 import { useModel } from "../../state/model.ts";
+import { envOfProject } from "../../state/environments.ts";
+import { EnvTag } from "../fleet/FleetBits.tsx";
 import { useServerSettings } from "../../state/serverSettings.ts";
 import { useTicker } from "../mission/useTicker.ts";
 import { Icon } from "../ui/Icon.tsx";
@@ -17,7 +19,8 @@ import { parentOf } from "./railTree.ts";
 import { useRailGroups } from "./useRailGroups.ts";
 import styles from "./RailProjectFolders.module.css";
 
-export const folderKey = (projectId: string): string => `project:${projectId}`;
+/** `key` is the repo group's key (`remoteUrl` or `path:<projectId>`). */
+export const folderKey = (groupKey: string): string => `project:${groupKey}`;
 
 /** Rows for a folder's threads: roots first, children nested under their parent via `siblings`. */
 function Rows({ threads, now, label, showProject = false }: { threads: Thread[]; now: number; label: string; showProject?: boolean }) {
@@ -39,11 +42,13 @@ function Rows({ threads, now, label, showProject = false }: { threads: Thread[];
 
 const Folder = memo(function Folder({ folder, collapsed, onToggle, now }: { folder: RailFolder; collapsed: boolean; onToggle: () => void; now: number }) {
   const { project, threads } = folder;
+  const title = folder.label;
+  const envIds = [...new Set(folder.projects.map((p) => envOfProject(p.id)))];
   const childAttention = useModel((s) => collapsed && threads.some((t) => selectChildAttention(s.model, t.id, now)));
   const [menu, setMenu] = useState<MenuPosition | undefined>(undefined);
   const needsDot = collapsed && (folder.needsCount > 0 || childAttention);
   return (
-    <section className={styles.folder} aria-label={project.title} data-rail-group={folderKey(project.id)}>
+    <section className={styles.folder} aria-label={title} data-rail-group={folderKey(folder.key)}>
       <div
         className={styles.head}
         onContextMenu={(e) => {
@@ -56,7 +61,8 @@ const Folder = memo(function Folder({ folder, collapsed, onToggle, now }: { fold
           <span className={styles.icon}>
             <ProjectIcon project={project} />
           </span>
-          <span className={styles.title}>{project.title}</span>
+          <span className={styles.title}>{title}</span>
+          {envIds.length >= 2 ? envIds.map((envId) => <EnvTag key={envId ?? "none"} envId={envId} />) : null}
           {project.pinned === true ? (
             <span className={styles.pin} data-folder-pinned="">
               <Icon name="pin" size={10} />
@@ -73,7 +79,7 @@ const Folder = memo(function Folder({ folder, collapsed, onToggle, now }: { fold
         <button
           type="button"
           className={styles.more}
-          aria-label={`Actions for ${project.title}`}
+          aria-label={`Actions for ${title}`}
           onClick={(e) => {
             const rect = e.currentTarget.getBoundingClientRect();
             setMenu({ x: rect.left, y: rect.bottom });
@@ -83,7 +89,7 @@ const Folder = memo(function Folder({ folder, collapsed, onToggle, now }: { fold
         </button>
         {menu ? <ContextMenu position={menu} items={projectFolderMenu(project)} onClose={() => setMenu(undefined)} label="Project actions" /> : null}
       </div>
-      {collapsed ? null : <Rows threads={threads} now={now} label={`${project.title} threads`} />}
+      {collapsed ? null : <Rows threads={threads} now={now} label={`${title} threads`} />}
     </section>
   );
 });
@@ -93,14 +99,16 @@ const Folder = memo(function Folder({ folder, collapsed, onToggle, now }: { fold
  * status tail (Snoozed · Settled · Archived). Rows carry the same `data-rail-thread`
  * markup as the status view, so j/k/e/s/m walk across folders (a folded one has no rows).
  */
-export function RailProjectFolders({ projects, projectIds, filter }: { projects: readonly Project[]; projectIds: readonly string[]; filter: readonly string[] }) {
+export function RailProjectFolders({ projectIds, filter }: { projectIds: readonly string[]; filter: readonly string[] }) {
   const now = useTicker(60_000);
   const workingSection = useServerSettings((s) => s.settings.inbox.workingSection);
   const { folds, toggle } = useGroupFolds();
   const { groups } = useRailGroups(projectIds, now, workingSection);
+  const allGroups = useModel((s) => selectRepoGroups(s.model));
+  const repoGroups = useMemo(() => allGroups.filter((g) => g.projects.some((p) => projectIds.includes(p.id))), [allGroups, projectIds]);
   const model = useMemo(
-    () => buildRailProjectModel(groups.map((g) => g.group), projects.filter((p) => projectIds.includes(p.id)), filter),
-    [groups, projects, projectIds, filter],
+    () => buildRailProjectModel(groups.map((g) => g.group), repoGroups, filter),
+    [groups, repoGroups, filter],
   );
   return (
     <div>
@@ -111,10 +119,10 @@ export function RailProjectFolders({ projects, projectIds, filter }: { projects:
       ) : null}
       {model.folders.map((folder) => (
         <Folder
-          key={folder.project.id}
+          key={folder.key}
           folder={folder}
-          collapsed={isGroupCollapsed(folds, folderKey(folder.project.id))}
-          onToggle={() => toggle(folderKey(folder.project.id))}
+          collapsed={isGroupCollapsed(folds, folderKey(folder.key))}
+          onToggle={() => toggle(folderKey(folder.key))}
           now={now}
         />
       ))}

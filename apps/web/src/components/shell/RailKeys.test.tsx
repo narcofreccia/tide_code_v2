@@ -149,7 +149,7 @@ describe("j/k across project folders", () => {
     key("j");
     expect(focusedThread()).toBe("c");
     cleanup();
-    window.localStorage.setItem("tide.rail.groups", JSON.stringify({ "project:p2": true }));
+    window.localStorage.setItem("tide.rail.groups", JSON.stringify({ "project:path:p2": true }));
     render(<Rail />);
     key("j");
     key("j");

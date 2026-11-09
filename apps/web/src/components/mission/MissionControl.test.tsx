@@ -282,4 +282,19 @@ describe("Mission Control — providers", () => {
     expect(badge.getAttribute("title")).toContain("5-hour limit");
     expect(strip.getAllByLabelText(/rate limit/)).toHaveLength(1);
   });
+
+  it("draws one project card per repo, however many machines hold a clone", () => {
+    const repo = { remoteUrl: "github.com/acme/web", cloneUrl: "https://github.com/acme/web.git", defaultBranch: "main", detectedAt: 1 };
+    attachFakeStore(
+      modelWith({
+        projects: { p1: { ...project, repo }, p2: { ...project, id: "p2", repo, createdAt: 2 } },
+        threads: { t1: makeThread("t1", { projectId: "p1", title: "A" }), t2: makeThread("t2", { projectId: "p2", title: "B" }) },
+      }),
+    );
+    render(<MissionControl />);
+    const cards = screen.getAllByRole("article");
+    expect(cards).toHaveLength(1);
+    expect(cards[0]?.getAttribute("aria-label")).toBe("Project acme/web");
+    expect(within(cards[0] as HTMLElement).getByText("2 threads")).toBeDefined();
+  });
 });

@@ -1,4 +1,4 @@
-import { selectProjects } from "@tide/client";
+import { selectProjects, selectRepoGroups } from "@tide/client";
 import { useModel } from "../../state/model.ts";
 import { useUi } from "../../state/ui.ts";
 import { InboxColumn } from "./InboxColumn.tsx";
@@ -26,6 +26,7 @@ export function MissionControl() {
   const projects = selectProjects(model).filter(
     (p) => selectedProjectId === null || p.id === selectedProjectId,
   );
+  const groups = selectRepoGroups(model).filter((g) => selectedProjectId === null || g.projects.some((p) => p.id === selectedProjectId));
   const scoped = selectedProjectId === null ? undefined : selectedProjectId;
   const gettingStarted = shouldShowGettingStarted(model);
   const howItWorks = shouldShowHowItWorks(model);
@@ -55,9 +56,9 @@ export function MissionControl() {
           <section className={styles.section} aria-label="Projects">
             <h2 className={styles.label}>Projects</h2>
             <div className={styles.projectGrid}>
-              {projects.map((project, index) => (
-                <Fragment key={project.id}>
-                  <ProjectCard project={project} />
+              {groups.map((group, index) => (
+                <Fragment key={group.key}>
+                  <ProjectCard project={group.lead} />
                   {index === 0 && howItWorks ? <HowTideWorks /> : null}
                 </Fragment>
               ))}
