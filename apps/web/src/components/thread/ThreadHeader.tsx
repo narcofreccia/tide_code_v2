@@ -124,7 +124,7 @@ export function ThreadHeader({ thread }: { thread: Thread }) {
           <Button
             variant="quiet"
             disabled={command === undefined}
-            title={command ? `Open in terminal: ${command}` : NO_COMMAND}
+            title={command ? `Open in terminal: ${command}` : thread.nativeSessionId === undefined ? NO_COMMAND : "This harness has no terminal resume command"}
             onClick={() => {
               if (command) void runInThreadTerminal(thread.id, command, { purpose: "resume" });
             }}

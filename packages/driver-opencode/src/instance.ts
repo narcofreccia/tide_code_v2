@@ -55,6 +55,10 @@ export class OpencodeInstance implements ProviderInstance {
   #api: OpencodeApi | undefined;
   #apiUrl: string | undefined;
   #status: { at: number; value: ProviderStatus } | undefined;
+  /** why Tide's MCP server did not register in the newest session that carried one (undefined = it did) */
+  #mcpFailure: string | undefined;
+  /** `status()` keeps returning one object while nothing changed */
+  #lastHinted: { base: ProviderStatus; value: ProviderStatus } | undefined;
   #statusInFlight: Promise<ProviderStatus> | undefined;
   #catalog = new Map<string, { at: number; value: WireModel[] }>();
   #slashCache = new Map<string, { at: number; value: SlashCatalog }>();
@@ -78,9 +82,26 @@ export class OpencodeInstance implements ProviderInstance {
     return this.#api;
   }
 
+  /** The last session's Tide MCP registration failed: Settings › Providers says so until one succeeds. */
+  #noteMcp(failure: string | undefined): void {
+    if (failure === this.#mcpFailure) return;
+    this.#mcpFailure = failure;
+    this.#lastHinted = undefined;
+  }
+
+  #withMcpHint(status: ProviderStatus): ProviderStatus {
+    const failure = this.#mcpFailure;
+    if (failure === undefined || !status.loggedIn) return status;
+    if (this.#lastHinted?.base === status) return this.#lastHinted.value;
+    const hint = `Tide's MCP server failed to register in the last session, so threads run without tide_delegate, experts and secrets tools (${failure})`;
+    const value = { ...status, hint: status.hint !== undefined ? `${status.hint} · ${hint}` : hint };
+    this.#lastHinted = { base: status, value };
+    return value;
+  }
+
   async status(): Promise<ProviderStatus> {
     const cached = this.#status;
-    if (cached && Date.now() - cached.at < STATUS_TTL_MS) return cached.value;
+    if (cached && Date.now() - cached.at < STATUS_TTL_MS) return this.#withMcpHint(cached.value);
     this.#statusInFlight ??= buildStatus(this.#config, this.#env, async () => {
       const api = await this.api();
       const version = this.#server.current?.version;
@@ -88,7 +109,7 @@ export class OpencodeInstance implements ProviderInstance {
     })
       .then((value) => {
         this.#status = { at: Date.now(), value };
-        return value;
+        return this.#withMcpHint(value);
       })
       .finally(() => {
         this.#statusInFlight = undefined;
@@ -196,15 +217,22 @@ export class OpencodeInstance implements ProviderInstance {
     }
 
     const mcpNames: string[] = [];
+    const mcpFailures: string[] = [];
     for (const server of options.mcpServers) {
       const name = mcpServerName(server.name, options.threadId);
       try {
         await api.addMcpServer({ directory: options.cwd, name, command: [server.command, ...(server.args ?? [])], ...(server.env ? { env: server.env } : {}) });
         mcpNames.push(name);
       } catch (error) {
-        this.#env.log(`[opencode] could not register MCP server ${name}: ${error instanceof Error ? error.message : String(error)}`);
+        const message = error instanceof Error ? error.message : String(error);
+        this.#env.log(`[opencode] could not register MCP server ${name}: ${message}`);
+        mcpFailures.push(`${server.name}: ${message}`);
       }
     }
+    // the servers Tide passes are its own (board, delegation, secrets): their absence must show
+    const mcpFailure = mcpFailures.length > 0 ? mcpFailures.join("; ") : undefined;
+    const mcpNotice = mcpFailure !== undefined ? `Tide tools are not available in this session: OpenCode could not register Tide's MCP server (${mcpFailure})` : undefined;
+    if (options.mcpServers.length > 0) this.#noteMcp(mcpFailure);
 
     const session = new OpencodeSession(
       this.#env,
@@ -218,6 +246,7 @@ export class OpencodeInstance implements ProviderInstance {
         ...(contextWindow !== undefined ? { contextWindow } : {}),
         ...(baseline ? { baseline } : {}),
         ...(mcpNames.length > 0 ? { mcpNames } : {}),
+        ...(mcpNotice !== undefined ? { notices: [mcpNotice] } : {}),
         resolveModel: (id, effort) => this.#resolveModel(options.cwd, id, effort),
         slash: () => this.#slash(options.cwd),
         onClosed: (closed) => this.#sessions.delete(closed),

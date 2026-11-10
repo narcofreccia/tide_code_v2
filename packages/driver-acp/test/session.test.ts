@@ -286,3 +286,45 @@ describe("AcpSession turns", () => {
     expect(() => session.send({ text: "two" })).toThrow(/busy/);
   });
 });
+
+describe("AcpSession resume fallback (D1)", () => {
+  type Reporting = ProviderSession & { readonly resumeFailed?: string | undefined };
+
+  it("an agent without loadSession opens a new session and says the resume failed; Tide's preamble rides along", async () => {
+    const { agent, session } = await open(["synthetic/init-bare", "synthetic/simple-turn"], { resume: "sess_old", systemPromptAppend: "Linked repo: lib" });
+    expect(sent(agent, "session/load")).toEqual([]);
+    expect(sent(agent, "session/new")).toHaveLength(1);
+    expect((session as Reporting).resumeFailed).toMatch(/cannot load earlier sessions/);
+    await collect(session.send({ text: "hi" }));
+    const prompt = (sent(agent, "session/prompt")[0]?.params as { prompt: { text: string }[] }).prompt;
+    expect(prompt[0]?.text).toContain("Linked repo: lib");
+  });
+
+  it("a failed session/load falls back to session/new with the reason", async () => {
+    const config = loadFixture(CONFIG);
+    const newAt = config.findIndex((line) => line.method === "session/new");
+    const lines = [
+      ...config.slice(0, newAt),
+      { _dir: "c2a" as const, jsonrpc: "2.0" as const, id: 1, method: "session/load", params: {} },
+      { jsonrpc: "2.0" as const, id: 1, error: { code: -32002, message: "Resource not found: sess_old" } },
+      ...config.slice(newAt),
+    ];
+    const cwd = realpathSync(mkdtempSync(join(tmpdir(), "tide-acp-")));
+    const agent = new FixtureAgent(lines);
+    const instance = createAcpInstance({ command: "fake" }, { dataDir: cwd, log: () => undefined }, { spawn: agent.spawn });
+    const session = (await instance.openSession({ threadId: "t", cwd, resume: "sess_old", mode: "approval-required", interaction: "default", mcpServers: [] })) as Reporting;
+    expect(sent(agent, "session/load")).toHaveLength(1);
+    expect(sent(agent, "session/new")).toHaveLength(1);
+    expect(session.nativeSessionId).toBe("sess_1");
+    expect(session.resumeFailed).toMatch(/could not load session sess_old: .*not found/);
+  });
+
+  it("a session that loaded reports no resume failure", async () => {
+    const lines = [...loadFixture(CONFIG).filter((line) => line.method !== "session/new" && line.id !== 1), ...loadFixture("synthetic/load-replay")];
+    const cwd = realpathSync(mkdtempSync(join(tmpdir(), "tide-acp-")));
+    const agent = new FixtureAgent(lines);
+    const instance = createAcpInstance({ command: "fake" }, { dataDir: cwd, log: () => undefined }, { spawn: agent.spawn });
+    const session = (await instance.openSession({ threadId: "t", cwd, resume: "sess_1", mode: "approval-required", interaction: "default", mcpServers: [] })) as Reporting;
+    expect(session.resumeFailed).toBeUndefined();
+  });
+});

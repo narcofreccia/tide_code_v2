@@ -82,6 +82,7 @@ export class PiTurnLedger {
   #turns: (string | undefined)[] = [];
   /** `get_entries` failed once, so this process's turns can't be told apart any more */
   #lost = false;
+  #userMessages: number | undefined;
 
   constructor(rpc: PiRpc) {
     this.#rpc = rpc;
@@ -106,6 +107,12 @@ export class PiTurnLedger {
   async reposition(): Promise<void> {
     const forks = await this.#rpc.data<{ messages?: { entryId: string }[] }>({ type: "get_fork_messages" });
     this.#cursor = forks?.messages?.at(-1)?.entryId;
+    this.#userMessages = forks?.messages?.length;
+  }
+
+  /** How many user messages the session held at the last reposition; undefined when pi did not say. */
+  get userMessages(): number | undefined {
+    return this.#userMessages;
   }
 
   /** The last `turns` turns are gone from the session. */

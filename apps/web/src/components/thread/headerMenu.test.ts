@@ -60,3 +60,15 @@ describe("headerMenu: settle", () => {
     expect(off?.checked).toBe(false);
   });
 });
+
+describe("headerMenu: folded Terminal item", () => {
+  it("says why it is off: no session yet, or a harness with no resume command (ACP)", () => {
+    const fresh = makeThread("t1");
+    const fake = attachFakeStore(modelWith({ threads: { t1: fresh } }));
+    const model = fake.store.getState().model;
+    expect(headerMenu(model, fresh, Date.now(), { terminal: undefined, fork: undefined }).find((i) => i.label === "Terminal")).toMatchObject({ disabled: true, hint: "no session yet" });
+    const acp = makeThread("t1", { provider: "acp", nativeSessionId: "sess_1" });
+    expect(headerMenu(model, acp, Date.now(), { terminal: undefined, fork: undefined }).find((i) => i.label === "Terminal")).toMatchObject({ disabled: true, hint: "this harness has no terminal resume command" });
+    expect(headerMenu(model, acp, Date.now(), { terminal: "x --resume 1", fork: undefined }).find((i) => i.label === "Terminal")).toMatchObject({ disabled: false });
+  });
+});

@@ -93,6 +93,12 @@ describe("ThreadPills", () => {
     );
   });
 
+  it("says what Auto does on a harness where it means something else (Pi runs every tool unasked)", () => {
+    mount({ provider: "pi", mode: "auto" });
+    expect(optionLabels("Permissions")).toContain("AutoAuto on Pi runs every tool without asking (pi has no sandbox)");
+    expect(screen.getByTitle("Auto on Pi runs every tool without asking (pi has no sandbox)")).toBeDefined();
+  });
+
   it("switches Build / Plan with the segmented control", () => {
     const fake = mount();
     expect(screen.getByRole("radio", { name: "Build" }).getAttribute("aria-checked")).toBe("true");

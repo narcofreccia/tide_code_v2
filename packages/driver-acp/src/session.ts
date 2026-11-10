@@ -76,10 +76,14 @@ export interface SessionContext {
   onInitialized?: (init: AcpInitializeResult) => void;
   onAuthRequired?: (hint: string) => void;
   onCommands?: (commands: SlashCommandInfo[]) => void;
+  /** the agent reported context usage (caps.contextUsage is learned, not declared) */
+  onContextUsage?: () => void;
 }
 
 export class AcpSession implements ProviderSession {
   nativeSessionId: string | undefined;
+  /** a resume was asked for but a new session opened instead; one line why (SPI `resumeFailed`) */
+  resumeFailed: string | undefined;
   init: AcpInitializeResult | undefined;
   settings: AcpSettings | undefined;
 
@@ -145,19 +149,8 @@ export class AcpSession implements ProviderSession {
     };
     let result: AcpNewSessionResult;
     try {
-      if (this.#options.resume && init.agentCapabilities?.loadSession) {
-        this.#normalizer.muted = true;
-        this.#normalizer.costBaselineUnknown = true;
-        try {
-          const loaded = await this.#conn.request<Omit<AcpNewSessionResult, "sessionId"> | null>("session/load", { ...base, sessionId: this.#options.resume });
-          result = { ...loaded, sessionId: this.#options.resume };
-        } finally {
-          this.#normalizer.muted = false;
-        }
-      } else {
-        if (this.#options.resume) this.#log(`agent cannot load sessions; starting a new one instead of ${this.#options.resume}`);
-        result = await this.#conn.request<AcpNewSessionResult>("session/new", base);
-      }
+      const loaded = this.#options.resume !== undefined ? await this.#load(init, base, this.#options.resume) : undefined;
+      result = loaded ?? (await this.#conn.request<AcpNewSessionResult>("session/new", base));
     } catch (error) {
       if (isAuthRequired(error)) {
         const hint = authHint(this.#ctx.label, init);
@@ -167,9 +160,38 @@ export class AcpSession implements ProviderSession {
       throw error;
     }
     this.nativeSessionId = result.sessionId;
-    this.#preamblePending = !this.#options.resume && (this.#options.systemPromptAppend ?? "").trim() !== "";
+    // a session that did not resume never saw the preamble either
+    this.#preamblePending = (this.#options.resume === undefined || this.resumeFailed !== undefined) && (this.#options.systemPromptAppend ?? "").trim() !== "";
     this.settings = new AcpSettings(this.#conn, result.sessionId, result, (message) => this.#log(message), this.#ctx.config.defaultModel);
     await this.settings.apply({ model: this.#options.model, effort: this.#options.effort, mode: this.#mode, interaction: this.#interaction });
+  }
+
+  /**
+   * `session/load` the requested session. undefined when it could not be loaded (the agent has no
+   * `loadSession`, or the load failed for another reason than auth): `start` then opens a new
+   * session and `resumeFailed` says why, so the server can mark the lost history.
+   */
+  async #load(init: AcpInitializeResult, base: Record<string, unknown>, sessionId: string): Promise<AcpNewSessionResult | undefined> {
+    if (init.agentCapabilities?.loadSession !== true) {
+      this.resumeFailed = `${this.#ctx.label} cannot load earlier sessions`;
+      this.#log(`agent cannot load sessions; starting a new one instead of ${sessionId}`);
+      return undefined;
+    }
+    this.#normalizer.muted = true;
+    this.#normalizer.costBaselineUnknown = true;
+    try {
+      const loaded = await this.#conn.request<Omit<AcpNewSessionResult, "sessionId"> | null>("session/load", { ...base, sessionId });
+      return { ...loaded, sessionId };
+    } catch (error) {
+      if (isAuthRequired(error)) throw error;
+      const message = error instanceof Error ? error.message : String(error);
+      this.resumeFailed = `${this.#ctx.label} could not load session ${sessionId}: ${message}`;
+      this.#log(`session/load failed (${message}); starting a new session`);
+      this.#normalizer.costBaselineUnknown = false;
+      return undefined;
+    } finally {
+      this.#normalizer.muted = false;
+    }
   }
 
   get planSupported(): boolean {
@@ -190,6 +212,7 @@ export class AcpSession implements ProviderSession {
     if (this.nativeSessionId !== undefined && sessionId !== undefined && sessionId !== this.nativeSessionId) return;
     if (update.sessionUpdate === "config_option_update") this.settings?.ingest({ configOptions: update["configOptions"] as never });
     for (const event of this.#normalizer.next(update)) {
+      if (event.type === "usage" && event.contextUsage !== undefined) this.#ctx.onContextUsage?.();
       if (event.type === "commands") {
         if (!this.#turnActive) continue; // flushed at the start of the next turn
         this.#pendingCommands = undefined;

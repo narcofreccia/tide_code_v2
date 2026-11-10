@@ -135,7 +135,11 @@ export function decideTurn(model: ReadModel, command: TurnCommand, ctx: DecideCo
       if (!thread) return fail("not-found", `unknown thread ${turn.threadId}`);
       if (thread.latestTurnId !== turn.id) return fail("conflict", `turn ${turn.id} is not the latest turn of ${thread.id}`);
       if (turn.status !== "requested") return fail("conflict", `turn ${turn.id} is already ${turn.status}`);
-      return ok({
+      // R18 D1: the driver had to start a new native session although a resume was asked for —
+      // the turn records the boundary first (the new id below then lands on a cleared thread).
+      const lostResume = command.freshSession === true && turn.freshSession !== true;
+      const boundary: DomainEvent[] = lostResume ? [{ type: "session.boundary", threadId: thread.id, turnId: turn.id, providerId: command.providerId ?? instanceKey(thread), at: ctx.now }] : [];
+      return ok(...boundary, {
         type: "turn.started",
         turnId: turn.id,
         threadId: thread.id,

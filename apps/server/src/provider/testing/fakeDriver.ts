@@ -66,6 +66,8 @@ export class FakeSession implements ProviderSession {
   readonly control: FakeDriverControl;
   readonly inputs: TurnInput[] = [];
   nativeSessionId: string | undefined;
+  /** D1: `control.resumeFails` makes a resume open a new native session and say why */
+  resumeFailed: string | undefined;
   closed = false;
   #waiters = new Map<string, Deferred<unknown>>();
 
@@ -74,6 +76,10 @@ export class FakeSession implements ProviderSession {
     this.control = control;
     // a fork is a new native session that starts from another one's history
     this.nativeSessionId = options.resume ?? (options.forkFrom !== undefined ? `${options.forkFrom}~fork${control.sessions.length + 1}` : undefined);
+    if (options.resume !== undefined && control.resumeFails !== undefined) {
+      this.resumeFailed = control.resumeFails;
+      this.nativeSessionId = `${options.resume}~new${control.sessions.length + 1}`;
+    }
   }
 
   #waiter<T>(key: string): Deferred<T> {
@@ -237,6 +243,8 @@ export class FakeDriverControl {
   readonly steers: { threadId: string; input: TurnInput; target?: SteerTarget }[] = [];
   readonly rollbacks: { threadId: string; turns: number; nativeSessionId: string | undefined }[] = [];
   steerError: Error | undefined;
+  /** D1: resumes open a new native session reporting this reason */
+  resumeFails: string | undefined;
   rollbackError: Error | undefined;
   reconfigureResult: ReconfigureResult | undefined;
   statusResult: ProviderStatus;

@@ -35,7 +35,11 @@ export const LOGIN_COMMAND = "codex login";
 export const INSTALL_HINT = "Install Codex: run `npm i -g @openai/codex` in a terminal";
 export const FREE_PLAN_LABEL = "ChatGPT free plan";
 export const FREE_PLAN_NOTE =
-  ": this plan lists only the GPT-6-Luna and GPT-5.6 models — sign in with a paid ChatGPT plan or an API key (printenv OPENAI_API_KEY | codex login --with-api-key) for the full catalogue";
+  ": this plan lists fewer models — sign in with a paid ChatGPT plan or an API key (printenv OPENAI_API_KEY | codex login --with-api-key) for the full catalogue";
+/** The probe itself failed (app-server did not start or answer): login state is unknown, not "logged out". */
+export function probeFailedHint(message: string): string {
+  return `Could not read Codex's login state (${message}). Refresh to retry; if you are signed out, run \`codex login\` in a terminal`;
+}
 
 async function exec(file: string, args: string[], timeout = 10_000, env?: NodeJS.ProcessEnv): Promise<string | undefined> {
   try {
@@ -93,6 +97,8 @@ interface Probe {
   models: ModelInfo[];
   /** e.g. `ChatGPT pro plan`, present only when signed in with a recognised account */
   account?: string;
+  /** the probe failed, so `loggedIn: false` means "unknown" */
+  error?: string;
 }
 
 /**
@@ -120,8 +126,9 @@ export async function probe(binary: string, config: CodexConfig, env: DriverEnv)
       ...(label ? { account: label } : {}),
     };
   } catch (error) {
-    env.log(`[codex] status probe failed: ${error instanceof Error ? error.message : String(error)}`);
-    return { loggedIn: false, models: [] };
+    const message = error instanceof Error ? error.message : String(error);
+    env.log(`[codex] status probe failed: ${message}`);
+    return { loggedIn: false, models: [], error: message };
   } finally {
     server?.close();
   }
@@ -134,14 +141,14 @@ export async function buildStatus(config: CodexConfig, env: DriverEnv): Promise<
   }
   const versionOutput = await exec(binary, ["--version"], 15_000);
   const version = versionOutput ? parseVersion(versionOutput) : undefined;
-  const { loggedIn, models, account } = await probe(binary, config, env);
+  const { loggedIn, models, account, error } = await probe(binary, config, env);
   const accountHint = account === undefined ? undefined : account === FREE_PLAN_LABEL ? account + FREE_PLAN_NOTE : account;
   return {
     kind: "codex",
     installed: true,
     loggedIn,
     ...(version ? { version } : {}),
-    ...(loggedIn ? (accountHint ? { hint: accountHint } : {}) : { hint: LOGIN_HINT, loginCommand: LOGIN_COMMAND }),
+    ...(loggedIn ? (accountHint ? { hint: accountHint } : {}) : { hint: error !== undefined ? probeFailedHint(error) : LOGIN_HINT, loginCommand: LOGIN_COMMAND }),
     models,
     caps: { ...CODEX_CAPS },
   };

@@ -53,6 +53,14 @@ export function editorItems(model: ReadModel, thread: Thread): MenuItem[] {
   }));
 }
 
+/**
+ * Why "Open in terminal" is off: no native session yet, or a harness with no resume command of its
+ * own (ACP agents: `caps.openInTerminal` false, `terminalCommand` undefined).
+ */
+export function terminalUnavailable(thread: Pick<Thread, "nativeSessionId">): string {
+  return thread.nativeSessionId === undefined ? "no session yet" : "this harness has no terminal resume command";
+}
+
 /** The thread header's More menu: everything that is not Terminal / Fork (those fold in when narrow). */
 export function headerMenu(
   model: ReadModel,
@@ -69,7 +77,7 @@ export function headerMenu(
         {
           label: "Terminal",
           disabled: narrow.terminal === undefined,
-          ...(narrow.terminal === undefined ? { hint: "no session yet" } : {}),
+          ...(narrow.terminal === undefined ? { hint: terminalUnavailable(thread) } : {}),
           onSelect: () => {
             const command = narrow.terminal;
             if (command) void runInThreadTerminal(thread.id, command, { purpose: "resume" });

@@ -75,6 +75,23 @@ export const RUNTIME_MODE_HINTS: Record<RuntimeMode, string> = {
   "full-access": "Never asks — use with care",
 };
 
+/**
+ * Where a mode means something else on one harness than RUNTIME_MODE_HINTS says. The ONE place
+ * for these captions; the facts are in docs/internals/providers.md § "What differs per harness"
+ * (Claude's `auto` is its own classifier, which the generic hint already describes).
+ */
+export const RUNTIME_MODE_KIND_HINTS: Partial<Record<ProviderKind, Partial<Record<RuntimeMode, string>>>> = {
+  codex: { auto: "Never asks; commands run in Codex's workspace sandbox" },
+  opencode: { auto: "Edits, shell commands and web fetches run without asking" },
+  pi: { auto: "Auto on Pi runs every tool without asking (pi has no sandbox)" },
+  acp: { auto: "Approves every request the agent makes, commands included" },
+};
+
+/** The mode's caption for a harness kind (falls back to the generic hint). */
+export function runtimeModeHint(mode: RuntimeMode, kind?: ProviderKind): string {
+  return (kind === undefined ? undefined : RUNTIME_MODE_KIND_HINTS[kind]?.[mode]) ?? RUNTIME_MODE_HINTS[mode];
+}
+
 export const INTERACTION_LABELS: Record<InteractionMode, string> = { default: "Build", plan: "Plan" };
 export const INTERACTION_HINTS: Record<InteractionMode, string> = {
   default: "Makes changes",

@@ -1,6 +1,6 @@
 import { tmpdir } from "node:os";
 import { describe, expect, it } from "vitest";
-import type { DriverEnv, OpenSessionOptions } from "@tide/contracts";
+import type { DriverEnv, NormalizedEvent, OpenSessionOptions } from "@tide/contracts";
 import { FakeOpencodeApi } from "../test/fake-api.ts";
 import { chooseAgents, INSTRUCTION_KEY, mcpServerName, OpencodeInstance, parseModelId } from "./instance.ts";
 import { LOGIN_COMMAND, LOGIN_HINT } from "./status.ts";
@@ -91,6 +91,30 @@ describe("OpencodeInstance", () => {
     expect(api.mcp).toEqual([{ directory: "/repo", name: "tide-t1", command: ["node", "mcp.js"] }]);
     await session.close();
     expect(api.mcpRemoved).toEqual([{ directory: "/repo", name: "tide-t1" }]);
+    await instance.dispose();
+  });
+
+  it("a Tide MCP registration that fails shows as one info row on the first turn and as a provider hint (D2)", async () => {
+    const { instance, api } = harness();
+    api.addMcpServer = async () => {
+      throw new Error("HTTP 404");
+    };
+    const session = await instance.openSession({ ...baseOptions, mcpServers: [{ name: "tide", command: "node" }] });
+    const events: NormalizedEvent[] = [];
+    const done = (async () => {
+      for await (const event of session.send({ text: "hi" })) events.push(event);
+    })();
+    await new Promise((resolve) => setImmediate(resolve));
+    api.succeeded();
+    await done;
+    expect(events[1]).toEqual({ type: "activity", activity: { kind: "info", text: "Tide tools are not available in this session: OpenCode could not register Tide's MCP server (tide: HTTP 404)" } });
+    const status = await instance.status();
+    expect(status.hint).toMatch(/Tide's MCP server failed to register in the last session.*\(tide: HTTP 404\)/);
+    expect(await instance.status()).toBe(status);
+    // a later session that registers clears the hint
+    api.addMcpServer = async () => undefined;
+    await instance.openSession({ ...baseOptions, threadId: "t2", mcpServers: [{ name: "tide", command: "node" }] });
+    expect((await instance.status()).hint).toBeUndefined();
     await instance.dispose();
   });
 

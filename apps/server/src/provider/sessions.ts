@@ -2,6 +2,7 @@ import { hasBackgroundChildren, type DriverCaps, type HarnessTurnHandle, type Mc
 import { THREAD_TOOLS_HINT } from "@tide/tide-mcp";
 import { composeSystemPromptAppend, linkedRepoPreamble, resolveLinkedDirs } from "./links.ts";
 import type { DriverRegistry } from "./registry.ts";
+import { resumeLossOf, type ResumeLoss } from "./sessionNotices.ts";
 
 const IDLE_MS = 30 * 60_000;
 const REAP_INTERVAL_MS = 60_000;
@@ -153,6 +154,8 @@ export class SessionDirectory {
   #onClosed: ((threadId: string) => void | Promise<void>) | undefined;
   #entries = new Map<string, Entry>();
   #opening = new Map<string, Promise<ProviderSession>>();
+  /** D1: sessions opened on a new native session although a resume was asked for, until the reactor takes it */
+  #resumeLost = new Map<string, ResumeLoss>();
   #timer: ReturnType<typeof setInterval> | undefined;
 
   constructor(options: SessionDirectoryOptions) {
@@ -294,7 +297,22 @@ export class SessionDirectory {
       });
     }
     this.#entries.set(thread.id, { threadId: thread.id, providerId, instance, cwd, session, settings: settingsOf(thread), lastUsedAt: this.#now() });
+    const loss = resume !== undefined ? resumeLossOf(session, this.#registry.cachedCaps(providerId), this.#registry.labelOf(providerId) ?? thread.provider) : undefined;
+    if (loss !== undefined) {
+      this.#log(`[provider] ${thread.id}: resume of ${resume} did not hold (${loss.reason}); a new native session started`);
+      this.#resumeLost.set(thread.id, loss);
+    } else this.#resumeLost.delete(thread.id);
     return session;
+  }
+
+  /**
+   * D1: the session just opened for the thread is a new native session although the server asked
+   * to resume one. Read once (the reactor records the boundary on the turn that opened it).
+   */
+  takeResumeLoss(threadId: string): ResumeLoss | undefined {
+    const loss = this.#resumeLost.get(threadId);
+    this.#resumeLost.delete(threadId);
+    return loss;
   }
 
   async #reconfigure(entry: Entry, wanted: SessionSettings): Promise<"applied" | "reopen"> {
@@ -315,6 +333,7 @@ export class SessionDirectory {
     const entry = this.#entries.get(threadId);
     if (!entry) return;
     this.#entries.delete(threadId);
+    this.#resumeLost.delete(threadId);
     // the agent token only lives as long as the harness process that was handed it
     this.#mcp?.revoke(threadId);
     try {

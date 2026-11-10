@@ -5,6 +5,7 @@ import { AsyncQueue } from "./async-queue.ts";
 import { PiNormalizer } from "./normalize.ts";
 import { PiRpc } from "./rpc.ts";
 import { splitModelId } from "./spawn.ts";
+import type { BridgeState } from "./bridge.ts";
 import { PiTurnLedger } from "./turns.ts";
 import type { ChildLike, PiCommandInfo, PiDeps, PiEvent, PiPromptDisposition, PiResponse, PiSessionStats, PiState, PiUiRequest } from "./types.ts";
 
@@ -56,6 +57,12 @@ function modelId(state: PiState | undefined): string | undefined {
 
 export class PiSession implements ProviderSession {
   nativeSessionId: string | undefined;
+  /** a resume was asked for but pi started a new session (SPI `resumeFailed`, set by the instance) */
+  resumeFailed: string | undefined;
+  /** whether tide-bridge answered `get_commands` with `/tide-config` (see bridge.ts) */
+  bridge: BridgeState = "unknown";
+  /** one-line info rows shown at the start of the next turn (tide-bridge missing) */
+  #notices: string[] = [];
 
   #env: DriverEnv;
   #options: OpenSessionOptions;
@@ -113,7 +120,18 @@ export class PiSession implements ProviderSession {
     this.#stats = await this.#rpc.data<PiSessionStats>({ type: "get_session_stats" });
     const commands = await this.#rpc.data<{ commands?: PiCommandInfo[] }>({ type: "get_commands" });
     this.#liveConfig = (commands?.commands ?? []).some((command) => command.name === CONFIG_COMMAND && command.source === "extension");
+    this.bridge = this.#liveConfig ? "loaded" : commands?.commands !== undefined ? "missing" : "unknown";
     await this.#ledger.prime();
+  }
+
+  /** User messages the opened session holds (undefined when pi did not say). */
+  get userMessages(): number | undefined {
+    return this.#ledger.userMessages;
+  }
+
+  /** Queues an info row for the start of the next turn. */
+  notice(text: string): void {
+    this.#notices.push(text);
   }
 
   #emit(event: NormalizedEvent): void {
@@ -183,6 +201,7 @@ export class PiSession implements ProviderSession {
       this.#announcedSession = true;
       mailbox.push({ type: "session", nativeSessionId: this.nativeSessionId, ...(this.#model ? { model: this.#model } : {}) });
     }
+    for (const text of this.#notices.splice(0)) mailbox.push({ type: "activity", activity: { kind: "info", text } });
 
     const command: Record<string, unknown> = { type: "prompt", message: input.text };
     pushImages(command, input);

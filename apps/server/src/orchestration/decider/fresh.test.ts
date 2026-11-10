@@ -40,6 +40,27 @@ describe("decide: turn.request freshSession (R17 T1)", () => {
   });
 });
 
+describe("decide: turn.start freshSession — a resume that did not hold (R18 D1)", () => {
+  it("records the boundary before turn.started and lands the new native id on a cleared thread", () => {
+    const f = withThread("claude");
+    const t1 = completeTurn(f.model, f.threadId, "first", "ok", "old-sess");
+    const requested = run(t1.model, { type: "turn.request", threadId: f.threadId, text: "next" });
+    const turnId = eventOf(requested.events, "turn.requested").turn.id;
+    const { model, events } = run(requested.model, { type: "turn.start", turnId, provider: "claude", nativeSessionId: "new-sess", freshSession: true });
+    expect(events.map((e) => e.type)).toEqual(["session.boundary", "turn.started"]);
+    expect(model.threads[f.threadId]).toMatchObject({ sessionBoundaryTurnId: turnId, nativeSessionId: "new-sess" });
+  });
+
+  it("adds no second boundary to a turn the user already asked to start fresh", () => {
+    const f = withThread("claude");
+    const t1 = completeTurn(f.model, f.threadId, "first", "ok", "old-sess");
+    const requested = run(t1.model, { type: "turn.request", threadId: f.threadId, text: "again", freshSession: true });
+    const turnId = eventOf(requested.events, "turn.requested").turn.id;
+    const { events } = run(requested.model, { type: "turn.start", turnId, provider: "claude", freshSession: true });
+    expect(events.map((e) => e.type)).toEqual(["turn.started"]);
+  });
+});
+
 describe("decide: plan mode against cached caps (R17 C1)", () => {
   const caps = { providerCaps: { pi: { planMode: false, label: "Pi" }, claude: { planMode: true } } };
 

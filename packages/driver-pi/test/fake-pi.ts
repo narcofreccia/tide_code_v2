@@ -158,7 +158,8 @@ export function baseScript(overrides: BaseOverrides = {}): Script {
         });
         return;
       case "get_commands":
-        pi.emitLine({ type: "response", id, command: "get_commands", success: true, data: { commands: overrides.commands ?? [] } });
+        // tide-bridge's /tide-config is listed unless a test says otherwise (its absence is a warning row)
+        pi.emitLine({ type: "response", id, command: "get_commands", success: true, data: { commands: overrides.commands ?? [{ name: "tide-config", source: "extension" }] } });
         return;
       case "abort":
         pi.emitLine({ type: "response", id, command: "abort", success: true });

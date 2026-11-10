@@ -37,6 +37,27 @@ No driver code: every driver already opens a new native session when `resume` is
 
 Background sub-agents of the closed session end with it (`onClosed` marks them lost).
 
+### Resume that did not hold (R18 D1)
+
+A reopen (settings change answered `reopen`, the idle reaper, a server restart) opens the
+session with `resume`. When the harness started a **new** native session instead, the driver
+says so with `ProviderSession.resumeFailed` (one line why); an instance whose cached caps
+declare `resume: false` counts the same. `SessionDirectory` remembers it per thread, the reactor
+takes it right after opening and sends `turn.start {freshSession: true}`: the decider emits
+`session.boundary` before `turn.started` (the "New session · <harness>" divider, the old native
+id released, rollback stops there), and the reactor adds one info row "<harness> could not
+resume the previous session; it starts without the earlier context"
+(`apps/server/src/provider/sessionNotices.ts`). A resume that fails *loudly* stays an error on
+the turn (`/clear` then starts a fresh session).
+
+| Harness | resume of a session that is gone | how Tide learns it |
+|---|---|---|
+| Claude | `query({resume})` fails ("No conversation found…"): the turn errors | error row (not silent) |
+| Codex | `thread/resume` rejects: opening fails, the turn errors | error row (not silent) |
+| OpenCode | `GET /api/session/:id` fails: opening fails, the turn errors | error row (not silent) |
+| Pi | `--session <path>` on a missing / empty file **silently** starts a new session at that path (pi `SessionManager._setSessionFile`); an id that matches nothing makes pi exit (error) | `resumeFailed` when the path held no session before spawn and `get_fork_messages` lists no user message |
+| ACP | no `loadSession`, or `session/load` fails (not `auth_required`): the driver opens `session/new` instead | `resumeFailed` (agent label + reason); Tide's preamble is then sent with the first prompt |
+
 ### Instances
 
 The registry (`apps/server/src/provider/registry.ts`) holds one entry per **instance**, keyed by
@@ -93,6 +114,7 @@ switched in place; `reopen` means the server closes the session and opens a new 
 | Codex | `applied` | `turn/start` carries `model`, `approvalPolicy`, `sandboxPolicy` and `collaborationMode` **per turn**; the session stores the new settings and the next turn sends them. |
 | OpenCode | `applied` | OpenCode 2: model, agent and the session permission ruleset change in place on a live session (`PATCH /session/:id`, verified with `GET /session/:id`); any failure answers `reopen`. A resumed session gets the thread's current settings re-applied when it opens. |
 | Pi | `applied` | the model goes through pi's `set_model` RPC; mode and plan-mode changes go through the bridge command `/tide-config`, sent as a prompt (pi runs extension commands without a model call and answers `handled`). `reopen` only when `get_commands` does not list `/tide-config` or the model id is unknown. |
+| ACP | `applied` | model, effort and mode / plan go through `session/set_config_option` (or the legacy `session/set_mode` / `session/set_model`) on the live session; any knob that fails, a running turn or a closed session answers `reopen` (which resumes with `session/load` when the agent can, see [ACP agents](#acp-agents)). |
 
 ### Reasoning
 
@@ -159,16 +181,27 @@ pure duplication of something Tide already renders:
   `tool_execution_update`, `bash_execution_update` (`PI_SILENT_EVENTS`); the last two are
   per-output-chunk streaming frames whose content arrives whole on `tool_execution_end`.
   `builtin:` tool-name prefixes are stripped, and MCP tools render as `server/tool`.
+- **ACP** — `session_info_update`, `config_option_update` (ingested as settings),
+  `user_message_chunk` (`ACP_SILENT_UPDATES`); every other unknown `sessionUpdate` is an info
+  row `<sessionUpdate>` with the raw payload.
 
 `unknownCount` now counts every frame that took the pass-through path (known-but-unmodelled
 as well as genuinely new), not only unrecognised types.
 
 **Login.** Each driver reports `ProviderStatus.loginCommand` — the exact shell command the UI
 offers to run — whenever the CLI is installed but signed out; the install case fills `hint`
-only. Claude `claude auth login`, Codex `codex login`, OpenCode `opencode auth login`, Pi `pi`
+only, and the registry never derives a login command from a not-installed hint (its backticks
+hold the install command). Claude `claude auth login`, Codex `codex login`, OpenCode `opencode auth login`, Pi `pi`
 (pi has no non-interactive login: the user signs in with `/login` once it is up, which the
 prose `hint` says). Pi is detected by probing `--version` on the configured path, then the
 workspace `node_modules/.bin/pi`, then PATH; a binary that crashes the probe is skipped.
+
+**Install.** `providers.list` adds `install: { command?, url? }` to every instance that is not
+installed, from one table (`apps/server/src/provider/installHints.ts`) that `tide doctor` prints
+too: the npm command and docs page per bundled harness. An ACP instance gets its registry
+entry's website (else repository) and no command, since npx/uvx agents are launched by Tide; a
+manual-command agent gets none. The web shows the command with Copy and the docs link in the
+first-run checklist and on the provider card.
 
 **Process death.** Every driver treats the loss of its child as a settled turn: the live
 mailbox gets `{settled, status: interrupted|error}` naming the exit code, and closes. Failing
@@ -180,7 +213,8 @@ on close (OpenCode: see its section).
 ## Claude Code — `@anthropic-ai/claude-agent-sdk` (0.3.296, CLI 2.1.296; fixtures re-recorded on it)
 
 - `query({ prompt: string | AsyncIterable<SDKUserMessage>, options })` → `AsyncGenerator<SDKMessage>` + `interrupt()`, `setPermissionMode()`, `setModel()`.
-- Options we use: `cwd`, `model`, `permissionMode`, `canUseTool`, `resume` (session id from `system/init`), `mcpServers: Record<name, {type:'stdio', command, args, env}>`, `strictMcpConfig`, `systemPrompt: {type:'preset', preset:'claude_code', append}`, `includePartialMessages: true` (token streaming), `abortController`, `settingSources` (default all → user/project settings + skills apply), `env`, `stderr`.
+- Options we use: `cwd`, `model`, `effort`, `permissionMode`, `canUseTool`, `resume` (session id from `system/init`; `forkSession` / `resumeSessionAt` for fork and rollback), `mcpServers: Record<name, {type:'stdio', command, args, env}>` (Tide's servers only; the user's own MCP config still loads), `additionalDirectories` (linked repos), `allowDangerouslySkipPermissions` (full-access only), `systemPrompt: {type:'preset', preset:'claude_code', append}`, `includePartialMessages: true` (token streaming), `abortController`, `pathToClaudeCodeExecutable` (when a binary is configured), `env`, `stderr`.
+- **Deliberately not set: `settingSources` and `strictMcpConfig`** (`session.ts` `#buildOptions`). Their SDK defaults load the user's and project's settings, skills, hooks, plugins and MCP servers; setting either would strip them (CLAUDE.md §1a).
 - **`systemPrompt` is always sent as `{type:'preset', preset:'claude_code'}`**, with `append` only when Tide has a preamble. An *omitted* `systemPrompt` is an empty **custom** prompt to the SDK (`sdk.d.ts`: a preset object is the opt-in for Claude Code's own prompt), so leaving it out when there is nothing to append silently strips the harness's system prompt.
 - `canUseTool(toolName, input, { signal, suggestions, toolUseID, ... })` → `{behavior:'allow', updatedInput?, updatedPermissions?} | {behavior:'deny', message, interrupt?}`. Only called when no rule/mode auto-approved. `AskUserQuestion` always reaches it → map to `user-input.requested`. `ExitPlanMode` reaches it in plan mode → its `input.plan` (markdown) is the **ProposedPlan**; deny with a message to keep planning, allow = accept plan (we still never auto-implement; implementation is a new thread).
 - **"Accept for session / always" is as narrow as the CLI proposes.** `canUseTool` options carry `suggestions: PermissionUpdate[]` (e.g. `addRules` with `Bash(git status:*)`, or `addDirectories`). `approvals.ts` re-targets the `allow`-rule and directory suggestions to `destination: "session"` (accept for session) or `"localSettings"` (accept always) and drops `setMode`/deny updates (Tide owns the mode); with no usable suggestion it falls back to a whole-tool rule. `options.mcpServer {name, source}` (MCP tools) is appended to the approval title.
@@ -196,9 +230,9 @@ on close (OpenCode: see its section).
 - **Usage is a per-turn delta.** `result.usage` and `total_cost_usd` are cumulative for the session's one `query()`; `ClaudeNormalizer` keeps the last reported totals and emits only the difference (a counter that goes backwards, i.e. a fresh query, restarts from zero). Context occupancy comes from `getContextUsage()` after each settled turn.
 - **Rate limits:** `rate_limit_event.rate_limit_info {status: allowed|allowed_warning|rejected, rateLimitType, resetsAt (epoch s), isUsingOverage|overageInUse, utilization?}` → `usage.rateLimit {status ok|warning|limited, remainingPct, resetsAt (ms), overage}`. CLI 2.1.296 puts utilization (a 0..1 fraction) in an undeclared `unifiedWindows[rateLimitType].utilization`; the top-level `utilization` of the d.ts is read first. Only non-nominal frames also add an info row. A `rejected` frame on an *overage* window (`rateLimitType` contains `overage`: `overage`, `seven_day_overage_included`) maps to `warning`, not `limited`, note kept (`seven_day_overage_included 100% used (rejected)`): extra usage ran out while the plan's own windows still allow requests.
 - **Limited rule (server, all harnesses):** a thread becomes `limited` only when the harness refused work — the turn settled `error` or `interrupted` and a limit signal came with it (a `usage.rateLimit.status: "limited"` during the turn, or an error text matching `USAGE_LIMIT_PATTERN`). A turn that settles `completed` never produces `thread.limited`, whatever its rate-limit frames said, and clears a limit left on the thread from before (the reactor sends `thread.resume` without `continue`). The rejected window still shows as a warning in the usage badge.
-- **Compaction:** `/compact` (or auto-compaction) streams `system/status {status: "compacting"}` → `system/compact_boundary {compact_metadata: {trigger: manual|auto, pre_tokens, post_tokens?, duration_ms?}}` → `system/status {status: null, compact_result: success|failed, compact_error?}` (`SDKStatusMessage` / `SDKCompactBoundaryMessage` in sdk.d.ts). The driver emits one info row with a driver-chosen id: `Compacting conversation…` on `compacting`, replaced in place by `Context compacted (manual) · 182k → 21k tokens` on the boundary (`· from 182k tokens` without `post_tokens`), or by an error row `Compaction failed: <compact_error>`. Right after the boundary it asks `getContextUsage()` so the context gauge drops before the turn ends. Codex (`thread/compacted`), OpenCode (`session.compaction.ended`) and Pi (`compaction_start` / `compaction_end`) report the same wording without token figures; the web recognises the prefixes.
+- **Compaction:** `/compact` (or auto-compaction) streams `system/status {status: "compacting"}` → `system/compact_boundary {compact_metadata: {trigger: manual|auto, pre_tokens, post_tokens?, duration_ms?}}` → `system/status {status: null, compact_result: success|failed, compact_error?}` (`SDKStatusMessage` / `SDKCompactBoundaryMessage` in sdk.d.ts). The driver emits one info row with a driver-chosen id: `Compacting conversation…` on `compacting`, replaced in place by `Context compacted (manual) · 182k → 21k tokens` on the boundary (`· from 182k tokens` without `post_tokens`), or by an error row `Compaction failed: <compact_error>`. Right after the boundary it asks `getContextUsage()` so the context gauge drops before the turn ends. Codex (`thread/compacted`), OpenCode (`session.compaction.ended`) and Pi (`compaction_start` / `compaction_end`) report the same wording without token figures; the web recognises the prefixes. ACP v1 has no compaction update: an ACP agent's compaction shows only as the next `usage_update` (or not at all).
 - Plan progress: `TodoWrite` tool_use input `{todos:[{content,status,activeForm}]}`.
-- Context usage: control request `get_context_usage`; cost: `get_session_cost`. `result.usage` has `input_tokens`, cache fields.
+- Context usage: `Query.getContextUsage()` (the CLI's `get_context_usage` control request) after each settled turn; cost: `result.total_cost_usd` (cumulative per `query()`, reported as a per-turn delta, see above). `result.usage` has `input_tokens`, cache fields.
 - **Background sub-agents and harness-initiated turns** (R14; `caps.harnessTurns = true`; seen live on CLI 2.1.316). An `Agent` call that runs in the background returns at once with a placeholder tool_result ("Async agent launched successfully…") and the turn ends with its `result`. Claude Code does not stop there: when the agent finishes, the CLI injects a `user` message whose content string starts with `<task-notification>` (`<task-id>`, `<tool-use-id>`, `<output-file>`, `<status>`, `<summary>`, `<result>`; transcript `origin.kind: "task-notification"`) and runs a new model turn **by itself** on the same `query()`: text, tool calls, even `AskUserQuestion` through `canUseTool`, ending in its own `result`. One notification per agent, so three background agents can mean three autonomous runs. Tide keeps reading the iterator after a send settles (`session.ts` idle loop). Bookkeeping read while idle (session ids, usage, rate limits, child progress, info rows) is held back. The first substantive event (text, a tool call, a child settle, a `<task-notification>` message, or a broker prompt) opens a **harness turn**, handed to `ProviderSession.onHarnessTurn` with a one-line reason (`sub-agent "Audit feature gaps" reported`) and ended by the next `result`. A `send()` that arrives during one waits for it to settle. `hasBackgroundWork()` is true while a backgrounded child has not reported, or while a harness turn is streaming. Before this, those runs sat unread in the iterator and an `AskUserQuestion` from one left the CLI waiting on `canUseTool` forever.
 - **Steers during a harness turn** (2026-11-01; fake-SDK tests, not yet live). A harness turn runs on the same streaming-input `query()`, so `steer()` takes it like a steer in a sent turn: the message (own `uuid`) goes straight into the live input, the CLI folds it in between tool rounds, and the harness turn's `result` lists it in `user_message_uuids`. The pending uuids live on the harness turn, so an unconsumed steer with `queued_turn_count > 0` keeps that harness turn streaming until the next `result`, same as in a send. Precedence: a `send()` waiting behind a harness turn is the server's live turn, so it takes the steer (delivered with its prompt); only with no send active does the steer go to the harness turn. Once the harness turn's final `result` is read (while its context usage is fetched, and after it closes) `steer()` throws, and the server's `steer.fallback` queues the message: a steer is refused, never dropped. After an interrupt that leaves a steer queued the query is **not** torn down (unlike a send, where a reset protects the next `send()`): a reset would kill the background sub-agents, and the CLI simply runs the steer next, which the idle loop surfaces as a harness turn of its own. A steer written just as the CLI writes the `result` (not counted in `queued_turn_count`) also runs next and surfaces the same way. Before this, every steer during a harness turn threw "no turn is running" and was silently queued behind it. Each harness turn carries an opaque `key` (`HarnessTurnHandle.key`), and the server's steer names it (`steer(input, { turnKey })`). When the named turn is no longer the live one (the harness finished it and already opened the next while Tide was still streaming it), `steer()` throws `conflict: …` instead of landing the message in the wrong turn. The server then falls back to a queued turn and, because the next harness turn is waiting in Tide behind the old one, promotes that queued turn into it once it runs (`turn.promote`: the message moves into the harness turn that actually folds it in). A fallback that cannot be promoted (images, a handoff) runs as a turn of its own. A steer for a `send()` carries no key and behaves as before.
 - **Lost background sub-agents.** A background agent is a task *inside* the CLI process that runs the `query()`; nothing outside it can report for it. When that process ends before the agent's `<task-notification>` arrives, the agent is gone: `claude --resume <id>` (and Tide's own resume on reopen) reloads the transcript, which still holds the "Async agent launched…" placeholder, but no task is restarted and no notification ever follows. So there is no resume-preserving case to wait for. Not live-verified with a kill mid-agent on 2.1.316; inferred from the transport (one process per `query()`, tasks keyed to it) and from `hasBackgroundWork()` being process-local. Tide closes such rows honestly as `error` with the summary "No report: the Claude Code session ended before this sub-agent finished", never `done`: the driver does it when the stream ends or fails (between turns via the idle loop, or under a send) and on any query reset (rollback, interrupted steer), delivering the rows through `onIdleActivity`; the server does it on every `SessionDirectory.close` (explicit close, provider/worktree/settings reopen, interrupt watchdog, idle reaper, shutdown) and in startup recovery (`recoverLostChildren`). While the session lives, children are never touched. The idle reaper keeps a session alive while `hasBackgroundWork()` is true (a driver without the method falls back to the read model's `hasBackgroundChildren`).
@@ -277,7 +311,7 @@ Binary detection prefers a 2.x candidate among `binaryPath` → `~/.opencode/bin
 
 **Reconfigure → `applied`.** Model (`POST …/model`), agent (`POST …/agent`) and ruleset (`PATCH …/session {permissions}`) all change in place (verified: `GET /session/:id` reflects all three). Any failure answers `reopen`. A resumed session gets the thread's current ruleset/agent/model re-applied at open.
 
-**MCP.** `PUT /api/experimental/mcp/<name>-<threadId>?location[directory]=` `{config:{type:"local", command, environment}}` registers Tide's server for that location at runtime — verified it writes no file into the config dir — and `DELETE` removes it on session close (2.x has a real remove). The user's own MCP servers, plugins and agents are untouched. Tool naming as seen by the model was not re-verified on 2.x.
+**MCP.** `PUT /api/experimental/mcp/<name>-<threadId>?location[directory]=` `{config:{type:"local", command, environment}}` registers Tide's server for that location at runtime — verified it writes no file into the config dir — and `DELETE` removes it on session close (2.x has a real remove). The user's own MCP servers, plugins and agents are untouched. Tool naming as seen by the model was not re-verified on 2.x. A registration that fails does not stop the session: its first turn shows one info row "Tide tools are not available in this session: OpenCode could not register Tide's MCP server (<name>: <error>)", and `status().hint` carries the failure until a later session registers (R18 D2).
 
 **Config facts checked** (2.0.27 `Config.Info` in `/openapi.json` and core): `permissions` is the ordered rule array, `agents` (not `agent`), `providers`, `plugins`, `mcp`, `default_agent`, `worktree`, `snapshots`. Instructions: in a scratch HOME a project `CLAUDE.md` alone was **not** picked up while `AGENTS.md` was. Not verified: `prompt→system` rename (an agent's `system` field exists), `mcp.servers` nesting, v1 plugins not running.
 
@@ -307,10 +341,10 @@ against that real pi on every `pnpm test`.
   `PATH`. Each candidate must answer `--version` cleanly (a pi that crashes on start is skipped);
   `status().version` is the version it reported. Older than 1.1.0 is accepted with a log line.
 - **Transport**: strict LF-delimited JSONL. Commands used: `prompt` (`images`), `abort`,
-  `get_state`, `get_session_stats`, `get_commands`, `get_available_models`, `set_model`,
+  `get_state`, `get_session_stats`, `get_commands`, `get_available_models`,
+  `get_available_thinking_levels` (status), `set_model`, `set_thinking_level` (effort, R8),
   `extension_ui_response`, `steer`, `fork`, `get_fork_messages`, `get_entries` (R4, below).
-  Not used: `follow_up`, `clear_queue`, `clone`, `get_tree`, `switch_session`,
-  `set_thinking_level`.
+  Not used: `follow_up`, `clear_queue`, `clone`, `get_tree`, `switch_session`.
 - **`prompt` disposition (0.99)**: `{data:{disposition}}` = `started` | `queued` | `handled`.
   `handled` (an extension command or input handler consumed it) starts no run and emits no
   `agent_settled`, so the turn settles `completed` at once; `started`/`queued` (and a pi that
@@ -335,6 +369,14 @@ against that real pi on every `pnpm test`.
   - Emulated by tide-bridge: runtime modes (a `tool_call` hook that asks through
     `ctx.ui.confirm`), plan mode (system-prompt instructions + `tide_propose_plan`, plan-mode
     shell allowlist), `systemPromptAppend` (`before_agent_start`). pi has no sub-agents.
+  - **Without tide-bridge** pi gates nothing: every tool call runs unasked, plan mode, the
+    preamble, read-only links and Tide's MCP servers (tide_delegate, experts, secrets) are gone.
+    When the bridge path cannot be resolved (`resolveBridgePath()` undefined) the driver
+    **refuses** to open a session in `approval-required`, `auto-accept-edits` or plan
+    (`packages/driver-pi/src/bridge.ts`), opens `auto` / `full-access` with one info row on the
+    first turn, and `status().hint` says so. When the bridge was passed but `get_commands` does
+    not list its `/tide-config`, the session opens with a warning row (approvals and plan mode
+    are not enforced); a pi that does not answer `get_commands` gets no row (cannot tell).
 - **MCP**: `OpenSessionOptions.mcpServers` → `TIDE_MCP_SERVERS` (JSON) → tide-bridge calls
   `pi.registerMcpServer(name, {command, args, env, exposure:"direct"})` at load
   (`docs/mcp.md` § Add servers from extensions). `direct` because pi's default exposure,
@@ -423,6 +465,8 @@ the protocol (a non-JSON line is logged and skipped), stderr is logged.
   `sessionCapabilities.additionalDirectories`), or `session/load {sessionId, cwd, mcpServers}`
   when resuming and `agentCapabilities.loadSession`. `session/load` replays history as
   `session/update`s before replying; the normalizer is muted for it (commands and mode still tracked).
+  No `loadSession`, or a load that fails with anything but `auth_required`, falls back to
+  `session/new` and sets `resumeFailed` (see [Resume that did not hold](#resume-that-did-not-hold-r18-d1)).
 - **Turn:** `session/prompt {sessionId, prompt}` → `{stopReason}`. Text block; images as
   `{type: "image", data, mimeType}` only with `promptCapabilities.image` (else dropped with an
   info row). ACP has no system-prompt field, so `systemPromptAppend` leads the first prompt of a
@@ -490,7 +534,7 @@ ENOENT → `installed: false` + "install it or pick another agent from the regis
 `auth_required` (`-32000`) answer → `loggedIn: false`, `hint` = the first `authMethods[].description`
 (no `authenticate` call in v1); a session that later opens clears it.
 
-`caps`: `{planMode: <plan mode found>, subagents: false, mcp: true, images: promptCapabilities.image, resume: loadSession, contextUsage: false, openInTerminal: false, steer: false, fork: false, rollback: false, oneShot: false, effort: <thought_level found>, commands: true}`.
+`caps`: `{planMode: <plan mode found>, subagents: false, mcp: true, images: promptCapabilities.image, resume: loadSession, contextUsage: <a usage_update with used/size seen>, openInTerminal: false, steer: false, fork: false, rollback: false, oneShot: false, effort: <thought_level found>, commands: true}`.
 **Unsupported:** client terminals (`terminal/*`), steer, fork, rollback, sub-agent rows,
 one-shot completions, an "open in terminal" command (no portable resume CLI), `authenticate`,
 elicitation, and enforcing read-only links for agents that write files themselves.
@@ -518,8 +562,9 @@ Fixtures: `packages/driver-acp/test/fixtures/{opencode-acp,opencode-acp-1.1}/` r
 ## W1 linked repos — how each harness scopes a secondary directory
 
 `OpenSessionOptions.linkedDirs` carries `{path, label, note?, access}`. The preamble reaches
-all four through `systemPromptAppend`. Every harness enforces write links natively; the
-read-only link is the part each driver has to add.
+every driver through `systemPromptAppend` (ACP: a `<tide-context>` block leading the first
+prompt of a new session). Every harness enforces write links natively; the read-only link is
+the part each driver has to add (ACP only through its `fs/*` callbacks).
 
 | | read under a link | write under a write link | write under a read-only link | mechanism |
 |---|---|---|---|---|
@@ -546,3 +591,27 @@ read-only link is the part each driver has to add.
 - Links always point at the linked repo's real path — a thread in a worktree still reaches
   the link's own checkout. Link paths are stored as `realpath`s (resolved at the RPC
   boundary), and compared with `path.resolve` so trailing slashes and `.`/`..` never matter.
+
+## What differs per harness
+
+One row per behaviour a user would notice, read from the code (R18, 2026-11-10). The mode
+picker's per-harness captions for `auto` come from this table (`apps/web/src/lib/vocab.ts`
+`RUNTIME_MODE_KIND_HINTS`).
+
+| | Claude | Codex | OpenCode | Pi | ACP |
+|---|---|---|---|---|---|
+| `auto` means | `permissionMode: "auto"`: Claude Code's own classifier decides what to ask | approval `never` (or the user's stricter config), sandbox `workspace-write` (`modes.ts`) | session rules allow `edit`, `shell`, `webfetch`; the rest follows the agent/user rules (`permissions.ts`) | no gate at all: tide-bridge asks for nothing, same as full access (`pi-extensions/src/protocol.ts` `needsApproval`); pi has no sandbox | every permission request answered `allow_once`, `execute` included, with an "auto-approved" info row (`driver-acp/src/permissions.ts`) |
+| "for session" / "always" approval | `canUseTool` suggestions re-targeted to `session` / `localSettings` (persisted in the project's `.claude/settings.local.json`) | both become Codex `acceptForSession` (no "always" on these requests) | for session: in-memory grant in the driver (`once` replies); always: OpenCode `always` (a saved project rule) | both remembered per tool name in the driver until the session closes; nothing persisted | both pick the agent's `allow_always` option (the agent decides its scope) |
+| plan source | native: `ExitPlanMode` input `plan` | native: the `plan` item of a plan collaboration-mode turn | the `plan` agent's last text of the turn | `tide_propose_plan` tool (tide-bridge) | the turn's last assistant message in the agent's plan mode |
+| rate limits | `rate_limit_event` → gauge + `limited` | `account/rateLimits/updated` | none reported | none on RPC | none in ACP v1 |
+| cost | `result.total_cost_usd` (delta) | none (Codex reports no cost) | session `cost` delta | `get_session_stats.cost` delta | `usage_update.cost` delta (USD only) |
+| sub-agent rows | yes (`Task`/`Agent` tool + task frames, incl. background) | yes (`collabAgentToolCall`, `subAgentActivity`) | yes (`SUBAGENT_TOOLS` calls open a child row) | none (pi has no sub-agents) | none |
+| todo progress (`plan.progress`) | `TodoWrite` | `turn/plan/updated` | none | none | `plan` updates |
+| context usage | `getContextUsage()` | `thread/tokenUsage/updated` | last step tokens / catalog `limit.context` | `get_session_stats.contextUsage` | `usage_update {used, size}` when the agent sends it |
+| background turns (`harnessTurns`) | yes (background sub-agents re-invoke the model) | no | no | no | no |
+| resume that cannot hold | turn errors | turn errors | turn errors | silent new session → boundary + row (D1) | new session → boundary + row (D1) |
+| Tide MCP tools missing | n/a (SDK `mcpServers`) | n/a (`-c mcp_servers…`) | registration failure → info row + status hint | no bridge → refused in gated modes, else info row + status hint | n/a (`session/new.mcpServers`); not verified per agent that it honours them |
+| open in terminal | `claude --resume <id>` | `codex resume <id>` | `opencode --session <id>` | `pi --session <file>` | none (no portable resume CLI): the action is disabled with a reason |
+
+Unverified cells: ACP `allow_always` scope (agent-defined), and whether every ACP agent attaches
+the MCP servers it is handed in `session/new`.

@@ -22,6 +22,7 @@ import { inlinePrompt, planHandoffDelivery, type DeliveryPlan } from "./handoffD
 import { ownerChildRow, rememberChild } from "./children.ts";
 import { dismissHarnessTurn, HarnessTurnQueue, SteerRetargets } from "./harnessTurns.ts";
 import { instanceIdOf, type HarnessTurn, type OpenHints, type SessionDirectory } from "./sessions.ts";
+import { resumeLostActivity, startCommand, type ResumeLoss } from "./sessionNotices.ts";
 
 interface ThreadState {
   /** one turn at a time per thread; different threads run concurrently */
@@ -509,6 +510,8 @@ export class ProviderReactor {
     }
 
     let started = false;
+    /** D1: set once the session is open: the resume it was asked for did not hold */
+    let lost: ResumeLoss | undefined;
     const start = async (nativeSessionId?: string, modelId?: string): Promise<void> => {
       if (started) {
         // R17: the harness named its session after an earlier event already started the turn
@@ -516,14 +519,17 @@ export class ProviderReactor {
         return;
       }
       started = true;
-      await this.#dispatch({
-        type: "turn.start",
+      const command = {
+        type: "turn.start" as const,
         turnId,
         provider: thread.provider,
         ...(thread.providerId !== undefined ? { providerId: thread.providerId } : {}),
         ...((modelId ?? thread.model) !== undefined ? { model: modelId ?? thread.model } : {}),
         ...(nativeSessionId !== undefined ? { nativeSessionId } : {}),
-      });
+      };
+      // D1: a resume that became a new native session gets its boundary + reason row
+      await this.#dispatch(startCommand(command, lost));
+      if (lost !== undefined) await this.#dispatch({ type: "activity.upsert", activity: resumeLostActivity(lost, { id: this.#newId(), threadId, turnId, at: this.#now() }) });
     };
 
     let settled = false;
@@ -531,6 +537,7 @@ export class ProviderReactor {
     try {
       // an attached turn never opens/reconfigures: that could close the very session running it
       const opened = attached === undefined ? await this.#openFor(thread, project, turnId, input) : undefined;
+      if (opened !== undefined) lost = this.#sessions.takeResumeLoss(threadId);
       this.#sessions.touch(threadId);
       const nativeSessionId = (opened?.session ?? this.#sessions.peek(threadId))?.nativeSessionId;
       if (nativeSessionId !== undefined) await start(nativeSessionId);

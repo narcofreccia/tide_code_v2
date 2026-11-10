@@ -61,6 +61,18 @@ describe("status()", () => {
     expect(status.models[0]?.efforts?.map((effort) => effort.id)).toEqual(["low", "medium", "high", "xhigh", "max", "default"]);
   });
 
+  it("contextUsage is true once the agent sends a usage_update with used/size (probe session)", async () => {
+    const lines = loadFixture("synthetic/init-config");
+    const newAt = lines.findIndex((line) => line.method === "session/new");
+    const withUsage = [...lines.slice(0, newAt + 2), { jsonrpc: "2.0" as const, method: "session/update", params: { sessionId: "sess_1", update: { sessionUpdate: "usage_update", used: 1200, size: 200000 } } }, ...lines.slice(newAt + 2)];
+    // the update is sent before the session/new answer, so the probe has seen it when it builds caps
+    const reordered = [...withUsage.slice(0, newAt + 1), withUsage[newAt + 2]!, withUsage[newAt + 1]!, ...withUsage.slice(newAt + 3)];
+    const status = await createAcpInstance({ command: "fake" }, env(), { spawn: spawnSeq(new FixtureAgent(reordered).child) }).status();
+    expect(status.caps.contextUsage).toBe(true);
+    const plain = await createAcpInstance({ command: "fake" }, env(), { spawn: spawnSeq(new FixtureAgent(loadFixture("synthetic/init-config")).child) }).status();
+    expect(plain.caps.contextUsage).toBe(false);
+  });
+
   it("caches for 60 s and only probes models once per instance", async () => {
     const spawn = spawnSeq(new FixtureAgent(loadFixture("synthetic/init-config")).child);
     const instance = createAcpInstance({ command: "fake" }, env(), { spawn });

@@ -25,6 +25,8 @@ export interface AgentFacts {
   models?: ModelInfo[];
   planMode?: boolean;
   effort?: boolean;
+  /** the agent sent a `usage_update` with `used`/`size` (probe or live session): it reports context usage */
+  contextUsage?: boolean;
   /** set by an `auth_required` answer; cleared when a session opens */
   authHint?: string;
 }
@@ -37,7 +39,8 @@ export function acpCaps(facts: AgentFacts): DriverCaps {
     mcp: true,
     images: agent?.promptCapabilities?.image === true,
     resume: agent?.loadSession === true,
-    contextUsage: false,
+    // only known once the agent sends a `usage_update` carrying `used`/`size` (unstable ACP field)
+    contextUsage: facts.contextUsage === true,
     openInTerminal: false,
     steer: false,
     fork: false,
@@ -46,6 +49,11 @@ export function acpCaps(facts: AgentFacts): DriverCaps {
     effort: facts.effort ?? false,
     commands: true,
   };
+}
+
+/** A `usage_update` that carries the context window figures (what the normalizer turns into `contextUsage`). */
+export function reportsContext(update: Record<string, unknown>): boolean {
+  return typeof update["used"] === "number" && typeof update["size"] === "number" && update["size"] > 0;
 }
 
 export function installHint(label: string, command: string): string {
@@ -91,6 +99,7 @@ export async function probeStatus(
     // spawn reports a bad cwd itself
   }
   let child;
+  let sawContextUsage = false;
   try {
     child = deps.spawn(config.command, config.args ?? [], { cwd, env: agentEnv(config, env) });
   } catch (error) {
@@ -102,6 +111,7 @@ export async function probeStatus(
     onNotification: (method, params) => {
       const update = method === "session/update" ? (params as { update?: { sessionUpdate?: unknown; availableCommands?: unknown } } | null)?.update : undefined;
       if (update?.sessionUpdate === "available_commands_update") onCommands?.(toSlashCommands(update.availableCommands));
+      if (update?.sessionUpdate === "usage_update" && reportsContext(update)) sawContextUsage = true;
     },
     onRequest: (method) => {
       if (method === "session/request_permission") return { outcome: { outcome: "cancelled" } };
@@ -117,6 +127,7 @@ export async function probeStatus(
         const result = await conn.request<AcpNewSessionResult>("session/new", { cwd, mcpServers: [] }, PROBE_SESSION_TIMEOUT_MS);
         Object.assign(next, sessionFacts(result, config.defaultModel));
         delete next.authHint;
+        if (sawContextUsage) next.contextUsage = true;
       } catch (error) {
         if (isAuthRequired(error)) next.authHint = authHint(label, init);
         else env.log(`[acp:${label}] probe session/new failed: ${error instanceof Error ? error.message : String(error)}`);

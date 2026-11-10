@@ -16,8 +16,8 @@ import { SetupStep } from "./ProviderCardSetup.tsx";
 
 const CAPS: { key: keyof ProviderStatusDto["caps"]; label: string }[] = [
   { key: "planMode", label: "plan mode" },
-  { key: "subagents", label: "sub-agents" },
-  { key: "mcp", label: "MCP" },
+  { key: "subagents", label: "harness sub-agents" },
+  { key: "mcp", label: "user MCP servers" },
   { key: "images", label: "images" },
   { key: "resume", label: "resume" },
   { key: "contextUsage", label: "context usage" },

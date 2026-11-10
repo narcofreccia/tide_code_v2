@@ -40,6 +40,8 @@ export interface SessionDeps {
   slash?: () => Promise<SlashCatalog>;
   /** thread-scoped MCP registrations to remove on close */
   mcpNames?: string[];
+  /** one-line info rows for the first turn (Tide's MCP server did not register) */
+  notices?: string[];
   onClosed?: (session: OpencodeSession) => void;
 }
 
@@ -76,6 +78,7 @@ export class OpencodeSession implements ProviderSession {
   #closed = false;
   /** per send of this process: the admitted user message id, undefined when it was refused */
   #turns: (string | undefined)[] = [];
+  #notices: string[];
 
   constructor(env: DriverEnv, options: OpenSessionOptions, deps: SessionDeps, sessionId: string) {
     this.#env = env;
@@ -84,6 +87,7 @@ export class OpencodeSession implements ProviderSession {
     this.#settings = { ...(options.model !== undefined ? { model: options.model } : {}), ...(options.effort !== undefined ? { effort: options.effort } : {}), mode: options.mode, interaction: options.interaction };
     this.#agent = agentFor(deps.agents, options.interaction);
     this.#baseline = deps.baseline ?? { cost: 0, tokens: ZERO_TOKENS };
+    this.#notices = [...(deps.notices ?? [])];
     this.nativeSessionId = sessionId;
     this.#unsubscribe = deps.hub.add(sessionId, { onEvent: (event) => this.#onEvent(event), onStreamEnd: (reason) => this.#onStreamEnd(reason) }, true);
   }
@@ -119,6 +123,7 @@ export class OpencodeSession implements ProviderSession {
       try {
         const model = self.#deps.model;
         yield { type: "session", nativeSessionId: self.nativeSessionId, ...(model ? { model: `${model.providerID}/${model.id}` } : {}) };
+        for (const text of self.#notices.splice(0)) yield { type: "activity", activity: { kind: "info", text } };
         for await (const event of mailbox.drain()) yield event;
         await pump;
       } finally {

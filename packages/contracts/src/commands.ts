@@ -337,6 +337,8 @@ export const TurnStart = Type.Object({
   provider: ProviderKind,
   providerId: Type.Optional(Type.String()),
   model: Type.Optional(Type.String()),
+  /** R18: the session that runs this turn is new although a resume was asked for: the decider emits session.boundary before turn.started */
+  freshSession: Type.Optional(Type.Literal(true)),
 });
 /**
  * R17: the harness named its native session after the turn had already started (Claude sends a

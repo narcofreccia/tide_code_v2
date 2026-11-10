@@ -5,10 +5,10 @@ import {
   INTERACTION_LABELS,
   INTERACTION_MODES,
   RUNTIME_MODES,
-  RUNTIME_MODE_HINTS,
   RUNTIME_MODE_LABELS,
   instanceLabel,
   providerIdOf,
+  runtimeModeHint,
 } from "../../lib/vocab.ts";
 import { updateThread, type ThreadPatch } from "../../lib/threadActions.ts";
 import {
@@ -93,7 +93,8 @@ export const ThreadPills = memo(function ThreadPills({ thread }: { thread: Threa
   const modeOptions: SelectOption<Thread["mode"]>[] = RUNTIME_MODES.map((mode) => ({
     value: mode,
     label: RUNTIME_MODE_LABELS[mode],
-    description: RUNTIME_MODE_HINTS[mode],
+    // per harness where `auto` means something else (vocab.ts RUNTIME_MODE_KIND_HINTS)
+    description: runtimeModeHint(mode, thread.provider),
   }));
 
   const apply = (patch: ThreadPatch): void => updateThread(thread.id, patch);
@@ -148,7 +149,7 @@ export const ThreadPills = memo(function ThreadPills({ thread }: { thread: Threa
           />
         </Slot>
       )}
-      <Slot caption="Permissions" hint={RUNTIME_MODE_HINTS[thread.mode]}>
+      <Slot caption="Permissions" hint={runtimeModeHint(thread.mode, thread.provider)}>
         <Select
           label="Permissions"
           className={styles.control}

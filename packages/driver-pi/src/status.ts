@@ -5,6 +5,7 @@ import { dirname, join } from "node:path";
 import { fileURLToPath } from "node:url";
 import { promisify } from "node:util";
 import type { DriverEnv, ModelInfo, ProviderStatus } from "@tide/contracts";
+import { BRIDGE_STATUS_HINT, bridgePathOf } from "./bridge.ts";
 import { detectLocalModels, readModelsJson } from "./local-models.ts";
 import { withEfforts } from "./commands.ts";
 import { PiRpc } from "./rpc.ts";
@@ -244,7 +245,7 @@ export async function buildStatus(config: PiConfig, env: DriverEnv, deps: PiDeps
     installed: true,
     loggedIn,
     version,
-    ...(loggedIn ? {} : { hint: LOGIN_HINT, loginCommand: LOGIN_COMMAND }),
+    ...(loggedIn ? (bridgePathOf(deps) === undefined ? { hint: BRIDGE_STATUS_HINT } : {}) : { hint: LOGIN_HINT, loginCommand: LOGIN_COMMAND }),
     models: mergeModels(fromPi, local),
     caps: { ...PI_CAPS },
   };

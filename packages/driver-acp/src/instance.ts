@@ -40,9 +40,12 @@ export class AcpInstance implements ProviderInstance {
     if (cached && Date.now() - cached.at < STATUS_TTL_MS) return cached.value;
     this.#statusInFlight ??= probeStatus(this.#config, this.#env, this.#deps, this.#label, this.#facts, CLIENT_VERSION, (commands) => this.#setCommands(commands))
       .then(({ status, facts }) => {
-        this.#facts = facts;
-        this.#status = { at: Date.now(), value: status };
-        return status;
+        // a live session may have learned context usage while the probe ran
+        const learned = this.#facts.contextUsage === true && facts.contextUsage !== true;
+        this.#facts = learned ? { ...facts, contextUsage: true } : facts;
+        const value = learned ? { ...status, caps: { ...status.caps, contextUsage: true } } : status;
+        this.#status = { at: Date.now(), value };
+        return value;
       })
       .finally(() => {
         this.#statusInFlight = undefined;
@@ -82,6 +85,9 @@ export class AcpInstance implements ProviderInstance {
       },
       onAuthRequired: (hint) => this.#learn({ authHint: hint }),
       onCommands: (commands) => this.#setCommands(commands),
+      onContextUsage: () => {
+        if (this.#facts.contextUsage !== true) this.#learn({ contextUsage: true });
+      },
     });
     try {
       await session.start(CLIENT_VERSION);
@@ -103,9 +109,12 @@ export class AcpInstance implements ProviderInstance {
       this.#status = undefined;
     }
     this.#sessions.add(session);
-    return {
+    const handle: ProviderSession = {
       get nativeSessionId() {
         return session.nativeSessionId;
+      },
+      get resumeFailed() {
+        return session.resumeFailed;
       },
       send: (input) => session.send(input),
       respondApproval: (requestId, decision) => session.respondApproval(requestId, decision),
@@ -117,6 +126,7 @@ export class AcpInstance implements ProviderInstance {
         await session.close();
       },
     };
+    return handle;
   }
 
   #learn(facts: Partial<AgentFacts>): void {

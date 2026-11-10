@@ -50,6 +50,19 @@ describe("status", () => {
   });
 
   it("hints at `codex login` when account/read returns no account", async () => {
+    const { spawn } = fakeSpawn((server) => {
+      server.account = null;
+    });
+    const instance = await codexDriver.create({ binaryPath: process.execPath, spawnImpl: spawn }, env);
+    const status = await instance.status();
+    expect(status.installed).toBe(true);
+    expect(status.loggedIn).toBe(false);
+    expect(status.hint).toBe(LOGIN_HINT);
+    expect(status.loginCommand).toBe(LOGIN_COMMAND);
+    await instance.dispose();
+  });
+
+  it("a failed probe says the login state is unknown instead of claiming logged out", async () => {
     const { spawn, servers } = fakeSpawn();
     const signedOut: typeof spawn = (command, args, options) => {
       const child = spawn(command, args, options);
@@ -60,7 +73,7 @@ describe("status", () => {
     const status = await instance.status();
     expect(status.installed).toBe(true);
     expect(status.loggedIn).toBe(false);
-    expect(status.hint).toBe(LOGIN_HINT);
+    expect(status.hint).toMatch(/^Could not read Codex's login state \(.*not logged in.*\)\. Refresh to retry/);
     expect(status.loginCommand).toBe(LOGIN_COMMAND);
     await instance.dispose();
   });
@@ -75,6 +88,8 @@ describe("status", () => {
     expect(status.hint).toContain("free plan");
     expect(status.hint).toContain("--with-api-key");
     expect(status.hint).toBe("ChatGPT free plan" + FREE_PLAN_NOTE);
+    // the note does not name models: the catalogue changes under it
+    expect(FREE_PLAN_NOTE).not.toMatch(/GPT-\d/i);
     await instance.dispose();
   });
 

@@ -36,8 +36,8 @@ export type FetchLike = (url: string, init?: { signal?: AbortSignal }) => Promis
 export interface PiDeps {
   spawn: SpawnLike;
   fetch: FetchLike;
-  /** absolute path passed to `pi -e`; defaults to the built tide-bridge of @tide/pi-extensions */
-  bridgePath?: string;
+  /** absolute path passed to `pi -e`; defaults to the built tide-bridge of @tide/pi-extensions; null = none (tests) */
+  bridgePath?: string | null;
   /** `pi --version` check used when choosing a binary; defaults to running it */
   probe?: (binary: string) => Promise<string | undefined>;
 }

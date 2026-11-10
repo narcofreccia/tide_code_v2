@@ -189,6 +189,8 @@ export interface HarnessTurnHandle {
 
 export interface ProviderSession {
   readonly nativeSessionId: string | undefined;
+  /** R18: `resume` was given but the harness started a new native session; one line why. The server then records a session.boundary + info row. */
+  readonly resumeFailed?: string | undefined;
   /** Runs one turn; the iterable ends after a `settled` event. */
   send(input: TurnInput): AsyncIterable<NormalizedEvent>;
   respondApproval(requestId: string, decision: ApprovalDecision): Promise<void>;

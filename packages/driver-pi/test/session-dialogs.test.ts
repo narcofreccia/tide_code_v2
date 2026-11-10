@@ -134,7 +134,7 @@ describe("reconfigure", () => {
   });
 
   it("reopens when the bridge command is missing, or pi did not treat it as a command", async () => {
-    const missing = await open(() => undefined);
+    const missing = await open(() => undefined, {}, baseScript({ commands: [] }));
     expect(await missing.session.reconfigure?.({ mode: "auto", interaction: "default" })).toBe("reopen");
     expect(missing.pi().sent.some((command) => command["type"] === "prompt")).toBe(false);
     await missing.session.close();

@@ -39,7 +39,7 @@ export function createPiInstance(config: PiConfig, env: DriverEnv, deps: Partial
   return new PiInstance(config, env, {
     spawn: deps.spawn ?? nodeSpawn,
     fetch: deps.fetch ?? nodeFetch,
-    ...(deps.bridgePath ? { bridgePath: deps.bridgePath } : {}),
+    ...(deps.bridgePath !== undefined ? { bridgePath: deps.bridgePath } : {}),
     ...(deps.probe ? { probe: deps.probe } : {}),
   });
 }

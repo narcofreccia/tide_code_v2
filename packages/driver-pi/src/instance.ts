@@ -1,6 +1,6 @@
 import type { CompletionRequest, SlashCommandInfo, CompletionResult, DriverEnv, OpenSessionOptions, ProviderInstance, ProviderSession, ProviderStatus } from "@tide/contracts";
 import { runComplete } from "./complete.ts";
-import { resolveBridgePath } from "./bridge-path.ts";
+import { bridgeNotice, bridgePathOf, needsGate, refusalFor, sessionFileGone } from "./bridge.ts";
 import { listCommands } from "./commands.ts";
 import { PiSession } from "./session.ts";
 import { buildSpawn } from "./spawn.ts";
@@ -47,13 +47,25 @@ export class PiInstance implements ProviderInstance {
     this.#binaryPath ??= (await detectBinary(this.#config, this.#deps.probe, this.#env.log))?.path;
     const binary = this.#binaryPath;
     if (!binary) throw new Error(INSTALL_HINT);
-    const bridgePath = this.#deps.bridgePath ?? resolveBridgePath();
-    if (!bridgePath) this.#env.log("[pi] tide-bridge not found; approvals, plan mode, live reconfigure and Tide MCP are unavailable");
+    const bridgePath = bridgePathOf(this.#deps);
+    if (!bridgePath) {
+      this.#env.log("[pi] tide-bridge not found; approvals, plan mode, live reconfigure and Tide MCP are unavailable");
+      // pi gates nothing by itself: a mode that promises approvals must not run ungated
+      if (needsGate(options.mode, options.interaction)) throw new Error(refusalFor(options.mode, options.interaction));
+    }
+    // checked before spawning: pi creates the file it was pointed at
+    const resumeGone = options.resume !== undefined && options.forkFrom === undefined && sessionFileGone(options.resume);
     const { args, env } = buildSpawn(options, this.#config, bridgePath);
     this.#env.log(`[pi] ${binary} ${args.join(" ")}`);
     const child = this.#deps.spawn(binary, args, { cwd: options.cwd, env });
     const session = new PiSession(child, this.#env, options);
     await session.prime();
+    if (resumeGone && (session.userMessages ?? 0) === 0) session.resumeFailed = `the pi session file ${options.resume} is missing or empty`;
+    const notice = bridgeNotice(bridgePath ? session.bridge : "missing", bridgePath !== undefined);
+    if (notice !== undefined) {
+      this.#env.log(`[pi] ${notice}`);
+      session.notice(notice);
+    }
     this.#sessions.add(session);
     return session;
   }
