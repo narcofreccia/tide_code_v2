@@ -1,18 +1,9 @@
 import type { DomainEvent, EventRecord } from "@tide/contracts";
 import { openDatabase, type Database, type SqlStatement } from "../db/sqlite.ts";
+import { CompactionTable } from "./compaction.ts";
+import { migrate } from "./migrations.ts";
+import { SnapshotTable } from "./snapshots.ts";
 
-const SCHEMA = `
-CREATE TABLE IF NOT EXISTS events (
-  seq INTEGER PRIMARY KEY AUTOINCREMENT,
-  ts INTEGER NOT NULL,
-  type TEXT NOT NULL,
-  aggregate_id TEXT,
-  payload TEXT NOT NULL
-);
-CREATE INDEX IF NOT EXISTS events_aggregate_idx ON events(aggregate_id);
-CREATE TABLE IF NOT EXISTS meta (key TEXT PRIMARY KEY, value TEXT);
-CREATE TABLE IF NOT EXISTS receipts (command_id TEXT PRIMARY KEY, first_seq INTEGER NOT NULL, last_seq INTEGER NOT NULL, ts INTEGER NOT NULL);
-`;
 
 /** The aggregate an event belongs to, used for cheap per-entity queries later. */
 export function aggregateIdOf(event: DomainEvent): string | null {
@@ -133,10 +124,17 @@ export class EventStore {
   #getReceipt: SqlStatement;
   #putReceipt: SqlStatement;
   #readRange: SqlStatement;
+  /** read-model snapshots (boot resumes from the newest usable one) */
+  readonly snapshots: SnapshotTable;
+  /** rewriting settled turns' text deltas into one row per run */
+  readonly compaction: CompactionTable;
 
+  /** Migrates `db` to the current schema first; throws `StoreSchemaError` when a newer Tide wrote it. */
   constructor(db: Database) {
     this.#db = db;
-    db.exec(SCHEMA);
+    migrate(db);
+    this.snapshots = new SnapshotTable(db);
+    this.compaction = new CompactionTable(db);
     this.#insert = db.prepare(
       "INSERT INTO events (ts, type, aggregate_id, payload) VALUES (?, ?, ?, ?) RETURNING seq",
     );
@@ -217,5 +215,11 @@ export class EventStore {
 }
 
 export async function openEventStore(path: string): Promise<EventStore> {
-  return new EventStore(await openDatabase(path));
+  const db = await openDatabase(path);
+  try {
+    return new EventStore(db);
+  } catch (err) {
+    db.close();
+    throw err;
+  }
 }

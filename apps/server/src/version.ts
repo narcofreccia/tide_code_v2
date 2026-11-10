@@ -38,3 +38,6 @@ function resolveVersion(): string {
 
 /** The product version (root package.json), embedded at build time in the compiled sidecar. */
 export const VERSION: string = resolveVersion();
+
+/** True in the compiled sidecar, false when the source runs under node (dev, tests). */
+export const IS_BUILD: boolean = typeof TIDE_BUILD_VERSION === "string" && TIDE_BUILD_VERSION.length > 0;

@@ -98,8 +98,8 @@ async function defaultResolveDir(path: string): Promise<string> {
 
 export function registerHandlers(router: RpcRouter, deps: HandlerDeps): void {
   router.register("server.info", async (_input, ctx) => {
-    // the pairing URL carries the bearer token: user-facing client sockets only
-    const remote = deps.remote?.({ includePairing: ctx.agentThreadId === undefined });
+    // the pairing URL carries the master token: owner sockets only (not agents, not paired devices)
+    const remote = deps.remote?.({ includePairing: ctx.agentThreadId === undefined && ctx.clientId === undefined });
     const [envResult, ghAuth] = await Promise.all([deps.envInfo?.(), deps.tools !== undefined ? deps.ghAuth?.() : undefined]);
     const env = envResult ?? {};
     return {
@@ -237,7 +237,9 @@ export function registerHandlers(router: RpcRouter, deps: HandlerDeps): void {
       coalescer.close();
     };
 
-    if (input.fromSeq !== undefined && input.fromSeq >= 0) {
+    // A client whose model stopped inside a run of text deltas that compaction has since merged
+    // into one row cannot resume from a tail (it would miss or repeat text): it gets a snapshot.
+    if (input.fromSeq !== undefined && input.fromSeq >= 0 && !deps.store.compaction.inside(input.fromSeq)) {
       for (const record of deps.store.readFrom(input.fromSeq + 1)) push(record);
     } else {
       const model = deps.engine.getModel();

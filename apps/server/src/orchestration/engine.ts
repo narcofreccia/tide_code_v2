@@ -1,6 +1,7 @@
 import { Check, Errors } from "typebox/value";
 import {
   Command as CommandSchema,
+  DomainEvent as DomainEventSchema,
   applyRecord,
   emptyReadModel,
   newId as defaultNewId,
@@ -11,6 +12,7 @@ import {
 } from "@tide/contracts";
 import { decide, type DecideDefaults } from "./decider/index.ts";
 import { handoffCapFromEnv } from "./handoff/select.ts";
+import { Compactor, type CompactionStats } from "./compaction.ts";
 import type { EventStore } from "./store.ts";
 
 /** Every `type` literal the command union accepts, flattened across its nested unions. */
@@ -21,6 +23,21 @@ const KNOWN_COMMAND_TYPES: ReadonlySet<string> = new Set(
     ) ?? [],
   ),
 );
+
+/** Every event `type` this build projects; anything else in the log came from a newer server. */
+const KNOWN_EVENT_TYPES: ReadonlySet<string> = new Set(
+  DomainEventSchema.anyOf.flatMap((m) => {
+    const type = (m as { properties?: { type?: { const?: unknown } } }).properties?.type?.const;
+    return typeof type === "string" ? [type] : [];
+  }),
+);
+
+const SNAPSHOT_TAG = "snapshot_tag";
+
+/** Events appended between two automatic snapshots. */
+export const DEFAULT_SNAPSHOT_EVERY = 5_000;
+
+const SETTLED_STATUSES: ReadonlySet<string> = new Set(["completed", "interrupted", "error"]);
 
 /** Rejection carrying a stable machine code (invalid-command / not-found / conflict / busy). */
 export class CommandError extends Error {
@@ -40,6 +57,24 @@ export interface EngineOptions {
   defaults?: () => DecideDefaults;
   /** upper bound for recorded handoffs; defaults to `TIDE_HANDOFF_TOKEN_CAP` */
   handoffCap?: number | undefined;
+  /** events appended before an automatic snapshot (0 = only explicit `snapshot()` calls) */
+  snapshotEvery?: number;
+  /**
+   * Identifies the code that wrote a snapshot (the app passes the build version). A snapshot is
+   * loaded only when the tag stored with it equals this one, so a new build always replays once
+   * and a forgotten `MODEL_SCHEMA` bump cannot serve a stale model. `null` = never load one
+   * (source runs, where the projector changes without a version change). Undefined = no check.
+   */
+  snapshotTag?: string | null;
+  /** compact settled turns' text deltas after each settle (default on; `compact()` works either way) */
+  compaction?: boolean;
+  log?: (msg: string) => void;
+}
+
+export interface SnapshotResult {
+  seq: number;
+  bytes: number;
+  ms: number;
 }
 
 export interface DispatchResult {
@@ -63,6 +98,15 @@ export class Engine {
   #listeners = new Set<EventListener>();
   /** tail of the serial processing chain; also the drain() handle */
   #queue: Promise<unknown> = Promise.resolve();
+  #log: (msg: string) => void;
+  #snapshotEvery: number;
+  #snapshotTag: string | null | undefined;
+  /** events appended since the newest snapshot */
+  #sinceSnapshot = 0;
+  #compactor: Compactor;
+  #autoCompact: boolean;
+  /** threads with a turn settled since the last maintenance step */
+  #settledThreads = new Set<string>();
 
   constructor(options: EngineOptions) {
     this.#store = options.store;
@@ -70,7 +114,86 @@ export class Engine {
     this.#newId = options.newId ?? (() => defaultNewId());
     this.#defaults = options.defaults ?? (() => ({}));
     this.#handoffCap = "handoffCap" in options ? options.handoffCap : handoffCapFromEnv();
-    this.#model = replay(emptyReadModel(), options.store.readAll());
+    this.#log = options.log ?? ((msg) => console.log(msg));
+    this.#snapshotEvery = options.snapshotEvery ?? DEFAULT_SNAPSHOT_EVERY;
+    this.#snapshotTag = options.snapshotTag;
+    this.#model = this.#boot();
+    this.#autoCompact = options.compaction !== false;
+    this.#compactor = new Compactor(this.#store.compaction, (turnId) => {
+      const turn = this.#model.turns[turnId];
+      return turn === undefined || SETTLED_STATUSES.has(turn.status);
+    });
+  }
+
+  /** Newest usable snapshot + the events after it; a full replay when there is none. */
+  #boot(): ReadModel {
+    const lastSeq = this.#store.lastSeq();
+    if (lastSeq === 0) return emptyReadModel();
+    const started = performance.now();
+    const tag = this.#snapshotTag;
+    const usable = tag === undefined || (tag !== null && this.#store.getMeta(SNAPSHOT_TAG) === tag);
+    const snapshot = usable ? this.#store.snapshots.load(lastSeq, (msg) => console.warn(msg)) : undefined;
+    const tail = this.#store.readFrom((snapshot?.seq ?? 0) + 1);
+    const unknown = new Map<string, number>();
+    for (const record of tail) {
+      if (!KNOWN_EVENT_TYPES.has(record.event.type)) unknown.set(record.event.type, (unknown.get(record.event.type) ?? 0) + 1);
+    }
+    if (unknown.size > 0) {
+      const total = [...unknown.values()].reduce((a, b) => a + b, 0);
+      console.warn(`[engine] ${total} events of types this server does not know were skipped (${[...unknown.entries()].map(([t, n]) => `${t}×${n}`).join(", ")}); a newer Tide wrote them`);
+    }
+    const model = replay(snapshot?.model ?? emptyReadModel(), tail);
+    this.#sinceSnapshot = tail.length;
+    const ms = Math.round(performance.now() - started);
+    this.#log(
+      snapshot !== undefined
+        ? `[engine] replayed ${tail.length} events from snapshot at seq ${snapshot.seq} (${ms} ms)`
+        : `[engine] replayed ${tail.length} events from the start, no snapshot (${ms} ms)`,
+    );
+    return model;
+  }
+
+  /**
+   * Writes the current model as a snapshot (no-op when the newest one is already at this seq).
+   * Synchronous: it runs between commands, so the model it serialises is never mid-dispatch.
+   */
+  snapshot(): SnapshotResult | undefined {
+    const seq = this.#model.seq;
+    if (seq === 0 || seq <= this.#store.snapshots.latestSeq()) return undefined;
+    const started = performance.now();
+    const bytes = this.#store.snapshots.write(seq, JSON.stringify(this.#model), this.#now());
+    if (typeof this.#snapshotTag === "string") this.#store.setMeta(SNAPSHOT_TAG, this.#snapshotTag);
+    this.#sinceSnapshot = 0;
+    return { seq, bytes, ms: performance.now() - started };
+  }
+
+  /** Compacts every settled turn after the stored watermark (boot runs this once). */
+  compact(): CompactionStats {
+    return this.#compactor.all();
+  }
+
+  /** After a command: compaction of freshly settled threads, then a snapshot past the threshold. */
+  #maintain(): void {
+    if (this.#settledThreads.size > 0 && this.#autoCompact) {
+      const threads = [...this.#settledThreads];
+      this.#settledThreads.clear();
+      try {
+        const idle = Object.values(this.#model.turns).every((t) => t.status === "queued" || SETTLED_STATUSES.has(t.status));
+        // nothing running anywhere: one pass from the watermark also moves it forward
+        if (idle) this.#compactor.all();
+        else for (const threadId of threads) this.#compactor.thread(threadId);
+      } catch (err) {
+        console.error("[engine] compaction failed", err);
+      }
+    }
+    if (this.#snapshotEvery > 0 && this.#sinceSnapshot >= this.#snapshotEvery) {
+      try {
+        this.snapshot();
+      } catch (err) {
+        this.#sinceSnapshot = 0; // retried after the next window, not after every command
+        console.error("[engine] snapshot failed", err);
+      }
+    }
   }
 
   getModel(): ReadModel {
@@ -97,11 +220,14 @@ export class Engine {
 
   #enqueue(command: Command): Promise<DispatchResult> {
     const run = this.#queue.then(() => this.#process(command));
-    // keep the chain alive regardless of this command's outcome
-    this.#queue = run.then(
-      () => undefined,
-      () => undefined,
-    );
+    // keep the chain alive regardless of this command's outcome; maintenance is its own step,
+    // one tick later, so the caller's continuation runs before compaction or a snapshot
+    this.#queue = run
+      .then(
+        () => undefined,
+        () => undefined,
+      )
+      .then(() => this.#maintain());
     return run;
   }
 
@@ -139,8 +265,10 @@ export class Engine {
     if (decision.events.length === 0 && commandId === undefined) return { seq: this.#model.seq, events: [] };
 
     const records = this.#store.append(decision.events, ts, commandId === undefined ? undefined : { commandId });
+    this.#sinceSnapshot += records.length;
     for (const record of records) {
       this.#model = applyRecord(this.#model, record);
+      if (record.event.type === "turn.settled" && this.#autoCompact) this.#settledThreads.add(record.event.threadId);
       for (const listener of this.#listeners) {
         try {
           listener(record);

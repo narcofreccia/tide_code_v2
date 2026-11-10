@@ -7,6 +7,7 @@ import { RotatingLog, teeConsole } from "./logFile.ts";
 import { acquireHomeLock, hostLockProbes, releaseHomeLock, updateHomeLock } from "../homeLock.ts";
 import { PARENT_PID_ENV, parentPidFrom, watchParent } from "./parentWatch.ts";
 import { clearRuntime, writeRuntime } from "./runtime.ts";
+import { StoreSchemaError } from "../orchestration/migrations.ts";
 
 export interface BannerInput {
   environmentId: string;
@@ -71,7 +72,17 @@ export async function runServe(args: string[], legacy: boolean): Promise<void> {
   await acquireHomeLock(config.tideHome, lock, config.environmentId, hostLockProbes());
   process.on("exit", () => releaseHomeLock(config.tideHome));
 
-  const app = await createApp({ config });
+  let app: Awaited<ReturnType<typeof createApp>>;
+  try {
+    app = await createApp({ config });
+  } catch (err) {
+    // B3: a database from a newer Tide is refused with one plain sentence, not a stack trace
+    if (err instanceof StoreSchemaError) {
+      console.error(`tide: ${err.message} (${config.dbPath})`);
+      process.exit(1);
+    }
+    throw err;
+  }
   if (flags.name !== undefined && flags.name.trim().length > 0) app.settings.set({ environment: { name: flags.name.trim().slice(0, 64) } });
   const port = app.server?.port ?? config.port;
   writeRuntime(config.tideHome, { pid: process.pid, host: config.host, port, startedAt: Date.now() });

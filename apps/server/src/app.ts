@@ -1,5 +1,6 @@
 import type { ImageInput } from "@tide/contracts";
 import type { ServerConfig } from "./config.ts";
+import { IS_BUILD, VERSION } from "./version.ts";
 import type { Transport } from "./decisions/client.ts";
 import type { Judge } from "./decisions/judge.ts";
 import type { JudgeLedger } from "./decisions/ledger.ts";
@@ -131,7 +132,8 @@ export async function createApp(options: AppOptions): Promise<App> {
   // One settings store for the engine (decider defaults), the RPC server and the decisions client.
   const settings = options.settings ?? new SettingsStore({ ...(config.settingsPath === undefined ? {} : { path: config.settingsPath }), log });
   // read per command, after `registry` below exists
-  const engine = new Engine({ store, defaults: () => deciderDefaults(settings, registry) });
+  // a snapshot is trusted only by the build that wrote it; source runs always replay (the projector changes without a version change)
+  const engine = new Engine({ store, defaults: () => deciderDefaults(settings, registry), log: (msg) => log(msg), snapshotTag: IS_BUILD ? VERSION : null });
   const registry = new DriverRegistry({ env: { dataDir: config.dataDir, log } });
   if (options.registerDrivers) await options.registerDrivers(registry);
   else await registerBundledDrivers(registry, config.providers, log);
@@ -244,6 +246,14 @@ export async function createApp(options: AppOptions): Promise<App> {
   await recoverLostChildren(engine, { log });
   await recoverRollbacks(engine, { log });
   if (settings.get().continueAfterRestart) await continueAfterRestart(engine, recovered.threadIds, { log });
+  // B3: settled turns' text deltas from before this boot become one row per run (incremental via a watermark)
+  try {
+    await engine.drain();
+    const compacted = engine.compact();
+    if (compacted.deleted > 0) log(`[app] compacted ${compacted.runs} delta runs (${compacted.deleted} rows removed)`);
+  } catch (err) {
+    log("[app] boot compaction failed", err);
+  }
 
   const repoBackfill = new RepoBackfill({ engine, log });
   repoBackfill.start();
@@ -366,6 +376,14 @@ export async function createApp(options: AppOptions): Promise<App> {
       await withTimeout(delegation.drain(), options.shutdownTimeoutMs ?? DEFAULT_SHUTDOWN_TIMEOUT_MS, log);
       delegation.stop();
       await registry.dispose();
+      // B3: the next boot resumes from here instead of replaying the whole log
+      try {
+        await engine.drain();
+        const snap = engine.snapshot();
+        if (snap !== undefined) log(`[app] snapshot at seq ${snap.seq} (${Math.round(snap.bytes / 1024)} KiB, ${Math.round(snap.ms)} ms)`);
+      } catch (err) {
+        log("[app] snapshot on shutdown failed", err);
+      }
       if (!options.keepStoreOpen) store.close();
     },
   };
