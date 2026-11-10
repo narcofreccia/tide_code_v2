@@ -13,6 +13,7 @@ tide doctor [--port <n>]
 tide triage [--issue] [--no-agent] [--port <n>]
 tide service install [serve flags] | uninstall | status
 tide update [--check] [--yes]
+tide token rotate
 tide --version
 ```
 
@@ -99,19 +100,48 @@ tide-server.service`); otherwise it says `restart tide-server to use a.b.c`. Cod
 
 | Route | Auth | CORS | Answer |
 |---|---|---|---|
-| `GET /health` | none | configured origins | `{ok, environmentId, version}` |
-| `GET /api/env` | none | `*` | `EnvProbe {environmentId, name, version, protocol}` |
-| `POST /api/auth/pair` `{code, name?}` | pairing code | `*` | `PairResponse {environmentId, name, token}` (a per-device token); 400 bad body, 401 wrong/expired/used code, 429 rate-limited (`Retry-After: 60`) |
-| `POST /api/auth/ws-ticket` | `Authorization: Bearer <master or live device token>` | `*` | `{ticket, expiresAt}` (single use, 5 min) |
-| `POST /hook/<hookId>` | hook id, optional HMAC | none | fires a webhook task, see below |
+| `GET /health` | none | trusted origins | `{ok, environmentId, version}` |
+| `GET /api/env` | none | trusted origins | `EnvProbe {environmentId, name, version, protocol}` |
+| `POST /api/auth/pair` `{code, name?}` | pairing code + Origin rule | trusted origins | `PairResponse {environmentId, name, token, clientId}` (a per-device token); 400 bad body, 401 wrong/expired/used code, 403 untrusted Origin, 429 rate-limited (`Retry-After: 60`) |
+| `POST /api/auth/ws-ticket` | `Authorization: Bearer <master or live device token>` | echoes any Origin | `{ticket, expiresAt}` (single use, 5 min) |
+| `POST /hook/<hookId>` | hook id, optional HMAC, Origin rule | none | fires a webhook task, see below; 403 untrusted Origin |
 | `GET /pair` | none | none | static explainer that reads `#token=` from the fragment |
 | `GET /ws` (upgrade) | `wsTicket`, `agentToken`, or `token` (master, `--dev` only) | n/a | the RPC socket |
 | anything else, GET | none | none | the web client, or a pairing-instructions page at `/` |
 
-**CORS stance.** Origins do not protect anything here. The token, a ticket, or a pairing code
-does. Routes guarded by one of those, plus the public probe, answer `Access-Control-Allow-Origin: *`
-so a client served from any origin (a hosted web app, a relay URL, a LAN address) can call
-them. `/health` keeps the configured-origins rule (`TIDE_CORS_ORIGINS`, the dev server).
+Every request, HTTP and WebSocket upgrade alike, first passes the Host check, then the routes
+apply their Origin and CORS rules. Code: `apps/server/src/rpc/hostOrigin.ts`.
+
+**Host check (DNS rebinding).** A rebinding page keeps its own name while that name starts
+resolving to this machine, so the browser sends `Host: evil.example`. The server answers only to:
+IP literals (any: a page cannot make the browser send an IP-literal Host without its URL being
+that IP, which is an ordinary cross-origin request), `localhost` and `*.localhost`, the machine's
+hostname, `<hostname>.local`, the mDNS host name (`tide-<id>.local`), and the names in
+`TIDE_ALLOWED_HOSTS` (comma-separated, ports ignored, `*` turns the check off). Anything else gets
+`421` with a one-line text body naming `TIDE_ALLOWED_HOSTS`; an upgrade gets the same `421` before
+the handshake. A request without a Host header (HTTP/1.0 tools) passes. Reaching a server by a DNS
+name (a Tailscale MagicDNS name, a reverse proxy) needs that name in `TIDE_ALLOWED_HOSTS`.
+
+**Origin rule.** Token-bearing requests are not origin-checked: legitimate clients live on many
+origins (another machine's dev server, its Tauri shell, the page its own tide-server serves), and
+the bearer token is the guard. The two unauthenticated routes that change state,
+`POST /api/auth/pair` and `POST /hook/<id>`, refuse (403 `forbidden`) a browser request from a page
+that could be on the public web:
+
+| Origin | Verdict |
+|---|---|
+| none (curl, the CLI, webhook senders, tide-mcp) | accepted |
+| `null`, unparseable | refused (a sandboxed iframe on any site sends `null`) |
+| a non-http(s) scheme (`tauri://localhost`, app schemes) | accepted: a web page cannot have one |
+| http(s) with host `localhost`, `*.localhost` (also `tauri.localhost`), a loopback, private (RFC 1918), link-local or CGNAT/Tailscale (100.64/10) IP, an IPv6 ULA or link-local IP, a `*.local` name, a single-label name | accepted: none is a public web page |
+| the request's own Host (a page this server served), a `TIDE_ALLOWED_HOSTS` name, a `TIDE_CORS_ORIGINS` entry, the configured relay's origin | accepted |
+| anything else (a public domain or public IP) | refused |
+
+**CORS.** No route answers `Access-Control-Allow-Origin: *` any more. `/health`, `/api/env` and
+`/api/auth/pair` echo the request's Origin (with `Vary: Origin`) only when the Origin rule accepts
+it, so a public page can no longer read the probe of a LAN server. `/api/auth/ws-ticket` echoes any
+Origin: the bearer token guards it. Preflights follow the route's rule. Relayed answers carry the
+relay's own `*` (the relay replaces `access-control-*`).
 
 **Constant-time compares.** Bearer tokens, the dev `?token=`, pairing codes and webhook
 signatures go through `safeEqual` (`crypto.timingSafeEqual`). Tickets are 256-bit random
@@ -136,7 +166,9 @@ map keys.
    `ws(s)://…/ws?wsTicket=<ticket>`.
 
 Brute force: attempts are limited to 5 per minute per remote address, and after 20 wrong guesses
-in total every outstanding code is burnt.
+in total every outstanding code is burnt. Attempts that come through the relay arrive from
+loopback; they share one bucket of 3 per minute (`RELAY_BUCKET`, see Relay). The attempts map
+keeps at most 1024 addresses and evicts the least recent one past that.
 
 ## Discovery
 
@@ -160,6 +192,10 @@ the sha256 is stored, in `<TIDE_HOME>/clients.json` (mode 0600) with the device 
 The master token in `server.json` is never handed out by pairing.
 
 - `ws-ticket` accepts the master token or a live device token; the ticket carries the `clientId`.
+- Each ticket bought with a device token records `lastUsedAt` in `clients.json` (written at most once
+  an hour per token). A token whose newest of `createdAt`, `lastSeenAt` and `lastUsedAt` is more than
+  90 days old is rejected and removed, at load and on lookup. Files written before this field load
+  unchanged.
 - A raw `?token=` on the WebSocket stays master-only and works only with `--dev`.
 - `env.clients.list` returns the paired devices; `env.clients.revoke {id}` removes one and closes
   its sockets with code 4401. The client shows "Pair again" for that machine, and the revoked
@@ -168,6 +204,44 @@ The master token in `server.json` is never handed out by pairing.
   machine › Paired devices.
 - `tide triage` never includes `clients.json` in its bundle.
 - Devices paired before this change still hold the master token and do not appear in the list.
+
+## Owner and paired devices
+
+A socket is the **owner** when its ticket was bought with the master token (no `clientId`): the
+local desktop shell, the local browser with the dev token, `tide pair`. A socket whose ticket came
+from a device token is a **paired device**. The router runs one guard (`deviceGuard` in
+`apps/server/src/rpc/env.ts`) before every handler; a refusal is the `forbidden` code with a
+sentence saying where to do it instead.
+
+| Call | Paired device |
+|---|---|
+| `env.pairingCode` | refused: only the owner lets new devices in |
+| `env.clients.list` | answered with the device's own row only |
+| `env.clients.revoke {id}` | allowed for its own id (unpair itself), refused for any other |
+| `settings.set` with `relay` or `environment.lanBind` | refused: a device does not change how the machine is exposed; every other key stays writable |
+| `server.info` | answered without `remote.pairingUrl` (it embeds the master token) |
+| everything else (threads, fs, pty, git, settings.get, `env.updateHarnesses`) | allowed |
+
+The web client knows which it holds from `KnownEnvironment.clientId` (set by pairing): on a device,
+Settings › Environments › This machine hides "Pair another device" and "Reachable on the LAN", and
+Paired devices becomes "This device" with only its own row. A `forbidden` answer hides the row
+instead of showing an error.
+
+This is a boundary for the management surface, not a sandbox. A paired device has a full shell on
+the machine by design: it opens terminals (pty), browses the filesystem (`fs.browse`), creates
+projects at any path and runs harnesses with the user's credentials, so it can read `server.json`
+or `clients.json` like any local process. Pair only devices you would hand a logged-in terminal.
+The transport on the LAN is plain HTTP and WebSocket: anyone who can watch the network sees
+tickets and traffic. Use a network you trust, Tailscale, or the relay behind TLS.
+
+### `tide token rotate`
+
+Writes a new master token to `<TIDE_HOME>/server.json` (every other field kept; 0600, through a temp
+file and a rename) and prints what follows. A running server keeps the old token in memory until it
+restarts; nothing is hot-swapped, and the command says so when `runtime.json` names a live pid.
+After the restart the desktop shell reads the new token from `server.json` at boot, devices paired
+with a code keep their device tokens, and clients holding the old master token (paired before
+per-device tokens, or given the token by hand) must pair again. Code: `apps/server/src/cli/token.ts`.
 
 ## Desktop modes
 
@@ -215,11 +289,17 @@ per machine under Settings › Environments). A foreign folder at the target is 
 - `git.pushThreadBranches` is `never`, `on-checkpoint` or `on-merge-request`. `on-checkpoint`
   pushes `tide/*` after each checkpoint (committed work only; a failure posts one muted info);
   `on-merge-request` pushes once when a merge is requested. Pushes never force.
-- `git.syncBaseWithRemote` (on by default; `pushThreadBranches` defaults to `never`) fetches and fast-forwards the base before a local merge
-  and pushes the base afterwards. A dirty base, a diverged base or an unreachable origin refuses
-  the merge with that reason in `merge.report`; turn the setting off to merge offline. A push
-  failure keeps the local merge and posts an error. The PR path (`gh pr`) skips both.
-- A merge runs on the thread's owner machine; the merge panel says where, and the toast offers
+- `git.syncBaseWithRemote` (on by default; `pushThreadBranches` defaults to `never`) fetches and
+  fast-forwards the base before a local merge. The fetch has a 15 s timeout
+  (`SYNC_FETCH_TIMEOUT_MS`). A base that is behind origin with a dirty checkout, or that diverged
+  from origin, refuses the merge with that reason in `merge.report`. An unreachable origin (no
+  answer, timeout, auth failure) does not refuse: the thread gets a "Base not synced" info row and
+  the merge goes into the local base.
+- `git.pushBaseAfterMerge` (off by default, independent of the sync) pushes the base to origin
+  after a local merge. A push failure keeps the local merge and posts an error. With it off, a
+  merge never publishes the base. The PR path (`gh pr`) skips the sync and the push.
+- A merge runs on the thread's owner machine; the merge panel says where and, from that
+  machine's settings, whether the base will be pushed. Only when it is does the toast offer
   "Pull <base> here" to fast-forward the clone you are looking at.
 - With `git.generateMessages` on, the squash subject and the publish commit/PR text come from the
   text model (`generateCommitMessage`: `--stat` plus a 4 KB patch, 5 s), falling back to

@@ -2,6 +2,15 @@ import { randomInt, timingSafeEqual } from "node:crypto";
 
 export const PAIR_CODE_TTL_MS = 5 * 60_000;
 export const PAIR_ATTEMPTS_PER_MINUTE = 5;
+/**
+ * R18: every attempt that arrives through the relay shares one bucket (the relay forwards no
+ * client address the server could trust), so that bucket is stricter than a single LAN address.
+ */
+export const RELAY_PAIR_ATTEMPTS_PER_MINUTE = 3;
+/** the bucket key for relayed attempts; never a real socket address */
+export const RELAY_BUCKET = "relay";
+/** R18: bound on tracked addresses; the oldest entry is evicted past it */
+export const MAX_TRACKED_ADDRESSES = 1024;
 /** wrong guesses (from any address) after which every outstanding code is burnt */
 const MAX_FAILURES_PER_CODE = 20;
 const WINDOW_MS = 60_000;
@@ -47,17 +56,27 @@ export class PairingCodes {
     return { code, expiresAt };
   }
 
-  /** `ok` exactly once per live code; every call counts against the caller's per-minute budget. */
+  /**
+   * `ok` exactly once per live code; every call counts against the caller's per-minute budget.
+   * `address` is the bucket: the socket's remote address, or RELAY_BUCKET for relayed attempts.
+   */
   exchange(code: string, address: string): PairOutcome {
     const now = this.#now();
+    const limit = address === RELAY_BUCKET ? RELAY_PAIR_ATTEMPTS_PER_MINUTE : PAIR_ATTEMPTS_PER_MINUTE;
     const recent = (this.#attempts.get(address) ?? []).filter((t) => now - t < WINDOW_MS);
-    if (recent.length >= PAIR_ATTEMPTS_PER_MINUTE) {
+    if (recent.length >= limit) {
       this.#attempts.set(address, recent);
       return "rate-limited";
     }
     recent.push(now);
+    // re-insert so Map order is least-recently-attempted first, then evict past the bound
+    this.#attempts.delete(address);
     this.#attempts.set(address, recent);
     this.#sweep();
+    while (this.#attempts.size > MAX_TRACKED_ADDRESSES) {
+      const oldest = this.#attempts.keys().next().value as string;
+      this.#attempts.delete(oldest);
+    }
     let match: string | undefined;
     // compare against every live code so the timing does not say which one was close
     for (const live of this.#codes.keys()) if (safeEqual(live, code)) match = live;
@@ -70,6 +89,11 @@ export class PairingCodes {
     }
     this.#codes.delete(match);
     return "ok";
+  }
+
+  /** addresses currently tracked (tests) */
+  get trackedAddresses(): number {
+    return this.#attempts.size;
   }
 
   #sweep(): void {

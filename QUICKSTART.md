@@ -135,12 +135,31 @@ Environments → Add takes one of the printed URLs and the code. Details: `docs/
 
 | | |
 |---|---|
-| Server state, settings, logs | `~/.tide` (`server.json`, `settings.json`, `logs/`, `worktrees/`) |
+| Server state, settings, logs | `~/.tide` (`server.json`, `settings.json`, `data/events.sqlite`, `logs/`, `worktrees/`) |
 | Thread worktrees | `~/.tide/worktrees/<project>/<thread>/`, branch `tide/<title>` |
 | Checkpoints | `refs/tide/checkpoints/…` in your repo (refs only, no commits on your branches) |
 | Settings | top bar → Settings: providers, git, appearance, keyboard, remote, decisions |
 | Deleting | "Delete…" (rail right-click, header ⋯, Archived group) removes a thread, its branch and checkpoints for good; archive keeps them; child threads (forks, delegates) are deleted with it after a confirmation |
 | Escape hatch | thread header → "Open in terminal" runs `claude --resume <id>` (or the harness's equivalent) in the worktree |
+
+### Backup and restore
+
+`tide backup [--out <file>]` writes `tide-backup-<machine>-<YYYYMMDD-HHmmss>.tar.gz` in the
+current folder while the server keeps running: a `VACUUM INTO` snapshot of
+`data/events.sqlite`, `settings.json`, `uploads/` if present, and a `manifest.json` (Tide
+version, database `user_version`, machine name, time, sha256 of every file). API keys in
+`settings.json` (decisions key, relay key, provider-instance `env`) are left out unless you pass
+`--include-keys`. `server.json`, `clients.json`, `secrets/`, `logs/`, `worktrees/`, `shell.json`
+and caches are never in the archive.
+
+`tide restore <archive>` needs the server stopped. It checks the checksums and refuses a
+database schema newer than the binary knows. When `data/events.sqlite` already has events it
+asks for `--force`. The current database, `settings.json` and `uploads/` move to
+`~/.tide/pre-restore-<time>/` before the backup is copied in. `server.json` and `clients.json`
+are left alone, so the machine keeps its token and paired devices. The environment id is stored
+in the database, so a restored home answers with the id of the machine the backup came from.
+Worktrees are not part of a backup: threads whose worktree folder is missing still load, and
+their work comes back from the thread branch on the remote, if it was pushed.
 
 ## 6. Keyboard
 

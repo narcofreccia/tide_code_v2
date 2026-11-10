@@ -10,7 +10,7 @@ import { cpuUsage, memAvailable } from "./hostLoad.ts";
 import type { ClientTokenStore } from "./clientTokens.ts";
 import type { PairingCodes } from "./pairing.ts";
 import type { RemoteInfo } from "./remote.ts";
-import { RpcException, type RpcRouter } from "./router.ts";
+import { RpcException, type RpcCallContext, type RpcRouter } from "./router.ts";
 
 type ServerInfo = RpcOutput<"server.info">;
 export type HostFacts = NonNullable<ServerInfo["host"]>;
@@ -127,6 +127,32 @@ export async function envInfo(deps: EnvDeps): Promise<Pick<ServerInfo, "host" | 
   };
 }
 
+/**
+ * R18: what a paired device may not do. A socket whose ticket came from a device token
+ * (`ctx.clientId`) does ordinary work (threads, fs, pty, settings) but not what decides who else
+ * gets in or how the machine is exposed. Owner = master token (desktop shell, dev browser, CLI).
+ * `env.clients.list` is not refused: its handler answers a device with its own row only.
+ */
+export function deviceGuard(method: string, params: unknown, ctx: Pick<RpcCallContext, "clientId">): string | undefined {
+  const clientId = ctx.clientId;
+  if (clientId === undefined) return undefined;
+  switch (method) {
+    case "env.pairingCode":
+      return "only the machine's owner can pair new devices; open Tide on that machine (or run `tide pair` there)";
+    case "env.clients.revoke":
+      // a device may unpair itself, not the others
+      return (params as { id?: unknown }).id === clientId ? undefined : "a paired device can revoke only itself; revoke other devices from the machine itself";
+    case "settings.set": {
+      const patch = (params as { patch?: { relay?: unknown; environment?: { lanBind?: unknown } } }).patch;
+      if (patch?.relay !== undefined) return "a paired device cannot change the relay settings; change them on the machine itself";
+      if (patch?.environment?.lanBind !== undefined) return "a paired device cannot change whether the machine is reachable on the LAN; change it on the machine itself";
+      return undefined;
+    }
+    default:
+      return undefined;
+  }
+}
+
 export function registerEnvHandlers(router: RpcRouter, deps: EnvDeps): void {
   router.register("env.pairingCode", async () => {
     const { code, expiresAt } = deps.pairing.issue();
@@ -144,8 +170,12 @@ export function registerEnvHandlers(router: RpcRouter, deps: EnvDeps): void {
     }
   });
 
-  // agent sockets never reach env.* (the router keeps them to agent.*); a device may revoke itself
-  router.register("env.clients.list", async () => ({ clients: deps.clients?.store.list() ?? [] }));
+  // agent sockets never reach env.* (the router keeps them to agent.*); a device sees and may
+  // revoke only its own row (deviceGuard refuses the rest)
+  router.register("env.clients.list", async (_input, ctx) => {
+    const all = deps.clients?.store.list() ?? [];
+    return { clients: ctx.clientId === undefined ? all : all.filter((c) => c.id === ctx.clientId) };
+  });
   router.register("env.clients.revoke", async ({ id }) => {
     // ok: false = no such device (already revoked, or a typo)
     const clients = deps.clients;

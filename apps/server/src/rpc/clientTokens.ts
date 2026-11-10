@@ -6,11 +6,20 @@ import { safeEqual } from "./pairing.ts";
 
 /** at most one `lastSeenAt` write to disk per client per minute */
 export const TOUCH_WRITE_INTERVAL_MS = 60_000;
+/** R18: at most one `lastUsedAt` write to disk per token per hour */
+export const USE_WRITE_INTERVAL_MS = 60 * 60_000;
+/** R18: a device token nobody used for this long is rejected and dropped */
+export const TOKEN_IDLE_EXPIRY_MS = 90 * 24 * 60 * 60_000;
 
 interface StoredClient extends PairedClient {
   /** sha256 hex of the token; the token itself is never stored */
   hash: string;
+  /** R18: last ticket purchase with this token (absent in files written before R18) */
+  lastUsedAt?: number;
 }
+
+/** The newest sign of life: a ticket purchase, an open socket, or the pairing itself. */
+const lastActivity = (c: StoredClient): number => Math.max(c.createdAt, c.lastSeenAt ?? 0, c.lastUsedAt ?? 0);
 
 interface StoredFile {
   version: 1;
@@ -30,7 +39,14 @@ const hashOf = (token: string): string => createHash("sha256").update(token, "ut
 function isStored(value: unknown): value is StoredClient {
   if (typeof value !== "object" || value === null) return false;
   const v = value as Record<string, unknown>;
-  return typeof v["id"] === "string" && typeof v["name"] === "string" && typeof v["createdAt"] === "number" && typeof v["hash"] === "string" && /^[0-9a-f]{64}$/.test(v["hash"]);
+  return (
+    typeof v["id"] === "string" &&
+    typeof v["name"] === "string" &&
+    typeof v["createdAt"] === "number" &&
+    typeof v["hash"] === "string" &&
+    /^[0-9a-f]{64}$/.test(v["hash"]) &&
+    (v["lastUsedAt"] === undefined || typeof v["lastUsedAt"] === "number")
+  );
 }
 
 /**
@@ -45,6 +61,8 @@ export class ClientTokenStore {
   #clients: StoredClient[];
   /** last time each client's `lastSeenAt` reached the disk */
   #touchWritten = new Map<string, number>();
+  /** last time each client's `lastUsedAt` reached the disk */
+  #useWritten = new Map<string, number>();
   #dirty = false;
 
   /** clients.json lives beside settings.json (so a `--data` scratch run never touches ~/.tide). */
@@ -58,6 +76,7 @@ export class ClientTokenStore {
     this.#random = options.random ?? ((n) => randomBytes(n));
     this.#log = options.log ?? ((msg, data) => (data === undefined ? console.error(msg) : console.error(msg, data)));
     this.#clients = this.#load();
+    if (this.#dropExpired() > 0) this.#save();
   }
 
   mint(name: string, address: string): { id: string; token: string } {
@@ -72,8 +91,12 @@ export class ClientTokenStore {
     return { id, token };
   }
 
-  /** The client id for a live token. Compares against every hash so timing does not say which one was close. */
+  /**
+   * The client id for a live token. Compares against every hash so timing does not say which one
+   * was close. A token idle for TOKEN_IDLE_EXPIRY_MS is dropped here too (a server that runs for months).
+   */
   resolve(token: string): string | undefined {
+    if (this.#dropExpired() > 0) this.#save();
     const hash = hashOf(token);
     let match: string | undefined;
     for (const client of this.#clients) if (safeEqual(client.hash, hash)) match = client.id;
@@ -99,8 +122,23 @@ export class ClientTokenStore {
     this.#save();
   }
 
+  /** R18: a ticket was bought with this client's token; persisted at most once per hour. */
+  use(id: string): void {
+    const client = this.#clients.find((c) => c.id === id);
+    if (!client) return;
+    const now = this.#now();
+    client.lastUsedAt = now;
+    const written = this.#useWritten.get(id);
+    if (written !== undefined && now - written < USE_WRITE_INTERVAL_MS) {
+      this.#dirty = true;
+      return;
+    }
+    this.#useWritten.set(id, now);
+    this.#save();
+  }
+
   list(): PairedClient[] {
-    return this.#clients.map(({ hash: _hash, ...client }) => ({ ...client }));
+    return this.#clients.map(({ hash: _hash, lastUsedAt: _used, ...client }) => ({ ...client }));
   }
 
   revoke(id: string): boolean {
@@ -108,8 +146,21 @@ export class ClientTokenStore {
     this.#clients = this.#clients.filter((c) => c.id !== id);
     if (this.#clients.length === before) return false;
     this.#touchWritten.delete(id);
+    this.#useWritten.delete(id);
     this.#save();
     return true;
+  }
+
+  /** Removes tokens idle for longer than TOKEN_IDLE_EXPIRY_MS; returns how many went. */
+  #dropExpired(): number {
+    const now = this.#now();
+    const live = this.#clients.filter((c) => now - lastActivity(c) < TOKEN_IDLE_EXPIRY_MS);
+    const dropped = this.#clients.length - live.length;
+    if (dropped > 0) {
+      for (const c of this.#clients) if (!live.includes(c)) this.#log(`[clients] device "${c.name}" (${c.id}) unused for 90 days; its token was removed`);
+      this.#clients = live;
+    }
+    return dropped;
   }
 
   /** Writes touches the debounce held back (server shutdown). */

@@ -28,6 +28,11 @@ export interface RpcCallContext {
   requestId: string;
   /** set when the socket authenticated with an agent token: the thread it speaks for */
   agentThreadId?: string;
+  /**
+   * R18: set when the socket's ticket was bought with a paired device's token. Absent on a client
+   * socket = the owner (master token: the local desktop shell, the dev browser, `tide pair`).
+   */
+  clientId?: string;
   /** cancels an active stream on this connection */
   cancelStream(id: string): boolean;
 }
@@ -35,7 +40,15 @@ export interface RpcCallContext {
 export interface ConnectionOptions {
   /** an agent connection may call `agent.*` (and nothing else); a client connection the reverse */
   agentThreadId?: string;
+  /** R18: a paired device's socket; the router's guard may refuse owner-only calls on it */
+  clientId?: string;
 }
+
+/**
+ * R18: a per-call policy run after the params validate and before the handler: a string is the
+ * refusal message (sent as `forbidden`), undefined lets the call through.
+ */
+export type RpcGuard = (method: string, params: unknown, ctx: RpcCallContext) => string | undefined;
 
 const AGENT_PREFIX = "agent.";
 /** harmless on either kind of socket */
@@ -48,6 +61,12 @@ type StreamFn = (input: unknown, ctx: RpcCallContext, emit: (chunk: unknown) => 
 export class RpcRouter {
   #unary = new Map<string, UnaryFn>();
   #streams = new Map<string, StreamFn>();
+  #guard: RpcGuard | undefined;
+
+  /** R18: installs the call policy (one per router; see env.ts `deviceGuard`). */
+  guard(fn: RpcGuard): void {
+    this.#guard = fn;
+  }
 
   register<M extends UnaryMethodName>(
     name: M,
@@ -68,7 +87,7 @@ export class RpcRouter {
   }
 
   connection(connectionId: string, send: Send, options: ConnectionOptions = {}): RpcConnection {
-    return new RpcConnection(this.#unary, this.#streams, connectionId, send, options);
+    return new RpcConnection(this.#unary, this.#streams, connectionId, send, options, () => this.#guard);
   }
 }
 
@@ -81,6 +100,8 @@ export class RpcConnection {
   #active = new Map<string, { cancel: (() => void) | null; closed: boolean }>();
   #closed = false;
   #agentThreadId: string | undefined;
+  #clientId: string | undefined;
+  #guard: () => RpcGuard | undefined;
 
   constructor(
     unary: Map<string, UnaryFn>,
@@ -88,12 +109,15 @@ export class RpcConnection {
     connectionId: string,
     send: Send,
     options: ConnectionOptions = {},
+    guard: () => RpcGuard | undefined = () => undefined,
   ) {
     this.#unary = unary;
     this.#streams = streams;
     this.#connectionId = connectionId;
     this.#send = send;
     this.#agentThreadId = options.agentThreadId;
+    this.#clientId = options.clientId;
+    this.#guard = guard;
   }
 
   get agentThreadId(): string | undefined {
@@ -143,8 +167,14 @@ export class RpcConnection {
       connectionId: this.#connectionId,
       requestId: id,
       ...(this.#agentThreadId !== undefined ? { agentThreadId: this.#agentThreadId } : {}),
+      ...(this.#clientId !== undefined ? { clientId: this.#clientId } : {}),
       cancelStream: (streamId) => this.cancelStream(streamId),
     };
+    const refusal = this.#guard()?.(method, params, ctx);
+    if (refusal !== undefined) {
+      this.#error(id, "forbidden", refusal);
+      return;
+    }
 
     const unary = this.#unary.get(method);
     if (unary) {

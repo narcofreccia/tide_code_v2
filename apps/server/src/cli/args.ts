@@ -10,7 +10,10 @@ export type CliCommand =
   | { cmd: "doctor"; port?: number }
   | { cmd: "triage"; issue: boolean; noAgent: boolean; port?: number }
   | { cmd: "service"; action: "install" | "uninstall" | "status"; serveArgs: string[] }
-  | { cmd: "update"; check: boolean; yes: boolean };
+  | { cmd: "update"; check: boolean; yes: boolean }
+  | { cmd: "backup"; out?: string; includeKeys: boolean }
+  | { cmd: "restore"; archive: string; force: boolean }
+  | { cmd: "token"; action: "rotate" };
 
 export class CliError extends Error {}
 
@@ -28,6 +31,16 @@ export const USAGE = `usage:
              run \`tide serve\` at login (launchd on macOS, systemd --user on Linux, Task Scheduler on Windows)
   tide update [--check] [--yes]
              update a headless install (binary + web/) to the latest release and restart the service
+  tide backup [--out <file>] [--include-keys]
+             write the database, settings.json and uploads to one tar.gz (works while the server runs);
+             API keys in settings.json are left out unless --include-keys; server.json, clients.json,
+             secrets, logs and worktrees are never included
+  tide restore <archive> [--force]
+             restore a backup into TIDE_HOME with the server stopped; the current database, settings
+             and uploads move to pre-restore-<time>/ (--force is needed when the database has events)
+  tide token rotate
+             write a new master token to <TIDE_HOME>/server.json (restart the server to use it);
+             devices paired with a code keep working, holders of the old master token pair again
   tide --version
   tide --mcp  (internal: the Tide MCP stdio server)
 
@@ -114,6 +127,35 @@ export function parseCli(argv: string[]): CliCommand {
         else throw new CliError(`unknown argument ${arg} for tide update`);
       }
       return out;
+    }
+    case "backup": {
+      const out: { cmd: "backup"; out?: string; includeKeys: boolean } = { cmd: "backup", includeKeys: false };
+      for (let i = 0; i < rest.length; i++) {
+        const arg = rest[i];
+        if (arg === "--include-keys") out.includeKeys = true;
+        else if (arg === "--out") {
+          const file = rest[++i];
+          if (file === undefined || file.startsWith("--")) throw new CliError("--out needs a file path");
+          out.out = file;
+        } else throw new CliError(`unknown argument ${String(arg)} for tide backup`);
+      }
+      return out;
+    }
+    case "restore": {
+      let archive: string | undefined;
+      let force = false;
+      for (const arg of rest) {
+        if (arg === "--force") force = true;
+        else if (arg.startsWith("--")) throw new CliError(`unknown argument ${arg} for tide restore`);
+        else if (archive !== undefined) throw new CliError("tide restore takes one archive");
+        else archive = arg;
+      }
+      if (archive === undefined) throw new CliError("tide restore needs the archive to restore");
+      return { cmd: "restore", archive, force };
+    }
+    case "token": {
+      if (rest.length === 1 && rest[0] === "rotate") return { cmd: "token", action: "rotate" };
+      throw new CliError("usage: tide token rotate");
     }
     default:
       // flags without a subcommand: the original `tide-server --port … --host …` form

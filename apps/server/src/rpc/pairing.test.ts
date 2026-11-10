@@ -1,5 +1,5 @@
 import { describe, expect, it } from "vitest";
-import { PairingCodes, safeEqual } from "./pairing.ts";
+import { MAX_TRACKED_ADDRESSES, PairingCodes, RELAY_BUCKET, RELAY_PAIR_ATTEMPTS_PER_MINUTE, safeEqual } from "./pairing.ts";
 
 describe("PairingCodes", () => {
   it("issues distinct 6-digit codes that expire after 5 minutes", () => {
@@ -25,5 +25,24 @@ describe("PairingCodes", () => {
     expect(safeEqual("abc", "abc")).toBe(true);
     expect(safeEqual("abc", "abd")).toBe(false);
     expect(safeEqual("abc", "abcd")).toBe(false);
+  });
+
+  it("gives relayed attempts one stricter bucket of their own", () => {
+    let now = 0;
+    const codes = new PairingCodes({ now: () => now });
+    for (let i = 0; i < RELAY_PAIR_ATTEMPTS_PER_MINUTE; i++) expect(codes.exchange("000001", RELAY_BUCKET)).toBe("invalid");
+    const { code } = codes.issue();
+    expect(codes.exchange(code, RELAY_BUCKET)).toBe("rate-limited");
+    // loopback and LAN addresses keep their own budget
+    expect(codes.exchange("000002", "127.0.0.1")).toBe("invalid");
+    now += 60_001;
+    expect(codes.exchange(code, RELAY_BUCKET)).toBe("ok");
+  });
+
+  it("bounds the attempts map, evicting the least recent address", () => {
+    const codes = new PairingCodes({ now: () => 0 });
+    // 20 failures burn codes but the per-address map keeps growing: keep it bounded anyway
+    for (let i = 0; i < MAX_TRACKED_ADDRESSES + 50; i++) codes.exchange("000001", `10.0.${i >> 8}.${i & 255}`);
+    expect(codes.trackedAddresses).toBe(MAX_TRACKED_ADDRESSES);
   });
 });

@@ -59,10 +59,18 @@ opening is queued by the environment client. Close codes that cannot be sent on 
 replaces any `access-control-*` from the environment with its own `*`.
 
 Every relayed HTTP request and loopback WS upgrade carries **`x-tide-relay: 1`**. The environment
-sees these as loopback connections, so anything that trusts `req.socket.remoteAddress` (pairing
-rate limits, "local only" endpoints) must treat `x-tide-relay` as remote. The environment client
-always sets it, so relayed traffic can never pass as local; a direct client setting it only makes
-itself look remote.
+sees these as loopback connections. The server believes the header only from a loopback peer while
+a relay is configured (`server.info.relay` present); elsewhere it is ignored. A believed relayed
+pairing attempt counts against one shared bucket of 3 attempts a minute (`RELAY_BUCKET` in
+`apps/server/src/rpc/pairing.ts`) instead of the `127.0.0.1` bucket, and the device it mints
+records `relay` as its last address. The relay forwards no client address the server could trust
+(it passes client headers through, so an `x-forwarded-for` would be the client's own claim), which
+is why relayed attempts share one bucket; a per-client bucket needs the relay to set a header of
+its own from the socket address after stripping any incoming copy.
+
+Relayed requests reach the server with `Host: 127.0.0.1:<port>` (the client's `Host` is dropped),
+so they pass the Host check. The web client served through the relay has the relay's origin; the
+server accepts that origin on the pairing route while the relay is configured.
 
 ## Webhooks
 

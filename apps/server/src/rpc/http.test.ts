@@ -54,10 +54,13 @@ async function boot(overrides: Partial<ServerConfig> = {}, pairing?: PairingCode
   };
 }
 
+/** another machine's dev web server on the LAN: a legitimate cross-origin pairing client */
+const LAN_ORIGIN = "http://192.168.1.20:5173";
+
 const pair = (base: string, code: unknown, name?: unknown): Promise<Response> =>
   fetch(`${base}/api/auth/pair`, {
     method: "POST",
-    headers: { "content-type": "application/json", origin: "https://elsewhere.example" },
+    headers: { "content-type": "application/json", origin: LAN_ORIGIN },
     body: JSON.stringify(name === undefined ? { code } : { code, name }),
   });
 
@@ -81,19 +84,25 @@ describe("GET /api/env", () => {
   beforeAll(async () => (b = await boot()));
   afterAll(() => b.close());
 
-  it("answers without auth, with CORS *", async () => {
-    const res = await fetch(`${b.base}/api/env`, { headers: { origin: "https://app.example" } });
+  it("answers without auth; CORS echoes LAN/loopback/Tauri origins, not public ones", async () => {
+    const res = await fetch(`${b.base}/api/env`, { headers: { origin: LAN_ORIGIN } });
     expect(res.status).toBe(200);
-    expect(res.headers.get("access-control-allow-origin")).toBe("*");
+    expect(res.headers.get("access-control-allow-origin")).toBe(LAN_ORIGIN);
+    expect(res.headers.get("vary")).toBe("Origin");
+    const tauri = await fetch(`${b.base}/api/env`, { headers: { origin: "tauri://localhost" } });
+    expect(tauri.headers.get("access-control-allow-origin")).toBe("tauri://localhost");
+    const publicPage = await fetch(`${b.base}/api/env`, { headers: { origin: "https://app.example" } });
+    expect(publicPage.status).toBe(200);
+    expect(publicPage.headers.get("access-control-allow-origin")).toBeNull();
     const body = (await res.json()) as Record<string, unknown>;
     expect(body).toMatchObject({ environmentId: "env-http", version: "9.9.9-test", protocol: PROTOCOL_VERSION });
     expect(typeof body["name"]).toBe("string");
   });
 
-  it("answers a CORS preflight for the ticket route with *", async () => {
+  it("answers a CORS preflight for the ticket route by echoing any origin (the bearer token is the guard)", async () => {
     const res = await fetch(`${b.base}/api/auth/ws-ticket`, { method: "OPTIONS", headers: { origin: "https://app.example", "access-control-request-method": "POST" } });
     expect(res.status).toBe(204);
-    expect(res.headers.get("access-control-allow-origin")).toBe("*");
+    expect(res.headers.get("access-control-allow-origin")).toBe("https://app.example");
     expect(res.headers.get("access-control-allow-headers")).toContain("authorization");
   });
 
@@ -123,7 +132,7 @@ describe("pairing", () => {
       expect(issued.urls).toEqual([`http://127.0.0.1:${b.handle.port}`]);
       const ok = await pair(b.base, issued.code);
       expect(ok.status).toBe(200);
-      expect(ok.headers.get("access-control-allow-origin")).toBe("*");
+      expect(ok.headers.get("access-control-allow-origin")).toBe(LAN_ORIGIN);
       const body = (await ok.json()) as PairResponse;
       expect(body).toMatchObject({ environmentId: "env-http", clientId: expect.any(String) });
       expect(body.token).not.toBe(TOKEN); // never the master token

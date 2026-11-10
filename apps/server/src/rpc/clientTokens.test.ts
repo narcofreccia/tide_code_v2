@@ -1,8 +1,8 @@
-import { mkdtempSync, readFileSync, rmSync, statSync } from "node:fs";
+import { mkdtempSync, readFileSync, rmSync, statSync, writeFileSync } from "node:fs";
 import { tmpdir } from "node:os";
 import { join } from "node:path";
 import { afterEach, describe, expect, it } from "vitest";
-import { ClientTokenStore, TOUCH_WRITE_INTERVAL_MS } from "./clientTokens.ts";
+import { ClientTokenStore, TOKEN_IDLE_EXPIRY_MS, TOUCH_WRITE_INTERVAL_MS, USE_WRITE_INTERVAL_MS } from "./clientTokens.ts";
 
 const dirs: string[] = [];
 afterEach(() => {
@@ -53,11 +53,11 @@ describe("ClientTokenStore", () => {
     expect(onDisk(path).clients[0]).toMatchObject({ id, name: "phone", hash: expect.stringMatching(/^[0-9a-f]{64}$/) });
     if (process.platform !== "win32") expect(statSync(path).mode & 0o777).toBe(0o600);
 
-    const reloaded = new ClientTokenStore({ path });
+    const reloaded = new ClientTokenStore({ path, now: () => 5 });
     expect(reloaded.resolve(token)).toBe(id);
     expect(reloaded.list()).toEqual([{ id, name: "phone", createdAt: 5, lastSeenAt: 5, lastAddress: "10.0.0.5" }]);
     expect(reloaded.revoke(id)).toBe(true);
-    expect(new ClientTokenStore({ path }).list()).toEqual([]);
+    expect(new ClientTokenStore({ path, now: () => 5 }).list()).toEqual([]);
   });
 
   it("ignores an unreadable file", () => {
@@ -89,5 +89,46 @@ describe("ClientTokenStore", () => {
 
   it("puts clients.json beside settings.json", () => {
     expect(ClientTokenStore.pathFor(join("/h", "settings.json"))).toBe(join("/h", "clients.json"));
+  });
+
+  it("records lastUsedAt on ticket purchases, writing at most once an hour", () => {
+    const path = scratch();
+    let now = 1_000;
+    const store = new ClientTokenStore({ path, now: () => now, random: counter() });
+    const { id } = store.mint("phone", "10.0.0.5");
+    store.use(id);
+    expect(onDisk(path).clients[0]?.["lastUsedAt"]).toBe(1_000);
+    now += USE_WRITE_INTERVAL_MS - 1;
+    store.use(id);
+    expect(onDisk(path).clients[0]?.["lastUsedAt"]).toBe(1_000); // held back
+    now += 1;
+    store.use(id);
+    expect(onDisk(path).clients[0]?.["lastUsedAt"]).toBe(now);
+    // the wire shape stays PairedClient
+    expect(Object.keys(store.list()[0] ?? {})).not.toContain("lastUsedAt");
+  });
+
+  it("drops tokens unused for 90 days at load and on resolve; old files without lastUsedAt still load", () => {
+    const path = scratch();
+    const day = 24 * 60 * 60_000;
+    const hash = (c: string): string => c.repeat(64);
+    writeFileSync(
+      path,
+      JSON.stringify({
+        version: 1,
+        clients: [
+          { id: "stale", name: "old phone", createdAt: 0, lastSeenAt: 1 * day, hash: hash("a") },
+          { id: "used", name: "laptop", createdAt: 0, lastSeenAt: 1 * day, lastUsedAt: 50 * day, hash: hash("b") },
+          { id: "seen", name: "tablet", createdAt: 0, lastSeenAt: 60 * day, hash: hash("c") },
+        ],
+      }),
+    );
+    let now = 1 * day + TOKEN_IDLE_EXPIRY_MS;
+    const store = new ClientTokenStore({ path, now: () => now, log: () => undefined });
+    expect(store.list().map((c) => c.id)).toEqual(["used", "seen"]);
+    expect(onDisk(path).clients.map((c) => c["id"])).toEqual(["used", "seen"]);
+    now = 50 * day + TOKEN_IDLE_EXPIRY_MS;
+    store.resolve("whatever");
+    expect(store.list().map((c) => c.id)).toEqual(["seen"]);
   });
 });

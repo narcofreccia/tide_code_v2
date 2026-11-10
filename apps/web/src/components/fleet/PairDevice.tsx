@@ -3,6 +3,7 @@ import { call } from "../../state/model.ts";
 import { errorText } from "../../lib/dispatchOrToast.ts";
 import { copyText } from "../../lib/threadActions.ts";
 import { envOpt } from "./envView.ts";
+import { isForbidden, useOwnsEnvironment } from "./PairedDevices.tsx";
 import { Button } from "../ui/Button.tsx";
 import { SettingRow } from "../settings/ui/SettingRow.tsx";
 import styles from "./Environments.module.css";
@@ -37,6 +38,8 @@ export function PairDevice({ envId }: { envId: string | undefined }) {
   const [pairing, setPairing] = useState<Pairing | null>(null);
   const [error, setError] = useState<string | null>(null);
   const [busy, setBusy] = useState(false);
+  const owner = useOwnsEnvironment(envId);
+  const [refused, setRefused] = useState(false);
   const now = useNow(pairing !== null);
   const expired = pairing !== null && now >= pairing.expiresAt;
 
@@ -45,10 +48,12 @@ export function PairDevice({ envId }: { envId: string | undefined }) {
     setError(null);
     call("env.pairingCode", {}, envOpt(envId))
       .then((result) => setPairing(result))
-      .catch((err: unknown) => setError(errorText(err)))
+      .catch((err: unknown) => (isForbidden(err) ? setRefused(true) : setError(errorText(err))))
       .finally(() => setBusy(false));
   };
 
+  // R18: only the owner (master token) may mint pairing codes; a paired device sees no button
+  if (!owner || refused) return null;
   return (
     <SettingRow
       label="Pair another device"

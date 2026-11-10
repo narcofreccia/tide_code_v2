@@ -4,7 +4,9 @@ import type { ServerConfig } from "../config.ts";
 import { handleWebhook, WEBHOOK_MAX_BODY, type WebhookDeps } from "../scheduling/webhooks.ts";
 import { PROTOCOL_VERSION } from "../version.ts";
 import type { ClientTokenStore } from "./clientTokens.ts";
-import { safeEqual, type PairingCodes } from "./pairing.ts";
+import { hostRefusal, trustedOrigin, type HostPolicy } from "./hostOrigin.ts";
+import { RELAY_BUCKET, safeEqual, type PairingCodes } from "./pairing.ts";
+import { isLoopbackHost } from "./remote.ts";
 import { landingPage, pairPage, type RemoteInfo } from "./remote.ts";
 import { serveStatic } from "./static.ts";
 import type { TicketIssuer } from "./tickets.ts";
@@ -19,14 +21,19 @@ export interface HttpContext {
   /** settings.environment.name, read per request (the user may rename the machine) */
   envName: () => string;
   webhook: WebhookDeps;
+  /** R18: which Host names this server answers to (hostOrigin.ts) */
+  hosts: HostPolicy;
+  /** R18: the configured relay's http origin, read per request; undefined = no relay configured */
+  relayOrigin?: () => string | undefined;
 }
 
 /**
- * `configured`: only the origins in config.corsOrigins (the dev web server, TIDE_CORS_ORIGINS).
- * `any`: `*` — the route is either public (`/api/env`) or guarded by something other than the
- * origin (the bearer token, a single-use pairing code), so a browser on any origin may call it.
+ * R18. `trusted`: the request's Origin is echoed only when `trustedOrigin` accepts it (loopback,
+ * LAN, Tauri, this server's own pages, configured origins, the relay); public probe routes and
+ * pairing. `bearer`: any Origin is echoed (with `Vary: Origin`) because the bearer token is the
+ * guard and legitimate clients live on many origins. `none`: no CORS headers.
  */
-type Cors = "configured" | "any" | "none";
+type Cors = "trusted" | "bearer" | "none";
 
 interface Route {
   method: "GET" | "POST";
@@ -75,13 +82,27 @@ export function readBody(req: IncomingMessage, limit: number): Promise<Buffer | 
   });
 }
 
-function applyCors(cors: Cors, req: IncomingMessage, res: ServerResponse, allowed: string[]): void {
+/**
+ * R18: true when the relay client on this machine made this request: it dials loopback and sets
+ * `x-tide-relay: 1`. The header is believed only from a loopback peer while a relay is configured;
+ * anywhere else it is ignored (a direct client cannot borrow the relay's bucket).
+ */
+export function isRelayed(ctx: Pick<HttpContext, "relayOrigin">, req: IncomingMessage): boolean {
+  if (req.headers["x-tide-relay"] !== "1" || ctx.relayOrigin?.() === undefined) return false;
+  const peer = (req.socket.remoteAddress ?? "").replace(/^::ffff:/, "");
+  return isLoopbackHost(peer) || peer.startsWith("127.");
+}
+
+function originTrusted(ctx: HttpContext, req: IncomingMessage): boolean {
+  return trustedOrigin(req.headers.origin, { host: req.headers.host, hosts: ctx.hosts, corsOrigins: ctx.config.corsOrigins, relayOrigin: ctx.relayOrigin?.() });
+}
+
+function applyCors(cors: Cors, req: IncomingMessage, res: ServerResponse, ctx: HttpContext): void {
   const origin = req.headers.origin;
-  if (cors === "any") res.setHeader("Access-Control-Allow-Origin", "*");
-  else if (cors === "configured" && origin && allowed.includes(origin)) {
-    res.setHeader("Access-Control-Allow-Origin", origin);
-    res.setHeader("Vary", "Origin");
-  } else return;
+  if (origin === undefined || cors === "none") return;
+  if (cors === "trusted" && !originTrusted(ctx, req)) return;
+  res.setHeader("Access-Control-Allow-Origin", origin);
+  res.setHeader("Vary", "Origin");
   res.setHeader("Access-Control-Allow-Headers", "authorization, content-type");
   res.setHeader("Access-Control-Allow-Methods", "GET, POST, OPTIONS");
   res.setHeader("Access-Control-Max-Age", "600");
@@ -93,13 +114,13 @@ function routes(ctx: HttpContext): Route[] {
     {
       method: "GET",
       path: "/health",
-      cors: "configured",
+      cors: "trusted",
       handle: (_req, res) => json(res, 200, { ok: true, environmentId: config.environmentId, version: config.version }),
     },
     {
       method: "GET",
       path: "/api/env",
-      cors: "any",
+      cors: "trusted",
       handle: (_req, res) => {
         const probe: EnvProbe = { environmentId: config.environmentId, name: ctx.envName(), version: config.version, protocol: PROTOCOL_VERSION };
         json(res, 200, probe);
@@ -114,18 +135,20 @@ function routes(ctx: HttpContext): Route[] {
     {
       method: "POST",
       path: "/api/auth/ws-ticket",
-      cors: "any",
+      cors: "bearer",
       handle: (req, res) => {
         const grant = bearerGrant(ctx, req.headers.authorization);
         if (grant === undefined) return json(res, 401, { error: "unauthorized" });
+        if (grant.clientId !== undefined) ctx.clientTokens.use(grant.clientId);
         json(res, 200, ctx.tickets.issue("websocket", grant));
       },
     },
     {
       method: "POST",
       path: "/api/auth/pair",
-      cors: "any",
+      cors: "trusted",
       handle: async (req, res) => {
+        if (!originTrusted(ctx, req)) return refuseOrigin(res);
         const raw = await readBody(req, PAIR_BODY_MAX);
         if (raw === "too-large") return json(res, 413, { error: "payload-too-large" });
         let code: unknown;
@@ -139,7 +162,8 @@ function routes(ctx: HttpContext): Route[] {
         if (name !== undefined && (typeof name !== "string" || name.trim().length > CLIENT_NAME_MAX)) {
           return json(res, 400, { error: "invalid-params", message: `name must be a string of at most ${CLIENT_NAME_MAX} characters` });
         }
-        const address = req.socket.remoteAddress ?? "unknown";
+        // relayed attempts arrive from loopback: they share one stricter bucket (pairing.ts)
+        const address = isRelayed(ctx, req) ? RELAY_BUCKET : (req.socket.remoteAddress ?? "unknown");
         const outcome = ctx.pairing.exchange(code.trim(), address);
         if (outcome === "rate-limited") {
           res.setHeader("Retry-After", "60");
@@ -157,6 +181,7 @@ function routes(ctx: HttpContext): Route[] {
       path: "/hook/",
       cors: "none",
       handle: async (req, res, hookId) => {
+        if (!originTrusted(ctx, req)) return refuseOrigin(res);
         const raw = await readBody(req, WEBHOOK_MAX_BODY);
         if (raw === "too-large") return json(res, 413, { error: "payload-too-large" });
         const result = await handleWebhook(ctx.webhook, hookId, raw, req.headers);
@@ -165,6 +190,10 @@ function routes(ctx: HttpContext): Route[] {
       },
     },
   ];
+}
+
+function refuseOrigin(res: ServerResponse): void {
+  json(res, 403, { error: "forbidden", message: "this endpoint does not accept requests from a page on that origin" });
 }
 
 function match(route: Route, pathname: string): string | undefined {
@@ -185,6 +214,11 @@ function match(route: Route, pathname: string): string | undefined {
 export function createHttpHandler(ctx: HttpContext): (req: IncomingMessage, res: ServerResponse) => void {
   const table = routes(ctx);
   const handle = async (req: IncomingMessage, res: ServerResponse): Promise<void> => {
+    if (!ctx.hosts.allowsHost(req.headers.host)) {
+      res.writeHead(421, { "content-type": "text/plain; charset=utf-8" });
+      res.end(hostRefusal(req.headers.host));
+      return;
+    }
     const url = new URL(req.url ?? "/", "http://localhost");
     const method = req.method ?? "GET";
     const hits = table.flatMap((route) => {
@@ -192,14 +226,14 @@ export function createHttpHandler(ctx: HttpContext): (req: IncomingMessage, res:
       return param === undefined ? [] : [{ route, param }];
     });
     if (method === "OPTIONS") {
-      applyCors(hits[0]?.route.cors ?? "configured", req, res, ctx.config.corsOrigins);
+      applyCors(hits[0]?.route.cors ?? "trusted", req, res, ctx);
       res.writeHead(204);
       res.end();
       return;
     }
     const hit = hits.find((h) => h.route.method === method);
     if (hit) {
-      applyCors(hit.route.cors, req, res, ctx.config.corsOrigins);
+      applyCors(hit.route.cors, req, res, ctx);
       await hit.route.handle(req, res, hit.param);
       return;
     }

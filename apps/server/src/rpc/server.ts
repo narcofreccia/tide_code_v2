@@ -35,9 +35,10 @@ import { browse } from "./mdns/browser.ts";
 import { MdnsResponder } from "./mdns/responder.ts";
 import type { MdnsSocketFactory } from "./mdns/socket.ts";
 import { PROTOCOL_VERSION } from "../version.ts";
-import { envInfo, registerEnvHandlers, type EnvDeps, type RelayState } from "./env.ts";
+import { deviceGuard, envInfo, registerEnvHandlers, type EnvDeps, type RelayState } from "./env.ts";
 import { ClientTokenStore } from "./clientTokens.ts";
 import { createHttpHandler } from "./http.ts";
+import { ALLOWED_HOSTS_ENV, createHostPolicy, hostRefusal, parseAllowedHosts, relayOriginOf } from "./hostOrigin.ts";
 import { PairingCodes, safeEqual } from "./pairing.ts";
 import { registerRunStackHandlers } from "./runStack.ts";
 import { registerVcsHandlers } from "./vcs.ts";
@@ -97,6 +98,8 @@ export interface ServerDeps {
   forges?: ForgeResolver;
   /** R17: per-device tokens; in memory unless config.settingsPath says where clients.json lives */
   clientTokens?: ClientTokenStore;
+  /** R18: extra Host names to answer to; default: TIDE_ALLOWED_HOSTS from the environment */
+  allowedHosts?: string[];
   /** R17: LAN discovery over mDNS; tests hand in fake sockets */
   discovery?: { socketFactory?: MdnsSocketFactory; browse?: (timeoutMs: number) => Promise<DiscoveredPeer[]> };
 }
@@ -159,6 +162,7 @@ export async function startServer(deps: ServerDeps): Promise<ServerHandle> {
   });
 
   const router = new RpcRouter();
+  router.guard(deviceGuard);
   const settings = deps.settings ?? new SettingsStore(config.dataDir === ":memory:" ? {} : { path: SettingsStore.pathFor(config.tideHome) });
   const envDeps: EnvDeps = {
     engine,
@@ -228,6 +232,7 @@ export async function startServer(deps: ServerDeps): Promise<ServerHandle> {
     if (removed > 0) console.error(`[attachments] removed ${removed} upload dir(s) older than 30 days`);
   })().catch(() => undefined);
 
+  const hosts = createHostPolicy({ environmentId: config.environmentId, allowedHosts: deps.allowedHosts ?? parseAllowedHosts(process.env[ALLOWED_HOSTS_ENV]) });
   const http: Server = createServer(
     createHttpHandler({
       config,
@@ -237,6 +242,8 @@ export async function startServer(deps: ServerDeps): Promise<ServerHandle> {
       remote,
       envName: () => settings.get().environment.name,
       webhook: { engine, settings },
+      hosts,
+      relayOrigin: () => relayOriginOf(deps.relayState?.()?.url),
     }),
   );
 
@@ -268,6 +275,12 @@ export async function startServer(deps: ServerDeps): Promise<ServerHandle> {
       socket.destroy();
       return;
     }
+    // R18: the same Host rule as HTTP (DNS rebinding); refused before the handshake
+    if (!hosts.allowsHost(req.headers.host)) {
+      const body = hostRefusal(req.headers.host);
+      socket.end(`HTTP/1.1 421 Misdirected Request\r\nContent-Type: text/plain; charset=utf-8\r\nContent-Length: ${Buffer.byteLength(body)}\r\nConnection: close\r\n\r\n${body}`);
+      return;
+    }
     const authorized = authorize(url);
     wss.handleUpgrade(req, socket, head, (ws) => {
       if (!authorized) {
@@ -281,7 +294,8 @@ export async function startServer(deps: ServerDeps): Promise<ServerHandle> {
 
   wss.on("connection", (ws: WebSocket, req: IncomingMessage, privileges: Privileges = {}) => {
     alive.set(ws, true);
-    const { clientId, ...options } = privileges;
+    const { clientId } = privileges;
+    const options = { ...(privileges.agentThreadId !== undefined ? { agentThreadId: privileges.agentThreadId } : {}), ...(clientId !== undefined ? { clientId } : {}) };
     if (clientId !== undefined) {
       clientSockets.set(ws, clientId);
       clientTokens.touch(clientId, req.socket.remoteAddress ?? "unknown");

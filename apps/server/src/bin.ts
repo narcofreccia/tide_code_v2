@@ -59,6 +59,25 @@ async function main(): Promise<number | undefined> {
       console.log(result.text);
       return result.code;
     }
+    case "backup": {
+      const { runBackup } = await import("./cli/backup.ts");
+      const { tideHomeOf } = await import("./cli/runtime.ts");
+      return runBackup(
+        { includeKeys: command.includeKeys, ...(command.out !== undefined ? { out: command.out } : {}) },
+        { tideHome: tideHomeOf(), version: VERSION, log: (line) => console.log(line) },
+      );
+    }
+    case "restore": {
+      const { runRestore } = await import("./cli/restore.ts");
+      const { tideHomeOf } = await import("./cli/runtime.ts");
+      const { resolve } = await import("node:path");
+      return runRestore({ archive: resolve(command.archive), force: command.force }, { tideHome: tideHomeOf(), log: (line) => console.log(line) });
+    }
+    case "token": {
+      const { rotateToken } = await import("./cli/token.ts");
+      console.log(rotateToken());
+      return 0;
+    }
     case "update": {
       const { runUpdate, platformTriple } = await import("./cli/update.ts");
       const { realExec, selfCommand } = await import("./cli/service.ts");
@@ -93,7 +112,7 @@ main()
       process.exit(HOME_IN_USE_EXIT_CODE);
     }
     if (err instanceof CliError) console.error(`tide: ${err.message}\n\n${USAGE}`);
-    else if (err instanceof ConfigError || (err instanceof Error && err.name === "PairError")) console.error(`tide: ${err.message}`);
+    else if (err instanceof ConfigError || (err instanceof Error && (err.name === "PairError" || err.name === "TokenError"))) console.error(`tide: ${err.message}`);
     else console.error(err);
     process.exit(1);
   });

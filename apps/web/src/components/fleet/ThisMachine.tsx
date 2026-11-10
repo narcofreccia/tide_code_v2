@@ -10,7 +10,7 @@ import { SettingToggle } from "../settings/ui/SettingToggle.tsx";
 import { HostBars } from "./FleetBits.tsx";
 import { hostLine, harnessSummary, formatBytes } from "./envView.ts";
 import { PairDevice } from "./PairDevice.tsx";
-import { PairedDevices } from "./PairedDevices.tsx";
+import { PairedDevices, useOwnsEnvironment } from "./PairedDevices.tsx";
 import { UpdateHarnesses } from "./UpdateHarnesses.tsx";
 import styles from "./Environments.module.css";
 
@@ -29,6 +29,8 @@ export function ThisMachine({ info, envId }: { info: ServerInfo | undefined; env
   const name = settings.name || info?.name || "";
   const lanUrls = info?.remote?.lanUrls ?? [];
   const host = info?.host;
+  // R18: a paired device may not change how the machine is exposed (the server refuses it)
+  const owner = useOwnsEnvironment(envId);
 
   return (
     <SettingsGroup title="This machine" actions={host ? <HostBars host={host} /> : undefined}>
@@ -75,7 +77,7 @@ export function ThisMachine({ info, envId }: { info: ServerInfo | undefined; env
           />
         )}
       />
-      {isDesktop() ? (
+      {isDesktop() && owner ? (
         <SettingRow
           label="Reachable on the LAN"
           help="Takes effect after Tide restarts"
