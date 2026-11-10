@@ -1,6 +1,7 @@
 // R16: secrets the agent needs (API keys, tokens, pairing codes) are asked through a masked
-// card in Tide, never in chat. The value comes back once in the tool result and is never
-// stored in an event; kind "file" gets a 0600 file path instead.
+// card in Tide, never in chat. The value comes back once in the tool result (the last line);
+// the server redacts it from the activity the harness records for this call and from anything
+// else the thread emits. kind "file" gets a 0600 file path instead.
 import type { AgentBackend } from "./backend.ts";
 import type { TextResult, ToolDef } from "./threadTools.ts";
 
@@ -44,5 +45,7 @@ export async function callSecretTool(backend: AgentBackend, args: Record<string,
   if (result.decided !== "provided") return ok(declinedText(name));
   if (result.path !== undefined) return ok(`The user provided ${name}. It is in the file ${result.path} (mode 0600); read it from there and do not print it.`);
   if (result.value === undefined) return ok(declinedText(name));
-  return ok(`The user provided ${name}. Use it for this task only; do not echo it or write it to tracked files.\n${result.value}`);
+  return ok(
+    `The user provided ${name}. Use it for this task only. Do not repeat it in your replies, print or echo it, or write it to tracked files; prefer passing it through an environment variable. Tide redacts it from the thread's record.\n${result.value}`,
+  );
 }

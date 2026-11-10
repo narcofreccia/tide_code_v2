@@ -1,4 +1,4 @@
-import { mkdtempSync, readFileSync, rmSync, statSync } from "node:fs";
+import { existsSync, mkdirSync, mkdtempSync, readFileSync, rmSync, statSync, writeFileSync } from "node:fs";
 import { tmpdir } from "node:os";
 import { join } from "node:path";
 import { afterEach, describe, expect, it } from "vitest";
@@ -7,7 +7,8 @@ import { openDatabase } from "../db/sqlite.ts";
 import { Engine } from "../orchestration/engine.ts";
 import { EventStore } from "../orchestration/store.ts";
 import type { CancelTimer } from "./agentThreads.ts";
-import { registerAgentSecretHandlers } from "./agentSecrets.ts";
+import { secretValuesFor } from "../provider/secretRedaction.ts";
+import { registerAgentSecretHandlers, sweepSecretDirs } from "./agentSecrets.ts";
 import { RpcRouter } from "./router.ts";
 
 const SECRET = "ghp_very_secret_value_123";
@@ -42,6 +43,8 @@ interface Harness {
   clientCall(method: string, params: unknown): Promise<RpcFrame>;
   /** resolves with the pending secret card once it is on the model */
   card(): Promise<ActivityOf<"user-input">>;
+  /** boot sweep and thread cleanups done */
+  settled(): Promise<void>;
 }
 
 const homes: string[] = [];
@@ -62,7 +65,7 @@ async function harness(): Promise<Harness> {
   const home = mkdtempSync(join(tmpdir(), "tide-secrets-"));
   homes.push(home);
   const router = new RpcRouter();
-  registerAgentSecretHandlers(router, { engine, tideHome: home, schedule: clock.schedule });
+  const handle = registerAgentSecretHandlers(router, { engine, tideHome: home, schedule: clock.schedule });
   const project = first((await engine.dispatch({ type: "project.create", title: "T", rootPath: "/repo" })).events, "project.created");
   const thread = first((await engine.dispatch({ type: "thread.create", projectId: project.project.id, provider: "claude" })).events, "thread.created");
   const turn = first((await engine.dispatch({ type: "turn.request", threadId: thread.thread.id, text: "deploy it" })).events, "turn.requested");
@@ -85,7 +88,7 @@ async function harness(): Promise<Harness> {
         if (check()) off();
       });
     });
-  return { engine, store, clock, home, threadId: thread.thread.id, turnId: turn.turn.id, agentCall: call(thread.thread.id), clientCall: call(undefined), card };
+  return { engine, store, clock, home, threadId: thread.thread.id, turnId: turn.turn.id, agentCall: call(thread.thread.id), clientCall: call(undefined), card, settled: () => handle.settled() };
 }
 
 const result = (frame: RpcFrame): unknown => (frame as { result?: unknown }).result;
@@ -180,5 +183,67 @@ describe("secret.provide", () => {
     const h = await harness();
     expect(errorCode(await h.agentCall("secret.provide", { threadId: h.threadId, requestId: "secret:x", value: "x" }))).toBe("forbidden");
     expect(errorCode(await h.clientCall("agent.secret.request", { name: "A", purpose: "x" }))).toBe("forbidden");
+  });
+});
+
+describe("R18: handed-out values and secret files", () => {
+  async function provide(h: Harness, kind?: "file"): Promise<void> {
+    const pending = h.agentCall("agent.secret.request", { name: "DEPLOY_KEY", purpose: "ssh to prod", ...(kind ? { kind } : {}) });
+    const card = await h.card();
+    await h.clientCall("secret.provide", { threadId: h.threadId, requestId: card.requestId, value: SECRET });
+    await pending;
+  }
+
+  it("remembers a provided value for redaction until the thread is archived, and removes its secret files", async () => {
+    const h = await harness();
+    await provide(h, "file");
+    const values = secretValuesFor(h.engine);
+    expect(values.has(h.threadId)).toBe(true);
+    expect(values.scrubText(`token=${SECRET}`)).toBe("token=[redacted]");
+    await h.engine.dispatch({ type: "turn.settle", turnId: h.turnId, status: "completed" });
+    await h.engine.dispatch({ type: "thread.archive", threadId: h.threadId });
+    await h.engine.drain();
+    await h.settled();
+    expect(values.has(h.threadId)).toBe(false);
+    expect(values.scrubText(`token=${SECRET}`)).toBe(`token=${SECRET}`);
+    expect(existsSync(join(h.home, "secrets", h.threadId))).toBe(false);
+  });
+
+  it("forgets the value and removes the files when the thread is deleted", async () => {
+    const h = await harness();
+    await provide(h, "file");
+    await h.engine.dispatch({ type: "turn.settle", turnId: h.turnId, status: "completed" });
+    await h.engine.dispatch({ type: "thread.delete", threadId: h.threadId });
+    await h.engine.drain();
+    await h.settled();
+    expect(secretValuesFor(h.engine).has()).toBe(false);
+    expect(existsSync(join(h.home, "secrets", h.threadId))).toBe(false);
+  });
+
+  it("a declined request remembers nothing", async () => {
+    const h = await harness();
+    const pending = h.agentCall("agent.secret.request", { name: "API_KEY", purpose: "call the API" });
+    const card = await h.card();
+    await h.engine.dispatch({ type: "user-input.respond", threadId: h.threadId, requestId: card.requestId, answers: { decided: "declined" } });
+    await pending;
+    expect(secretValuesFor(h.engine).has()).toBe(false);
+  });
+
+  it("the boot sweep removes directories of unknown and archived threads only", async () => {
+    const h = await harness();
+    await h.settled();
+    for (const id of [h.threadId, "gone-thread"]) {
+      mkdirSync(join(h.home, "secrets", id), { recursive: true });
+      writeFileSync(join(h.home, "secrets", id, "API_KEY"), SECRET);
+    }
+    expect(await sweepSecretDirs(h.home, h.engine.getModel())).toEqual(["gone-thread"]);
+    expect(existsSync(join(h.home, "secrets", h.threadId, "API_KEY"))).toBe(true);
+    expect(existsSync(join(h.home, "secrets", "gone-thread"))).toBe(false);
+  });
+
+  it("the sweep tolerates a missing secrets directory", async () => {
+    const h = await harness();
+    await h.settled();
+    expect(await sweepSecretDirs(join(h.home, "nowhere"), h.engine.getModel())).toEqual([]);
   });
 });

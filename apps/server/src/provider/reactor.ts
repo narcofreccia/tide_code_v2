@@ -13,7 +13,8 @@ import {
   type TurnInput,
 } from "@tide/contracts";
 import type { Engine } from "../orchestration/engine.ts";
-import { isSecretResponse, redactSecretTool } from "./secretInput.ts";
+import { isSecretResponse } from "./secretInput.ts";
+import { redactSecretTool, secretValuesFor, type SecretValues } from "./secretRedaction.ts";
 import { isUsageLimitError } from "../orchestration/limits.ts";
 import { attachmentFooter } from "../workspace/attachments.ts";
 import { activityKey, mergeActivity } from "./activities.ts";
@@ -93,6 +94,8 @@ export interface ReactorOptions {
   now?: () => number;
   newId?: () => string;
   log?: (msg: string, data?: unknown) => void;
+  /** R18: values handed to agents, scrubbed from every command (default: the engine's registry) */
+  secrets?: SecretValues;
 }
 
 /**
@@ -107,6 +110,7 @@ export class ProviderReactor {
   #imagesFor: ((turnId: string) => ImageInput[] | undefined) | undefined;
   #handoffReady: ((handoffId: string) => Promise<void> | undefined) | undefined;
   #onCommands: ((threadId: string, commands: SlashCommandInfo[]) => void) | undefined;
+  #secrets: SecretValues;
   /** turns already handed to a thread's chain (from `turn.requested` or a promotion) */
   #known = new Set<string>();
   #now: () => number;
@@ -135,6 +139,7 @@ export class ProviderReactor {
     this.#imagesFor = options.imagesFor;
     this.#handoffReady = options.handoffReady;
     this.#onCommands = options.onCommands;
+    this.#secrets = options.secrets ?? secretValuesFor(options.engine);
     this.#interruptTimeoutMs = options.interruptTimeoutMs ?? DEFAULT_INTERRUPT_TIMEOUT_MS;
     this.#schedule = options.schedule ?? realTimer;
     this.#now = options.now ?? (() => Date.now());
@@ -285,6 +290,7 @@ export class ProviderReactor {
           dropTurnKeys(state.activityIds, event.turnId);
           dropTurnKeys(state.messageIds, event.turnId);
         }
+        this.#secrets.flush(event.turnId);
         this.#runPromoted(event.threadId, event.turnId);
         return;
       }
@@ -470,9 +476,10 @@ export class ProviderReactor {
     }
   }
 
+  /** Every command from a driver passes here: no remembered secret value gets past it. */
   async #dispatch(command: InternalCommand): Promise<void> {
     try {
-      await this.#engine.dispatch(command);
+      await this.#engine.dispatch(this.#secrets.scrub(command));
     } catch (err) {
       this.#log(`[reactor] ${command.type} rejected`, err);
     }
@@ -544,6 +551,7 @@ export class ProviderReactor {
       }
       if (!settled) {
         await start();
+        await this.#flushHeld(threadId, turnId);
         await this.#dispatch({ type: "turn.settle", turnId, status: "completed" });
         settled = true;
         run.status = "completed";
@@ -553,6 +561,7 @@ export class ProviderReactor {
       this.#log("[reactor] driver error", err);
       if (!settled) {
         await start();
+        await this.#flushHeld(threadId, turnId);
         await this.#dispatch({ type: "activity.upsert", activity: this.#errorActivity(threadId, turnId, message) });
         await this.#dispatch({ type: "turn.settle", turnId, status: "error", error: message });
         settled = true;
@@ -658,6 +667,16 @@ export class ProviderReactor {
     }
   }
 
+  /** Streamed text held back by the secret scrubber (a possible value start) lands before the turn settles. */
+  async #flushHeld(threadId: string, turnId: string): Promise<void> {
+    const messageIds = this.#threads.get(threadId)?.messageIds;
+    for (const { kind, key, text } of this.#secrets.flush(turnId)) {
+      const messageId = messageIds?.get(key);
+      if (messageId === undefined) continue;
+      await this.#dispatch(kind === "text" ? { type: "assistant.append", turnId, messageId, delta: text } : { type: "assistant.reasoning.append", turnId, messageId, delta: text });
+    }
+  }
+
   #errorActivity(threadId: string, turnId: string, text: string): Activity {
     const at = this.#now();
     return { id: this.#newId(), threadId, turnId, kind: "error", text, createdAt: at, updatedAt: at };
@@ -674,7 +693,8 @@ export class ProviderReactor {
           messageId = this.#newId();
           state.messageIds.set(key, messageId);
         }
-        await this.#dispatch({ type: "assistant.append", turnId, messageId, delta: event.delta });
+        const delta = this.#secrets.stream("text", key, event.delta);
+        if (delta !== "") await this.#dispatch({ type: "assistant.append", turnId, messageId, delta });
         return false;
       }
       case "assistant.reasoning": {
@@ -684,7 +704,8 @@ export class ProviderReactor {
           messageId = this.#newId();
           state.messageIds.set(key, messageId);
         }
-        await this.#dispatch({ type: "assistant.reasoning.append", turnId, messageId, delta: event.delta });
+        const delta = this.#secrets.stream("reasoning", key, event.delta);
+        if (delta !== "") await this.#dispatch({ type: "assistant.reasoning.append", turnId, messageId, delta });
         return false;
       }
       case "activity": {
@@ -734,6 +755,7 @@ export class ProviderReactor {
       case "settled":
         run.status = event.status;
         if (event.status === "error" && isUsageLimitError(event.error)) run.limited ??= { note: event.error as string };
+        await this.#flushHeld(threadId, turnId);
         await this.#dispatch({
           type: "turn.settle",
           turnId,
