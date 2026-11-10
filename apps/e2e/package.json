@@ -1,0 +1,15 @@
+{
+  "name": "@tide/e2e",
+  "version": "0.0.0",
+  "private": true,
+  "type": "module",
+  "scripts": {
+    "e2e": "playwright test",
+    "typecheck": "tsc --noEmit -p tsconfig.json",
+    "build": "echo skip"
+  },
+  "devDependencies": {
+    "@playwright/test": "1.65.0",
+    "@types/node": "^22.0.0"
+  }
+}

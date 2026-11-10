@@ -17,6 +17,7 @@
     "build": "pnpm -r build",
     "typecheck": "pnpm -r typecheck",
     "test": "pnpm -r test",
+    "e2e": "pnpm --filter @tide/e2e e2e",
     "desktop:dev": "pnpm --filter @tide/desktop tauri dev",
     "desktop:build": "pnpm --filter @tide/desktop tauri build",
     "desktop:sidecar": "./scripts/build-server-sidecar.sh",

@@ -87,7 +87,7 @@ export function Popover({
       </Button>
       {open
         ? createPortal(
-            <div ref={panel} className={[styles.panel, flush ? styles.flush : "", panelClassName ?? ""].filter(Boolean).join(" ")} style={style} role="dialog" data-tide-layer="">
+            <div ref={panel} className={[styles.panel, flush ? styles.flush : "", panelClassName ?? ""].filter(Boolean).join(" ")} style={style} role="dialog" aria-label={ariaLabel ?? title ?? (typeof label === "string" ? label : undefined)} data-tide-layer="">
               {children(() => setOpen(false))}
             </div>,
             document.body,

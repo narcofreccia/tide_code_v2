@@ -83,7 +83,7 @@ function TurnMenu({ turn }: { turn: Turn }) {
     useUi.getState().setThreadDialog({ kind, threadId: turn.threadId, turnId: turn.id });
   return (
     <span className={styles.turnMenu}>
-      <Popover label="⋯" title="Turn actions" variant="quiet" align="end">
+      <Popover label="⋯" title="Turn actions" ariaLabel="Turn actions" variant="quiet" align="end">
         {(close) => (
           <div className={styles.menuItems}>
             <Button variant="quiet" onClick={() => (close(), open("fork"))}>

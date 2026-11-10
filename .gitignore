@@ -3,6 +3,9 @@ dist
 *.tsbuildinfo
 .DS_Store
 coverage
+# Playwright output (apps/e2e)
+test-results/
+playwright-report/
 .tide-dev
 apps/desktop/src-tauri/target
 apps/desktop/src-tauri/binaries

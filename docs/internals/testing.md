@@ -101,3 +101,22 @@ driver's transport tapped by a `Recorder`, runs the prompts through the engine (
 are masked (`$any` outbound, `[redacted]` inbound), but review the file before committing: prompts,
 paths, emails and model output are recorded as they were. Live-recorded `in` frames are in wire order, so a
 prompt response and the first SSE events may be swapped relative to a hand-written transcript; both replay.
+
+## Browser smoke test (`apps/e2e`)
+
+One Playwright spec (`apps/e2e/specs/smoke.e2e.ts`) walks the real app end to end: boot without a
+first-run flash, add a repository, a worktree thread whose agent streams text, calls an edit tool
+and waits for an approval, the diff in Workbench › Changes, merge back (checked with `git` in the
+repo), a server kill and restart on the same port and home (quiet "Reconnecting…" pill, never the
+boot overlay; the thread replays from the event log), Copy reply through the clipboard, and
+Settings › Git with the Esc rule. It is **local-only by design**: run it by hand with `pnpm e2e`;
+no CI workflow runs it.
+
+Global setup makes a temp dir with a one-commit git repo, a scratch `TIDE_HOME` (fixed token in
+`server.json`) and an empty `HOME`, then starts `tide serve` from source on a free loopback port
+with `--web apps/web/dist` (rebuilt when older than the web/client/contracts sources), so the test
+runs the production bundle on one origin. The server's PATH holds only node and git, so no
+bundled harness is found and no model is called. The harness is `fixtures/fake-agent.ts`, a
+scripted ACP agent registered in `settings.json` as an ordinary ACP provider instance
+(`command: node`, `args: [fake-agent.ts]`): no server code knows it is a test. Details and
+debugging: `apps/e2e/README.md`.
