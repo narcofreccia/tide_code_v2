@@ -1,6 +1,7 @@
 import { useEnvironments } from "./envStore.ts";
 import { environmentName } from "./environments.ts";
 import { useModel } from "./model.ts";
+import { MIXED_CONTENT_REASON } from "../lib/routeSecurity.ts";
 
 /**
  * Whether the machine that owns a thread can take a send right now.
@@ -17,6 +18,8 @@ export interface ThreadEnvStatus {
   online: boolean;
   primary: boolean;
   machine: string;
+  /** R19: the browser refuses every route to this machine as mixed content (https page, plain ws) */
+  mixedContent?: boolean;
 }
 
 /** The status of one environment; `envId` undefined means the primary. */
@@ -25,10 +28,11 @@ export function useEnvStatus(envId: string | undefined): ThreadEnvStatus {
   const managed = useEnvironments((s) => s.environments.length > 0);
   const id = envId ?? primaryId;
   const connection = useEnvironments((s) => (id === undefined ? undefined : s.statuses[id]?.connection));
+  const mixedContent = useEnvironments((s) => (id === undefined ? false : s.statuses[id]?.error === MIXED_CONTENT_REASON));
   const status = useModel((s) => s.status);
   // single-server mode (tests, `attachModelStore`): the one connection is the primary
   if (!managed || id === undefined) return { online: status === "open", primary: true, machine: "the server" };
-  return { online: connection === "connected", primary: id === primaryId, machine: environmentName(id) };
+  return { online: connection === "connected", primary: id === primaryId, machine: environmentName(id), ...(mixedContent ? { mixedContent } : {}) };
 }
 
 export function useThreadEnvStatus(threadId: string | undefined): ThreadEnvStatus {
@@ -38,6 +42,7 @@ export function useThreadEnvStatus(threadId: string | undefined): ThreadEnvStatu
 
 /** Composer / card copy for a machine that cannot take a send. */
 export function offlineReason(env: ThreadEnvStatus): string {
+  if (env.mixedContent === true) return MIXED_CONTENT_REASON;
   return env.primary ? "Not connected to the server" : `${env.machine} is offline`;
 }
 

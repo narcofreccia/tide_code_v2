@@ -18,6 +18,7 @@ import { EnvDot, HostBars } from "./FleetBits.tsx";
 import { activeRoute, connectionLabel, harnessSummary, hostLine, httpOriginOf, statusOf } from "./envView.ts";
 import { openAddMachine } from "./fleetUi.ts";
 import { RoutesEditor } from "./RoutesEditor.tsx";
+import { NotEncrypted } from "./NotEncrypted.tsx";
 import { deviceLimitReason } from "../../state/deviceAccess.ts";
 import styles from "./Environments.module.css";
 import card from "./MachineCard.module.css";
@@ -69,6 +70,7 @@ export function MachineCard({ env }: { env: KnownEnvironment }) {
             primary
           </Pill>
         ) : null}
+        <NotEncrypted url={route?.url} />
         <span className={styles.cardStatus}>{connectionLabel(status)}</span>
         {info?.host ? <HostBars host={info.host} /> : null}
       </div>

@@ -31,6 +31,7 @@ import { runReconnectHandlers } from "./reconnect.ts";
 import { routeEnv, type RouteContext } from "./routing.ts";
 import { loadServerSettings } from "./serverSettings.ts";
 import { showToast } from "./toast.ts";
+import { mixedContentReason } from "../lib/routeSecurity.ts";
 
 /**
  * R9 connection manager: one EnvironmentConnection per known environment, their read
@@ -171,12 +172,18 @@ export function mirrorPrimary(): void {
   });
 }
 
-function toEnvStatus(snap: EnvConnectionSnapshot): EnvStatus {
+/**
+ * `routes`: the environment's routes. R19: when the socket fails and the browser refuses every
+ * route as mixed content (an https page, plain ws:// to another machine), the error says so.
+ */
+export function toEnvStatus(snap: EnvConnectionSnapshot, routes: readonly EnvRoute[] = []): EnvStatus {
+  const blocked = snap.state === "offline" || snap.state === "connecting" ? mixedContentReason(routes) : undefined;
+  const error = snap.error !== undefined ? (blocked ?? snap.error) : undefined;
   return {
     connection: snap.state,
     ...(snap.route ? { route: snap.route } : {}),
     ...(snap.info ? { info: snap.info } : {}),
-    ...(snap.error !== undefined ? { error: snap.error } : {}),
+    ...(error !== undefined ? { error } : {}),
     ...(snap.lastSeenAt !== undefined ? { lastSeenAt: snap.lastSeenAt } : {}),
   };
 }
@@ -218,7 +225,7 @@ function onSnapshot(entry: Entry, snap: EnvConnectionSnapshot): void {
     rekeyEnvironment(entry.id, snap.environmentId);
   }
   const id = entry.id;
-  useEnvironments.setState((s) => ({ statuses: { ...s.statuses, [id]: toEnvStatus(snap) } }));
+  useEnvironments.setState((s) => ({ statuses: { ...s.statuses, [id]: toEnvStatus(snap, envById(id)?.routes) } }));
   const prevState = entry.lastState;
   const prevRoute = entry.lastRoute;
   entry.lastState = snap.state;

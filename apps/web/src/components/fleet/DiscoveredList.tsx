@@ -2,6 +2,7 @@ import { useEffect, useState } from "react";
 import type { DiscoveredPeer } from "@tide/contracts";
 import { call } from "../../state/model.ts";
 import { useEnvironments } from "../../state/environments.ts";
+import { NotEncrypted } from "./NotEncrypted.tsx";
 import styles from "./DiscoveredList.module.css";
 
 /**
@@ -32,7 +33,7 @@ export function DiscoveredList({ onPick }: { onPick: (url: string) => void }) {
       <h3 className={styles.heading}>Found on your network</h3>
       <ul className={styles.list}>
         {fresh.map((peer) => {
-          const url = peer.urls[0] ?? `http://${peer.host}:${peer.port}`;
+          const url = peer.urls[0] ?? `${peer.tls === true ? "https" : "http"}://${peer.host.includes(":") ? `[${peer.host}]` : peer.host}:${peer.port}`;
           return (
             <li key={peer.environmentId}>
               <button type="button" className={styles.row} onClick={() => onPick(url)} aria-label={`Use ${peer.name}`}>
@@ -41,6 +42,7 @@ export function DiscoveredList({ onPick }: { onPick: (url: string) => void }) {
                   {peer.host.includes(":") ? `[${peer.host}]` : peer.host}:{peer.port}
                   {peer.version.length > 0 ? ` · v${peer.version}` : ""}
                 </span>
+                {peer.tls === true ? null : <NotEncrypted url={url} />}
               </button>
             </li>
           );

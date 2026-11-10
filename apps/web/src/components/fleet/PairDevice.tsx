@@ -5,6 +5,7 @@ import { errorText } from "../../lib/dispatchOrToast.ts";
 import { copyText } from "../../lib/threadActions.ts";
 import { envOpt } from "./envView.ts";
 import { isForbidden, useOwnsEnvironment } from "./PairedDevices.tsx";
+import { NotEncrypted } from "./NotEncrypted.tsx";
 import { Button } from "../ui/Button.tsx";
 import { SettingRow } from "../settings/ui/SettingRow.tsx";
 import { SettingToggle } from "../settings/ui/SettingToggle.tsx";
@@ -103,6 +104,7 @@ export function PairDevice({ envId }: { envId: string | undefined }) {
                       {pairing.urls.map((url) => (
                         <li key={url} className={styles.urlRow}>
                           <span className={styles.value}>{url}</span>
+                          <NotEncrypted url={url} />
                           <Button variant="quiet" onClick={() => void copyText(url, "URL")}>
                             Copy
                           </Button>
