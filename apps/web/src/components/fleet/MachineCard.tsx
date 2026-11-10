@@ -18,6 +18,7 @@ import { EnvDot, HostBars } from "./FleetBits.tsx";
 import { activeRoute, connectionLabel, harnessSummary, hostLine, httpOriginOf, statusOf } from "./envView.ts";
 import { openAddMachine } from "./fleetUi.ts";
 import { RoutesEditor } from "./RoutesEditor.tsx";
+import { deviceLimitReason } from "../../state/deviceAccess.ts";
 import styles from "./Environments.module.css";
 import card from "./MachineCard.module.css";
 
@@ -36,6 +37,8 @@ export function machineNotes(name: string, info: ServerInfo | undefined, primary
   if (tools !== undefined && !tools.git) notes.push({ tone: "warn", text: `git is not installed on ${name}; threads cannot use worktrees.` });
   if (tools !== undefined && !tools.gh) notes.push({ tone: "quiet", text: `The GitHub CLI (gh) is not installed on ${name}; pull requests from its threads need it.` });
   else if (tools?.gh === true && tools.ghAuth === false) notes.push({ tone: "quiet", text: `gh is not logged in on ${name}; run \`gh auth login\` there for pull requests.` });
+  // R19: this device was paired with limited access; the owner raises it on that machine
+  if (info.access === "limited") notes.push({ tone: "quiet", text: deviceLimitReason(name) });
   return notes;
 }
 

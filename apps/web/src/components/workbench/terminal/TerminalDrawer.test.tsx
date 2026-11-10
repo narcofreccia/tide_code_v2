@@ -6,6 +6,7 @@ import { emptyReadModel } from "@tide/contracts";
 import { useModel } from "../../../state/model.ts";
 import { setDrawerOpen, useTerminals } from "../../../state/terminals.ts";
 import { TerminalDrawer, tabTitle } from "./TerminalDrawer.tsx";
+import { useEnvironments } from "../../../state/environments.ts";
 
 interface FakeTerm {
   written: string[];
@@ -192,5 +193,41 @@ describe("TerminalDrawer", () => {
     await waitFor(() => expect(rpc).toHaveBeenCalledWith("run.stop", { projectId: "p1", key: "backend.api" }));
     fake.detach();
     useModel.setState({ model: emptyReadModel() });
+  });
+});
+
+describe("TerminalDrawer on a device with limited access (R19)", () => {
+  afterEach(() => useEnvironments.setState({ environments: [], statuses: {}, primaryId: undefined }));
+
+  function onMachine(access: "limited" | undefined): void {
+    useEnvironments.setState({
+      environments: [{ id: "env-1", name: "studio", routes: [], addedAt: 0, clientId: "c-phone" }],
+      statuses: { "env-1": { connection: "connected", info: { environmentId: "env-1", name: "studio", version: "1", startedAt: 1, ...(access ? { access } : {}) } } },
+      primaryId: "env-1",
+    });
+  }
+
+  it("disables New terminal and says why, without asking the server", async () => {
+    onMachine("limited");
+    const rpc = mockRpc({ "pty.list": () => ({ ptys: [] }), "pty.create": () => ({ ptyId: "p9" }) });
+    mockStream();
+    setDrawerOpen(true);
+    render(<TerminalDrawer threadId="t1" />);
+    const reason = "This device has limited access. Turn on Full access for it on studio.";
+    expect(await screen.findByText(reason)).toBeDefined();
+    const button = screen.getByLabelText("New terminal") as HTMLButtonElement;
+    expect(button.disabled).toBe(true);
+    expect(button.title).toBe(reason);
+    expect(rpc.mock.calls.some(([m]) => m === "pty.create")).toBe(false);
+  });
+
+  it("keeps New terminal for the owner (no access in server.info)", async () => {
+    onMachine(undefined);
+    mockRpc({ "pty.list": () => ({ ptys: [] }) });
+    mockStream();
+    setDrawerOpen(true);
+    render(<TerminalDrawer threadId="t1" />);
+    await screen.findByText(/No terminal yet/);
+    expect((screen.getByLabelText("New terminal") as HTMLButtonElement).disabled).toBe(false);
   });
 });

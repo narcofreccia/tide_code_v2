@@ -4,6 +4,7 @@ import { startTeamRun, teamOptionLabel, worktreeNote } from "../../lib/teamActio
 import { runOrToast } from "../../lib/dispatchOrToast.ts";
 import { worktreeByDefault, useServerSettings } from "../../state/serverSettings.ts";
 import { useUi } from "../../state/ui.ts";
+import { useProjectDeviceLimit } from "../../state/deviceAccess.ts";
 import { Checkbox } from "../ui/Choice.tsx";
 import { DialogFrame, FrameField, FrameSection, PrimaryField } from "../ui/DialogFrame.tsx";
 import { PresetChips } from "../ui/StageList/PresetChips.tsx";
@@ -31,6 +32,9 @@ export function NewTeamFields({
   const [title, setTitle] = useState("");
   const [useWorktree, setUseWorktree] = useState(worktreeByDefault);
   const team = teams.find((t) => t.id === teamId) ?? teams[0];
+  // R19: a stage in Full access mode is refused for a device with limited access on that machine
+  const limit = useProjectDeviceLimit(projectId);
+  const modeLimit = team?.stages.some((stage) => stage.mode === "full-access") === true ? limit : undefined;
   const blocked =
     projectId === undefined
       ? "Add a project first"
@@ -38,7 +42,7 @@ export function NewTeamFields({
         ? "Add a team in Settings › Teams"
         : task.trim() === ""
           ? "Describe the task to start"
-          : undefined;
+          : modeLimit;
   const start = (): void => {
     if (blocked !== undefined || team === undefined || projectId === undefined) return;
     const trimmed = title.trim();

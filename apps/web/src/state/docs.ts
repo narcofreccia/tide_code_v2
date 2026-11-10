@@ -1,6 +1,7 @@
 import { create } from "zustand";
 import { call } from "./model.ts";
 import { showToast } from "./toast.ts";
+import { threadDeviceLimitOf } from "./deviceAccess.ts";
 import { subscribeWatch } from "./files.ts";
 import { isImagePath } from "../lib/imagePaths.ts";
 
@@ -117,6 +118,11 @@ export async function saveDoc(threadId: string, path: string, overwrite = false)
   const key = docKey(threadId, path);
   const doc = useDocs.getState().docs[key];
   if (!doc || doc.content === undefined || doc.saving) return false;
+  const limit = threadDeviceLimitOf(threadId);
+  if (limit !== undefined) {
+    showToast(limit);
+    return false;
+  }
   patch(key, { saving: true });
   try {
     const result = await call("fs.write", {

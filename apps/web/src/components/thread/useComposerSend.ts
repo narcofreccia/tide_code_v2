@@ -1,4 +1,5 @@
 import { useRef, useState } from "react";
+import { threadSendBlock } from "@tide/client";
 import type { AttachmentRef, ProviderKind, Thread } from "@tide/contracts";
 import { newId } from "@tide/contracts";
 import { forgetFiles, uploadFiles, type DraftFile } from "../../lib/attachments.ts";
@@ -56,6 +57,9 @@ export function promptOf(text: string, hasImages: boolean, hasFiles: boolean): s
  * Offline (the thread's machine is not connected) a send does nothing and the draft stays:
  * nothing queues commands across a drop, so a "sent" message would be lost. `offline` is
  * the reason to show, undefined while connected.
+ *
+ * Blocked (`threadSendBlock`: the worktree is gone, archived, rolling back) a send does nothing
+ * either: the server would refuse the turn. `blocked` says why and whether a fork can carry on.
  */
 export function useComposerSend({ thread, text, images, files, followUp, onSent }: ComposerSendInput) {
   const [busy, setBusy] = useState(false);
@@ -64,11 +68,12 @@ export function useComposerSend({ thread, text, images, files, followUp, onSent 
   const running = thread.status === "running";
   const env = useThreadEnvStatus(thread.id);
   const offline = env.online ? undefined : offlineReason(env);
+  const blocked = threadSendBlock(thread);
 
   /** `override` replaces the draft text (`/clear <prompt>` sends the prompt after the command). */
   const send = async (how?: FollowUpMode, background = false, override?: { text: string; fresh?: boolean }): Promise<void> => {
     const body = override?.text ?? text;
-    if ((body.trim() === "" && images.length === 0 && files.length === 0) || busy || offline !== undefined) return;
+    if ((body.trim() === "" && images.length === 0 && files.length === 0) || busy || offline !== undefined || blocked !== undefined) return;
     const fresh = override?.fresh === true || isFreshSessionArmed(thread.id);
     const steer = !fresh && running && (how ?? followUp.mode) === "steer" && followUp.canSteer;
     const imageInputs = images.map((image) => ({ mediaType: image.mediaType, data: image.data }));
@@ -114,5 +119,5 @@ export function useComposerSend({ thread, text, images, files, followUp, onSent 
     }
   };
 
-  return { send, busy, uploading, offline };
+  return { send, busy, uploading, offline, blocked };
 }

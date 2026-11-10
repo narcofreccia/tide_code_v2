@@ -1,3 +1,4 @@
+import { LIMITED_HINT, projectDeviceLimitOf, threadDeviceLimitOf } from "../../state/deviceAccess.ts";
 import { selectThreadTurns } from "@tide/client";
 import type { Project, ReadModel, Thread } from "@tide/contracts";
 import {
@@ -92,6 +93,7 @@ export function threadMenu(
   const forkTurn = latestSettledTurnId(model, thread.id);
   const hasSession = thread.nativeSessionId !== undefined;
   const empty = isEmptyThread(thread.id);
+  const limited = threadDeviceLimitOf(thread.id) !== undefined;
   return [
     { label: "Open", onSelect: () => ui.selectThread(thread.id) },
     { label: "Rename…", onSelect: startRename },
@@ -99,8 +101,8 @@ export function threadMenu(
     ...settleItems(thread),
     {
       label: "Open in terminal",
-      disabled: !hasSession,
-      ...(hasSession ? {} : { hint: NO_SESSION_HINT }),
+      disabled: !hasSession || limited,
+      ...(limited ? { hint: LIMITED_HINT } : hasSession ? {} : { hint: NO_SESSION_HINT }),
       onSelect: () => void openThreadTerminal(thread.id),
     },
     { label: "New child thread", onSelect: () => createChild(thread) },
@@ -128,7 +130,8 @@ export function threadMenu(
 }
 
 function pinItem(project: Project): MenuItem {
-  return { label: project.pinned ? "Unpin" : "Pin", onSelect: () => setProjectPinned(project.id, project.pinned !== true) };
+  const off = projectDeviceLimitOf(project.id) === undefined ? {} : { disabled: true, hint: LIMITED_HINT };
+  return { label: project.pinned ? "Unpin" : "Pin", ...off, onSelect: () => setProjectPinned(project.id, project.pinned !== true) };
 }
 
 /** Right-click / ⋯ on a rail project folder header. */

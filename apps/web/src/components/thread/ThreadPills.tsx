@@ -22,6 +22,7 @@ import {
 import { EffortSelect } from "./EffortSelect.tsx";
 import { instanceOptions } from "./ProviderPicker.tsx";
 import { showToast } from "../../state/toast.ts";
+import { limitModeOptions, useThreadDeviceLimit } from "../../state/deviceAccess.ts";
 import { Select, type SelectOption } from "../ui/Select.tsx";
 import styles from "./ThreadPills.module.css";
 
@@ -80,6 +81,7 @@ function InteractionToggle({
 export const ThreadPills = memo(function ThreadPills({ thread }: { thread: Thread }) {
   const providers = useProviders();
   const running = thread.status === "running";
+  const limit = useThreadDeviceLimit(thread.id);
 
   const id = providerIdOf(thread);
   const listed = instanceOptions(providers, false, "all");
@@ -90,12 +92,16 @@ export const ThreadPills = memo(function ThreadPills({ thread }: { thread: Threa
   const models = providerStatus(providers, id)?.models ?? [];
   const modelOptions: SelectOption<string>[] = modelChoices(models, id, providers);
   const efforts = effortsOf(models, thread.model);
-  const modeOptions: SelectOption<Thread["mode"]>[] = RUNTIME_MODES.map((mode) => ({
-    value: mode,
-    label: RUNTIME_MODE_LABELS[mode],
-    // per harness where `auto` means something else (vocab.ts RUNTIME_MODE_KIND_HINTS)
-    description: runtimeModeHint(mode, thread.provider),
-  }));
+  // R19: Full access is refused for a device with limited access on the thread's machine
+  const modeOptions: SelectOption<Thread["mode"]>[] = limitModeOptions(
+    RUNTIME_MODES.map((mode) => ({
+      value: mode,
+      label: RUNTIME_MODE_LABELS[mode],
+      // per harness where `auto` means something else (vocab.ts RUNTIME_MODE_KIND_HINTS)
+      description: runtimeModeHint(mode, thread.provider),
+    })),
+    limit,
+  );
 
   const apply = (patch: ThreadPatch): void => updateThread(thread.id, patch);
 

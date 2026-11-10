@@ -2,6 +2,7 @@ import type { Project, ReadModel } from "@tide/contracts";
 import { dispatch, useModel, type RouteOptions } from "../state/model.ts";
 import { envOfProject } from "../state/environments.ts";
 import { showToast } from "../state/toast.ts";
+import { deviceLimitOf, projectDeviceLimitOf, refusedForLimit } from "../state/deviceAccess.ts";
 import { useUi } from "../state/ui.ts";
 import { dispatchOrToast, errorText } from "./dispatchOrToast.ts";
 
@@ -9,11 +10,13 @@ import { dispatchOrToast, errorText } from "./dispatchOrToast.ts";
 export const ARCHIVE_UNDO_MS = 8000;
 
 export function renameProject(projectId: string, title: string): void {
+  if (refusedForLimit(projectDeviceLimitOf(projectId))) return;
   dispatchOrToast("Renaming the project", { type: "project.update", projectId, title });
 }
 
 /** Pinned projects lead the chips, Settings › Projects and the rail's folders. */
 export function setProjectPinned(projectId: string, pinned: boolean): void {
+  if (refusedForLimit(projectDeviceLimitOf(projectId))) return;
   dispatchOrToast(pinned ? "Pinning the project" : "Unpinning the project", { type: "project.update", projectId, pinned });
 }
 
@@ -24,11 +27,13 @@ export function pinnedFirst<T extends Pick<Project, "pinned" | "title">>(project
 
 /** Brings an archived project (and its threads) back into the rail and Mission Control. */
 export function unarchiveProject(projectId: string): void {
+  if (refusedForLimit(projectDeviceLimitOf(projectId))) return;
   dispatchOrToast("Restoring the project", { type: "project.unarchive", projectId });
 }
 
 /** Archives a project, drops any view scoped to it, and offers Undo for a few seconds. */
 export function archiveProject(projectId: string): void {
+  if (refusedForLimit(projectDeviceLimitOf(projectId))) return;
   const title = useModel.getState().model.projects[projectId]?.title ?? "project";
   dispatch({ type: "project.archive", projectId })
     .then(() =>
@@ -60,6 +65,9 @@ export function archivedProjectAt(model: ReadModel, rootPath: string, envId?: st
  * instead of registering a duplicate. Rejects with the server's error, like `dispatch`.
  */
 export async function addProject(title: string, rootPath: string, opts?: RouteOptions): Promise<"created" | "restored"> {
+  // R19: rejects like the server would, with the reason a caller's error line can show
+  const limit = deviceLimitOf(opts?.envId);
+  if (limit !== undefined) throw new Error(limit);
   const archived = archivedProjectAt(useModel.getState().model, rootPath, opts?.envId);
   if (archived !== undefined) {
     await dispatch({ type: "project.unarchive", projectId: archived.id }, opts);

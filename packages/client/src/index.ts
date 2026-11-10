@@ -129,3 +129,4 @@ export {
   type BackgroundAgentCore,
   type BackgroundAgentStep,
 } from "./backgroundAgents.ts";
+export { threadSendBlock, type SendBlock, type SendBlockKind } from "./sendBlock.ts";

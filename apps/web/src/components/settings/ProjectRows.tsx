@@ -7,6 +7,7 @@ import { copyText } from "../../lib/threadActions.ts";
 import { envOfProject } from "../../state/environments.ts";
 import { dispatchOrToast } from "../../lib/dispatchOrToast.ts";
 import { useUi } from "../../state/ui.ts";
+import { LIMITED_HINT, useProjectDeviceLimit } from "../../state/deviceAccess.ts";
 import { EnvTag } from "../fleet/FleetBits.tsx";
 import { Button } from "../ui/Button.tsx";
 import { Icon } from "../ui/Icon.tsx";
@@ -74,14 +75,17 @@ export function ProjectRow({
   const [renaming, setRenaming] = useState(false);
   const [menu, setMenu] = useState<MenuPosition | undefined>(undefined);
   const [titling, setTitling] = useState(false);
+  // R19: a device with limited access may not change the project
+  const limit = useProjectDeviceLimit(project.id);
+  const off = limit === undefined ? {} : { disabled: true, hint: LIMITED_HINT };
   const items: MenuItem[] = [
-    { label: project.pinned ? "Unpin" : "Pin", onSelect: () => setProjectPinned(project.id, project.pinned !== true) },
-    { label: "Rename", onSelect: () => setRenaming(true) },
-    { label: "Icon…", onSelect: onIcon },
-    { label: "Title instructions…", onSelect: () => setTitling(true) },
-    { label: "Linked repositories…", onSelect: () => useUi.getState().setLinksProject(project.id) },
+    { label: project.pinned ? "Unpin" : "Pin", ...off, onSelect: () => setProjectPinned(project.id, project.pinned !== true) },
+    { label: "Rename", ...off, onSelect: () => setRenaming(true) },
+    { label: "Icon…", ...off, onSelect: onIcon },
+    { label: "Title instructions…", ...off, onSelect: () => setTitling(true) },
+    { label: "Linked repositories…", ...off, onSelect: () => useUi.getState().setLinksProject(project.id) },
     { label: "Copy path", onSelect: () => void copyText(project.rootPath, "path") },
-    { label: "Archive", separatorBefore: true, onSelect: () => archiveProject(project.id) },
+    { label: "Archive", separatorBefore: true, ...off, onSelect: () => archiveProject(project.id) },
   ];
   return (
     <SettingRow
@@ -105,6 +109,8 @@ export function ProjectRow({
             multiline
             label={`Title instructions for ${project.title}`}
             maxLength={500}
+            disabled={limit !== undefined}
+            title={limit}
             placeholder="Uses the instructions from Settings › General"
             value={project.titleInstructions ?? ""}
             onCommit={(text) =>
@@ -145,6 +151,7 @@ export function ProjectRow({
 
 /** An archived project: when it went, how many threads it holds, and Restore. */
 export function ArchivedProjectRow({ project, threads }: { project: Project; threads: number }) {
+  const limit = useProjectDeviceLimit(project.id);
   const when = project.archivedAt === undefined ? "" : relativeTime(project.archivedAt);
   return (
     <SettingRow
@@ -163,7 +170,7 @@ export function ArchivedProjectRow({ project, threads }: { project: Project; thr
         </span>
       }
       control={
-        <Button aria-label={`Restore ${project.title}`} onClick={() => unarchiveProject(project.id)}>
+        <Button aria-label={`Restore ${project.title}`} disabled={limit !== undefined} title={limit} onClick={() => unarchiveProject(project.id)}>
           Restore
         </Button>
       }

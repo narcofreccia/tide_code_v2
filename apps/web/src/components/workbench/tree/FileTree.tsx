@@ -19,6 +19,7 @@ import {
   useFsWatch,
 } from "../../../state/files.ts";
 import { openFileTab, useWorkbench } from "../../../state/workbench.ts";
+import { LIMITED_HINT, useThreadDeviceLimit } from "../../../state/deviceAccess.ts";
 import { TreeRow, type TreeRowModel } from "./TreeRow.tsx";
 import { TreeResizeHandle } from "./TreeResizeHandle.tsx";
 import styles from "./FileTree.module.css";
@@ -50,6 +51,7 @@ export function FileTree({ threadId }: { threadId: string }) {
   const selected = useFiles((s) => s.selected[threadId]);
   const [menu, setMenu] = useState<{ position: MenuPosition; path: string; kind: FsEntry["kind"] } | null>(null);
   const [pending, setPending] = useState<Pending | null>(null);
+  const limit = useThreadDeviceLimit(threadId);
   const width = useWorkbench((s) => s.treeWidth);
   const treeRef = useRef<HTMLDivElement>(null);
 
@@ -122,11 +124,12 @@ export function FileTree({ threadId }: { threadId: string }) {
 
   const menuItems = (path: string, kind: FsEntry["kind"]): MenuItem[] => {
     const dir = kind === "dir" ? path : parentDir(path);
+    const off = limit === undefined ? {} : { disabled: true, hint: LIMITED_HINT };
     return [
-      { label: "New file", onSelect: () => setPending({ kind: "new-file", dir }) },
-      { label: "New folder", onSelect: () => setPending({ kind: "new-folder", dir }) },
-      { label: "Rename", separatorBefore: true, onSelect: () => setPending({ kind: "rename", path }) },
-      { label: "Delete", danger: true, onSelect: () => setPending({ kind: "delete", path }) },
+      { label: "New file", ...off, onSelect: () => setPending({ kind: "new-file", dir }) },
+      { label: "New folder", ...off, onSelect: () => setPending({ kind: "new-folder", dir }) },
+      { label: "Rename", separatorBefore: true, ...off, onSelect: () => setPending({ kind: "rename", path }) },
+      { label: "Delete", danger: true, ...off, onSelect: () => setPending({ kind: "delete", path }) },
     ];
   };
 
@@ -138,8 +141,9 @@ export function FileTree({ threadId }: { threadId: string }) {
         <Button
           variant="quiet"
           className={styles.action}
-          title="New file in the worktree root"
+          title={limit ?? "New file in the worktree root"}
           aria-label="New file"
+          disabled={limit !== undefined}
           onClick={() => setPending({ kind: "new-file", dir: "" })}
         >
           <Icon name="plus" size={14} />

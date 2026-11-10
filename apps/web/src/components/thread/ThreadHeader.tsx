@@ -17,6 +17,7 @@ import { ContextMenu, type MenuPosition } from "../ui/Menu.tsx";
 import { RateLimitBadge } from "../ui/RateLimitBadge.tsx";
 import { StateGlyph } from "../ui/StatusGlyph.tsx";
 import { MergeGlyph, PrBadge } from "../ui/VcsBadges.tsx";
+import { MergeErrorNotice } from "../workbench/MergeAction.tsx";
 import { threadStateKey, threadStateLabel } from "../../lib/vocab.ts";
 import { useBackgroundAgentCount } from "../../state/hooks.ts";
 import { useThreadEnvStatus } from "../../state/threadEnv.ts";
@@ -163,6 +164,7 @@ export function ThreadHeader({ thread }: { thread: Thread }) {
         <div className={styles.sub}>
           {thread.pr ? <PrBadge pr={thread.pr} /> : null}
           <MergeGlyph thread={thread} />
+          <MergeErrorNotice thread={thread} />
           {thread.delegatedBy ? <DelegatedBy parentThreadId={thread.delegatedBy} /> : null}
           <DelegatesPopover threadId={thread.id} />
           <SideChatsPopover threadId={thread.id} />

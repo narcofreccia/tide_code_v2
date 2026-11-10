@@ -18,6 +18,7 @@ import { Button } from "../../ui/Button.tsx";
 import { Pill } from "../../ui/Pill.tsx";
 import { LAYER_ATTR } from "../../ui/useAnchoredPanel.ts";
 import { PlanPreviewDialog } from "./PlanPreviewDialog.tsx";
+import { useProjectDeviceLimit } from "../../../state/deviceAccess.ts";
 import { RunRow } from "./RunRow.tsx";
 import { rootLabel, StackHeader } from "./StackHeader.tsx";
 import styles from "./Run.module.css";
@@ -78,6 +79,7 @@ function RepoGroup({
 
 function EmptyProfiles({ projectId, repos }: { projectId: string; repos: RunRepo[] }) {
   const [busy, setBusy] = useState(false);
+  const limit = useProjectDeviceLimit(projectId);
   const scan = (useModelScan: boolean): void => {
     setBusy(true);
     void rescanAll(projectId, repos, useModelScan).finally(() => setBusy(false));
@@ -86,10 +88,10 @@ function EmptyProfiles({ projectId, repos }: { projectId: string; repos: RunRepo
     <div className={styles.empty}>
       <p className={styles.note}>{NO_PROFILES}</p>
       <span className={styles.emptyActions}>
-        <Button variant="ghost" disabled={busy} onClick={() => scan(false)}>
+        <Button variant="ghost" disabled={busy || limit !== undefined} title={limit} onClick={() => scan(false)}>
           Scan
         </Button>
-        <Button variant="ghost" disabled={busy} onClick={() => scan(true)}>
+        <Button variant="ghost" disabled={busy || limit !== undefined} title={limit} onClick={() => scan(true)}>
           Ask the model
         </Button>
         <Button variant="quiet" onClick={() => useUi.getState().openSettings("projects")}>
@@ -141,6 +143,7 @@ export function RunPanel({
   const [collapsed, setCollapsed] = useState(variant === "strip");
   const [open, setOpen] = useState<OpenPlan | undefined>(undefined);
   const [planning, setPlanning] = useState(false);
+  const limit = useProjectDeviceLimit(projectId);
 
   const services = useMemo(() => stackServices(repos, project), [repos, project]);
   const selected = useMemo(
@@ -198,6 +201,7 @@ export function RunPanel({
         root={stackRoot(session, thread)}
         starting={planning}
         canStart={!unsupported}
+        limit={limit}
         {...(variant === "strip" ? { collapsed, onToggleCollapsed: () => setCollapsed((c) => !c) } : {})}
         onStart={onStart}
         onStopAll={() => void stopStack(projectId)}

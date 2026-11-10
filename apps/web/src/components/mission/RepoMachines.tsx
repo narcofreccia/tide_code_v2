@@ -8,6 +8,7 @@ import { envOpt } from "../fleet/envView.ts";
 import { EnvTag } from "../fleet/FleetBits.tsx";
 import { Button } from "../ui/Button.tsx";
 import { useTicker } from "./useTicker.ts";
+import { useProjectDeviceLimit } from "../../state/deviceAccess.ts";
 import styles from "./RepoMachines.module.css";
 
 type BaseStatus = Awaited<ReturnType<typeof fetchStatus>>;
@@ -65,6 +66,7 @@ function MachineRow({ project, now }: { project: Project; now: number }) {
     }
   };
   const unsupported = note === "update this machine to sync";
+  const limit = useProjectDeviceLimit(project.id);
   return (
     <li className={styles.row}>
       <EnvTag envId={envOfProject(project.id)} />
@@ -74,10 +76,10 @@ function MachineRow({ project, now }: { project: Project; now: number }) {
       </span>
       <Button
         variant="quiet"
-        disabled={pulling || unsupported || status?.hasRemote === false}
+        disabled={pulling || unsupported || status?.hasRemote === false || limit !== undefined}
         onClick={() => void pull()}
         aria-label={`Pull on ${project.title}`}
-        title="Fast-forward the base branch to origin"
+        title={limit ?? "Fast-forward the base branch to origin"}
       >
         {pulling ? "Pulling…" : "Pull"}
       </Button>

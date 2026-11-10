@@ -1,5 +1,6 @@
 import { openSearchTab, setQuickOpen } from "../../state/workbench.ts";
 import { createPty, setDrawerOpen } from "../../state/terminals.ts";
+import { useThreadDeviceLimit } from "../../state/deviceAccess.ts";
 import { Button } from "../ui/Button.tsx";
 import { Icon } from "../ui/Icon.tsx";
 import { Kbd } from "../ui/Kbd.tsx";
@@ -8,6 +9,7 @@ import styles from "./Workbench.module.css";
 
 /** The tab strip's "+": the ways in to the editor and terminal, with their shortcuts. */
 export function AddMenu({ threadId }: { threadId: string }) {
+  const limit = useThreadDeviceLimit(threadId);
   return (
     <Popover label={<Icon name="plus" size={14} />} ariaLabel="Open…" title="Open a file, search, or a terminal" variant="quiet" align="end">
       {(close) => (
@@ -39,6 +41,8 @@ export function AddMenu({ threadId }: { threadId: string }) {
           <Button
             variant="quiet"
             role="menuitem"
+            disabled={limit !== undefined}
+            title={limit}
             onClick={() => {
               close();
               setDrawerOpen(true);

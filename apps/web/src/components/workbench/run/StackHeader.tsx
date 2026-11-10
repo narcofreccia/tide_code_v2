@@ -52,6 +52,7 @@ export function StackHeader({
   onStopAll,
   onRefresh,
   onRescan,
+  limit,
 }: {
   summary: RunSummary;
   /** shown as the total before anything runs */
@@ -68,6 +69,8 @@ export function StackHeader({
   onStopAll: () => void;
   onRefresh: () => void;
   onRescan: () => void;
+  /** R19: why this device may not start, stop or rescan the stack (limited access) */
+  limit?: string | undefined;
 }) {
   const total = summary.total > 0 ? summary.total : selectedCount;
   const title =
@@ -90,13 +93,13 @@ export function StackHeader({
       </span>
       <span className={styles.headerActions}>
         {canStart ? (
-          <Button variant="primary" disabled={starting || selectedCount === 0} onClick={onStart}>
+          <Button variant="primary" disabled={starting || selectedCount === 0 || limit !== undefined} title={limit} onClick={onStart}>
             <Icon name="play" size={14} />
             Start stack
           </Button>
         ) : null}
         {summary.up > 0 || summary.worst === "starting" ? (
-          <Button variant="quiet" onClick={onStopAll}>
+          <Button variant="quiet" disabled={limit !== undefined} title={limit} onClick={onStopAll}>
             <Icon name="stop" size={14} />
             Stop all
           </Button>
@@ -109,6 +112,8 @@ export function StackHeader({
             <div className={styles.menu}>
               <Button
                 variant="quiet"
+                disabled={limit !== undefined}
+                title={limit}
                 onClick={() => {
                   close();
                   onRescan();

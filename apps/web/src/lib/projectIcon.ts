@@ -1,6 +1,7 @@
 import type { ProjectIcon } from "@tide/contracts";
 import { call } from "../state/model.ts";
 import { showToast } from "../state/toast.ts";
+import { projectDeviceLimitOf } from "../state/deviceAccess.ts";
 import { dispatchOrToast, errorText } from "./dispatchOrToast.ts";
 
 export function setProjectIcon(projectId: string, icon: ProjectIcon | null): void {
@@ -24,6 +25,8 @@ const flagKey = (projectId: string): string => `tide.iconChecked:${projectId}`;
 
 /** One lazy detection per project and browser: flagged whether or not an icon was found. */
 export function detectIconOnce(projectId: string): void {
+  // R19: a limited device may not change the project; leave the check to one that may
+  if (projectDeviceLimitOf(projectId) !== undefined) return;
   try {
     if (localStorage.getItem(flagKey(projectId)) !== null) return;
     localStorage.setItem(flagKey(projectId), "1");

@@ -1,6 +1,7 @@
 import { copyTerminalCommand, fetchTerminalCommand } from "./threadActions.ts";
 import { createPty, ensurePtys, livePurposeTab, setActivePty, setDrawerOpen, writePty, type PtyPurpose } from "../state/terminals.ts";
 import { showToast } from "../state/toast.ts";
+import { threadDeviceLimitOf } from "../state/deviceAccess.ts";
 import { useUi } from "../state/ui.ts";
 import { useMobileNav } from "../components/mobile/mobileNav.ts";
 import { isPhoneViewport } from "./useViewport.ts";
@@ -51,6 +52,11 @@ async function run(threadId: string, command: string, purpose: PtyPurpose | unde
  * Falls back to the clipboard when no PTY can be created.
  */
 export function runInThreadTerminal(threadId: string, command: string, options: { purpose?: PtyPurpose } = {}): Promise<void> {
+  const limit = threadDeviceLimitOf(threadId);
+  if (limit !== undefined) {
+    showToast(limit);
+    return Promise.resolve();
+  }
   showThread(threadId);
   const key = options.purpose === undefined ? undefined : `${threadId}:${options.purpose}`;
   const inFlight = key === undefined ? undefined : pending.get(key);
@@ -66,6 +72,11 @@ export function runInThreadTerminal(threadId: string, command: string, options: 
  * harness's own resume command into it.
  */
 export async function openThreadTerminal(threadId: string): Promise<void> {
+  const limit = threadDeviceLimitOf(threadId);
+  if (limit !== undefined) {
+    showToast(limit);
+    return;
+  }
   showThread(threadId);
   const existing = livePurposeTab(threadId, "resume");
   if (existing) {

@@ -22,6 +22,7 @@ import { ThreadLinkPicker, useLinkChoices } from "./ThreadLinkPicker.tsx";
 import { HarnessFields, draftForProvider, useThreadDraft } from "../thread/ProviderPicker.tsx";
 import { useModel } from "../../state/model.ts";
 import { useEnvOfflineReason } from "../../state/threadEnv.ts";
+import { limitModeOptions, modeBlocked, useDeviceLimit } from "../../state/deviceAccess.ts";
 import { useUi, type NewThreadTab } from "../../state/ui.ts";
 import { NewTeamFields } from "./NewTeamFields.tsx";
 import { environmentName } from "../../state/environments.ts";
@@ -175,6 +176,9 @@ function ThreadFields({
   const envId = parent === undefined ? runOn.target : runOn.owner;
   const status = providerStatus(providers, draft.providerId, envId) ?? providerStatus(providers, draft.providerId);
   const offline = useEnvOfflineReason(envId);
+  // R19: on a machine where this device is limited, no Full access mode and no fresh clone
+  const limit = useDeviceLimit(envId);
+  const limited = modeBlocked(draft.mode, limit) ?? (runOn.plan.kind === "clone" ? limit : undefined);
   const efforts = effortsOf(status?.models ?? [], draft.model);
   // C1: Plan only where the harness has a native plan mode; an unknown (still loading) roster keeps it
   const planMode = status === undefined || status.caps.planMode === true;
@@ -185,7 +189,7 @@ function ThreadFields({
   // a harness that is known to be missing or signed out cannot run the first turn; unknown never blocks
   const problem = rosterError === null ? harnessProblem(status, harness) : undefined;
   const create = (): void => {
-    if (!projectId || busy !== undefined || offline !== undefined || problem !== undefined) return;
+    if (!projectId || busy !== undefined || offline !== undefined || limited !== undefined || problem !== undefined) return;
     const trimmed = title.trim();
     const options: NewThreadOptions = {
       ...(parent === undefined ? {} : { parentThreadId: parent.id }),
@@ -247,7 +251,7 @@ function ThreadFields({
       primaryLabel={busy ?? (parent ? "Create child thread" : "Create thread")}
       onPrimary={create}
       busy={busy !== undefined}
-      blockedReason={projectId === undefined ? "Add a project first" : (offline ?? problem?.reason)}
+      blockedReason={projectId === undefined ? "Add a project first" : (offline ?? limited ?? problem?.reason)}
       onCancel={onDone}
     >
       <PrimaryField
@@ -318,7 +322,7 @@ function ThreadFields({
           <Select
             label="Thread permissions"
             value={mode}
-            options={MODE_OPTIONS}
+            options={limitModeOptions(MODE_OPTIONS, limit)}
             onSelect={(next) => patch({ mode: next })}
             variant="field"
             size="md"

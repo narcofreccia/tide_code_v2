@@ -7,6 +7,7 @@ import { describeSchedule, formatOnce } from "../../lib/schedule.ts";
 import { createTask, deleteTask, runTaskNow, updateTask, type TaskFields } from "../../lib/taskActions.ts";
 import { useModel } from "../../state/model.ts";
 import { useUi } from "../../state/ui.ts";
+import { useProjectDeviceLimit } from "../../state/deviceAccess.ts";
 import { Button } from "../ui/Button.tsx";
 import { ConfirmDialog } from "../ui/Dialog.tsx";
 import { TaskDialog } from "./TaskDialog.tsx";
@@ -42,6 +43,9 @@ function TaskRow({
   // a one-time task that ran disabled itself; a new time arms it again (enabled) even though completedAt stays
   const done = task.completedAt !== undefined && !task.enabled;
   const last = task.lastRunAt === undefined ? "never run" : `last ${relativeTime(task.lastRunAt)} ago`;
+  // R19: creating, editing and deleting automations needs Full access on that machine
+  const limit = useProjectDeviceLimit(task.projectId);
+  const off = { disabled: limit !== undefined, title: limit };
   return (
     <SettingRow
       id={`setting-task-${task.id}`}
@@ -61,13 +65,13 @@ function TaskRow({
       }
       control={
         <>
-          <Button onClick={() => runOrToast("Running the automation", () => runTaskNow(task.id))}>Run now</Button>
-          <Button onClick={onEdit}>Edit</Button>
-          <Button variant="quietDanger" onClick={onDelete}>Delete</Button>
+          <Button {...off} onClick={() => runOrToast("Running the automation", () => runTaskNow(task.id))}>Run now</Button>
+          <Button {...off} onClick={onEdit}>Edit</Button>
+          <Button variant="quietDanger" {...off} onClick={onDelete}>Delete</Button>
           <SettingToggle
             label={`Enable ${task.title}`}
             checked={task.enabled}
-            disabled={done}
+            disabled={done || limit !== undefined}
             onChange={(enabled) => dispatchOrToast("Updating the automation", { type: "task.update", taskId: task.id, enabled })}
           />
         </>
@@ -89,6 +93,15 @@ function emptyText(scoped: boolean, grouped: boolean, title: string): string {
   if (scoped) return "No automations for this project.";
   if (grouped) return "No automations.";
   return `No automations in ${title} yet.`;
+}
+
+function NewAutomation({ projectId, quiet, onNew }: { projectId: string; quiet: boolean; onNew: () => void }) {
+  const limit = useProjectDeviceLimit(projectId);
+  return (
+    <Button variant={quiet ? "ghost" : "primary"} disabled={limit !== undefined} title={limit} onClick={onNew}>
+      New automation
+    </Button>
+  );
 }
 
 /** Settings › Automations: scheduled prompts for the selected project (or every project). */
@@ -121,11 +134,7 @@ export function AutomationsSection() {
             key={project.id}
             title={grouped ? project.title : "Scheduled prompts"}
             label={`Automations for ${project.title}`}
-            actions={
-              <Button variant={grouped ? "ghost" : "primary"} onClick={() => setEditing({ projectId: project.id })}>
-                New automation
-              </Button>
-            }
+            actions={<NewAutomation projectId={project.id} quiet={grouped} onNew={() => setEditing({ projectId: project.id })} />}
           >
             {tasks.length === 0 ? (
               <SettingNote>{emptyText(selectedProjectId !== null, grouped, project.title)}</SettingNote>

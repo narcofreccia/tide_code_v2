@@ -3,6 +3,7 @@ import { call } from "../../state/model.ts";
 import { addProject } from "../../lib/projectActions.ts";
 import { useUi } from "../../state/ui.ts";
 import { useEnvironments } from "../../state/environments.ts";
+import { useDeviceLimit } from "../../state/deviceAccess.ts";
 import { EnvSelect } from "../fleet/EnvSelect.tsx";
 import { envOpt } from "../fleet/envView.ts";
 import { Button } from "../ui/Button.tsx";
@@ -33,6 +34,8 @@ export function AddProjectForm({ onDone, variant = "inline" }: { onDone: () => v
   const primaryId = useEnvironments((s) => s.primaryId);
   const [envId, setEnvId] = useState<string | undefined>(undefined);
   const target = envId ?? primaryId;
+  // R19: a device with limited access on that machine may not add projects there
+  const limit = useDeviceLimit(target);
 
   const finish = (): void => {
     setTitle("");
@@ -130,7 +133,7 @@ export function AddProjectForm({ onDone, variant = "inline" }: { onDone: () => v
             onChange={(e) => setRootPath(e.target.value)}
             onBlur={deriveTitle}
           />
-          <Button className={styles.browse ?? ""} onClick={() => setPicking(true)}>Browse…</Button>
+          <Button className={styles.browse ?? ""} disabled={limit !== undefined} title={limit} onClick={() => setPicking(true)}>Browse…</Button>
         </div>
       ) : (
         <>
@@ -142,7 +145,7 @@ export function AddProjectForm({ onDone, variant = "inline" }: { onDone: () => v
               value={parentPath}
               onChange={(e) => setParentPath(e.target.value)}
             />
-            <Button className={styles.browse ?? ""} onClick={() => setPicking(true)}>Browse…</Button>
+            <Button className={styles.browse ?? ""} disabled={limit !== undefined} title={limit} onClick={() => setPicking(true)}>Browse…</Button>
           </div>
           <input
             className={`${styles.input} ${styles.mono}`}
@@ -158,9 +161,10 @@ export function AddProjectForm({ onDone, variant = "inline" }: { onDone: () => v
           ? "Link related repositories later from the project card."
           : "It runs git init on a main branch with an empty first commit, so the first thread gets its own worktree, checkpoints and merge-back."}
       </p>
+      {limit ? <p className={styles.hint} role="note">{limit}</p> : null}
       {error ? <p className={styles.error}>{error}</p> : null}
       <div className={styles.actions}>
-        <Button type="submit" variant="primary" disabled={busy}>
+        <Button type="submit" variant="primary" disabled={busy || limit !== undefined} title={limit}>
           {mode === "existing" ? "Create" : "Create project"}
         </Button>
         <Button variant="quiet" onClick={onDone}>

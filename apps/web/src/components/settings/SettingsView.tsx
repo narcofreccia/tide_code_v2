@@ -21,7 +21,8 @@ import { searchSettings, type SectionMeta } from "./search.ts";
 import { rowId } from "./ui/saved.ts";
 import { MachineSlotContext, SettingsGateContext, type SettingsGate } from "./ui/SettingsPage.tsx";
 import { EnvSelect } from "../fleet/EnvSelect.tsx";
-import { retryServerSettings, selectSettingsEnv, useSelectedSettings } from "../../state/serverSettings.ts";
+import { retryServerSettings, selectSettingsEnv, useSelectedSettings, useServerSettings } from "../../state/serverSettings.ts";
+import { useDeviceLimit } from "../../state/deviceAccess.ts";
 import { useEscape } from "../../lib/useEscape.ts";
 import styles from "./SettingsView.module.css";
 
@@ -53,11 +54,16 @@ function serverBacked(section: SettingsSection): boolean {
 /** The gate the open section shows: the selected environment's `settings.get` state. */
 function useGate(section: SettingsSection): SettingsGate {
   const state = useSelectedSettings((entry) => (entry.loaded ? "ready" : (entry.error ?? "loading")));
+  // keyboard writes the primary's keybindings; the per-environment sections the selected machine's
+  const selectedId = useServerSettings((s) => (section === "keyboard" ? undefined : s.selectedId));
+  const limit = useDeviceLimit(selectedId);
   return useMemo(() => {
-    if (!serverBacked(section) || state === "ready") return { status: "ready" };
+    if (!serverBacked(section)) return { status: "ready" };
+    if (limit !== undefined) return { status: "limited", message: limit };
+    if (state === "ready") return { status: "ready" };
     if (state === "loading") return { status: "loading" };
     return { status: "error", message: state, retry: () => void retryServerSettings() };
-  }, [section, state]);
+  }, [section, state, limit]);
 }
 
 function Body({ section }: { section: SettingsSection }) {

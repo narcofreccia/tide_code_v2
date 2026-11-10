@@ -13,6 +13,7 @@ import {
   useDoc,
 } from "../../../state/docs.ts";
 import { clearEditorStatus, setEditorStatus, useWorkbench } from "../../../state/workbench.ts";
+import { useThreadDeviceLimit } from "../../../state/deviceAccess.ts";
 import { ImagePreview } from "./ImagePreview.tsx";
 import { Breadcrumbs } from "./Breadcrumbs.tsx";
 import styles from "./FileTab.module.css";
@@ -35,6 +36,7 @@ export function FileTab({ threadId, path }: { threadId: string; path: string }) 
   }, [threadId, path]);
 
   const dirty = isDirty(doc);
+  const limit = useThreadDeviceLimit(threadId);
   const editable = doc?.content !== undefined;
 
   useEffect(() => {
@@ -63,8 +65,8 @@ export function FileTab({ threadId, path }: { threadId: string; path: string }) 
         <Button
           variant="quiet"
           className={styles.save}
-          disabled={!dirty || doc?.saving === true}
-          title={dirty ? "Save (⌘S)" : "No unsaved changes"}
+          disabled={!dirty || doc?.saving === true || limit !== undefined}
+          title={limit ?? (dirty ? "Save (⌘S)" : "No unsaved changes")}
           onClick={() => void saveDoc(threadId, path)}
         >
           {dirty ? <span className={styles.saveDot} aria-label="unsaved changes" /> : null}
@@ -78,7 +80,7 @@ export function FileTab({ threadId, path }: { threadId: string; path: string }) 
           <Button variant="quiet" onClick={() => reloadDoc(threadId, path)}>
             Reload
           </Button>
-          <Button variant="primary" onClick={() => void saveDoc(threadId, path, true)}>
+          <Button variant="primary" disabled={limit !== undefined} title={limit} onClick={() => void saveDoc(threadId, path, true)}>
             Overwrite
           </Button>
         </div>

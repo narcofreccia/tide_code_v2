@@ -1,3 +1,4 @@
+import { LIMITED_HINT, threadDeviceLimitOf } from "../../state/deviceAccess.ts";
 import type { ReadModel, Thread } from "@tide/contracts";
 import { useServerSettings } from "../../state/serverSettings.ts";
 import { createChild, deleteNeedsConfirm, isEmptyThread, requestArchive, requestDelete, updateThread } from "../../lib/threadActions.ts";
@@ -72,12 +73,13 @@ export function headerMenu(
   const lastTurn = latestSettledTurnId(model, thread.id);
   const decisions = useServerSettings.getState().settings.decisions;
   const autoAllowOff = !decisions.enabled || !decisions.hasKey ? "needs a Jev key" : !decisions.sites.approvals ? "approvals judge is off" : undefined;
+  const limited = threadDeviceLimitOf(thread.id) !== undefined;
   const folded: MenuItem[] = narrow
     ? [
         {
           label: "Terminal",
-          disabled: narrow.terminal === undefined,
-          ...(narrow.terminal === undefined ? { hint: terminalUnavailable(thread) } : {}),
+          disabled: narrow.terminal === undefined || limited,
+          ...(limited ? { hint: LIMITED_HINT } : narrow.terminal === undefined ? { hint: terminalUnavailable(thread) } : {}),
           onSelect: () => {
             const command = narrow.terminal;
             if (command) void runInThreadTerminal(thread.id, command, { purpose: "resume" });

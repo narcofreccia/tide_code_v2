@@ -84,3 +84,29 @@ export function MergeAction({ thread, running }: { thread: Thread; running: bool
     </Popover>
   );
 }
+
+/**
+ * R19 L4: a failed merge in the thread header, with its message and a retry. The Changes tab
+ * shows the same state only once the thread has checkpointed turns; a merge cut short by a
+ * restart on a thread with none would otherwise say only "merge failed" in the glyph.
+ */
+export function MergeErrorNotice({ thread }: { thread: Thread }) {
+  const merge = thread.merge;
+  if (merge?.status !== "error") return null;
+  const blocked = mergeBlockedReason(thread, thread.status === "running");
+  return (
+    <span className={styles.notice} role="alert" aria-label="Merge error">
+      <span className={styles.noticeText} title={merge.error}>
+        {merge.error ?? "The last merge did not finish"}
+      </span>
+      <Button
+        variant="link"
+        disabled={blocked !== undefined}
+        title={blocked ?? `Merge ${mergeTarget(thread)} again`}
+        onClick={() => void mergeThread(thread.id, { strategy: merge.strategy })}
+      >
+        Retry merge
+      </Button>
+    </span>
+  );
+}

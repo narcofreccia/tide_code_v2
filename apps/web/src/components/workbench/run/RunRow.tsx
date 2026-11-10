@@ -3,6 +3,7 @@ import { isUp, previewPort, type StackService } from "@tide/client";
 import { openPreviewTab } from "../../../state/workbench.ts";
 import { envOfThread } from "../../../state/environments.ts";
 import { previewUrlFor } from "../../../lib/previewUrls.ts";
+import { useProjectDeviceLimit } from "../../../state/deviceAccess.ts";
 import { restartService, showServiceLog, startStack, stopStack } from "../../../state/run.ts";
 import { Button } from "../../ui/Button.tsx";
 import { Checkbox } from "../../ui/Choice.tsx";
@@ -105,6 +106,9 @@ export function RunRow({
   const env = Object.entries(service.env);
   const where = rootPath !== undefined && item.repoId === "root" && planRow !== undefined ? relativeCwd(planRow.cwd, rootPath) : undefined;
   const install = isDepsMissing(reason) ? installCommand(service, planRow?.cwd) : undefined;
+  // R19: a device with limited access may not start or stop the stack
+  const limit = useProjectDeviceLimit(projectId);
+  const off = { disabled: limit !== undefined };
 
   return (
     <div className={styles.row} data-service={key}>
@@ -112,6 +116,8 @@ export function RunRow({
         <Checkbox
           checked={selected}
           aria-label={`Include ${service.name} in the stack`}
+          disabled={limit !== undefined}
+          title={limit}
           onChange={(e) => onToggle(key, e.target.checked)}
         />
         <span
@@ -145,17 +151,17 @@ export function RunRow({
         </span>
         <span className={styles.actions}>
           {live ? null : (
-            <Button variant="quiet" aria-label={`Start ${service.name}`} title="Start" onClick={() => void startStack(projectId, { ...(threadId === undefined ? {} : { threadId }), selected: [key] })}>
+            <Button variant="quiet" aria-label={`Start ${service.name}`} title={limit ?? "Start"} {...off} onClick={() => void startStack(projectId, { ...(threadId === undefined ? {} : { threadId }), selected: [key] })}>
               <Icon name="play" size={14} />
             </Button>
           )}
           {live && state !== "external" ? (
-            <Button variant="quiet" aria-label={`Restart ${service.name}`} title="Restart" onClick={() => void restartService(projectId, key)}>
+            <Button variant="quiet" aria-label={`Restart ${service.name}`} title={limit ?? "Restart"} {...off} onClick={() => void restartService(projectId, key)}>
               <Icon name="refresh" size={14} />
             </Button>
           ) : null}
           {live ? (
-            <Button variant="quiet" aria-label={`Stop ${service.name}`} title="Stop" onClick={() => void stopStack(projectId, key)}>
+            <Button variant="quiet" aria-label={`Stop ${service.name}`} title={limit ?? "Stop"} {...off} onClick={() => void stopStack(projectId, key)}>
               <Icon name="stop" size={14} />
             </Button>
           ) : null}

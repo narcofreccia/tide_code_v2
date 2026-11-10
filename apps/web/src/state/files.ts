@@ -4,6 +4,7 @@ import type { FsChange, FsEntry } from "@tide/contracts";
 import { call, stream, useModel, type StreamControl } from "./model.ts";
 import { onReconnect } from "./reconnect.ts";
 import { showToast } from "./toast.ts";
+import { refusedForLimit, threadDeviceLimitOf } from "./deviceAccess.ts";
 
 export interface Entry<T> {
   data?: T;
@@ -102,7 +103,11 @@ export function selectRow(threadId: string, path: string | undefined): void {
 
 // ---- mutations ----
 
+/** R19: a limited device may not write files; say so instead of letting the call fail. */
+const refusedHere = (threadId: string): boolean => refusedForLimit(threadDeviceLimitOf(threadId));
+
 export async function createEntry(threadId: string, path: string, kind: "file" | "dir"): Promise<boolean> {
+  if (refusedHere(threadId)) return false;
   try {
     await call("fs.create", { threadId, path, kind });
     ensureDir(threadId, parentDir(path), true);
@@ -115,6 +120,7 @@ export async function createEntry(threadId: string, path: string, kind: "file" |
 }
 
 export async function renameEntry(threadId: string, from: string, to: string): Promise<boolean> {
+  if (refusedHere(threadId)) return false;
   try {
     await call("fs.rename", { threadId, from, to });
     ensureDir(threadId, parentDir(from), true);
@@ -128,6 +134,7 @@ export async function renameEntry(threadId: string, from: string, to: string): P
 }
 
 export async function deleteEntry(threadId: string, path: string): Promise<boolean> {
+  if (refusedHere(threadId)) return false;
   try {
     await call("fs.delete", { threadId, path });
     ensureDir(threadId, parentDir(path), true);

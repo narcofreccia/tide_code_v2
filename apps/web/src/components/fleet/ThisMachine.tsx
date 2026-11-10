@@ -11,6 +11,7 @@ import { HostBars } from "./FleetBits.tsx";
 import { hostLine, harnessSummary, formatBytes } from "./envView.ts";
 import { PairDevice } from "./PairDevice.tsx";
 import { PairedDevices, useOwnsEnvironment } from "./PairedDevices.tsx";
+import { useDeviceLimit } from "../../state/deviceAccess.ts";
 import { UpdateHarnesses } from "./UpdateHarnesses.tsx";
 import styles from "./Environments.module.css";
 
@@ -31,6 +32,8 @@ export function ThisMachine({ info, envId }: { info: ServerInfo | undefined; env
   const host = info?.host;
   // R18: a paired device may not change how the machine is exposed (the server refuses it)
   const owner = useOwnsEnvironment(envId);
+  // R19: a device with limited access sees these read-only
+  const limit = useDeviceLimit(envId);
 
   return (
     <SettingsGroup title="This machine" actions={host ? <HostBars host={host} /> : undefined}>
@@ -43,6 +46,8 @@ export function ThisMachine({ info, envId }: { info: ServerInfo | undefined; env
             value={name}
             placeholder={host?.hostname ?? "my-laptop"}
             normalize={trim}
+            disabled={limit !== undefined}
+            title={limit}
             validate={(next) => (next === "" && name !== "" ? "A machine needs a name" : undefined)}
             onCommit={(next) => (next === "" ? undefined : patchServerSettings({ environment: { name: next } }))}
           />
@@ -73,6 +78,8 @@ export function ThisMachine({ info, envId }: { info: ServerInfo | undefined; env
             value={settings.sshHost ?? info?.sshHost ?? ""}
             placeholder="user@host"
             normalize={trim}
+            disabled={limit !== undefined}
+            title={limit}
             onCommit={(next) => patchServerSettings({ environment: { sshHost: next === "" ? null : next } })}
           />
         )}
@@ -115,7 +122,7 @@ export function ThisMachine({ info, envId }: { info: ServerInfo | undefined; env
       )}
       <PairDevice envId={envId} />
       <PairedDevices envId={envId} />
-      <UpdateHarnesses />
+      <UpdateHarnesses limit={limit} />
     </SettingsGroup>
   );
 }

@@ -1,5 +1,5 @@
 import { useCallback, useEffect, useState } from "react";
-import type { PairedClient } from "@tide/contracts";
+import type { DeviceAccess, PairedClient } from "@tide/contracts";
 import { call } from "../../state/model.ts";
 import { useEnvironments } from "../../state/environments.ts";
 import { errorText } from "../../lib/dispatchOrToast.ts";
@@ -7,6 +7,8 @@ import { relativeTime } from "../../lib/relativeTime.ts";
 import { Button } from "../ui/Button.tsx";
 import { ConfirmDialog } from "../ui/Dialog.tsx";
 import { Pill } from "../ui/Pill.tsx";
+import { Select, type SelectOption } from "../ui/Select.tsx";
+import { showToast } from "../../state/toast.ts";
 import { SettingRow } from "../settings/ui/SettingRow.tsx";
 import { envOpt } from "./envView.ts";
 import styles from "./PairedDevices.module.css";
@@ -22,6 +24,16 @@ export function useOwnsEnvironment(envId: string | undefined): boolean {
 
 /** The server refused the call because this connection is a paired device, not the owner. */
 export const isForbidden = (err: unknown): boolean => (err as { code?: unknown } | null)?.code === "forbidden";
+
+/** R19: a row written before access levels (or an older server) has full access. */
+export const accessOf = (client: PairedClient): DeviceAccess => client.access ?? "full";
+
+export const ACCESS_LABELS: Record<DeviceAccess, string> = { limited: "Limited", full: "Full access" };
+
+const ACCESS_OPTIONS: SelectOption<DeviceAccess>[] = [
+  { value: "limited", label: ACCESS_LABELS.limited, description: "Read, chat, approvals, review and merge" },
+  { value: "full", label: ACCESS_LABELS.full, description: "Also terminal, file edits, settings, projects and Full access mode" },
+];
 
 const day = (ms: number): string => new Date(ms).toLocaleDateString(undefined, { year: "numeric", month: "short", day: "numeric" });
 
@@ -50,6 +62,19 @@ export function PairedDevices({ envId }: { envId: string | undefined }) {
 
   useEffect(load, [load]);
 
+  // R19: optimistic; a refusal puts the list back from the server and says why
+  const setAccess = (client: PairedClient, access: DeviceAccess): void => {
+    if (accessOf(client) === access) return;
+    setClients((list) => list?.map((c) => (c.id === client.id ? { ...c, access } : c)) ?? null);
+    const failed = (why: string): void => {
+      showToast(`Changing access for “${client.name}” failed: ${why}`);
+      load();
+    };
+    call("env.clients.setAccess", { id: client.id, access }, envOpt(envId))
+      .then((result) => (result.ok ? undefined : failed("that device is no longer paired")))
+      .catch((err: unknown) => failed(isForbidden(err) ? "only the owner of the machine can change it" : errorText(err)));
+  };
+
   const revoke = (client: PairedClient): void => {
     setConfirm(null);
     call("env.clients.revoke", { id: client.id }, envOpt(envId))
@@ -64,7 +89,7 @@ export function PairedDevices({ envId }: { envId: string | undefined }) {
       label={owner ? "Paired devices" : "This device"}
       help={
         owner
-          ? "Each device that paired holds its own token; revoke one you no longer use or have lost"
+          ? "Each device that paired holds its own token. Limited devices cannot use the terminal, edit files, settings or projects; revoke one you no longer use or have lost"
           : "This device is paired with that machine; other devices are managed on the machine itself"
       }
       extra={
@@ -86,6 +111,19 @@ export function PairedDevices({ envId }: { envId: string | undefined }) {
                   <span className={styles.meta} title={client.lastAddress}>
                     paired {day(client.createdAt)} · {client.lastSeenAt === undefined ? "never seen" : `seen ${relativeTime(client.lastSeenAt, now)}`}
                   </span>
+                  {owner ? (
+                    <Select
+                      label={`Access for ${client.name}`}
+                      value={accessOf(client)}
+                      options={ACCESS_OPTIONS}
+                      onSelect={(access) => setAccess(client, access)}
+                      align="end"
+                    />
+                  ) : (
+                    <Pill size="sm" tone={accessOf(client) === "full" ? "accent" : "muted"} title="Changed by the owner, on that machine">
+                      {ACCESS_LABELS[accessOf(client)]}
+                    </Pill>
+                  )}
                   {owner || client.id === ownClientId ? (
                     <Button variant="quietDanger" aria-label={`Revoke ${client.name}`} onClick={() => setConfirm(client)}>
                       Revoke

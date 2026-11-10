@@ -9,11 +9,23 @@ export const MachineSlotContext = createContext<ReactNode>(null);
  * Whether the server settings this page edits have answered. SettingsView sets it for the
  * server-backed sections; client-only ones (appearance, notifications) stay `ready` always.
  */
-export type SettingsGate = { status: "ready" } | { status: "loading" } | { status: "error"; message: string; retry: () => void };
+export type SettingsGate =
+  | { status: "ready" }
+  | { status: "loading" }
+  | { status: "error"; message: string; retry: () => void }
+  /** R19: this device has limited access on the machine: the page is read-only */
+  | { status: "limited"; message: string };
 
 export const SettingsGateContext = createContext<SettingsGate>({ status: "ready" });
 
 function GateLine({ gate }: { gate: Exclude<SettingsGate, { status: "ready" }> }) {
+  if (gate.status === "limited") {
+    return (
+      <p className={styles.gateLine} role="note">
+        Read-only. {gate.message}
+      </p>
+    );
+  }
   if (gate.status === "loading") {
     return (
       <p className={styles.gateLine} role="status">
@@ -32,9 +44,26 @@ function GateLine({ gate }: { gate: Exclude<SettingsGate, { status: "ready" }> }
 }
 
 /**
+ * R19: a block this device may only read (limited access on that machine): the reason on top,
+ * the content dimmed and inert below. `limit` undefined renders the content as is.
+ */
+export function ReadOnlyBlock({ limit, children }: { limit: string | undefined; children: ReactNode }) {
+  if (limit === undefined) return <>{children}</>;
+  return (
+    <>
+      <GateLine gate={{ status: "limited", message: limit }} />
+      <div className={styles.gated} inert data-testid="settings-read-only">
+        {children}
+      </div>
+    </>
+  );
+}
+
+/**
  * One settings section: a title, a one-line blurb, then its groups. Capped at `--measure`.
  * Until the server's settings load the groups are dimmed and inert: what they would show
- * are client defaults, and a change made then could overwrite the server's lists.
+ * are client defaults, and a change made then could overwrite the server's lists. R19: on a
+ * device with limited access they stay inert with a notice saying why.
  */
 export function SettingsPage({
   title,
@@ -60,6 +89,8 @@ export function SettingsPage({
       </header>
       {gate.status === "ready" ? (
         children
+      ) : gate.status === "limited" ? (
+        <ReadOnlyBlock limit={gate.message}>{children}</ReadOnlyBlock>
       ) : (
         <>
           <GateLine gate={gate} />

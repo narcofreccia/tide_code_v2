@@ -1,11 +1,14 @@
 import { memo, useState } from "react";
 import ReactMarkdown from "react-markdown";
 import remarkGfm from "remark-gfm";
+import { threadSendBlock } from "@tide/client";
 import type { ProposedPlan, ProviderKind } from "@tide/contracts";
 import { dismissPlan, implementPlanHere, implementPlanInNewThread } from "../../lib/threadActions.ts";
 import { runOrToast } from "../../lib/dispatchOrToast.ts";
 import { focusComposer } from "../../lib/composerFocus.ts";
+import { useModel } from "../../state/model.ts";
 import { useUi } from "../../state/ui.ts";
+import { modeBlocked, useThreadDeviceLimit } from "../../state/deviceAccess.ts";
 import { Button } from "../ui/Button.tsx";
 import { Icon } from "../ui/Icon.tsx";
 import { Popover } from "../ui/Popover.tsx";
@@ -25,6 +28,13 @@ export const PlanCard = memo(function PlanCard({ plan, provider }: { plan: Propo
   const [choosing, setChoosing] = useState(false);
   const selectThread = useUi((s) => s.selectThread);
   const implementedHere = plan.implementationThreadId === plan.threadId;
+  // R19: a Full access default mode is refused for a device with limited access on that machine
+  const modeLimit = modeBlocked(draft.mode, useThreadDeviceLimit(plan.threadId));
+  // in place it is a turn on this thread: the same refusal as the composer's (a new thread still works)
+  const blocked = useModel((s) => {
+    const thread = s.model.threads[plan.threadId];
+    return thread === undefined ? undefined : threadSendBlock(thread)?.reason;
+  });
 
   return (
     <li>
@@ -50,7 +60,8 @@ export const PlanCard = memo(function PlanCard({ plan, provider }: { plan: Propo
                 <Button
                   variant="primary"
                   className={own.main}
-                  title="Run the plan in this thread"
+                  disabled={blocked !== undefined}
+                  title={blocked ?? "Run the plan in this thread"}
                   onClick={() => {
                     runOrToast("Implementing the plan", () => implementPlanHere(plan.id));
                     focusComposer();
@@ -70,8 +81,11 @@ export const PlanCard = memo(function PlanCard({ plan, provider }: { plan: Propo
                     <>
                       <span className={own.heading}>In a new thread</span>
                       <ProviderPicker draft={draft} onChange={patch} />
+                      {modeLimit === undefined ? null : <p className={own.why}>{modeLimit}</p>}
                       <Button
                         variant="primary"
+                        disabled={modeLimit !== undefined}
+                        title={modeLimit}
                         onClick={() => {
                           close();
                           runOrToast("Implementing the plan", () =>

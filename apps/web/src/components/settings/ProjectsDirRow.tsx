@@ -1,6 +1,7 @@
 import { useState } from "react";
 import { useEnvironments } from "../../state/environments.ts";
 import { patchServerSettings, useServerSettings } from "../../state/serverSettings.ts";
+import { useDeviceLimit } from "../../state/deviceAccess.ts";
 import { EnvSelect } from "../fleet/EnvSelect.tsx";
 import { DEFAULT_PROJECTS_DIR, settingsOfEnv } from "../shell/useRunOn.ts";
 import { SettingRow } from "./ui/SettingRow.tsx";
@@ -23,6 +24,7 @@ export function ProjectsDirGroup() {
   const primaryId = useEnvironments((s) => s.primaryId);
   const [chosen, setChosen] = useState<string | undefined>(undefined);
   const envId = chosen ?? primaryId;
+  const limit = useDeviceLimit(envId);
   const value = useServerSettings((s) => settingsOfEnv(s, envId, primaryId)?.environment.projectsDir ?? "");
   const commit = (next: string): Promise<void> => {
     const trimmed = next.trim();
@@ -34,7 +36,7 @@ export function ProjectsDirGroup() {
         label="Projects folder"
         help={`Where repos from other machines are cloned when you start a thread here. Empty uses ${DEFAULT_PROJECTS_DIR}.`}
         control={(id) => (
-          <SettingText id={id} label="Projects folder" mono placeholder={DEFAULT_PROJECTS_DIR} value={value} validate={validateProjectsDir} onCommit={commit} />
+          <SettingText id={id} label="Projects folder" mono placeholder={DEFAULT_PROJECTS_DIR} value={value} validate={validateProjectsDir} onCommit={commit} disabled={limit !== undefined} title={limit} />
         )}
       />
     </SettingsGroup>

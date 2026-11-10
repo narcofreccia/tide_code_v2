@@ -3,6 +3,7 @@ import { persist } from "zustand/middleware";
 import { call, useModel } from "./model.ts";
 import { onReconnect } from "./reconnect.ts";
 import { showToast } from "./toast.ts";
+import { threadDeviceLimitOf } from "./deviceAccess.ts";
 
 /** why Tide opened the tab: `resume` runs the harness's own resume command (one per thread) */
 export type PtyPurpose = "resume";
@@ -70,6 +71,8 @@ export function setActivePty(threadId: string, ptyId: string | undefined): void 
 /** `pty.list` once per thread when the drawer opens; ptys outlive the client. */
 export async function ensurePtys(threadId: string, force = false): Promise<void> {
   if (!force && useTerminals.getState().loaded[threadId]) return;
+  // R19: listing and attaching need Full access too; the drawer says why instead
+  if (threadDeviceLimitOf(threadId) !== undefined) return;
   useTerminals.setState((s) => ({ loaded: { ...s.loaded, [threadId]: true } }));
   try {
     const result = await call("pty.list", { threadId });
@@ -127,6 +130,12 @@ export async function ensureOwnerPtys(ownerId: string, force = false): Promise<P
 }
 
 export async function createPty(threadId: string, cols: number, rows: number, purpose?: PtyPurpose): Promise<string | undefined> {
+  // R19: a limited device may not open terminals; say so instead of letting the call fail
+  const limit = threadDeviceLimitOf(threadId);
+  if (limit !== undefined) {
+    showToast(limit);
+    return undefined;
+  }
   try {
     const { ptyId } = await call("pty.create", { threadId, cols, rows });
     const tab: PtyTab = { ptyId, alive: true, ...(purpose === undefined ? {} : { purpose }) };

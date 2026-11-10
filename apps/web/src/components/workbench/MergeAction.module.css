@@ -47,3 +47,7 @@
   color: var(--danger);
 }
 .stateHint { margin: 0; color: var(--muted); font-size: var(--fs-sm); }
+
+/* header sub-row (MergeErrorNotice): one 24px line, the message truncated, full text on hover */
+.notice { display: inline-flex; align-items: center; gap: var(--sp-2); min-width: 0; font-size: var(--fs-sm); }
+.noticeText { min-width: 0; max-width: 320px; overflow: hidden; text-overflow: ellipsis; white-space: nowrap; color: var(--danger); }

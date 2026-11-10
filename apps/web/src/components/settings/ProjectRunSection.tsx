@@ -14,7 +14,8 @@ import { SettingRow } from "./ui/SettingRow.tsx";
 import { SettingText } from "./ui/SettingText.tsx";
 import { SettingToggle } from "./ui/SettingToggle.tsx";
 import { SettingNote, SettingsGroup } from "./ui/SettingsGroup.tsx";
-import { SettingsPage } from "./ui/SettingsPage.tsx";
+import { ReadOnlyBlock, SettingsPage } from "./ui/SettingsPage.tsx";
+import { useProjectDeviceLimit } from "../../state/deviceAccess.ts";
 import { MiddlePath } from "./ProjectRows.tsx";
 import styles from "./ProjectRunSection.module.css";
 
@@ -178,6 +179,8 @@ function RepoGroup({ repo, project, repos, rescan, refresh }: {
 /** Settings › Projects › Run stack: per repo profile, which services are in the stack, port pins. */
 export function ProjectRunSection({ project, onBack }: { project: Project; onBack: () => void }) {
   const { repos, loading, error, refresh, rescan } = useRunProfiles(project.id);
+  // R19: profiles, pins and the stack are read-only on a device with limited access
+  const limit = useProjectDeviceLimit(project.id);
   return (
     <SettingsPage title={`Run stack — ${project.title}`} blurb={RUN_BLURB}>
       <Button variant="quiet" className={styles.back} onClick={onBack}>
@@ -185,9 +188,11 @@ export function ProjectRunSection({ project, onBack }: { project: Project; onBac
       </Button>
       {error === undefined ? null : <SettingNote role="alert">{error}</SettingNote>}
       {loading && repos.length === 0 ? <SettingNote role="status">Reading profiles…</SettingNote> : null}
-      {repos.map((repo) => (
-        <RepoGroup key={repo.repoId} repo={repo} project={project} repos={repos} rescan={rescan} refresh={refresh} />
-      ))}
+      <ReadOnlyBlock limit={limit}>
+        {repos.map((repo) => (
+          <RepoGroup key={repo.repoId} repo={repo} project={project} repos={repos} rescan={rescan} refresh={refresh} />
+        ))}
+      </ReadOnlyBlock>
     </SettingsPage>
   );
 }

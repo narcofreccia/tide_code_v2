@@ -1,4 +1,5 @@
 import { useEffect, useRef, useState } from "react";
+import { selectLatestSettledTurnId } from "@tide/client";
 import { getDraft, useDrafts } from "../../state/drafts.ts";
 import { useComposerDraft } from "./useComposerDraft.ts";
 import type { Thread } from "@tide/contracts";
@@ -21,6 +22,8 @@ import { bigPasteFile, filesOf, splitFiles, transferHasFiles } from "../../lib/a
 import { parseClearCommand } from "../../lib/slash.ts";
 import { armFreshSession, disarmFreshSession, useArmed } from "../../state/freshSession.ts";
 import { showToast } from "../../state/toast.ts";
+import { useModel } from "../../state/model.ts";
+import { useUi } from "../../state/ui.ts";
 import { applyCompose } from "../../lib/cite.ts";
 import { interceptSide, useComposeEvent, useEscInterrupt, type ComposerScope } from "./composerScope.ts";
 import { Button } from "../ui/Button.tsx";
@@ -68,7 +71,7 @@ export function Composer({ thread, scope = "main" }: { thread: Thread; scope?: C
   const slash = useSlash(thread, text, listsCommands, scope === "main");
   const harness = useThreadHarnessLabel(thread);
   const files = fileAttachments.files;
-  const { send: sendNow, busy, uploading, offline } = useComposerSend({
+  const { send: sendNow, busy, uploading, offline, blocked } = useComposerSend({
     thread,
     text,
     images: attachments.images,
@@ -79,6 +82,10 @@ export function Composer({ thread, scope = "main" }: { thread: Thread; scope?: C
       attachments.clear();
     },
   });
+
+  const forkTurn = useModel((s) => (blocked?.continueElsewhere === true ? selectLatestSettledTurnId(s.model, thread.id) : undefined));
+  /** the one reason sending is off right now, for the button's title */
+  const held = blocked?.reason ?? offline;
 
   useEffect(() => (scope === "main" ? registerComposerFocus(() => input.current?.focus()) : undefined), [scope]);
 
@@ -305,6 +312,23 @@ export function Composer({ thread, scope = "main" }: { thread: Thread; scope?: C
           {offline}. Sending resumes when it reconnects; your text stays here.
         </p>
       )}
+      {blocked === undefined ? null : (
+        <div className={styles.blocked} role="status">
+          <span>{blocked.reason}</span>
+          {blocked.continueElsewhere ? (
+            <Button
+              variant="quiet"
+              disabled={forkTurn === undefined}
+              title={forkTurn === undefined ? "No finished turn to continue from" : "Fork from the latest finished turn into a new thread"}
+              onClick={() => {
+                if (forkTurn) useUi.getState().setThreadDialog({ kind: "fork", threadId: thread.id, turnId: forkTurn });
+              }}
+            >
+              Continue in a new thread
+            </Button>
+          ) : null}
+        </div>
+      )}
       {slash.unknown === undefined ? null : (
         <p className={styles.switchHint} role="status">
           Unknown command for {harness}; it will be sent as text
@@ -376,8 +400,8 @@ export function Composer({ thread, scope = "main" }: { thread: Thread; scope?: C
           <Button
             variant="primary"
             onClick={() => void send()}
-            disabled={busy || nothingToSend || offline !== undefined}
-            {...(offline === undefined ? {} : { title: offline })}
+            disabled={busy || nothingToSend || held !== undefined}
+            {...(held === undefined ? {} : { title: held })}
           >
             {primaryLabel}
           </Button>

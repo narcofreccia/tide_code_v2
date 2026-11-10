@@ -1,6 +1,7 @@
 import { create } from "zustand";
 import type { ProviderInstanceConfig, RuntimeMode, UserSettings, UserSettingsPatch } from "@tide/contracts";
 import { errorText } from "../lib/dispatchOrToast.ts";
+import { deviceLimitOf } from "./deviceAccess.ts";
 import { useEnvironments } from "./envStore.ts";
 import { call } from "./model.ts";
 import { showToast } from "./toast.ts";
@@ -218,6 +219,12 @@ export function applyPatch(settings: UserSettings, patch: UserSettingsPatch): Us
  */
 export async function patchServerSettings(patch: UserSettingsPatch, envId?: string): Promise<void> {
   const target = targetEnv(envId);
+  // R19: a limited device may not write settings; say why instead of a failed save
+  const limit = deviceLimitOf(target);
+  if (limit !== undefined) {
+    showToast(limit);
+    return;
+  }
   const previous = entryOf(useServerSettings.getState(), target);
   // a list-replacing field (teams, providerInstances, keybindings) sent now would overwrite the server's
   if (!previous.loaded) {

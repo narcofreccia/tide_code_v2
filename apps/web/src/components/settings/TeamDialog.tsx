@@ -8,6 +8,8 @@ import {
   RUNTIME_MODES,
 } from "../../lib/vocab.ts";
 import { HarnessFields } from "../thread/ProviderPicker.tsx";
+import { limitModeOptions, useDeviceLimit } from "../../state/deviceAccess.ts";
+import { useServerSettings } from "../../state/serverSettings.ts";
 import { Dialog } from "../ui/Dialog.tsx";
 import { DialogFrame, FrameSection, PrimaryField } from "../ui/DialogFrame.tsx";
 import { Select, type SelectOption } from "../ui/Select.tsx";
@@ -47,6 +49,8 @@ function StageEditor({
   onRemove: () => void;
 }) {
   const n = index + 1;
+  // teams belong to the machine Settings edits; Full access is refused there for a limited device
+  const limit = useDeviceLimit(useServerSettings((s) => s.selectedId));
   const donors: SelectOption<string>[] = earlier.map((s, i) => ({ value: s.uid, label: `${i + 1}. ${s.role.trim() || "(no role)"}` }));
   const donor =
     stage.inheritUid !== "" && earlier.some((s) => s.uid === stage.inheritUid) ? stage.inheritUid : (earlier.at(-1)?.uid ?? "");
@@ -86,7 +90,7 @@ function StageEditor({
     >
       <StageSettings>
         <StageSetting label="Permissions">
-          <Select label={`Stage ${n} permissions`} value={stage.mode} options={MODE_OPTIONS} onSelect={(mode) => onChange({ mode })} variant="field" size="md" />
+          <Select label={`Stage ${n} permissions`} value={stage.mode} options={limitModeOptions(MODE_OPTIONS, limit)} onSelect={(mode) => onChange({ mode })} variant="field" size="md" />
         </StageSetting>
         <StageSetting label="Mode">
           <Select label={`Stage ${n} interaction`} value={stage.interaction} options={INTERACTION_OPTIONS} onSelect={(interaction) => onChange({ interaction })} variant="field" size="md" />

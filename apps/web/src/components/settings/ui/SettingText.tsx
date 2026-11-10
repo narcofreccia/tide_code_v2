@@ -24,6 +24,8 @@ export function SettingText({
   step,
   multiline = false,
   maxLength,
+  disabled,
+  title,
 }: {
   id?: string;
   value: string;
@@ -42,6 +44,9 @@ export function SettingText({
   /** a textarea: Enter adds a line, ⌘/Ctrl+Enter or blur commits */
   multiline?: boolean;
   maxLength?: number;
+  disabled?: boolean | undefined;
+  /** tooltip, e.g. why the field is disabled */
+  title?: string | undefined;
 }) {
   const [text, setText] = useState(value);
   const [error, setError] = useState<string | undefined>(undefined);
@@ -81,6 +86,8 @@ export function SettingText({
           maxLength={maxLength}
           aria-label={label}
           aria-invalid={error !== undefined}
+          disabled={disabled}
+          title={title}
           placeholder={placeholder}
           value={text}
           onChange={(e) => setText(e.target.value)}
@@ -110,6 +117,8 @@ export function SettingText({
         step={step}
         aria-label={label}
         aria-invalid={error !== undefined}
+        disabled={disabled}
+        title={title}
         placeholder={placeholder}
         value={text}
         onChange={(e) => setText(e.target.value)}

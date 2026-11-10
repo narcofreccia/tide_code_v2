@@ -13,6 +13,7 @@ import {
   useTerminals,
   type PtyTab,
 } from "../../../state/terminals.ts";
+import { useThreadDeviceLimit } from "../../../state/deviceAccess.ts";
 import { ContextMenu, type MenuItem, type MenuPosition } from "../../ui/Menu.tsx";
 import { Button } from "../../ui/Button.tsx";
 import { Icon } from "../../ui/Icon.tsx";
@@ -93,6 +94,7 @@ export function TerminalDrawer({ threadId }: { threadId: string }) {
   const stack = useStackTabs(open, projectId);
   const active = useTerminals((s) => s.active[threadId]);
   const onDrag = useDragHeight();
+  const limit = useThreadDeviceLimit(threadId);
   const drawer = useRef<HTMLDivElement>(null);
   const tabRow = useRef<HTMLDivElement>(null);
   useWheelScrollX(tabRow);
@@ -205,7 +207,8 @@ export function TerminalDrawer({ threadId }: { threadId: string }) {
         <Button
           variant="quiet"
           aria-label="New terminal"
-          title="New terminal"
+          title={limit ?? "New terminal"}
+          disabled={limit !== undefined}
           onClick={() => void createPty(threadId, DEFAULT_COLS, DEFAULT_ROWS)}
         >
           <Icon name="plus" size={14} />
@@ -221,7 +224,7 @@ export function TerminalDrawer({ threadId }: { threadId: string }) {
             <TerminalView key={current.ptyId} threadId={threadId} ptyId={current.ptyId} />
           </Suspense>
         ) : (
-          <p className={styles.note}>No terminal yet — press + to start one in the worktree.</p>
+          <p className={styles.note}>{limit ?? "No terminal yet — press + to start one in the worktree."}</p>
         )}
       </div>
       {menu ? (

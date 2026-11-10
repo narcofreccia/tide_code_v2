@@ -168,6 +168,10 @@ Composer: textarea, `@` mentions (worktree files), paste images, mode/provider/m
 - **Paired devices.** Settings › Environments › This machine lists paired devices with a Revoke
   action; a revoked machine shows "Pair again". "Found on your network" in Add machine lists
   discovered servers. The relay form is owner-only; a paired device sees the relay state and a note.
+  R19: "Pair another device" has a **Full access** switch (off by default; one sentence says what it
+  adds). The code pairs at the chosen level and flipping the switch asks for a new code. Each paired
+  row shows its level: the owner changes it with a Limited / Full access select, a paired device sees
+  its own level as a read-only pill. A refused change is a toast and the list reloads.
 - **Version skew.** A machine card warns when that server speaks another wire protocol than this
   app ("build-box runs Tide 1.4.0 with a different protocol; update it or this app") and notes
   quietly when only its Tide version differs from the primary's. A primary on another protocol is
@@ -299,6 +303,15 @@ offline), so nothing pretends to send. While the thread's machine is not connect
 the text, disables Send and Stop and says "Not connected to the server. Sending resumes when it
 reconnects; your text stays here." Approval and question buttons, secret Provide / Decline and the
 new-thread dialog's Create are disabled with the reason as their tooltip.
+
+**Limited access (R19).** On a machine where this device is `limited` (`server.info.access`; absent
+means the owner, never restricted) whatever the server would refuse is disabled with the reason
+"This device has limited access. Turn on Full access for it on <machine>." as tooltip or inline hint:
+New terminal and Open in terminal, Save and the file tree's create / rename / delete, Add project and
+project actions (rename, icon, title instructions, links, archive, restore), Start / Stop / Rescan of
+the run stack, Update harnesses, automations create / edit / delete, and the Full access option in
+every permissions picker. Server-backed Settings pages and the project run settings render read-only
+(inert) under a "Read-only." notice. The machine card notes it too.
 
 **Another machine offline.** Its threads stay in the merged view with their last known state. Rail rows
 are muted (tooltip "<machine> is offline"); the thread header carries a "<machine> is offline" pill;

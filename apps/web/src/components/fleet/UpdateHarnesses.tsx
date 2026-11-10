@@ -20,7 +20,7 @@ const MAX_LINES = 200;
  * "Update harnesses": runs each installed CLI's own update command on this machine and
  * streams the output into one log per harness.
  */
-export function UpdateHarnesses() {
+export function UpdateHarnesses({ limit }: { /** R19: why this device may not run it (limited access) */ limit?: string | undefined } = {}) {
   const [logs, setLogs] = useState<Partial<Record<Key, Log>>>({});
   const [running, setRunning] = useState(false);
   const control = useRef<StreamControl | null>(null);
@@ -54,7 +54,7 @@ export function UpdateHarnesses() {
       label="Harness CLIs"
       help="Runs each installed CLI's own update command on this machine"
       control={
-        <Button disabled={running} onClick={start}>
+        <Button disabled={running || limit !== undefined} title={limit} onClick={start}>
           {running ? "Updating…" : "Update harnesses"}
         </Button>
       }

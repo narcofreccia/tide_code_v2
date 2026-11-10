@@ -1,4 +1,4 @@
-import { selectExpertsSessions, selectProjects, selectThreadsByProject } from "@tide/client";
+import { selectExpertsSessions, selectProjects, selectThreadsByProject, threadSendBlock } from "@tide/client";
 import type { ProposedPlan, ReadModel, Thread } from "@tide/contracts";
 import { compose } from "./cite.ts";
 import { fuzzyRank } from "./fuzzy.ts";
@@ -7,6 +7,7 @@ import { providerIdOf } from "./vocab.ts";
 import { useServerSettings } from "../state/serverSettings.ts";
 import { SHORTCUTS, scopeApplies, shortcutKeys } from "./shortcuts.ts";
 import { openThreadTerminal } from "./openInTerminal.ts";
+import { threadDeviceLimitOf } from "../state/deviceAccess.ts";
 import { copyThreadMarkdown, exportThreadMarkdown } from "./threadExport.ts";
 import { armFreshSession } from "../state/freshSession.ts";
 import { useUi } from "../state/ui.ts";
@@ -57,6 +58,8 @@ function latestPlan(model: ReadModel, threadId: string): ProposedPlan | undefine
   return found;
 }
 
+const withDetail = (detail: string | undefined): { detail?: string } => (detail === undefined ? {} : { detail });
+
 /** Contextual actions for the thread the palette was opened on. */
 function threadItems(model: ReadModel, thread: Thread): PaletteItem[] {
   const ui = useUi.getState();
@@ -75,7 +78,13 @@ function threadItems(model: ReadModel, thread: Thread): PaletteItem[] {
       detail: "The harness forgets the conversation; the thread keeps its history",
       run: () => armFreshSession(thread.id),
     },
-    { id: "thread:terminal", label: "Open in terminal", group: "Thread", run: () => void openThreadTerminal(thread.id) },
+    {
+      id: "thread:terminal",
+      label: "Open in terminal",
+      group: "Thread",
+      ...withDetail(threadDeviceLimitOf(thread.id)),
+      run: () => void openThreadTerminal(thread.id),
+    },
     thread.settledAt === undefined
       ? { id: "thread:settle", label: "Settle thread", group: "Thread", detail: "Close it from the inbox; the worktree stays", run: () => settleThread(thread.id) }
       : { id: "thread:unsettle", label: "Unsettle thread", group: "Thread", detail: "Back to the inbox", run: () => unsettleThread(thread.id) },
@@ -93,12 +102,15 @@ function threadItems(model: ReadModel, thread: Thread): PaletteItem[] {
   ];
   const plan = latestPlan(model, thread.id);
   if (plan) {
-    items.push({
-      id: "thread:implement-plan",
-      label: "Implement latest plan",
-      group: "Thread",
-      run: () => runOrToast("Implementing the plan", () => implementPlanHere(plan.id)),
-    });
+    // in place it is a turn on this thread: offered only when the server would take one
+    if (threadSendBlock(thread) === undefined) {
+      items.push({
+        id: "thread:implement-plan",
+        label: "Implement latest plan",
+        group: "Thread",
+        run: () => runOrToast("Implementing the plan", () => implementPlanHere(plan.id)),
+      });
+    }
     items.push({
       id: "thread:implement-plan-new",
       label: "Implement latest plan in a new thread",

@@ -6,6 +6,7 @@ import { call, dispatch, stream, useModel, type StreamControl } from "./model.ts
 import { onReconnect } from "./reconnect.ts";
 import { ensureOwnerPtys, runOwnerId, setActivePty, setDrawerOpen } from "./terminals.ts";
 import { showToast } from "./toast.ts";
+import { projectDeviceLimitOf, refusedForLimit } from "./deviceAccess.ts";
 
 // R13: a project's run stack on the client — profiles (per repo, from the server), the live
 // session (`run.subscribe`), the last plan, and a pending selection while a toggle debounces.
@@ -199,6 +200,7 @@ export async function planStack(projectId: string, opts: StackOptions = {}): Pro
 }
 
 export async function startStack(projectId: string, opts: StackOptions = {}): Promise<RunSession | undefined> {
+  if (refusedForLimit(projectDeviceLimitOf(projectId))) return undefined;
   try {
     const session = await call("run.start", stackParams(projectId, opts));
     setSession(projectId, session);
@@ -214,6 +216,7 @@ export async function startStack(projectId: string, opts: StackOptions = {}): Pr
 }
 
 export async function stopStack(projectId: string, key?: string): Promise<void> {
+  if (refusedForLimit(projectDeviceLimitOf(projectId))) return;
   try {
     await call("run.stop", { projectId, ...(key === undefined ? {} : { key }) });
   } catch (error) {
@@ -222,6 +225,7 @@ export async function stopStack(projectId: string, key?: string): Promise<void> 
 }
 
 export async function restartService(projectId: string, key: string): Promise<void> {
+  if (refusedForLimit(projectDeviceLimitOf(projectId))) return;
   try {
     setSession(projectId, await call("run.restart", { projectId, key }));
   } catch (error) {

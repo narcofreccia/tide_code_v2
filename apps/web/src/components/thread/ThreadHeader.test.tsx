@@ -377,3 +377,26 @@ describe("ThreadHeader state chip", () => {
   });
 });
 
+
+describe("ThreadHeader with an interrupted merge (R19 L4)", () => {
+  it("shows the error and a retry on a thread with no turns", () => {
+    mockRpc({ "thread.terminalCommand": () => ({}) });
+    const error = "interrupted by a server restart; check the base branch and merge again";
+    const fake = mount({ worktreePath: "/wt/t1", branch: "tide/t1", baseBranch: "main", merge: { status: "error", strategy: "rebase", error, at: 5 } });
+    const notice = screen.getByRole("alert", { name: "Merge error" });
+    expect(notice.textContent).toContain(error);
+    const retry = screen.getByRole("button", { name: "Retry merge" }) as HTMLButtonElement;
+    expect(retry.title).toBe("Merge tide/t1 → main again");
+    fireEvent.click(retry);
+    expect(fake.dispatch).toHaveBeenCalledWith(expect.objectContaining({ type: "thread.merge", threadId: "t1", strategy: "rebase" }));
+  });
+
+  it("holds the retry while a turn runs, and shows nothing without an error", () => {
+    mockRpc({ "thread.terminalCommand": () => ({}) });
+    mount({ status: "running", branch: "tide/t1", merge: { status: "error", strategy: "squash", error: "boom", at: 5 } });
+    expect((screen.getByRole("button", { name: "Retry merge" }) as HTMLButtonElement).disabled).toBe(true);
+    cleanup();
+    mount({ branch: "tide/t1", merge: { status: "conflicted", strategy: "squash", files: ["a"], at: 5 } });
+    expect(screen.queryByRole("alert", { name: "Merge error" })).toBeNull();
+  });
+});
