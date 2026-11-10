@@ -142,18 +142,21 @@ export function projectFolderMenu(project: Project): MenuItem[] {
 /** Right-click / ⋯ on a project row. */
 export function projectMenu(project: Project): MenuItem[] {
   const ui = useUi.getState();
+  // R19: renaming, the icon and archiving change the project, full access only
+  const off = projectDeviceLimitOf(project.id) === undefined ? {} : { disabled: true, hint: LIMITED_HINT };
   return [
     { label: "New thread…", onSelect: () => ui.openNewThread({ projectId: project.id }) },
     { label: "New Experts session…", onSelect: () => ui.setNewExpertsProject(project.id) },
     pinItem(project),
-    { label: "Rename…", onSelect: () => ui.setProjectDialog({ kind: "rename", projectId: project.id }) },
-    { label: "Project icon…", onSelect: () => ui.setProjectDialog({ kind: "icon", projectId: project.id }) },
+    { label: "Rename…", ...off, onSelect: () => ui.setProjectDialog({ kind: "rename", projectId: project.id }) },
+    { label: "Project icon…", ...off, onSelect: () => ui.setProjectDialog({ kind: "icon", projectId: project.id }) },
     { label: "Linked repositories…", onSelect: () => ui.setLinksProject(project.id) },
     { label: "Copy path", onSelect: () => void copyText(project.rootPath, "path") },
     { label: "Project settings…", onSelect: () => ui.openSettings("projects") },
     {
       label: "Archive project…",
       separatorBefore: true,
+      ...off,
       onSelect: () => ui.setProjectDialog({ kind: "archive", projectId: project.id }),
     },
   ];

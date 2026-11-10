@@ -1,5 +1,6 @@
 import { useState } from "react";
-import { PROVIDER_LABELS } from "../../lib/vocab.ts";
+import type { TeamStage } from "@tide/contracts";
+import { PROVIDER_LABELS, RUNTIME_MODE_LABELS, runtimeModeHint } from "../../lib/vocab.ts";
 import { startTeamRun, teamOptionLabel, worktreeNote } from "../../lib/teamActions.ts";
 import { runOrToast } from "../../lib/dispatchOrToast.ts";
 import { worktreeByDefault, useServerSettings } from "../../state/serverSettings.ts";
@@ -14,6 +15,11 @@ import styles from "./NewThreadPopover.module.css";
 
 function heading(stages: number): string {
   return stages === 1 ? "Run a one-stage team on its harness" : `Run ${stages} stages in sequence, each on its own harness`;
+}
+
+/** The stage's mode and what it means on that stage's harness; nothing when it keeps the harness default. */
+export function stageModeNote(stage: Pick<TeamStage, "mode" | "provider">): string | undefined {
+  return stage.mode === undefined ? undefined : `${RUNTIME_MODE_LABELS[stage.mode]}: ${runtimeModeHint(stage.mode, stage.provider)}`;
 }
 
 /** Team side of the new-thread form: pick a saved team, describe the task, start the run. */
@@ -102,7 +108,11 @@ export function NewTeamFields({
                   tone={i === 0 ? "lead" : "stage"}
                   label={`Stage ${i + 1}`}
                   title={<StageTitle>{stage.role}</StageTitle>}
-                  subtitle={<StageSubtitle>{worktreeNote(team.stages, i)}</StageSubtitle>}
+                  subtitle={
+                    <StageSubtitle>
+                      {[worktreeNote(team.stages, i), stageModeNote(stage)].filter((part) => part !== undefined).join(" · ")}
+                    </StageSubtitle>
+                  }
                   harness={<HarnessTag provider={stage.provider} model={stage.model} />}
                 />
               ))}

@@ -6,12 +6,11 @@ import {
   INTERACTION_HINTS,
   INTERACTION_LABELS,
   INTERACTION_MODES,
-  RUNTIME_MODE_HINTS,
-  RUNTIME_MODE_LABELS,
-  RUNTIME_MODES,
   defaultModelHint,
   instanceLabel,
   providerIdOf,
+  runtimeModeHint,
+  runtimeModeOptions,
 } from "../../lib/vocab.ts";
 import { EffortSelect } from "../thread/EffortSelect.tsx";
 import { effortsOf, providerStatus, useProviderRoster } from "../../state/providers.ts";
@@ -40,12 +39,6 @@ import styles from "./NewThreadPopover.module.css";
 
 /** the server's mode when none is sent */
 const FALLBACK_MODE: RuntimeMode = "approval-required";
-
-const MODE_OPTIONS: SelectOption<RuntimeMode>[] = RUNTIME_MODES.map((mode) => ({
-  value: mode,
-  label: RUNTIME_MODE_LABELS[mode],
-  title: RUNTIME_MODE_HINTS[mode],
-}));
 
 function InteractionSwitch({
   value,
@@ -318,11 +311,11 @@ function ThreadFields({
             />
           </FrameField>
         )}
-        <FrameField label="Permissions" caption={RUNTIME_MODE_HINTS[mode]}>
+        <FrameField label="Permissions" caption={runtimeModeHint(mode, draft.provider)}>
           <Select
             label="Thread permissions"
             value={mode}
-            options={limitModeOptions(MODE_OPTIONS, limit)}
+            options={limitModeOptions(runtimeModeOptions(draft.provider), limit)}
             onSelect={(next) => patch({ mode: next })}
             variant="field"
             size="md"

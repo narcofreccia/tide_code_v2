@@ -4,11 +4,10 @@ import {
   INTERACTION_HINTS,
   INTERACTION_LABELS,
   INTERACTION_MODES,
-  RUNTIME_MODES,
-  RUNTIME_MODE_LABELS,
   instanceLabel,
   providerIdOf,
   runtimeModeHint,
+  runtimeModeOptions,
 } from "../../lib/vocab.ts";
 import { updateThread, type ThreadPatch } from "../../lib/threadActions.ts";
 import {
@@ -93,15 +92,8 @@ export const ThreadPills = memo(function ThreadPills({ thread }: { thread: Threa
   const modelOptions: SelectOption<string>[] = modelChoices(models, id, providers);
   const efforts = effortsOf(models, thread.model);
   // R19: Full access is refused for a device with limited access on the thread's machine
-  const modeOptions: SelectOption<Thread["mode"]>[] = limitModeOptions(
-    RUNTIME_MODES.map((mode) => ({
-      value: mode,
-      label: RUNTIME_MODE_LABELS[mode],
-      // per harness where `auto` means something else (vocab.ts RUNTIME_MODE_KIND_HINTS)
-      description: runtimeModeHint(mode, thread.provider),
-    })),
-    limit,
-  );
+  // captions per harness where `auto` means something else (vocab.ts RUNTIME_MODE_KIND_HINTS)
+  const modeOptions: SelectOption<Thread["mode"]>[] = limitModeOptions(runtimeModeOptions(thread.provider), limit);
 
   const apply = (patch: ThreadPatch): void => updateThread(thread.id, patch);
 

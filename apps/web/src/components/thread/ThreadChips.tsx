@@ -1,6 +1,6 @@
 import type { Thread } from "@tide/contracts";
 import { relativeUntil } from "../../lib/relativeTime.ts";
-import { resumeThread, setLimitPolicy, snoozeThread } from "../../lib/turnActions.ts";
+import { continueBlock, resumeThread, setLimitPolicy, snoozeThread } from "../../lib/turnActions.ts";
 import { useModel } from "../../state/model.ts";
 import { useUi } from "../../state/ui.ts";
 import { Button } from "../ui/Button.tsx";
@@ -33,6 +33,7 @@ export function LineageChip({ thread }: { thread: Thread }) {
 export function LimitedBadge({ thread }: { thread: Thread }) {
   const limited = thread.limited;
   if (!limited) return null;
+  const blocked = continueBlock(thread);
   const resetsAt = limited.resetsAt;
   return (
     <Popover
@@ -48,7 +49,7 @@ export function LimitedBadge({ thread }: { thread: Thread }) {
         };
         return (
           <div className={styles.menu}>
-            <Button variant="quiet" onClick={act(() => resumeThread(thread.id, true))}>
+            <Button variant="quiet" disabled={blocked !== undefined} title={blocked} onClick={act(() => resumeThread(thread.id, true))}>
               Resume now
             </Button>
             <Button

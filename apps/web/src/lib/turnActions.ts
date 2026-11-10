@@ -1,4 +1,5 @@
-import type { AttachmentRef, ImageInput, ProviderKind } from "@tide/contracts";
+import { threadSendBlock } from "@tide/client";
+import type { AttachmentRef, ImageInput, ProviderKind, Thread } from "@tide/contracts";
 import { newId } from "@tide/contracts";
 import { dispatch, type DispatchResult } from "../state/model.ts";
 import { invalidateThread } from "../state/vcs.ts";
@@ -105,6 +106,15 @@ export function snoozeThread(threadId: string, until: number): void {
       showToast(`Snoozed until ${formatUntil(until)}`, { label: "Undo", onClick: () => resumeThread(threadId, false) }),
     )
     .catch((error: unknown) => showToast(`Snoozing the thread failed: ${errorText(error)}`));
+}
+
+/**
+ * Why "Resume now" (`thread.resume` with continue) would be refused: the server checks archived and
+ * a removed worktree (decider/threads.ts), not a rollback in progress, so that block is not mirrored.
+ */
+export function continueBlock(thread: Thread): string | undefined {
+  const block = threadSendBlock(thread);
+  return block === undefined || block.kind === "rolling-back" ? undefined : block.reason;
 }
 
 export function resumeThread(threadId: string, continueNow: boolean): void {

@@ -79,9 +79,26 @@ export function setDispatcher(fn: Dispatcher | undefined): void {
 }
 
 export function dispatch(command: ClientCommand, opts?: RouteOptions): Promise<DispatchResult> {
-  if (dispatcher) return dispatcher(command, opts);
+  if (dispatcher) return observed(dispatcher(command, opts), command, opts);
   if (!client) return Promise.reject(new Error("model store not attached"));
-  return client.dispatch(command);
+  return observed(client.dispatch(command), command, opts);
+}
+
+/** Sees every failed `call` / `dispatch` with what it was routed by (R19: a `forbidden` answer re-reads the device's access). */
+export type RpcErrorObserver = (subject: unknown, opts: RouteOptions | undefined, error: unknown) => void;
+
+let errorObserver: RpcErrorObserver | undefined;
+
+export function setRpcErrorObserver(fn: RpcErrorObserver | undefined): void {
+  errorObserver = fn;
+}
+
+function observed<T>(promise: Promise<T>, subject: unknown, opts: RouteOptions | undefined): Promise<T> {
+  if (!errorObserver) return promise;
+  return promise.catch((error: unknown) => {
+    errorObserver?.(subject, opts, error);
+    throw error;
+  });
 }
 
 export type RpcCaller = <M extends UnaryMethodName>(
@@ -99,7 +116,7 @@ export function setRpcCaller(fn: RpcCaller | undefined): void {
 
 export function call<M extends UnaryMethodName>(method: M, params: RpcInput<M>, opts?: RouteOptions): Promise<RpcOutput<M>> {
   if (!caller) return Promise.reject(new Error("connection not attached"));
-  return opts === undefined ? caller(method, params) : caller(method, params, opts);
+  return observed(opts === undefined ? caller(method, params) : caller(method, params, opts), params, opts);
 }
 
 // ---- streaming RPC (fs.watch, pty.attach) ----

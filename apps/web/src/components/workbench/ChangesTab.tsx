@@ -11,6 +11,7 @@ import {
 } from "../../lib/linkedDiff.ts";
 import { useSelectedThread } from "../../state/hooks.ts";
 import { useModel } from "../../state/model.ts";
+import { useThreadDeviceLimit } from "../../state/deviceAccess.ts";
 import { useUi } from "../../state/ui.ts";
 import { ALL_CHANGES, isCommitSelection, pickFile, resolveSelection, selectTurn, useCommits, useTurnDiff, useVcs, commitSelection } from "../../state/vcs.ts";
 import { Button } from "../ui/Button.tsx";
@@ -88,6 +89,7 @@ function ChangesFor({ thread }: { thread: Thread }) {
     ? toDiffFile(fromLink.group, fromLink.file)
     : files.find((f) => f.path === selectedKey);
 
+  const revertLimit = useThreadDeviceLimit(thread.id);
   const revertLinked = (group: LinkedDiffGroup): void => void revertLinkedChanges(thread.id, group.linkId);
 
   const nothing = files.length === 0 && linked.length === 0;
@@ -131,6 +133,7 @@ function ChangesFor({ thread }: { thread: Thread }) {
             selected={selectedKey}
             onSelect={(path) => pickFile(thread.id, path)}
             onRevertLinked={revertLinked}
+            revertLimit={revertLimit}
             collapsed={collapsed}
             onToggle={toggleFileList}
           />

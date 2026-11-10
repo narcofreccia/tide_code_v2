@@ -2,6 +2,7 @@ import { useEffect } from "react";
 import { selectRepoSiblings } from "@tide/client";
 import type { MergeState, Project, ReadModel, Thread } from "@tide/contracts";
 import { envOfProject, envOfThread, useEnvironments } from "../state/environments.ts";
+import { deviceLimitOf } from "../state/deviceAccess.ts";
 import { call, useModel } from "../state/model.ts";
 import { defaultGitSettings, useServerSettings } from "../state/serverSettings.ts";
 import { showToast } from "../state/toast.ts";
@@ -88,8 +89,11 @@ function pushesBase(envId: string): boolean {
   return { ...defaultGitSettings(), ...git }.pushBaseAfterMerge;
 }
 
-function pullContext(): PullContext {
-  return { primaryId: useEnvironments.getState().primaryId, envOfThread, envOfProject, pushesBase };
+function pullContext(): PullContext | undefined {
+  const primaryId = useEnvironments.getState().primaryId;
+  // R19: pulling the base is full access only, so a limited device on the primary is not offered it
+  if (deviceLimitOf(primaryId) !== undefined) return undefined;
+  return { primaryId, envOfThread, envOfProject, pushesBase };
 }
 
 /**

@@ -1,4 +1,5 @@
 import type { LinkAccess } from "@tide/contracts";
+import { projectDeviceLimitOf, refusedForLimit, threadDeviceLimitOf } from "../state/deviceAccess.ts";
 import { call, dispatch } from "../state/model.ts";
 import { showToast } from "../state/toast.ts";
 import { invalidateThread } from "../state/vcs.ts";
@@ -18,6 +19,7 @@ function report(what: string, error: unknown): void {
 
 /** Links a secondary repository to the project; the label defaults to the folder name. */
 export async function addProjectLink(projectId: string, draft: LinkDraft): Promise<void> {
+  if (refusedForLimit(projectDeviceLimitOf(projectId))) throw new Error("limited access");
   try {
     await dispatch({
       type: "project.link.add",
@@ -39,6 +41,7 @@ export async function updateProjectLink(
   linkId: string,
   patch: { label?: string; note?: string; access?: LinkAccess },
 ): Promise<void> {
+  if (refusedForLimit(projectDeviceLimitOf(projectId))) throw new Error("limited access");
   try {
     await dispatch({
       type: "project.link.update",
@@ -55,6 +58,7 @@ export async function updateProjectLink(
 }
 
 export function removeProjectLink(projectId: string, linkId: string): void {
+  if (refusedForLimit(projectDeviceLimitOf(projectId))) return;
   void dispatch({ type: "project.link.remove", projectId, linkId }).catch((error: unknown) =>
     report("Removing the link", error),
   );
@@ -64,6 +68,8 @@ export function removeProjectLink(projectId: string, linkId: string): void {
 
 /** Discards a linked repository's working-tree changes for this thread. */
 export async function revertLinkedChanges(threadId: string, linkId: string, files?: string[]): Promise<void> {
+  // full access only: it discards files in a repository outside the thread's worktree
+  if (refusedForLimit(threadDeviceLimitOf(threadId))) return;
   try {
     const result = await call("vcs.linkedRevert", {
       threadId,

@@ -92,6 +92,11 @@ export function runtimeModeHint(mode: RuntimeMode, kind?: ProviderKind): string 
   return (kind === undefined ? undefined : RUNTIME_MODE_KIND_HINTS[kind]?.[mode]) ?? RUNTIME_MODE_HINTS[mode];
 }
 
+/** A mode picker's options for one harness kind: the caption under each follows `runtimeModeHint`. */
+export function runtimeModeOptions(kind?: ProviderKind): { value: RuntimeMode; label: string; description: string }[] {
+  return RUNTIME_MODES.map((mode) => ({ value: mode, label: RUNTIME_MODE_LABELS[mode], description: runtimeModeHint(mode, kind) }));
+}
+
 export const INTERACTION_LABELS: Record<InteractionMode, string> = { default: "Build", plan: "Plan" };
 export const INTERACTION_HINTS: Record<InteractionMode, string> = {
   default: "Makes changes",

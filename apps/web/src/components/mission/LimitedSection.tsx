@@ -2,6 +2,7 @@ import { useState } from "react";
 import { selectLimited, selectSnoozed } from "@tide/client";
 import { dispatchOrToast } from "../../lib/dispatchOrToast.ts";
 import { relativeUntil } from "../../lib/relativeTime.ts";
+import { continueBlock } from "../../lib/turnActions.ts";
 import { threadHarnessLabel } from "../../lib/vocab.ts";
 import { useProvidersSnapshot } from "../../state/providers.ts";
 import { useModel } from "../../state/model.ts";
@@ -42,6 +43,8 @@ export function LimitedSection() {
               <div className={styles.actions}>
                 <Button
                   variant="quiet"
+                  disabled={continueBlock(thread) !== undefined}
+                  title={continueBlock(thread)}
                   onClick={() =>
                     dispatchOrToast("Resuming the thread", { type: "thread.resume", threadId: thread.id, continue: true })
                   }

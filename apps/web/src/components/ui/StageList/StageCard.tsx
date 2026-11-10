@@ -185,11 +185,12 @@ export function HarnessTag({ provider, model }: { provider: ProviderKind; model?
 }
 
 /** A small labelled control inside a card's settings strip. */
-export function StageSetting({ label, children }: { label: string; children: React.ReactNode }) {
+export function StageSetting({ label, caption, children }: { label: string; caption?: string | undefined; children: React.ReactNode }) {
   return (
     <div className={styles.setting}>
       <span className={styles.settingLabel}>{label}</span>
       {children}
+      {caption === undefined ? null : <span className={styles.settingCaption}>{caption}</span>}
     </div>
   );
 }

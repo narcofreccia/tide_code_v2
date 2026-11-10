@@ -10,6 +10,7 @@ import { useUi } from "./ui.ts";
 import { defaultUserSettings, patchServerSettings, useServerSettings } from "./serverSettings.ts";
 import { useToasts } from "./toast.ts";
 import { deviceLimitReason } from "./deviceAccess.ts";
+import { ProjectLinks } from "../components/mission/ProjectLinks.tsx";
 
 const REASON = deviceLimitReason("studio");
 
@@ -68,6 +69,21 @@ describe("a device with limited access (R19)", () => {
     onMachine("limited");
     openSettings("appearance");
     expect(screen.queryByTestId("settings-read-only")).toBeNull();
+  });
+
+  it("reads the linked repositories but cannot add, edit or remove one", () => {
+    onMachine("limited");
+    const project = { id: "p1", title: "Tide", rootPath: "/src/tide", createdAt: 1, updatedAt: 1, links: [{ id: "l1", path: "/src/api", label: "api", access: "read" as const }] };
+    const fake = attachFakeStore(modelWith({ projects: { p1: project } }));
+    render(<ProjectLinks projectId="p1" />);
+    expect(screen.getByText("/src/api")).toBeDefined();
+    for (const name of ["Add repository…", "Edit api", "Remove api"]) {
+      const button = screen.getByRole("button", { name }) as HTMLButtonElement;
+      expect(button.disabled).toBe(true);
+      expect(button.title).toBe(REASON);
+    }
+    fireEvent.click(screen.getByRole("button", { name: "Remove api" }));
+    expect(fake.dispatch).not.toHaveBeenCalled();
   });
 
   it("does not send a settings write; it shows the reason", async () => {

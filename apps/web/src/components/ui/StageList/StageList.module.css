@@ -127,6 +127,7 @@
 .settings { display: flex; flex-wrap: wrap; gap: var(--sp-2) var(--sp-3); padding-top: var(--sp-1); }
 .setting { display: flex; flex-direction: column; gap: 2px; min-width: 132px; flex: 1 1 132px; }
 .settingLabel { color: var(--text-2); font-size: var(--fs-sm); }
+.settingCaption { color: var(--muted); font-size: var(--fs-sm); }
 
 /* ghost add card */
 .ghostItem { display: flex; }

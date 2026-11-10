@@ -13,17 +13,20 @@ export interface SeparatorOptions {
   step?: number | (() => number);
   /** `vertical` (the default) is a handle between left and right panes: ←/→; `horizontal`: ↑/↓ */
   orientation?: "vertical" | "horizontal";
+  /** the sized pane sits after the handle (a bottom drawer): ↑ (or ←) grows it */
+  reversed?: boolean;
 }
 
 /**
  * Keyboard and ARIA for a `role="separator"` resize handle (WAI-ARIA window splitter): focusable,
  * arrows move it by 16px, Home/End jump to the minimum/maximum. Spread the result on the handle.
  */
-export function useSeparatorKeys({ value, min, max, onChange, step = SEPARATOR_STEP_PX, orientation = "vertical" }: SeparatorOptions) {
+export function useSeparatorKeys({ value, min, max, onChange, step = SEPARATOR_STEP_PX, orientation = "vertical", reversed = false }: SeparatorOptions) {
   const onKeyDown = useCallback(
     (event: React.KeyboardEvent<HTMLElement>) => {
       const by = typeof step === "function" ? step() : step;
-      const [less, more] = orientation === "vertical" ? ["ArrowLeft", "ArrowRight"] : ["ArrowUp", "ArrowDown"];
+      const keys = orientation === "vertical" ? ["ArrowLeft", "ArrowRight"] : ["ArrowUp", "ArrowDown"];
+      const [less, more] = reversed ? [keys[1], keys[0]] : keys;
       let next: number;
       if (event.key === less) next = value - by;
       else if (event.key === more) next = value + by;
@@ -33,7 +36,7 @@ export function useSeparatorKeys({ value, min, max, onChange, step = SEPARATOR_S
       event.preventDefault();
       onChange(Math.min(max, Math.max(min, next)));
     },
-    [value, min, max, onChange, step, orientation],
+    [value, min, max, onChange, step, orientation, reversed],
   );
   return {
     role: "separator" as const,

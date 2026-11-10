@@ -4,6 +4,7 @@ import type { Thread } from "@tide/contracts";
 import { fetchTerminalCommand } from "../../lib/threadActions.ts";
 import { runInThreadTerminal } from "../../lib/openInTerminal.ts";
 import { useModel } from "../../state/model.ts";
+import { useThreadDeviceLimit } from "../../state/deviceAccess.ts";
 import { useUi } from "../../state/ui.ts";
 import { LimitedBadge, LineageChip, RollbackPill } from "./ThreadChips.tsx";
 import { DelegatedBy, DelegatesPopover } from "./Delegates.tsx";
@@ -45,10 +46,17 @@ function useNarrow(ref: React.RefObject<HTMLElement | null>): boolean {
 
 const NO_COMMAND = "No harness session to resume yet";
 
-/** Resolves the harness's own resume command; undefined until the session exists. */
-function useTerminalCommand(threadId: string, nativeSessionId: string | undefined): string | undefined {
+/**
+ * Resolves the harness's own resume command; undefined until the session exists. Not asked for
+ * while this device is limited there (the server refuses it); asked again once that lifts.
+ */
+function useTerminalCommand(threadId: string, nativeSessionId: string | undefined, limited: boolean): string | undefined {
   const [command, setCommand] = useState<string | undefined>(undefined);
   useEffect(() => {
+    if (limited) {
+      setCommand(undefined);
+      return;
+    }
     let alive = true;
     fetchTerminalCommand(threadId)
       .then((value) => {
@@ -60,7 +68,7 @@ function useTerminalCommand(threadId: string, nativeSessionId: string | undefine
     return () => {
       alive = false;
     };
-  }, [threadId, nativeSessionId]);
+  }, [threadId, nativeSessionId, limited]);
   return command;
 }
 
@@ -85,7 +93,9 @@ function hasChips(thread: Thread, delegates: number): boolean {
  * get a 24px sub-row that is absent when there is nothing to show.
  */
 export function ThreadHeader({ thread }: { thread: Thread }) {
-  const command = useTerminalCommand(thread.id, thread.nativeSessionId);
+  // R19: a terminal is a shell on the host, full access only
+  const limit = useThreadDeviceLimit(thread.id);
+  const command = useTerminalCommand(thread.id, thread.nativeSessionId, limit !== undefined);
   const background = useBackgroundAgentCount(thread.id);
   const now = Date.now();
   const state = threadStateKey(thread, now, background);
@@ -124,8 +134,11 @@ export function ThreadHeader({ thread }: { thread: Thread }) {
             <>
           <Button
             variant="quiet"
-            disabled={command === undefined}
-            title={command ? `Open in terminal: ${command}` : thread.nativeSessionId === undefined ? NO_COMMAND : "This harness has no terminal resume command"}
+            disabled={command === undefined || limit !== undefined}
+            title={
+              limit ??
+              (command ? `Open in terminal: ${command}` : thread.nativeSessionId === undefined ? NO_COMMAND : "This harness has no terminal resume command")
+            }
             onClick={() => {
               if (command) void runInThreadTerminal(thread.id, command, { purpose: "resume" });
             }}

@@ -59,8 +59,20 @@ describe("new thread form", () => {
   it("states the outcome: project in the heading, permission hint as caption", () => {
     open();
     expect(screen.getByRole("heading", { name: "Start a thread on Tide" })).toBeDefined();
-    chooseOption("Thread permissions", "Full access");
+    chooseOption("Thread permissions", /^Full access/);
     expect(screen.getByText("Never asks — use with care")).toBeDefined();
+  });
+
+  it("captions the permission for the chosen harness, and the caption follows a harness change", () => {
+    const claude = PROVIDER_FIXTURE[0]!;
+    setProvidersForTest([claude, { ...claude, id: "codex", kind: "codex", label: "Codex", models: [] }]);
+    open(undefined, {});
+    chooseOption("Thread provider", /^Claude Code/);
+    chooseOption("Thread permissions", /^Auto\b(?!-)/);
+    expect(screen.getByText("The agent decides when to ask")).toBeDefined();
+    chooseOption("Thread provider", /^Codex/);
+    expect(screen.getByText("Never asks; commands run in Codex's workspace sandbox")).toBeDefined();
+    expect(screen.queryByText("The agent decides when to ask")).toBeNull();
   });
 
   it("⌘↵ creates from any field", async () => {
@@ -78,7 +90,7 @@ describe("new thread form", () => {
 
   it("offers the four permission modes and sends the chosen one", async () => {
     const fake = open();
-    chooseOption("Thread permissions", "Full access");
+    chooseOption("Thread permissions", /^Full access/);
     fireEvent.click(screen.getByText("Create thread"));
     expect((await created(fake))["mode"]).toBe("full-access");
   });

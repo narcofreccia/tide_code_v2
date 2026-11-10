@@ -14,6 +14,10 @@
   background: transparent;
 }
 .grip:hover { background: var(--accent-soft); }
+.grip:focus-visible {
+  outline: none;
+  background: var(--accent);
+}
 .tabs {
   display: flex;
   flex: none;

@@ -1,10 +1,10 @@
-import { useEffect } from "react";
 import { selectProjects } from "@tide/client";
 import type { ProviderStatusDto, ReadModel } from "@tide/contracts";
 import { PROVIDER_LABELS } from "../../lib/vocab.ts";
 import { installOf, resolveLoginCommand } from "../../lib/providerLogin.ts";
 import { isUsable } from "../../lib/preferredProvider.ts";
 import { useServerInfo } from "../../lib/useServerInfo.ts";
+import { useWindowReturn } from "../../lib/useWindowReturn.ts";
 import { useModel } from "../../state/model.ts";
 import { loadProviders, orderedInstances, providerStatus, useProviderRoster, useProvidersStore } from "../../state/providers.ts";
 import { useUi } from "../../state/ui.ts";
@@ -148,23 +148,13 @@ function StepDetail({ step }: { step: HarnessStep }) {
 
 /**
  * While the harness step is open, coming back to the window re-reads the roster (bypassing the
- * server's status cache): the user installed or logged in from their own terminal. One pair of
- * listeners, removed as soon as a harness is usable; no timers.
+ * server's status cache): the user installed or logged in from their own terminal. The listeners
+ * are removed as soon as a harness is usable.
  */
 function useRecheckOnReturn(open: boolean): void {
-  useEffect(() => {
-    if (!open) return undefined;
-    const recheck = (): void => {
-      if (document.visibilityState === "hidden" || useProvidersStore.getState().loading) return;
-      loadProviders(true);
-    };
-    window.addEventListener("focus", recheck);
-    document.addEventListener("visibilitychange", recheck);
-    return () => {
-      window.removeEventListener("focus", recheck);
-      document.removeEventListener("visibilitychange", recheck);
-    };
-  }, [open]);
+  useWindowReturn(() => {
+    if (!useProvidersStore.getState().loading) loadProviders(true);
+  }, open);
 }
 
 /**

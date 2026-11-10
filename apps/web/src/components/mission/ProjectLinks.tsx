@@ -2,6 +2,7 @@ import { useState } from "react";
 import { selectProjectLinks } from "@tide/client";
 import type { ProjectLink } from "@tide/contracts";
 import { addProjectLink, removeProjectLink, updateProjectLink, type LinkDraft } from "../../lib/linkActions.ts";
+import { useProjectDeviceLimit } from "../../state/deviceAccess.ts";
 import { useModel } from "../../state/model.ts";
 import { useUi } from "../../state/ui.ts";
 import { Button } from "../ui/Button.tsx";
@@ -22,11 +23,11 @@ function toDraft(link: ProjectLink): LinkDraft {
   return { path: link.path, label: link.label, note: link.note ?? "", access: link.access };
 }
 
-function LinkRow({ projectId, link }: { projectId: string; link: ProjectLink }) {
+function LinkRow({ projectId, link, limit }: { projectId: string; link: ProjectLink; limit: string | undefined }) {
   const [editing, setEditing] = useState(false);
   const [confirming, setConfirming] = useState(false);
 
-  if (editing) {
+  if (editing && limit === undefined) {
     return (
       <li className={styles.item}>
         <LinkEditor
@@ -56,16 +57,16 @@ function LinkRow({ projectId, link }: { projectId: string; link: ProjectLink }) 
           {link.path}
         </span>
         <span className={styles.rowActions}>
-          <Button variant="quiet" onClick={() => setEditing(true)} aria-label={`Edit ${link.label}`}>
+          <Button variant="quiet" disabled={limit !== undefined} title={limit} onClick={() => setEditing(true)} aria-label={`Edit ${link.label}`}>
             Edit
           </Button>
-          <Button variant="quiet" onClick={() => setConfirming(true)} aria-label={`Remove ${link.label}`}>
+          <Button variant="quiet" disabled={limit !== undefined} title={limit} onClick={() => setConfirming(true)} aria-label={`Remove ${link.label}`}>
             Remove
           </Button>
         </span>
       </div>
       {link.note ? <p className={styles.note}>{link.note}</p> : null}
-      {confirming ? (
+      {confirming && limit === undefined ? (
         <ConfirmDialog
           title={`Unlink “${link.label}”?`}
           confirmLabel="Remove link"
@@ -90,26 +91,32 @@ export function ProjectLinks({ projectId }: { projectId: string }) {
   const links = selectProjectLinks(useModel((s) => s.model), projectId);
   const [adding, setAdding] = useState(false);
   const [busy, setBusy] = useState(false);
+  // adding, editing and removing a link need full access; a limited device still sees the list
+  const limit = useProjectDeviceLimit(projectId);
 
   return (
     <section className={styles.section} aria-label="Linked repositories">
       <div className={styles.sectionHead}>
         <h3 className={styles.heading}>Linked repositories</h3>
-        {adding ? null : <Button onClick={() => setAdding(true)}>Add repository…</Button>}
+        {adding && limit === undefined ? null : (
+          <Button disabled={limit !== undefined} title={limit} onClick={() => setAdding(true)}>
+            Add repository…
+          </Button>
+        )}
       </div>
       <p className={styles.explainer}>{LINKS_EXPLAINER}</p>
 
-      {links.length === 0 && !adding ? (
+      {links.length === 0 && !(adding && limit === undefined) ? (
         <p className={styles.empty}>No linked repositories yet.</p>
       ) : (
         <ul className={styles.list}>
           {links.map((link) => (
-            <LinkRow key={link.id} projectId={projectId} link={link} />
+            <LinkRow key={link.id} projectId={projectId} link={link} limit={limit} />
           ))}
         </ul>
       )}
 
-      {adding ? (
+      {adding && limit === undefined ? (
         <LinkEditor
           mode="add"
           initial={emptyDraft()}

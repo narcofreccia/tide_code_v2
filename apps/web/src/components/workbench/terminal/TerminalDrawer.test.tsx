@@ -231,3 +231,27 @@ describe("TerminalDrawer on a device with limited access (R19)", () => {
     expect((screen.getByLabelText("New terminal") as HTMLButtonElement).disabled).toBe(false);
   });
 });
+
+describe("terminal drawer resize handle (keyboard)", () => {
+  it("is a focusable separator: Up grows the drawer, Down shrinks it, Home/End jump to the bounds", async () => {
+    mockRpc({ "pty.list": () => ({ ptys: [] }) });
+    mockStream();
+    setDrawerOpen(true);
+    useTerminals.setState({ height: 240 });
+    render(<TerminalDrawer threadId="t1" />);
+    await screen.findByText(/No terminal yet/);
+    const grip = screen.getByRole("separator", { name: "Resize terminal" });
+    expect(grip.tabIndex).toBe(0);
+    expect(grip.getAttribute("aria-orientation")).toBe("horizontal");
+    expect(grip.getAttribute("aria-valuenow")).toBe("240");
+    fireEvent.keyDown(grip, { key: "ArrowUp" });
+    expect(useTerminals.getState().height).toBe(256);
+    fireEvent.keyDown(grip, { key: "ArrowDown" });
+    fireEvent.keyDown(grip, { key: "ArrowDown" });
+    expect(useTerminals.getState().height).toBe(224);
+    fireEvent.keyDown(grip, { key: "End" });
+    expect(useTerminals.getState().height).toBe(800);
+    fireEvent.keyDown(grip, { key: "Home" });
+    expect(useTerminals.getState().height).toBe(100);
+  });
+});

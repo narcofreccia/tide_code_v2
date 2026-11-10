@@ -42,6 +42,18 @@ describe("thread header R4", () => {
     expect(fake.dispatch).toHaveBeenCalledWith(expect.objectContaining({ type: "thread.snooze", threadId: "t1" }));
   });
 
+  it("does not offer Resume now on a thread whose worktree is gone; it says why", () => {
+    const fake = mount({ branch: "tide/t1", limited: { resume: "manual", at: 1 } });
+    fireEvent.click(screen.getByText(/Resume options/));
+    const resume = screen.getByRole("button", { name: "Resume now" }) as HTMLButtonElement;
+    expect(resume.disabled).toBe(true);
+    expect(resume.title).toBe("This thread's worktree was removed.");
+    fireEvent.click(resume);
+    expect(fake.dispatch).not.toHaveBeenCalledWith(expect.objectContaining({ type: "thread.resume" }));
+    // the other choices do not start a turn, so they stay
+    expect((screen.getByRole("button", { name: /Resume at reset/ }) as HTMLButtonElement).disabled).toBe(false);
+  });
+
   it("shows rollback progress and failure", () => {
     mount({ rollback: { status: "rolling", turnId: "u1", restoreFiles: true, at: 1 } });
     expect(screen.getByText(/Rolling back/)).toBeDefined();

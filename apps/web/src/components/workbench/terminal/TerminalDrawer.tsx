@@ -8,6 +8,8 @@ import {
   runOwnerId,
   killPty,
   setActivePty,
+  MAX_HEIGHT,
+  MIN_HEIGHT,
   setDrawerHeight,
   toggleDrawer,
   useTerminals,
@@ -19,6 +21,7 @@ import { Button } from "../../ui/Button.tsx";
 import { Icon } from "../../ui/Icon.tsx";
 import { Kbd } from "../../ui/Kbd.tsx";
 import { useWheelScrollX } from "../useWheelScrollX.ts";
+import { useSeparatorKeys } from "../../../lib/useSeparatorKeys.ts";
 import styles from "./TerminalDrawer.module.css";
 
 /** xterm and its addons are their own chunk; the shell never pays for them. */
@@ -94,6 +97,8 @@ export function TerminalDrawer({ threadId }: { threadId: string }) {
   const stack = useStackTabs(open, projectId);
   const active = useTerminals((s) => s.active[threadId]);
   const onDrag = useDragHeight();
+  // ↑ grows the drawer (its handle is on top), ↓ shrinks it; Home/End jump to the smallest/largest
+  const gripKeys = useSeparatorKeys({ value: height, min: MIN_HEIGHT, max: MAX_HEIGHT, onChange: setDrawerHeight, orientation: "horizontal", reversed: true });
   const limit = useThreadDeviceLimit(threadId);
   const drawer = useRef<HTMLDivElement>(null);
   const tabRow = useRef<HTMLDivElement>(null);
@@ -127,13 +132,7 @@ export function TerminalDrawer({ threadId }: { threadId: string }) {
 
   return (
     <div ref={drawer} className={styles.drawer} aria-label="Terminal" data-terminal-drawer="">
-      <div
-        className={styles.grip}
-        role="separator"
-        aria-orientation="horizontal"
-        aria-label="Resize terminal"
-        onMouseDown={onDrag}
-      />
+      <div className={styles.grip} aria-label="Resize terminal" {...gripKeys} onMouseDown={onDrag} />
       <div className={styles.tabs}>
         <div className={styles.scroll} role="tablist" ref={tabRow}>
         {tabs.map((tab, index) => {

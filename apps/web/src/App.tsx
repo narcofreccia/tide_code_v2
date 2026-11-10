@@ -28,6 +28,7 @@ import { useWorkbench } from "./state/workbench.ts";
 import { useKeyboardMap } from "./lib/useKeyboardMap.ts";
 import { useHashRoute } from "./lib/useHashRoute.ts";
 import { useMergeOutcomeToasts } from "./lib/mergeToasts.ts";
+import { useDeviceAccessRefresh } from "./state/accessRefresh.ts";
 import { useDocumentTitle } from "./lib/useDocumentTitle.ts";
 import { useNotificationEvents } from "./lib/useNotificationEvents.ts";
 import { useViewport } from "./lib/useViewport.ts";
@@ -84,6 +85,7 @@ export function App() {
   useKeyboardMap();
   useHashRoute();
   useMergeOutcomeToasts();
+  useDeviceAccessRefresh();
   useDocumentTitle();
   useNotificationEvents();
   const { phone } = useViewport();

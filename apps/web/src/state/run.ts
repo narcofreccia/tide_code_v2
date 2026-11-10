@@ -80,6 +80,7 @@ export async function loadProfiles(projectId: string, force = false): Promise<vo
 
 /** Rescans one repo (manifests; the text model when `useModel`) and swaps it into the list. */
 export async function rescanRepo(projectId: string, repoId: string, useModelScan = false): Promise<RunRepo | undefined> {
+  if (refusedForLimit(projectDeviceLimitOf(projectId))) return undefined;
   try {
     const repo = await call("run.profiles.scan", { projectId, repoId, ...(useModelScan ? { useModel: true } : {}) });
     useRun.setState((s) => {
@@ -234,6 +235,8 @@ export async function restartService(projectId: string, key: string): Promise<vo
 }
 
 export async function setRunStack(projectId: string, runStack: RunStack): Promise<void> {
+  // a side save: the controls that lead here are already off on a limited device
+  if (projectDeviceLimitOf(projectId) !== undefined) return;
   try {
     await dispatch({ type: "project.runStack.set", commandId: newId(), projectId, runStack });
   } catch (error) {

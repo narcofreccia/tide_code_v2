@@ -1,6 +1,7 @@
 import type { ReadModel, Thread } from "@tide/contracts";
 import { envOfThread, useEnvironments, type EnvironmentsState } from "../state/environments.ts";
 import { envOpt, envSshHost, isLocalEnv } from "../components/fleet/envView.ts";
+import { deviceLimitOf } from "../state/deviceAccess.ts";
 import { call } from "../state/model.ts";
 import { showToast } from "../state/toast.ts";
 
@@ -68,7 +69,8 @@ function assignUrl(url: string): void {
 /**
  * Hands the URL to the OS; the page itself stays put. A thread on this machine asks its local
  * server to run the OS opener (the desktop WebView will not navigate to `vscode://`); a remote
- * one, or a failed launch, falls back to the browser handoff and toasts why.
+ * one, a device with limited access, or a failed launch, falls back to the browser handoff
+ * (toasting why when the launch failed).
  */
 export async function launchEditorUrl(
   url: string,
@@ -76,7 +78,8 @@ export async function launchEditorUrl(
   state: EnvironmentsState = useEnvironments.getState(),
 ): Promise<void> {
   const envId = options.threadId === undefined ? state.primaryId : (envOfThread(options.threadId) ?? state.primaryId);
-  if (!isLocalEnv(envId, state)) {
+  // R19: the server's opener is full access only; a limited device hands the URL over itself
+  if (!isLocalEnv(envId, state) || deviceLimitOf(envId) !== undefined) {
     assignUrl(url);
     return;
   }

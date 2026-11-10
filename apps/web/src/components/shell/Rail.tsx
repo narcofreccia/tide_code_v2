@@ -1,7 +1,8 @@
 import { useEffect, useLayoutEffect, useRef } from "react";
 import { selectProjects } from "@tide/client";
 import { useModel } from "../../state/model.ts";
-import { clampRailWidth, useUi } from "../../state/ui.ts";
+import { RAIL_WIDTH, clampRailWidth, useUi } from "../../state/ui.ts";
+import { useSeparatorKeys } from "../../lib/useSeparatorKeys.ts";
 import { useSettings } from "../../state/settings.ts";
 import { useRailSearch } from "../../state/railSearch.ts";
 import { detectIconOnce } from "../../lib/projectIcon.ts";
@@ -26,15 +27,16 @@ function useDetectIcons(ids: string): void {
   }, [ids]);
 }
 
-/** Drag handle on the panel's right edge: 240–360px, persisted. */
+/** Drag handle on the panel's right edge: 240–360px, persisted; double-click resets; ←/→, Home/End from the keyboard. */
 function ResizeHandle() {
   const start = useRef<{ x: number; width: number } | undefined>(undefined);
+  const width = useUi((s) => s.railWidth);
+  const keys = useSeparatorKeys({ value: width, min: RAIL_WIDTH.min, max: RAIL_WIDTH.max, onChange: useUi.getState().setRailWidth });
   return (
     <div
       className={styles.resize}
-      role="separator"
-      aria-orientation="vertical"
       aria-label="Resize rail"
+      {...keys}
       onPointerDown={(e) => {
         start.current = { x: e.clientX, width: useUi.getState().railWidth };
         e.currentTarget.setPointerCapture(e.pointerId);
@@ -46,7 +48,7 @@ function ResizeHandle() {
       onPointerUp={() => {
         start.current = undefined;
       }}
-      onDoubleClick={() => useUi.getState().setRailWidth(clampRailWidth(280))}
+      onDoubleClick={() => useUi.getState().setRailWidth(clampRailWidth(RAIL_WIDTH.initial))}
     />
   );
 }

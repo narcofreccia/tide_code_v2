@@ -85,6 +85,7 @@ export function FileList({
   selected,
   onSelect,
   onRevertLinked,
+  revertLimit,
   collapsed,
   onToggle,
 }: {
@@ -96,6 +97,8 @@ export function FileList({
   onSelect: (key: string) => void;
   /** absent hides the per-group revert action */
   onRevertLinked?: (group: LinkedDiffGroup) => void;
+  /** why the revert is off on this device (limited access); undefined when it can run */
+  revertLimit?: string | undefined;
   collapsed: boolean;
   onToggle: () => void;
 }) {
@@ -161,8 +164,9 @@ export function FileList({
                 <Button
                   variant="quiet"
                   className={styles.revert}
+                  disabled={revertLimit !== undefined}
                   onClick={() => onRevertLinked(group)}
-                  title={`Revert changes in ${group.label}`}
+                  title={revertLimit ?? `Revert changes in ${group.label}`}
                 >
                   Revert linked changes
                 </Button>

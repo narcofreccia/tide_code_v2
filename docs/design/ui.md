@@ -307,11 +307,16 @@ new-thread dialog's Create are disabled with the reason as their tooltip.
 **Limited access (R19).** On a machine where this device is `limited` (`server.info.access`; absent
 means the owner, never restricted) whatever the server would refuse is disabled with the reason
 "This device has limited access. Turn on Full access for it on <machine>." as tooltip or inline hint:
-New terminal and Open in terminal, Save and the file tree's create / rename / delete, Add project and
-project actions (rename, icon, title instructions, links, archive, restore), Start / Stop / Rescan of
-the run stack, Update harnesses, automations create / edit / delete, and the Full access option in
-every permissions picker. Server-backed Settings pages and the project run settings render read-only
-(inert) under a "Read-only." notice. The machine card notes it too.
+New terminal, Open in terminal and the header's Terminal button, Save and the file tree's create /
+rename / delete, Add project and project actions (rename, icon, title instructions, archive, restore),
+the linked-repositories dialog's Add / Edit / Remove (the list stays readable), Revert linked changes,
+Pull on another machine's checkout (and no "Pull <base> here" on a merge toast), Start / Stop / Rescan
+of the run stack, Update harnesses, automations create / edit / delete, and the Full access option in
+every permissions picker. Open in VS Code / Cursor skips the server's opener and hands the URL over in
+the browser. Server-backed Settings pages and the project run settings render read-only (inert) under
+a "Read-only." notice. The machine card notes it too. The level is re-read from `server.info` every
+30 s, at once when a call is answered `forbidden`, and when the window regains focus or visibility,
+so turning Full access on at the machine needs no reload.
 
 **Another machine offline.** Its threads stay in the merged view with their last known state. Rail rows
 are muted (tooltip "<machine> is offline"); the thread header carries a "<machine> is offline" pill;
@@ -501,8 +506,9 @@ palette, whose field is the dialog, closes at once. A handler that already took 
 listbox, an inline rename) wins. Dialogs are `aria-modal`, labelled by their heading; focus moves
 inside on open (an `autoFocus` field, else the panel; `ConfirmDialog` starts on its confirm button, or
 on Cancel when destructive), Tab/⇧Tab cycle inside, and focus returns to the opener on close.
-Resize handles (split, file tree) are focusable separators: `←`/`→` move 16px, `Home`/`End` jump to
-the minimum/maximum (`lib/useSeparatorKeys`).
+Resize handles (split, file tree, rail, terminal drawer) are focusable separators with an accent focus
+ring: `←`/`→` move 16px (the drawer: `↑` grows it, `↓` shrinks it), `Home`/`End` jump to the
+minimum/maximum (`lib/useSeparatorKeys`).
 
 Go-to chords (two bare keys in sequence, `g` then a letter within 1 s; never while a text field has
 focus; rebindable to any `g x` in Settings › Keyboard, ids `goto.*` in `lib/shortcuts.ts`): `g m` Mission Control ·

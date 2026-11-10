@@ -1,12 +1,6 @@
 import { useState } from "react";
 import type { InteractionMode, RuntimeMode, Team } from "@tide/contracts";
-import {
-  INTERACTION_LABELS,
-  INTERACTION_MODES,
-  RUNTIME_MODE_HINTS,
-  RUNTIME_MODE_LABELS,
-  RUNTIME_MODES,
-} from "../../lib/vocab.ts";
+import { INTERACTION_LABELS, INTERACTION_MODES, runtimeModeHint, runtimeModeOptions } from "../../lib/vocab.ts";
 import { HarnessFields } from "../thread/ProviderPicker.tsx";
 import { limitModeOptions, useDeviceLimit } from "../../state/deviceAccess.ts";
 import { useServerSettings } from "../../state/serverSettings.ts";
@@ -18,10 +12,10 @@ import { StageList } from "../ui/StageList/StageList.tsx";
 import { StageNote } from "../ui/StageList/StageNote.tsx";
 import { MAX_STAGES, blankStage, draftFromTeam, teamFromDraft, type StageDraft, type TeamDraft } from "./teamDraft.ts";
 
-const MODE_OPTIONS: SelectOption<RuntimeMode | "">[] = [
-  { value: "", label: "Harness default" },
-  ...RUNTIME_MODES.map((m) => ({ value: m, label: RUNTIME_MODE_LABELS[m], title: RUNTIME_MODE_HINTS[m] })),
-];
+/** "Harness default" plus each mode, captioned for the stage's harness (what Auto means there). */
+function modeOptions(provider: StageDraft["provider"]): SelectOption<RuntimeMode | "">[] {
+  return [{ value: "", label: "Harness default", description: "The harness's own default mode" }, ...runtimeModeOptions(provider)];
+}
 const INTERACTION_OPTIONS: SelectOption<InteractionMode>[] = INTERACTION_MODES.map((m) => ({
   value: m,
   label: INTERACTION_LABELS[m],
@@ -89,8 +83,8 @@ function StageEditor({
       canRemove={count > 1}
     >
       <StageSettings>
-        <StageSetting label="Permissions">
-          <Select label={`Stage ${n} permissions`} value={stage.mode} options={limitModeOptions(MODE_OPTIONS, limit)} onSelect={(mode) => onChange({ mode })} variant="field" size="md" />
+        <StageSetting label="Permissions" caption={stage.mode === "" ? undefined : runtimeModeHint(stage.mode, stage.provider)}>
+          <Select label={`Stage ${n} permissions`} value={stage.mode} options={limitModeOptions(modeOptions(stage.provider), limit)} onSelect={(mode) => onChange({ mode })} variant="field" size="md" />
         </StageSetting>
         <StageSetting label="Mode">
           <Select label={`Stage ${n} interaction`} value={stage.interaction} options={INTERACTION_OPTIONS} onSelect={(interaction) => onChange({ interaction })} variant="field" size="md" />

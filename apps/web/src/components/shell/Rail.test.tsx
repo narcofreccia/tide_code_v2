@@ -217,3 +217,27 @@ describe("rail groups", () => {
     expect(screen.queryByText("Loose")).toBeNull();
   });
 });
+
+describe("rail resize handle (keyboard)", () => {
+  it("is a focusable separator: arrows move it 16px, Home/End jump to the bounds", () => {
+    attachFakeStore(modelWith({}));
+    useUi.setState({ railWidth: 280 });
+    renderRail();
+    const handle = screen.getByRole("separator", { name: "Resize rail" });
+    expect(handle.tabIndex).toBe(0);
+    expect(handle.getAttribute("aria-orientation")).toBe("vertical");
+    expect(handle.getAttribute("aria-valuenow")).toBe("280");
+    expect(handle.getAttribute("aria-valuemin")).toBe("240");
+    expect(handle.getAttribute("aria-valuemax")).toBe("360");
+    fireEvent.keyDown(handle, { key: "ArrowRight" });
+    expect(useUi.getState().railWidth).toBe(296);
+    fireEvent.keyDown(handle, { key: "ArrowLeft" });
+    fireEvent.keyDown(handle, { key: "ArrowLeft" });
+    expect(useUi.getState().railWidth).toBe(264);
+    fireEvent.keyDown(handle, { key: "End" });
+    expect(useUi.getState().railWidth).toBe(360);
+    expect(handle.getAttribute("aria-valuenow")).toBe("360");
+    fireEvent.keyDown(handle, { key: "Home" });
+    expect(useUi.getState().railWidth).toBe(240);
+  });
+});
