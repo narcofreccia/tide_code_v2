@@ -1,0 +1,6 @@
+/* a machine that may misbehave: other protocol, git missing */
+.warn {
+  margin: 0;
+  font-size: var(--fs-sm);
+  color: var(--warn);
+}

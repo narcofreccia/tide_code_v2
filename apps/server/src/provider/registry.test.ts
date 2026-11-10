@@ -64,6 +64,16 @@ describe("DriverRegistry", () => {
     expect((await registry.statusAll())[0]).toMatchObject({ installed: true });
   });
 
+  it("never reads a missing CLI's backticked install command as its login command", async () => {
+    const { driver, control } = createFakeDriver("codex");
+    control.statusResult = { ...control.statusResult, installed: false, loggedIn: false, hint: "Install Codex: run `npm i -g @openai/codex`" };
+    const registry = new DriverRegistry({ env });
+    registry.register(driver);
+    expect((await registry.statusAll()).find((s) => s.id === "codex")?.loginCommand).toBeUndefined();
+    control.statusResult = { ...control.statusResult, installed: true, hint: "Run `codex login` in a terminal" };
+    expect((await registry.statusAll(true)).find((s) => s.id === "codex")?.loginCommand).toBe("codex login");
+  });
+
   it("throws when asked for an unregistered kind", async () => {
     const registry = new DriverRegistry({ env });
     await expect(registry.get("pi")).rejects.toThrow("no driver registered for pi");

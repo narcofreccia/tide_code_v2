@@ -37,3 +37,8 @@
 .input::placeholder { color: var(--muted); }
 .input:focus { outline: none; border-color: var(--accent); }
 .machine { font-family: var(--font-mono); font-size: var(--fs-sm); line-height: 28px; }
+
+/* the Agent row's caption when the chosen harness cannot run yet */
+.problem {
+  color: var(--warn);
+}

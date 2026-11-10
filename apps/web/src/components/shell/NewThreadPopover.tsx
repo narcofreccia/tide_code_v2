@@ -1,4 +1,4 @@
-import { useEffect, useState } from "react";
+import { useEffect, useRef, useState } from "react";
 import type { InteractionMode, RuntimeMode, Thread } from "@tide/contracts";
 import { createThread, type NewThreadOptions } from "../../lib/threadActions.ts";
 import { runOrToast } from "../../lib/dispatchOrToast.ts";
@@ -14,9 +14,12 @@ import {
   providerIdOf,
 } from "../../lib/vocab.ts";
 import { EffortSelect } from "../thread/EffortSelect.tsx";
-import { effortsOf, providerStatus, useProviders } from "../../state/providers.ts";
+import { effortsOf, providerStatus, useProviderRoster } from "../../state/providers.ts";
+import { preferredProviderId } from "../../lib/preferredProvider.ts";
+import { copyTerminalCommand } from "../../lib/threadActions.ts";
+import { harnessProblem, runOrCopy, type HarnessProblem } from "../../lib/providerLogin.ts";
 import { ThreadLinkPicker, useLinkChoices } from "./ThreadLinkPicker.tsx";
-import { HarnessFields, useThreadDraft } from "../thread/ProviderPicker.tsx";
+import { HarnessFields, draftForProvider, useThreadDraft } from "../thread/ProviderPicker.tsx";
 import { useModel } from "../../state/model.ts";
 import { useEnvOfflineReason } from "../../state/threadEnv.ts";
 import { useUi, type NewThreadTab } from "../../state/ui.ts";
@@ -26,6 +29,7 @@ import { call } from "../../state/model.ts";
 import { envOpt, useMultiEnv } from "../fleet/envView.ts";
 import { EnvSelect } from "../fleet/EnvSelect.tsx";
 import { useRunOn } from "./useRunOn.ts";
+import { Button } from "../ui/Button.tsx";
 import { Checkbox } from "../ui/Choice.tsx";
 import { Dialog } from "../ui/Dialog.tsx";
 import { DialogFrame, FrameField, PrimaryField } from "../ui/DialogFrame.tsx";
@@ -80,6 +84,50 @@ function lastCreated(threads: Record<string, Thread>, projectId: string | undefi
   return best;
 }
 
+/**
+ * The first pick is made before the roster may have answered; once it does, a pick the user has
+ * not changed follows the better choice (a usable harness instead of the unusable default).
+ */
+function useRepickOnRoster(picked: string, current: string, repick: (id: string) => void): void {
+  const initial = useRef(current);
+  useEffect(() => {
+    if (current !== initial.current || picked === current) return;
+    initial.current = picked;
+    repick(picked);
+    // eslint-disable-next-line react-hooks/exhaustive-deps -- repick is a fresh closure each render
+  }, [picked, current]);
+}
+
+/** "Codex is not logged in · Log in": the fix next to the reason. */
+function ProblemCaption({ problem }: { problem: HarnessProblem }) {
+  const { command, url } = problem;
+  return (
+    <span className={styles.problem} role="status">
+      {problem.reason}
+      {command !== undefined ? (
+        <>
+          {" · "}
+          <Button
+            variant="link"
+            onClick={() => void (problem.kind === "login" ? runOrCopy(command) : copyTerminalCommand(command))}
+            title={command}
+          >
+            {problem.kind === "login" ? "Log in" : "Copy install command"}
+          </Button>
+        </>
+      ) : null}
+      {url !== undefined ? (
+        <>
+          {" · "}
+          <a href={url} target="_blank" rel="noreferrer">
+            Docs
+          </a>
+        </>
+      ) : null}
+    </span>
+  );
+}
+
 function useProjectTitle(projectId: string | undefined): string {
   return useModel((s) => (projectId === undefined ? undefined : s.model.projects[projectId]?.title)) ?? "this project";
 }
@@ -106,11 +154,14 @@ function ThreadFields({
     parentThreadId === undefined || projectId === undefined ? lastCreated(s.model.threads, projectId) : undefined,
   );
   const source = parent ?? last;
+  const { providers, error: rosterError } = useProviderRoster();
+  const picked = preferredProviderId(providers, source === undefined ? undefined : providerIdOf(source));
   const [draft, patch] = useThreadDraft(
-    source === undefined ? "claude" : providerIdOf(source),
-    parent === undefined ? (last?.model ?? "") : "",
+    picked,
+    parent === undefined && last !== undefined && providerIdOf(last) === picked ? (last.model ?? "") : "",
     parent === undefined ? last?.mode : undefined,
   );
+  useRepickOnRoster(picked, draft.providerId, (id) => patch(draftForProvider(id, providers)));
   const [title, setTitle] = useState("");
   const [interaction, setInteraction] = useState<InteractionMode>("default");
   const [busy, setBusy] = useState<string | undefined>(undefined);
@@ -118,7 +169,6 @@ function ThreadFields({
   const project = useProjectTitle(projectId);
   const projectRecord = useModel((s) => (projectId === undefined ? undefined : s.model.projects[projectId]));
   const mode = draft.mode ?? FALLBACK_MODE;
-  const providers = useProviders();
   const harness = instanceLabel(providers, draft.providerId);
   const multiEnv = useMultiEnv();
   const runOn = useRunOn(parent === undefined ? projectId : undefined);
@@ -132,8 +182,10 @@ function ThreadFields({
     if (!planMode) setInteraction("default");
   }, [planMode]);
   const chosenInteraction: InteractionMode = planMode ? interaction : "default";
+  // a harness that is known to be missing or signed out cannot run the first turn; unknown never blocks
+  const problem = rosterError === null ? harnessProblem(status, harness) : undefined;
   const create = (): void => {
-    if (!projectId || busy !== undefined || offline !== undefined) return;
+    if (!projectId || busy !== undefined || offline !== undefined || problem !== undefined) return;
     const trimmed = title.trim();
     const options: NewThreadOptions = {
       ...(parent === undefined ? {} : { parentThreadId: parent.id }),
@@ -195,7 +247,7 @@ function ThreadFields({
       primaryLabel={busy ?? (parent ? "Create child thread" : "Create thread")}
       onPrimary={create}
       busy={busy !== undefined}
-      blockedReason={projectId === undefined ? "Add a project first" : offline}
+      blockedReason={projectId === undefined ? "Add a project first" : (offline ?? problem?.reason)}
       onCancel={onDone}
     >
       <PrimaryField
@@ -232,7 +284,13 @@ function ThreadFields({
         ) : null}
         <FrameField
           label="Agent"
-          caption={draft.model === "" ? `Model: ${defaultModelHint(harness).toLowerCase()}` : undefined}
+          caption={
+            problem !== undefined ? (
+              <ProblemCaption problem={problem} />
+            ) : draft.model === "" ? (
+              `Model: ${defaultModelHint(harness).toLowerCase()}`
+            ) : undefined
+          }
         >
           <HarnessFields
             layout="inline"

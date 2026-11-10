@@ -1,7 +1,9 @@
 import { afterEach, beforeEach, describe, expect, it } from "vitest";
 import { emptyReadModel, type ClientCommand, type ReadModel } from "@tide/contracts";
 import { installFakeConnections } from "./fakeEnvConnection.ts";
-import { isLocalEnv, resetEnvManager, setFrameScheduler, startEnvironments } from "./envManager.ts";
+import { isLocalEnv, protocolDiffers, resetEnvManager, setFrameScheduler, startEnvironments } from "./envManager.ts";
+import { useToasts } from "./toast.ts";
+import { PROTOCOL_VERSION, type ServerInfo } from "@tide/contracts";
 import { useEnvironments } from "./envStore.ts";
 import { saveEnvironments } from "./envPersist.ts";
 import { dispatch, useModel } from "./model.ts";
@@ -149,5 +151,27 @@ describe("envManager remote launch", () => {
     startEnvironments({ url: "", token: "", remote: true });
     expect(useEnvironments.getState().primaryId).toBe("env-box");
     expect(useEnvironments.getState().environments.find((e) => e.id === "env-local")!.routes[0]!.url).toBe("ws://127.0.0.1:5000/ws");
+  });
+});
+
+describe("envManager protocol skew (R6)", () => {
+  const info = (protocol?: number): ServerInfo =>
+    ({ environmentId: "local", name: "laptop", version: "2.0.0", startedAt: 1, ...(protocol === undefined ? {} : { protocol }) }) as ServerInfo;
+
+  it("reads a missing protocol as unknown, never as a mismatch", () => {
+    expect(protocolDiffers(info())).toBe(false);
+    expect(protocolDiffers(info(PROTOCOL_VERSION))).toBe(false);
+    expect(protocolDiffers(info(PROTOCOL_VERSION + 1))).toBe(true);
+  });
+
+  it("says once in the shell when the primary speaks another protocol", () => {
+    useToasts.setState({ toasts: [] });
+    const local = fakes.byId("local");
+    local.emit({ state: "connected", info: info(PROTOCOL_VERSION + 1) });
+    local.emit({ state: "connected", info: info(PROTOCOL_VERSION + 1), lastSeenAt: 2 });
+    const texts = useToasts.getState().toasts.map((t) => t.text);
+    expect(texts.filter((t) => t.includes("different protocol"))).toEqual([
+      expect.stringMatching(/runs Tide 2\.0\.0 with a different protocol; update it or this app$/),
+    ]);
   });
 });

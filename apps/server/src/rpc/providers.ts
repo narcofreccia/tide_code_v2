@@ -1,7 +1,8 @@
-import type { SlashCommandInfo } from "@tide/contracts";
+import type { ProviderStatusDto, SlashCommandInfo } from "@tide/contracts";
 import type { Engine } from "../orchestration/engine.ts";
 import { AcpRegistry, toRegistryDto } from "../provider/acpRegistry.ts";
 import { CommandsCache } from "../provider/commands.ts";
+import { acpInstallHint, installHintFor, type InstallHint } from "../provider/installHints.ts";
 import type { DriverRegistry } from "../provider/registry.ts";
 import { instanceIdOf, threadCwd } from "../provider/sessions.ts";
 import type { SettingsStore } from "../settings.ts";
@@ -24,7 +25,7 @@ export function registerProviderHandlers(router: RpcRouter, deps: ProviderHandle
   const commands = deps.commands ?? new CommandsCache();
   const acp = deps.acp ?? new AcpRegistry({ dataDir: deps.dataDir ?? ":memory:", log });
 
-  router.register("providers.list", async (input) => deps.registry.statusAll(input.refresh ?? false));
+  router.register("providers.list", async (input) => withInstallHints(await deps.registry.statusAll(input.refresh ?? false), deps, acp));
 
   router.register("providers.commands", async (input) => ({ commands: await threadCommands(deps, commands, input.threadId, log) }));
 
@@ -37,6 +38,28 @@ export function registerProviderHandlers(router: RpcRouter, deps: ProviderHandle
       agents: agents.map((a) => toRegistryDto(a, configured)),
       ...(acp.fetchedAt !== undefined ? { fetchedAt: acp.fetchedAt } : {}),
     };
+  });
+}
+
+/** `ProviderStatusDto.install` until the contract lists it; read as optional by clients. */
+export type ProviderStatusWithInstall = ProviderStatusDto;
+
+/**
+ * A harness that is not installed carries how to install it: the bundled kinds from the shared
+ * table (`tide doctor` prints the same), an ACP agent from its registry entry when it has one.
+ */
+export function withInstallHints(list: ProviderStatusDto[], deps: Pick<ProviderHandlerDeps, "settings">, acp: AcpRegistry): ProviderStatusWithInstall[] {
+  const instances = deps.settings?.get().providerInstances ?? [];
+  return list.map((dto) => {
+    if (dto.installed) return dto;
+    let install: InstallHint | undefined;
+    if (dto.kind === "acp") {
+      const agentId = instances.find((p) => p.id === dto.id)?.acpAgentId;
+      install = agentId === undefined ? undefined : acpInstallHint(acp.find(agentId));
+    } else {
+      install = installHintFor(dto.kind);
+    }
+    return install === undefined ? dto : { ...dto, install };
   });
 }
 

@@ -1,26 +1,34 @@
+import { useEffect } from "react";
 import { selectProjects } from "@tide/client";
-import type { ReadModel } from "@tide/contracts";
+import type { ProviderStatusDto, ReadModel } from "@tide/contracts";
 import { PROVIDER_LABELS } from "../../lib/vocab.ts";
+import { installOf, resolveLoginCommand } from "../../lib/providerLogin.ts";
+import { isUsable } from "../../lib/preferredProvider.ts";
+import { useServerInfo } from "../../lib/useServerInfo.ts";
 import { useModel } from "../../state/model.ts";
-import { orderedInstances, providerStatus, useProviderRoster } from "../../state/providers.ts";
+import { loadProviders, orderedInstances, providerStatus, useProviderRoster, useProvidersStore } from "../../state/providers.ts";
 import { useUi } from "../../state/ui.ts";
 import { Logo } from "../shell/Logo.tsx";
 import { NewThreadPopover } from "../shell/NewThreadPopover.tsx";
+import { SetupStep } from "../settings/ProviderCardSetup.tsx";
 import { Button } from "../ui/Button.tsx";
 import { Icon } from "../ui/Icon.tsx";
 import styles from "./MissionControl.module.css";
+import local from "./MissionEmpty.module.css";
 
 function Row({
   done,
   step,
   label,
   hint,
+  detail,
   action,
 }: {
   done: boolean;
   step: string;
   label: string;
   hint: string;
+  detail?: React.ReactNode;
   action: React.ReactNode;
 }) {
   return (
@@ -31,6 +39,7 @@ function Row({
       <span className={styles.checkBody}>
         <span>{label}</span>
         <span className={styles.checkHint}>{hint}</span>
+        {detail}
       </span>
       <span className={styles.checkAction}>{action}</span>
     </li>
@@ -42,6 +51,122 @@ export function shouldShowGettingStarted(model: ReadModel): boolean {
   return Object.keys(model.projects).length === 0 || Object.keys(model.threads).length === 0;
 }
 
+const nameOf = (p: ProviderStatusDto): string => p.label || PROVIDER_LABELS[p.kind];
+
+/** "A", "A or B", "A, B or C" */
+function joinOr(names: string[]): string {
+  if (names.length <= 1) return names[0] ?? "";
+  return `${names.slice(0, -1).join(", ")} or ${names[names.length - 1]}`;
+}
+
+export type HarnessStep =
+  | { state: "checking" }
+  | { state: "error"; error: string }
+  | { state: "none-installed"; missing: ProviderStatusDto[] }
+  | { state: "logged-out"; installed: ProviderStatusDto[] }
+  | { state: "ready"; ready: ProviderStatusDto[] };
+
+/**
+ * Where the harness step stands, over every instance the server reports (the bundled four and any
+ * ACP agent): nothing installed → install one; installed but signed out → log in; one usable → done.
+ */
+export function harnessStep(providers: readonly ProviderStatusDto[], checking: boolean, error: string | null): HarnessStep {
+  if (checking) return { state: "checking" };
+  const all = orderedInstances(providers).map((p) => providerStatus(providers, p.id || p.kind) ?? p);
+  const ready = all.filter(isUsable);
+  if (ready.length > 0) return { state: "ready", ready };
+  if (error !== null) return { state: "error", error };
+  const installed = all.filter((p) => p.installed);
+  if (installed.length > 0) return { state: "logged-out", installed };
+  return { state: "none-installed", missing: all };
+}
+
+function stepCopy(step: HarnessStep): { label: string; hint: string } {
+  switch (step.state) {
+    case "checking":
+      return { label: "Set up a harness", hint: "Checking harnesses…" };
+    case "error":
+      return { label: "Set up a harness", hint: `Could not reach the server: ${step.error}` };
+    case "ready":
+      return { label: "Set up a harness", hint: `Ready: ${step.ready.map(nameOf).join(", ")}` };
+    case "logged-out":
+      return {
+        label: `Log in to ${joinOr(step.installed.map(nameOf))}`,
+        hint: "Installed but signed out. Run the login command in your terminal, then come back here.",
+      };
+    case "none-installed": {
+      const any = step.missing.some((p) => installOf(p) !== undefined);
+      return {
+        label: "Install a harness",
+        hint: any
+          ? "None is installed yet. Install one in your terminal, then come back here."
+          : "None is installed yet. Providers lists what each one needs.",
+      };
+    }
+  }
+}
+
+function StepDetail({ step }: { step: HarnessStep }) {
+  if (step.state === "none-installed") {
+    const rows = step.missing.flatMap((p) => {
+      const install = installOf(p);
+      return install === undefined ? [] : [{ p, install }];
+    });
+    if (rows.length === 0) return null;
+    return (
+      <ul className={local.fixes} aria-label="Install a harness">
+        {rows.map(({ p, install }) => (
+          <li key={p.id || p.kind} className={local.fix}>
+            <span className={local.fixName}>{nameOf(p)}</span>
+            <SetupStep name={nameOf(p)} command={install.command} url={install.url} what="install" />
+          </li>
+        ))}
+      </ul>
+    );
+  }
+  if (step.state === "logged-out") {
+    return (
+      <ul className={local.fixes} aria-label="Log in to a harness">
+        {step.installed.map((p) => {
+          const command = resolveLoginCommand(p);
+          return (
+            <li key={p.id || p.kind} className={local.fix}>
+              <span className={local.fixName}>{nameOf(p)}</span>
+              {command === undefined ? (
+                <span className={local.fixNote}>{p.hint ?? "Log in from its own CLI"}</span>
+              ) : (
+                <SetupStep name={nameOf(p)} command={command} what="login" />
+              )}
+            </li>
+          );
+        })}
+      </ul>
+    );
+  }
+  return null;
+}
+
+/**
+ * While the harness step is open, coming back to the window re-reads the roster (bypassing the
+ * server's status cache): the user installed or logged in from their own terminal. One pair of
+ * listeners, removed as soon as a harness is usable; no timers.
+ */
+function useRecheckOnReturn(open: boolean): void {
+  useEffect(() => {
+    if (!open) return undefined;
+    const recheck = (): void => {
+      if (document.visibilityState === "hidden" || useProvidersStore.getState().loading) return;
+      loadProviders(true);
+    };
+    window.addEventListener("focus", recheck);
+    document.addEventListener("visibilitychange", recheck);
+    return () => {
+      window.removeEventListener("focus", recheck);
+      document.removeEventListener("visibilitychange", recheck);
+    };
+  }, [open]);
+}
+
 /**
  * What the first run looks like: the mark, one sentence, and the three things
  * that have to be true before a thread can run. Every row reads its state from
@@ -50,6 +175,7 @@ export function shouldShowGettingStarted(model: ReadModel): boolean {
 export function MissionEmpty() {
   const model = useModel((s) => s.model);
   const { providers, loading, error } = useProviderRoster();
+  const info = useServerInfo();
   const setNewProjectOpen = useUi((s) => s.setNewProjectOpen);
   const railCollapsed = useUi((s) => s.railCollapsed);
   const toggleRail = useUi((s) => s.toggleRail);
@@ -58,19 +184,12 @@ export function MissionEmpty() {
 
   const projects = selectProjects(model);
   const firstProject = projects[0];
-  const ready = loading
-    ? []
-    : orderedInstances(providers).filter((p) => {
-        const status = providerStatus(providers, p.id);
-        return status?.installed === true && status.loggedIn === true;
-      });
-  const harnessHint = loading
-    ? "Checking harnesses…"
-    : error
-      ? `Could not reach the server: ${error}`
-      : ready.length > 0
-        ? `Ready: ${ready.map((p) => p.label || PROVIDER_LABELS[p.kind]).join(", ")}`
-        : "None of the four are logged in yet.";
+  // a refresh keeps the last answer on screen; only the very first read shows "checking"
+  const checking = loading && providers.length === 0;
+  const step = harnessStep(providers, checking, error);
+  const copy = stepCopy(step);
+  const harnessDone = step.state === "ready";
+  useRecheckOnReturn(!harnessDone && !checking);
 
   const addRepository = (): void => {
     if (railCollapsed) toggleRail();
@@ -79,6 +198,7 @@ export function MissionEmpty() {
 
   // once a repository exists the card shrinks to the checklist and stays until the first thread
   const compact = projects.length > 0;
+  const noGit = info?.tools !== undefined && !info.tools.git;
 
   return (
     <div className={styles.emptyState}>
@@ -106,19 +226,32 @@ export function MissionEmpty() {
           }
         />
         <Row
-          done={ready.length > 0}
+          done={harnessDone}
           step="2"
-          label="Log in to a harness"
-          hint={harnessHint}
+          label={copy.label}
+          hint={copy.hint}
+          detail={<StepDetail step={step} />}
           action={
-            <Button
-              onClick={() => {
-                setSettingsSection("providers");
-                showSettings();
-              }}
-            >
-              Providers
-            </Button>
+            <span className={local.actions}>
+              {harnessDone ? null : (
+                <Button
+                  variant="quiet"
+                  disabled={loading}
+                  title="Ask the server to check every harness again"
+                  onClick={() => loadProviders(true)}
+                >
+                  {loading && !checking ? "Checking…" : "Refresh"}
+                </Button>
+              )}
+              <Button
+                onClick={() => {
+                  setSettingsSection("providers");
+                  showSettings();
+                }}
+              >
+                Providers
+              </Button>
+            </span>
           }
         />
         <Row
@@ -129,6 +262,11 @@ export function MissionEmpty() {
           action={<NewThreadPopover projectId={firstProject?.id} variant="ghost" align="end" />}
         />
       </ul>
+      {noGit ? (
+        <p className={local.warn} role="note">
+          git is not installed on {info.name}; threads cannot use worktrees.
+        </p>
+      ) : null}
     </div>
   );
 }

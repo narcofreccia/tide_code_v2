@@ -39,6 +39,7 @@ function StripButton({
   pressed,
   badge,
   tone = "needs",
+  disabledReason,
   onClick,
 }: {
   icon: IconName;
@@ -51,6 +52,8 @@ function StripButton({
   badge?: number;
   /** needs-you counts are amber; plain counts are quiet */
   tone?: "needs" | "count";
+  /** set when the page cannot open yet; becomes the tooltip */
+  disabledReason?: string | undefined;
   onClick: () => void;
 }) {
   return (
@@ -58,9 +61,10 @@ function StripButton({
       type="button"
       className={`${styles.button} ${active ? styles.active : ""}`}
       aria-label={label ?? name}
-      title={shortcut ? `${name} (${shortcut})` : name}
+      title={disabledReason ?? (shortcut ? `${name} (${shortcut})` : name)}
       aria-current={active ? "page" : undefined}
       aria-pressed={pressed}
+      disabled={disabledReason !== undefined}
       onClick={onClick}
     >
       <Icon name={icon} size={18} />
@@ -95,6 +99,7 @@ export function Strip() {
   const multiEnv = useMultiEnv();
   const fleet = useFleetConnection();
   const ui = useUi.getState;
+  const hasProject = useModel((s) => Object.values(s.model.projects).some((p) => p.archivedAt === undefined));
 
   return (
     <nav className={styles.strip} aria-label="Pages">
@@ -124,6 +129,7 @@ export function Strip() {
           name="Experts"
           shortcut="⌘⇧X"
           active={view === "experts"}
+          disabledReason={hasProject ? undefined : "Add a repository first: an experts session runs inside a project"}
           onClick={() => {
             const projectId = expertsProject();
             if (projectId !== undefined) ui().setNewExpertsProject(projectId);

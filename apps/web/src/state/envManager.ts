@@ -11,7 +11,7 @@ import {
   type FetchLike,
   type StreamHandle,
 } from "@tide/client";
-import type { ClientCommand, EnvRoute, KnownEnvironment } from "@tide/contracts";
+import { PROTOCOL_VERSION, type ClientCommand, type EnvRoute, type KnownEnvironment, type ServerInfo } from "@tide/contracts";
 import { useEnvironments, type EnvConnection, type EnvStatus } from "./envStore.ts";
 import { loadEnvironments, saveEnvironments } from "./envPersist.ts";
 import { migrateEnvStorage, purgeEnvStorage, renameEnvStorage } from "./envStorage.ts";
@@ -30,6 +30,7 @@ import { dropProvidersFor, loadProvidersFor, reorderProviders } from "./provider
 import { runReconnectHandlers } from "./reconnect.ts";
 import { routeEnv, type RouteContext } from "./routing.ts";
 import { loadServerSettings } from "./serverSettings.ts";
+import { showToast } from "./toast.ts";
 
 /**
  * R9 connection manager: one EnvironmentConnection per known environment, their read
@@ -180,6 +181,36 @@ function toEnvStatus(snap: EnvConnectionSnapshot): EnvStatus {
   };
 }
 
+// ---- R6: version skew ----
+
+/**
+ * The wire protocol a server speaks, from its `server.info` (`protocol`, read as optional: a
+ * server that predates the field says nothing and is not flagged).
+ */
+export function protocolOf(info: ServerInfo | undefined): number | undefined {
+  return info?.protocol;
+}
+
+/** True when the server is known to speak another protocol than this client. */
+export function protocolDiffers(info: ServerInfo | undefined): boolean {
+  const protocol = protocolOf(info);
+  return protocol !== undefined && protocol !== PROTOCOL_VERSION;
+}
+
+/** "<machine> runs Tide <version> with a different protocol; update it or this app" */
+export function protocolWarning(name: string, info: ServerInfo | undefined): string {
+  return `${name} runs Tide ${info?.version ?? "(unknown version)"} with a different protocol; update it or this app`;
+}
+
+/** primaries already warned about this session: the toast says it once, the machine card keeps it */
+const protocolWarned = new Set<string>();
+
+function warnPrimaryProtocol(id: string, info: ServerInfo | undefined): void {
+  if (!protocolDiffers(info) || protocolWarned.has(id)) return;
+  protocolWarned.add(id);
+  showToast(protocolWarning(envById(id)?.name || info?.name || "This machine", info), undefined, { ms: 12_000 });
+}
+
 function onSnapshot(entry: Entry, snap: EnvConnectionSnapshot): void {
   if (!entries.has(entry.id) || entries.get(entry.id) !== entry) return;
   // the local environment is whoever answers on its route: adopt the real id
@@ -208,7 +239,10 @@ function onSnapshot(entry: Entry, snap: EnvConnectionSnapshot): void {
   }
   const env = envById(id);
   if (env && env.name === "" && snap.info?.name) patchEnv(id, { name: snap.info.name });
-  if (isPrimary) mirrorPrimary();
+  if (isPrimary) {
+    mirrorPrimary();
+    warnPrimaryProtocol(id, snap.info);
+  }
 }
 
 // ---- lifecycle ----
@@ -522,6 +556,7 @@ export function setPrimary(id: string): void {
 export function resetEnvManager(): void {
   stopEnvironments();
   ptyOwners.clear();
+  protocolWarned.clear();
   merged.seedOwnership({ projects: {}, threads: {} });
   flushModel();
   setFrameScheduler(undefined);

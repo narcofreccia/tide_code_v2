@@ -4,6 +4,7 @@ import { createExpertsSession } from "../../lib/expertsActions.ts";
 import { DEFAULT_PRESET_KEYS, EXPERT_PRESETS, presetByKey } from "../../lib/expertPresets.ts";
 import { useModel } from "../../state/model.ts";
 import { useProviders } from "../../state/providers.ts";
+import { preferredProviderKind } from "../../lib/preferredProvider.ts";
 import { Dialog } from "../ui/Dialog.tsx";
 import { DialogFrame, FrameSection, PrimaryField } from "../ui/DialogFrame.tsx";
 import { PresetChips } from "../ui/StageList/PresetChips.tsx";
@@ -68,8 +69,8 @@ export function CreateExpertsDialog({ projectId, onClose }: { projectId: string;
   const providers = useProviders();
   const projectTitle = useModel((s) => s.model.projects[projectId]?.title);
   const [topic, setTopic] = useState("");
-  const [lead, setLead] = useState(() => draftForProvider("claude", providers));
-  const [experts, setExperts] = useState<ExpertDraft[]>(() => initialExperts("claude"));
+  const [lead, setLead] = useState(() => draftForProvider(preferredProviderKind(providers), providers));
+  const [experts, setExperts] = useState<ExpertDraft[]>(() => initialExperts(preferredProviderKind(providers)));
   const [busy, setBusy] = useState(false);
 
   const patchExpert = (index: number, patch: Partial<ExpertDraft>): void =>

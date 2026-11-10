@@ -2,6 +2,7 @@ import { execFile } from "node:child_process";
 import { accessSync, constants, existsSync, mkdirSync, readFileSync, rmSync, writeFileSync } from "node:fs";
 import { createServer } from "node:net";
 import { delimiter, join } from "node:path";
+import { HARNESS_INSTALLS } from "../provider/installHints.ts";
 import { readRuntime, tideHomeOf } from "./runtime.ts";
 
 export type CheckLevel = "ok" | "warn" | "fail";
@@ -23,12 +24,7 @@ export interface DoctorProbes {
 }
 
 const MIN_NODE = [22, 13] as const;
-const HARNESSES = [
-  { bin: "claude", label: "Claude Code", install: "npm i -g @anthropic-ai/claude-code" },
-  { bin: "codex", label: "Codex", install: "npm i -g @openai/codex" },
-  { bin: "opencode", label: "OpenCode", install: "npm i -g @opencode/cli" },
-  { bin: "pi", label: "Pi", install: "npm i -g @earendil-works/pi-coding-agent" },
-];
+const HARNESSES = Object.values(HARNESS_INSTALLS);
 
 function nodeOk(version: string): boolean {
   const [major = 0, minor = 0] = version.replace(/^v/, "").split(".").map(Number);
@@ -77,7 +73,7 @@ export async function runChecks(probes: DoctorProbes, port: number): Promise<Che
   for (const h of HARNESSES) {
     const v = probes.onPath(h.bin) ? await probes.version(h.bin, ["--version"]) : undefined;
     if (v !== undefined) anyHarness = true;
-    checks.push({ name: h.bin, level: v !== undefined ? "ok" : "warn", detail: v ?? `${h.label} not installed (${h.install})` });
+    checks.push({ name: h.bin, level: v !== undefined ? "ok" : "warn", detail: v ?? `${h.label} not installed (${h.command})` });
   }
   if (!anyHarness) checks.push({ name: "harnesses", level: "fail", detail: "no harness CLI found; install at least one" });
   checks.push(checkTideHome(probes.tideHome));

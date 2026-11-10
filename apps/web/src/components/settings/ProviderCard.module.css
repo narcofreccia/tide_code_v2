@@ -111,3 +111,32 @@
   font-size: var(--fs-sm);
   color: var(--muted);
 }
+
+/* install / login step: command, Copy, docs link on one wrapping line */
+.setup {
+  display: inline-flex;
+  flex-wrap: wrap;
+  align-items: center;
+  gap: var(--sp-2);
+  min-width: 0;
+}
+
+.setupCommand {
+  font-family: var(--font-mono);
+  font-size: var(--fs-xs);
+  color: var(--text);
+  overflow-wrap: anywhere;
+}
+
+.docs {
+  display: inline-flex;
+  align-items: center;
+  gap: var(--sp-1);
+  font-size: var(--fs-sm);
+  color: var(--accent);
+  text-decoration: none;
+}
+
+.docs:hover {
+  text-decoration: underline;
+}

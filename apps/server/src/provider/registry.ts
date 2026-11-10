@@ -93,8 +93,10 @@ function toDto(status: ProviderStatus, entry: { id: string; kind: ProviderKind; 
   };
 }
 
-/** Drivers may set loginCommand explicitly; otherwise the first backticked span of the hint is it. */
-function loginCommandOf(status: { loginCommand?: string; hint?: string; loggedIn: boolean }): string | undefined {
+/** Drivers may set loginCommand explicitly; otherwise the first backticked span of the hint is it (installed CLIs only). */
+function loginCommandOf(status: { loginCommand?: string; hint?: string; installed: boolean; loggedIn: boolean }): string | undefined {
+  // a missing CLI's hint backticks its *install* command (`npm i -g …`), never a login
+  if (!status.installed) return undefined;
   if (status.loginCommand) return status.loginCommand;
   if (status.loggedIn || !status.hint) return undefined;
   return /`([^`]+)`/.exec(status.hint)?.[1];

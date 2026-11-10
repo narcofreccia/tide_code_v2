@@ -1,6 +1,6 @@
 import type { ProviderInstanceConfig, ProviderStatusDto } from "@tide/contracts";
 import { PROVIDER_LABELS, RUNTIME_MODES, RUNTIME_MODE_HINTS, RUNTIME_MODE_LABELS } from "../../lib/vocab.ts";
-import { resolveLoginCommand, runOrCopy } from "../../lib/providerLogin.ts";
+import { installOf, resolveLoginCommand, runOrCopy } from "../../lib/providerLogin.ts";
 import { loadProviders, modelChoiceValue, modelChoices } from "../../state/providers.ts";
 import { setProviderDefault, useSelectedSettings } from "../../state/serverSettings.ts";
 import { useUi } from "../../state/ui.ts";
@@ -12,6 +12,7 @@ import { Icon } from "../ui/Icon.tsx";
 import providers from "./providers/Providers.module.css";
 import styles from "./ProviderCard.module.css";
 import { plural } from "../../lib/format.ts";
+import { SetupStep } from "./ProviderCardSetup.tsx";
 
 const CAPS: { key: keyof ProviderStatusDto["caps"]; label: string }[] = [
   { key: "planMode", label: "plan mode" },
@@ -103,6 +104,9 @@ export function ProviderCard({
   const threadId = useUi((s) => s.selectedThreadId);
   const { glyph, text, tone } = statusOf(status);
   const command = resolveLoginCommand(status);
+  const install = installOf(status);
+  // the driver's install hint usually repeats the command shown just below it
+  const hint = install?.command !== undefined && status.hint?.includes(install.command) ? undefined : status.hint;
   const modelOptions: SelectOption<string>[] = modelChoices(status.models, id, [status]);
   const modeOptions = RUNTIME_MODES.map((mode) => ({
     value: mode,
@@ -133,7 +137,12 @@ export function ProviderCard({
       <p className={`${styles.status} ${styles[tone] ?? ""}`} data-tone={tone}>
         <span aria-hidden="true">{glyph}</span> {text}
       </p>
-      {status.hint ? <p className={styles.note}>{status.hint}</p> : null}
+      {hint ? <p className={styles.note}>{hint}</p> : null}
+      {install ? (
+        <div aria-label={`Install ${name}`}>
+          <SetupStep name={name} command={install.command} url={install.url} what="install" />
+        </div>
+      ) : null}
       {command ? (
         <div>
           <Button onClick={() => void runOrCopy(command)}>

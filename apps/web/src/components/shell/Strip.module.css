@@ -25,6 +25,8 @@
   transition: background var(--dur-fast) var(--ease), color var(--dur-fast) var(--ease);
 }
 .button:hover { background: var(--surface-hover); color: var(--text); }
+.button:disabled,
+.button:disabled:hover { background: transparent; color: var(--muted); opacity: 0.4; cursor: default; }
 .active,
 .active:hover { background: var(--selection); color: var(--text); }
 .active::before {

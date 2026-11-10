@@ -8,6 +8,8 @@ import {
   useEnvironments,
 } from "../../state/environments.ts";
 import { runOrToast } from "../../lib/dispatchOrToast.ts";
+import { protocolDiffers, protocolWarning } from "../../state/envManager.ts";
+import type { ServerInfo } from "@tide/contracts";
 import { Button } from "../ui/Button.tsx";
 import { ConfirmDialog } from "../ui/Dialog.tsx";
 import { Pill } from "../ui/Pill.tsx";
@@ -17,6 +19,25 @@ import { activeRoute, connectionLabel, harnessSummary, hostLine, httpOriginOf, s
 import { openAddMachine } from "./fleetUi.ts";
 import { RoutesEditor } from "./RoutesEditor.tsx";
 import styles from "./Environments.module.css";
+import card from "./MachineCard.module.css";
+
+/**
+ * What this machine cannot do or may misunderstand: another protocol (warning), another Tide
+ * version than the primary (quiet), git missing (warning), gh missing or signed out (quiet).
+ */
+export function machineNotes(name: string, info: ServerInfo | undefined, primaryVersion: string | undefined): { tone: "warn" | "quiet"; text: string }[] {
+  if (info === undefined) return [];
+  const notes: { tone: "warn" | "quiet"; text: string }[] = [];
+  if (protocolDiffers(info)) notes.push({ tone: "warn", text: protocolWarning(name, info) });
+  else if (primaryVersion !== undefined && info.version !== primaryVersion) {
+    notes.push({ tone: "quiet", text: `${name} runs Tide ${info.version}; the primary runs ${primaryVersion}.` });
+  }
+  const tools = info.tools;
+  if (tools !== undefined && !tools.git) notes.push({ tone: "warn", text: `git is not installed on ${name}; threads cannot use worktrees.` });
+  if (tools !== undefined && !tools.gh) notes.push({ tone: "quiet", text: `The GitHub CLI (gh) is not installed on ${name}; pull requests from its threads need it.` });
+  else if (tools?.gh === true && tools.ghAuth === false) notes.push({ tone: "quiet", text: `gh is not logged in on ${name}; run \`gh auth login\` there for pull requests.` });
+  return notes;
+}
 
 function safely(what: string, run: () => void): void {
   runOrToast(what, async () => run());
@@ -26,6 +47,7 @@ function safely(what: string, run: () => void): void {
 export function MachineCard({ env }: { env: KnownEnvironment }) {
   const status = useEnvironments((s) => statusOf(s, env.id));
   const primary = useEnvironments((s) => s.primaryId === env.id);
+  const primaryVersion = useEnvironments((s) => (s.primaryId === undefined ? undefined : s.statuses[s.primaryId]?.info?.version));
   const [forgetting, setForgetting] = useState(false);
   const [showRoutes, setShowRoutes] = useState(false);
   const info = status.info;
@@ -48,6 +70,11 @@ export function MachineCard({ env }: { env: KnownEnvironment }) {
         {info?.host ? <HostBars host={info.host} /> : null}
       </div>
       {status.error && !connected ? <p className={styles.error}>{status.error}</p> : null}
+      {machineNotes(name, info, primary ? undefined : primaryVersion).map((note) => (
+        <p key={note.text} className={note.tone === "warn" ? card.warn : styles.note} role="note">
+          {note.text}
+        </p>
+      ))}
       <dl className={styles.facts}>
         <dt>Host</dt>
         <dd>{hostLine(info?.host)}</dd>

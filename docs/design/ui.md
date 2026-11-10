@@ -69,6 +69,18 @@ folded to one line (`4 agents ready · 1 needs login`), expandable to the per-ha
 A thread with a linked PR and a watch shows a PR watch pill on its card:
 `👁 PR #12 · ✔ · 3 comments`. This is the landing view. "New thread" from here asks project → provider → worktree?.
 
+**First run.** Until the first thread, Mission Control is a three-step checklist: add a repository,
+set up a harness, start a thread. The harness step reads every instance the server reports (the
+four bundled harnesses and any ACP agent): with none installed it reads "Install a harness" and
+lists each one's install command with Copy and a Docs link; with some installed but signed out,
+"Log in to Claude Code or Pi" with each login command; done once one is usable. Refresh asks the
+server again past its 60 s status cache, and so does coming back to the window while the step is
+open (one focus/visibility listener, gone once a harness is usable). Commands are copied, not run:
+the server opens terminals for a thread or a run stack only. A server without git says so under
+the checklist. New-thread and Experts start on the first usable harness when the last one used is
+not; a known-unusable choice disables Create with "Codex is not logged in · Log in". The strip's
+Experts button is disabled, with the reason, until a repository exists.
+
 "Open in terminal" opens a PTY tab in the terminal drawer, on the thread's worktree (or
 the project root), and types the harness's own resume command into it (`claude --resume <id>` /
 `codex resume` / `opencode`). The tab is tagged as the thread's resume tab: while it is alive, the
@@ -155,7 +167,12 @@ Composer: textarea, `@` mentions (worktree files), paste images, mode/provider/m
   Control card and one rail folder, with a machine tag per clone (rows show ahead/behind and Pull).
 - **Paired devices.** Settings › Environments › This machine lists paired devices with a Revoke
   action; a revoked machine shows "Pair again". "Found on your network" in Add machine lists
-  discovered servers.
+  discovered servers. The relay form is owner-only; a paired device sees the relay state and a note.
+- **Version skew.** A machine card warns when that server speaks another wire protocol than this
+  app ("build-box runs Tide 1.4.0 with a different protocol; update it or this app") and notes
+  quietly when only its Tide version differs from the primary's. A primary on another protocol is
+  also said once per session as a toast. The card also names a missing git (warning) and a
+  missing or signed-out gh (quiet).
 
 ### Thread layout and type
 

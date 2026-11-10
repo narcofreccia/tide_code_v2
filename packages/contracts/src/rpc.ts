@@ -56,6 +56,8 @@ export const ProviderStatusDto = Type.Object({
   version: Type.Optional(Type.String()),
   hint: Type.Optional(Type.String()),
   loginCommand: Type.Optional(Type.String()),
+  /** R18 C4: how to install a harness that is not installed: the server's table (shared with `tide doctor`) or an ACP agent's registry page */
+  install: Type.Optional(Type.Object({ command: Type.Optional(Type.String()), url: Type.Optional(Type.String()) })),
   models: Type.Array(Type.Object({
     id: Type.String(), label: Type.String(), family: Type.Optional(Type.String()), default: Type.Optional(Type.Boolean()),
     efforts: Type.Optional(Type.Array(Type.Object({ id: Type.String(), label: Type.String(), default: Type.Optional(Type.Boolean()) }))),
@@ -266,6 +268,8 @@ export const ServerInfo = Type.Object({
   /** R9: user-given machine name (settings.environment.name), default = hostname */
   name: Type.String(),
   version: Type.String(),
+  /** R18 R6: wire protocol (`PROTOCOL_VERSION`) so clients can flag skew; absent on older servers */
+  protocol: Type.Optional(Type.Number()),
   startedAt: Type.Number(),
   /** R9: host facts for the fleet view */
   host: Type.Optional(Type.Object({

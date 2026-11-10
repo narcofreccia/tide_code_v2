@@ -68,4 +68,20 @@ describe("Strip", () => {
     render(<Strip />);
     expect(screen.queryByRole("button", { name: /Environments/ })).toBeNull();
   });
+
+  it("disables Experts with the reason while there is no project, and opens it once there is one", () => {
+    attachFakeStore(modelWith({}));
+    const { unmount } = render(<Strip />);
+    const experts = screen.getByRole("button", { name: "Experts" }) as HTMLButtonElement;
+    expect(experts.disabled).toBe(true);
+    expect(experts.title).toMatch(/Add a repository first/);
+    unmount();
+
+    attachFakeStore(modelWith({ projects: { p1: PROJECT } }));
+    render(<Strip />);
+    const enabled = screen.getByRole("button", { name: "Experts" }) as HTMLButtonElement;
+    expect(enabled.disabled).toBe(false);
+    fireEvent.click(enabled);
+    expect(useUi.getState().newExpertsProjectId).toBe("p1");
+  });
 });

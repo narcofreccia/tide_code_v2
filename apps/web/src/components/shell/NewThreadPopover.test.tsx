@@ -11,7 +11,7 @@ import { attachFakeStore, chooseOption, makeThread, mockRpc, modelWith, resetUi 
 import { useUi } from "../../state/ui.ts";
 import { defaultUserSettings, resetServerSettings, useServerSettings } from "../../state/serverSettings.ts";
 import { setDispatcher, type DispatchResult } from "../../state/model.ts";
-import { setProvidersForTest } from "../../state/providers.ts";
+import { resetProviders, setProvidersForTest } from "../../state/providers.ts";
 import { PROVIDER_FIXTURE } from "../settings/fixtures.ts";
 import { createChild } from "../../lib/threadActions.ts";
 
@@ -234,5 +234,48 @@ describe("new thread form · plan mode (C1)", () => {
     expect(screen.getByRole("radio", { name: "Build" }).getAttribute("aria-checked")).toBe("true");
     fireEvent.click(screen.getByText("Create thread"));
     expect((await created(fake))["interaction"]).toBeUndefined();
+  });
+});
+
+describe("new thread form: harness readiness", () => {
+  afterEach(() => resetProviders());
+  const caps = PROVIDER_FIXTURE[0]!.caps;
+  const status = (id: "claude" | "codex", installed: boolean, loggedIn: boolean, extra: Partial<ProviderStatusDto> = {}): ProviderStatusDto => ({
+    id, kind: id, label: id === "claude" ? "Claude Code" : "Codex", installed, loggedIn, models: [], caps, ...extra,
+  });
+
+  it("starts a Codex-only user on Codex instead of an absent Claude", async () => {
+    setProvidersForTest([status("claude", false, false), status("codex", true, true)]);
+    const fake = open(undefined, {});
+    expect(screen.getByRole("combobox", { name: "Thread provider" }).textContent).toContain("Codex");
+    fireEvent.click(screen.getByText("Create thread"));
+    expect((await created(fake))["provider"]).toBe("codex");
+  });
+
+  it("blocks Create with the reason and offers the fix when the chosen harness is signed out", () => {
+    setProvidersForTest([status("claude", false, false), status("codex", true, false, { loginCommand: "codex login" })]);
+    const fake = open();
+    const create = screen.getByText("Create thread").closest("button") as HTMLButtonElement;
+    expect(create.disabled).toBe(true);
+    expect(screen.getAllByText(/Codex is not logged in/).length).toBeGreaterThan(0);
+    expect(screen.getByRole("button", { name: "Log in" }).getAttribute("title")).toBe("codex login");
+    fireEvent.click(create);
+    expect(fake.dispatch).not.toHaveBeenCalled();
+  });
+
+  it("says how to install a missing harness", () => {
+    setProvidersForTest([
+      status("claude", false, false, { install: { command: "npm i -g @anthropic-ai/claude-code" } } as Partial<ProviderStatusDto>),
+      status("codex", false, false),
+    ]);
+    open(undefined, {});
+    expect(screen.getAllByText(/Claude Code is not installed/).length).toBeGreaterThan(0);
+    expect(screen.getByRole("button", { name: "Copy install command" })).toBeDefined();
+  });
+
+  it("does not block while the roster is still unknown", async () => {
+    const fake = open();
+    fireEvent.click(screen.getByText("Create thread"));
+    expect((await created(fake))["type"]).toBe("thread.create");
   });
 });

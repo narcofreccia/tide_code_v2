@@ -1,3 +1,4 @@
+import { PROTOCOL_VERSION } from "../version.ts";
 import { mkdir, readdir, realpath, stat } from "node:fs/promises";
 import { isAbsolute, join } from "node:path";
 import { Git } from "../vcs/git.ts";
@@ -107,6 +108,7 @@ export function registerHandlers(router: RpcRouter, deps: HandlerDeps): void {
       environmentId: deps.environmentId,
       name: deps.settings?.get().environment.name ?? hostname(),
       version: deps.version,
+      protocol: PROTOCOL_VERSION,
       startedAt: deps.startedAt,
       ...(deps.tideHome !== undefined ? { tideHome: deps.tideHome, worktreeRoot: `${deps.tideHome}/worktrees` } : {}),
       ...(deps.tools !== undefined ? { tools: { ...deps.tools, ...(ghAuth !== undefined ? { ghAuth } : {}) } } : {}),

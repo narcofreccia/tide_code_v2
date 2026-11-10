@@ -54,7 +54,7 @@ beforeAll(async () => {
   const acp = new AcpRegistry({
     dataDir: ":memory:",
     fetch: offline,
-    snapshot: { agents: [{ id: "gemini", name: "Gemini CLI", distribution: { npx: { package: "@google/gemini-cli" } } }, { id: "goose", name: "Goose", distribution: { binary: {} } }] },
+    snapshot: { agents: [{ id: "gemini", name: "Gemini CLI", website: "https://gemini.example", distribution: { npx: { package: "@google/gemini-cli" } } }, { id: "goose", name: "Goose", distribution: { binary: {} } }] },
   });
   app = await createApp({
     config,
@@ -127,12 +127,25 @@ describe("provider instances over RPC", () => {
     await client.call("settings.set", { patch: { providerInstances: [{ id: "acp:gemini", kind: "acp", label: "Gemini", acpAgentId: "gemini" }] } });
     const { agents } = await client.call<{ agents: { id: string; distribution: string; configured?: boolean }[] }>("providers.acpRegistry", {});
     expect(agents).toEqual([
-      { id: "gemini", name: "Gemini CLI", distribution: "npx", configured: true },
+      { id: "gemini", name: "Gemini CLI", website: "https://gemini.example", distribution: "npx", configured: true },
       { id: "goose", name: "Goose", distribution: "none" },
     ]);
     // no ACP driver in this test build: the instance is listed, greyed out
     const acp = (await client.call<ProviderStatusDto[]>("providers.list", {})).find((p) => p.id === "acp:gemini");
-    expect(acp).toMatchObject({ kind: "acp", installed: false, hint: "no ACP driver in this build" });
+    expect(acp).toMatchObject({ kind: "acp", installed: false, hint: "no ACP driver in this build", install: { url: "https://gemini.example" } });
     await client.call("settings.set", { patch: { providerInstances: [] } });
+  });
+});
+
+describe("providers.list install hints", () => {
+  it("tells a missing harness how to install it and leaves an installed one alone", async () => {
+    const list = await client.call<(ProviderStatusDto & { install?: { command?: string; url?: string } })[]>("providers.list", {});
+    const claudeDto = list.find((p) => p.id === "claude");
+    expect(claudeDto?.installed).toBe(true);
+    expect(claudeDto?.install).toBeUndefined();
+    // only the fake Claude driver is in this build: Codex reads "not installed"
+    const codex = list.find((p) => p.id === "codex");
+    expect(codex).toMatchObject({ installed: false, install: { command: "npm i -g @openai/codex", url: "https://github.com/openai/codex" } });
+    expect(codex?.loginCommand).toBeUndefined();
   });
 });

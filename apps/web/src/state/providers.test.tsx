@@ -61,7 +61,7 @@ describe("provider roster honesty", () => {
     render(<MissionControl />);
 
     expect(screen.getByText("Checking harnesses…")).toBeDefined();
-    expect(screen.getByLabelText("2 Log in to a harness").dataset["done"]).toBe("false");
+    expect(screen.getByLabelText("2 Set up a harness").dataset["done"]).toBe("false");
   });
 
   it("reports why the roster is unknown when the probe failed", async () => {
@@ -74,7 +74,7 @@ describe("provider roster honesty", () => {
     render(<MissionControl />);
 
     expect(await screen.findByText("Could not reach the server: connection lost")).toBeDefined();
-    expect(screen.getByLabelText("2 Log in to a harness").dataset["done"]).toBe("false");
+    expect(screen.getByLabelText("2 Set up a harness").dataset["done"]).toBe("false");
   });
 
   it("offers a harness once the server says it is ready", async () => {
