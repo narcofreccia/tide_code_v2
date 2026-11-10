@@ -15,7 +15,7 @@ bar. `⌘B` (or the strip's Inbox button) collapses the rail; the strip stays. T
 | Top bar | 36px | logo (→ Mission Control) · `Project › Thread` breadcrumb, or the page heading (`--fs-md --fw-medium`) · right: env chip (multi-environment only), connection dot, theme toggle, `search` icon = command palette (`⌘K`). No project switcher: projects are picked in the rail. Carries `data-tauri-drag-region`. |
 | Strip | 44px | `--surface`, hairline right border. Top: Mission Control (`⌘0`), Inbox (toggles the rail; amber badge = threads that need you), Pull requests (badge = open PRs), Usage, Experts (new session). Bottom: Environments (only with more than one environment; → Settings › Environments), Settings (`⌘,`). 36×36 icon buttons, `title="Name (shortcut)"`; the active page has `aria-current="page"`, `--selection` fill and a 2px `--selection-bar` on the left edge. |
 | Rail | 280px, resizable 240–360 (persisted) | see **Rail anatomy** |
-| Thread | flexible, primary | header: one 32px row = state chip · title (inline rename: double-click or ✎) · branch chip (mono, tooltip = worktree path, `main checkout` when none) \| Terminal · Fork (latest settled turn) · `⋯` (below ~560px container width Terminal and Fork fold into `⋯`; Stop lives only in the composer) (New child, Roll back last turn…, Snooze ▸, Copy thread ID, Copy branch, Remove worktree…, Archive thread…); a 24px sub-row exists only when it has chips (PR / merge, lineage `forked from <title>`, `Limited` menu, `Rolling back…`, delegates, rate limit) · pinned plan progress while running · stream of messages + activities · inline cards (approval, user-input, proposed plan) · composer |
+| Thread | flexible, primary | header: one 32px row = state chip · title (inline rename: double-click or ✎) · branch chip (mono, tooltip = worktree path, `main checkout` when none) \| Terminal · Fork (latest settled turn) · `⋯` (below ~560px container width Terminal and Fork fold into `⋯`; Stop lives only in the composer) (New child, Roll back last turn…, Snooze ▸, Copy thread ID, Copy branch, Export as Markdown, Copy as Markdown, Remove worktree…, Archive thread…); a 24px sub-row exists only when it has chips (PR / merge, lineage `forked from <title>`, `Limited` menu, `Rolling back…`, delegates, rate limit) · pinned plan progress while running · stream of messages + activities · inline cards (approval, user-input, proposed plan) · composer |
 | Workbench | flexible, secondary | tab strip: **Changes** (default) · Search · open files (Monaco) · Preview \| `+` menu (Open file… `⌘P`, Search in files… `⌘⇧F`, New terminal) · **Files** toggle (`⌘⇧E`; open by default in Code focus, closed in Split, each layout remembers its last choice) · Preview (dev servers of the thread) · Terminal `` ⌘` ``. Editor bar: path as breadcrumbs (a folder opens the tree on it; the file name is plain) · Save (dot when dirty, disabled when clean). Monaco on the type scale: `--fs-sm` mono, line height 1.5× that, current line in `--selection`. Terminal drawer: a fixed one-line tab strip (`--row-h-nav`, tabs ≤160px, titles ellipsised with the harness's status glyph dropped, a dot = alive, muted = exited; right-click: Close / Close others; `plus` new; Hide right) above the terminal, which refits on resize, on open and on tab switch |
 | Status bar | 24px | `⎇ branch (worktree)` · context % + cost · diff stats · provider health · connection |
 
@@ -52,7 +52,8 @@ Rail toggle `⌘B`. Terminal drawer `` ⌘` ``. Palette `⌘K`.
    the groups give way to one **Results · n** list: local matches first, then server hits not already
    listed, each with its snippet (a `search` icon marks a message match). "Nothing matches" when empty.
 6. **Empty states**: no project → "Add a repository" card with one button (opens the Add project dialog);
-   a project with no threads → "New thread"; a search with no results.
+   a project with no threads → "New thread"; a search with no results. Before the primary machine's
+   first snapshot the rail shows skeleton rows instead (see Connection states).
 
 Merge back from the rail sends `thread.merge` with no strategy, so the server applies Settings › Git;
 when `confirmMergeBack` is on, a dialog asks first.
@@ -166,6 +167,20 @@ Composer: textarea, `@` mentions (worktree files), paste images, mode/provider/m
 - **User message.** A tiny `You` label (`--fs-xs`, `--muted`, the turn's ⋯ menu at its right) over a
   `--surface-2` block with a hairline and `--radius`, full measure, `white-space: pre-wrap` so the
   user's own line breaks survive. Assistant text has no box.
+- **Copy tools.** Hover or focus reveals icon-only tools (on touch they stay visible): a Copy beside
+  the `You` label copies the prompt as typed; Quote and Copy under a settled reply copy its Markdown
+  source; every code block (not html/mermaid visuals, which have their own header) carries a Copy in its
+  top-right corner. They are reachable by Tab and a mouse press never takes focus from the composer.
+  The icon turns into a check after a real copy. Where the page cannot write the clipboard (plain-http
+  LAN is not a secure context) the helper falls back to `execCommand("copy")`; if that fails too, the
+  toast says "Copying is not available here" and its `Show text` opens a small dialog with the text
+  selected for copying by hand. No surface toasts "Copied" for a copy that did not happen.
+- **Export.** `⋯` › Export as Markdown downloads `<slug>-<date>.md`; Copy as Markdown puts the same
+  document on the clipboard (both also in ⌘K for the open thread). The document: title, project,
+  harness · model, branch, created date (UTC), then the timeline in order: `### You` / `### Assistant`
+  headings, one list line per tool call (`- Tool: Bash <command> (ok)`, no output), approvals and questions
+  with their decisions, sub-agents, notes and errors, plan cards, and a `---` + *New session* at each
+  session boundary.
 - **Markdown.** Body `--fs-base`, `line-height: 1.6`, normal white-space: a single newline is a soft
   break (no `remark-breaks`), a blank line starts a paragraph. `p` margin `0 0 .75em`; `h1` `--fs-lg`,
   `h2` `--fs-md`, `h3`–`h6` `--fs-base`, all `--fw-semibold`, margin `1.25em 0 .5em`; lists `.25em 0 .75em`,
@@ -232,9 +247,45 @@ path and the note. A live thread's link set is fixed at creation.
 repo's under a `label — path` header, opened at their absolute path, with
 "Revert linked changes" per group (`vcs.linkedRevert`).
 
-**Settings** (route `/settings`): Providers (installed/logged-in/version, default model,
-default mode, login hint that opens the terminal), Git (worktree root, PR via gh), Appearance,
-Keyboard, Environments (this machine, pairing, other machines, relay).
+**Settings** (route `/settings`), fourteen sections in this order: General (follow-up default,
+usage-limit policy, continue after restart, title instructions) · Projects (live projects, where
+clones go, per-project run) · Inbox (auto-settle, Working group, snooze options, text model) ·
+Notifications · Providers (installed/logged-in/version, default model and mode, login hint that
+opens the terminal, extra accounts and ACP agents) · Git (worktree default, merge-back defaults,
+remote push and sync, generated messages) · Decisions (the TypeSafe Jev layer and its fallback) ·
+Automations (scheduled and webhook tasks) · Teams · Appearance (theme, density, VS Code colour
+theme, fonts, rail grouping) · Keyboard (the `lib/shortcuts.ts` registry, rebinding) · Environments
+(this machine, pairing, other machines, relay) · Glass box (status-bar limits, harness logs) · About. A search box filters sections and
+jumps to a row.
+
+Server-backed sections (the per-environment ones, with a "Settings of <machine>" picker when several
+machines are connected, and Keyboard) wait for that machine's `settings.get`: until it answers the
+groups are dimmed and inert under a quiet "Loading settings…" line; a failed load shows the error
+with Retry. `patchServerSettings` refuses with a toast ("Settings are still loading") rather than
+send a patch whose list fields (`teams`, `providerInstances`, `keybindings`) would replace the
+server's. Appearance, Notifications and About are local to the browser and stay usable while the
+server is unreachable.
+
+## Connection states
+
+The primary machine's connection decides what covers the app; nothing else does.
+
+| State | What renders |
+|---|---|
+| Never connected in this page, 8 s after load | Full screen "Could not reach the Tide server" (URL, token hint, Retry, Copy report); lifts by itself when the connection opens |
+| Token refused (`unauthorized`, terminal) | Full screen "The server refused this device" at once (pair again, or a valid `?token=`); "Continue without a connection" leaves a quiet line at the top |
+| Was connected, now dropped | No overlay. After 2 s, one floating pill under the top bar: "Reconnecting…", time down, **Retry now** (re-walks the routes, skipping the backoff). Desktop and phone alike; gone when the connection is back |
+| Connected, first snapshot not landed | Skeleton rows in Mission Control, the rail, All threads, the phone inbox and an experts deep link. First-run content ("Add a repository", the Getting started checklist, "No threads yet", "This experts session is gone") appears only once the server has answered and the model is truly empty |
+
+**Sending while offline.** Commands are not queued across a drop (calls reject while a machine is
+offline), so nothing pretends to send. While the thread's machine is not connected the composer keeps
+the text, disables Send and Stop and says "Not connected to the server. Sending resumes when it
+reconnects; your text stays here." Approval and question buttons, secret Provide / Decline and the
+new-thread dialog's Create are disabled with the reason as their tooltip.
+
+**Another machine offline.** Its threads stay in the merged view with their last known state. Rail rows
+are muted (tooltip "<machine> is offline"); the thread header carries a "<machine> is offline" pill;
+the composer says the same and disables Send.
 
 ## States per thread (status glyph)
 
@@ -372,12 +423,12 @@ Line height `--lh-body: 1.45` for text, `--lh-tight: 1.2` for titles and single-
 
 ## Component inventory (apps/web/src/components)
 
-`shell/` TopBar, Strip, Rail (RailHeader, ProjectChips, RailGroups, RailThreadRow, RailSearch, RailEmpty), StatusBar, SplitPane, FocusModeSwitch · `mission/` MissionControl, Inbox, ProjectCard, ProjectLinks ·
+`shell/` TopBar, Strip, Rail (RailHeader, ProjectChips, RailGroups, RailThreadRow, RailSearch, RailEmpty), StatusBar, SplitPane, FocusModeSwitch, BootGate, ReconnectBanner · `mission/` MissionControl, Inbox, ProjectCard, ProjectLinks ·
 `thread/` ThreadHeader, ThreadLinkChips, Stream, MessageItem, ActivityRow, ActivityGroup, ApprovalCard,
 UserInputCard, PlanCard, PlanProgress, Composer, MentionPicker · `workbench/` Workbench,
 ChangesTab, DiffView, FileTab (Monaco), FileTree, TerminalDrawer · `experts/` Board, ExpertCard,
 FindingsFeed · `settings/` … · `ui/` Button, Pill, Select, Checkbox/Radio (`Choice`), Menu,
-Popover, Dialog, Toast, Kbd.
+Popover, Dialog, Toast, Kbd, Skeleton.
 
 `Select` is one custom listbox (portalled, `position: fixed`, viewport-clamped via
 `ui/useAnchoredPanel.ts`, which `Popover` and `Menu` share) — never a native `<select>`.
@@ -393,12 +444,35 @@ traffic-light inset.
 
 ## Keyboard map
 
-`⌘K` palette · `⌘N` new thread · `⌘0` Mission Control · `⌘1/2/3` focus modes · `⌘B` rail ·
-`` ⌘` `` terminal · `↵` / `⌘↵` send and stay (while a turn runs: in the selected follow-up mode) · `⇧↵` newline · `⌥↵` the other follow-up mode (Steer ↔ Queue) · `⌘⇧↵` idle: send in the background (back to Mission Control) · `Esc` stop turn / close · `y`/`n` approve/deny focused card ·
-`⌘⇧S` in the composer: stash the draft / apply the latest stash · `⌘Z` undo the last settle (while its toast is up or the rail/thread has focus) · `⌘⇧R` cycle reasoning effort (in the workbench: toggle file tree) ·
-`/` at the start of a line: slash commands + skills of the thread's harness · `@` mention a worktree file ·
-`⌘P` open file in worktree · `⌘S` save · `⌘⇧D` toggle unified/split diff · `[` `]` prev/next turn ·
-`⌘⇧L` toggle light/dark.
+The registry is `lib/shortcuts.ts` (`SHORTCUTS`): `handleShortcut` dispatches from it and
+Settings › Keyboard renders it, so this list follows it. Entries a surface owns (composer, cards,
+Monaco, the rail) are listed there without a handler and cannot be rebound.
+
+- **Navigation:** `⌘K` palette · `⌘N` new thread (browser tab: `⌥N`) · `⌘⇧X` new Experts session ·
+  `⌘0` Mission Control · `⌘,` Settings · `Esc` closes the topmost dialog, Settings or the Experts board.
+- **View:** `⌘1/2/3` focus modes (thread / split / workbench) · `⌘B` rail · `⌘⇧L` toggle light/dark.
+- **Thread (composer):** `↵` / `⌘↵` send and stay (while a turn runs: in the selected follow-up mode) ·
+  `⌘⇧↵` idle: send in the background (back to Mission Control); running: as `↵` · `⌥↵` while running:
+  the other follow-up mode (Steer ↔ Queue) · `⇧↵` newline · `Esc` stop the running turn (composer
+  focused) · `⌘⇧S` stash the draft / apply the latest stash · `⌘⇧R` cycle reasoning effort ·
+  `y`/`n` approve/deny the focused card · `/` at the start of a line: slash commands + skills of the
+  thread's harness · `@` mention a worktree file.
+- **Workbench:** `` ⌘` `` terminal drawer (from Thread focus it widens to Split) · `⌘P` open file in
+  worktree · `⌘⇧F` search in worktree · `⌘⇧E` toggle file tree · `⌘W` close tab (browser tab: `⌥W`) ·
+  `⌘S` save · `⌘⇧D` unified/split diff · `[` `]` previous/next turn.
+- **Rail:** the single keys below, and `⌘Z` undo the last settle (outside text fields, while its toast
+  is up or the rail/thread has focus).
+
+**Esc and focus (`lib/useEscape`, `ui/Dialog`).** Overlays register on one Esc stack and only the
+topmost answers, so one Esc closes one layer (a dialog over Settings closes alone; a popover or menu
+opened over a layer closes first). In a text field, select or contenteditable the first Esc leaves
+the field (a settings text field also drops its uncommitted edit) and the next Esc closes; the ⌘K
+palette, whose field is the dialog, closes at once. A handler that already took the key (an open
+listbox, an inline rename) wins. Dialogs are `aria-modal`, labelled by their heading; focus moves
+inside on open (an `autoFocus` field, else the panel; `ConfirmDialog` starts on its confirm button, or
+on Cancel when destructive), Tab/⇧Tab cycle inside, and focus returns to the opener on close.
+Resize handles (split, file tree) are focusable separators: `←`/`→` move 16px, `Home`/`End` jump to
+the minimum/maximum (`lib/useSeparatorKeys`).
 
 Go-to chords (two bare keys in sequence, `g` then a letter within 1 s; never while a text field has
 focus; rebindable to any `g x` in Settings › Keyboard, ids `goto.*` in `lib/shortcuts.ts`): `g m` Mission Control ·

@@ -385,3 +385,27 @@
 .table tr[data-flash] td {
   background: var(--selection);
 }
+
+/* ---- server settings not loaded yet: quiet status line, groups dimmed and inert ---- */
+
+.gateLine {
+  margin: 0;
+  display: flex;
+  align-items: center;
+  gap: var(--sp-3);
+  font-size: var(--fs-sm);
+  line-height: var(--lh-body);
+  color: var(--muted);
+}
+
+.gateError {
+  color: var(--danger);
+}
+
+.gated {
+  display: flex;
+  flex-direction: column;
+  gap: var(--sp-5);
+  opacity: 0.5;
+  pointer-events: none;
+}

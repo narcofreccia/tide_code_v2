@@ -8,3 +8,7 @@
   z-index: 1;
 }
 .resize:hover { background: var(--accent-soft); }
+.resize:focus-visible {
+  outline: none;
+  background: var(--accent);
+}

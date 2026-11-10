@@ -206,6 +206,8 @@ export const SHORTCUTS: Shortcut[] = [
   },
   { id: "mission", keys: "⌘0", label: "Mission Control", group: "Navigation", key: "0", when: "always", run: () => ui().showMission() },
   { id: "settings", keys: "⌘,", label: "Settings", group: "Navigation", key: ",", when: "always", run: () => ui().showSettings() },
+  // lib/useEscape: the topmost dialog, Settings or the Experts board
+  { id: "close", keys: "Esc", label: "Close dialog, Settings or Experts board (in a text field: leave the field first)", group: "Navigation" },
   ...GOTO_SHORTCUTS,
   { id: "focus-thread", keys: "⌘1", label: "Focus: thread", group: "View", key: "1", when: "thread", run: () => ui().setFocusMode("thread") },
   { id: "focus-split", keys: "⌘2", label: "Focus: split", group: "View", key: "2", when: "thread", run: () => ui().setFocusMode("split") },
@@ -218,7 +220,11 @@ export const SHORTCUTS: Shortcut[] = [
     },
   },
   { id: "rail", keys: "⌘B", label: "Toggle rail", group: "View", key: "b", shift: false, when: "always", run: () => ui().toggleRail() },
-  { id: "send", keys: "⌘↵", label: "Send in background (while running: the selected follow-up mode)", group: "Thread", when: "thread" },
+  // composer keys: thread/Composer.tsx `onDefaultKey`
+  { id: "send", keys: "↵ / ⌘↵", label: "Send and stay (while running: in the selected follow-up mode)", group: "Thread", when: "thread" },
+  { id: "send-background", keys: "⌘⇧↵", label: "Send in background: back to Mission Control (while running: as ↵)", group: "Thread", when: "thread" },
+  { id: "send-alternate", keys: "⌥↵", label: "While running: send in the other follow-up mode", group: "Thread", when: "thread" },
+  { id: "newline", keys: "⇧↵", label: "New line in the message", group: "Thread", when: "thread" },
   {
     id: "stash", keys: "⌘⇧S", label: "Stash prompt / apply stash (composer focused)", group: "Thread", key: "s", shift: true,
     when: "thread",
@@ -231,7 +237,7 @@ export const SHORTCUTS: Shortcut[] = [
       return applyStash(id);
     },
   },
-  { id: "stop", keys: "Esc", label: "Stop turn / close", group: "Thread", when: "thread" },
+  { id: "stop", keys: "Esc", label: "Stop turn (composer focused, turn running)", group: "Thread", when: "thread" },
   { id: "approve", keys: "y", label: "Approve focused card", group: "Thread", when: "thread" },
   { id: "deny", keys: "n", label: "Deny focused card", group: "Thread", when: "thread" },
   {
@@ -280,6 +286,8 @@ export const SHORTCUTS: Shortcut[] = [
   { id: "prev-turn", keys: "[", label: "Previous turn", group: "Workbench", when: "workbench" },
   { id: "next-turn", keys: "]", label: "Next turn", group: "Workbench", when: "workbench" },
   ...RAIL_SHORTCUTS,
+  // shell/useInboxKeys: outside text fields, while a settle can still be undone
+  { id: "undo-settle", keys: "⌘Z", label: "Undo the last settle", group: "Rail", when: "rail" },
 ];
 
 export const SHORTCUT_GROUPS: Shortcut["group"][] = ["Navigation", "Go to", "View", "Thread", "Workbench", "Rail"];

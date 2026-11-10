@@ -8,6 +8,14 @@
   padding-top: 14vh;
   background: rgba(0, 0, 0, 0.4);
 }
+
+/* the panel takes focus only as a fallback when nothing inside asks for it; no ring for that */
+.panel:focus,
+.palette:focus,
+.sheet:focus {
+  outline: none;
+}
+
 .panel {
   width: min(420px, 90vw);
   display: flex;

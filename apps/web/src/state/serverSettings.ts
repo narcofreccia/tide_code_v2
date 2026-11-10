@@ -20,6 +20,8 @@ interface SettingsEntry {
   settings: UserSettings;
   /** `settings.get` answered at least once on this connection */
   loaded: boolean;
+  /** the last `settings.get` failed and nothing has loaded yet: Settings shows it with Retry */
+  error?: string | undefined;
 }
 
 /**
@@ -91,12 +93,12 @@ function targetEnv(envId: string | undefined, state: ServerSettingsState = useSe
 
 function entryOf(state: ServerSettingsState, envId: string | undefined): SettingsEntry {
   const id = targetEnv(envId, state);
-  return id === undefined ? { settings: state.settings, loaded: state.loaded } : (state.byEnv[id] ?? { settings: defaultUserSettings(), loaded: false });
+  return id === undefined ? { settings: state.settings, loaded: state.loaded, error: state.error } : (state.byEnv[id] ?? { settings: defaultUserSettings(), loaded: false });
 }
 
 function setEntry(envId: string | undefined, entry: SettingsEntry): void {
   const id = targetEnv(envId);
-  if (id === undefined) useServerSettings.setState({ settings: entry.settings, loaded: entry.loaded });
+  if (id === undefined) useServerSettings.setState({ settings: entry.settings, loaded: entry.loaded, error: entry.error });
   else useServerSettings.setState((s) => ({ byEnv: { ...s.byEnv, [id]: entry } }));
 }
 
@@ -118,7 +120,7 @@ export function selectSettingsEnv(envId: string | undefined): void {
 let knownPrimary = useEnvironments.getState().primaryId;
 useEnvironments.subscribe((env) => {
   const state = useServerSettings.getState();
-  let { settings, loaded, byEnv, selectedId } = state;
+  let { settings, loaded, error, byEnv, selectedId } = state;
   if (env.primaryId !== knownPrimary) {
     const next = { ...byEnv };
     if (knownPrimary !== undefined && loaded) next[knownPrimary] = { settings, loaded };
@@ -126,6 +128,7 @@ useEnvironments.subscribe((env) => {
     if (env.primaryId !== undefined) delete next[env.primaryId];
     settings = incoming?.settings ?? defaultUserSettings();
     loaded = incoming?.loaded ?? false;
+    error = incoming?.error;
     byEnv = next;
     knownPrimary = env.primaryId;
   }
@@ -133,57 +136,79 @@ useEnvironments.subscribe((env) => {
   const kept = Object.entries(byEnv).filter(([id]) => alive(id));
   if (kept.length !== Object.keys(byEnv).length) byEnv = Object.fromEntries(kept);
   if (selectedId !== undefined && !alive(selectedId)) selectedId = undefined;
-  if (settings !== state.settings || loaded !== state.loaded || byEnv !== state.byEnv || selectedId !== state.selectedId) {
-    useServerSettings.setState({ settings, loaded, byEnv, selectedId });
+  if (settings !== state.settings || loaded !== state.loaded || error !== state.error || byEnv !== state.byEnv || selectedId !== state.selectedId) {
+    useServerSettings.setState({ settings, loaded, error, byEnv, selectedId });
   }
 });
 
 /** Read on every connect, for every environment; a server without the method keeps the defaults. */
 export async function loadServerSettings(envId?: string): Promise<void> {
-  const settings = await (envId === undefined ? call("settings.get", {}) : call("settings.get", {}, { envId }));
-  if (envId !== undefined && !isPrimary(envId) && useEnvironments.getState().statuses[envId]?.connection !== "connected") return;
-  setEntry(envId === undefined ? undefined : envId, { settings, loaded: true });
+  const gone = (): boolean => envId !== undefined && !isPrimary(envId) && useEnvironments.getState().statuses[envId]?.connection !== "connected";
+  let settings: UserSettings;
+  try {
+    settings = await (envId === undefined ? call("settings.get", {}) : call("settings.get", {}, { envId }));
+  } catch (error) {
+    const entry = entryOf(useServerSettings.getState(), envId);
+    // an earlier answer stays good; only a page that never loaded shows the failure
+    if (!gone() && !entry.loaded) setEntry(envId, { ...entry, error: errorText(error) });
+    throw error;
+  }
+  if (gone()) return;
+  setEntry(envId, { settings, loaded: true });
 }
 
-function clearFallback(d: UserSettings["decisions"], clear: boolean): UserSettings["decisions"] {
-  if (!clear) return d;
-  const { fallback: _fallback, ...rest } = d;
-  return rest;
+/** Retry button of the Settings page: reloads the environment the page edits. */
+export function retryServerSettings(): Promise<void> {
+  const target = targetEnv(undefined);
+  setEntry(target, { ...entryOf(useServerSettings.getState(), target), error: undefined });
+  return loadServerSettings(target).catch(() => undefined);
 }
 
-/** The local view of a patch: what the server will answer, minus the key itself. */
-function applyPatch(settings: UserSettings, patch: UserSettingsPatch): UserSettings {
-  const decisions = patch.decisions;
-  return {
-    providerDefaults: patch.providerDefaults ?? settings.providerDefaults,
-    worktreeByDefault: patch.worktreeByDefault ?? settings.worktreeByDefault,
-    decisions: clearFallback({
-      ...settings.decisions,
-      enabled: decisions?.enabled ?? settings.decisions.enabled,
-      hasKey: settings.decisions.hasKey,
-      ...(decisions?.fallback === undefined ? {} : decisions.fallback === null ? {} : { fallback: decisions.fallback }),
-      grayZone: decisions?.grayZone ?? settings.decisions.grayZone,
-      sites: { ...settings.decisions.sites, ...(decisions?.sites ?? {}) },
-      expertsAutoAdvance: decisions?.expertsAutoAdvance ?? settings.decisions.expertsAutoAdvance,
-    }, decisions?.fallback === null),
-    continueAfterRestart: patch.continueAfterRestart ?? settings.continueAfterRestart,
-    followUpMode: patch.followUpMode ?? settings.followUpMode,
-    limitPolicy: patch.limitPolicy ?? settings.limitPolicy,
-    teams: patch.teams ?? settings.teams,
-    inbox: { ...settings.inbox, ...(patch.inbox ?? {}) },
-    git: { ...settings.git, ...(patch.git ?? {}) },
-    providerInstances: patch.providerInstances ?? settings.providerInstances,
-    glassBox: { ...settings.glassBox, ...(patch.glassBox ?? {}) },
-    keybindings: patch.keybindings !== undefined ? Object.fromEntries(Object.entries(patch.keybindings).filter(([, v]) => v !== "")) : settings.keybindings,
-    environment: {
-      name: patch.environment?.name ?? settings.environment.name,
-      ...(patch.environment?.sshHost === null ? {} : patch.environment?.sshHost !== undefined ? { sshHost: patch.environment.sshHost } : settings.environment.sshHost !== undefined ? { sshHost: settings.environment.sshHost } : {}),
-      ...((patch.environment?.lanBind ?? settings.environment.lanBind) !== undefined ? { lanBind: patch.environment?.lanBind ?? settings.environment.lanBind } : {}),
-      ...(patch.environment?.projectsDir === null ? {} : patch.environment?.projectsDir !== undefined ? { projectsDir: patch.environment.projectsDir } : settings.environment.projectsDir !== undefined ? { projectsDir: settings.environment.projectsDir } : {}),
-    },
-    ...(patch.relay === null ? {} : patch.relay !== undefined ? { relay: { url: patch.relay.url, hasKey: patch.relay.key !== undefined || settings.relay?.hasKey === true } } : settings.relay !== undefined ? { relay: settings.relay } : {}),
-    ...(patch.textModel === null ? {} : patch.textModel !== undefined ? { textModel: patch.textModel } : settings.textModel !== undefined ? { textModel: settings.textModel } : {}),
-  };
+type Nullable<T> = T | null | undefined;
+
+/** A patch's sub-object without keys explicitly set to `undefined`, so spreading it never blanks a field. */
+function defined<T extends object>(value: T | undefined): Partial<T> {
+  return Object.fromEntries(Object.entries(value ?? {}).filter(([, v]) => v !== undefined)) as Partial<T>;
+}
+
+/** `null` clears an optional field, `undefined` keeps it. */
+function clearable<T extends object, K extends keyof T>(base: T, key: K, value: Nullable<T[K]>): T {
+  if (value === undefined) return base;
+  const { [key]: _dropped, ...rest } = base;
+  return (value === null ? rest : { ...rest, [key]: value }) as T;
+}
+
+/**
+ * The local view of a patch: what the server will answer, minus the key itself. Starts from the
+ * current settings so a field this function does not know about is kept, never dropped; only
+ * patched keys are overridden, and only the special cases below need more than a spread.
+ */
+export function applyPatch(settings: UserSettings, patch: UserSettingsPatch): UserSettings {
+  const next: UserSettings = { ...settings };
+  if (patch.providerDefaults !== undefined) next.providerDefaults = patch.providerDefaults;
+  if (patch.worktreeByDefault !== undefined) next.worktreeByDefault = patch.worktreeByDefault;
+  if (patch.continueAfterRestart !== undefined) next.continueAfterRestart = patch.continueAfterRestart;
+  if (patch.followUpMode !== undefined) next.followUpMode = patch.followUpMode;
+  if (patch.limitPolicy !== undefined) next.limitPolicy = patch.limitPolicy;
+  if (patch.teams !== undefined) next.teams = patch.teams;
+  if (patch.providerInstances !== undefined) next.providerInstances = patch.providerInstances;
+  if (patch.inbox !== undefined) next.inbox = { ...settings.inbox, ...defined(patch.inbox) };
+  if (patch.git !== undefined) next.git = { ...settings.git, ...defined(patch.git) };
+  if (patch.glassBox !== undefined) next.glassBox = { ...settings.glassBox, ...defined(patch.glassBox) };
+  // the whole map is replaced; an empty value means "back to the default"
+  if (patch.keybindings !== undefined) next.keybindings = Object.fromEntries(Object.entries(patch.keybindings).filter(([, v]) => v !== ""));
+  if (patch.decisions !== undefined) {
+    // the key itself never comes back: `hasKey` stays the server's word until it answers
+    const { apiKey: _apiKey, fallback, sites, ...rest } = patch.decisions;
+    const decisions = { ...settings.decisions, ...defined(rest), hasKey: settings.decisions.hasKey, sites: { ...settings.decisions.sites, ...defined(sites) } };
+    next.decisions = clearable(decisions, "fallback", fallback);
+  }
+  if (patch.environment !== undefined) {
+    const { sshHost, projectsDir, ...rest } = patch.environment;
+    next.environment = clearable(clearable({ ...settings.environment, ...defined(rest) }, "sshHost", sshHost), "projectsDir", projectsDir);
+  }
+  const relay = patch.relay == null ? patch.relay : { url: patch.relay.url, hasKey: patch.relay.key !== undefined || settings.relay?.hasKey === true };
+  return clearable(clearable(clearable(next, "relay", relay), "textModel", patch.textModel), "titleInstructions", patch.titleInstructions);
 }
 
 /**
@@ -194,6 +219,11 @@ function applyPatch(settings: UserSettings, patch: UserSettingsPatch): UserSetti
 export async function patchServerSettings(patch: UserSettingsPatch, envId?: string): Promise<void> {
   const target = targetEnv(envId);
   const previous = entryOf(useServerSettings.getState(), target);
+  // a list-replacing field (teams, providerInstances, keybindings) sent now would overwrite the server's
+  if (!previous.loaded) {
+    showToast("Settings are still loading");
+    return;
+  }
   setEntry(target, { settings: applyPatch(previous.settings, patch), loaded: previous.loaded });
   try {
     const settings = await (target === undefined ? call("settings.set", { patch }) : call("settings.set", { patch }, { envId: target }));
@@ -255,5 +285,5 @@ export function setLimitPolicyDefault(limitPolicy: UserSettings["limitPolicy"]):
 }
 
 export function resetServerSettings(): void {
-  useServerSettings.setState({ settings: defaultUserSettings(), loaded: false, byEnv: {}, selectedId: undefined });
+  useServerSettings.setState({ settings: defaultUserSettings(), loaded: false, error: undefined, byEnv: {}, selectedId: undefined });
 }

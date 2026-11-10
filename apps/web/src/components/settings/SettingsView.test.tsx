@@ -26,7 +26,7 @@ describe("Settings view", () => {
     expect(useUi.getState().view).toBe("settings");
     expect(screen.getByLabelText("Settings sections")).toBeDefined();
 
-    fireEvent.keyDown(window, { key: "Escape" });
+    fireEvent.keyDown(document.body, { key: "Escape" });
     expect(useUi.getState().view).toBe("thread");
   });
 

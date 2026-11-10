@@ -148,7 +148,8 @@ describe("rail keys in the registry", () => {
   it("lists every RAIL_BINDINGS id under Rail with its bare default", async () => {
     const { RAIL_BINDINGS } = await import("./keybindings.ts");
     const { bindingEntries, defaultBinding } = await import("./shortcuts.ts");
-    const rail = SHORTCUTS.filter((s) => s.group === "Rail");
+    // rebindable rail keys; ⌘Z undo-settle is listed under Rail too but owned by the rail's handler
+    const rail = SHORTCUTS.filter((s) => s.group === "Rail" && s.run !== undefined);
     expect(rail.map((s) => s.id)).toEqual(RAIL_BINDINGS.map((b) => b.id));
     expect(rail.map((s) => s.keys)).toEqual(["/", "j", "k", "↵", "e", "s", "m", "x"]);
     for (const shortcut of rail) expect(defaultBinding(shortcut)).toBe(RAIL_BINDINGS.find((b) => b.id === shortcut.id)?.binding);
@@ -160,5 +161,22 @@ describe("rail keys in the registry", () => {
 
   it("leaves dispatch to the rail's own handler", () => {
     expect(handleShortcut(new KeyboardEvent("keydown", { key: "j" }))).toBe(false);
+  });
+});
+
+describe("the registry matches the surfaces' handlers", () => {
+  it("labels the composer keys as the composer implements them", () => {
+    const keys = (id: string) => SHORTCUTS.find((s) => s.id === id);
+    expect(keys("send")).toMatchObject({ keys: "↵ / ⌘↵", label: expect.stringContaining("Send and stay") });
+    expect(keys("send-background")).toMatchObject({ keys: "⌘⇧↵", label: expect.stringContaining("background") });
+    expect(keys("send-alternate")?.keys).toBe("⌥↵");
+    expect(keys("newline")?.keys).toBe("⇧↵");
+    expect(keys("undo-settle")).toMatchObject({ keys: "⌘Z", group: "Rail" });
+    expect(keys("new-experts")?.keys).toBe("⌘⇧X");
+    expect(keys("close-tab")?.keys).toBe("⌘W");
+    expect(keys("tree")?.keys).toBe("⌘⇧E");
+    expect(keys("effort")?.keys).toBe("⌘⇧R");
+    // surface-owned entries never reach the dispatcher or the rebinding table
+    for (const id of ["send", "send-background", "send-alternate", "newline", "undo-settle", "close"]) expect(keys(id)?.run).toBeUndefined();
   });
 });

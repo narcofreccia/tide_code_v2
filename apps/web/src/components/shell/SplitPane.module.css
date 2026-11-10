@@ -21,6 +21,10 @@
   inset: 0 -3px;
 }
 .handle:hover { background: var(--accent); }
+.handle:focus-visible {
+  outline: none;
+  background: var(--accent);
+}
 
 /* Touch: the divider is draggable by finger without the page scrolling under it. */
 @media (pointer: coarse) {

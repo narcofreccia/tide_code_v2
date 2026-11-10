@@ -1,9 +1,10 @@
-import { useEffect, useState } from "react";
+import { useEffect, useRef, useState } from "react";
 import { useTrackSave, type ChangeResult } from "./saved.ts";
 import styles from "./settings.module.css";
 
 /**
- * A text field that commits on blur or Enter. `normalize` rewrites what was typed (and the field
+ * A text field that commits on blur or Enter; Esc drops the uncommitted edit and leaves the
+ * field (a second Esc then reaches the page, see `lib/useEscape`). `normalize` rewrites what was typed (and the field
  * shows the result); `validate` returns an error message that blocks the commit.
  */
 export function SettingText({
@@ -45,9 +46,23 @@ export function SettingText({
   const [text, setText] = useState(value);
   const [error, setError] = useState<string | undefined>(undefined);
   const track = useTrackSave();
+  const reverting = useRef(false);
   useEffect(() => setText(value), [value]);
 
+  const revert = (e: React.KeyboardEvent<HTMLInputElement | HTMLTextAreaElement>): void => {
+    e.preventDefault();
+    setText(value);
+    setError(undefined);
+    if (document.activeElement !== e.currentTarget) return;
+    reverting.current = true;
+    e.currentTarget.blur();
+  };
+
   const commit = (): void => {
+    if (reverting.current) {
+      reverting.current = false;
+      return;
+    }
     const next = normalize ? normalize(text) : text;
     setText(next);
     const problem = validate?.(next);
@@ -71,7 +86,8 @@ export function SettingText({
           onChange={(e) => setText(e.target.value)}
           onBlur={commit}
           onKeyDown={(e) => {
-            if (e.key === "Enter" && (e.metaKey || e.ctrlKey)) commit();
+            if (e.key === "Escape") revert(e);
+            else if (e.key === "Enter" && (e.metaKey || e.ctrlKey)) commit();
           }}
         />
         {error === undefined ? null : (
@@ -99,7 +115,8 @@ export function SettingText({
         onChange={(e) => setText(e.target.value)}
         onBlur={commit}
         onKeyDown={(e) => {
-          if (e.key === "Enter") commit();
+          if (e.key === "Escape") revert(e);
+          else if (e.key === "Enter") commit();
         }}
       />
       {suffix === undefined ? null : <span className={styles.suffix}>{suffix}</span>}

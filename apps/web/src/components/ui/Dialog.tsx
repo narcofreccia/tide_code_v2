@@ -1,11 +1,59 @@
-import { useEffect, useRef, useState } from "react";
+import { useEffect, useId, useRef, useState } from "react";
+import { useEscape } from "../../lib/useEscape.ts";
 import { Button } from "./Button.tsx";
 import styles from "./Dialog.module.css";
 
 export type DialogSize = "sm" | "md" | "lg";
 
+const FOCUSABLE =
+  'a[href], button:not([disabled]), input:not([disabled]):not([type="hidden"]), select:not([disabled]), textarea:not([disabled]), [tabindex]:not([tabindex="-1"]), [contenteditable="true"]';
+
+function focusables(panel: HTMLElement): HTMLElement[] {
+  return Array.from(panel.querySelectorAll<HTMLElement>(FOCUSABLE)).filter((el) => !el.hidden && el.closest("[inert]") === null);
+}
+
 /**
- * Modal shell: centred panel over a scrim, Escape cancels, focus starts inside.
+ * Focus starts inside (an `autoFocus` child keeps it, else the panel itself), Tab and ⇧Tab
+ * cycle within the panel, and on close focus goes back to where it was, unless something
+ * else has taken it meanwhile (a composer the dialog opened).
+ */
+function useFocusTrap(panel: React.RefObject<HTMLDivElement | null>): (e: React.KeyboardEvent) => void {
+  // read during the first render: by the time effects run an `autoFocus` child already has focus
+  const [previous] = useState(() => (typeof document === "undefined" ? null : document.activeElement));
+  useEffect(() => {
+    const el = panel.current;
+    if (el && !el.contains(document.activeElement)) el.focus({ preventScroll: true });
+    return () => {
+      const now = document.activeElement;
+      const lost = now === null || now === document.body || !now.isConnected || (el?.contains(now) ?? false);
+      if (lost && previous instanceof HTMLElement && previous.isConnected) previous.focus({ preventScroll: true });
+    };
+  }, [panel, previous]);
+  return (e) => {
+    if (e.key !== "Tab" || e.defaultPrevented || !panel.current) return;
+    // the innermost dialog owns Tab; an outer one must not wrap it again
+    e.stopPropagation();
+    const items = focusables(panel.current);
+    const first = items[0];
+    const last = items[items.length - 1];
+    if (!first || !last) {
+      e.preventDefault();
+      return;
+    }
+    const active = document.activeElement;
+    if (e.shiftKey && (active === first || active === panel.current)) {
+      e.preventDefault();
+      last.focus();
+    } else if (!e.shiftKey && active === last) {
+      e.preventDefault();
+      first.focus();
+    }
+  };
+}
+
+/**
+ * Modal shell: centred panel over a scrim, Escape cancels (`lib/useEscape`: a text field is
+ * left first; nested dialogs close one at a time), focus starts inside and is trapped there.
  * `variant="palette"` is the flush, top-anchored look of ⌘K / ⌘P: no padding and
  * no visible title (it stays the accessible name). `variant="sheet"` is the wide,
  * flush panel the composition dialogs fill with a `DialogFrame`, which draws its
@@ -27,15 +75,11 @@ export function Dialog({
 }) {
   const palette = variant === "palette";
   const sheet = variant === "sheet";
-  useEffect(() => {
-    const onKey = (e: KeyboardEvent): void => {
-      if (e.key !== "Escape") return;
-      e.stopPropagation();
-      onCancel();
-    };
-    document.addEventListener("keydown", onKey);
-    return () => document.removeEventListener("keydown", onKey);
-  }, [onCancel]);
+  const panel = useRef<HTMLDivElement>(null);
+  const titleId = useId();
+  // the palette's field is the whole dialog: Esc there closes at once
+  useEscape(onCancel, { blurFirst: !palette, root: panel });
+  const onKeyDown = useFocusTrap(panel);
 
   return (
     <div
@@ -43,14 +87,21 @@ export function Dialog({
       onMouseDown={onCancel}
     >
       <div
+        ref={panel}
         className={palette ? styles.palette : sheet ? styles.sheet : `${styles.panel} ${styles[size] ?? ""}`}
         data-size={palette || sheet ? undefined : size}
         role="dialog"
         aria-modal="true"
-        aria-label={title}
+        tabIndex={-1}
+        {...(palette || sheet ? { "aria-label": title } : { "aria-labelledby": titleId })}
         onMouseDown={(e) => e.stopPropagation()}
+        onKeyDown={onKeyDown}
       >
-        {palette || sheet ? null : <h2 className={styles.title}>{title}</h2>}
+        {palette || sheet ? null : (
+          <h2 id={titleId} className={styles.title}>
+            {title}
+          </h2>
+        )}
         {children}
       </div>
     </div>
@@ -127,14 +178,16 @@ export function ConfirmDialog({
   onConfirm: () => void;
   onCancel: () => void;
 }) {
+  // focus starts on the confirm button, or on Cancel when confirming destroys something
+  const cancelFirst = danger === true || confirmDisabled === true;
   return (
     <Dialog title={title} onCancel={onCancel}>
       <p className={styles.body}>{body}</p>
       <div className={styles.actions}>
-        <Button variant="quiet" onClick={onCancel}>
+        <Button variant="quiet" autoFocus={cancelFirst} onClick={onCancel}>
           Cancel
         </Button>
-        <Button variant={danger ? "danger" : "primary"} disabled={confirmDisabled} onClick={onConfirm}>
+        <Button variant={danger ? "danger" : "primary"} autoFocus={!cancelFirst} disabled={confirmDisabled} onClick={onConfirm}>
           {confirmLabel}
         </Button>
       </div>

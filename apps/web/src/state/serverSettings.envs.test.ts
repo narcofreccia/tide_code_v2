@@ -3,11 +3,13 @@ import type { UserSettings } from "@tide/contracts";
 import { makeEnv } from "../components/fleet/testEnvironments.ts";
 import { mockRpc, resetUi } from "../testHarness.ts";
 import { useEnvironments } from "./envStore.ts";
+import { useToasts } from "./toast.ts";
 import {
   defaultUserSettings,
   loadServerSettings,
   patchServerSettings,
   resetServerSettings,
+  retryServerSettings,
   selectedSettings,
   selectSettingsEnv,
   useServerSettings,
@@ -58,9 +60,35 @@ describe("settings per environment", () => {
   });
 
   it("an explicit envId beats the selection, and no selection means the primary", async () => {
+    mockRpc({ "settings.get": () => B });
+    await loadServerSettings("b");
+    useServerSettings.setState({ loaded: true });
+    selectSettingsEnv("b");
     const rpc = mockRpc({ "settings.set": () => A });
+    await patchServerSettings({ worktreeByDefault: false }, "a");
+    selectSettingsEnv(undefined);
     await patchServerSettings({ worktreeByDefault: false });
-    expect(answers(rpc)[0]).toEqual(["settings.set", { patch: { worktreeByDefault: false } }]);
+    expect(answers(rpc)).toEqual([
+      ["settings.set", { patch: { worktreeByDefault: false } }],
+      ["settings.set", { patch: { worktreeByDefault: false } }],
+    ]);
+  });
+
+  it("refuses to patch an environment whose settings have not loaded, and keeps a failed load for Retry", async () => {
+    selectSettingsEnv("b");
+    const rpc = mockRpc({
+      "settings.get": () => {
+        throw new Error("offline");
+      },
+    });
+    await expect(loadServerSettings("b")).rejects.toThrow("offline");
+    expect(useServerSettings.getState().byEnv["b"]).toMatchObject({ loaded: false, error: "offline" });
+    await patchServerSettings({ teams: [] });
+    expect(answers(rpc).filter(([method]) => method === "settings.set")).toEqual([]);
+    expect(useToasts.getState().toasts.map((t) => t.text)).toEqual(["Settings are still loading"]);
+    mockRpc({ "settings.get": () => B });
+    await retryServerSettings();
+    expect(useServerSettings.getState().byEnv["b"]).toEqual({ settings: B, loaded: true });
   });
 
   it("switching the selection keeps both entries; changing the primary swaps the mirror", async () => {

@@ -19,9 +19,10 @@ import { AboutSection, META as about } from "./AboutSection.tsx";
 import { GlassBoxSection, META as glassBox } from "./GlassBoxSection.tsx";
 import { searchSettings, type SectionMeta } from "./search.ts";
 import { rowId } from "./ui/saved.ts";
-import { MachineSlotContext } from "./ui/SettingsPage.tsx";
+import { MachineSlotContext, SettingsGateContext, type SettingsGate } from "./ui/SettingsPage.tsx";
 import { EnvSelect } from "../fleet/EnvSelect.tsx";
-import { selectSettingsEnv } from "../../state/serverSettings.ts";
+import { retryServerSettings, selectSettingsEnv, useSelectedSettings } from "../../state/serverSettings.ts";
+import { useEscape } from "../../lib/useEscape.ts";
 import styles from "./SettingsView.module.css";
 
 /** The static search index: each section's header and row labels. */
@@ -43,6 +44,21 @@ export const SECTION_META: Record<SettingsSection, SectionMeta> = {
 };
 
 const FLASH_MS = 1200;
+
+/** Sections whose values live on the server: per-environment ones plus Keyboard (the primary's keybindings). */
+function serverBacked(section: SettingsSection): boolean {
+  return SECTION_META[section].perEnvironment === true || section === "keyboard";
+}
+
+/** The gate the open section shows: the selected environment's `settings.get` state. */
+function useGate(section: SettingsSection): SettingsGate {
+  const state = useSelectedSettings((entry) => (entry.loaded ? "ready" : (entry.error ?? "loading")));
+  return useMemo(() => {
+    if (!serverBacked(section) || state === "ready") return { status: "ready" };
+    if (state === "loading") return { status: "loading" };
+    return { status: "error", message: state, retry: () => void retryServerSettings() };
+  }, [section, state]);
+}
 
 function Body({ section }: { section: SettingsSection }) {
   switch (section) {
@@ -91,7 +107,10 @@ function useScrollTarget(target: string | null, section: SettingsSection, done: 
   }, [target, section, done]);
 }
 
-/** `⌘,` opens Settings; `Esc` goes back to whatever view it was opened from (or clears the search first). */
+/**
+ * `⌘,` opens Settings; `Esc` goes back to whatever view it was opened from. From a field it
+ * first clears the search, or leaves the field (an uncommitted edit is dropped); the next Esc closes.
+ */
 export function SettingsView() {
   const section = useUi((s) => s.settingsSection);
   const setSection = useUi((s) => s.setSettingsSection);
@@ -99,6 +118,8 @@ export function SettingsView() {
   const [query, setQuery] = useState("");
   const [target, setTarget] = useState<string | null>(null);
   const content = useRef<HTMLDivElement>(null);
+  const root = useRef<HTMLElement>(null);
+  const gate = useGate(section);
   const [chosen, setChosen] = useState<string | undefined>(undefined);
   const perEnvironment = SECTION_META[section].perEnvironment === true;
   // the store's selection is live only while a per-environment section shows, so edits made
@@ -111,15 +132,7 @@ export function SettingsView() {
   const clearTarget = useMemo(() => () => setTarget(null), []);
   useScrollTarget(target, section, clearTarget);
 
-  useEffect(() => {
-    const onKeyDown = (event: KeyboardEvent): void => {
-      if (event.key !== "Escape" || event.metaKey || event.ctrlKey) return;
-      event.preventDefault();
-      closeSettings();
-    };
-    window.addEventListener("keydown", onKeyDown);
-    return () => window.removeEventListener("keydown", onKeyDown);
-  }, [closeSettings]);
+  useEscape(closeSettings, { root });
 
   const open = (next: SettingsSection): void => {
     setSection(next);
@@ -127,7 +140,7 @@ export function SettingsView() {
   };
 
   return (
-    <section className={styles.view} aria-label="Settings">
+    <section ref={root} className={styles.view} aria-label="Settings">
       <aside className={styles.side}>
         <h2 className={styles.heading}>Settings</h2>
         <label className={styles.search}>
@@ -195,7 +208,9 @@ export function SettingsView() {
         <MachineSlotContext.Provider
           value={perEnvironment ? <EnvSelect label="Settings of" value={chosen} onSelect={setChosen} /> : null}
         >
-          <Body section={section} />
+          <SettingsGateContext.Provider value={gate}>
+            <Body section={section} />
+          </SettingsGateContext.Provider>
         </MachineSlotContext.Provider>
       </div>
     </section>
