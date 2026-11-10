@@ -22,6 +22,13 @@ approvals across all threads; cross-harness Experts panels; agents delegating ta
 harnesses; "Open in terminal" escape hatches everywhere. See `docs/internals/overview.md`
 and `docs/design/ui.md`.
 
+Several machines: `tide-server serve` on another Mac, Linux box or Windows PC; machines on the
+LAN find each other, pair with a 6-digit code (each device gets its own revocable token), and one
+repository checked out on several of them shows as one project. `tide service` keeps a server
+running; `tide backup` / `tide restore` move the history. Transport on the LAN is plain HTTP and
+a paired device has a shell on the machine: pair only what you trust. Details:
+[`docs/internals/remote.md`](docs/internals/remote.md).
+
 New here? Start with [`QUICKSTART.md`](QUICKSTART.md); what Tide does to a repo is in [`docs/TRIAL.md`](docs/TRIAL.md).
 Running several harnesses on one task (plan → build → review, delegation, teams): [`docs/WORKFLOWS.md`](docs/WORKFLOWS.md).
 
@@ -36,4 +43,7 @@ pnpm desktop:sidecar && pnpm desktop:dev   # Tauri shell with the compiled serve
 ```
 
 Provider CLIs are yours: install and log in with `claude`, `codex login`, `opencode auth login`,
-`pi` — Tide never stores provider credentials. Progress log: `JOURNAL.html`.
+`pi`. Tide never reads or stores the harnesses' own logins. What it does keep, in
+`~/.tide/settings.json` (mode 0600): keys you enter yourself (the Decisions API key, a relay key,
+environment variables of a provider instance). Checks: `pnpm test && pnpm typecheck`, and
+`pnpm e2e` for the browser smoke test (local only). Progress log: `JOURNAL.html`.
