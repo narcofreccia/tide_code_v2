@@ -11,6 +11,11 @@ const useChrome = process.env["TIDE_E2E_CHROMIUM"] !== "1" && existsSync(SYSTEM_
 export default defineConfig({
   testDir: "specs",
   testMatch: "**/*.e2e.ts",
+  // devices builds on the project and threads the smoke walk leaves behind
+  projects: [
+    { name: "smoke", testMatch: "smoke.e2e.ts" },
+    { name: "devices", testMatch: "devices.e2e.ts", dependencies: ["smoke"] },
+  ],
   globalSetup: "./global-setup.ts",
   fullyParallel: false,
   workers: 1,

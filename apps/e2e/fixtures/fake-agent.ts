@@ -4,7 +4,8 @@
  * Goose, so the server needs no test hook. ndjson JSON-RPC on stdio; no network, no model.
  *
  * Script, keyed on the prompt text (Tide prepends its preamble to the first prompt, so match
- * with `includes`):
+ * with `includes`; a fork's first prompt carries the source's history inline ahead of
+ * "User message:", and only what follows it counts):
  * - a prompt containing EDIT_TRIGGER streams two text chunks, announces an `edit` tool call on
  *   `hello.txt` with its diff, asks permission, and on approval writes the file through the
  *   client's `fs/write_text_file` (served by Tide inside the worktree), then finishes the reply;
@@ -43,6 +44,9 @@ let sessionSeq = 0;
 function update(sessionId: string, body: Record<string, unknown>): void {
   send({ method: "session/update", params: { sessionId, update: body } });
 }
+
+/** `apps/server/src/provider/handoffDelivery.ts`: the inline handoff ends with this line */
+const USER_MESSAGE = "\n---\n\nUser message:\n";
 
 function promptText(params: Record<string, unknown>): string {
   const blocks = Array.isArray(params["prompt"]) ? (params["prompt"] as { type?: string; text?: string }[]) : [];
@@ -110,7 +114,9 @@ async function prompt(id: Id, params: Record<string, unknown>): Promise<void> {
   const cancelled = new Promise<"cancelled">((resolve) => {
     session.cancel = () => resolve("cancelled");
   });
-  const text = promptText(params);
+  const whole = promptText(params);
+  const handoff = whole.lastIndexOf(USER_MESSAGE);
+  const text = handoff < 0 ? whole : whole.slice(handoff + USER_MESSAGE.length);
   let stopReason: string;
   if (text.includes(EDIT_TRIGGER)) stopReason = await editTurn(sessionId, session.cwd, cancelled);
   else {

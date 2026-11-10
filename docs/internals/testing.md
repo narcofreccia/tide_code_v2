@@ -104,13 +104,36 @@ prompt response and the first SSE events may be swapped relative to a hand-writt
 
 ## Browser smoke test (`apps/e2e`)
 
-One Playwright spec (`apps/e2e/specs/smoke.e2e.ts`) walks the real app end to end: boot without a
-first-run flash, add a repository, a worktree thread whose agent streams text, calls an edit tool
-and waits for an approval, the diff in Workbench › Changes, merge back (checked with `git` in the
-repo), a server kill and restart on the same port and home (quiet "Reconnecting…" pill, never the
-boot overlay; the thread replays from the event log), Copy reply through the clipboard, and
-Settings › Git with the Esc rule. It is **local-only by design**: run it by hand with `pnpm e2e`;
-no CI workflow runs it.
+Two Playwright specs walk the real app end to end. `apps/e2e/specs/smoke.e2e.ts`:
+
+- a. boot without a first-run flash; b. add a repository;
+- c. a worktree thread whose agent streams text and calls an edit tool; d. the approval;
+- e. the diff in Workbench › Changes; f. merge back (checked with `git` in the repo);
+- f2. the merged thread's composer is off ("This thread's worktree was removed after the
+  merge.") and "Continue in a new thread" opens the fork dialog; f3. the fork runs on the same
+  agent in its own worktree started from `main` (checked with `git`), says so in an info row,
+  and answers a message (the fake agent keys its script on what follows the inline handoff's
+  "User message:");
+  f4. a new worktree thread for the sending steps;
+- g1/g2. a server kill and restart on the same port and home (quiet "Reconnecting…" pill, never
+  the boot overlay; the thread replays from the event log; a new turn on a fresh session);
+- h. Copy reply through the clipboard; i. Settings › Git with the Esc rule.
+
+`apps/e2e/specs/devices.e2e.ts` (the `devices` project, which depends on `smoke` and reuses its
+project and threads; it boots the server again because the smoke worker stops the one it
+restarted):
+
+- j. the owner mints a pairing code in Settings › Environments; a second browser context with no
+  token pairs with it through Add machine; the owner's Paired devices list shows it as Limited;
+- k. on that device: the threads load, chat works (the scripted agent answers), New terminal is
+  disabled and Settings › Git is read-only, both with "This device has limited access. Turn on
+  Full access for it on e2e.";
+- l. the owner switches it to Full access; a window `focus` event on the device re-reads
+  `server.info` and New terminal is enabled, with no reload.
+
+The pairing panel's "Not encrypted" label is not covered: the scratch server listens on
+loopback only, so it lists no LAN URL. It is **local-only by design**: run it by hand with
+`pnpm e2e` (about 15 s); no CI workflow runs it.
 
 Global setup makes a temp dir with a one-commit git repo, a scratch `TIDE_HOME` (fixed token in
 `server.json`) and an empty `HOME`, then starts `tide serve` from source on a free loopback port

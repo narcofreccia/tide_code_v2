@@ -1,11 +1,14 @@
 # @tide/e2e: browser smoke test
 
-One Playwright spec that drives the real app in Chrome against a scratch tide-server. Local
+Two Playwright specs drive the real app in Chrome against a scratch tide-server: `smoke.e2e.ts`
+(the main walk) and `devices.e2e.ts` (pairing a second browser and its access level; the
+`devices` project depends on `smoke` and reuses the project and threads it leaves). Local
 only: nothing in CI runs it (Actions minutes are paid; see the account rules).
 
 ```sh
 source ~/.nvm/nvm.sh && nvm use 22
-pnpm e2e                         # from the repo root, ~10 s once apps/web/dist is fresh
+pnpm e2e                         # from the repo root, ~15 s once apps/web/dist is fresh
+pnpm e2e --project smoke         # the main walk only
 pnpm e2e --headed                # watch it
 pnpm e2e --debug                 # Playwright inspector, step by step
 TIDE_E2E_KEEP=1 pnpm e2e         # keep the temp dir (server.log, repo, TIDE_HOME) for a look
@@ -33,7 +36,8 @@ A failing step keeps a screenshot and a trace under `test-results/`; the later s
 3. Starts `node apps/server/src/bin.ts serve --host 127.0.0.1 --port <free> --web apps/web/dist`
    with an environment built from scratch (that HOME and PATH), and waits for its banner. The
    page opens `/?token=…` on that origin. Ports 3777/5173 and `~/.tide` are never used.
-4. Teardown stops the server (and the one the reconnect step restarted) and removes the temp dir.
+4. Teardown stops the server (and whichever one `state.json` names last: the reconnect step and
+   `devices.e2e.ts` start their own) and removes the temp dir.
 
 ## The fake harness
 

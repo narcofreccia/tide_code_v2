@@ -15,6 +15,8 @@ test.describe.configure({ mode: "serial" });
 const PROMPT = `${EDIT_TRIGGER} so it greets the e2e world`;
 const STREAMED = STREAM_CHUNKS.join("");
 const FOLLOW_UP = "are you still there?";
+const FORK_PROMPT = "carry on in the fork";
+const MERGED_REASON = "This thread's worktree was removed after the merge.";
 
 let state: E2EState;
 let context: BrowserContext;
@@ -143,6 +145,62 @@ test("f. merge back from the thread; the base branch has the change", async () =
   expect(git("remote")).toBe("");
 });
 
+test("f2. the merged thread's composer is off with the reason; Continue in a new thread opens the fork dialog", async () => {
+  // the squash merge removed the worktree: a new turn there would run in the main checkout
+  const blocked = thread().getByRole("status").filter({ hasText: MERGED_REASON });
+  await expect(blocked).toBeVisible();
+  await composer().fill(FOLLOW_UP);
+  await expect(send()).toBeDisabled();
+  await expect(send()).toHaveAttribute("title", MERGED_REASON);
+  await composer().fill("");
+
+  await blocked.getByRole("button", { name: "Continue in a new thread" }).click();
+  const fork = page.getByRole("dialog", { name: "Fork from here" });
+  await expect(fork.getByRole("textbox", { name: "Fork title" })).toHaveValue(`${PROMPT} (fork)`);
+  await expect(fork.getByRole("checkbox", { name: "Use a worktree" })).toBeChecked();
+  await fork.getByRole("button", { name: "Cancel" }).click();
+  await expect(fork).toBeHidden();
+});
+
+test("f3. the fork continues on its own worktree with the same agent, and answers", async () => {
+  await thread().getByRole("button", { name: "Continue in a new thread" }).click();
+  const fork = page.getByRole("dialog", { name: "Fork from here" });
+  // the source's configured instance, not the kind's unconfigured default
+  await expect(fork.getByRole("combobox", { name: "Fork provider" })).toContainText("E2E Agent");
+  await expect(fork.getByRole("combobox", { name: "Fork provider" })).not.toContainText("not configured");
+  await fork.getByRole("button", { name: "Fork", exact: true }).click();
+  await expect(fork).toBeHidden();
+  await expect(page.getByRole("navigation", { name: "Breadcrumb" })).toContainText(`${PROMPT} (fork)`);
+  await expect(thread().getByRole("combobox", { name: "Provider" })).toContainText("E2E Agent");
+
+  // its own worktree on its own branch, started from main (where the merged work now lives)
+  const branch = page.getByRole("contentinfo").getByText(/⎇ tide\/.+ \(worktree\)/);
+  await expect(branch).toBeVisible();
+  const worktree = (await branch.getAttribute("title")) ?? "";
+  expect(worktree).not.toBe("");
+  expect(worktree).not.toBe(state.repo);
+  expect(git("worktree", "list", "--porcelain")).toContain(`worktree ${worktree}`);
+  expect(execFileSync("git", ["rev-parse", "HEAD"], { cwd: worktree, encoding: "utf8" }).trim()).toBe(git("rev-parse", "main"));
+
+  await composer().fill(FORK_PROMPT);
+  await expect(send()).toBeEnabled();
+  await send().click();
+  await expect(messages().filter({ hasText: "You" }).filter({ hasText: FORK_PROMPT })).toBeVisible();
+  await expect(assistantReply(`Echo: ${FORK_PROMPT}`)).toBeVisible();
+  await expect(messages().filter({ hasText: "Started from main: the original checkpoint was removed after the merge." })).toBeVisible();
+  // nothing ran in the main checkout
+  expect(git("status", "--porcelain")).toBe("");
+});
+
+test("f4. a new worktree thread for the steps that need to send", async () => {
+  await page.getByRole("navigation", { name: "Navigation" }).getByRole("button", { name: "New", exact: true }).click();
+  const dialog = page.getByRole("dialog", { name: "New thread" });
+  await dialog.getByRole("button", { name: "Create thread" }).click();
+  await expect(dialog).toBeHidden();
+  await expect(thread().getByRole("heading", { name: "Start by describing the task" })).toBeVisible();
+  await expect(page.getByRole("contentinfo")).toContainText("(worktree)");
+});
+
 test("g1. server killed: the quiet pill shows, never the boot overlay; send is disabled with a reason", async () => {
   const pid = state.serverPid;
   expect(pid, "global setup records the server pid").toBeDefined();
@@ -170,14 +228,15 @@ test("g2. server back on the same port and home: the pill lifts, the thread is i
 
   // a fresh page load reads everything from the restarted server (event log replay)
   await page.reload();
-  await page.getByRole("region", { name: "Settled" }).getByRole("button", { name: /^Settled/ }).click();
-  await page.getByRole("button", { name: new RegExp(`^Merged ${PROMPT}`) }).click();
+  const settled = page.getByRole("region", { name: "Settled" });
+  await settled.getByRole("button", { name: /^Settled/ }).click();
+  await settled.getByRole("button", { name: new RegExp(`^${PROMPT}.* merged`) }).click();
   await expect(messages().filter({ hasText: PROMPT }).first()).toBeVisible();
   await expect(messages().filter({ hasText: STREAMED }).first()).toBeVisible();
   await expect(assistantReply(FINAL_TEXT)).toBeVisible();
   await expect(thread().getByRole("img", { name: "merged" })).toBeVisible();
 
-  // a merged thread has no worktree any more (the server refuses new turns there), so the
+  // a merged thread has no worktree any more (its composer says so, step f2), so the
   // "can still send" check runs on a new thread: it also proves a fresh agent session spawns
   await page.getByRole("navigation", { name: "Navigation" }).getByRole("button", { name: "New", exact: true }).click();
   const dialog = page.getByRole("dialog", { name: "New thread" });
