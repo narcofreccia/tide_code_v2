@@ -48,15 +48,40 @@ takes it right after opening and sends `turn.start {freshSession: true}`: the de
 id released, rollback stops there), and the reactor adds one info row "<harness> could not
 resume the previous session; it starts without the earlier context"
 (`apps/server/src/provider/sessionNotices.ts`). A resume that fails *loudly* stays an error on
-the turn (`/clear` then starts a fresh session).
+the turn; see [Resume the harness refused](#resume-the-harness-refused-r19-l5).
 
 | Harness | resume of a session that is gone | how Tide learns it |
 |---|---|---|
-| Claude | `query({resume})` fails ("No conversation found…"): the turn errors | error row (not silent) |
-| Codex | `thread/resume` rejects: opening fails, the turn errors | error row (not silent) |
-| OpenCode | `GET /api/session/:id` fails: opening fails, the turn errors | error row (not silent) |
+| Claude | `query({resume})` fails ("No conversation found…"): the turn errors | resume-refused row (R19 L5) |
+| Codex | `thread/resume` rejects ("no rollout found…"): opening fails, the turn errors | resume-refused row (R19 L5) |
+| OpenCode | `GET /api/session/:id` answers 404 `SessionNotFoundError`: opening fails, the turn errors | resume-refused row (R19 L5) |
 | Pi | `--session <path>` on a missing / empty file **silently** starts a new session at that path (pi `SessionManager._setSessionFile`); an id that matches nothing makes pi exit (error) | `resumeFailed` when the path held no session before spawn and `get_fork_messages` lists no user message |
 | ACP | no `loadSession`, or `session/load` fails (not `auth_required`): the driver opens `session/new` instead | `resumeFailed` (agent label + reason); Tide's preamble is then sent with the first prompt |
+
+### Resume the harness refused (R19 L5)
+
+Claude Code, Codex and OpenCode refuse a resume of a session that is gone (file deleted or
+expired, another machine or account, a CLI upgrade). The turn errors, and every later turn
+resumes the same id and fails the same way. The driver marks that error with the machine code
+`resume-refused: ` followed by the harness's own words: thrown from `openSession` (Codex,
+OpenCode) or in `settled.error` (Claude). Each driver's `src/resume-refused.ts` holds its signal:
+
+| Harness | signal (only when the open / query asked to `resume`, never for a fork) | evidence |
+|---|---|---|
+| Claude | `result {subtype: "error_during_execution", num_turns: 0, errors: ["No conversation found with session ID: <id>"]}`, then the SDK throws "Claude Code returned an error result: No conversation found…" (both are matched) | live, CLI 2.1.322 + SDK 0.3.296 |
+| Codex | `thread/resume` JSON-RPC error `-32600 "no rollout found for thread id <id>"`; a malformed id ("invalid session id: …") is left alone | live, codex-cli 0.166.0 |
+| OpenCode | `GET /api/session/<id>` HTTP 404 `{"_tag":"SessionNotFoundError","message":"Session not found: <id>"}`; a malformed id (400 `InvalidRequestError`) is left alone | live, opencode 1.19.5 |
+| Pi, ACP | none: their resume does not fail loudly (D1 above) | |
+
+The reactor (`resumeRefusedRow` in `sessionNotices.ts`) writes one `error` activity
+"<label> could not reopen its session (<harness words>)" with
+`payload: {code: "resume-refused", harness: <harness words>}` and settles the turn with the same
+text. **Seam:** `payload.code` stands in for a proposed `InfoActivity.code` field until contracts
+carry one. The web row (`ResumeRefusedRow`) explains that a fresh session keeps the thread and its
+files but the agent starts without the earlier conversation, and offers "Start a fresh session":
+it arms the same fresh mode as `/clear` (`armFreshSession`) and focuses the composer. The prompt
+is not resent (a failed turn may carry images, files or a handoff that `/clear <prompt>` cannot
+carry), nothing is retried on its own, and the action goes once a later session boundary exists.
 
 ### Instances
 
@@ -609,7 +634,7 @@ picker's per-harness captions for `auto` come from this table (`apps/web/src/lib
 | todo progress (`plan.progress`) | `TodoWrite` | `turn/plan/updated` | none | none | `plan` updates |
 | context usage | `getContextUsage()` | `thread/tokenUsage/updated` | last step tokens / catalog `limit.context` | `get_session_stats.contextUsage` | `usage_update {used, size}` when the agent sends it |
 | background turns (`harnessTurns`) | yes (background sub-agents re-invoke the model) | no | no | no | no |
-| resume that cannot hold | turn errors | turn errors | turn errors | silent new session → boundary + row (D1) | new session → boundary + row (D1) |
+| resume that cannot hold | turn errors, resume-refused row (L5) | turn errors, resume-refused row (L5) | turn errors, resume-refused row (L5) | silent new session → boundary + row (D1) | new session → boundary + row (D1) |
 | Tide MCP tools missing | n/a (SDK `mcpServers`) | n/a (`-c mcp_servers…`) | registration failure → info row + status hint | no bridge → refused in gated modes, else info row + status hint | n/a (`session/new.mcpServers`); not verified per agent that it honours them |
 | open in terminal | `claude --resume <id>` | `codex resume <id>` | `opencode --session <id>` | `pi --session <file>` | none (no portable resume CLI): the action is disabled with a reason |
 

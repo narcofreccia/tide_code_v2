@@ -126,3 +126,65 @@ describe("resume that did not hold (D1)", () => {
     expect(timelineKinds(h.engine.getModel(), h.threadId)).not.toContain("boundary");
   });
 });
+
+// R19 L5: a resume the harness refused loudly becomes one marked error row and a plain turn error.
+describe("resume the harness refused (R19 L5)", () => {
+  const errorRows = (model: ReadModel, threadId: string) =>
+    (model.threadTimeline[threadId] ?? []).flatMap((entry) => {
+      const activity = entry.kind === "activity" ? model.activities[entry.id] : undefined;
+      return activity?.kind === "error" ? [activity] : [];
+    });
+
+  it("a refusal carried by settled.error (Claude) lands as the marked row and a readable turn error", async () => {
+    const h = await harness();
+    await firstTurnThenDropSession(h);
+    h.control.script(emit({ type: "settled", status: "error", error: "resume-refused: No conversation found with session ID: sess-1" }));
+    const records: { event: DomainEvent }[] = [];
+    const stop = h.engine.subscribe((record) => records.push(record));
+    const turnId = pick((await h.engine.dispatch({ type: "turn.request", threadId: h.threadId, text: "second" })).events, "turn.requested").turn.id;
+    await h.reactor.drain();
+    stop();
+
+    const text = "Claude Code could not reopen its session (No conversation found with session ID: sess-1)";
+    const upserted = records.map((r) => r.event).find((e): e is EventOf<"activity.upserted"> => e.type === "activity.upserted");
+    expect(upserted?.activity).toMatchObject({ turnId, kind: "error", text, payload: { code: "resume-refused", harness: "No conversation found with session ID: sess-1" } });
+    const model = h.engine.getModel();
+    expect(model.turns[turnId]).toMatchObject({ status: "error", error: text });
+    expect(errorRows(model, h.threadId)).toHaveLength(1);
+    // nothing retried, no session started on its own
+    expect(h.control.opened).toHaveLength(2);
+    expect(model.threads[h.threadId]?.sessionBoundaryTurnId).toBeUndefined();
+  });
+
+  it("a refusal thrown by openSession (Codex, OpenCode) lands the same way", async () => {
+    const h = await harness();
+    await firstTurnThenDropSession(h);
+    h.control.resumeError = new Error("resume-refused: no rollout found for thread id sess-1");
+    const turnId = pick((await h.engine.dispatch({ type: "turn.request", threadId: h.threadId, text: "second" })).events, "turn.requested").turn.id;
+    await h.reactor.drain();
+    const model = h.engine.getModel();
+    const rows = errorRows(model, h.threadId);
+    expect(rows).toEqual([expect.objectContaining({ turnId, text: "Claude Code could not reopen its session (no rollout found for thread id sess-1)", payload: { code: "resume-refused", harness: "no rollout found for thread id sess-1" } })]);
+    expect(model.turns[turnId]?.error).toBe("Claude Code could not reopen its session (no rollout found for thread id sess-1)");
+
+    // the user's fresh session opens without resume and works
+    h.control.script(emit({ type: "session", nativeSessionId: "sess-2" }), emit({ type: "settled", status: "completed" }));
+    const fresh = pick((await h.engine.dispatch({ type: "turn.request", threadId: h.threadId, text: "again", freshSession: true })).events, "turn.requested").turn.id;
+    await h.reactor.drain();
+    expect(h.control.opened.at(-1)?.resume).toBeUndefined();
+    expect(h.engine.getModel().turns[fresh]?.status).toBe("completed");
+  });
+
+  it("any other error keeps its plain row and text", async () => {
+    const h = await harness();
+    await firstTurnThenDropSession(h);
+    h.control.resumeError = new Error("codex app-server failed to start: ENOENT");
+    const turnId = pick((await h.engine.dispatch({ type: "turn.request", threadId: h.threadId, text: "second" })).events, "turn.requested").turn.id;
+    await h.reactor.drain();
+    const rows = errorRows(h.engine.getModel(), h.threadId);
+    expect(rows).toHaveLength(1);
+    expect(rows[0]?.text).toBe("codex app-server failed to start: ENOENT");
+    expect(rows[0]?.payload).toBeUndefined();
+    expect(h.engine.getModel().turns[turnId]?.error).toBe("codex app-server failed to start: ENOENT");
+  });
+});

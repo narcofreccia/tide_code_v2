@@ -13,6 +13,7 @@ import { readUserSandboxConfig, type UserSandboxConfig } from "./config-toml.ts"
 import { ApprovalBroker } from "./approvals.ts";
 import { AsyncQueue, deferred, type Deferred } from "./async-queue.ts";
 import type { RequestId } from "./jsonrpc.ts";
+import { resumeRefusal } from "./resume-refused.ts";
 import { collaborationModeFor, policyFor, writableRoots } from "./modes.ts";
 import { CodexNormalizer } from "./normalize.ts";
 import { withInstance } from "./instance-config.ts";
@@ -148,7 +149,7 @@ export class CodexSession implements ProviderSession {
             });
     } catch (error) {
       server.close(); // no session will own this child
-      throw error;
+      throw options.resume !== undefined && options.forkFrom === undefined ? resumeRefusal(error) : error;
     }
 
     session = new CodexSession(env, options, server, started.model ?? options.model ?? config.defaultModel ?? "", userConfig);

@@ -14,6 +14,7 @@ import { Button } from "../ui/Button.tsx";
 import { Icon } from "../ui/Icon.tsx";
 import { useTurnSettled } from "./activities/turnSettled.ts";
 import { LiveLabel } from "./LiveLabel.tsx";
+import { isResumeRefused, ResumeRefusedRow } from "./ResumeRefusedRow.tsx";
 import styles from "./ActivityRow.module.css";
 
 /** The fixed 16px status column: a check, a cross, or the live "…" while the call runs. */
@@ -135,7 +136,7 @@ export const ActivityRow = memo(function ActivityRow({ activity, ownerRunning = 
   const turnSettled = useTurnSettled(activity.turnId);
 
   if (activity.kind === "info" || activity.kind === "error") {
-    return <ErrorActivity activity={activity} />;
+    return isResumeRefused(activity) ? <ResumeRefusedRow activity={activity} /> : <ErrorActivity activity={activity} />;
   }
   if (activity.kind !== "tool") return null;
 

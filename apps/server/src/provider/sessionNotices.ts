@@ -34,6 +34,52 @@ export function resumeLostActivity(loss: ResumeLoss, ids: { id: string; threadId
   return { id: ids.id, threadId: ids.threadId, turnId: ids.turnId, kind: "info", text: resumeLostText(loss), createdAt: ids.at, updatedAt: ids.at };
 }
 
+/**
+ * R19 L5: a resume the harness refused *loudly* (Claude Code "No conversation found…", Codex
+ * "no rollout found…", OpenCode 404 SessionNotFoundError). The driver marks the turn's error, thrown
+ * from `openSession` or carried by `settled.error`, with the machine code `resume-refused: ` and
+ * the harness's own words after it (the drivers' `resume-refused.ts`). The server turns it into
+ * one error row and a plain turn error; every later turn would fail the same way, so the row
+ * offers "Start a fresh session" (web `ResumeRefusedRow`). Nothing is retried on its own.
+ */
+export const RESUME_REFUSED = "resume-refused";
+const RESUME_REFUSED_PREFIX = `${RESUME_REFUSED}: `;
+
+/** The harness's own words when `error` is a resume refusal, else undefined. */
+export function resumeRefusalOf(error: string | undefined): string | undefined {
+  if (error === undefined || !error.startsWith(RESUME_REFUSED_PREFIX)) return undefined;
+  return error.slice(RESUME_REFUSED_PREFIX.length).trim() || "the session is gone";
+}
+
+export function resumeRefusedText(label: string, reason: string): string {
+  return `${label} could not reopen its session (${reason})`;
+}
+
+/**
+ * SEAM (R19 L5): until `InfoActivity` has a field for it (proposed: `code: "resume-refused"`), the
+ * row is marked through `payload.code`; the web reads it in `isResumeRefused`. The payload holds
+ * the harness's own words, so the expandable details stay honest.
+ */
+export function resumeRefusedActivity(label: string, reason: string, ids: { id: string; threadId: string; turnId: string; at: number }): Activity {
+  return {
+    id: ids.id,
+    threadId: ids.threadId,
+    turnId: ids.turnId,
+    kind: "error",
+    text: resumeRefusedText(label, reason),
+    payload: { code: RESUME_REFUSED, harness: reason },
+    createdAt: ids.at,
+    updatedAt: ids.at,
+  };
+}
+
+/** The row and the turn error for a failed turn whose error is a resume refusal; undefined otherwise. */
+export function resumeRefusedRow(error: string | undefined, label: string, ids: () => { id: string; threadId: string; turnId: string; at: number }): { activity: Activity; error: string } | undefined {
+  const reason = resumeRefusalOf(error);
+  if (reason === undefined) return undefined;
+  return { activity: resumeRefusedActivity(label, reason, ids()), error: resumeRefusedText(label, reason) };
+}
+
 type TurnStart = Extract<InternalCommand, { type: "turn.start" }>;
 
 /**

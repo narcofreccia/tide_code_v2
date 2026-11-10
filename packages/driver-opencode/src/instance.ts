@@ -2,6 +2,7 @@ import type { CompletionRequest, SlashCommandInfo, CompletionResult, DriverEnv, 
 import { complete } from "./complete.ts";
 import { HttpOpencodeApi } from "./client.ts";
 import { EventHub } from "./hub.ts";
+import { resumeRefusal } from "./resume-refused.ts";
 import { OpencodeServer, type ServerSeams } from "./server.ts";
 import { agentFor, OpencodeSession, type AgentChoice } from "./session.ts";
 import { shellQuote } from "./shell.ts";
@@ -203,7 +204,10 @@ export class OpencodeInstance implements ProviderInstance {
       sessionId = created.id;
     } else {
       // v2 changes all of these in place, so a resumed session follows the thread's current settings
-      const existing = await api.getSession({ sessionId });
+      // R19 L5: a stored session that is gone fails the open as resume-refused (a fork's copy cannot be)
+      const existing = await api.getSession({ sessionId }).catch((error: unknown) => {
+        throw options.forkFrom === undefined ? resumeRefusal(error) : error;
+      });
       baseline = { cost: existing.cost, tokens: existing.tokens };
       await api.setPermissions({ sessionId, permissions });
       if (existing.agent !== agent) await api.switchAgent({ sessionId, agent });

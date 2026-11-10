@@ -15,6 +15,7 @@ import { AsyncQueue } from "./async-queue.ts";
 import { instanceEnv } from "./env.ts";
 import { CONTINUED_REASON, HarnessTurn, type HarnessTurnListener, isIdleActivity, isSubstantive, Preamble, reportedReason } from "./harness-turn.ts";
 import { ClaudeNormalizer } from "./normalize.ts";
+import { markResumeRefused } from "./resume-refused.ts";
 import { SessionLedger } from "./rollback.ts";
 import type { ClaudeMessage, ResultMessage, TranscriptEntry } from "./sdk-shapes.ts";
 import type { ClaudeConfig, QueryFn, QueryLike, SessionMessagesFn } from "./types.ts";
@@ -119,6 +120,8 @@ export class ClaudeSession implements ProviderSession {
 
   /** fork source, consumed once the forked session reports its own id */
   #forkFrom: string | undefined;
+  /** R19 L5: the session id the live query was opened to resume (not a fork), for `markResumeRefused` */
+  #resumed: string | undefined;
   /** pending truncating resume (rollback), consumed with the next query's `system/init` */
   #resumeAt: string | undefined;
   /** turn starts (send prompts, harness turns the server records) and steers, for rollback */
@@ -386,6 +389,7 @@ export class ClaudeSession implements ProviderSession {
 
   #ensureQuery(): AsyncIterator<ClaudeMessage> {
     if (this.#iterator) return this.#iterator;
+    this.#resumed = this.#forkFrom ? undefined : this.nativeSessionId;
     this.#query = this.#queryFn({ prompt: this.#inbox.drain(), options: this.#buildOptions() });
     this.#iterator = this.#query[Symbol.asyncIterator]();
     return this.#iterator;
@@ -483,7 +487,7 @@ export class ClaudeSession implements ProviderSession {
 
             const contextUsage = await this.#contextUsage();
             if (contextUsage) mailbox.push({ type: "usage", contextUsage });
-            mailbox.push(event);
+            mailbox.push(event.status === "error" && event.error !== undefined ? { ...event, error: markResumeRefused(event.error, this.#resumed) } : event);
             if (after === "reset") this.#resetQuery();
             else idle = true;
             return;
@@ -499,7 +503,7 @@ export class ClaudeSession implements ProviderSession {
     } catch (error) {
       const message = error instanceof Error ? error.message : String(error);
       this.#abandonBackground();
-      mailbox.push({ type: "settled", status: this.#interruptRequested ? "interrupted" : "error", error: message });
+      mailbox.push({ type: "settled", status: this.#interruptRequested ? "interrupted" : "error", error: markResumeRefused(message, this.#resumed) });
     } finally {
       mailbox.close();
       if (this.#mailbox === mailbox) this.#mailbox = undefined;

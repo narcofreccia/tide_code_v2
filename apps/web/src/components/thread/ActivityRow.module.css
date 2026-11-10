@@ -132,3 +132,15 @@
   opacity: 0.6;
 }
 .diffLink:hover, .diffLink:focus-visible { color: var(--accent); opacity: 1; }
+/* R19 L5: the way out under a refused resume (ResumeRefusedRow) */
+.recovery {
+  display: flex;
+  flex-wrap: wrap;
+  align-items: center;
+  gap: var(--sp-2);
+  max-width: var(--measure);
+  margin: 0 0 var(--sp-2) var(--sp-4);
+  font-size: var(--fs-sm);
+  color: var(--muted);
+}
+.recoveryArmed { color: var(--text-2); }

@@ -245,6 +245,8 @@ export class FakeDriverControl {
   steerError: Error | undefined;
   /** D1: resumes open a new native session reporting this reason */
   resumeFails: string | undefined;
+  /** R19 L5: the next openSession that resumes throws this (a harness refusing the resume) */
+  resumeError: Error | undefined;
   rollbackError: Error | undefined;
   reconfigureResult: ReconfigureResult | undefined;
   statusResult: ProviderStatus;
@@ -327,6 +329,7 @@ export function createFakeDriver(kind: ProviderKind = "claude"): FakeDriverHandl
       },
       async openSession(options: OpenSessionOptions) {
         control.opened.push(options);
+        if (options.resume !== undefined && control.resumeError !== undefined) throw control.resumeError;
         const session = new FakeSession(options, control);
         control.sessions.push(session);
         return session;

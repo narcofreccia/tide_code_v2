@@ -22,7 +22,7 @@ import { inlinePrompt, planHandoffDelivery, type DeliveryPlan } from "./handoffD
 import { ownerChildRow, rememberChild } from "./children.ts";
 import { dismissHarnessTurn, HarnessTurnQueue, SteerRetargets } from "./harnessTurns.ts";
 import { instanceIdOf, type HarnessTurn, type OpenHints, type SessionDirectory } from "./sessions.ts";
-import { resumeLostActivity, startCommand, type ResumeLoss } from "./sessionNotices.ts";
+import { resumeLostActivity, resumeRefusedRow, startCommand, type ResumeLoss } from "./sessionNotices.ts";
 
 interface ThreadState {
   /** one turn at a time per thread; different threads run concurrently */
@@ -569,8 +569,10 @@ export class ProviderReactor {
       if (!settled) {
         await start();
         await this.#flushHeld(threadId, turnId);
-        await this.#dispatch({ type: "activity.upsert", activity: this.#errorActivity(threadId, turnId, message) });
-        await this.#dispatch({ type: "turn.settle", turnId, status: "error", error: message });
+        // R19 L5: a resume the harness refused gets its own row (the web offers a fresh session)
+        const refused = resumeRefusedRow(message, this.#sessions.labelOf(thread), () => ({ id: this.#newId(), threadId, turnId, at: this.#now() }));
+        await this.#dispatch({ type: "activity.upsert", activity: refused?.activity ?? this.#errorActivity(threadId, turnId, message) });
+        await this.#dispatch({ type: "turn.settle", turnId, status: "error", error: refused?.error ?? message });
         settled = true;
         run.status = "error";
         if (isUsageLimitError(message)) run.limited ??= { note: message };
@@ -763,11 +765,15 @@ export class ProviderReactor {
         run.status = event.status;
         if (event.status === "error" && isUsageLimitError(event.error)) run.limited ??= { note: event.error as string };
         await this.#flushHeld(threadId, turnId);
+        const thread = this.#engine.getModel().threads[threadId];
+        const refused = event.status === "error" && thread !== undefined ? resumeRefusedRow(event.error, this.#sessions.labelOf(thread), () => ({ id: this.#newId(), threadId, turnId, at: this.#now() })) : undefined;
+        if (refused !== undefined) await this.#dispatch({ type: "activity.upsert", activity: refused.activity });
+        const error = refused?.error ?? event.error;
         await this.#dispatch({
           type: "turn.settle",
           turnId,
           status: event.status,
-          ...(event.error !== undefined ? { error: event.error } : {}),
+          ...(error !== undefined ? { error } : {}),
         });
         return true;
       default:

@@ -184,6 +184,11 @@ export class SessionDirectory {
     return this.#entries.get(threadId)?.session;
   }
 
+  /** The instance's label ("Claude Code", "Claude (work)"), else the thread's kind. */
+  labelOf(thread: Pick<Thread, "provider" | "providerId">): string {
+    return this.#registry.labelOf(instanceIdOf(thread)) ?? thread.provider;
+  }
+
   /** What the thread's harness instance can do (cached driver status); a bundled kind is its default instance. */
   async caps(providerId: string): Promise<Partial<DriverCaps>> {
     return (await this.#registry.status(providerId)).caps;
