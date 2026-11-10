@@ -1,7 +1,8 @@
 // R16: secrets the agent needs (API keys, tokens, pairing codes) are asked through a masked
-// card in Tide, never in chat. The value comes back once in the tool result (the last line);
-// the server redacts it from the activity the harness records for this call and from anything
-// else the thread emits. kind "file" gets a 0600 file path instead.
+// card in Tide, never in chat. R19: kind "file" (the default) writes the value to a 0600 file and
+// returns only the path, so the secret never enters the transcript. kind "value" returns it once
+// in the tool result (the last line); the server redacts that exact string from the activity and
+// from anything else the thread emits, which fails as soon as the agent re-encodes it.
 import type { AgentBackend } from "./backend.ts";
 import type { TextResult, ToolDef } from "./threadTools.ts";
 
@@ -12,7 +13,7 @@ export const SECRET_TOOL_DEFINITIONS: ToolDef[] = [
   {
     name: "tide_request_secret",
     description:
-      "Ask the user for an API key, token, password or pairing code through a private masked card. Never ask for secrets in chat. Returns the value once (or a file path with kind 'file'); on decline, do not ask again in chat.",
+      "Ask the user for an API key, token, password or pairing code through a private masked card. Never ask for secrets in chat. By default (kind 'file') the secret is written to a private 0600 file and only its path is returned: read it from there (e.g. export VAR=\"$(cat <path>)\"). Use kind 'value' only when nothing can read a file; the value is hidden from the thread's log only as long as you never rewrite or re-encode it (base64, URL-encoding, splitting, quoting it into another string). On decline, do not ask again in chat.",
     inputSchema: {
       type: "object",
       properties: {
@@ -21,7 +22,8 @@ export const SECRET_TOOL_DEFINITIONS: ToolDef[] = [
         kind: {
           type: "string",
           enum: ["value", "file"],
-          description: "value (default): the secret is returned in the result. file: it is written to a private 0600 file and only the path is returned — prefer it when a tool can read the secret from a file.",
+          description:
+            "file (default, preferred): the secret is written to a private 0600 file and only the path is returned. value: the secret itself is returned in the result; Tide can redact it from the log only verbatim, so use it only when a file cannot work.",
         },
       },
       required: ["name", "purpose"],
@@ -40,7 +42,8 @@ export async function callSecretTool(backend: AgentBackend, args: Record<string,
   if (typeof name !== "string" || !NAME.test(name)) throw new Error("`name` is required: uppercase letters, digits and _ (e.g. GITHUB_TOKEN)");
   const purpose = args["purpose"];
   if (typeof purpose !== "string" || purpose.trim() === "") throw new Error("`purpose` is required");
-  const kind = args["kind"] === "file" ? "file" : "value";
+  // R19: the file form unless the caller asks for the value; a path cannot leak through a re-encoding
+  const kind = args["kind"] === "value" ? "value" : "file";
   const result = await backend.secretRequest({ name, purpose, ...(kind === "file" ? { kind } : {}) });
   if (result.decided !== "provided") return ok(declinedText(name));
   if (result.path !== undefined) return ok(`The user provided ${name}. It is in the file ${result.path} (mode 0600); read it from there and do not print it.`);

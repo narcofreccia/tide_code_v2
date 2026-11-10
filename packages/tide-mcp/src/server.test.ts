@@ -508,10 +508,10 @@ describe("R16: tide_request_secret", () => {
     expect(THREAD_TOOLS_HINT).toContain('"Delegate to:" line naming a provider, providerId and optional model');
   });
 
-  it("returns the provided value once", async () => {
+  it("returns the provided value once with kind value", async () => {
     const backend = new FakeBackend();
     backend.secretResult = { decided: "provided", value: "ghp_secret" };
-    const result = await call(backend, { name: "GITHUB_TOKEN", purpose: "push the branch" });
+    const result = await call(backend, { name: "GITHUB_TOKEN", purpose: "push the branch", kind: "value" });
     expect(backend.threadCalls).toEqual([["secret", { name: "GITHUB_TOKEN", purpose: "push the branch" }]]);
     expect(firstText(result)).toContain("ghp_secret");
   });
@@ -522,6 +522,24 @@ describe("R16: tide_request_secret", () => {
     const result = await call(backend, { name: "API_KEY", purpose: "call the API", kind: "file" });
     expect(backend.threadCalls[0]?.[1]).toEqual({ name: "API_KEY", purpose: "call the API", kind: "file" });
     expect(firstText(result)).toContain("/home/.tide/secrets/t1/API_KEY");
+  });
+
+  it("R19: asks for the file form when the caller names no kind (or an unknown one)", async () => {
+    for (const args of [{}, { kind: "env" }]) {
+      const backend = new FakeBackend();
+      backend.secretResult = { decided: "provided", path: "/home/.tide/secrets/t1/API_KEY" };
+      const result = await call(backend, { name: "API_KEY", purpose: "call the API", ...args });
+      expect(backend.threadCalls[0]?.[1]).toEqual({ name: "API_KEY", purpose: "call the API", kind: "file" });
+      expect(firstText(result)).toContain("/home/.tide/secrets/t1/API_KEY");
+    }
+  });
+
+  it("R19: the schema and description say file is the default and why value is weaker", () => {
+    const tool = TOOL_DEFINITIONS.find((t) => t.name === "tide_request_secret");
+    const kind = (tool?.inputSchema.properties as Record<string, { description?: string }> | undefined)?.["kind"];
+    expect(kind?.description).toMatch(/^file \(default/);
+    expect(tool?.description).toContain("By default (kind 'file')");
+    expect(tool?.description).toMatch(/hidden from the thread's log only as long as you never rewrite or re-encode it/);
   });
 
   it("tells the agent not to ask in chat on decline", async () => {

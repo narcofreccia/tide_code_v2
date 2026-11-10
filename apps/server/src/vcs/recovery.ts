@@ -5,6 +5,8 @@ import type { InternalCommand, Project, ReadModel } from "@tide/contracts";
 import type { Engine } from "../orchestration/engine.ts";
 import type { Git } from "./git.ts";
 import type { MergeBack } from "./merge.ts";
+import { sweepOrphanCheckpointRefs } from "./refSweep.ts";
+import { findLandedSquash } from "./squashLanded.ts";
 import type { WorktreeManager } from "./worktrees.ts";
 
 /**
@@ -21,6 +23,7 @@ import type { WorktreeManager } from "./worktrees.ts";
  *   then, once:
  *     4. publish / detach intents the journal says were cut short: an info row (archive-detach is redone)
  *     5. unreferenced, unregistered, empty `tide/*` worktree directories removed; anything else logged and kept
+ *     6. checkpoint refs of threads the log knew and the model no longer has (deleted mid-crash) removed
  */
 
 export const MERGE_RESTART_ERROR = "interrupted by a server restart; check the base branch and merge again";
@@ -31,10 +34,14 @@ export const MAIN_CHECKOUT_WARNING =
 
 const DEFAULT_PROJECT_TIMEOUT_MS = 20_000;
 
-export type IntentKind = "publish" | "detach" | "archive";
+export type IntentKind = "publish" | "detach" | "archive" | "merge";
 export interface Intent {
   threadId: string;
   kind: IntentKind;
+  /** merge: the base branch head when the local merge started (after any sync from origin) */
+  baseSha?: string;
+  /** merge: the commit the base was moved to, written as soon as the merge returned */
+  landed?: string;
 }
 
 /**
@@ -114,6 +121,8 @@ export interface VcsRecoveryReport {
   pruned: string[];
   lostIntents: number;
   removedDirs: string[];
+  /** checkpoint refs of deleted threads removed, summed over repositories */
+  sweptRefs: number;
   keptDirs: string[];
   /** projects whose pass failed or timed out (logged; boot went on) */
   failedProjects: string[];
@@ -149,17 +158,20 @@ function threadsThatRan(model: ReadModel): Set<string> {
 }
 
 export async function recoverVcs(deps: VcsRecoveryDeps, options: VcsRecoveryOptions = {}): Promise<VcsRecoveryReport> {
-  const report: VcsRecoveryReport = { merges: [], adopted: [], created: [], warned: [], pruned: [], lostIntents: 0, removedDirs: [], keptDirs: [], failedProjects: [] };
+  const report: VcsRecoveryReport = { merges: [], adopted: [], created: [], warned: [], pruned: [], lostIntents: 0, removedDirs: [], sweptRefs: 0, keptDirs: [], failedProjects: [] };
   const model = deps.engine.getModel();
   const timeoutMs = options.projectTimeoutMs ?? DEFAULT_PROJECT_TIMEOUT_MS;
   const ran = threadsThatRan(model);
   const registered = new Map<string, Set<string>>();
+  // merge intents the dead process journaled, by thread: what inspectMerge needs to recognise a landed merge
+  const mergeIntents = new Map<string, Intent>();
+  for (const [, intent] of options.journal?.lost() ?? []) if (intent.kind === "merge") mergeIntents.set(intent.threadId, intent);
 
   const projects = Object.values(model.projects).filter((p) => p.archivedAt === undefined);
   await Promise.all(
     projects.map(async (project) => {
       try {
-        const paths = await withTimeout(recoverProject(deps, options, project, ran, report), timeoutMs, `recovery of ${project.rootPath}`);
+        const paths = await withTimeout(recoverProject(deps, options, project, ran, mergeIntents, report), timeoutMs, `recovery of ${project.rootPath}`);
         if (paths !== undefined) registered.set(project.id, paths);
       } catch (err) {
         report.failedProjects.push(project.id);
@@ -177,6 +189,17 @@ export async function recoverVcs(deps: VcsRecoveryDeps, options: VcsRecoveryOpti
 
   await recoverIntents(deps, options.journal, report);
   await sweepStrayWorktrees(deps, projects, registered, report);
+  try {
+    const lookup = options.threadCreated;
+    const swept = await withTimeout(
+      sweepOrphanCheckpointRefs({ git: deps.git, log: deps.log }, deps.engine.getModel(), lookup !== undefined ? { knownToLog: (id) => lookup(id) !== undefined } : {}),
+      timeoutMs,
+      "checkpoint ref sweep",
+    );
+    for (const n of swept.deleted.values()) report.sweptRefs += n;
+  } catch (err) {
+    deps.log("[vcs-recovery] checkpoint ref sweep failed", message(err));
+  }
 
   const counts = [
     [report.merges.length, "interrupted merge(s) settled"],
@@ -185,6 +208,7 @@ export async function recoverVcs(deps: VcsRecoveryDeps, options: VcsRecoveryOpti
     [report.warned.length, "thread(s) warned they run in the main checkout"],
     [report.lostIntents, "lost publish/detach intent(s) reported"],
     [report.removedDirs.length, "stray worktree dir(s) removed"],
+    [report.sweptRefs, "checkpoint ref(s) of deleted threads removed"],
   ] as const;
   const said = counts.filter(([n]) => n > 0).map(([n, what]) => `${n} ${what}`);
   if (said.length > 0) deps.log(`[vcs-recovery] ${said.join("; ")}`);
@@ -198,6 +222,7 @@ async function recoverProject(
   options: VcsRecoveryOptions,
   project: Project,
   ran: Set<string>,
+  mergeIntents: Map<string, Intent>,
   report: VcsRecoveryReport,
 ): Promise<Set<string> | undefined> {
   const threads = Object.values(deps.engine.getModel().threads).filter((t) => t.projectId === project.id);
@@ -218,7 +243,7 @@ async function recoverProject(
   for (const thread of threads) {
     if (thread.merge?.status !== "merging") continue;
     await deps.exclusive(thread.id, async () => {
-      const outcome = healthy ? await inspectMerge(deps, project, thread.id) : { outcome: "error" as const, text: MERGE_RESTART_ERROR };
+      const outcome = healthy ? await inspectMerge(deps, project, thread.id, mergeIntents.get(thread.id)) : { outcome: "error" as const, text: MERGE_RESTART_ERROR };
       await settleMerge(deps, thread.id, outcome, report);
     });
   }
@@ -241,10 +266,12 @@ type MergeVerdict = { outcome: "merged"; sha: string; text: string } | { outcome
  * recognised when the branch head is an ancestor of the base (merge strategy, a fast-forward
  * rebase, nothing to squash) or, for rebase, when every branch commit has a patch-identical
  * commit on the base (`git cherry`), and the worktree holds no uncommitted work (a merge commits
- * it first). A squash commit cannot be told apart from other work on the base, so a squash is
- * reported as interrupted and the user checks.
+ * it first). The journaled merge intent adds two signals: the commit the base was moved to (written
+ * the moment the merge returned, so it survives a crash during branch deletion or the report) and,
+ * for a squash, the base head at the start, from which `findLandedSquash` recognises the squash
+ * commit by its parent and tree. A squash without a journaled intent is reported as interrupted.
  */
-async function inspectMerge(deps: VcsRecoveryDeps, project: Project, threadId: string): Promise<MergeVerdict> {
+async function inspectMerge(deps: VcsRecoveryDeps, project: Project, threadId: string, intent: Intent | undefined): Promise<MergeVerdict> {
   const thread = deps.engine.getModel().threads[threadId];
   if (thread?.merge?.status !== "merging") return { outcome: "error", text: MERGE_RESTART_ERROR };
   try {
@@ -262,21 +289,28 @@ async function inspectMerge(deps: VcsRecoveryDeps, project: Project, threadId: s
   try {
     const root = deps.git(project.rootPath);
     const baseSha = await root.revParse(`refs/heads/${base}`);
+    if (baseSha === undefined) return { outcome: "error", text: MERGE_RESTART_ERROR };
+    const landed = `${base} already contains ${head}: the merge finished before the server restarted`;
+    if (intent?.landed !== undefined && (await root.tryRun(["merge-base", "--is-ancestor", intent.landed, baseSha])).code === 0) {
+      return { outcome: "merged", sha: intent.landed, text: landed };
+    }
     const headSha = await root.revParse(`refs/heads/${head}`);
-    if (baseSha === undefined || headSha === undefined) return { outcome: "error", text: MERGE_RESTART_ERROR };
+    if (headSha === undefined) return { outcome: "error", text: MERGE_RESTART_ERROR };
     // a merge commits the worktree's pending work first: uncommitted work means it never got that far
     if (thread.worktreePath !== undefined && existsSync(thread.worktreePath)) {
       const wt = deps.git(thread.worktreePath);
       if ((await wt.isRepo()) && (await wt.status()).dirty > 0) return { outcome: "error", text: MERGE_RESTART_ERROR };
     }
-    const landed = `${base} already contains ${head}: the merge finished before the server restarted`;
     if ((await root.tryRun(["merge-base", "--is-ancestor", headSha, baseSha])).code === 0) return { outcome: "merged", sha: baseSha, text: landed };
     if (thread.merge.strategy === "rebase") {
       const cherry = await root.tryRun(["cherry", baseSha, headSha]);
       const lines = cherry.stdout.split("\n").filter((l) => l.trim() !== "");
       if (cherry.code === 0 && lines.length > 0 && lines.every((l) => l.startsWith("-"))) return { outcome: "merged", sha: baseSha, text: landed };
     }
-    if (thread.merge.strategy === "squash") {
+    if (thread.merge.strategy === "squash" && intent?.baseSha !== undefined) {
+      const squash = await findLandedSquash(root, intent.baseSha, baseSha, headSha);
+      if (squash !== undefined) return { outcome: "merged", sha: squash, text: `the squash of ${head} landed on ${base} before the server restarted` };
+    } else if (thread.merge.strategy === "squash") {
       return { outcome: "error", text: `${MERGE_RESTART_ERROR} (a squash that landed cannot be detected: look for it on ${base} first)` };
     }
   } catch (err) {
@@ -355,6 +389,11 @@ async function recoverIntents(deps: VcsRecoveryDeps, journal: IntentJournal | un
   if (journal === undefined) return;
   for (const [key, intent] of journal.lost()) {
     const { threadId, kind } = intent;
+    if (kind === "merge") {
+      // settled from the model's `merging` status above; the intent only fed inspectMerge
+      journal.end(key);
+      continue;
+    }
     try {
       await deps.exclusive(threadId, async () => {
         const thread = deps.engine.getModel().threads[threadId];

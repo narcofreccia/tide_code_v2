@@ -195,7 +195,15 @@ export class VcsReactor {
       }
       case "merge.requested": {
         const { threadId, strategy, deleteBranch } = event;
-        this.#enqueue(threadId, () => this.#mergeBack(threadId, strategy, deleteBranch === true));
+        // the journal entry (written by #mergeBack once the base head is known) lives until the merge is over
+        const key = String(record.seq);
+        this.#enqueue(threadId, async () => {
+          try {
+            await this.#mergeBack(threadId, strategy, deleteBranch === true, key);
+          } finally {
+            this.#journal?.end(key);
+          }
+        });
         return;
       }
       case "worktree.attached":
@@ -566,7 +574,7 @@ export class VcsReactor {
    * (an unreachable origin only warns; a dirty-behind or diverged base refuses), and
    * `pushBaseAfterMerge` pushes the base after it. The two are independent; the push is off by default.
    */
-  async #mergeBack(threadId: string, strategy: MergeStrategy, deleteBranch: boolean): Promise<void> {
+  async #mergeBack(threadId: string, strategy: MergeStrategy, deleteBranch: boolean, journalKey: string): Promise<void> {
     const ctx = this.#context(threadId);
     if (!ctx) return;
     const { thread, project } = ctx;
@@ -592,7 +600,14 @@ export class VcsReactor {
       // origin out of reach: the merge proceeds on the local base, and the thread says so
       if (before.warning !== undefined) await this.#info(threadId, "info", `Base not synced: ${before.warning}`);
     }
+    // R19 L3: the base head the local merge starts from, and below the commit it moved to, so a
+    // restart between the base moving and the report can still tell the merge landed
+    const baseSha = local && thread.baseBranch !== undefined ? await root.revParse(`refs/heads/${thread.baseBranch}`) : undefined;
+    if (baseSha !== undefined) this.#journal?.begin(journalKey, { threadId, kind: "merge", baseSha });
     const result = await this.#merge.merge(project, thread, strategy, deleteBranch);
+    if (baseSha !== undefined && result.outcome === "merged" && result.sha !== undefined && result.pr === undefined) {
+      this.#journal?.begin(journalKey, { threadId, kind: "merge", baseSha, landed: result.sha });
+    }
     if (result.outcome === "conflicted") {
       await this.#dispatch({ type: "merge.report", threadId, outcome: "conflicted", files: result.files });
       await this.#info(threadId, "error", `Merge into ${thread.baseBranch ?? "base"} conflicts in ${result.files.join(", ")}; nothing was changed`);

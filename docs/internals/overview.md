@@ -67,6 +67,15 @@ Reactors subscribe to events and issue further commands; they hold no business r
   `gh pr merge`), teardown on detach/archive (terminals and watchers first; failures are posted
   as error activities), checkpoint-ref GC on archive. `exclusive(threadId, task)` lets other
   services run git work on a thread's queue.
+  **Boot recovery** (`vcs/recovery.ts`, `VcsReactor.recover()`): a local merge-back journals the
+  base head it starts from (meta `vcs.inflight`, kind `merge`) and, the moment the merge returns,
+  the commit the base moved to. A merge left `merging` settles as merged when that commit is on the
+  base, or, for a squash, when the first first-parent commit after the recorded base has it as its
+  only parent and the tree `git merge-tree --write-tree <recorded base> <thread tip>` gives
+  (`vcs/squashLanded.ts`); otherwise it is reported interrupted. Then one `git for-each-ref` per
+  repository finds checkpoint refs of threads the log created but the model no longer has (deleted
+  while the server died) and drops them with batched `update-ref --stdin` (`vcs/refSweep.ts`); ids
+  the log never saw (another TIDE_HOME on the same repo) and archived threads keep theirs.
   **Origin handoff** (`vcs/remoteSync.ts`, settings `git.*` read per event, only when the root has
   an `origin`): `pushThreadBranches` `on-checkpoint` pushes the committed `tide/*` branch after each
   after-checkpoint, `on-merge-request` commits pending work and pushes once before the merge; each

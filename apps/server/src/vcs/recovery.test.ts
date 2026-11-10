@@ -341,3 +341,114 @@ describe("vcs boot recovery — lost publish", () => {
     expect(w.store.getMeta("vcs.inflight")).toBe("{}");
   });
 });
+
+describe("vcs boot recovery — R19 L3 squash that landed before the crash", () => {
+  /** A crashed squash with the thread's work committed on its branch (MergeBack's commitPending ran) and the journal entry #mergeBack writes. */
+  async function journaledSquash(): Promise<{ w: World; thread: Thread; recorded: string }> {
+    const w = await world();
+    const thread = await crashedMerge(w, "squash");
+    const wt = w.repo.git.at(thread.worktreePath as string);
+    await wt.run(["add", "-A"]);
+    await wt.run(["-c", "commit.gpgsign=false", "commit", "-q", "-m", "tide: Add feature"]);
+    const recorded = (await w.repo.git.revParse("refs/heads/main")) as string;
+    w.store.setMeta("vcs.inflight", JSON.stringify({ "9999": { threadId: thread.id, kind: "merge", baseSha: recorded } }));
+    return { w, thread, recorded };
+  }
+  /** What MergeBack's squash does, run in the main checkout (clean, on main): the base moves to the squash commit. */
+  async function squashOntoMain(w: World, thread: Thread): Promise<string> {
+    await w.repo.git.run(["merge", "--squash", thread.branch as string]);
+    await w.repo.git.run(["-c", "commit.gpgsign=false", "commit", "-q", "-m", "Add feature"]);
+    return (await w.repo.git.revParse("refs/heads/main")) as string;
+  }
+
+  it("a crash before the squash commit is reported interrupted", async () => {
+    const { w, thread } = await journaledSquash();
+    await w.boot();
+    await w.settle();
+    expect(w.model().threads[thread.id]?.merge).toMatchObject({ status: "error", error: MERGE_RESTART_ERROR });
+    expect(w.store.getMeta("vcs.inflight")).toBe("{}");
+  });
+
+  it("a crash after the squash commit but before the report settles as merged on that commit", async () => {
+    const { w, thread, recorded } = await journaledSquash();
+    const squash = await squashOntoMain(w, thread);
+    expect(squash).not.toBe(recorded);
+    await w.boot();
+    await w.settle();
+    expect(w.model().threads[thread.id]?.merge).toMatchObject({ status: "merged", sha: squash });
+    expect(rows(w, thread.id).some((a) => textOf(a).includes("the squash of"))).toBe(true);
+  });
+
+  it("is still recognised when someone committed on top of the squash afterwards", async () => {
+    const { w, thread } = await journaledSquash();
+    const squash = await squashOntoMain(w, thread);
+    await w.repo.write("later.txt", "later\n");
+    await w.repo.commit("later");
+    await w.boot();
+    await w.settle();
+    expect(w.model().threads[thread.id]?.merge).toMatchObject({ status: "merged", sha: squash });
+  });
+
+  it("a base moved by someone else's unrelated commit is reported interrupted", async () => {
+    const { w, thread } = await journaledSquash();
+    await w.repo.write("other.txt", "other\n");
+    await w.repo.commit("other");
+    await w.boot();
+    await w.settle();
+    expect(w.model().threads[thread.id]?.merge).toMatchObject({ status: "error", error: MERGE_RESTART_ERROR });
+  });
+
+  it("the commit the merge returned (journaled before branch deletion) settles it even when the branch is gone", async () => {
+    const { w, thread, recorded } = await journaledSquash();
+    const squash = await squashOntoMain(w, thread);
+    w.store.setMeta("vcs.inflight", JSON.stringify({ "9999": { threadId: thread.id, kind: "merge", baseSha: recorded, landed: squash } }));
+    await w.repo.git.run(["worktree", "remove", "--force", thread.worktreePath as string]);
+    await w.repo.git.run(["branch", "-D", thread.branch as string]);
+    await w.boot();
+    await w.settle();
+    expect(w.model().threads[thread.id]?.merge).toMatchObject({ status: "merged", sha: squash });
+  });
+
+  it("a live merge leaves no journal entry behind", async () => {
+    const w = await world();
+    const id = await createThread(w, "Live");
+    await runTurn(w, id, "live.txt");
+    await w.app.engine.dispatch({ type: "thread.merge", threadId: id, strategy: "squash" });
+    await w.settle();
+    expect(w.model().threads[id]?.merge?.status).toBe("merged");
+    expect(w.store.getMeta("vcs.inflight")).toBe("{}");
+  });
+});
+
+describe("vcs boot recovery — R19 L2 orphaned checkpoint refs", () => {
+  const refsOf = (w: World, id: string) => w.repo.git.listRefs(`refs/tide/checkpoints/${id}/`);
+
+  it("removes the refs of a thread deleted while the server died; live, archived and unknown threads keep theirs", async () => {
+    const w = await world();
+    const deleted = await createThread(w, "Deleted");
+    await runTurn(w, deleted, "d.txt");
+    const archived = await createThread(w, "Archived");
+    await runTurn(w, archived, "a.txt");
+    const live = await createThread(w, "Live");
+    await runTurn(w, live, "l.txt");
+    await w.app.engine.dispatch({ type: "thread.archive", threadId: archived, keepWorktree: true });
+    await w.settle();
+    // a thread this server's log never had (another TIDE_HOME on the same repo)
+    const head = (await w.repo.git.revParse("HEAD")) as string;
+    await w.repo.git.updateRef("refs/tide/checkpoints/foreign-thread/turn-1/before", head);
+    expect((await refsOf(w, deleted)).length).toBe(2);
+
+    w.crash();
+    await w.app.engine.dispatch({ type: "thread.delete", threadId: deleted });
+    await w.app.engine.drain();
+    expect(w.model().threads[deleted]).toBeUndefined();
+    expect((await refsOf(w, deleted)).length).toBe(2);
+
+    await w.boot();
+    await w.settle();
+    expect(await refsOf(w, deleted)).toEqual([]);
+    expect((await refsOf(w, archived)).length).toBe(2);
+    expect((await refsOf(w, live)).length).toBe(2);
+    expect((await refsOf(w, "foreign-thread")).length).toBe(1);
+  });
+});
