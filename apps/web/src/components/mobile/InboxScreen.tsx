@@ -2,6 +2,7 @@ import { useState } from "react";
 import { selectInbox, selectProjects, selectRailGroups } from "@tide/client";
 import type { Project, Thread } from "@tide/contracts";
 import { useModel } from "../../state/model.ts";
+import { Skeleton } from "../ui/Skeleton.tsx";
 import { useRailSearch } from "../../state/railSearch.ts";
 import { useServerSettings } from "../../state/serverSettings.ts";
 import { useUi } from "../../state/ui.ts";
@@ -49,6 +50,7 @@ function byProject(projects: Project[], threads: Thread[]): Thread[] {
  */
 export function InboxScreen() {
   const model = useModel((s) => s.model);
+  const ready = useModel((s) => s.ready);
   const now = useTicker(60_000);
   const workingSection = useServerSettings((s) => s.settings.inbox.workingSection);
   const openNewThread = useUi((s) => s.openNewThread);
@@ -89,7 +91,8 @@ export function InboxScreen() {
             <Section name="Working" threads={working} collapsible />
             <Section name="Snoozed" threads={snoozed} collapsible />
             <Section name="Settled" threads={settled} collapsible />
-            {empty ? <p className={styles.empty}>Nothing here yet. Add a project and a thread from the desktop app or with + Thread.</p> : null}
+            {empty && !ready ? <Skeleton rows={5} label="Loading the inbox" /> : null}
+            {empty && ready ? <p className={styles.empty}>Nothing here yet. Add a project and a thread from the desktop app or with + Thread.</p> : null}
           </>
         )}
       </div>

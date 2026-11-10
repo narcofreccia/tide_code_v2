@@ -21,6 +21,12 @@ interface ModelState {
   lastError: string | null;
   /** the primary environment's id */
   environmentId: string | null;
+  /**
+   * The primary environment has delivered its first snapshot (sticky for the page). Until
+   * then an empty `model` means "not loaded yet": surfaces show a skeleton, never first-run
+   * or not-found states.
+   */
+  ready: boolean;
 }
 
 export const useModel = create<ModelState>(() => ({
@@ -29,6 +35,7 @@ export const useModel = create<ModelState>(() => ({
   status: "closed",
   lastError: null,
   environmentId: null,
+  ready: false,
 }));
 
 /** R9: where a call / command / stream goes. Explicit `envId` wins over ownership and the primary. */
@@ -45,8 +52,8 @@ let client: ModelStore | undefined;
 export function attachModelStore(store: ModelStore): () => void {
   client = store;
   const sync = (): void => {
-    const { model, status, lastError } = store.getState();
-    useModel.setState({ model, status, lastError });
+    const { model, status, lastError, ready } = store.getState();
+    useModel.setState({ model, status, lastError, ready: ready !== false });
   };
   sync();
   const unsubscribe = store.subscribe(sync);

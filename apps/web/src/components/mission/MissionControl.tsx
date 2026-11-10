@@ -11,6 +11,7 @@ import { ProjectCard } from "./ProjectCard.tsx";
 import { ProjectTotals } from "./ProjectTotals.tsx";
 import { ProvidersStrip } from "./ProvidersStrip.tsx";
 import { MachinesStrip } from "../fleet/MachinesStrip.tsx";
+import { Skeleton } from "../ui/Skeleton.tsx";
 import styles from "./MissionControl.module.css";
 
 /**
@@ -19,9 +20,12 @@ import styles from "./MissionControl.module.css";
  * the Projects grid, Snoozed, the harness roster folded to one line, and the
  * machines (environments) with their load. The
  * project scope comes from the top bar's switcher; this view only reflects it.
+ * Until the first snapshot lands it shows a skeleton: first-run content is for a server
+ * that answered "nothing yet", never for one that has not answered.
  */
 export function MissionControl() {
   const model = useModel((s) => s.model);
+  const ready = useModel((s) => s.ready);
   const selectedProjectId = useUi((s) => s.selectedProjectId);
   const projects = selectProjects(model).filter(
     (p) => selectedProjectId === null || p.id === selectedProjectId,
@@ -45,7 +49,9 @@ export function MissionControl() {
         </div>
       </header>
 
-      {projects.length === 0 ? (
+      {!ready ? (
+        <Skeleton rows={6} label="Loading Mission Control" />
+      ) : projects.length === 0 ? (
         <MissionEmpty />
       ) : (
         <>

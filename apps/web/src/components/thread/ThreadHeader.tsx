@@ -19,6 +19,8 @@ import { StateGlyph } from "../ui/StatusGlyph.tsx";
 import { MergeGlyph, PrBadge } from "../ui/VcsBadges.tsx";
 import { threadStateKey, threadStateLabel } from "../../lib/vocab.ts";
 import { useBackgroundAgentCount } from "../../state/hooks.ts";
+import { useThreadEnvStatus } from "../../state/threadEnv.ts";
+import { Pill } from "../ui/Pill.tsx";
 import { LiveLabel } from "./LiveLabel.tsx";
 import styles from "./ThreadHeader.module.css";
 
@@ -92,6 +94,9 @@ export function ThreadHeader({ thread }: { thread: Thread }) {
   const [menu, setMenu] = useState<MenuPosition | undefined>(undefined);
   const mainRef = useRef<HTMLDivElement>(null);
   const narrow = useNarrow(mainRef);
+  // the primary's drops have the app-wide banner; another machine's say so here
+  const env = useThreadEnvStatus(thread.id);
+  const machineOffline = !env.online && !env.primary;
 
   return (
     <header className={styles.header}>
@@ -108,6 +113,11 @@ export function ThreadHeader({ thread }: { thread: Thread }) {
           {thread.worktreePath === undefined ? null : <Icon name="branch" size={12} className={`${styles.branchIcon}`} />}
           <span className={styles.branchName}>{thread.branch ?? "main checkout"}</span>
         </span>
+        {machineOffline ? (
+          <Pill tone="interrupted" size="sm" className={styles.offline} title="Its last known state; nothing can be sent until it reconnects">
+            {env.machine} is offline
+          </Pill>
+        ) : null}
         <div className={styles.actions}>
           {narrow ? null : (
             <>

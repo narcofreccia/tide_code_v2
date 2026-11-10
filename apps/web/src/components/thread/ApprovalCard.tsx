@@ -3,6 +3,7 @@ import type { ActivityOf, ApprovalDecision } from "@tide/contracts";
 import { toolTarget } from "../../lib/activity.ts";
 import { diffStats, parseUnifiedDiff } from "../../lib/diff.ts";
 import { useServerSettings } from "../../state/serverSettings.ts";
+import { useOfflineReason } from "../../state/threadEnv.ts";
 import { respondApproval } from "../../lib/threadActions.ts";
 import { Button } from "../ui/Button.tsx";
 import { Pill } from "../ui/Pill.tsx";
@@ -62,11 +63,13 @@ export const ApprovalCard = memo(function ApprovalCard({
   const low = useServerSettings((s) => s.settings.decisions.grayZone.low);
   const judged = activity.judge?.label !== undefined && activity.judge.confidence >= low ? activity.judge : undefined;
   const target = toolTarget(activity.input);
+  // an answer sent while the machine is unreachable is lost: the buttons say so instead
+  const offline = useOfflineReason(activity.threadId);
   const respond = (decision: ApprovalDecision): void =>
     respondApproval(activity.threadId, activity.requestId, decision);
 
   useEffect(() => {
-    if (!pending || !active) return undefined;
+    if (!pending || !active || offline !== undefined) return undefined;
     const onKey = (e: KeyboardEvent): void => {
       if (e.metaKey || e.ctrlKey || e.altKey || isTypingTarget(e.target)) return;
       if (e.key === "y" || e.key === "Y") respond("accept");
@@ -111,12 +114,16 @@ export const ApprovalCard = memo(function ApprovalCard({
         ) : null}
         {activity.diff ? <DiffPreview diff={activity.diff} /> : null}
         <div className={styles.actions}>
-          <Button variant="primary" onClick={() => respond("accept")}>
+          <Button variant="primary" disabled={offline !== undefined} title={offline} onClick={() => respond("accept")}>
             Allow
           </Button>
-          <Button onClick={() => respond("acceptForSession")}>Allow for session</Button>
-          <Button onClick={() => respond("decline")}>Deny</Button>
-          {active ? (
+          <Button disabled={offline !== undefined} title={offline} onClick={() => respond("acceptForSession")}>
+            Allow for session
+          </Button>
+          <Button disabled={offline !== undefined} title={offline} onClick={() => respond("decline")}>
+            Deny
+          </Button>
+          {active && offline === undefined ? (
             <span className={styles.hint}>
               <Kbd>y</Kbd> / <Kbd>n</Kbd>
             </span>

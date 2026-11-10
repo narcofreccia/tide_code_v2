@@ -12,6 +12,7 @@ import { Button } from "../ui/Button.tsx";
 import { Checkbox } from "../ui/Choice.tsx";
 import { Icon } from "../ui/Icon.tsx";
 import { ThreadGlyph } from "../ui/StatusGlyph.tsx";
+import { Skeleton } from "../ui/Skeleton.tsx";
 import { MergeGlyph, PrGlyph } from "../ui/VcsBadges.tsx";
 import styles from "./AllThreads.module.css";
 
@@ -47,6 +48,7 @@ function Cells({ thread, archived }: { thread: Thread; archived: boolean }) {
  */
 export function AllThreads({ projectId }: { projectId: string }) {
   const model = useModel((s) => s.model);
+  const ready = useModel((s) => s.ready);
   const selectThread = useUi((s) => s.selectThread);
   const showAllThreads = useUi((s) => s.showAllThreads);
   const [archived, setArchived] = useState(false);
@@ -79,7 +81,9 @@ export function AllThreads({ projectId }: { projectId: string }) {
         <span className={styles.num}>{archived ? "Archived" : "Active"}</span>
         <span className={styles.num}>Cost</span>
       </div>
-      {threads.length === 0 ? (
+      {threads.length === 0 && !ready ? (
+        <Skeleton rows={5} label="Loading threads" />
+      ) : threads.length === 0 ? (
         <p className={styles.empty}>{archived ? "No archived threads." : "No threads yet."}</p>
       ) : (
         <ul className={styles.list} aria-label={archived ? "Archived threads" : "Threads"}>

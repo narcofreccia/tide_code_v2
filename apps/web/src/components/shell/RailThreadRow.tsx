@@ -10,6 +10,7 @@ import { useBackgroundAgentCount } from "../../state/hooks.ts";
 import { useThreadHarnessLabel } from "../../state/providers.ts";
 import { useServerSettings } from "../../state/serverSettings.ts";
 import { useModel } from "../../state/model.ts";
+import { useThreadEnvStatus } from "../../state/threadEnv.ts";
 import { useUi } from "../../state/ui.ts";
 import { activityCount, isUnread, useLastSeen } from "../../state/lastSeen.ts";
 import {
@@ -144,9 +145,13 @@ export const RailThreadRow = memo(function RailThreadRowView({ thread, childNode
   const mergeable = !archived && canMergeBack(thread);
   const snoozedUntil = thread.snoozedUntil !== undefined && thread.snoozedUntil > Date.now() ? thread.snoozedUntil : undefined;
   const harness = useThreadHarnessLabel(thread);
+  // another machine's thread while that machine is down: its last known state, muted
+  const env = useThreadEnvStatus(thread.id);
+  const machineOffline = !env.online && !env.primary;
   const tip = [
     `${PROVIDER_MONOGRAMS[thread.provider]} · ${harness}`,
     thread.worktreePath === undefined ? undefined : `worktree ${thread.worktreePath}`,
+    machineOffline ? `${env.machine} is offline` : undefined,
   ]
     .filter(Boolean)
     .join(" · ");
@@ -184,6 +189,7 @@ export const RailThreadRow = memo(function RailThreadRowView({ thread, childNode
           .join(" ")}
         data-rail-thread={thread.id}
         data-recede={recede ? "" : undefined}
+        data-offline={machineOffline ? "" : undefined}
         draggable={!renaming}
         onDragStart={(e) => {
           // R11: dropped on the composer, it becomes an @thread context mention

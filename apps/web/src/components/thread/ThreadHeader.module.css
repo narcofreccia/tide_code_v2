@@ -38,6 +38,7 @@
   white-space: nowrap;
 }
 .branchIcon { flex: none; color: var(--muted); }
+.offline { flex: none; white-space: nowrap; }
 .branchName { min-width: 0; overflow: hidden; text-overflow: ellipsis; }
 .actions { display: flex; flex: 0 0 auto; gap: var(--sp-1); margin-left: auto; }
 .stat { color: var(--muted); font-variant-numeric: tabular-nums; font-size: var(--fs-sm); }

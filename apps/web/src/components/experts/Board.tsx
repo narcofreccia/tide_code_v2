@@ -5,6 +5,7 @@ import { useModel } from "../../state/model.ts";
 import { useUi } from "../../state/ui.ts";
 import { Button } from "../ui/Button.tsx";
 import { Pill } from "../ui/Pill.tsx";
+import { Skeleton } from "../ui/Skeleton.tsx";
 import { BoardComposer } from "./BoardComposer.tsx";
 import { ExpertCard } from "./ExpertCard.tsx";
 import { ExpertsEmpty } from "./ExpertsEmpty.tsx";
@@ -20,10 +21,13 @@ import styles from "./Board.module.css";
  */
 export function Board({ sessionId }: { sessionId: string }) {
   const model = useModel((s) => s.model);
+  const ready = useModel((s) => s.ready);
   const board = selectExpertsBoard(model, sessionId);
   const selectedThreadId = useUi((s) => s.selectedThreadId);
   const low = useServerSettings((s) => s.settings.decisions.grayZone.low);
 
+  // a deep link opened before the first snapshot: the session is not gone, just not here yet
+  if (!board && !ready) return <Skeleton rows={4} label="Loading the experts session" />;
   if (!board) return <ExpertsEmpty note="This experts session is gone." />;
   const { session } = board;
   // the verdict is only news until something else moves the session (a phase change, a new finding)

@@ -1,0 +1,35 @@
+/* floats over the top of the content region, below the top bar; never blocks the page */
+.banner {
+  position: fixed;
+  top: calc(28px + var(--sp-2));
+  left: 50%;
+  transform: translateX(-50%);
+  z-index: 45;
+  display: inline-flex;
+  align-items: center;
+  gap: var(--sp-2);
+  max-width: calc(100vw - 2 * var(--sp-3));
+  min-height: var(--row-h);
+  padding: 0 var(--sp-1) 0 var(--sp-3);
+  border: 1px solid var(--border-strong);
+  border-radius: var(--radius-lg);
+  background: var(--surface-raised);
+  box-shadow: var(--shadow-pop);
+  color: var(--text-2);
+  font-size: var(--fs-sm);
+}
+.dot {
+  flex: none;
+  width: 8px;
+  height: 8px;
+  border-radius: 50%;
+  background: var(--warn);
+}
+.bad .dot { background: var(--danger); }
+.bad { padding-right: var(--sp-3); }
+.elapsed { color: var(--muted); font-family: var(--font-mono); font-variant-numeric: tabular-nums; }
+.retry { flex: none; }
+
+@media (max-width: 720px) {
+  .banner { top: calc(env(safe-area-inset-top) + 44px + var(--sp-2)); }
+}

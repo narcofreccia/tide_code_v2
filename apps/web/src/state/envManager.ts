@@ -136,8 +136,18 @@ export function flushModel(): void {
   const before = merged.ownership;
   const changed = merged.commit();
   const ownership = merged.ownership;
-  if (changed || ownership !== useModel.getState().ownership) useModel.setState({ model: merged.model, ownership });
+  const current = useModel.getState();
+  // ready lands with the merged model it describes, so no frame is "ready but empty"
+  const ready = current.ready || primaryReady();
+  if (changed || ownership !== current.ownership || ready !== current.ready) useModel.setState({ model: merged.model, ownership, ready });
   if (ownership !== before) persist();
+}
+
+/** The primary's store has had its first snapshot (a store that does not track it counts as ready). */
+function primaryReady(): boolean {
+  const { primaryId } = useEnvironments.getState();
+  const entry = primaryId === undefined ? undefined : entries.get(primaryId);
+  return entry !== undefined && entry.conn.store.getState().ready !== false;
 }
 
 // ---- statuses ----
@@ -472,6 +482,7 @@ export function startEnvironments(local: LocalLaunch): () => void {
     migrateEnvStorage(localId);
   }
   useEnvironments.setState({ environments, statuses: {}, primaryId });
+  useModel.setState({ ready: false });
   merged.seedOwnership(persisted?.ownership ?? { projects: {}, threads: {} });
   setRpcCaller(routedCall);
   setRpcStreamer(routedStream);
@@ -488,6 +499,12 @@ export function stopEnvironments(): void {
   setRpcCaller(undefined);
   setRpcStreamer(undefined);
   setDispatcher(undefined);
+}
+
+/** Retry now: the primary re-walks its routes instead of waiting out the backoff. */
+export function retryPrimary(): void {
+  const { primaryId } = useEnvironments.getState();
+  if (primaryId !== undefined) entries.get(primaryId)?.conn.probe();
 }
 
 /** Switches the primary: settings and the status bar follow it. */
@@ -511,6 +528,7 @@ export function resetEnvManager(): void {
   setConnectionFactory(undefined);
   setEnvFetch(undefined);
   useEnvironments.setState({ environments: [], statuses: {}, primaryId: undefined });
+  useModel.setState({ ready: false });
 }
 
 export { purgeEnvStorage };

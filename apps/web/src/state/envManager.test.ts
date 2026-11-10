@@ -81,6 +81,29 @@ describe("envManager frame batching", () => {
   });
 });
 
+describe("envManager ready", () => {
+  it("turns ready with the primary's first snapshot, in the same publish as its model, and stays ready", () => {
+    const local = fakes.byId("local");
+    // the fake store does not track `ready`; make it a real "not loaded yet" store
+    Object.assign(local.store.getState(), { ready: false });
+    useModel.setState({ ready: false });
+    local.setModel(modelAt(1));
+    frames.frame();
+    expect(useModel.getState().ready).toBe(false);
+    const seen: [boolean, number][] = [];
+    const offReady = useModel.subscribe((s) => seen.push([s.ready, s.model.seq]));
+    Object.assign(local.store.getState(), { ready: true });
+    local.setModel(modelAt(2));
+    frames.frame();
+    offReady();
+    expect(seen).toEqual([[true, 2]]);
+    Object.assign(local.store.getState(), { ready: false });
+    local.setModel(modelAt(3));
+    frames.frame();
+    expect(useModel.getState().ready).toBe(true);
+  });
+});
+
 describe("envManager remote launch", () => {
   const REMOTE = "ws://10.0.0.5:3777/ws";
 

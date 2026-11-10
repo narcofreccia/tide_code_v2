@@ -101,6 +101,21 @@ describe("createModelStore", () => {
     expect(store.getState().model.seq).toBe(7);
   });
 
+  it("is not ready until the first snapshot, and stays ready across a reconnect", () => {
+    const h = harness();
+    const store = createModelStore(h.conn);
+    expect(store.getState().ready).toBe(false);
+    h.setStatus("open");
+    expect(store.getState().ready).toBe(false);
+    // an empty snapshot is still an answer: "nothing there", not "nothing yet"
+    h.streamCalls[0]?.push(snapshot(emptyReadModel()));
+    expect(store.getState().ready).toBe(true);
+    h.setStatus("reconnecting");
+    expect(store.getState().ready).toBe(true);
+    h.setStatus("open");
+    expect(store.getState().ready).toBe(true);
+  });
+
   it("dispatch calls orchestration.dispatch and applies returned events once", async () => {
     const h = harness();
     const store = createModelStore(h.conn);
@@ -162,6 +177,19 @@ describe("createModelStore frame batching", () => {
     expect(Object.keys(store.getState().model.projects)).toHaveLength(10);
     frames.frame();
     expect(seen).toEqual([10]);
+  });
+
+  it("ready is published in the same frame as the snapshot it came with", () => {
+    const h = harness();
+    const frames = fakeFrames();
+    const store = createModelStore(h.conn, { schedule: frames.schedule });
+    h.setStatus("open");
+    const seen: [boolean | undefined, number][] = [];
+    store.subscribe(() => seen.push([store.getState().ready, store.getState().model.seq]));
+    h.streamCalls[0]?.push(snapshot({ ...emptyReadModel(), seq: 3 }));
+    expect(seen).toEqual([]);
+    frames.frame();
+    expect(seen).toEqual([[true, 3]]);
   });
 
   it("a dispatch receipt publishes at once, taking pending records along", async () => {

@@ -1,6 +1,7 @@
 import { memo, useState } from "react";
 import type { ActivityOf } from "@tide/contracts";
 import { declineSecret, provideSecret, respondUserInput } from "../../lib/threadActions.ts";
+import { useOfflineReason } from "../../state/threadEnv.ts";
 import { Button } from "../ui/Button.tsx";
 import { Checkbox } from "../ui/Choice.tsx";
 import { RequestFrom, type RequestOrigin } from "./RequestFrom.tsx";
@@ -31,6 +32,7 @@ function SecretCard({ activity, from }: { activity: ActivityOf<"user-input">; fr
   const question = activity.questions[0];
   const name = question?.id ?? "secret";
   const inputId = `secret-${activity.id}`;
+  const offline = useOfflineReason(activity.threadId);
 
   if (activity.status === "resolved") {
     const decided = activity.answers?.["decided"] === "provided" ? "provided" : "declined";
@@ -45,7 +47,7 @@ function SecretCard({ activity, from }: { activity: ActivityOf<"user-input">; fr
   }
 
   const provide = (): void => {
-    if (value === "" || sending) return;
+    if (value === "" || sending || offline !== undefined) return;
     setSending(true);
     void provideSecret(activity.threadId, activity.requestId, value).then((ok) => {
       setSending(false);
@@ -76,10 +78,15 @@ function SecretCard({ activity, from }: { activity: ActivityOf<"user-input">; fr
           />
         </div>
         <div className={styles.actions}>
-          <Button variant="primary" disabled={value === "" || sending} onClick={provide}>
+          <Button variant="primary" disabled={value === "" || sending || offline !== undefined} title={offline} onClick={provide}>
             Provide
           </Button>
-          <Button variant="ghost" disabled={sending} onClick={() => declineSecret(activity.threadId, activity.requestId)}>
+          <Button
+            variant="ghost"
+            disabled={sending || offline !== undefined}
+            title={offline}
+            onClick={() => declineSecret(activity.threadId, activity.requestId)}
+          >
             Decline
           </Button>
         </div>
@@ -92,6 +99,7 @@ function QuestionCard({ activity, from }: { activity: ActivityOf<"user-input">; 
   const [answers, setAnswers] = useState<Record<string, Answer>>({});
   const questions = activity.questions;
   const single = questions.length === 1 && questions[0]?.multi !== true && (questions[0]?.options?.length ?? 0) > 0;
+  const offline = useOfflineReason(activity.threadId);
 
   const submit = (payload: Record<string, Answer>): void =>
     respondUserInput(activity.threadId, activity.requestId, payload);
@@ -156,6 +164,9 @@ function QuestionCard({ activity, from }: { activity: ActivityOf<"user-input">; 
                     <Button
                       key={option.label}
                       variant={answers[question.id] === option.label ? "primary" : "ghost"}
+                      // a single choice answers on click
+                      disabled={single && offline !== undefined}
+                      title={single ? offline : undefined}
                       onClick={() => pick(question, option.label)}
                     >
                       {option.label}
@@ -175,7 +186,7 @@ function QuestionCard({ activity, from }: { activity: ActivityOf<"user-input">; 
         ))}
         {single ? null : (
           <div className={styles.actions}>
-            <Button variant="primary" disabled={!complete} onClick={() => submit(answers)}>
+            <Button variant="primary" disabled={!complete || offline !== undefined} title={offline} onClick={() => submit(answers)}>
               Send answer
             </Button>
           </div>

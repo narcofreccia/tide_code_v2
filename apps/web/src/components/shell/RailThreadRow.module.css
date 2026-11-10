@@ -64,6 +64,9 @@
 /* rows that need nothing from the user recede; hover brings the text back */
 .row[data-recede] .title { color: var(--text-2); font-weight: var(--fw-regular); }
 .row[data-recede]:hover .title { color: var(--text); }
+/* a thread on a machine that is offline: last known state, visibly stale */
+.row[data-offline] { opacity: 0.55; }
+.row[data-offline]:hover { opacity: 0.8; }
 .archived .title,
 .archived:hover .title { color: var(--muted); font-weight: var(--fw-regular); }
 .roleGlyph { flex: none; color: var(--muted); font-size: var(--fs-sm); }

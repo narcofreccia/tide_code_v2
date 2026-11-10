@@ -18,6 +18,7 @@ import { effortsOf, providerStatus, useProviders } from "../../state/providers.t
 import { ThreadLinkPicker, useLinkChoices } from "./ThreadLinkPicker.tsx";
 import { HarnessFields, useThreadDraft } from "../thread/ProviderPicker.tsx";
 import { useModel } from "../../state/model.ts";
+import { useEnvOfflineReason } from "../../state/threadEnv.ts";
 import { useUi, type NewThreadTab } from "../../state/ui.ts";
 import { NewTeamFields } from "./NewTeamFields.tsx";
 import { environmentName } from "../../state/environments.ts";
@@ -123,6 +124,7 @@ function ThreadFields({
   const runOn = useRunOn(parent === undefined ? projectId : undefined);
   const envId = parent === undefined ? runOn.target : runOn.owner;
   const status = providerStatus(providers, draft.providerId, envId) ?? providerStatus(providers, draft.providerId);
+  const offline = useEnvOfflineReason(envId);
   const efforts = effortsOf(status?.models ?? [], draft.model);
   // C1: Plan only where the harness has a native plan mode; an unknown (still loading) roster keeps it
   const planMode = status === undefined || status.caps.planMode === true;
@@ -131,7 +133,7 @@ function ThreadFields({
   }, [planMode]);
   const chosenInteraction: InteractionMode = planMode ? interaction : "default";
   const create = (): void => {
-    if (!projectId || busy !== undefined) return;
+    if (!projectId || busy !== undefined || offline !== undefined) return;
     const trimmed = title.trim();
     const options: NewThreadOptions = {
       ...(parent === undefined ? {} : { parentThreadId: parent.id }),
@@ -193,7 +195,7 @@ function ThreadFields({
       primaryLabel={busy ?? (parent ? "Create child thread" : "Create thread")}
       onPrimary={create}
       busy={busy !== undefined}
-      blockedReason={projectId === undefined ? "Add a project first" : undefined}
+      blockedReason={projectId === undefined ? "Add a project first" : offline}
       onCancel={onDone}
     >
       <PrimaryField

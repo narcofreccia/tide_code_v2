@@ -7,6 +7,7 @@ import { useRailSearch } from "../../state/railSearch.ts";
 import { detectIconOnce } from "../../lib/projectIcon.ts";
 import { ProjectChips } from "./ProjectChips.tsx";
 import { RailEmpty } from "./RailEmpty.tsx";
+import { Skeleton } from "../ui/Skeleton.tsx";
 import { RailGroups } from "./RailGroups.tsx";
 import { RailHeader } from "./RailHeader.tsx";
 import { RailProjectFolders } from "./RailProjectFolders.tsx";
@@ -53,6 +54,7 @@ function ResizeHandle() {
 /** The rail panel: header (search, New), project chips, then the groups or the search results. */
 function RailPanel() {
   const model = useModel((s) => s.model);
+  const ready = useModel((s) => s.ready);
   const projects = selectProjects(model);
   const groupBy = useSettings((s) => s.railGroupBy);
   const width = useUi((s) => s.railWidth);
@@ -70,7 +72,9 @@ function RailPanel() {
   useDetectIcons(projects.filter((p) => p.icon === undefined).map((p) => p.id).join("\n"));
 
   let body: React.ReactNode;
-  if (projects.length === 0) body = <RailEmpty kind="projects" />;
+  // nothing loaded yet is not "no projects": no first-run card until the server answered
+  if (!ready && projects.length === 0) body = <Skeleton rows={5} label="Loading threads" />;
+  else if (projects.length === 0) body = <RailEmpty kind="projects" />;
   else if (query.trim() !== "")
     body = <RailSearchResults query={query} projectId={scoped?.id ?? null} projectIds={projectIds} showProject={showProject} />;
   else if (!anyThread) body = <RailEmpty kind="threads" projectId={scoped?.id ?? projects[0]?.id ?? ""} />;

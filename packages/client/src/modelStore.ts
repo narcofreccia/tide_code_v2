@@ -16,6 +16,12 @@ export interface ModelStoreState {
   model: ReadModel;
   status: ConnectionStatus;
   lastError: string | null;
+  /**
+   * true once the first `model.subscribe` snapshot has landed (and from then on, across
+   * reconnects): before it, an empty model means "no data yet", not "nothing there".
+   * Optional so structural test doubles can omit it; absent reads as ready.
+   */
+  ready?: boolean;
 }
 
 export interface ModelStore {
@@ -42,7 +48,7 @@ export interface ModelStoreOptions {
  */
 export function createModelStore(conn: ModelStoreConnection, opts: ModelStoreOptions = {}): ModelStore {
   const schedule = opts.schedule ?? scheduleFrame;
-  let state: ModelStoreState = { model: emptyReadModel(), status: conn.status, lastError: null };
+  let state: ModelStoreState = { model: emptyReadModel(), status: conn.status, lastError: null, ready: false };
   const listeners = new Set<() => void>();
   let sub: StreamHandle | undefined;
   let hasSnapshot = false;
@@ -60,9 +66,9 @@ export function createModelStore(conn: ModelStoreConnection, opts: ModelStoreOpt
     state = { ...state, ...next };
     emit();
   };
-  const setModelBatched = (model: ReadModel): void => {
-    if (model === state.model) return;
-    state = { ...state, model };
+  const setModelBatched = (model: ReadModel, ready = state.ready === true): void => {
+    if (model === state.model && ready === state.ready) return;
+    state = { ...state, model, ready };
     if (publishQueued) return;
     publishQueued = true;
     schedule(flushPending);
@@ -71,7 +77,8 @@ export function createModelStore(conn: ModelStoreConnection, opts: ModelStoreOpt
   const onChunk = (chunk: ModelChunk): void => {
     if (chunk.kind === "snapshot") {
       hasSnapshot = true;
-      setModelBatched(chunk.model);
+      // ready rides with the snapshot's own publish: no frame where it is ready but still empty
+      setModelBatched(chunk.model, true);
     } else {
       setModelBatched(applyRecord(state.model, chunk.record));
     }

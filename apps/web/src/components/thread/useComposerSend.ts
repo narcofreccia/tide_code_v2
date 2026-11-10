@@ -9,6 +9,7 @@ import { sendTurn, turnRequestLanded } from "../../lib/threadActions.ts";
 import { steerTurn } from "../../lib/turnActions.ts";
 import { disarmFreshSession, isFreshSessionArmed } from "../../state/freshSession.ts";
 import { useModel } from "../../state/model.ts";
+import { offlineReason, useThreadEnvStatus } from "../../state/threadEnv.ts";
 import { useProvidersStore } from "../../state/providers.ts";
 import { showToast } from "../../state/toast.ts";
 import { useUi } from "../../state/ui.ts";
@@ -51,17 +52,23 @@ export function promptOf(text: string, hasImages: boolean, hasFiles: boolean): s
  * Sending: uploads pending files first (`attachments.upload`), then requests or steers
  * the turn with their refs. Sending while the thread runs is allowed: the server
  * queues the turn behind the live one.
+ *
+ * Offline (the thread's machine is not connected) a send does nothing and the draft stays:
+ * nothing queues commands across a drop, so a "sent" message would be lost. `offline` is
+ * the reason to show, undefined while connected.
  */
 export function useComposerSend({ thread, text, images, files, followUp, onSent }: ComposerSendInput) {
   const [busy, setBusy] = useState(false);
   const [uploading, setUploading] = useState(0);
   const pending = useRef<Pending | undefined>(undefined);
   const running = thread.status === "running";
+  const env = useThreadEnvStatus(thread.id);
+  const offline = env.online ? undefined : offlineReason(env);
 
   /** `override` replaces the draft text (`/clear <prompt>` sends the prompt after the command). */
   const send = async (how?: FollowUpMode, background = false, override?: { text: string; fresh?: boolean }): Promise<void> => {
     const body = override?.text ?? text;
-    if ((body.trim() === "" && images.length === 0 && files.length === 0) || busy) return;
+    if ((body.trim() === "" && images.length === 0 && files.length === 0) || busy || offline !== undefined) return;
     const fresh = override?.fresh === true || isFreshSessionArmed(thread.id);
     const steer = !fresh && running && (how ?? followUp.mode) === "steer" && followUp.canSteer;
     const imageInputs = images.map((image) => ({ mediaType: image.mediaType, data: image.data }));
@@ -107,5 +114,5 @@ export function useComposerSend({ thread, text, images, files, followUp, onSent 
     }
   };
 
-  return { send, busy, uploading };
+  return { send, busy, uploading, offline };
 }

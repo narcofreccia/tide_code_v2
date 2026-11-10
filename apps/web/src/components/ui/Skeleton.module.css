@@ -1,0 +1,23 @@
+.skeleton {
+  display: flex;
+  flex-direction: column;
+  gap: var(--sp-2);
+  padding: var(--sp-3);
+}
+.bar {
+  display: block;
+  height: calc(var(--row-h) - var(--sp-2));
+  border-radius: var(--radius-sm);
+  background: var(--surface-2);
+  animation: pulse 1.6s var(--ease) infinite;
+}
+.bar:nth-child(3n + 2) { width: 80%; }
+.bar:nth-child(3n) { width: 60%; }
+
+@keyframes pulse {
+  0%, 100% { opacity: 0.55; }
+  50% { opacity: 1; }
+}
+@media (prefers-reduced-motion: reduce) {
+  .bar { animation: none; }
+}

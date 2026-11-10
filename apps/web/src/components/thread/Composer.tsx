@@ -68,7 +68,7 @@ export function Composer({ thread, scope = "main" }: { thread: Thread; scope?: C
   const slash = useSlash(thread, text, listsCommands, scope === "main");
   const harness = useThreadHarnessLabel(thread);
   const files = fileAttachments.files;
-  const { send: sendNow, busy, uploading } = useComposerSend({
+  const { send: sendNow, busy, uploading, offline } = useComposerSend({
     thread,
     text,
     images: attachments.images,
@@ -300,6 +300,11 @@ export function Composer({ thread, scope = "main" }: { thread: Thread; scope?: C
           Next message starts a new session · Esc to cancel
         </p>
       ) : null}
+      {offline === undefined ? null : (
+        <p className={styles.offline} role="status">
+          {offline}. Sending resumes when it reconnects; your text stays here.
+        </p>
+      )}
       {slash.unknown === undefined ? null : (
         <p className={styles.switchHint} role="status">
           Unknown command for {harness}; it will be sent as text
@@ -360,15 +365,20 @@ export function Composer({ thread, scope = "main" }: { thread: Thread; scope?: C
           {running ? (
             <Button
               variant="quietDanger"
-              disabled={interrupting}
-              title="Stop the running turn (Esc)"
+              disabled={interrupting || offline !== undefined}
+              title={offline ?? "Stop the running turn (Esc)"}
               onClick={() => interruptTurn(thread.id)}
             >
               <span>Stop</span>
               <Kbd>Esc</Kbd>
             </Button>
           ) : null}
-          <Button variant="primary" onClick={() => void send()} disabled={busy || nothingToSend}>
+          <Button
+            variant="primary"
+            onClick={() => void send()}
+            disabled={busy || nothingToSend || offline !== undefined}
+            {...(offline === undefined ? {} : { title: offline })}
+          >
             {primaryLabel}
           </Button>
         </span>
