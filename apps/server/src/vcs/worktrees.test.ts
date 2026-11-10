@@ -68,6 +68,22 @@ describe("WorktreeManager", () => {
     await expect(manager.create(project, thread("01THREADFORKBBBB", "Fork gone"), "refs/tide/checkpoints/nope")).rejects.toThrow(/fork point/);
   });
 
+  it("starts at the fallback ref when the fork point is gone, and fails when that is gone too", async () => {
+    const { repo, project, manager } = await fixture();
+    await repo.write("merged.txt", "landed on main");
+    await repo.commit("the source's squash");
+    const head = await repo.git.revParse("refs/heads/main");
+    const info = await manager.create(project, thread("01THREADFORKCCCC", "Fork merged"), "refs/tide/checkpoints/gone/after", { fallbackRef: "refs/heads/main" });
+    expect(info.fellBackTo).toBe("refs/heads/main");
+    expect(await new Git(info.worktreePath, { env: GIT_TEST_ENV }).revParse("HEAD")).toBe(head);
+    // a fork point that still exists wins over the fallback
+    const kept = await manager.create(project, thread("01THREADFORKDDDD", "Fork kept"), head, { fallbackRef: "refs/heads/nope" });
+    expect(kept.fellBackTo).toBeUndefined();
+    await expect(
+      manager.create(project, thread("01THREADFORKEEEE", "Fork lost"), "refs/tide/checkpoints/gone/after", { fallbackRef: "refs/heads/nope" }),
+    ).rejects.toThrow(/fork point/);
+  });
+
   it("falls back to the thread id when the title has no slug, and disambiguates a taken branch", async () => {
     const { project, manager } = await fixture();
     const untitled = await manager.create(project, thread("01THREADBBBBBBBB", "***"));

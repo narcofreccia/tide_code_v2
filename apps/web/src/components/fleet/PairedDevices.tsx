@@ -1,4 +1,4 @@
-import { useCallback, useEffect, useState } from "react";
+import { useCallback, useEffect, useRef, useState } from "react";
 import type { DeviceAccess, PairedClient } from "@tide/contracts";
 import { call } from "../../state/model.ts";
 import { useEnvironments } from "../../state/environments.ts";
@@ -45,22 +45,41 @@ const day = (ms: number): string => new Date(ms).toLocaleDateString(undefined, {
  */
 export function PairedDevices({ envId }: { envId: string | undefined }) {
   const ownClientId = useEnvironments((s) => s.environments.find((e) => e.id === (envId ?? s.primaryId))?.clientId);
+  // `envId` stays undefined for the primary across a re-pairing: the list reloads when that
+  // environment's connection comes up or its token changes, so an earlier refusal does not stick
+  const connection = useEnvironments((s) => {
+    const id = envId ?? s.primaryId;
+    return id === undefined ? undefined : s.statuses[id]?.connection;
+  });
+  const token = useEnvironments((s) => s.environments.find((e) => e.id === (envId ?? s.primaryId))?.token);
   const owner = ownClientId === undefined;
   const [hidden, setHidden] = useState(false);
   const [clients, setClients] = useState<PairedClient[] | null>(null);
   const [error, setError] = useState<string | null>(null);
   const [confirm, setConfirm] = useState<PairedClient | null>(null);
 
+  // only the latest list answers: one sent before a re-pairing may come back after the new one
+  const latest = useRef(0);
   const load = useCallback((): void => {
+    const seq = ++latest.current;
     call("env.clients.list", {}, envOpt(envId))
       .then((result) => {
+        if (seq !== latest.current) return;
         setClients(result.clients);
         setError(null);
+        setHidden(false);
       })
-      .catch((err: unknown) => (isForbidden(err) ? setHidden(true) : setError(errorText(err))));
+      .catch((err: unknown) => {
+        if (seq !== latest.current) return;
+        if (isForbidden(err)) setHidden(true);
+        else setError(errorText(err));
+      });
   }, [envId]);
 
-  useEffect(load, [load]);
+  useEffect(() => {
+    // a connection on its way up answers nothing useful yet: wait for it to open or fail
+    if (connection !== "connecting") load();
+  }, [load, connection, token, ownClientId]);
 
   // R19: optimistic; a refusal puts the list back from the server and says why
   const setAccess = (client: PairedClient, access: DeviceAccess): void => {

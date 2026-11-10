@@ -53,7 +53,10 @@ export function decideLineage(model: ReadModel, command: LineageCommand, ctx: De
       const turns = handoffTurns(model, source.id, { untilTurnId: turn.id });
       if (turns.length === 0) return fail("conflict", "nothing to fork");
       const provider = command.provider ?? source.provider;
-      const forkModel = command.model ?? (provider === source.provider ? source.model : undefined);
+      // same harness kind: the fork runs on the source's configured instance with its model and
+      // effort (as `thread.side` does); another kind starts on that kind's default instance
+      const sameKind = provider === source.provider;
+      const forkModel = command.model ?? (sameKind ? source.model : undefined);
       const thread: Thread = {
         id: ctx.newId(),
         projectId: source.projectId,
@@ -61,7 +64,9 @@ export function decideLineage(model: ReadModel, command: LineageCommand, ctx: De
         forkedFrom: { threadId: source.id, turnId: turn.id },
         title: command.title ?? `${source.title} (fork)`,
         provider,
+        ...(sameKind && source.providerId !== undefined ? { providerId: source.providerId } : {}),
         ...(forkModel !== undefined ? { model: forkModel } : {}),
+        ...(sameKind && source.effort !== undefined ? { effort: source.effort } : {}),
         mode: source.mode,
         interaction: source.interaction,
         ...(source.links !== undefined ? { links: source.links } : {}),

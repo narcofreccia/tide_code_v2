@@ -72,16 +72,27 @@ export function useThreadDraft(
  */
 export type InstanceScope = "bundled" | "all";
 
-/** The Agent options: grouped, each disabled with its reason when not installed / logged in. */
+/**
+ * The Agent options: grouped, each disabled with its reason when not installed / logged in.
+ * `pinned` (bundled scope): an instance that stands in for its kind, e.g. the source thread's
+ * instance a fork keeps when the kind is not changed.
+ */
 export function instanceOptions(
   providers: readonly ProviderStatusDto[],
   loading: boolean,
   scope: InstanceScope,
+  pinned?: string,
 ): SelectOption<string>[] {
+  const pinnedKind = pinned === undefined ? undefined : (providerStatus(providers, pinned)?.kind ?? kindOfId(pinned));
+  const pinnedStatus = (): ProviderStatusDto =>
+    (pinned === undefined ? undefined : providerStatus(providers, pinned)) ?? placeholderStatus(pinnedKind ?? "claude", pinned);
+  const bundled = BUNDLED_PROVIDERS.map((kind) => (kind === pinnedKind ? pinnedStatus() : (providerStatus(providers, kind) ?? placeholderStatus(kind))));
   const list =
     scope === "all"
       ? orderedInstances(providers)
-      : BUNDLED_PROVIDERS.map((kind) => providerStatus(providers, kind) ?? placeholderStatus(kind));
+      : pinnedKind !== undefined && !BUNDLED_PROVIDERS.includes(pinnedKind)
+        ? [...bundled, pinnedStatus()]
+        : bundled;
   const grouped = new Set(list.map(instanceGroup)).size > 1;
   return list.map((p) => {
     const id = p.id || p.kind;
@@ -124,7 +135,7 @@ export function HarnessFields({
   const { providers, loading } = useProviderRoster();
   const id = providerId ?? provider;
   // nothing is known before `providers.list` answers, so nothing is offered
-  const providerOptions = instanceOptions(providers, loading, instances);
+  const providerOptions = instanceOptions(providers, loading, instances, instances === "bundled" ? providerId : undefined);
   const models = providerStatus(providers, id)?.models ?? [];
   const modelOptions: SelectOption<string>[] = modelChoices(models, id, providers);
   const pick = (next: string): void => onChange(draftForProvider(next, providers));

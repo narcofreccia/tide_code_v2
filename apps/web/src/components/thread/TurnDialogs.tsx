@@ -50,7 +50,9 @@ export function RollbackDialog({ thread, turn, onClose }: { thread: Thread; turn
 /** New thread continuing from a settled turn: title, harness, model, worktree. */
 export function ForkDialog({ thread, turn, onClose }: { thread: Thread; turn: Turn; onClose: () => void }) {
   const [title, setTitle] = useState(`${thread.title} (fork)`);
+  // the fork keeps the source's instance (account / ACP agent) unless another kind is picked
   const [provider, setProvider] = useState<ProviderKind>(thread.provider);
+  const [providerId, setProviderId] = useState(thread.providerId ?? thread.provider);
   const [model, setModel] = useState(thread.model ?? "");
   const [useWorktree, setUseWorktree] = useState(true);
   const submit = (): void => {
@@ -77,9 +79,11 @@ export function ForkDialog({ thread, turn, onClose }: { thread: Thread; turn: Tu
       <HarnessFields
         name="Fork"
         provider={provider}
+        providerId={providerId}
         model={model}
         onChange={(patch) => {
           if (patch.provider !== undefined) setProvider(patch.provider);
+          if (patch.providerId !== undefined) setProviderId(patch.providerId);
           if (patch.model !== undefined) setModel(patch.model);
         }}
       />

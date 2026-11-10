@@ -89,6 +89,26 @@ describe("decide: thread.fork", () => {
     expect(model.threads[created.thread.id]?.pendingHandoffId).toBe(handoff.id);
   });
 
+  it("inherits the source's instance, model and effort unless another harness kind is named", () => {
+    const h = withHistory(true);
+    const source = h.model.threads[h.threadId];
+    if (!source) throw new Error("no source");
+    const model: ReadModel = {
+      ...h.model,
+      threads: { ...h.model.threads, [h.threadId]: { ...source, provider: "acp", providerId: "acp:e2e", model: "e2e-model", effort: "high", mode: "full-access" } },
+    };
+    const same = eventOf(run(model, { type: "thread.fork", threadId: h.threadId, turnId: h.t2, useWorktree: true }).events, "thread.created").thread;
+    expect(same).toMatchObject({ provider: "acp", providerId: "acp:e2e", model: "e2e-model", effort: "high", mode: "full-access", interaction: "default" });
+    // naming the same kind keeps the instance; a model named on the command wins
+    const named = eventOf(run(model, { type: "thread.fork", threadId: h.threadId, turnId: h.t2, provider: "acp", model: "other" }).events, "thread.created").thread;
+    expect(named).toMatchObject({ provider: "acp", providerId: "acp:e2e", model: "other", effort: "high" });
+    const other = eventOf(run(model, { type: "thread.fork", threadId: h.threadId, turnId: h.t2, provider: "codex" }).events, "thread.created").thread;
+    expect(other.provider).toBe("codex");
+    expect(other.providerId).toBeUndefined();
+    expect(other.model).toBeUndefined();
+    expect(other.effort).toBeUndefined();
+  });
+
   it("refuses an unsettled or unknown turn", () => {
     const h = withHistory();
     const live = startTurn(h.model, h.threadId, "more");

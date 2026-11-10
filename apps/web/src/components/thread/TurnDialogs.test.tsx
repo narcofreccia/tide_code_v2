@@ -9,7 +9,7 @@ import {
   replyWithEvents,
   resetUi,
 } from "../../testHarness.ts";
-import { PROVIDER_FIXTURE } from "../settings/fixtures.ts";
+import { GEMINI, PROVIDER_FIXTURE } from "../settings/fixtures.ts";
 import { setProvidersForTest } from "../../state/providers.ts";
 import { useUi } from "../../state/ui.ts";
 
@@ -18,8 +18,8 @@ afterEach(() => {
   resetUi();
 });
 
-function open(kind: "rollback" | "fork", threadPatch = {}, turnPatch = {}) {
-  setProvidersForTest(PROVIDER_FIXTURE);
+function open(kind: "rollback" | "fork", threadPatch = {}, turnPatch = {}, providers = PROVIDER_FIXTURE) {
+  setProvidersForTest(providers);
   const thread = makeThread("t1", { title: "Router", ...threadPatch });
   const fake = attachFakeStore(modelWithTurns(thread, [makeTurn("u1", turnPatch)]));
   useUi.setState({ threadDialog: { kind, threadId: "t1", turnId: "u1" } });
@@ -70,5 +70,14 @@ describe("fork dialog", () => {
     await Promise.resolve();
     await Promise.resolve();
     expect(useUi.getState().selectedThreadId).toBe("t2");
+  });
+
+  it("shows and keeps the source thread's instance (an ACP agent is not a bundled harness)", () => {
+    const fake = open("fork", { provider: "acp", providerId: "acp:gemini", model: "gemini-2.5-pro" }, {}, [...PROVIDER_FIXTURE, GEMINI]);
+    const dialog = screen.getByRole("dialog");
+    expect(within(dialog).getByLabelText("Fork provider").textContent).toContain("Gemini CLI");
+    expect(within(dialog).getByLabelText("Fork provider").textContent).not.toContain("not configured");
+    fireEvent.click(within(dialog).getByText("Fork"));
+    expect(fake.dispatch).toHaveBeenCalledWith(expect.objectContaining({ type: "thread.fork", provider: "acp", model: "gemini-2.5-pro" }));
   });
 });

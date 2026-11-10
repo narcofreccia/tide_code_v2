@@ -1,5 +1,5 @@
 import { afterEach, describe, expect, it } from "vitest";
-import { cleanup, fireEvent, render, screen, waitFor, within } from "@testing-library/react";
+import { act, cleanup, fireEvent, render, screen, waitFor, within } from "@testing-library/react";
 import type { PairedClient } from "@tide/contracts";
 import { useEnvironments } from "../../state/environments.ts";
 import { chooseOption, mockRpc } from "../../testHarness.ts";
@@ -9,7 +9,7 @@ import { PairedDevices } from "./PairedDevices.tsx";
 
 afterEach(() => {
   cleanup();
-  useEnvironments.setState({ environments: [], primaryId: undefined });
+  useEnvironments.setState({ environments: [], statuses: {}, primaryId: undefined });
 });
 
 const NOW = Date.now();
@@ -95,6 +95,37 @@ describe("PairedDevices", () => {
     const { container } = render(<PairedDevices envId={undefined} />);
     await waitFor(() => expect(container.textContent).toBe(""));
     expect(screen.queryByRole("alert")).toBeNull();
+  });
+
+  it("reloads when the primary's connection comes up with a new token after pairing, dropping the old refusal", async () => {
+    useEnvironments.setState({
+      environments: [{ id: "env-1", name: "box", routes: [], addedAt: 0, token: "old" }],
+      statuses: { "env-1": { connection: "unauthorized", error: "unauthorized" } },
+      primaryId: "env-1",
+    });
+    let paired = false;
+    const rpc = mockRpc({
+      "env.clients.list": () => {
+        if (!paired) throw new Error("unauthorized: the token was refused (pair again)");
+        return { clients: [{ id: "c-me", name: "Safari on iOS", createdAt: NOW }] };
+      },
+    });
+    render(<PairedDevices envId={undefined} />);
+    expect((await screen.findByRole("alert")).textContent).toContain("unauthorized");
+
+    // pairing again: a new token and client id, then the connection opens
+    paired = true;
+    act(() => {
+      useEnvironments.setState({
+        environments: [{ id: "env-1", name: "box", routes: [], addedAt: 0, token: "new", clientId: "c-me" }],
+        statuses: { "env-1": { connection: "connecting" } },
+      });
+    });
+    act(() => useEnvironments.setState({ statuses: { "env-1": { connection: "connected" } } }));
+    expect(await screen.findByRole("button", { name: "Revoke Safari on iOS" })).toBeDefined();
+    expect(screen.queryByRole("alert")).toBeNull();
+    expect(screen.getByText("this device")).toBeDefined();
+    expect(rpc.mock.calls.filter(([m]) => m === "env.clients.list").length).toBeGreaterThanOrEqual(2);
   });
 
   it("the owner keeps the pairing button", () => {

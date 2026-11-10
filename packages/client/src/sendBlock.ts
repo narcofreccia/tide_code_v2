@@ -5,10 +5,15 @@ import { isThreadMerged } from "./selectors.ts";
  * Why a new turn on this thread would be refused by the server, before the user types it.
  *
  * Mirrors the thread-level refusals of `turn.request` in
- * `apps/server/src/orchestration/decider/turns.ts` (the same rule guards `plan.implement`
- * here and `thread.resume` with continue). Refusals that depend on the command itself
- * (a duplicate requestId, a bad attachment, `/clear` while a turn runs) are not mirrored:
- * the composer handles those where they arise.
+ * `apps/server/src/orchestration/decider/turns.ts`, which `plan.implement` here also goes
+ * through. `thread.resume` with continue (`decider/threads.ts`) refuses an archived thread and
+ * one whose worktree was removed, but not one that is rolling back. Refusals that depend on the
+ * command itself (a duplicate requestId, a bad attachment, `/clear` while a turn runs) are not
+ * mirrored: the composer handles those where they arise.
+ *
+ * Not mirrored either: a thread whose worktree could not be created is refused by the vcs
+ * reactor once the turn is sent (an error row on that turn), since the read model does not
+ * record the failure.
  */
 export type SendBlockKind = "archived" | "rolling-back" | "worktree-merged" | "worktree-removed";
 

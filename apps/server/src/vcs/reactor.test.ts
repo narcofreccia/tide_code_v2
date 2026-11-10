@@ -33,7 +33,7 @@ describe("VcsReactor — worktrees", () => {
     expect(h.control.opened[0]?.cwd).toBe(thread.worktreePath);
   });
 
-  it("reports the failure on the first turn and leaves the thread on the project root", async () => {
+  it("a project folder without git: the thread runs in it, and the first turn says so once", async () => {
     const h = await harness(cleanups);
     const dir = await mkdtemp(join(tmpdir(), "tide-plain-"));
     cleanups.push(() => rm(dir, { recursive: true, force: true }));
@@ -46,22 +46,86 @@ describe("VcsReactor — worktrees", () => {
     await h.settle();
     const threadId = thread.thread.id;
     expect(h.model().threads[threadId]?.worktreePath).toBeUndefined();
-    // nothing to say yet: the failure has no turn to hang off
+    // nothing to say yet: the notice has no turn to hang off
     expect(activitiesOf(h.model(), threadId)).toHaveLength(0);
 
     h.control.script(emit({ type: "settled", status: "completed" }));
     const first = await requestTurn(h, threadId, "go");
+    expect(h.model().turns[first]?.status).toBe("completed");
+    expect(h.control.opened[0]?.cwd).toBe(dir);
+    const errors = activitiesOf(h.model(), threadId).filter((a) => a.kind === "error");
+    expect(errors).toHaveLength(1);
+    expect(errors[0]).toMatchObject({ turnId: first });
+    expect(errors[0]?.kind === "error" ? errors[0].text : "").toMatch(/^Worktree could not be created \(.+ is not a git repository\); this thread runs in the project's folder/);
+
+    h.control.script(emit({ type: "settled", status: "completed" }));
+    await requestTurn(h, threadId, "again");
+    expect(activitiesOf(h.model(), threadId).filter((a) => a.kind === "error")).toHaveLength(1);
+  });
+
+  it("refuses every turn of a thread whose worktree could not be created, never running it in the main checkout", async () => {
+    const h = await harness(cleanups);
+    const source = await newThread(h, { useWorktree: true, title: "Source" });
+    h.control.script(emit({ type: "settled", status: "completed" }));
+    const turnId = await requestTurn(h, source.id, "work");
+    // the fork point vanishes and the source was never merged: nothing to fall back to
+    for (const { ref } of await h.repo.git.listRefs(`refs/tide/checkpoints/${source.id}/`)) await h.repo.git.deleteRef(ref);
+    const forked = (await h.app.engine.dispatch({ type: "thread.fork", threadId: source.id, turnId, useWorktree: true })).events[0]?.event;
+    if (forked?.type !== "thread.created") throw new Error("expected thread.created");
+    await h.settle();
+    const threadId = forked.thread.id;
+    expect(h.model().threads[threadId]?.worktreePath).toBeUndefined();
+    const opened = h.control.opened.length;
+
+    const first = await requestTurn(h, threadId, "go");
+    expect(h.control.opened).toHaveLength(opened);
+    expect(h.model().turns[first]).toMatchObject({ status: "error", error: expect.stringMatching(/no worktree/) });
     const errors = activitiesOf(h.model(), threadId).filter((a) => a.kind === "error");
     expect(errors).toHaveLength(1);
     expect(errors[0]).toMatchObject({ turnId: first });
     expect(errors[0]?.kind === "error" ? errors[0].text : "").toMatch(
-      /^Worktree could not be created \(.+\); this thread runs in the project's main checkout — file restore and publish are disabled\.$/,
+      /^Worktree could not be created \(fork point .+ is gone\)\. This thread asked for its own worktree, so it will not run in the project's main checkout: fork it or start a new thread\.$/,
     );
 
-    // and it is said once, not on every turn
+    // the next turn is refused the same way, with its own reason row
+    const second = await requestTurn(h, threadId, "again");
+    expect(h.control.opened).toHaveLength(opened);
+    expect(h.model().turns[second]?.status).toBe("error");
+    expect(activitiesOf(h.model(), threadId).filter((a) => a.kind === "error" && a.turnId === second)).toHaveLength(1);
+  });
+
+  it("a fork of a thread merged back with its branch deleted starts from the base branch it landed on", async () => {
+    const h = await harness(cleanups);
+    const source = await newThread(h, { useWorktree: true, title: "Ship It" });
+    h.control.script(
+      effect(async (options) => {
+        await writeFile(join(options.cwd, "shipped.txt"), "shipped\n", "utf8");
+      }),
+      emit({ type: "settled", status: "completed" }),
+    );
+    const turnId = await requestTurn(h, source.id, "work");
+    await h.app.engine.dispatch({ type: "thread.merge", threadId: source.id, strategy: "squash", deleteBranch: true });
+    await h.settle();
+    expect(h.model().threads[source.id]?.worktreePath).toBeUndefined();
+    expect(await h.repo.git.listRefs(`refs/tide/checkpoints/${source.id}/`)).toEqual([]);
+    const main = await h.repo.git.revParse("refs/heads/main");
+
+    const forked = (await h.app.engine.dispatch({ type: "thread.fork", threadId: source.id, turnId, useWorktree: true })).events[0]?.event;
+    if (forked?.type !== "thread.created") throw new Error("expected thread.created");
+    await h.settle();
+    const fork = h.model().threads[forked.thread.id];
+    expect(fork?.worktreePath).toBeDefined();
+    expect(fork?.worktreePath).not.toBe(h.repo.dir);
+    expect(await new Git(fork!.worktreePath!, { env: GIT_TEST_ENV }).revParse("HEAD")).toBe(main);
+    expect(existsSync(join(fork!.worktreePath!, "shipped.txt"))).toBe(true);
+
     h.control.script(emit({ type: "settled", status: "completed" }));
-    await requestTurn(h, threadId, "again");
-    expect(activitiesOf(h.model(), threadId).filter((a) => a.kind === "error")).toHaveLength(1);
+    const next = await requestTurn(h, forked.thread.id, "carry on");
+    expect(h.control.opened.at(-1)?.cwd).toBe(fork?.worktreePath);
+    expect(h.model().turns[next]?.status).toBe("completed");
+    const infos = activitiesOf(h.model(), forked.thread.id).filter((a) => a.kind === "info");
+    expect(infos.map((a) => (a.kind === "info" ? a.text : ""))).toContain("Started from main: the original checkpoint was removed after the merge.");
+    expect(infos[0]?.turnId).toBe(next);
   });
 
   it("reopens the harness session in the worktree when one attaches mid-thread", async () => {

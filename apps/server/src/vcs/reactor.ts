@@ -25,7 +25,7 @@ import { formatCommitMessage, generateCommitMessage } from "./messages.ts";
 import { hasOrigin, pushBase, pushThreadBranch, syncBase } from "./remoteSync.ts";
 import { sharingThread } from "./restore.ts";
 import { recoverVcs, type IntentJournal, type VcsRecoveryOptions, type VcsRecoveryReport } from "./recovery.ts";
-import { WorktreeManager } from "./worktrees.ts";
+import { mergedSourceBase, notARepoText, NotARepositoryError, worktreeFailureText, WorktreeManager } from "./worktrees.ts";
 
 export interface VcsReactorOptions {
   engine: Engine;
@@ -87,8 +87,14 @@ export class VcsReactor {
   #queues = new Map<string, Promise<void>>();
   /** tail of the `thread.deleted` chain (see `#oneDeletionAtATime`) */
   #deletions: Promise<void> = Promise.resolve();
-  /** threadId -> why its worktree could not be created; surfaced on that thread's first turn */
+  /**
+   * threadId -> why its worktree could not be created. While set, every turn of the thread is
+   * refused with an error row (`#refuseWithoutWorktree`): it never runs in the main checkout.
+   * Cleared when a worktree attaches (a boot recovery retries creation) or the thread is deleted.
+   */
   #worktreeFailures = new Map<string, string>();
+  /** threadId -> how its worktree differs from what was asked; one row on its first turn */
+  #worktreeNotices = new Map<string, { kind: "info" | "error"; text: string }>();
   #inflight = new Set<Promise<unknown>>();
   #unsubscribe: (() => void) | undefined;
 
@@ -207,6 +213,7 @@ export class VcsReactor {
         return;
       }
       case "worktree.attached":
+        this.#worktreeFailures.delete(event.threadId);
         this.#track(this.#sessions?.close(event.threadId) ?? Promise.resolve());
         return;
       case "publish.requested": {
@@ -249,11 +256,15 @@ export class VcsReactor {
           await this.#createWorktree(threadId, startRef);
           const failure = this.#worktreeFailures.get(threadId);
           // a turn that is resumed after the restart never passes `#recordBefore`: say it now
+          // (the failure stays: the thread's next turns are still refused)
           if (failure !== undefined && this.#engine.getModel().threads[threadId]?.latestTurnId !== undefined) {
-            this.#worktreeFailures.delete(threadId);
             await this.#info(threadId, "error", worktreeFailureText(failure));
           }
           return failure;
+        },
+        worktreeFailed: async (threadId, reason) => {
+          this.#worktreeFailures.set(threadId, reason);
+          await this.#info(threadId, "error", worktreeFailureText(reason));
         },
         info: (threadId, kind, text, id) => this.#info(threadId, kind, text, id),
         detach: (threadId) => this.#detach(threadId, false),
@@ -377,14 +388,22 @@ export class VcsReactor {
 
   /**
    * Worktree creation happens before the thread has a turn, so a failure is remembered here and
-   * reported as an error activity on the thread's first turn (see `#recordBefore`): the thread
-   * silently falling back to the project's main checkout is exactly what the user must know.
+   * every turn of the thread is refused with an error row (see `#recordBefore`): a thread that
+   * asked for a worktree never runs in the project's main checkout.
+   *
+   * A fork of a thread that was merged back starts at the base branch it landed on when its
+   * fork point (a checkpoint ref, removed with the merged branch) is gone: that is where the
+   * source's work now lives. The first turn says so.
    */
   async #createWorktree(threadId: string, startRef?: string): Promise<void> {
     const ctx = this.#context(threadId);
     if (!ctx) return;
     try {
-      const info = await this.#worktrees.create(ctx.project, ctx.thread, startRef);
+      const landedOn = mergedSourceBase(ctx.model, ctx.thread);
+      const info = await this.#worktrees.create(ctx.project, ctx.thread, startRef, landedOn !== undefined ? { fallbackRef: `refs/heads/${landedOn}` } : {});
+      if (info.fellBackTo !== undefined && landedOn !== undefined) {
+        this.#worktreeNotices.set(threadId, { kind: "info", text: `Started from ${landedOn}: the original checkpoint was removed after the merge.` });
+      }
       await this.#dispatch({
         type: "worktree.attach",
         threadId,
@@ -393,17 +412,31 @@ export class VcsReactor {
         baseBranch: info.baseBranch,
       });
     } catch (err) {
+      if (err instanceof NotARepositoryError) {
+        // a folder without git has no worktrees to offer: the thread runs in it (said once)
+        this.#worktreeNotices.set(threadId, { kind: "error", text: notARepoText(err.message) });
+        return;
+      }
       this.#worktreeFailures.set(threadId, message(err));
-      this.#log("[vcs] worktree creation failed; thread stays on the project root", err);
+      this.#log("[vcs] worktree creation failed; the thread's turns are refused until it has one", err);
     }
   }
 
-  /** Reports a remembered worktree failure once, on the first turn that follows it. */
-  async #reportWorktreeFailure(threadId: string, turnId: string): Promise<void> {
+  /**
+   * A turn of a thread whose worktree could not be created: an error row on the turn, then the
+   * turn settles as an error before the provider reactor opens a session (it re-checks the
+   * status once the before-gate opens). Returns false when the thread has no such failure.
+   */
+  async #refuseWithoutWorktree(threadId: string, turnId: string): Promise<boolean> {
     const reason = this.#worktreeFailures.get(threadId);
-    if (reason === undefined) return;
-    this.#worktreeFailures.delete(threadId);
-    await this.#post(threadId, turnId, "error", worktreeFailureText(reason));
+    if (reason === undefined || this.#engine.getModel().threads[threadId]?.worktreePath !== undefined) return false;
+    try {
+      await this.#post(threadId, turnId, "error", worktreeFailureText(reason));
+      await this.#dispatch({ type: "turn.settle", turnId, status: "error", error: "no worktree: this thread will not run in the project's main checkout" });
+    } finally {
+      this.#checkpoints.release(turnId);
+    }
+    return true;
   }
 
   /**
@@ -514,6 +547,7 @@ export class VcsReactor {
     });
     await step("archived ref cleanup", () => this.#git(project.rootPath).deleteRef(`refs/tide/archived/${threadId}`));
     this.#worktreeFailures.delete(threadId);
+    this.#worktreeNotices.delete(threadId);
   }
 
   #oneDeletionAtATime(task: () => Promise<void>): Promise<void> {
@@ -532,7 +566,12 @@ export class VcsReactor {
   }
 
   async #recordBefore(threadId: string, turnId: string): Promise<void> {
-    await this.#reportWorktreeFailure(threadId, turnId);
+    if (await this.#refuseWithoutWorktree(threadId, turnId)) return;
+    const notice = this.#worktreeNotices.get(threadId);
+    if (notice !== undefined) {
+      this.#worktreeNotices.delete(threadId);
+      await this.#post(threadId, turnId, notice.kind, notice.text);
+    }
     const ctx = this.#context(threadId);
     if (!ctx || !(await this.#git(ctx.cwd).isRepo())) {
       this.#checkpoints.release(turnId);
@@ -745,9 +784,4 @@ export class VcsReactor {
 
 function message(err: unknown): string {
   return err instanceof Error ? err.message : String(err);
-}
-
-/** Starts with WORKTREE_FAILURE_PREFIX (recovery.ts looks for it before warning a second time). */
-function worktreeFailureText(reason: string): string {
-  return `Worktree could not be created (${reason}); this thread runs in the project's main checkout — file restore and publish are disabled.`;
 }

@@ -18,8 +18,9 @@ import type { WorktreeManager } from "./worktrees.ts";
  *   per project, in parallel, each bounded by `projectTimeoutMs`:
  *     1. `git worktree prune` (on the project's worktree lock)
  *     2. merges stuck on `merging`: scratch merge worktree removed, outcome inferred, `merge.report`
- *     3. worktrees wanted but never attached: orphan adopted, or created like `thread.created` does;
- *        a thread that already ran turns in the main checkout gets one warning row instead
+ *     3. worktrees wanted but never attached: orphan adopted, or created like `thread.created` does
+ *        (a failure refuses the thread's turns, as live); a thread that already ran turns in the
+ *        main checkout (before turns were refused) gets one warning row instead
  *   then, once:
  *     4. publish / detach intents the journal says were cut short: an info row (archive-detach is redone)
  *     5. unreferenced, unregistered, empty `tide/*` worktree directories removed; anything else logged and kept
@@ -99,6 +100,8 @@ export interface VcsRecoveryDeps {
   exclusive: <T>(threadId: string, task: () => Promise<T>) => Promise<T>;
   /** the live `thread.created` path; resolves to the failure reason, undefined when attached */
   createWorktree: (threadId: string, startRef?: string) => Promise<string | undefined>;
+  /** the live path's failure state: the thread's turns are refused, and the reason is said on its latest turn */
+  worktreeFailed: (threadId: string, reason: string) => Promise<void>;
   info: (threadId: string, kind: "info" | "error", text: string, id?: string) => Promise<void>;
   detach: (threadId: string) => Promise<boolean>;
   dispatch: (command: InternalCommand) => Promise<void>;
@@ -366,8 +369,8 @@ async function recoverWorktree(
     return;
   }
   if (entry === undefined && existsSync(expected) && !(await removableDir(expected))) {
-    deps.log(`[vcs-recovery] ${expected} exists but is not a worktree; left in place, thread ${threadId} stays on the main checkout`);
-    await deps.info(threadId, "error", `${WORKTREE_FAILURE_PREFIX} (${expected} exists and is not a worktree); this thread runs in the project's main checkout.`);
+    deps.log(`[vcs-recovery] ${expected} exists but is not a worktree; left in place, thread ${threadId} gets no worktree and its turns are refused`);
+    await deps.worktreeFailed(threadId, `${expected} exists and is not a worktree`);
     return;
   }
   if (entry === undefined && existsSync(expected)) await rm(expected, { recursive: true, force: true });

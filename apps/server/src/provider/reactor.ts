@@ -500,6 +500,8 @@ export class ProviderReactor {
       } catch (err) {
         this.#log("[reactor] beforeTurn hook failed", err);
       }
+      // the vcs reactor refuses a turn whose thread was promised a worktree it never got
+      if (this.#engine.getModel().turns[turnId]?.status !== "requested") return this.#releaseHarnessTurn(attached, "turn settled before it started", turnId);
     }
     const model = this.#engine.getModel();
     const thread = model.threads[threadId];

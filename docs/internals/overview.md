@@ -67,6 +67,20 @@ Reactors subscribe to events and issue further commands; they hold no business r
   `gh pr merge`), teardown on detach/archive (terminals and watchers first; failures are posted
   as error activities), checkpoint-ref GC on archive. `exclusive(threadId, task)` lets other
   services run git work on a thread's queue.
+  **Worktree creation** (`thread.created` with `useWorktree`): the branch starts at `baseRef`
+  when given (`thread.fork` names the fork turn's after-checkpoint; a fork on the same harness
+  kind keeps the source's `providerId`, model and effort, like a side chat), else at the root's current
+  branch. A fork whose source was merged back with its branch deleted finds that checkpoint ref
+  gone (merge-back GCs it); it then starts at the head of the base branch the source landed on
+  (`mergedSourceBase` → `WorktreeManager.create(…, { fallbackRef })`) and its first turn gets the
+  info row "Started from <base>: the original checkpoint was removed after the merge.". A project
+  folder that is not a git repository has no worktrees at all: the thread runs in the folder and
+  its first turn gets one row saying so (delegates, teams and scheduled tasks default to a
+  worktree there too). Any other failure is remembered per thread (in memory; boot recovery retries the creation): every turn
+  of that thread gets an error row "Worktree could not be created (…)" and settles as `error`
+  before a session opens (the provider reactor re-checks the turn after the before-gate), so a
+  thread that asked for a worktree never runs in the project's main checkout. The read model
+  does not record the failure, so the client cannot disable Send ahead of time.
   **Boot recovery** (`vcs/recovery.ts`, `VcsReactor.recover()`): a local merge-back journals the
   base head it starts from (meta `vcs.inflight`, kind `merge`) and, the moment the merge returns,
   the commit the base moved to. A merge left `merging` settles as merged when that commit is on the
