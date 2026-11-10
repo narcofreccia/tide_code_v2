@@ -144,17 +144,32 @@ export type UsageSummary = Static<typeof UsageSummary>;
  * `POST /hook/<hookId>` fires a webhook scheduled task (optionally `X-Tide-Signature: sha256=<hmac>`).
  */
 /** Bumped when the RPC/HTTP surface changes incompatibly. Servers advertise it (`GET /api/env`, `server.info`, mDNS); clients warn on a mismatch (R18). */
-export const PROTOCOL_VERSION = 1;
+export const PROTOCOL_VERSION = 2;
 
 export const EnvProbe = Type.Object({ environmentId: Type.String(), name: Type.String(), version: Type.String(), protocol: Type.Number() });
 export type EnvProbe = Static<typeof EnvProbe>;
-export const PairResponse = Type.Object({ environmentId: Type.String(), name: Type.String(), token: Type.String(), /** R17: id of the per-device token that was minted */ clientId: Type.Optional(Type.String()) });
+export const PairResponse = Type.Object({ environmentId: Type.String(), name: Type.String(), token: Type.String(), /** R17: id of the per-device token that was minted */ clientId: Type.Optional(Type.String()), /** R19: level the device was paired with */ access: Type.Optional(Type.Union([Type.Literal("limited"), Type.Literal("full")])) });
 export type PairResponse = Static<typeof PairResponse>;
+/**
+ * R19: what a paired device may do. `limited` reads, chats, answers approvals, reviews and merges;
+ * `full` adds terminals, file writes, settings, projects, the run stack and full-access mode.
+ * Pairing, device management, relay and LAN exposure stay with the machine's owner either way.
+ */
+export const DeviceAccess = Type.Union([Type.Literal("limited"), Type.Literal("full")]);
+export type DeviceAccess = Static<typeof DeviceAccess>;
 /** R17: a device that paired with this server (its token is never returned; `tide pair --list`, Settings › Environments) */
-export const PairedClient = Type.Object({ id: Type.String(), name: Type.String(), createdAt: Type.Number(), lastSeenAt: Type.Optional(Type.Number()), lastAddress: Type.Optional(Type.String()) });
+export const PairedClient = Type.Object({
+  id: Type.String(),
+  name: Type.String(),
+  createdAt: Type.Number(),
+  lastSeenAt: Type.Optional(Type.Number()),
+  lastAddress: Type.Optional(Type.String()),
+  /** absent on rows written before R19 and on older servers: treat as `full` */
+  access: Type.Optional(DeviceAccess),
+});
 export type PairedClient = Static<typeof PairedClient>;
 /** R17: another tide-server seen on the LAN through mDNS (`_tide._tcp`); pairing still needs its code */
-export const DiscoveredPeer = Type.Object({ environmentId: Type.String(), name: Type.String(), version: Type.String(), protocol: Type.Number(), host: Type.String(), port: Type.Number(), urls: Type.Array(Type.String()) });
+export const DiscoveredPeer = Type.Object({ environmentId: Type.String(), name: Type.String(), version: Type.String(), protocol: Type.Number(), host: Type.String(), port: Type.Number(), urls: Type.Array(Type.String()), /** R19: the peer serves HTTPS (TXT `tls=1`); `urls` already carry the scheme */ tls: Type.Optional(Type.Boolean()) });
 export type DiscoveredPeer = Static<typeof DiscoveredPeer>;
 
 /** R8: an entry of the public ACP registry, plus whether this machine can launch it. */
@@ -268,6 +283,8 @@ export const ServerInfo = Type.Object({
   /** R9: user-given machine name (settings.environment.name), default = hostname */
   name: Type.String(),
   version: Type.String(),
+  /** R19: the calling device's level; absent for the owner (master token, desktop shell) and on older servers */
+  access: Type.Optional(DeviceAccess),
   /** R18 R6: wire protocol (`PROTOCOL_VERSION`) so clients can flag skew; absent on older servers */
   protocol: Type.Optional(Type.Number()),
   startedAt: Type.Number(),
@@ -295,7 +312,7 @@ export const ServerInfo = Type.Object({
   /** tools detected on the server host */
   tools: Type.Optional(Type.Object({ git: Type.Boolean(), gh: Type.Boolean(), rg: Type.Boolean(), /** R10: `gh auth status` says logged in */ ghAuth: Type.Optional(Type.Boolean()) })),
   /** how clients reach this server; pairingUrl embeds the token — show only to the local user */
-  remote: Type.Optional(Type.Object({ host: Type.String(), port: Type.Number(), lanUrls: Type.Array(Type.String()), pairingUrl: Type.Optional(Type.String()), /** R17: mDNS advertisement state */ discovery: Type.Optional(Type.Object({ advertising: Type.Boolean() })) })),
+  remote: Type.Optional(Type.Object({ host: Type.String(), port: Type.Number(), lanUrls: Type.Array(Type.String()), pairingUrl: Type.Optional(Type.String()), /** R19: this server listens with TLS (TIDE_TLS_CERT / TIDE_TLS_KEY); `lanUrls` carry the scheme */ tls: Type.Optional(Type.Boolean()), /** R17: mDNS advertisement state */ discovery: Type.Optional(Type.Object({ advertising: Type.Boolean() })) })),
 });
 export type ServerInfo = Static<typeof ServerInfo>;
 
@@ -540,12 +557,14 @@ export const rpcMethods = {
    * R9: a one-time pairing code (6 digits, 5 min, single use) that `POST /api/auth/pair {code}` on this
    * server exchanges for the token — what `tide pair` prints and what the Environments UI shows.
    */
-  "env.pairingCode": unary(Type.Object({}), Type.Object({ code: Type.String(), expiresAt: Type.Number(), urls: Type.Array(Type.String()) })),
+  "env.pairingCode": unary(Type.Object({ /** R19: level of the device this code will pair; default `limited` */ access: Type.Optional(DeviceAccess) }), Type.Object({ code: Type.String(), expiresAt: Type.Number(), urls: Type.Array(Type.String()) })),
   /** R17: browse the LAN for other tide-servers (mDNS `_tide._tcp`); `enabled: false` when this server cannot multicast */
   "env.discover": unary(Type.Object({ timeoutMs: Type.Optional(Type.Number({ minimum: 200, maximum: 5000 })) }), Type.Object({ peers: Type.Array(DiscoveredPeer), enabled: Type.Boolean() })),
   /** R17: devices holding a per-device token for this server; revoking closes their sockets with 4401 */
   "env.clients.list": unary(Type.Object({}), Type.Object({ clients: Type.Array(PairedClient) })),
   "env.clients.revoke": unary(Type.Object({ id: Type.String() }), Type.Object({ ok: Type.Boolean() })),
+  /** R19: owner only; ok: false = no such device. The device's open sockets pick the level up on their next call. */
+  "env.clients.setAccess": unary(Type.Object({ id: Type.String(), access: DeviceAccess }), Type.Object({ ok: Type.Boolean() })),
   /** R9: run the harness CLIs' own update commands on this machine (streamed log lines) */
   "env.updateHarnesses": stream(Type.Object({ kinds: Type.Optional(Type.Array(ProviderKind)) }), Type.Object({ kind: Type.Optional(ProviderKind), line: Type.String(), done: Type.Optional(Type.Boolean()), ok: Type.Optional(Type.Boolean()) })),
   // ---- R10: PR tab ----
