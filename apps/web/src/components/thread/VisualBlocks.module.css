@@ -45,3 +45,18 @@
   white-space: normal;
 }
 .mermaid :global(svg) { max-width: 100%; height: auto; }
+
+/* a settled code block: Copy sits in its top-right corner, shown on hover or focus */
+.code { position: relative; }
+.codeCopy {
+  position: absolute;
+  top: var(--sp-1);
+  right: var(--sp-1);
+  background: var(--surface);
+  opacity: 0;
+}
+.code:hover .codeCopy,
+.codeCopy:focus-visible { opacity: 1; }
+@media (hover: none) {
+  .codeCopy { opacity: 1; }
+}

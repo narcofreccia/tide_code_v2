@@ -1,3 +1,4 @@
+import { copyWithToast } from "../../lib/clipboard.ts";
 import { useState } from "react";
 import { stackServices } from "@tide/client";
 import type { Project, RunProfile, RunRepo, RunService, RunStack } from "@tide/contracts";
@@ -106,10 +107,7 @@ function RepoGroup({ repo, project, repos, rescan, refresh }: {
     });
   const askAgent = (): void => {
     if (profile === undefined) return;
-    void navigator.clipboard?.writeText(guidePrompt(profile)).then(
-      () => showToast("Prompt copied; paste it in a new thread"),
-      () => showToast("Could not copy the prompt"),
-    );
+    void copyWithToast(guidePrompt(profile), "Prompt copied; paste it in a new thread");
   };
   return (
     <SettingsGroup

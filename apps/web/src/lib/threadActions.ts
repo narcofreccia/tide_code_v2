@@ -15,6 +15,7 @@ import { call, dispatch, useModel, type DispatchResult } from "../state/model.ts
 import { plural } from "./format.ts";
 import { dispatchOrToast, errorText } from "./dispatchOrToast.ts";
 import { showToast } from "../state/toast.ts";
+import { copyWithToast } from "./clipboard.ts";
 import { useUi } from "../state/ui.ts";
 import { ensureStatus, invalidateThread } from "../state/vcs.ts";
 import { useServerSettings } from "../state/serverSettings.ts";
@@ -147,14 +148,9 @@ export function createChild(thread: { id: string; projectId: string }): void {
   useUi.getState().openNewThread({ projectId: thread.projectId, parentThreadId: thread.id });
 }
 
-/** Copies a value and confirms it with a toast. */
+/** Copies a value and confirms it with a toast ("Copied branch"); a failed copy says so. */
 export async function copyText(text: string, what: string): Promise<void> {
-  try {
-    await navigator.clipboard?.writeText(text);
-    showToast(`Copied ${what}`);
-  } catch {
-    showToast(`Could not copy the ${what}`);
-  }
+  await copyWithToast(text, `Copied ${what}`);
 }
 
 /** Opens the archive confirmation for worktree threads; archives the rest now. */
@@ -336,12 +332,7 @@ export function dismissPlan(planId: string): void {
 
 /** Escape hatch: copy the harness's own resume command for this thread. */
 export async function copyTerminalCommand(command: string): Promise<void> {
-  try {
-    await navigator.clipboard?.writeText(command);
-  } catch {
-    /* clipboard may be denied; the toast still shows the command */
-  }
-  showToast(`Copied: ${command}`);
+  await copyWithToast(command, `Copied: ${command}`);
 }
 
 /** Resolves the thread's harness resume command, or undefined when it has none. */

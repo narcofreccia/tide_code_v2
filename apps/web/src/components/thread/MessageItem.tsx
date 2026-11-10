@@ -14,6 +14,7 @@ import { Button } from "../ui/Button.tsx";
 import { Popover } from "../ui/Popover.tsx";
 import { Pill } from "../ui/Pill.tsx";
 import { Icon } from "../ui/Icon.tsx";
+import { CopyButton } from "../ui/CopyButton.tsx";
 import { observeVisibleAnimation } from "../../lib/visibleAnimation.ts";
 import { LiveLabel } from "./LiveLabel.tsx";
 import { Chevron } from "./Chevron.tsx";
@@ -208,7 +209,10 @@ export const MessageItem = memo(function MessageItem({ message, turn, showMeta, 
       {isUser ? (
         <div className={styles.who}>
           <span>You</span>
-          {menuTurn ? <TurnMenu turn={menuTurn} /> : null}
+          <span className={styles.userTools}>
+            {message.text.trim() === "" ? null : <CopyButton text={message.text} label="Copy message" />}
+            {menuTurn ? <TurnMenu turn={menuTurn} /> : null}
+          </span>
         </div>
       ) : null}
       <div className={styles.body} data-role={message.role}>
@@ -257,6 +261,7 @@ export const MessageItem = memo(function MessageItem({ message, turn, showMeta, 
           <Button variant="quiet" title="Quote this reply in the composer" onClick={() => cite(message.text, citeLabel)}>
             Quote
           </Button>
+          <CopyButton text={message.text} label="Copy reply" />
         </span>
       ) : null}
       {showMeta === true && turn ? <TurnMeta turn={turn} /> : null}

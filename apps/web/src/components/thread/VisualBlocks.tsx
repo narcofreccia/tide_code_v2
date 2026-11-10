@@ -8,6 +8,7 @@ import {
   renderMermaid,
 } from "../../lib/visual.ts";
 import { Button } from "../ui/Button.tsx";
+import { CopyButton } from "../ui/CopyButton.tsx";
 import styles from "./VisualBlocks.module.css";
 
 /**
@@ -108,7 +109,7 @@ interface PositionedNode {
   position?: { end?: { offset?: number } };
 }
 
-/** react-markdown `pre` override: html and mermaid fences become visuals, the rest stays code. */
+/** react-markdown `pre` override: html and mermaid fences become visuals, the rest stays code with a Copy at its top right. */
 export function MarkdownPre({ children, node, ...rest }: React.ComponentProps<"pre"> & { node?: unknown }) {
   const openEnd = useContext(OpenFence);
   const end = (node as PositionedNode | undefined)?.position?.end?.offset;
@@ -117,5 +118,11 @@ export function MarkdownPre({ children, node, ...rest }: React.ComponentProps<"p
   const code = codeOf(children);
   if (code?.lang === "html") return <HtmlPreview code={code.text.replace(/\n$/, "")} />;
   if (code?.lang === "mermaid") return <MermaidBlock code={code.text.replace(/\n$/, "")} />;
-  return <pre {...rest}>{children}</pre>;
+  if (code === undefined) return <pre {...rest}>{children}</pre>;
+  return (
+    <div className={styles.code}>
+      <pre {...rest}>{children}</pre>
+      <CopyButton className={styles.codeCopy} text={code.text.replace(/\n$/, "")} label="Copy code" />
+    </div>
+  );
 }

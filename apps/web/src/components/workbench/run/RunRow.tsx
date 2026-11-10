@@ -8,7 +8,7 @@ import { Button } from "../../ui/Button.tsx";
 import { Checkbox } from "../../ui/Choice.tsx";
 import { Icon } from "../../ui/Icon.tsx";
 import { Pill } from "../../ui/Pill.tsx";
-import { copyText } from "./PlanPreviewDialog.tsx";
+import { copyWithToast } from "../../../lib/clipboard.ts";
 import styles from "./Run.module.css";
 
 const STATE_TITLE: Record<RunServiceStatus["state"], string> = {
@@ -193,7 +193,7 @@ export function RunRow({
       {reason === undefined ? null : <p className={styles.reason}>{reason}</p>}
       {install === undefined ? null : (
         <span className={styles.fix}>
-          <button type="button" className={styles.hint} title="Copy the install command" aria-label={`Copy ${install}`} onClick={() => copyText(install)}>
+          <button type="button" className={styles.hint} title="Copy the install command" aria-label={`Copy ${install}`} onClick={() => void copyWithToast(install)}>
             <Icon name="copy" size={12} />
             {install}
           </button>

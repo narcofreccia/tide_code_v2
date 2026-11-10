@@ -9,6 +9,7 @@ import { openChangesForFile } from "../../state/vcs.ts";
 import { openFileTab } from "../../state/workbench.ts";
 import { normalizePastedPath } from "../../lib/mentions.ts";
 import { summarizeToolResult } from "../../lib/toolSummary.ts";
+import { copyToClipboard, reportCopyFailure } from "../../lib/clipboard.ts";
 import { Button } from "../ui/Button.tsx";
 import { Icon } from "../ui/Icon.tsx";
 import { useTurnSettled } from "./activities/turnSettled.ts";
@@ -95,10 +96,7 @@ function ErrorActivity({ activity }: { activity: NoteActivity }) {
 function DetailBlock({ label, text }: { label: string; text: string }) {
   const [copied, setCopied] = useState(false);
   const copy = (): void => {
-    void navigator.clipboard
-      ?.writeText(text)
-      .then(() => setCopied(true))
-      .catch(() => undefined);
+    void copyToClipboard(text).then((ok) => (ok ? setCopied(true) : reportCopyFailure(text)));
   };
   return (
     <>

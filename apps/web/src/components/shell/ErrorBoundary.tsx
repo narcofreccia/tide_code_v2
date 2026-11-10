@@ -1,3 +1,4 @@
+import { copyToClipboard, reportCopyFailure } from "../../lib/clipboard.ts";
 import { Component, useState, type ErrorInfo, type ReactNode } from "react";
 import { Button } from "../ui/Button.tsx";
 import { Card } from "../ui/Card.tsx";
@@ -38,7 +39,8 @@ export function BootActions({ retryLabel, report }: { retryLabel: string; report
       </Button>
       <Button
         onClick={() => {
-          void navigator.clipboard?.writeText(report()).then(() => setCopied(true), () => undefined);
+          const text = report();
+          void copyToClipboard(text).then((ok) => (ok ? setCopied(true) : reportCopyFailure(text)));
         }}
       >
         {copied ? "Copied" : "Copy report"}

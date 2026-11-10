@@ -7,6 +7,7 @@ import { providerIdOf } from "./vocab.ts";
 import { useServerSettings } from "../state/serverSettings.ts";
 import { SHORTCUTS, scopeApplies, shortcutKeys } from "./shortcuts.ts";
 import { openThreadTerminal } from "./openInTerminal.ts";
+import { copyThreadMarkdown, exportThreadMarkdown } from "./threadExport.ts";
 import { armFreshSession } from "../state/freshSession.ts";
 import { useUi } from "../state/ui.ts";
 import { showHowTideWorks } from "../components/shell/HowTideWorks.tsx";
@@ -117,6 +118,10 @@ function threadItems(model: ReadModel, thread: Thread): PaletteItem[] {
       run: () => interruptTurn(thread.id),
     });
   }
+  items.push(
+    { id: "thread:export-md", label: "Export thread as Markdown", group: "Thread", detail: "Download a .md of the conversation", run: () => exportThreadMarkdown(thread.id) },
+    { id: "thread:copy-md", label: "Copy thread as Markdown", group: "Thread", run: () => copyThreadMarkdown(thread.id) },
+  );
   items.push({
     id: "thread:delete",
     label: "Delete thread…",

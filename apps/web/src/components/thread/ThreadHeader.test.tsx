@@ -169,6 +169,8 @@ describe("ThreadHeader", () => {
       "Link a PR…",
       "Copy thread ID",
       "Copy branch",
+      "Export as Markdown",
+      "Copy as Markdown",
       "Open in VS Code",
       "Open in Cursor",
       "Remove worktree…",

@@ -2,7 +2,7 @@ import { useState } from "react";
 import type { RunConflict, RunPlan, RunPlanRow, RunReadiness, RunRepo } from "@tide/contracts";
 import type { StackService } from "@tide/client";
 import { planStack, setRunStack, startStack, stopStack } from "../../../state/run.ts";
-import { showToast } from "../../../state/toast.ts";
+import { copyWithToast } from "../../../lib/clipboard.ts";
 import { Button } from "../../ui/Button.tsx";
 import { Dialog } from "../../ui/Dialog.tsx";
 import { Icon } from "../../ui/Icon.tsx";
@@ -11,15 +11,6 @@ import { RootPill, rootLabel } from "./StackHeader.tsx";
 import styles from "./Run.module.css";
 
 const MAX_CHIPS = 4;
-
-export function copyText(text: string): void {
-  const clipboard = typeof navigator === "undefined" ? undefined : navigator.clipboard;
-  if (!clipboard) return;
-  void clipboard.writeText(text).then(
-    () => showToast("Copied"),
-    () => undefined,
-  );
-}
 
 /** `<repoKey>.<serviceId>.<listen>` (or an external party) → the service key, when it is one. */
 export function conflictServiceKey(party: string): string | undefined {
@@ -41,7 +32,7 @@ function EnvChips({ env }: { env: Record<string, string> }) {
   return (
     <span className={styles.chips}>
       {shown.map(([k, v]) => (
-        <button key={k} type="button" className={styles.chip} title={`Copy ${k}=${v}`} onClick={() => copyText(`${k}=${v}`)}>
+        <button key={k} type="button" className={styles.chip} title={`Copy ${k}=${v}`} onClick={() => void copyWithToast(`${k}=${v}`)}>
           {k}={v}
         </button>
       ))}
@@ -158,7 +149,7 @@ function ConflictItem({
         <strong>{other === undefined ? conflict.with : nameOf(other)}</strong> both want :{conflict.port}. {conflict.reason}
       </span>
       {hint === undefined ? null : (
-        <button type="button" className={styles.hint} title="Copy" onClick={() => copyText(hint)}>
+        <button type="button" className={styles.hint} title="Copy" onClick={() => void copyWithToast(hint)}>
           {hint}
         </button>
       )}

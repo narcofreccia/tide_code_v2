@@ -1,5 +1,6 @@
 import { dismissToast, useToasts, type ToastItem } from "../../state/toast.ts";
 import { Icon } from "./Icon.tsx";
+import { ManualCopyDialog } from "./ManualCopyDialog.tsx";
 import styles from "./Toast.module.css";
 
 function ActionToast({ toast, action }: { toast: ToastItem; action: NonNullable<ToastItem["action"]> }) {
@@ -23,8 +24,17 @@ function ActionToast({ toast, action }: { toast: ToastItem; action: NonNullable<
   );
 }
 
-/** Bottom-right stack of transient confirmations; some carry one action (Undo). */
+/** Bottom-right stack of transient confirmations; some carry one action (Undo, Show text). */
 export function ToastHost() {
+  return (
+    <>
+      <Toasts />
+      <ManualCopyDialog />
+    </>
+  );
+}
+
+function Toasts() {
   const toasts = useToasts((s) => s.toasts);
   if (toasts.length === 0) return null;
   return (

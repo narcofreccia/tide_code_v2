@@ -1,0 +1,13 @@
+.text {
+  width: 100%;
+  max-height: 50vh;
+  padding: var(--sp-2);
+  resize: vertical;
+  background: var(--surface);
+  border: 1px solid var(--border);
+  border-radius: var(--radius-sm);
+  color: var(--text);
+  font-family: var(--font-mono);
+  font-size: var(--fs-sm);
+  line-height: var(--lh-body);
+}

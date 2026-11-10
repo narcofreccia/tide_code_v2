@@ -9,6 +9,7 @@ import type { MenuItem } from "../ui/Menu.tsx";
 import { copyItems, latestSettledTurnId, settleItems } from "../shell/railMenus.ts";
 import { addressThreadPrComments } from "../prs/prActions.ts";
 import { startSideChat } from "./useSideChat.ts";
+import { copyThreadMarkdown, exportThreadMarkdown } from "../../lib/threadExport.ts";
 
 /** "Link a PR…" always (relinking replaces it); "Address review comments" when the open PR has comments. */
 export function prItems(thread: Thread): MenuItem[] {
@@ -27,6 +28,14 @@ export function prItems(thread: Thread): MenuItem[] {
   return items;
 }
 
+
+/** The whole thread as Markdown: a `.md` download, or the clipboard (which works everywhere). */
+export function exportItems(thread: Thread): MenuItem[] {
+  return [
+    { label: "Export as Markdown", onSelect: () => exportThreadMarkdown(thread.id) },
+    { label: "Copy as Markdown", onSelect: () => copyThreadMarkdown(thread.id) },
+  ];
+}
 
 /** "Open in VS Code" / "Open in Cursor": local folders directly, remote ones over Remote-SSH. */
 export function editorItems(model: ReadModel, thread: Thread): MenuItem[] {
@@ -103,6 +112,7 @@ export function headerMenu(
     },
     ...prItems(thread),
     ...copyItems(thread),
+    ...exportItems(thread),
     ...editorItems(model, thread),
     {
       label: "Remove worktree…",
