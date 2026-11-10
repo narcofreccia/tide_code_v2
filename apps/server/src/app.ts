@@ -43,6 +43,7 @@ import { GitHubForge } from "./vcs/forge/github.ts";
 import { ForgeResolver } from "./vcs/forge/resolver.ts";
 import { PrWatcher } from "./vcs/prWatch.ts";
 import { VcsReactor } from "./vcs/reactor.ts";
+import { createdIntent, IntentJournal } from "./vcs/recovery.ts";
 import { RepoBackfill } from "./vcs/repoBackfill.ts";
 import { WorktreeManager } from "./vcs/worktrees.ts";
 
@@ -184,6 +185,8 @@ export async function createApp(options: AppOptions): Promise<App> {
     onPrChange: (threadId) => void prWatch.refresh(threadId),
     settings,
     oneShot: { registry, settings, tideHome: config.tideHome },
+    // B1: publish/detach intents survive a crash as a meta value, so the next boot can say they were cut short
+    journal: new IntentJournal({ load: () => store.getMeta(VCS_JOURNAL_KEY), save: (value) => store.setMeta(VCS_JOURNAL_KEY, value) }),
     log,
   });
   vcs.start();
@@ -242,6 +245,13 @@ export async function createApp(options: AppOptions): Promise<App> {
   // queued turn each settle promotes).
   // read before recovery: delegates whose turn settled while sub-agents kept working die quiet below
   const backgroundAtBoot = threadsWithBackgroundChildren(engine.getModel());
+  // B1/B2: before turns are recovered, so an unsent first turn resumed below opens in the worktree
+  // recovery just created; stuck merges are settled before any client can ask for another
+  try {
+    await vcs.recover({ threadCreated: threadCreatedLookup(store) });
+  } catch (err) {
+    log("[app] vcs recovery failed", err);
+  }
   const recovered = await recoverUnsettledTurns(engine, { log, resume: (threadId, turnId) => reactor.resume(threadId, turnId) });
   await recoverLostChildren(engine, { log });
   await recoverRollbacks(engine, { log });
@@ -390,6 +400,15 @@ export async function createApp(options: AppOptions): Promise<App> {
 }
 
 const DEFAULT_SHUTDOWN_TIMEOUT_MS = 5_000;
+const VCS_JOURNAL_KEY = "vcs.inflight";
+
+/**
+ * `useWorktree` / `baseRef` live only in the thread's `thread.created` event (the read model does
+ * not keep them): one indexed lookup per candidate thread.
+ */
+function threadCreatedLookup(store: EventStore): (threadId: string) => { useWorktree?: boolean; baseRef?: string } | undefined {
+  return (threadId) => createdIntent(store.firstPayloadOf(threadId, "thread.created"));
+}
 
 /** The slice of the user settings the decider applies to threads the server builds itself. */
 function deciderDefaults(settings: SettingsStore, registry: DriverRegistry): DecideDefaults {

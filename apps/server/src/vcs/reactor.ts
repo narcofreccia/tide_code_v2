@@ -24,6 +24,7 @@ import { MergeBack } from "./merge.ts";
 import { formatCommitMessage, generateCommitMessage } from "./messages.ts";
 import { hasOrigin, pushBase, pushThreadBranch, syncBase } from "./remoteSync.ts";
 import { sharingThread } from "./restore.ts";
+import { recoverVcs, type IntentJournal, type VcsRecoveryOptions, type VcsRecoveryReport } from "./recovery.ts";
 import { WorktreeManager } from "./worktrees.ts";
 
 export interface VcsReactorOptions {
@@ -44,6 +45,8 @@ export interface VcsReactorOptions {
   settings?: Pick<SettingsStore, "get">;
   /** R17 C5: harnesses for generated commit / PR text (`settings.git.generateMessages`) */
   oneShot?: OneShotDeps;
+  /** B1: publish / detach intents in flight, persisted so the next boot knows which ones a crash cut short */
+  journal?: IntentJournal;
   now?: () => number;
   newId?: () => string;
   log?: (msg: string, data?: unknown) => void;
@@ -75,6 +78,7 @@ export class VcsReactor {
   #onPrChange: ((threadId: string) => void) | undefined;
   #settings: Pick<SettingsStore, "get"> | undefined;
   #oneShot: OneShotDeps | undefined;
+  #journal: IntentJournal | undefined;
   /** threads whose last branch push failed: one activity per failure streak */
   #pushMuted = new Set<string>();
   #now: () => number;
@@ -100,6 +104,7 @@ export class VcsReactor {
     this.#onPrChange = options.onPrChange;
     this.#settings = options.settings;
     this.#oneShot = options.oneShot;
+    this.#journal = options.journal;
     this.#newId = options.newId ?? (() => defaultNewId());
     this.#log = options.log ?? ((msg, data) => (data === undefined ? console.error(msg) : console.error(msg, data)));
     this.#merge =
@@ -171,7 +176,9 @@ export class VcsReactor {
       case "thread.archived":
         // archiving frees the disk unless the user asked to keep the checkout; checkpoint refs
         // stay (unarchive needs them for diff/rollback/fork) and die only with the branch
-        if (event.keepWorktree !== true) this.#enqueue(event.threadId, async () => void (await this.#detach(event.threadId, false)));
+        if (event.keepWorktree !== true) {
+          this.#journaled(record.seq, event.threadId, "archive", async () => void (await this.#detach(event.threadId, false)));
+        }
         return;
       case "thread.deleted":
         // a cascade emits one event per thread and those may share a checkout and a branch:
@@ -180,7 +187,7 @@ export class VcsReactor {
         return;
       case "worktree.detach-requested": {
         const { threadId, deleteBranch } = event;
-        this.#enqueue(threadId, async () => {
+        this.#journaled(record.seq, threadId, "detach", async () => {
           const detached = await this.#detach(threadId, deleteBranch === true);
           if (detached && deleteBranch === true) await this.#gcCheckpoints(threadId);
         });
@@ -196,7 +203,7 @@ export class VcsReactor {
         return;
       case "publish.requested": {
         const { threadId, title, body, commitOnly, mergeWhenGreen } = event;
-        this.#enqueue(threadId, () => this.#publish(threadId, title, body, commitOnly === true, mergeWhenGreen));
+        this.#journaled(record.seq, threadId, "publish", () => this.#publish(threadId, title, body, commitOnly === true, mergeWhenGreen));
         return;
       }
       default:
@@ -217,7 +224,53 @@ export class VcsReactor {
     });
   }
 
+  /**
+   * B1/B2: boot-time reconciliation of git work the previous process left half-done (merges
+   * stuck on `merging`, worktrees never attached, lost publish/detach intents, stale worktree
+   * registrations). Runs on the same per-thread queues as live work. See `recovery.ts`.
+   */
+  recover(options: VcsRecoveryOptions = {}): Promise<VcsRecoveryReport> {
+    return recoverVcs(
+      {
+        engine: this.#engine,
+        worktrees: this.#worktrees,
+        merge: this.#merge,
+        git: this.#git,
+        exclusive: (threadId, task) => this.exclusive(threadId, task),
+        createWorktree: async (threadId, startRef) => {
+          await this.#createWorktree(threadId, startRef);
+          const failure = this.#worktreeFailures.get(threadId);
+          // a turn that is resumed after the restart never passes `#recordBefore`: say it now
+          if (failure !== undefined && this.#engine.getModel().threads[threadId]?.latestTurnId !== undefined) {
+            this.#worktreeFailures.delete(threadId);
+            await this.#info(threadId, "error", worktreeFailureText(failure));
+          }
+          return failure;
+        },
+        info: (threadId, kind, text, id) => this.#info(threadId, kind, text, id),
+        detach: (threadId) => this.#detach(threadId, false),
+        dispatch: (command) => this.#dispatch(command),
+        ...(this.#onPrChange !== undefined ? { onPrChange: this.#onPrChange } : {}),
+        log: this.#log,
+      },
+      { ...(this.#journal !== undefined ? { journal: this.#journal } : {}), ...options },
+    );
+  }
+
   // ---- plumbing ----
+
+  /** `#enqueue`, with the intent written to the journal until the task is over (whatever its outcome). */
+  #journaled(seq: number, threadId: string, kind: "publish" | "detach" | "archive", task: () => Promise<void>): void {
+    const key = String(seq);
+    this.#journal?.begin(key, { threadId, kind });
+    this.#enqueue(threadId, async () => {
+      try {
+        await task();
+      } finally {
+        this.#journal?.end(key);
+      }
+    });
+  }
 
   /**
    * Marked synchronously: the provider reactor's own listener runs right after this one and
@@ -258,20 +311,21 @@ export class VcsReactor {
     return { model, thread, project, cwd: threadCwd(thread, project) };
   }
 
-  async #info(threadId: string, kind: "info" | "error", text: string): Promise<void> {
+  /** Posts a row on the thread's latest turn (only logged when it has none); `id` makes the row idempotent. */
+  async #info(threadId: string, kind: "info" | "error", text: string, id?: string): Promise<void> {
     const model = this.#engine.getModel();
     const turnId = model.threads[threadId]?.latestTurnId;
     if (turnId === undefined) {
       this.#log(`[vcs] ${kind}: ${text}`, threadId);
       return;
     }
-    await this.#post(threadId, turnId, kind, text);
+    await this.#post(threadId, turnId, kind, text, id);
   }
 
   /** Same, but on a turn the caller already holds (the before-checkpoint path). */
-  async #post(threadId: string, turnId: string, kind: "info" | "error", text: string): Promise<void> {
+  async #post(threadId: string, turnId: string, kind: "info" | "error", text: string, id?: string): Promise<void> {
     const at = this.#now();
-    const activity: Activity = { id: this.#newId(), threadId, turnId, kind, text, createdAt: at, updatedAt: at };
+    const activity: Activity = { id: id ?? this.#newId(), threadId, turnId, kind, text, createdAt: at, updatedAt: at };
     await this.#dispatch({ type: "activity.upsert", activity });
   }
 
@@ -341,12 +395,7 @@ export class VcsReactor {
     const reason = this.#worktreeFailures.get(threadId);
     if (reason === undefined) return;
     this.#worktreeFailures.delete(threadId);
-    await this.#post(
-      threadId,
-      turnId,
-      "error",
-      `Worktree could not be created (${reason}); this thread runs in the project's main checkout — file restore and publish are disabled.`,
-    );
+    await this.#post(threadId, turnId, "error", worktreeFailureText(reason));
   }
 
   /**
@@ -681,4 +730,9 @@ export class VcsReactor {
 
 function message(err: unknown): string {
   return err instanceof Error ? err.message : String(err);
+}
+
+/** Starts with WORKTREE_FAILURE_PREFIX (recovery.ts looks for it before warning a second time). */
+function worktreeFailureText(reason: string): string {
+  return `Worktree could not be created (${reason}); this thread runs in the project's main checkout — file restore and publish are disabled.`;
 }

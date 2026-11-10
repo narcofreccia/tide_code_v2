@@ -1,3 +1,4 @@
+import { existsSync } from "node:fs";
 import { mkdir, rm } from "node:fs/promises";
 import { join } from "node:path";
 import type { MergeStrategy, Project, PullRequest, Thread } from "@tide/contracts";
@@ -193,6 +194,19 @@ export class MergeBack {
       `${checkout.path} has uncommitted changes, so only ${base} moved: its files are still at ${from.slice(0, 8)}. ` +
       `Once your changes are safe, sync it with: git -C ${checkout.path} read-tree -m -u ${from.slice(0, 8)} ${to.slice(0, 8)}`
     );
+  }
+
+  /**
+   * B1 boot recovery: removes the scratch merge worktree a dead process may have left (with any
+   * merge/rebase it had in progress), the same way a failed merge does. True when one was there.
+   */
+  async dropLeftover(rootPath: string, threadId: string): Promise<boolean> {
+    const tmp = this.tempPath(threadId);
+    const root = this.#git(rootPath);
+    const registered = (await root.worktreeList()).some((w) => w.path === tmp || w.path.endsWith(`/.merge-${threadId}`));
+    if (!registered && !existsSync(tmp)) return false;
+    await this.#dropTemp(root, tmp);
+    return true;
   }
 
   async #dropTemp(root: Git, tmp: string): Promise<void> {

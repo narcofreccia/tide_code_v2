@@ -52,8 +52,23 @@ export class WorktreeManager {
   }
 
   pathFor(project: Project, thread: Thread): string {
+    return join(this.projectDir(project), shortId(thread.id));
+  }
+
+  /** `<TIDE_HOME>/worktrees/<projectSlug>`: every thread worktree of `project` lives directly under it. */
+  projectDir(project: Project): string {
     const projectSlug = `${slugify(project.title) || slugify(basename(project.rootPath)) || "project"}-${project.id.slice(-6).toLowerCase()}`;
-    return join(this.#root, projectSlug, shortId(thread.id));
+    return join(this.#root, projectSlug);
+  }
+
+  /** Re-provisions `.worktreeinclude` files into an adopted worktree (copies only what is missing). */
+  async provision(project: Project, worktreePath: string): Promise<void> {
+    await provisionWorktree({ sourceRoot: project.rootPath, worktreePath, git: this.#git, log: this.#log });
+  }
+
+  /** `git worktree prune` on the project's lock (B2 boot recovery); throws on a git failure. */
+  async prune(rootPath: string): Promise<void> {
+    await this.#withLock(rootPath, async () => void (await this.#git(rootPath).run(["worktree", "prune"])));
   }
 
   /** Serializes everything touching one repository (`git worktree add` is not concurrency-safe). */
