@@ -1,7 +1,7 @@
 import { execFile } from "node:child_process";
-import { mkdir, mkdtemp, realpath, rm } from "node:fs/promises";
+import { mkdir, mkdtemp, readdir, realpath, rm, utimes } from "node:fs/promises";
 import { tmpdir } from "node:os";
-import { join } from "node:path";
+import { basename, join } from "node:path";
 import { promisify } from "node:util";
 import { afterEach, describe, expect, it } from "vitest";
 import { normalizeRemoteUrl, type RpcFrame } from "@tide/contracts";
@@ -10,7 +10,7 @@ import { openEventStore } from "../orchestration/store.ts";
 import { SettingsStore } from "../settings.ts";
 import { Git } from "../vcs/git.ts";
 import { createTempRepo, GIT_TEST_ENV } from "../vcs/testing/tempRepo.ts";
-import { registerProjectEnsure } from "./projectEnsure.ts";
+import { folderCandidates, isAllowedCloneUrl, isInside, isValidBranchName, registerProjectEnsure, repoFolderName } from "./projectEnsure.ts";
 import { RpcRouter } from "./router.ts";
 
 const run = promisify(execFile);
@@ -25,7 +25,7 @@ interface Ensured {
   cloned: boolean;
 }
 
-async function setup(options: { agentThreadId?: string; projectsDir?: string } = {}) {
+async function setup(options: { agentThreadId?: string; projectsDir?: string; now?: number } = {}) {
   const store = await openEventStore(":memory:");
   cleanups.push(async () => store.close());
   const engine = new Engine({ store });
@@ -40,7 +40,7 @@ async function setup(options: { agentThreadId?: string; projectsDir?: string } =
   const settings = new SettingsStore({ log: () => undefined });
   if (options.projectsDir !== undefined) settings.set({ environment: { projectsDir: options.projectsDir } });
   const router = new RpcRouter();
-  registerProjectEnsure(router, { engine, settings, git: (cwd) => new Git(cwd, { env: GIT_TEST_ENV }), homeDir: () => join(sandbox, "home") });
+  registerProjectEnsure(router, { engine, settings, git: (cwd) => new Git(cwd, { env: GIT_TEST_ENV }), homeDir: () => join(sandbox, "home"), cloneTimeoutMs: 60_000, ...(options.now !== undefined ? { now: () => options.now as number } : {}) });
   const frames: RpcFrame[] = [];
   const connection = router.connection("c1", (frame) => frames.push(frame), options.agentThreadId !== undefined ? { agentThreadId: options.agentThreadId } : {});
   let seq = 0;
@@ -101,20 +101,57 @@ describe("project.ensure", () => {
     expect(engine.getModel().projects[res.result?.projectId ?? ""]?.repo).toBeDefined();
   });
 
-  it("refuses a target path that is not a clone of the repo", async () => {
+  it("falls back to <owner>-<name> when <name> is taken by something else", async () => {
     const { call, sandbox } = await setup();
     const parent = join(sandbox, "work");
     await mkdir(join(parent, "widget"), { recursive: true });
     const res = await call({ parentDir: parent });
-    expect(res.error?.code).toBe("conflict");
-    expect(res.error?.message).toContain("is not a clone of");
+    expect(res.error).toBeUndefined();
+    const owner = basename(sandbox);
+    expect(res.result).toMatchObject({ rootPath: join(parent, `${owner}-widget`), cloned: true });
   });
 
-  it("surfaces git's stderr when the clone fails", async () => {
+  it("answers conflict only when every candidate folder is taken", async () => {
+    const { call, sandbox, remoteUrl } = await setup();
+    const parent = join(sandbox, "work");
+    for (const name of folderCandidates(remoteUrl)) await mkdir(join(parent, name), { recursive: true });
+    const res = await call({ parentDir: parent });
+    expect(res.error?.code).toBe("conflict");
+    expect(res.error?.message).toContain("none is a clone of");
+  });
+
+  it("surfaces git's stderr when the clone fails and leaves no partial folder", async () => {
     const { call, sandbox } = await setup();
-    const res = await call({ parentDir: join(sandbox, "p"), repo: { remoteUrl: "example.invalid/o/missing", cloneUrl: join(sandbox, "nope.git"), defaultBranch: "main" } });
+    const parent = join(sandbox, "p");
+    const res = await call({ parentDir: parent, repo: { remoteUrl: "example.invalid/o/missing", cloneUrl: join(sandbox, "nope.git"), defaultBranch: "main" } });
     expect(res.error?.code).toBe("internal");
     expect(res.error?.message).toMatch(/git clone .* failed: .+/);
+    expect(await readdir(parent)).toEqual([]);
+  });
+
+  it("removes stale .partial- folders of this repo, keeps fresh ones and other folders", async () => {
+    const now = Date.now();
+    const { call, sandbox } = await setup({ now });
+    const parent = join(sandbox, "work");
+    await mkdir(join(parent, "widget.partial-old"), { recursive: true });
+    await mkdir(join(parent, "widget.partial-new"), { recursive: true });
+    await mkdir(join(parent, "other.partial-old"), { recursive: true });
+    const old = new Date(now - 120_000);
+    await utimes(join(parent, "widget.partial-old"), old, old);
+    await utimes(join(parent, "other.partial-old"), old, old);
+    expect((await call({ parentDir: parent })).result).toMatchObject({ rootPath: join(parent, "widget"), cloned: true });
+    expect((await readdir(parent)).sort()).toEqual(["other.partial-old", "widget", "widget.partial-new"]);
+  });
+
+  it("refuses option-like or helper-transport clone URLs and bad branch names", async () => {
+    const { call, sandbox } = await setup();
+    const parent = join(sandbox, "p");
+    for (const cloneUrl of ["--upload-pack=touch /tmp/x", "ext::sh -c touch% /tmp/x", "fd::3", "ftp://example.com/r.git"]) {
+      const res = await call({ parentDir: parent, repo: { remoteUrl: "example.com/o/r", cloneUrl, defaultBranch: "main" } });
+      expect(res.error?.code, cloneUrl).toBe("invalid-params");
+    }
+    const res = await call({ parentDir: parent, repo: { remoteUrl: "example.com/o/r", cloneUrl: "https://example.com/o/r.git", defaultBranch: "--orphan" } });
+    expect(res.error?.code).toBe("invalid-params");
   });
 
   it("clones once for concurrent calls on the same repo", async () => {
@@ -127,5 +164,46 @@ describe("project.ensure", () => {
   it("is refused on agent sockets", async () => {
     const { call } = await setup({ agentThreadId: "t1" });
     expect((await call()).error?.code).toBe("forbidden");
+  });
+});
+
+describe("project.ensure helpers", () => {
+  it("derives a safe folder name on every platform", () => {
+    const table: [string, string][] = [
+      ["github.com/acme/widget", "widget"],
+      ["github.com/acme/widget.git", "widget"],
+      ["local/C:\\repos\\tool.git", "tool"],
+      ["example.com/o/we ird$name", "we-ird-name"],
+      ["example.com/o/CON", "repo-CON"],
+      ["example.com/o/lpt3.txt", "repo-lpt3.txt"],
+      ["example.com/o/...", "repo-"],
+      ["example.com/o/" + "x".repeat(120), "x".repeat(80)],
+    ];
+    for (const [key, folder] of table) expect(repoFolderName(key), key).toBe(folder);
+    expect(() => repoFolderName("example.com/o/.git")).toThrow(/cannot derive/);
+    expect(folderCandidates("github.com/acme/widget")).toEqual(["widget", "acme-widget", "acme-widget-2", "acme-widget-3", "acme-widget-4"]);
+  });
+
+  it("checks branch names like git check-ref-format --branch", () => {
+    for (const ok of ["main", "release/1.2", "feat/x-y_z", "v1.0"]) expect(isValidBranchName(ok), ok).toBe(true);
+    for (const bad of ["", "-x", "a..b", "a b", "a~1", "a^", "a:b", "a?", "a*", "a[", "a\\b", "a/", "/a", "a.", "a.lock", "a/.hidden", "a@{1}", "@", "a//b", "a\u0001"]) {
+      expect(isValidBranchName(bad), JSON.stringify(bad)).toBe(false);
+    }
+  });
+
+  it("allows https/http/ssh/git/scp-style/local paths only", () => {
+    for (const ok of ["https://github.com/o/r.git", "http://h/o/r", "ssh://git@h:22/o/r.git", "git://h/o/r", "git@github.com:o/r.git", "host.lan:repos/r.git", "/srv/git/r.git", "C:\\git\\r.git", "C:/git/r.git", "file:///srv/r.git"]) {
+      expect(isAllowedCloneUrl(ok), ok).toBe(true);
+    }
+    for (const bad of ["", "-u", "ext::sh -c x", "fd::7", "transport::addr", "ftp://h/r", "ssh://-oProxyCommand=x/r", "C:relative", "relative/path", "a\nb"]) {
+      expect(isAllowedCloneUrl(bad), JSON.stringify(bad)).toBe(false);
+    }
+  });
+
+  it("keeps the clone path inside the projects folder", () => {
+    expect(isInside("/p", "/p/widget")).toBe(true);
+    expect(isInside("/p", "/p")).toBe(false);
+    expect(isInside("/p", "/p/../q")).toBe(false);
+    expect(isInside("/p", "/elsewhere")).toBe(false);
   });
 });
