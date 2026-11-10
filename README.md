@@ -25,7 +25,7 @@ and `docs/design/ui.md`.
 Several machines: `tide-server serve` on another Mac, Linux box or Windows PC; machines on the
 LAN find each other, pair with a 6-digit code (each device gets its own revocable token), and one
 repository checked out on several of them shows as one project. `tide service` keeps a server
-running; `tide backup` / `tide restore` move the history. Transport on the LAN is plain HTTP and
+running; `tide backup` / `tide restore` move the history (`--new-identity` if the source keeps running). Transport on the LAN is plain HTTP and
 a paired device has a shell on the machine: pair only what you trust. Details:
 [`docs/internals/remote.md`](docs/internals/remote.md).
 

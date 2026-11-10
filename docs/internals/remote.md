@@ -8,6 +8,7 @@ servers. This page covers what one server exposes and how a client gets in.
 
 ```sh
 tide serve [--host 0.0.0.0] [--port 3777] [--data <dir>] [--name <machine name>] [--web <dir>] [--log <file>]
+           [--tls-cert <cert.pem> --tls-key <key.pem>]
 tide pair [--port <n>] [--host <h>] [--no-qr]
 tide doctor [--port <n>]
 tide triage [--issue] [--no-agent] [--port <n>]
@@ -46,7 +47,7 @@ tide --version
   harness CLIs resolve, and `TIDE_HOME` when it was set. On Linux, `loginctl enable-linger`
   keeps it running after logout.
 - The MCP server handed to provider sessions always dials loopback
-  (`ws://127.0.0.1:<port>/ws`), whatever the bind address.
+  (`ws://127.0.0.1:<port>/ws`, `wss://` with a certificate), whatever the bind address.
 
 ## Headless install
 
@@ -102,7 +103,7 @@ tide-server.service`); otherwise it says `restart tide-server to use a.b.c`. Cod
 |---|---|---|---|
 | `GET /health` | none | trusted origins | `{ok, environmentId, version}` |
 | `GET /api/env` | none | trusted origins | `EnvProbe {environmentId, name, version, protocol}` |
-| `POST /api/auth/pair` `{code, name?}` | pairing code + Origin rule | trusted origins | `PairResponse {environmentId, name, token, clientId}` (a per-device token); 400 bad body, 401 wrong/expired/used code, 403 untrusted Origin, 429 rate-limited (`Retry-After: 60`) |
+| `POST /api/auth/pair` `{code, name?}` | pairing code + Origin rule | trusted origins | `PairResponse {environmentId, name, token, clientId, access}` (a per-device token at the level the code was issued with); 400 bad body, 401 wrong/expired/used code, 403 untrusted Origin, 429 rate-limited (`Retry-After: 60`) |
 | `POST /api/auth/ws-ticket` | `Authorization: Bearer <master or live device token>` | echoes any Origin | `{ticket, expiresAt}` (single use, 5 min) |
 | `POST /hook/<hookId>` | hook id, optional HMAC, Origin rule | none | fires a webhook task, see below; 403 untrusted Origin |
 | `GET /pair` | none | none | static explainer that reads `#token=` from the fragment |
@@ -175,7 +176,8 @@ keeps at most 1024 addresses and evicts the least recent one past that.
 A server bound beyond loopback advertises itself as `_tide._tcp` over mDNS, so other Tide
 clients on the LAN can find it. The responder and browser are raw `node:dgram`
 (`apps/server/src/rpc/mdns/`, no dependency): PTR/SRV/TXT/A records with TXT keys `envId`, `name`,
-`version`, `protocol`, `port`, and a goodbye packet when the server stops. A loopback-only server
+`version`, `protocol`, `port` (and `tls=1` when the server serves HTTPS; the browser then builds
+`https://` URLs and sets `DiscoveredPeer.tls`), and a goodbye packet when the server stops. A loopback-only server
 advertises nothing. A host whose socket cannot join the multicast group logs once and runs with
 discovery off; `server.info.remote.discovery.advertising` says which.
 
@@ -184,6 +186,87 @@ Environments › Add machine shows them under "Found on your network"; picking o
 Discovery only locates a machine: pairing stays code-based, so being on the LAN grants nothing.
 Verified on macOS with `dns-sd -B _tide._tcp` (add on start, remove on SIGTERM), including the
 bun-compiled sidecar.
+
+## Encrypting the connection
+
+By default every connection between a device and a machine on the LAN is plain HTTP/WS: the
+bearer token, the pairing exchange and all content can be read by anyone on the same network.
+Tide mints no certificates of its own. Two ways to encrypt; the client labels every plain-HTTP
+route to another machine "Not encrypted" (machine card, pairing panel, discovered machines).
+
+### Tailscale (recommended)
+
+On the machine running Tide:
+
+```sh
+tide serve --host 127.0.0.1         # loopback is enough: Tailscale connects from 127.0.0.1
+tailscale serve --bg 3777           # HTTPS on https://<machine>.<tailnet>.ts.net, proxied to :3777
+```
+
+Then pair from the other device with `https://<machine>.<tailnet>.ts.net` and a code from
+`tide pair`. Tailscale holds the certificate (enable HTTPS certificates for the tailnet in its
+admin console) and the WireGuard tunnel encrypts the traffic as well. The Host rule
+(`rpc/hostOrigin.ts`) already accepts this machine's own `*.ts.net` name when its first label is
+the machine's hostname; if Tailscale knows the machine under another name, add it to
+`TIDE_ALLOWED_HOSTS`. The `tailscale serve` syntax above is not verified here (no `tailscale`
+binary on the machine this was written on); check `tailscale serve --help` for your version.
+Note that through `tailscale serve` every client reaches the server from 127.0.0.1: see "What
+loopback grants" below.
+
+### Your own certificate
+
+```sh
+TIDE_TLS_CERT=/path/fullchain.pem TIDE_TLS_KEY=/path/key.pem tide serve
+tide serve --tls-cert /path/fullchain.pem --tls-key /path/key.pem      # flags win over the variables
+```
+
+Both or neither: one without the other, an unreadable file, a file that is not PEM, a key that is
+not the certificate's or an expired certificate stops the server at start with one sentence (paths
+only, never key material). Encrypted keys are not supported. The server then listens with HTTPS
+and WSS on its one port (no plain port next to it); `server.info.remote.tls` is `true`,
+`lanUrls` are `wss://`, pairing URLs and the banner say `https://`. A certificate for a DNS name
+needs that name in `TIDE_ALLOWED_HOSTS` (the Host rule) unless it is the machine's hostname.
+`tide service install` passes serve flags through as given: use absolute paths there.
+
+Local callers trust the configured certificate for their loopback calls without turning
+verification off (`apps/server/src/loopback.ts`): `tide pair` and `tide doctor` find the
+certificate path in `runtime.json` (`certPath`), the home lock probe in `server.lock`, the relay
+client gets it in memory, and the Tide MCP child gets it as `TIDE_SERVER_CA`. The certificate is
+added to the public roots as a trust anchor and, because a certificate for a DNS name does not
+name 127.0.0.1, the hostname check also accepts that exact certificate (SHA-256 pin). Under Bun the
+`ws` client and `WebSocket` take only the anchor (no hostname hook): there the chain decides.
+The desktop sidecar and runs without a certificate are unchanged: plain HTTP on loopback.
+
+A page loaded over HTTPS cannot open `ws://` to another machine (mixed content). When every
+route to a machine is plain and the page is HTTPS, the machine card and the reconnect state say
+so instead of the generic offline text. Loopback stays reachable from an HTTPS page.
+
+### Who can read what
+
+| Setup | Someone on the same network | The relay operator | Tailscale |
+|---|---|---|---|
+| Plain LAN (`http://<ip>:3777`) | everything: token, pairing code, content | n/a | n/a |
+| Own certificate (`https://`) | nothing beyond the server's address and port | n/a | n/a |
+| Tailscale (`tailscale serve`) | nothing (WireGuard + TLS) | n/a | not the content: TLS ends on your machine; Tailscale's coordination server sees which devices talk |
+| Relay (`wss://relay`) | nothing, if the relay URL is `wss://` | everything: the relay ends TLS and forwards plain bytes to the machine | n/a |
+
+The relay is encrypted in transit only, not end to end. On the machine itself the hop from
+`tailscale serve` or the relay client to the server is loopback, and plain when the server has no
+certificate.
+
+### What loopback grants
+
+`tailscale serve` and any reverse proxy connect from 127.0.0.1, so a peer address of loopback
+must grant nothing. Checked in R19: owner rights come only from the master token (a ws ticket
+bought with it, or `?token=` in `--dev`); `/api/auth/ws-ticket` checks the bearer only; CORS and
+the pairing/webhook Origin rule look at the Origin header, not the peer; the Host rule looks at
+the Host header; agent sockets need an agent token. The one place that reads the peer address is
+pairing: the rate-limit bucket is the socket address, and `x-tide-relay: 1` from a loopback peer
+(only while a relay is configured) moves an attempt into the shared relay bucket. Behind a proxy
+every client therefore shares the loopback bucket (5 attempts a minute), and a forged
+`x-tide-relay` header only moves the sender into the stricter relay bucket (3 a minute): both
+narrow, neither grants. Forwarded-address headers (`X-Forwarded-For`, `Tailscale-User-*`) are
+never read.
 
 ## Per-device tokens
 
@@ -200,8 +283,9 @@ The master token in `server.json` is never handed out by pairing.
 - `env.clients.list` returns the paired devices; `env.clients.revoke {id}` removes one and closes
   its sockets with code 4401. The client shows "Pair again" for that machine, and the revoked
   token gets 401 from `ws-ticket`.
-- CLI: `tide pair --list`, `tide pair --revoke <id>`. The UI is Settings › Environments › This
-  machine › Paired devices.
+- Each token carries an access level, `limited` or `full` (see Device access levels).
+- CLI: `tide pair --list` (with each device's access), `tide pair --revoke <id>`. The UI is
+  Settings › Environments › This machine › Paired devices.
 - `tide triage` never includes `clients.json` in its bundle.
 - Devices paired before this change still hold the master token and do not appear in the list.
 
@@ -216,21 +300,54 @@ sentence saying where to do it instead.
 | Call | Paired device |
 |---|---|
 | `env.pairingCode` | refused: only the owner lets new devices in |
+| `env.clients.setAccess` | refused: only the owner changes a device's level |
 | `env.clients.list` | answered with the device's own row only |
 | `env.clients.revoke {id}` | allowed for its own id (unpair itself), refused for any other |
 | `settings.set` with `relay` or `environment.lanBind` | refused: a device does not change how the machine is exposed; every other key stays writable |
 | `server.info` | answered without `remote.pairingUrl` (it embeds the master token) |
-| everything else (threads, fs, pty, git, settings.get, `env.updateHarnesses`) | allowed |
+| everything else | allowed for a `full` device; a `limited` device is held to the table below |
 
 The web client knows which it holds from `KnownEnvironment.clientId` (set by pairing): on a device,
 Settings › Environments › This machine hides "Pair another device" and "Reachable on the LAN", and
 Paired devices becomes "This device" with only its own row. A `forbidden` answer hides the row
 instead of showing an error.
 
-This is a boundary for the management surface, not a sandbox. A paired device has a full shell on
-the machine by design: it opens terminals (pty), browses the filesystem (`fs.browse`), creates
+This is a boundary for the management surface, not a sandbox. A `full` device has a shell on the
+machine by design: it opens terminals (pty), browses the filesystem (`fs.browse`), creates
 projects at any path and runs harnesses with the user's credentials, so it can read `server.json`
-or `clients.json` like any local process. Pair only devices you would hand a logged-in terminal.
+or `clients.json` like any local process. Pair a device with full access only if you would hand it
+a logged-in terminal.
+
+### Device access levels (R19)
+
+| Level | May |
+|---|---|
+| `limited` (the default) | read (model, threads, `fs.read/list/search/watch`, diffs, commits, PRs, usage, run plans and status), chat (create/steer/queue turns, attachments, side chats, forks, threads created or switched to any mode except `full-access`), answer approvals, questions and secret cards, review and comment on PRs, merge back, publish, roll back to a checkpoint, archive and delete threads, team runs and Experts without `full-access` stages |
+| `full` | all of the above plus terminals (`pty.*`, attach and list included: a terminal can show secrets), file writes (`fs.write/create/rename/delete`), `fs.browse`, `settings.set`, projects (create, init, ensure, update, archive, links, run stack), the run stack's start/stop/restart and profile/QUICKSTART writes, `env.updateHarnesses`, scheduled tasks and webhooks, opening anything on the host (`workspace.openExternal`, `thread.terminalCommand`), `vcs.pullBase`, `vcs.linkedRevert`, and the `full-access` runtime mode |
+
+- A code is issued for one level and the token it mints keeps it: `env.pairingCode {access?}`
+  defaults to `limited`, `tide pair` mints limited codes and `tide pair --full` full ones. The
+  code printed by `tide serve` at start is limited.
+- The owner changes a level with `env.clients.setAccess {id, access}`. The level is looked up on
+  every call, so the change reaches the device's open sockets on their next call; nothing
+  reconnects.
+- `server.info.access` is the caller's own level; it is absent for the owner, who is never
+  restricted. `env.clients.list` rows carry `access`.
+- Rows in `clients.json` written before R19 have no `access` and keep `full`, the power they had.
+  New rows are always written with an explicit level.
+- The table is `apps/server/src/rpc/deviceAccess.ts`: every RPC method and every client command
+  type is classified, typed so a new one does not compile until it is, and a test fails on any
+  name missing from it. A name the table does not know is refused for a limited device. Any `mode`
+  field equal to `full-access` anywhere in the params is refused too (thread create/update,
+  `plan.implement`, team stages, tasks).
+- Refusals are `forbidden` with "this device has limited access; turn on Full access for it on the
+  machine itself".
+
+What it does not do: a limited device can still start agent turns, and the agent runs commands
+under the thread's own mode. A thread the owner set to `full-access` (or `auto`, or a mode whose
+defaults come from the owner's settings) does whatever its harness allows when a limited device
+sends it a prompt, and a limited device that approves a tool call has that call run. The level
+narrows what a stolen device token can do directly; it is not a sandbox.
 The transport on the LAN is plain HTTP and WebSocket: anyone who can watch the network sees
 tickets and traffic. Use a network you trust, Tailscale, or the relay behind TLS.
 

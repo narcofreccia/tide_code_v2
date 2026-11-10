@@ -1,15 +1,18 @@
-import { chmodSync, cpSync, existsSync, lstatSync, mkdirSync, mkdtempSync, readFileSync, renameSync, rmSync } from "node:fs";
+import { chmodSync, cpSync, existsSync, lstatSync, mkdirSync, mkdtempSync, readFileSync, renameSync, rmSync, writeFileSync } from "node:fs";
 import { tmpdir } from "node:os";
 import { join } from "node:path";
+import { newId } from "@tide/contracts";
 import { openDatabase } from "../db/sqlite.ts";
 import { hostLockProbes, readLock, type LockProbes } from "../homeLock.ts";
 import { EventStore } from "../orchestration/store.ts";
 import { BACKUP_FORMAT, DB_ENTRY, MANIFEST, SETTINGS_ENTRY, UPLOADS_ENTRY, dbPathOf, sha256File, stamp, tar, type BackupManifest, type ManifestFile } from "./backup.ts";
 
 /**
- * `tide restore <archive> [--force]`: puts a `tide backup` archive back into TIDE_HOME. The
- * current database, settings.json and uploads/ move to `pre-restore-<time>/` first; server.json
- * and clients.json are never touched, so this machine keeps its identity and paired devices.
+ * `tide restore <archive> [--force] [--new-identity]`: puts a `tide backup` archive back into
+ * TIDE_HOME. The current database, settings.json and uploads/ move to `pre-restore-<time>/`
+ * first; clients.json is never touched, so this machine keeps its paired devices. The
+ * environment id lives in the database (meta `environmentId`, which wins over server.json at
+ * boot), so a restore carries the source machine's id unless `--new-identity` mints a fresh one.
  */
 
 export interface RestoreDeps {
@@ -19,6 +22,8 @@ export interface RestoreDeps {
   /** the newest store schema this build opens; undefined = look it up from a fresh store */
   supportedDbVersion?: number;
   log: (line: string) => void;
+  /** `--new-identity` id source (tests) */
+  newId?: () => string;
 }
 
 class RestoreRefused extends Error {}
@@ -52,6 +57,32 @@ function environmentIdOf(tideHome: string): string | undefined {
   } catch {
     return undefined;
   }
+}
+
+/** Meta key the server reads its environment id from at boot (app.ts); it wins over server.json. */
+const ENV_META_KEY = "environmentId";
+
+/**
+ * `--new-identity`: a fresh environment id in every place one lives: the restored database's
+ * meta row and this home's server.json (its token and driver config stay). Returns the old id.
+ */
+async function resetIdentity(tideHome: string, id: string): Promise<string | undefined> {
+  const db = await openDatabase(dbPathOf(tideHome));
+  let previous: string | undefined;
+  try {
+    db.exec("CREATE TABLE IF NOT EXISTS meta (key TEXT PRIMARY KEY, value TEXT)");
+    const row = db.prepare("SELECT value FROM meta WHERE key = ?").get(ENV_META_KEY);
+    previous = typeof row?.["value"] === "string" ? row["value"] : undefined;
+    db.prepare("INSERT INTO meta (key, value) VALUES (?, ?) ON CONFLICT(key) DO UPDATE SET value = excluded.value").run(ENV_META_KEY, id);
+  } finally {
+    db.close();
+  }
+  const serverJson = join(tideHome, "server.json");
+  if (existsSync(serverJson)) {
+    const raw = JSON.parse(readFileSync(serverJson, "utf8")) as Record<string, unknown>;
+    writeFileSync(serverJson, `${JSON.stringify({ ...raw, environmentId: id }, null, 2)}\n`, { mode: 0o600 });
+  }
+  return previous;
 }
 
 /** Same rule as a starting server: the lock counts while its pid lives and its port answers for this home. */
@@ -104,7 +135,7 @@ function verify(dir: string, manifest: BackupManifest): void {
 }
 
 /** Returns the exit code; every line goes through `deps.log`. */
-export async function runRestore(opts: { archive: string; force: boolean }, deps: RestoreDeps): Promise<number> {
+export async function runRestore(opts: { archive: string; force: boolean; newIdentity?: boolean }, deps: RestoreDeps): Promise<number> {
   const { tideHome, log } = deps;
   const staging = mkdtempSync(join(tmpdir(), "tide-restore-"));
   try {
@@ -156,7 +187,13 @@ export async function runRestore(opts: { archive: string; force: boolean }, deps
     if (supported === 0) log("note: this build records no database schema version, so the schema check was skipped");
     if (!manifest.keysIncluded && manifest.strippedKeys.length > 0) log(`settings.json came without its keys: ${manifest.strippedKeys.join("; ")}. Re-enter them in Settings.`);
     log("server.json and clients.json were kept: this machine's token and paired devices are unchanged.");
-    log("the environment id lives in the database and comes from the backup: do not keep the original machine serving the same data under it.");
+    if (opts.newIdentity === true) {
+      const id = (deps.newId ?? newId)();
+      const previous = await resetIdentity(tideHome, id);
+      log(`--new-identity: this home now serves the restored data as environment ${id}${previous !== undefined ? ` (the backup's id ${previous} is gone from the database and server.json)` : ""}; no device token from the source machine was restored.`);
+    } else {
+      log("the environment id lives in the database and comes from the backup: do not keep the original machine serving the same data under it, or restore again with --new-identity to give this machine a fresh id.");
+    }
     log("worktrees are not in a backup: threads whose worktree folder is missing on this machine need a new worktree (or the branch from the remote).");
     return 0;
   } catch (err) {

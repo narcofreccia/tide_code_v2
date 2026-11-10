@@ -21,6 +21,16 @@ describe("PairingCodes", () => {
     expect(codes.exchange(code, "fresh-ip")).toBe("invalid");
   });
 
+  it("R19: a code carries the level it was issued with (limited by default)", () => {
+    const codes = new PairingCodes({ now: () => 0 });
+    const limited = codes.issue();
+    const full = codes.issue({ access: "full" });
+    expect(limited.access).toBe("limited");
+    expect(codes.redeem(full.code, "ip")).toEqual({ outcome: "ok", access: "full" });
+    expect(codes.redeem(limited.code, "ip")).toEqual({ outcome: "ok", access: "limited" });
+    expect(codes.redeem(full.code, "ip")).toEqual({ outcome: "invalid" });
+  });
+
   it("compares in constant time without throwing on length mismatch", () => {
     expect(safeEqual("abc", "abc")).toBe(true);
     expect(safeEqual("abc", "abd")).toBe(false);

@@ -1,7 +1,7 @@
 import { createHash, randomBytes } from "node:crypto";
 import { mkdirSync, readFileSync, renameSync, writeFileSync } from "node:fs";
 import { dirname, join } from "node:path";
-import type { PairedClient } from "@tide/contracts";
+import type { DeviceAccess, PairedClient } from "@tide/contracts";
 import { safeEqual } from "./pairing.ts";
 
 /** at most one `lastSeenAt` write to disk per client per minute */
@@ -45,7 +45,8 @@ function isStored(value: unknown): value is StoredClient {
     typeof v["createdAt"] === "number" &&
     typeof v["hash"] === "string" &&
     /^[0-9a-f]{64}$/.test(v["hash"]) &&
-    (v["lastUsedAt"] === undefined || typeof v["lastUsedAt"] === "number")
+    (v["lastUsedAt"] === undefined || typeof v["lastUsedAt"] === "number") &&
+    (v["access"] === undefined || v["access"] === "limited" || v["access"] === "full")
   );
 }
 
@@ -79,13 +80,14 @@ export class ClientTokenStore {
     if (this.#dropExpired() > 0) this.#save();
   }
 
-  mint(name: string, address: string): { id: string; token: string } {
+  /** R19: new devices are `limited` unless the code they redeemed said otherwise */
+  mint(name: string, address: string, access: DeviceAccess = "limited"): { id: string; token: string } {
     let id: string;
     do id = this.#random(9).toString("base64url");
     while (this.has(id));
     const token = this.#random(32).toString("base64url");
     const now = this.#now();
-    this.#clients.push({ id, name, createdAt: now, lastSeenAt: now, lastAddress: address, hash: hashOf(token) });
+    this.#clients.push({ id, name, createdAt: now, lastSeenAt: now, lastAddress: address, access, hash: hashOf(token) });
     this.#touchWritten.set(id, now);
     this.#save();
     return { id, token };
@@ -105,6 +107,24 @@ export class ClientTokenStore {
 
   has(id: string): boolean {
     return this.#clients.some((c) => c.id === id);
+  }
+
+  /**
+   * R19: the device's level, read on every call so a change reaches open sockets. Rows written
+   * before R19 carry no level and keep the full powers they had; undefined = no such device.
+   */
+  accessOf(id: string): DeviceAccess | undefined {
+    const client = this.#clients.find((c) => c.id === id);
+    return client === undefined ? undefined : (client.access ?? "full");
+  }
+
+  /** R19: false = no such device. */
+  setAccess(id: string, access: DeviceAccess): boolean {
+    const client = this.#clients.find((c) => c.id === id);
+    if (!client) return false;
+    client.access = access;
+    this.#save();
+    return true;
   }
 
   touch(id: string, address: string): void {
@@ -138,7 +158,7 @@ export class ClientTokenStore {
   }
 
   list(): PairedClient[] {
-    return this.#clients.map(({ hash: _hash, lastUsedAt: _used, ...client }) => ({ ...client }));
+    return this.#clients.map(({ hash: _hash, lastUsedAt: _used, ...client }) => ({ ...client, access: client.access ?? "full" }));
   }
 
   revoke(id: string): boolean {

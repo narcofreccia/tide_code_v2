@@ -2,7 +2,7 @@ import { PROTOCOL_VERSION } from "../version.ts";
 import { mkdir, readdir, realpath, stat } from "node:fs/promises";
 import { isAbsolute, join } from "node:path";
 import { Git } from "../vcs/git.ts";
-import { isInternalCommand, type ClientCommand, type EventRecord, type RpcOutput } from "@tide/contracts";
+import { isInternalCommand, type ClientCommand, type DeviceAccess, type EventRecord, type RpcOutput } from "@tide/contracts";
 import { CommandError, type Engine } from "../orchestration/engine.ts";
 import type { EventStore } from "../orchestration/store.ts";
 import type { DriverRegistry } from "../provider/registry.ts";
@@ -30,6 +30,8 @@ export interface HandlerDeps {
   ghAuth?: () => Promise<boolean | undefined>;
   /** how clients reach this server; resolved per call because the port is known only after listen */
   remote?: (options: { includePairing: boolean }) => RemoteInfo;
+  /** R19: a paired device's level (`server.info.access`); undefined = no such device */
+  deviceAccess?: (clientId: string) => DeviceAccess | undefined;
   /** W1: resolves + validates a linked-repo path; injectable so tests need no real directories */
   resolveDir?: (path: string) => Promise<string>;
   /** R15: timer behind the live-delta coalescer of `model.subscribe`; injectable for tests */
@@ -113,6 +115,8 @@ export function registerHandlers(router: RpcRouter, deps: HandlerDeps): void {
       ...(deps.tideHome !== undefined ? { tideHome: deps.tideHome, worktreeRoot: `${deps.tideHome}/worktrees` } : {}),
       ...(deps.tools !== undefined ? { tools: { ...deps.tools, ...(ghAuth !== undefined ? { ghAuth } : {}) } } : {}),
       ...(remote !== undefined ? { remote } : {}),
+      // R19: a device learns its own level; the owner gets none (never restricted)
+      ...(ctx.clientId !== undefined ? { access: deps.deviceAccess?.(ctx.clientId) ?? "limited" } : {}),
     };
   });
 

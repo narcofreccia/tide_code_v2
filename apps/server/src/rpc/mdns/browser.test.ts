@@ -82,6 +82,13 @@ describe("browse", () => {
     expect((await result)[0]).toMatchObject({ host: "fd00::20", urls: ["http://[fd00::20]:3777"] });
   });
 
+  it("builds https URLs and sets tls for a peer that says tls=1 (R19)", async () => {
+    const { result, socket, timers } = await start();
+    socket.deliver(peer("s1", { txt: { envId: "s1", name: "nas", version: "1.0.0", protocol: "1", port: "3777", tls: "1" } }), { address: "192.168.1.20", port: 5353 });
+    timers.fire();
+    expect((await result)[0]).toMatchObject({ environmentId: "s1", urls: ["https://192.168.1.20:3777"], tls: true });
+  });
+
   it("rejects when no socket can be opened", async () => {
     await expect(browse({ timeoutMs: 200, selfEnvironmentId: "s", timers: manualTimers(), socketFactory: fakeSocketFactory({ fail: true }) })).rejects.toThrow();
   });

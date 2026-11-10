@@ -38,6 +38,15 @@ describe("MdnsResponder", () => {
     expect(msg?.additionals.find((r) => r.type === TYPE.A)?.address).toBe("192.168.1.42");
   });
 
+  it("adds tls=1 to the TXT record when the server listens with TLS (R19)", async () => {
+    const factory = fakeSocketFactory();
+    const responder = new MdnsResponder({ environmentId: "env-0011aabbcc", name: () => "Box", version: "0.9.0", protocol: 1, port: 3777, tls: true, ips: () => ["192.168.1.42"], socketFactory: factory, log: () => undefined });
+    await responder.start();
+    const msg = parse((factory.sockets[0] as FakeSocket).sent[0]?.msg ?? new Uint8Array());
+    expect(msg?.additionals.find((r) => r.type === TYPE.TXT)?.txt).toMatchObject({ tls: "1" });
+    await responder.stop();
+  });
+
   it("answers PTR queries for _tide._tcp.local by multicast and ignores others", async () => {
     const { socket } = await started();
     socket.sent.length = 0;

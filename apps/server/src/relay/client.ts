@@ -1,4 +1,5 @@
 import { WebSocket } from "ws";
+import { loopbackFetch, wsTlsOptions, type LoopbackTrust } from "../loopback.ts";
 
 /**
  * R9: the environment side of the self-hosted relay (apps/relay, docs/internals/relay.md).
@@ -31,6 +32,8 @@ export interface RelayClientOptions {
   schedule?: (fn: () => void, ms: number) => () => void;
   pingMs?: number;
   fetch?: typeof fetch;
+  /** R19: the server listens with TLS: loopback channels use wss/https and trust this certificate */
+  tls?: LoopbackTrust;
 }
 
 export interface RelayClient {
@@ -72,7 +75,8 @@ export function backoffMs(attempt: number): number {
 export function createRelayClient(options: RelayClientOptions): RelayClient {
   const host = options.host ?? "127.0.0.1";
   const log = options.log ?? (() => undefined);
-  const doFetch = options.fetch ?? fetch;
+  const doFetch = options.fetch ?? loopbackFetch(options.tls);
+  const loopScheme = options.tls !== undefined ? { ws: "wss", http: "https" } : { ws: "ws", http: "http" };
   const schedule =
     options.schedule ??
     ((fn: () => void, ms: number) => {
@@ -101,7 +105,7 @@ export function createRelayClient(options: RelayClientOptions): RelayClient {
 
   const openChannel = (ws: WebSocket, c: number, path: string): void => {
     if (!path.startsWith("/ws")) return sendUp(ws, JSON.stringify({ t: "close", c, code: 4404, reason: "not-found" }));
-    const loop = new WebSocket(`ws://${host}:${options.port}${path}`, { headers: { "x-tide-relay": "1" }, maxPayload: MAX_FRAME });
+    const loop = new WebSocket(`${loopScheme.ws}://${host}:${options.port}${path}`, { headers: { "x-tide-relay": "1" }, maxPayload: MAX_FRAME, ...wsTlsOptions(options.tls) });
     const ch: Channel = { ws: loop, queue: [] };
     channels.set(c, ch);
     loop.on("open", () => {
@@ -123,7 +127,7 @@ export function createRelayClient(options: RelayClientOptions): RelayClient {
     if (!msg.path.startsWith("/") || msg.path.startsWith("//")) return reply(400, { "content-type": "application/json" }, Buffer.from('{"error":"bad-path"}'));
     try {
       const method = msg.method.toUpperCase();
-      const res = await doFetch(`http://${host}:${options.port}${msg.path}`, {
+      const res = await doFetch(`${loopScheme.http}://${host}:${options.port}${msg.path}`, {
         method,
         headers: { ...msg.headers, "x-tide-relay": "1" },
         redirect: "manual",

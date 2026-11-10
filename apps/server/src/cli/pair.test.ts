@@ -43,13 +43,25 @@ describe("tide pair", () => {
     // the printed code is live: a client can exchange it
     const res = await fetch(`http://127.0.0.1:${handle.port}/api/auth/pair`, { method: "POST", body: JSON.stringify({ code }) });
     expect(res.status).toBe(200);
+    expect(text).toContain("access: limited");
+    expect(((await res.json()) as { access?: string }).access).toBe("limited");
+  });
+
+  it("--full mints a code that pairs a device with full access", async () => {
+    const text = await runPair({ qr: false, full: true, env: { TIDE_HOME: home } });
+    expect(text).toContain("access: full");
+    const code = /code: (\d{6})/.exec(text)?.[1];
+    const res = await fetch(`http://127.0.0.1:${handle.port}/api/auth/pair`, { method: "POST", body: JSON.stringify({ code }) });
+    const body = (await res.json()) as { clientId: string; access?: string };
+    expect(body.access).toBe("full");
+    expect(handle.clientTokens.accessOf(body.clientId)).toBe("full");
   });
 
   it("--list prints the paired devices; --revoke drops one", async () => {
-    expect(await runPair({ qr: false, list: true, env: { TIDE_HOME: home } })).toMatch(/^ID\s+NAME\s+CREATED\s+LAST SEEN\s+LAST ADDRESS/);
+    expect(await runPair({ qr: false, list: true, env: { TIDE_HOME: home } })).toMatch(/^ID\s+NAME\s+ACCESS\s+CREATED\s+LAST SEEN\s+LAST ADDRESS/);
     const { id } = handle.clientTokens.mint("Tide desktop", "10.0.0.9");
     const listed = await runPair({ qr: false, list: true, env: { TIDE_HOME: home } });
-    expect(listed).toMatch(new RegExp(`${id}\\s+Tide desktop\\s+\\d{4}-\\d{2}-\\d{2} \\d{2}:\\d{2}.*10\\.0\\.0\\.9`));
+    expect(listed).toMatch(new RegExp(`${id}\\s+Tide desktop\\s+limited\\s+\\d{4}-\\d{2}-\\d{2} \\d{2}:\\d{2}.*10\\.0\\.0\\.9`));
     expect(await runPair({ qr: false, revoke: id, env: { TIDE_HOME: home } })).toContain(`revoked ${id}`);
     expect(handle.clientTokens.has(id)).toBe(false);
     await expect(runPair({ qr: false, revoke: id, env: { TIDE_HOME: home } })).rejects.toThrow(/no paired device/);
@@ -58,13 +70,13 @@ describe("tide pair", () => {
   it("formats an empty and a full table", () => {
     expect(clientsTable([])).toContain("No paired devices");
     const table = clientsTable([
-      { id: "abc", name: "phone", createdAt: Date.UTC(2026, 10, 9, 8, 30), lastSeenAt: Date.UTC(2026, 10, 9, 9, 0), lastAddress: "10.0.0.2" },
+      { id: "abc", name: "phone", createdAt: Date.UTC(2026, 10, 9, 8, 30), lastSeenAt: Date.UTC(2026, 10, 9, 9, 0), lastAddress: "10.0.0.2", access: "limited" },
       { id: "defghi", name: "x", createdAt: Date.UTC(2026, 10, 9, 8, 30) },
     ]);
     expect(table.split("\n")).toEqual([
-      "ID      NAME   CREATED           LAST SEEN         LAST ADDRESS",
-      "abc     phone  2026-11-09 08:30  2026-11-09 09:00  10.0.0.2",
-      "defghi  x      2026-11-09 08:30  -                 -",
+      "ID      NAME   ACCESS   CREATED           LAST SEEN         LAST ADDRESS",
+      "abc     phone  limited  2026-11-09 08:30  2026-11-09 09:00  10.0.0.2",
+      "defghi  x      full     2026-11-09 08:30  -                 -",
     ]);
   });
 

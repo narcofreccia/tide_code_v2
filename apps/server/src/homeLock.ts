@@ -1,5 +1,6 @@
 import { readFileSync, renameSync, rmSync, writeFileSync } from "node:fs";
 import { join } from "node:path";
+import { loopbackFetch, trustFromFile } from "./loopback.ts";
 
 /**
  * One server per TIDE_HOME. The orchestration engine is the single writer of the event store;
@@ -14,6 +15,8 @@ export interface LockInfo {
   version: string;
   /** the id the holder's `/health` reports (set once it listens; a copied store may differ from server.json) */
   environmentId?: string;
+  /** R19: the holder serves HTTPS with this certificate; the probe trusts it */
+  certPath?: string;
 }
 
 /** `tide serve` exits with this when the home is taken; the desktop shell shows it instead of restarting. */
@@ -36,7 +39,7 @@ export interface LockProbes {
   /** true while a process with this pid exists (EPERM counts as alive) */
   alive(pid: number): boolean;
   /** the environment id the server on this loopback port reports, or undefined when it does not answer */
-  health(port: number): Promise<string | undefined>;
+  health(port: number, certPath?: string): Promise<string | undefined>;
 }
 
 export const lockFileOf = (tideHome: string): string => join(tideHome, "server.lock");
@@ -57,6 +60,7 @@ export function readLock(tideHome: string): LockInfo | undefined {
     startedAt: typeof r["startedAt"] === "number" ? r["startedAt"] : 0,
     version: typeof r["version"] === "string" ? r["version"] : "unknown",
     ...(typeof r["environmentId"] === "string" ? { environmentId: r["environmentId"] } : {}),
+    ...(typeof r["certPath"] === "string" ? { certPath: r["certPath"] } : {}),
   };
 }
 
@@ -74,7 +78,7 @@ const serialize = (info: LockInfo): string => `${JSON.stringify(info)}\n`;
 async function heldBy(holder: LockInfo, environmentId: string, probes: LockProbes): Promise<boolean> {
   if (holder.pid === process.pid) return false; // our own leftover (e.g. a pid reused after a reboot)
   if (!probes.alive(holder.pid)) return false;
-  const reported = await probes.health(holder.port);
+  const reported = await probes.health(holder.port, holder.certPath);
   return reported !== undefined && (reported === environmentId || reported === holder.environmentId);
 }
 
@@ -124,10 +128,11 @@ export function pidAlive(pid: number): boolean {
   }
 }
 
-/** `GET http://127.0.0.1:<port>/health` with a short timeout → its environmentId. */
-export async function healthEnvironmentId(port: number, timeoutMs = 1_000): Promise<string | undefined> {
+/** `GET http(s)://127.0.0.1:<port>/health` with a short timeout → its environmentId (https when the holder has a certificate). */
+export async function healthEnvironmentId(port: number, timeoutMs = 1_000, certPath?: string): Promise<string | undefined> {
   try {
-    const res = await fetch(`http://127.0.0.1:${port}/health`, { signal: AbortSignal.timeout(timeoutMs) });
+    const trust = trustFromFile(certPath);
+    const res = await loopbackFetch(trust)(`${trust !== undefined ? "https" : "http"}://127.0.0.1:${port}/health`, { signal: AbortSignal.timeout(timeoutMs) });
     if (!res.ok) return undefined;
     const body = (await res.json()) as { ok?: unknown; environmentId?: unknown };
     return body.ok === true && typeof body.environmentId === "string" ? body.environmentId : undefined;
@@ -136,4 +141,4 @@ export async function healthEnvironmentId(port: number, timeoutMs = 1_000): Prom
   }
 }
 
-export const hostLockProbes = (): LockProbes => ({ alive: pidAlive, health: (port) => healthEnvironmentId(port) });
+export const hostLockProbes = (): LockProbes => ({ alive: pidAlive, health: (port, certPath) => healthEnvironmentId(port, 1_000, certPath) });

@@ -1,6 +1,6 @@
 import { accessSync, constants } from "node:fs";
 import { delimiter, join } from "node:path";
-import { createServer, type IncomingMessage, type Server } from "node:http";
+import type { IncomingMessage, Server } from "node:http";
 import type { Duplex } from "node:stream";
 import { WebSocketServer, type WebSocket } from "ws";
 import { newId, type DiscoveredPeer } from "@tide/contracts";
@@ -45,6 +45,7 @@ import { registerVcsHandlers } from "./vcs.ts";
 import { createWorkspaceServices, registerWorkspaceHandlers, type WorkspaceServices } from "./workspace.ts";
 import { RpcRouter } from "./router.ts";
 import { TicketIssuer } from "./tickets.ts";
+import { createListener, schemes } from "./tls.ts";
 
 const PING_INTERVAL_MS = 30_000;
 
@@ -156,13 +157,18 @@ export async function startServer(deps: ServerDeps): Promise<ServerHandle> {
       port: boundPort,
       token: config.token,
       includePairing,
+      tls: config.tls !== undefined,
       ...(deps.networkInterfaces !== undefined ? { interfaces: deps.networkInterfaces() } : {}),
     }),
     ...(responder !== undefined ? { discovery: { advertising: responder.enabled } } : {}),
   });
 
   const router = new RpcRouter();
-  router.guard(deviceGuard);
+  // R19: the level is read per call, so a change from the owner reaches already open sockets; a
+  // device unknown to the store (revoked mid-call) gets the narrowest level
+  router.guard((method, params, ctx) =>
+    deviceGuard(method, params, ctx, ctx.clientId === undefined ? "full" : (clientTokens.accessOf(ctx.clientId) ?? "limited")),
+  );
   const settings = deps.settings ?? new SettingsStore(config.dataDir === ":memory:" ? {} : { path: SettingsStore.pathFor(config.tideHome) });
   const envDeps: EnvDeps = {
     engine,
@@ -190,6 +196,7 @@ export async function startServer(deps: ServerDeps): Promise<ServerHandle> {
     ghAuth: () => forges.ghAuth(),
     remote,
     settings,
+    deviceAccess: (clientId) => clientTokens.accessOf(clientId),
     ...(deps.judgeLedger !== undefined ? { judgeLedger: deps.judgeLedger } : {}),
   });
   registerProviderHandlers(router, {
@@ -233,7 +240,8 @@ export async function startServer(deps: ServerDeps): Promise<ServerHandle> {
   })().catch(() => undefined);
 
   const hosts = createHostPolicy({ environmentId: config.environmentId, allowedHosts: deps.allowedHosts ?? parseAllowedHosts(process.env[ALLOWED_HOSTS_ENV]) });
-  const http: Server = createServer(
+  // R19: HTTPS/WSS on the same single listener when a certificate is configured
+  const http: Server = createListener(
     createHttpHandler({
       config,
       tickets,
@@ -245,6 +253,7 @@ export async function startServer(deps: ServerDeps): Promise<ServerHandle> {
       hosts,
       relayOrigin: () => relayOriginOf(deps.relayState?.()?.url),
     }),
+    config.tls,
   );
 
   const wss = new WebSocketServer({ noServer: true });
@@ -349,6 +358,7 @@ export async function startServer(deps: ServerDeps): Promise<ServerHandle> {
       version: config.version,
       protocol: PROTOCOL_VERSION,
       port,
+      tls: config.tls !== undefined,
       ips: () => (wildcard ? lanIps(deps.networkInterfaces?.()) : [config.host]),
       ...mdnsSockets,
       log: (msg) => console.error(msg),
@@ -359,7 +369,7 @@ export async function startServer(deps: ServerDeps): Promise<ServerHandle> {
   return {
     port,
     host: config.host,
-    url: `ws://${config.host}:${port}/ws`,
+    url: `${schemes(config.tls !== undefined).ws}://${config.host}:${port}/ws`,
     pairing,
     clientTokens,
     closeClient,

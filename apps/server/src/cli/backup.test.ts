@@ -194,12 +194,70 @@ describe("tide restore", () => {
   });
 });
 
+async function metaEnv(home: string): Promise<unknown> {
+  const db = await openDatabase(join(home, "data", "events.sqlite"));
+  try {
+    return db.prepare("SELECT value FROM meta WHERE key = 'environmentId'").get()?.["value"];
+  } finally {
+    db.close();
+  }
+}
+
+describe("tide restore --new-identity", () => {
+  async function sourceArchive(): Promise<string> {
+    const source = await seedHome(2);
+    const db = await openDatabase(join(source, "data", "events.sqlite"));
+    db.prepare("INSERT INTO meta (key, value) VALUES ('environmentId', 'env-a')").run();
+    db.close();
+    return (await backup(source)).file;
+  }
+
+  it("without the flag keeps the backup's id and names the flag in the warning", async () => {
+    const file = await sourceArchive();
+    const target = temp("tide-target-");
+    writeFileSync(join(target, "server.json"), JSON.stringify({ environmentId: "env-b", token: "other" }));
+    const r = await restore(target, file);
+    expect(r.code).toBe(0);
+    expect(await metaEnv(target)).toBe("env-a");
+    expect(r.text).toMatch(/do not keep the original machine serving .* --new-identity/);
+  });
+
+  it("mints a fresh id in the database meta and server.json, keeping the token and paired devices", async () => {
+    const file = await sourceArchive();
+    const target = temp("tide-target-");
+    writeFileSync(join(target, "server.json"), JSON.stringify({ environmentId: "env-a", token: "other", providers: { pi: {} } }));
+    writeFileSync(join(target, "clients.json"), "[1]");
+    const lines: string[] = [];
+    const code = await runRestore({ archive: file, force: false, newIdentity: true }, { tideHome: target, now: () => NOW, probes: noLock, newId: () => "env-fresh", log: (l) => lines.push(l) });
+    expect(code).toBe(0);
+    expect(await metaEnv(target)).toBe("env-fresh");
+    expect(JSON.parse(readFileSync(join(target, "server.json"), "utf8"))).toEqual({ environmentId: "env-fresh", token: "other", providers: { pi: {} } });
+    expect(readFileSync(join(target, "clients.json"), "utf8")).toBe("[1]");
+    const said = lines.filter((l) => l.startsWith("--new-identity:"));
+    expect(said).toHaveLength(1);
+    expect(said[0]).toContain("env-fresh");
+    expect(said[0]).toContain("env-a");
+    expect(lines.join("\n")).not.toContain("do not keep the original machine");
+  });
+
+  it("works without a server.json (the server writes one at boot; the database id wins)", async () => {
+    const file = await sourceArchive();
+    const target = temp("tide-target-");
+    const code = await runRestore({ archive: file, force: false, newIdentity: true }, { tideHome: target, probes: noLock, log: () => undefined });
+    expect(code).toBe(0);
+    const id = await metaEnv(target);
+    expect(typeof id === "string" && id !== "env-a" && id.length > 0).toBe(true);
+    expect(existsSync(join(target, "server.json"))).toBe(false);
+  });
+});
+
 describe("parseCli backup/restore", () => {
   it("parses the flags", () => {
     expect(parseCli(["backup"])).toEqual({ cmd: "backup", includeKeys: false });
     expect(parseCli(["backup", "--out", "/x.tar.gz", "--include-keys"])).toEqual({ cmd: "backup", out: "/x.tar.gz", includeKeys: true });
     expect(() => parseCli(["backup", "--out"])).toThrow(CliError);
-    expect(parseCli(["restore", "a.tar.gz", "--force"])).toEqual({ cmd: "restore", archive: "a.tar.gz", force: true });
+    expect(parseCli(["restore", "a.tar.gz", "--force"])).toEqual({ cmd: "restore", archive: "a.tar.gz", force: true, newIdentity: false });
+    expect(parseCli(["restore", "--new-identity", "a.tar.gz"])).toEqual({ cmd: "restore", archive: "a.tar.gz", force: false, newIdentity: true });
     expect(() => parseCli(["restore"])).toThrow(/needs the archive/);
     expect(() => parseCli(["restore", "a", "b"])).toThrow(/one archive/);
   });

@@ -36,6 +36,7 @@ import { startServer, type ServerDeps, type ServerHandle } from "./rpc/server.ts
 import { PairingCodes } from "./rpc/pairing.ts";
 import { ClientTokenStore } from "./rpc/clientTokens.ts";
 import { localHostFor } from "./rpc/remote.ts";
+import { loopbackTrust } from "./loopback.ts";
 import { createWorkspaceServices, type WorkspaceServices } from "./rpc/workspace.ts";
 import { CheckpointService } from "./vcs/checkpoints.ts";
 import { Gh, type GhLike } from "./vcs/gh.ts";
@@ -305,8 +306,11 @@ export async function createApp(options: AppOptions): Promise<App> {
           config: { ...config, environmentId },
         });
   // provider sessions on this machine reach the server over loopback, whatever the bind address
-  if (server) mcp.setUrl(`ws://${localHostFor(config.host)}:${server.port}/ws`);
-  const relay: RelayClient | undefined = server ? startRelayClient(settings, { environmentId, port: server.port, host: localHostFor(config.host), log }) : undefined;
+  // R19: with a certificate the loopback calls are wss/https and trust that certificate
+  const tlsCert = config.tls?.certPath;
+  if (server) mcp.setUrl(`${tlsCert !== undefined ? "wss" : "ws"}://${localHostFor(config.host)}:${server.port}/ws`, tlsCert);
+  const relayTls = config.tls !== undefined ? { tls: loopbackTrust(config.tls.cert) } : {};
+  const relay: RelayClient | undefined = server ? startRelayClient(settings, { environmentId, port: server.port, host: localHostFor(config.host), log, ...relayTls }) : undefined;
 
   return {
     config,

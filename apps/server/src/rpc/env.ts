@@ -1,6 +1,6 @@
 import { spawn } from "node:child_process";
 import { arch, cpus, freemem, hostname, platform, totalmem } from "node:os";
-import type { DiscoveredPeer, ProviderKind, RpcOutput } from "@tide/contracts";
+import type { DeviceAccess, DiscoveredPeer, ProviderKind, RpcOutput } from "@tide/contracts";
 import { threadsWithBackgroundChildren } from "../orchestration/background.ts";
 import type { Engine } from "../orchestration/engine.ts";
 import { BUNDLED_KINDS, type DriverRegistry } from "../provider/registry.ts";
@@ -8,6 +8,7 @@ import { instanceIdOf } from "../provider/sessions.ts";
 import type { SettingsStore } from "../settings.ts";
 import { cpuUsage, memAvailable } from "./hostLoad.ts";
 import type { ClientTokenStore } from "./clientTokens.ts";
+import { limitedRefusal } from "./deviceAccess.ts";
 import type { PairingCodes } from "./pairing.ts";
 import type { RemoteInfo } from "./remote.ts";
 import { RpcException, type RpcCallContext, type RpcRouter } from "./router.ts";
@@ -85,8 +86,9 @@ export function hostFacts(busyThreads: number, memFree: number = freemem()): Hos
 
 /** HTTP base URLs a client can pair against: LAN addresses, the relay's client URL, else loopback. */
 export function pairingUrls(remote: RemoteInfo, relay: RelayState | undefined): string[] {
-  const lan = remote.lanUrls.map((ws) => ws.replace(/^ws:/, "http:").replace(/\/ws$/, ""));
-  const urls = lan.length > 0 ? lan : [`http://127.0.0.1:${remote.port}`];
+  // R19: wss:// → https:// when the server listens with TLS
+  const lan = remote.lanUrls.map((ws) => ws.replace(/^ws(s?):/, "http$1:").replace(/\/ws$/, ""));
+  const urls = lan.length > 0 ? lan : [`${remote.tls === true ? "https" : "http"}://127.0.0.1:${remote.port}`];
   if (relay?.connected && relay.clientUrl !== undefined) urls.push(relay.clientUrl);
   return urls;
 }
@@ -128,17 +130,21 @@ export async function envInfo(deps: EnvDeps): Promise<Pick<ServerInfo, "host" | 
 }
 
 /**
- * R18: what a paired device may not do. A socket whose ticket came from a device token
- * (`ctx.clientId`) does ordinary work (threads, fs, pty, settings) but not what decides who else
- * gets in or how the machine is exposed. Owner = master token (desktop shell, dev browser, CLI).
- * `env.clients.list` is not refused: its handler answers a device with its own row only.
+ * What a paired device may not do. A socket whose ticket came from a device token (`ctx.clientId`)
+ * never decides who else gets in or how the machine is exposed (R18, every device). R19: a
+ * `limited` device is further held to the table in deviceAccess.ts. Owner = master token
+ * (desktop shell, dev browser, CLI): never restricted. `access` is the device's level, looked up
+ * per call by the caller. `env.clients.list` is not refused: its handler answers a device with its
+ * own row only.
  */
-export function deviceGuard(method: string, params: unknown, ctx: Pick<RpcCallContext, "clientId">): string | undefined {
+export function deviceGuard(method: string, params: unknown, ctx: Pick<RpcCallContext, "clientId">, access: DeviceAccess = "full"): string | undefined {
   const clientId = ctx.clientId;
   if (clientId === undefined) return undefined;
   switch (method) {
     case "env.pairingCode":
       return "only the machine's owner can pair new devices; open Tide on that machine (or run `tide pair` there)";
+    case "env.clients.setAccess":
+      return "only the machine's owner can change a device's access; change it on the machine itself";
     case "env.clients.revoke":
       // a device may unpair itself, not the others
       return (params as { id?: unknown }).id === clientId ? undefined : "a paired device can revoke only itself; revoke other devices from the machine itself";
@@ -146,16 +152,15 @@ export function deviceGuard(method: string, params: unknown, ctx: Pick<RpcCallCo
       const patch = (params as { patch?: { relay?: unknown; environment?: { lanBind?: unknown } } }).patch;
       if (patch?.relay !== undefined) return "a paired device cannot change the relay settings; change them on the machine itself";
       if (patch?.environment?.lanBind !== undefined) return "a paired device cannot change whether the machine is reachable on the LAN; change it on the machine itself";
-      return undefined;
+      break;
     }
-    default:
-      return undefined;
   }
+  return access === "full" ? undefined : limitedRefusal(method, params);
 }
 
 export function registerEnvHandlers(router: RpcRouter, deps: EnvDeps): void {
-  router.register("env.pairingCode", async () => {
-    const { code, expiresAt } = deps.pairing.issue();
+  router.register("env.pairingCode", async ({ access }) => {
+    const { code, expiresAt } = deps.pairing.issue(access !== undefined ? { access } : {});
     return { code, expiresAt, urls: pairingUrls(deps.remote({ includePairing: false }), deps.relayState?.()) };
   });
 
@@ -183,6 +188,8 @@ export function registerEnvHandlers(router: RpcRouter, deps: EnvDeps): void {
     clients.closeClient(id);
     return { ok: true };
   });
+
+  router.register("env.clients.setAccess", async ({ id, access }) => ({ ok: deps.clients?.store.setAccess(id, access) ?? false }));
 
   let updating = false;
   const run = deps.runUpdate ?? spawnUpdate;

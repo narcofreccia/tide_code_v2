@@ -6,23 +6,27 @@ export type CliCommand =
   | { cmd: "help" }
   /** `legacy`: no subcommand (the desktop sidecar and `pnpm dev`): loopback by default */
   | { cmd: "serve"; args: string[]; legacy: boolean }
-  | { cmd: "pair"; port?: number; host?: string; qr: boolean; list?: boolean; revoke?: string }
+  | { cmd: "pair"; port?: number; host?: string; qr: boolean; list?: boolean; revoke?: string; full?: boolean }
   | { cmd: "doctor"; port?: number }
   | { cmd: "triage"; issue: boolean; noAgent: boolean; port?: number }
   | { cmd: "service"; action: "install" | "uninstall" | "status"; serveArgs: string[] }
   | { cmd: "update"; check: boolean; yes: boolean }
   | { cmd: "backup"; out?: string; includeKeys: boolean }
-  | { cmd: "restore"; archive: string; force: boolean }
+  | { cmd: "restore"; archive: string; force: boolean; newIdentity: boolean }
   | { cmd: "token"; action: "rotate" };
 
 export class CliError extends Error {}
 
 export const USAGE = `usage:
   tide serve [--host 0.0.0.0] [--port 3777] [--data <dir>] [--name <machine name>] [--web <dir>] [--log <file>]
-             run the server headless (all interfaces by default) and print a pairing code
-  tide pair [--port <n>] [--host <h>] [--no-qr] [--list | --revoke <id>]
+             [--tls-cert <cert.pem> --tls-key <key.pem>]
+             run the server headless (all interfaces by default) and print a pairing code;
+             with a certificate and its key (or TIDE_TLS_CERT and TIDE_TLS_KEY) it serves HTTPS and WSS
+  tide pair [--port <n>] [--host <h>] [--no-qr] [--full] [--list | --revoke <id>]
              ask the running server for a one-time pairing code (6 digits, 5 minutes);
-             --list shows paired devices, --revoke <id> drops one (it must pair again)
+             the device gets limited access (read, chat, approvals, diffs, merge) unless --full
+             (adds terminals, file writes, settings, projects, run stack, full-access mode);
+             --list shows paired devices and their access, --revoke <id> drops one (it must pair again)
   tide doctor [--port <n>]
              check node, git/gh/rg, harness CLIs, TIDE_HOME, the port and server.json
   tide triage [--issue] [--no-agent] [--port <n>]
@@ -35,9 +39,10 @@ export const USAGE = `usage:
              write the database, settings.json and uploads to one tar.gz (works while the server runs);
              API keys in settings.json are left out unless --include-keys; server.json, clients.json,
              secrets, logs and worktrees are never included
-  tide restore <archive> [--force]
+  tide restore <archive> [--force] [--new-identity]
              restore a backup into TIDE_HOME with the server stopped; the current database, settings
-             and uploads move to pre-restore-<time>/ (--force is needed when the database has events)
+             and uploads move to pre-restore-<time>/ (--force is needed when the database has events);
+             --new-identity gives the restored data a fresh environment id (restoring on a second machine)
   tide token rotate
              write a new master token to <TIDE_HOME>/server.json (restart the server to use it);
              devices paired with a code keep working, holders of the old master token pair again
@@ -77,7 +82,7 @@ export function parseCli(argv: string[]): CliCommand {
     case "serve":
       return { cmd: "serve", args: validate(rest), legacy: false };
     case "pair": {
-      const out: { cmd: "pair"; port?: number; host?: string; qr: boolean; list?: boolean; revoke?: string } = { cmd: "pair", qr: true };
+      const out: { cmd: "pair"; port?: number; host?: string; qr: boolean; list?: boolean; revoke?: string; full?: boolean } = { cmd: "pair", qr: true };
       for (let i = 0; i < rest.length; i++) {
         const arg = rest[i];
         if (arg === "--port") out.port = portOf(rest[++i], "--port");
@@ -87,6 +92,7 @@ export function parseCli(argv: string[]): CliCommand {
           out.host = host;
         } else if (arg === "--no-qr") out.qr = false;
         else if (arg === "--list") out.list = true;
+        else if (arg === "--full") out.full = true;
         else if (arg === "--revoke") {
           const id = rest[++i];
           if (id === undefined || id.startsWith("--")) throw new CliError("--revoke needs a device id (see tide pair --list)");
@@ -94,6 +100,7 @@ export function parseCli(argv: string[]): CliCommand {
         } else throw new CliError(`unknown argument ${String(arg)} for tide pair`);
       }
       if (out.list === true && out.revoke !== undefined) throw new CliError("tide pair: --list and --revoke are exclusive");
+      if (out.full === true && (out.list === true || out.revoke !== undefined)) throw new CliError("tide pair: --full applies to a new pairing code, not to --list or --revoke");
       return out;
     }
     case "doctor": {
@@ -144,14 +151,16 @@ export function parseCli(argv: string[]): CliCommand {
     case "restore": {
       let archive: string | undefined;
       let force = false;
+      let newIdentity = false;
       for (const arg of rest) {
         if (arg === "--force") force = true;
+        else if (arg === "--new-identity") newIdentity = true;
         else if (arg.startsWith("--")) throw new CliError(`unknown argument ${arg} for tide restore`);
         else if (archive !== undefined) throw new CliError("tide restore takes one archive");
         else archive = arg;
       }
       if (archive === undefined) throw new CliError("tide restore needs the archive to restore");
-      return { cmd: "restore", archive, force };
+      return { cmd: "restore", archive, force, newIdentity };
     }
     case "token": {
       if (rest.length === 1 && rest[0] === "rotate") return { cmd: "token", action: "rotate" };
@@ -164,5 +173,5 @@ export function parseCli(argv: string[]): CliCommand {
   }
 }
 
-const VALUE_FLAGS = new Set(["--port", "--host", "--data", "--name", "--web", "--log"]);
+const VALUE_FLAGS = new Set(["--port", "--host", "--data", "--name", "--web", "--log", "--tls-cert", "--tls-key"]);
 

@@ -12,6 +12,8 @@ export interface ResponderOptions {
   version: string;
   protocol: number;
   port: number;
+  /** R19: the server listens with TLS; the TXT record says `tls=1` */
+  tls?: boolean;
   /** the addresses to advertise, read on every answer */
   ips: () => string[];
   socketFactory?: MdnsSocketFactory;
@@ -87,7 +89,7 @@ export class MdnsResponder {
       port: o.port,
       ips: o.ips(),
       ttl,
-      txt: { envId: o.environmentId, name: o.name(), version: o.version, protocol: String(o.protocol), port: String(o.port) },
+      txt: { envId: o.environmentId, name: o.name(), version: o.version, protocol: String(o.protocol), port: String(o.port), ...(o.tls === true ? { tls: "1" } : {}) },
     };
   }
 

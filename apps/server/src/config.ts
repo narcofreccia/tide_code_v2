@@ -3,6 +3,7 @@ import { existsSync, mkdirSync, readFileSync, writeFileSync } from "node:fs";
 import { homedir } from "node:os";
 import { dirname, join, resolve } from "node:path";
 import { newId, type ProviderKind } from "@tide/contracts";
+import { readTlsFiles, TLS_CERT_ENV, TLS_KEY_ENV, type TlsFiles } from "./rpc/tls.ts";
 import { VERSION } from "./version.ts";
 
 export interface CliFlags {
@@ -17,6 +18,9 @@ export interface CliFlags {
   web?: string;
   /** R9: tee console output to this file (rotated) */
   log?: string;
+  /** R19: PEM certificate and key; the server listens with TLS (overrides TIDE_TLS_CERT / TIDE_TLS_KEY) */
+  tlsCert?: string;
+  tlsKey?: string;
 }
 
 export interface ServerConfig {
@@ -38,6 +42,8 @@ export interface ServerConfig {
   webDir?: string;
   /** per-driver config from `<TIDE_HOME>/server.json` → `providers: { claude: {...} }` */
   providers: ProviderConfigs;
+  /** R19: the server listens with TLS (HTTPS/WSS) with this certificate; absent = plain HTTP */
+  tls?: TlsFiles;
 }
 
 export type ProviderConfigs = Partial<Record<ProviderKind, Record<string, unknown>>>;
@@ -75,6 +81,12 @@ export function parseArgs(argv: string[]): CliFlags {
         break;
       case "--log":
         flags.log = next();
+        break;
+      case "--tls-cert":
+        flags.tlsCert = next();
+        break;
+      case "--tls-key":
+        flags.tlsKey = next();
         break;
       default:
         if (arg !== undefined && arg.startsWith("--")) throw new Error(`unknown flag ${arg}`);
@@ -166,6 +178,12 @@ export function resolveConfig(argv: string[] = [], env: NodeJS.ProcessEnv = proc
   const dev = flags.dev ?? false;
   const webDir = flags.web !== undefined ? resolve(flags.web) : options.probeWeb === false ? undefined : defaultWebDir();
   if (flags.web !== undefined && !existsSync(join(webDir as string, "index.html"))) throw new ConfigError(`--web ${flags.web}: no index.html there`);
+  let tls: TlsFiles | undefined;
+  try {
+    tls = readTlsFiles(flags.tlsCert ?? env[TLS_CERT_ENV], flags.tlsKey ?? env[TLS_KEY_ENV]);
+  } catch (err) {
+    throw new ConfigError(err instanceof Error ? err.message : String(err));
+  }
   const extraOrigins = (env["TIDE_CORS_ORIGINS"] ?? "").split(",").map((s) => s.trim()).filter(Boolean);
 
   return {
@@ -183,5 +201,6 @@ export function resolveConfig(argv: string[] = [], env: NodeJS.ProcessEnv = proc
     version: VERSION,
     ...(webDir !== undefined ? { webDir } : {}),
     providers: identity.providers,
+    ...(tls !== undefined ? { tls } : {}),
   };
 }

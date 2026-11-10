@@ -44,6 +44,7 @@ export class TideMcpProvisioner {
   #tokens: AgentTokenStore;
   #entry: McpEntry;
   #url: string | undefined;
+  #caPath: string | undefined;
 
   constructor(options: McpProvisionerOptions) {
     this.#tokens = options.tokens;
@@ -51,8 +52,10 @@ export class TideMcpProvisioner {
     this.#url = options.url;
   }
 
-  setUrl(url: string): void {
+  /** `caPath`: R19, the certificate of a server that listens with TLS; the MCP child trusts it (TIDE_SERVER_CA) */
+  setUrl(url: string, caPath?: string): void {
     this.#url = url;
+    this.#caPath = caPath;
   }
 
   get url(): string | undefined {
@@ -70,6 +73,7 @@ export class TideMcpProvisioner {
           TIDE_SERVER_URL: this.#url,
           TIDE_AGENT_TOKEN: this.#tokens.getOrCreate(threadId),
           TIDE_THREAD_ID: threadId,
+          ...(this.#caPath !== undefined ? { TIDE_SERVER_CA: this.#caPath } : {}),
         },
       },
     ];

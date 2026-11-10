@@ -3,19 +3,20 @@ import { request } from "node:http";
 import { tmpdir } from "node:os";
 import { join } from "node:path";
 import { afterEach, beforeEach, describe, expect, it } from "vitest";
-import type { PairResponse, PairedClient, ServerInfo } from "@tide/contracts";
+import { ClientCommand, rpcMethods, type DeviceAccess, type PairResponse, type PairedClient, type ServerInfo } from "@tide/contracts";
 import WebSocket from "ws";
 import type { ServerConfig } from "../config.ts";
 import { openDatabase } from "../db/sqlite.ts";
 import { Engine } from "../orchestration/engine.ts";
 import { EventStore } from "../orchestration/store.ts";
+import { COMMAND_ACCESS, LIMITED_REFUSAL, METHOD_ACCESS, asksFullAccess } from "./deviceAccess.ts";
 import { deviceGuard } from "./env.ts";
 import { ClientTokenStore } from "./clientTokens.ts";
 import { RELAY_PAIR_ATTEMPTS_PER_MINUTE } from "./pairing.ts";
 import { startServer, type ServerHandle } from "./server.ts";
 import { WsTestClient } from "./testing/wsClient.ts";
 
-/** R18: owner vs paired-device powers, and the Host / Origin rules on the live listener. */
+/** R18: owner vs paired-device powers, and the Host / Origin rules on the live listener. R19: device access levels. */
 
 const TOKEN = "device-access-token";
 const config: ServerConfig = {
@@ -70,8 +71,9 @@ async function socket(token: string): Promise<WsTestClient> {
   return WsTestClient.open(`ws://127.0.0.1:${handle.port}/ws?wsTicket=${ticket}`);
 }
 
-async function pairDevice(name: string): Promise<PairResponse> {
-  const res = await fetch(`${base}/api/auth/pair`, { method: "POST", headers: { "content-type": "application/json" }, body: pairBody(handle.pairing.issue().code, name) });
+async function pairDevice(name: string, access?: DeviceAccess): Promise<PairResponse> {
+  const code = handle.pairing.issue(access !== undefined ? { access } : {}).code;
+  const res = await fetch(`${base}/api/auth/pair`, { method: "POST", headers: { "content-type": "application/json" }, body: pairBody(code, name) });
   expect(res.status).toBe(200);
   return (await res.json()) as PairResponse;
 }
@@ -92,13 +94,14 @@ function rawGet(path: string, host: string): Promise<{ status: number; body: str
 
 describe("owner-only methods", () => {
   it("refuses pairing codes, others' revocation and exposure settings to a device; the owner keeps them", async () => {
-    const phone = await pairDevice("phone");
-    const laptop = await pairDevice("laptop");
+    const phone = await pairDevice("phone", "full");
+    const laptop = await pairDevice("laptop", "full");
     const device = await socket(phone.token);
     const owner = await socket(TOKEN);
     try {
-      // env.pairingCode
+      // env.pairingCode and env.clients.setAccess: owner only, even for a full-access device
       expect((await device.expectError("env.pairingCode", {})).code).toBe("forbidden");
+      expect((await device.expectError("env.clients.setAccess", { id: phone.clientId, access: "full" })).code).toBe("forbidden");
       expect((await owner.call<{ code: string }>("env.pairingCode", {})).code).toMatch(/^\d{6}$/);
       // env.clients.list: a device sees its own row only
       const mine = (await device.call<{ clients: PairedClient[] }>("env.clients.list", {})).clients;
@@ -139,7 +142,9 @@ describe("owner-only methods", () => {
     expect(deviceGuard("settings.set", { patch: { environment: { name: "x" } } }, device)).toBeUndefined();
     expect(deviceGuard("settings.set", { patch: { environment: { lanBind: false } } }, device)).toBeDefined();
     expect(deviceGuard("settings.set", { patch: { relay: null } }, device)).toBeDefined();
-    for (const m of ["thread.create", "fs.browse", "pty.open", "env.updateHarnesses", "env.discover"]) expect(deviceGuard(m, {}, device)).toBeUndefined();
+    expect(deviceGuard("env.clients.setAccess", { id: "me", access: "full" }, device)).toMatch(/owner/);
+    // a full-access device keeps ordinary work, terminals included
+    for (const m of ["fs.browse", "pty.create", "env.updateHarnesses", "env.discover"]) expect(deviceGuard(m, {}, device, "full")).toBeUndefined();
   });
 
   it("records lastUsedAt in clients.json when a device buys a ticket", async () => {
@@ -149,6 +154,113 @@ describe("owner-only methods", () => {
     expect(res.status).toBe(200);
     const file = JSON.parse(readFileSync(join(home, "clients.json"), "utf8")) as { clients: { id: string; lastUsedAt?: number }[] };
     expect(file.clients.find((c) => c.id === phone.clientId)?.lastUsedAt).toBeGreaterThanOrEqual(before);
+  });
+});
+
+describe("R19 access levels: the table", () => {
+  const device = { clientId: "me" };
+  const limited = (method: string, params: unknown = {}): string | undefined => deviceGuard(method, params, device, "limited");
+  const dispatch = (command: Record<string, unknown>): { command: Record<string, unknown> } => ({ command: { commandId: "c1", ...command } });
+
+  it("classifies every RPC method and every client command", () => {
+    const commandTypes = (ClientCommand.anyOf as Array<{ properties: { type: { const: string } } }>).map((m) => m.properties.type.const);
+    expect(commandTypes.length).toBeGreaterThan(40);
+    expect(Object.keys(rpcMethods).filter((m) => !Object.hasOwn(METHOD_ACCESS, m))).toEqual([]);
+    expect(commandTypes.filter((t) => !Object.hasOwn(COMMAND_ACCESS, t))).toEqual([]);
+    // no stale rows for names the contracts dropped
+    expect(Object.keys(METHOD_ACCESS).filter((m) => !Object.hasOwn(rpcMethods, m))).toEqual([]);
+    expect(Object.keys(COMMAND_ACCESS).filter((t) => !commandTypes.includes(t))).toEqual([]);
+  });
+
+  it("refuses full-only work to a limited device", () => {
+    for (const m of ["pty.create", "pty.attach", "pty.list", "fs.write", "fs.delete", "settings.set", "project.init", "run.start", "run.profiles.set", "env.updateHarnesses", "workspace.openExternal", "thread.terminalCommand", "fs.browse"]) {
+      expect(limited(m), m).toBe(LIMITED_REFUSAL);
+    }
+    for (const type of ["project.create", "project.update", "project.link.add", "task.create", "task.run-now"]) expect(limited("orchestration.dispatch", dispatch({ type })), type).toBe(LIMITED_REFUSAL);
+    // unknown names fail closed
+    expect(limited("pty.something-new")).toBe(LIMITED_REFUSAL);
+    expect(limited("orchestration.dispatch", dispatch({ type: "thread.something-new" }))).toBe(LIMITED_REFUSAL);
+    expect(limited("orchestration.dispatch", {})).toBe(LIMITED_REFUSAL);
+  });
+
+  it("refuses full-access mode wherever a command carries a mode", () => {
+    const full = "full-access";
+    for (const command of [
+      { type: "thread.create", projectId: "p", provider: "claude", mode: full },
+      { type: "thread.update", threadId: "t", mode: full },
+      { type: "plan.implement", planId: "x", target: "new", mode: full },
+      { type: "team.run", projectId: "p", task: "x", team: { id: "t", name: "t", stages: [{ key: "a", role: "r", provider: "claude", worktree: "own" }, { key: "b", role: "r", provider: "codex", mode: full, worktree: "own" }] } },
+    ]) {
+      expect(limited("orchestration.dispatch", dispatch(command)), command.type).toMatch(/limited access and cannot use Full access mode/);
+      expect(deviceGuard("orchestration.dispatch", dispatch(command), device, "full")).toBeUndefined();
+      expect(deviceGuard("orchestration.dispatch", dispatch(command), {})).toBeUndefined();
+    }
+    expect(asksFullAccess({ mode: "auto" })).toBe(false);
+  });
+
+  it("lets a limited device read, chat, answer, review and merge", () => {
+    for (const m of ["server.info", "model.subscribe", "fs.read", "fs.list", "fs.search", "vcs.threadDiff", "secret.provide", "pr.merge", "run.plan", "run.subscribe", "env.clients.list", "unsubscribe"]) expect(limited(m), m).toBeUndefined();
+    for (const command of [
+      { type: "thread.create", projectId: "p", provider: "claude", mode: "approval-required" },
+      { type: "thread.create", projectId: "p", provider: "claude" },
+      { type: "turn.request", threadId: "t", text: "hi" },
+      { type: "approval.respond", threadId: "t", requestId: "r", decision: "accept" },
+      { type: "user-input.respond", threadId: "t", requestId: "r", answers: {} },
+      { type: "thread.merge", threadId: "t" },
+      { type: "thread.publish", threadId: "t" },
+      { type: "thread.rollback", threadId: "t", turnId: "u", restoreFiles: true },
+      { type: "thread.archive", threadId: "t" },
+      { type: "thread.delete", threadId: "t" },
+    ]) expect(limited("orchestration.dispatch", dispatch(command)), command.type).toBeUndefined();
+  });
+});
+
+describe("R19 access levels: live", () => {
+  it("pairs limited by default, tells the device its level, and applies a change on the next call", async () => {
+    const phone = await pairDevice("phone");
+    expect(phone.access).toBe("limited");
+    const device = await socket(phone.token);
+    const owner = await socket(TOKEN);
+    try {
+      expect((await device.call<ServerInfo>("server.info", {})).access).toBe("limited");
+      expect((await owner.call<ServerInfo>("server.info", {})).access).toBeUndefined();
+      expect((await device.call<{ clients: PairedClient[] }>("env.clients.list", {})).clients[0]?.access).toBe("limited");
+
+      const refused = await device.expectError("pty.create", { cols: 80, rows: 24 });
+      expect(refused).toMatchObject({ code: "forbidden", message: LIMITED_REFUSAL });
+      expect((await device.expectError("pty.attach", { ptyId: "x" })).code).toBe("forbidden"); // streams are guarded too
+      expect((await device.expectError("fs.write", { threadId: "t", path: "a", content: "" })).code).toBe("forbidden");
+      expect((await device.expectError("settings.set", { patch: { environment: { name: "phone was here" } } })).code).toBe("forbidden");
+      const mode = await device.expectError("orchestration.dispatch", { command: { type: "thread.create", commandId: "c1", projectId: "p", provider: "claude", mode: "full-access" } });
+      expect(mode.code).toBe("forbidden");
+      expect((await device.expectError("env.clients.setAccess", { id: phone.clientId, access: "full" })).code).toBe("forbidden");
+
+      expect(await owner.call("env.clients.setAccess", { id: phone.clientId, access: "full" })).toEqual({ ok: true });
+      expect(await owner.call("env.clients.setAccess", { id: "nobody", access: "full" })).toEqual({ ok: false });
+      // same socket, next call
+      const renamed = await device.call<{ environment: { name: string } }>("settings.set", { patch: { environment: { name: "phone was here" } } });
+      expect(renamed.environment.name).toBe("phone was here");
+      expect((await device.call<ServerInfo>("server.info", {})).access).toBe("full");
+      const file = JSON.parse(readFileSync(join(home, "clients.json"), "utf8")) as { clients: { id: string; access?: string }[] };
+      expect(file.clients.find((c) => c.id === phone.clientId)?.access).toBe("full");
+
+      expect(await owner.call("env.clients.setAccess", { id: phone.clientId, access: "limited" })).toEqual({ ok: true });
+      expect((await device.expectError("settings.set", { patch: { environment: { name: "again" } } })).code).toBe("forbidden");
+    } finally {
+      device.close();
+      owner.close();
+    }
+  });
+
+  it("the owner can mint a full-access code over RPC", async () => {
+    const owner = await socket(TOKEN);
+    try {
+      const { code } = await owner.call<{ code: string }>("env.pairingCode", { access: "full" });
+      const res = await pairWith(code);
+      expect(((await res.json()) as PairResponse).access).toBe("full");
+    } finally {
+      owner.close();
+    }
   });
 });
 

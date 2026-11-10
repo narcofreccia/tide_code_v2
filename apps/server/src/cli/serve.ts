@@ -3,6 +3,7 @@ import { createApp } from "../app.ts";
 import { parseArgs, resolveConfig } from "../config.ts";
 import { pairingUrls } from "../rpc/env.ts";
 import { buildRemoteInfo, isLoopbackHost } from "../rpc/remote.ts";
+import { schemes } from "../rpc/tls.ts";
 import { RotatingLog, teeConsole } from "./logFile.ts";
 import { acquireHomeLock, hostLockProbes, releaseHomeLock, updateHomeLock } from "../homeLock.ts";
 import { PARENT_PID_ENV, parentPidFrom, watchParent } from "./parentWatch.ts";
@@ -24,14 +25,17 @@ export interface BannerInput {
   logPath?: string;
   /** R17: the mDNS responder is advertising this server */
   advertised?: boolean;
+  /** R19: the server listens with TLS (https/wss) */
+  tls?: boolean;
 }
 
 /** What `tide serve` prints once it listens. Pure so the wording is tested. */
 export function serveBanner(b: BannerInput): string {
   const lines = [
     `tide-server ${b.version} — "${b.name}" (env ${b.environmentId})`,
-    `  listening on ${b.host}:${b.port}  (ws://127.0.0.1:${b.port}/ws on this machine)`,
+    `  listening on ${b.host}:${b.port}  (${b.tls === true ? "wss" : "ws"}://127.0.0.1:${b.port}/ws on this machine)`,
   ];
+  if (b.tls === true) lines.push("  TLS: on (HTTPS and WSS)");
   if (b.lanUrls.length > 0) for (const url of b.lanUrls) lines.push(`  reachable at ${url}`);
   else if (isLoopbackHost(b.host)) lines.push("  loopback only: other machines cannot connect (use --host 0.0.0.0)");
   if (b.advertised === true) lines.push("  advertised on the LAN as _tide._tcp");
@@ -68,7 +72,8 @@ export async function runServe(args: string[], legacy: boolean): Promise<void> {
   // One server per TIDE_HOME (throws HomeInUseError, which bin.ts turns into its exit code).
   // Released from the exit hook so every way out (shutdown, a failed boot, a fatal error) drops it.
   const startedAt = Date.now();
-  const lock = { pid: process.pid, port: config.port, startedAt, version: config.version };
+  const certPath = config.tls?.certPath;
+  const lock = { pid: process.pid, port: config.port, startedAt, version: config.version, ...(certPath !== undefined ? { certPath } : {}) };
   await acquireHomeLock(config.tideHome, lock, config.environmentId, hostLockProbes());
   process.on("exit", () => releaseHomeLock(config.tideHome));
 
@@ -85,17 +90,18 @@ export async function runServe(args: string[], legacy: boolean): Promise<void> {
   }
   if (flags.name !== undefined && flags.name.trim().length > 0) app.settings.set({ environment: { name: flags.name.trim().slice(0, 64) } });
   const port = app.server?.port ?? config.port;
-  writeRuntime(config.tideHome, { pid: process.pid, host: config.host, port, startedAt: Date.now() });
+  writeRuntime(config.tideHome, { pid: process.pid, host: config.host, port, startedAt: Date.now(), ...(certPath !== undefined ? { certPath } : {}) });
   updateHomeLock(config.tideHome, { ...lock, port, environmentId: app.environmentId });
 
   const name = app.settings.get().environment.name;
   if (legacy) {
-    console.log(`tide-server listening on ws://${config.host}:${port}/ws (env ${app.environmentId}, "${name}")`);
-    console.log(`  health: http://${config.host}:${port}/health`);
+    const scheme = schemes(config.tls !== undefined);
+    console.log(`tide-server listening on ${scheme.ws}://${config.host}:${port}/ws (env ${app.environmentId}, "${name}")`);
+    console.log(`  health: ${scheme.http}://${config.host}:${port}/health`);
     console.log(`  providers: ${app.registry.list().join(", ") || "none"}`);
     if (config.dev || config.printToken) console.log(`  token: ${config.token}`);
   } else {
-    const remote = buildRemoteInfo({ host: config.host, port, token: config.token, includePairing: false });
+    const remote = buildRemoteInfo({ host: config.host, port, token: config.token, includePairing: false, tls: config.tls !== undefined });
     console.log(
       serveBanner({
         environmentId: app.environmentId,
@@ -110,6 +116,7 @@ export async function runServe(args: string[], legacy: boolean): Promise<void> {
         ...(config.webDir !== undefined ? { webDir: config.webDir } : {}),
         ...(logPath !== undefined ? { logPath } : {}),
         advertised: app.server?.discovery.advertising ?? false,
+        tls: config.tls !== undefined,
       }),
     );
   }

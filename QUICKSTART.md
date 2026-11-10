@@ -71,6 +71,10 @@ tide doctor                         # node, git/gh/rg, harness CLIs, TIDE_HOME, 
 From source, `tide` is `node --experimental-strip-types apps/server/src/bin.ts`. In a client,
 Environments → Add takes one of the printed URLs and the code. Details: `docs/internals/remote.md`.
 
+On the LAN this connection is plain HTTP and readable by anyone on the network ("Not encrypted" in
+the app). Encrypt it with `tailscale serve --bg 3777` or `tide serve --tls-cert <pem> --tls-key <pem>`:
+see "Encrypting the connection" in `docs/internals/remote.md`.
+
 ## 3. First ten minutes
 
 1. **Add a project.** Rail → `+ project`. Pick **New project** to start from nothing (Tide
@@ -158,6 +162,7 @@ asks for `--force`. The current database, `settings.json` and `uploads/` move to
 `~/.tide/pre-restore-<time>/` before the backup is copied in. `server.json` and `clients.json`
 are left alone, so the machine keeps its token and paired devices. The environment id is stored
 in the database, so a restored home answers with the id of the machine the backup came from.
+`tide restore <archive> --new-identity` gives it a fresh id instead: use it when the source machine keeps serving.
 Worktrees are not part of a backup: threads whose worktree folder is missing still load, and
 their work comes back from the thread branch on the remote, if it was pushed.
 

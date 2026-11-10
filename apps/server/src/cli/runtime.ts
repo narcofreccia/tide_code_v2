@@ -8,6 +8,8 @@ export interface RuntimeInfo {
   host: string;
   port: number;
   startedAt: number;
+  /** R19: the server listens with TLS using this certificate; local tools trust it for loopback calls */
+  certPath?: string;
 }
 
 export function tideHomeOf(env: NodeJS.ProcessEnv = process.env): string {
@@ -31,7 +33,7 @@ export function readRuntime(tideHome: string): RuntimeInfo | undefined {
   try {
     const raw = JSON.parse(readFileSync(file, "utf8")) as Partial<RuntimeInfo>;
     if (typeof raw.port !== "number" || typeof raw.host !== "string" || typeof raw.pid !== "number") return undefined;
-    return { pid: raw.pid, host: raw.host, port: raw.port, startedAt: raw.startedAt ?? 0 };
+    return { pid: raw.pid, host: raw.host, port: raw.port, startedAt: raw.startedAt ?? 0, ...(typeof raw.certPath === "string" ? { certPath: raw.certPath } : {}) };
   } catch {
     return undefined;
   }

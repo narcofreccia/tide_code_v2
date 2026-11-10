@@ -1,4 +1,5 @@
 import { networkInterfaces as osNetworkInterfaces, type NetworkInterfaceInfo } from "node:os";
+import { schemes } from "./tls.ts";
 
 export type Interfaces = NodeJS.Dict<NetworkInterfaceInfo[]>;
 
@@ -10,6 +11,8 @@ export interface RemoteInfo {
   pairingUrl?: string;
   /** R17: whether this server advertises itself over mDNS (absent when it never tried) */
   discovery?: { advertising: boolean };
+  /** R19: the server listens with TLS; `lanUrls` and `pairingUrl` carry wss/https */
+  tls?: boolean;
 }
 
 const LOOPBACK: ReadonlySet<string> = new Set(["127.0.0.1", "::1", "localhost", "0:0:0:0:0:0:0:1"]);
@@ -48,6 +51,8 @@ export interface RemoteInfoOptions {
   /** false for agent sockets: they must never see the pairing token */
   includePairing: boolean;
   interfaces?: Interfaces;
+  /** R19: the server listens with TLS */
+  tls?: boolean;
 }
 
 /**
@@ -57,13 +62,16 @@ export interface RemoteInfoOptions {
 export function buildRemoteInfo(options: RemoteInfoOptions): RemoteInfo {
   const { host, port, token, includePairing } = options;
   const ips = isLoopbackHost(host) ? [] : lanIps(options.interfaces ?? osNetworkInterfaces());
-  const lanUrls = ips.map((ip) => `ws://${ip}:${port}/ws`);
+  const tls = options.tls === true;
+  const scheme = schemes(tls);
+  const lanUrls = ips.map((ip) => `${scheme.ws}://${ip}:${port}/ws`);
   const pairHost = ips[0] ?? "127.0.0.1";
   return {
     host,
     port,
     lanUrls,
-    ...(includePairing ? { pairingUrl: `http://${pairHost}:${port}/pair#token=${token}` } : {}),
+    ...(includePairing ? { pairingUrl: `${scheme.http}://${pairHost}:${port}/pair#token=${token}` } : {}),
+    ...(tls ? { tls: true } : {}),
   };
 }
 
@@ -72,8 +80,8 @@ export function buildRemoteInfo(options: RemoteInfoOptions): RemoteInfo {
  * it prints the WebSocket URL and reads the token out of the URL fragment in the browser —
  * a fragment is never sent to the server, so the token stays off the wire and out of logs.
  */
-export function pairPage(remote: { lanUrls: string[]; port: number }): string {
-  const wsUrl = remote.lanUrls[0] ?? `ws://127.0.0.1:${remote.port}/ws`;
+export function pairPage(remote: { lanUrls: string[]; port: number; tls?: boolean }): string {
+  const wsUrl = remote.lanUrls[0] ?? `${schemes(remote.tls === true).ws}://127.0.0.1:${remote.port}/ws`;
   return `<!doctype html><html lang="en"><head><meta charset="utf-8">
 <meta name="viewport" content="width=device-width,initial-scale=1"><title>Pair with Tide</title>
 <style>
@@ -109,7 +117,7 @@ function escapeHtml(text: string): string {
  * `/` when this server has no built web client to serve. A pairing link (`/#pair=<code>`, what
  * `tide pair` encodes in its QR) shows the code so the user can type it into a Tide client.
  */
-export function landingPage(info: { name: string; version: string; port: number }): string {
+export function landingPage(info: { name: string; version: string; port: number; tls?: boolean }): string {
   return `<!doctype html><html lang="en"><head><meta charset="utf-8">
 <meta name="viewport" content="width=device-width,initial-scale=1"><title>Tide server</title>
 <style>
@@ -127,7 +135,7 @@ ol{margin:0;padding-left:18px;color:var(--dim)}li{margin:4px 0}[hidden]{display:
 <section id="pair" hidden><h2>Pairing code</h2><code id="code"></code></section>
 <section><h2>Add this machine to a Tide client</h2><ol>
 <li>On this machine, run <code>tide pair</code>. It prints a 6-digit code (valid 5 minutes, single use) and this server's URLs.</li>
-<li>In the client: Environments → Add → enter <code>${"http://&lt;this-host&gt;:" + String(info.port)}</code> and the code.</li>
+<li>In the client: Environments → Add → enter <code>${schemes(info.tls === true).http + "://&lt;this-host&gt;:" + String(info.port)}</code> and the code.</li>
 <li>The client exchanges the code for this server's token (<code>POST /api/auth/pair</code>) and keeps it.</li>
 </ol></section>
 </main><script>

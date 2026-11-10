@@ -2,6 +2,7 @@ import { execFile } from "node:child_process";
 import { accessSync, constants, existsSync, mkdirSync, readFileSync, rmSync, writeFileSync } from "node:fs";
 import { createServer } from "node:net";
 import { delimiter, join } from "node:path";
+import { loopbackFetch, trustFromFile } from "../loopback.ts";
 import { HARNESS_INSTALLS } from "../provider/installHints.ts";
 import { readRuntime, tideHomeOf } from "./runtime.ts";
 
@@ -123,9 +124,11 @@ const canListen = (port: number, host: string): Promise<boolean> =>
     probe.listen(port, host, () => probe.close(() => resolve(true)));
   });
 
-async function portState(port: number): Promise<"free" | "tide" | "busy"> {
+async function portState(port: number, certPath?: string): Promise<"free" | "tide" | "busy"> {
   try {
-    const res = await fetch(`http://127.0.0.1:${port}/api/env`, { signal: AbortSignal.timeout(2_000) });
+    // R19: a server with a certificate answers https only; the probe trusts that certificate
+    const trust = trustFromFile(certPath);
+    const res = await loopbackFetch(trust)(`${trust !== undefined ? "https" : "http"}://127.0.0.1:${port}/api/env`, { signal: AbortSignal.timeout(2_000) });
     const body = (await res.json()) as { environmentId?: unknown };
     if (typeof body.environmentId === "string") return "tide";
   } catch {
@@ -140,7 +143,7 @@ export function hostProbes(env: NodeJS.ProcessEnv = process.env): DoctorProbes {
   return {
     version,
     onPath,
-    port: portState,
+    port: (port) => portState(port, readRuntime(tideHomeOf(env))?.certPath),
     runtime: bun !== undefined ? { name: "bun", version: bun.version } : { name: "node", version: process.version },
     tideHome: tideHomeOf(env),
   };

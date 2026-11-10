@@ -42,6 +42,8 @@ export interface McpEnv {
   TIDE_SERVER_URL?: string | undefined;
   TIDE_AGENT_TOKEN?: string | undefined;
   TIDE_THREAD_ID?: string | undefined;
+  /** R19: path of the server's TLS certificate when it listens with TLS */
+  TIDE_SERVER_CA?: string | undefined;
 }
 
 /**

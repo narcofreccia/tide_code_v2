@@ -15,6 +15,7 @@ describe("parseCli", () => {
     const argv = ["serve", "--host", "0.0.0.0", "--port", "3800", "--data", "/d", "--name", "studio", "--web", "/w", "--log", "/l"];
     expect(parseCli(argv)).toEqual({ cmd: "serve", args: argv.slice(1), legacy: false });
     expect(() => parseCli(["serve", "--bogus"])).toThrow(CliError);
+    expect(parseCli(["serve", "--tls-cert", "/c.pem", "--tls-key", "/k.pem"])).toEqual({ cmd: "serve", args: ["--tls-cert", "/c.pem", "--tls-key", "/k.pem"], legacy: false });
     expect(() => parseCli(["serve", "stray"])).toThrow(/unexpected argument stray/);
     expect(() => parseCli(["serve", "--name"])).toThrow(/missing value/);
   });
@@ -27,6 +28,8 @@ describe("parseCli", () => {
     expect(parseCli(["pair", "--revoke", "abc123"])).toEqual({ cmd: "pair", qr: true, revoke: "abc123" });
     expect(() => parseCli(["pair", "--revoke"])).toThrow(/device id/);
     expect(() => parseCli(["pair", "--list", "--revoke", "x"])).toThrow(/exclusive/);
+    expect(parseCli(["pair", "--full"])).toEqual({ cmd: "pair", qr: true, full: true });
+    expect(() => parseCli(["pair", "--full", "--list"])).toThrow(/--full/);
     expect(parseCli(["doctor"])).toEqual({ cmd: "doctor" });
     expect(parseCli(["doctor", "--port", "4000"])).toEqual({ cmd: "doctor", port: 4000 });
     expect(parseCli(["service", "install", "--port", "3800", "--name", "box"])).toEqual({ cmd: "service", action: "install", serveArgs: ["--port", "3800", "--name", "box"] });

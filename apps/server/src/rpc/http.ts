@@ -164,15 +164,15 @@ function routes(ctx: HttpContext): Route[] {
         }
         // relayed attempts arrive from loopback: they share one stricter bucket (pairing.ts)
         const address = isRelayed(ctx, req) ? RELAY_BUCKET : (req.socket.remoteAddress ?? "unknown");
-        const outcome = ctx.pairing.exchange(code.trim(), address);
-        if (outcome === "rate-limited") {
+        const redeemed = ctx.pairing.redeem(code.trim(), address);
+        if (redeemed.outcome === "rate-limited") {
           res.setHeader("Retry-After", "60");
           return json(res, 429, { error: "rate-limited" });
         }
-        if (outcome === "invalid") return json(res, 401, { error: "invalid-code" });
+        if (redeemed.outcome === "invalid") return json(res, 401, { error: "invalid-code" });
         const deviceName = typeof name === "string" && name.trim() !== "" ? name.trim() : DEFAULT_CLIENT_NAME;
-        const minted = ctx.clientTokens.mint(deviceName, address);
-        const body: PairResponse = { environmentId: config.environmentId, name: ctx.envName(), token: minted.token, clientId: minted.id };
+        const minted = ctx.clientTokens.mint(deviceName, address, redeemed.access);
+        const body: PairResponse = { environmentId: config.environmentId, name: ctx.envName(), token: minted.token, clientId: minted.id, access: redeemed.access };
         json(res, 200, body);
       },
     },
@@ -239,7 +239,10 @@ export function createHttpHandler(ctx: HttpContext): (req: IncomingMessage, res:
     }
     if (hits.length > 0) return json(res, 405, { error: "method-not-allowed" });
     if (ctx.config.webDir !== undefined && (await serveStatic(ctx.config.webDir, method, url.pathname, res))) return;
-    if (method === "GET" && url.pathname === "/") return html(res, landingPage({ name: ctx.envName(), version: ctx.config.version, port: ctx.remote({ includePairing: false }).port }));
+    if (method === "GET" && url.pathname === "/") {
+      const remote = ctx.remote({ includePairing: false });
+      return html(res, landingPage({ name: ctx.envName(), version: ctx.config.version, port: remote.port, tls: remote.tls === true }));
+    }
     json(res, 404, { error: "not-found" });
   };
   return (req, res) => {

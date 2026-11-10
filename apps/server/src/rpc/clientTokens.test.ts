@@ -34,8 +34,8 @@ describe("ClientTokenStore", () => {
     expect(store.resolve(b.token)).toBe(b.id);
     expect(store.resolve("nope")).toBeUndefined();
     expect(store.list()).toEqual([
-      { id: a.id, name: "phone", createdAt: 1_000, lastSeenAt: 1_000, lastAddress: "10.0.0.5" },
-      { id: b.id, name: "laptop", createdAt: 1_000, lastSeenAt: 1_000, lastAddress: "10.0.0.6" },
+      { id: a.id, name: "phone", createdAt: 1_000, lastSeenAt: 1_000, lastAddress: "10.0.0.5", access: "limited" },
+      { id: b.id, name: "laptop", createdAt: 1_000, lastSeenAt: 1_000, lastAddress: "10.0.0.6", access: "limited" },
     ]);
     expect(store.revoke(a.id)).toBe(true);
     expect(store.revoke(a.id)).toBe(false);
@@ -55,9 +55,30 @@ describe("ClientTokenStore", () => {
 
     const reloaded = new ClientTokenStore({ path, now: () => 5 });
     expect(reloaded.resolve(token)).toBe(id);
-    expect(reloaded.list()).toEqual([{ id, name: "phone", createdAt: 5, lastSeenAt: 5, lastAddress: "10.0.0.5" }]);
+    expect(reloaded.list()).toEqual([{ id, name: "phone", createdAt: 5, lastSeenAt: 5, lastAddress: "10.0.0.5", access: "limited" }]);
     expect(reloaded.revoke(id)).toBe(true);
     expect(new ClientTokenStore({ path, now: () => 5 }).list()).toEqual([]);
+  });
+
+  it("R19: writes an explicit level, reads a pre-R19 row as full, and changes a level on disk", () => {
+    const path = scratch();
+    const hash = "a".repeat(64);
+    writeFileSync(path, JSON.stringify({ version: 1, clients: [{ id: "old", name: "old phone", createdAt: 5, hash }] }));
+    const store = new ClientTokenStore({ path, now: () => 5, random: counter() });
+    expect(store.accessOf("old")).toBe("full");
+    expect(store.list()[0]?.access).toBe("full");
+    const limited = store.mint("phone", "a");
+    const full = store.mint("laptop", "b", "full");
+    expect(onDisk(path).clients.map((c) => c["access"])).toEqual([undefined, "limited", "full"]);
+    expect(store.accessOf(limited.id)).toBe("limited");
+    expect(store.accessOf(full.id)).toBe("full");
+    expect(store.accessOf("nobody")).toBeUndefined();
+    expect(store.setAccess(limited.id, "full")).toBe(true);
+    expect(store.setAccess("nobody", "full")).toBe(false);
+    expect(new ClientTokenStore({ path, now: () => 5 }).accessOf(limited.id)).toBe("full");
+    // a row with a level Tide does not know is dropped, not widened
+    writeFileSync(path, JSON.stringify({ version: 1, clients: [{ id: "odd", name: "x", createdAt: 5, hash, access: "admin" }] }));
+    expect(new ClientTokenStore({ path, now: () => 5, log: () => undefined }).has("odd")).toBe(false);
   });
 
   it("ignores an unreadable file", () => {

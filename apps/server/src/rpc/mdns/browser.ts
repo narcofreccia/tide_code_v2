@@ -17,8 +17,8 @@ export interface BrowseOptions {
 
 const realTimers: BrowseTimers = { setTimeout: (fn, ms) => setTimeout(fn, ms) };
 
-function hostUrl(host: string, port: number): string {
-  return `http://${host.includes(":") ? `[${host}]` : host}:${port}`;
+function hostUrl(host: string, port: number, tls: boolean): string {
+  return `${tls ? "https" : "http"}://${host.includes(":") ? `[${host}]` : host}:${port}`;
 }
 
 /** The peer one response describes, or undefined when it is not a usable `_tide._tcp` answer. */
@@ -38,6 +38,8 @@ export function peerFrom(records: ResourceRecord[], from: Remote): DiscoveredPee
   const aaaa = records.find((r) => r.type === TYPE.AAAA && onTarget(r))?.address;
   const host = a ?? aaaa ?? from.address;
   const protocol = Number(txt["protocol"]);
+  // R19: a peer that serves HTTPS says `tls=1`
+  const tls = txt["tls"] === "1";
   return {
     environmentId,
     name: txt["name"] ?? instance.split(".")[0] ?? environmentId,
@@ -45,7 +47,8 @@ export function peerFrom(records: ResourceRecord[], from: Remote): DiscoveredPee
     protocol: Number.isFinite(protocol) ? protocol : 0,
     host,
     port,
-    urls: [hostUrl(host, port)],
+    urls: [hostUrl(host, port, tls)],
+    ...(tls ? { tls: true } : {}),
   };
 }
 

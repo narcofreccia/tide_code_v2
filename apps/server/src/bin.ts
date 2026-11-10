@@ -34,6 +34,7 @@ async function main(): Promise<number | undefined> {
           ...(command.host !== undefined ? { host: command.host } : {}),
           ...(command.list === true ? { list: true } : {}),
           ...(command.revoke !== undefined ? { revoke: command.revoke } : {}),
+          ...(command.full === true ? { full: true } : {}),
         }),
       );
       return 0;
@@ -71,7 +72,7 @@ async function main(): Promise<number | undefined> {
       const { runRestore } = await import("./cli/restore.ts");
       const { tideHomeOf } = await import("./cli/runtime.ts");
       const { resolve } = await import("node:path");
-      return runRestore({ archive: resolve(command.archive), force: command.force }, { tideHome: tideHomeOf(), log: (line) => console.log(line) });
+      return runRestore({ archive: resolve(command.archive), force: command.force, newIdentity: command.newIdentity }, { tideHome: tideHomeOf(), log: (line) => console.log(line) });
     }
     case "token": {
       const { rotateToken } = await import("./cli/token.ts");

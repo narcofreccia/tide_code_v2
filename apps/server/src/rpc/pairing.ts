@@ -1,4 +1,5 @@
 import { randomInt, timingSafeEqual } from "node:crypto";
+import type { DeviceAccess } from "@tide/contracts";
 
 export const PAIR_CODE_TTL_MS = 5 * 60_000;
 export const PAIR_ATTEMPTS_PER_MINUTE = 5;
@@ -16,6 +17,8 @@ const MAX_FAILURES_PER_CODE = 20;
 const WINDOW_MS = 60_000;
 
 export type PairOutcome = "ok" | "invalid" | "rate-limited";
+/** R19: a redeemed code says which level the new device gets */
+export type PairRedemption = { outcome: "ok"; access: DeviceAccess } | { outcome: "invalid" } | { outcome: "rate-limited" };
 
 /** Constant-time string compare (length leaks, content does not). */
 export function safeEqual(a: string, b: string): boolean {
@@ -35,7 +38,7 @@ export function safeEqual(a: string, b: string): boolean {
  * address and a code that collects too many wrong guesses is burnt.
  */
 export class PairingCodes {
-  #codes = new Map<string, { expiresAt: number }>();
+  #codes = new Map<string, { expiresAt: number; access: DeviceAccess }>();
   #attempts = new Map<string, number[]>();
   #failures = 0;
   #now: () => number;
@@ -46,14 +49,16 @@ export class PairingCodes {
     this.#ttlMs = options.ttlMs ?? PAIR_CODE_TTL_MS;
   }
 
-  issue(): { code: string; expiresAt: number } {
+  /** R19: the code pairs a device at `access` (default `limited`). */
+  issue(options: { access?: DeviceAccess } = {}): { code: string; expiresAt: number; access: DeviceAccess } {
     this.#sweep();
     let code: string;
     do code = String(randomInt(0, 1_000_000)).padStart(6, "0");
     while (this.#codes.has(code));
     const expiresAt = this.#now() + this.#ttlMs;
-    this.#codes.set(code, { expiresAt });
-    return { code, expiresAt };
+    const access = options.access ?? "limited";
+    this.#codes.set(code, { expiresAt, access });
+    return { code, expiresAt, access };
   }
 
   /**
@@ -61,12 +66,17 @@ export class PairingCodes {
    * `address` is the bucket: the socket's remote address, or RELAY_BUCKET for relayed attempts.
    */
   exchange(code: string, address: string): PairOutcome {
+    return this.redeem(code, address).outcome;
+  }
+
+  /** `exchange` plus the level the code was issued with. */
+  redeem(code: string, address: string): PairRedemption {
     const now = this.#now();
     const limit = address === RELAY_BUCKET ? RELAY_PAIR_ATTEMPTS_PER_MINUTE : PAIR_ATTEMPTS_PER_MINUTE;
     const recent = (this.#attempts.get(address) ?? []).filter((t) => now - t < WINDOW_MS);
     if (recent.length >= limit) {
       this.#attempts.set(address, recent);
-      return "rate-limited";
+      return { outcome: "rate-limited" };
     }
     recent.push(now);
     // re-insert so Map order is least-recently-attempted first, then evict past the bound
@@ -85,10 +95,11 @@ export class PairingCodes {
         this.#codes.clear();
         this.#failures = 0;
       }
-      return "invalid";
+      return { outcome: "invalid" };
     }
+    const access = this.#codes.get(match)?.access ?? "limited";
     this.#codes.delete(match);
-    return "ok";
+    return { outcome: "ok", access };
   }
 
   /** addresses currently tracked (tests) */
