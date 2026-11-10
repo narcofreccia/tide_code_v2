@@ -141,6 +141,9 @@ export type UsageSummary = Static<typeof UsageSummary>;
  * `POST /api/auth/pair {code}` → PairResponse (single-use code from `env.pairingCode` / `tide pair`);
  * `POST /hook/<hookId>` fires a webhook scheduled task (optionally `X-Tide-Signature: sha256=<hmac>`).
  */
+/** Bumped when the RPC/HTTP surface changes incompatibly. Servers advertise it (`GET /api/env`, `server.info`, mDNS); clients warn on a mismatch (R18). */
+export const PROTOCOL_VERSION = 1;
+
 export const EnvProbe = Type.Object({ environmentId: Type.String(), name: Type.String(), version: Type.String(), protocol: Type.Number() });
 export type EnvProbe = Static<typeof EnvProbe>;
 export const PairResponse = Type.Object({ environmentId: Type.String(), name: Type.String(), token: Type.String(), /** R17: id of the per-device token that was minted */ clientId: Type.Optional(Type.String()) });
@@ -332,8 +335,10 @@ export const GitSettings = Type.Object({
   confirmMergeBack: Type.Boolean(),
   /** R17: push `tide/*` thread branches to origin — never, after every checkpoint, or once when a merge back is requested */
   pushThreadBranches: Type.Union([Type.Literal("never"), Type.Literal("on-checkpoint"), Type.Literal("on-merge-request")]),
-  /** R17: before a merge back fetch + fast-forward the base from origin; after it push the base (one repo on several machines) */
+  /** R17: before a merge back fetch + fast-forward the base from origin; an unreachable origin merges locally with a warning (R18) */
   syncBaseWithRemote: Type.Boolean(),
+  /** R18: after a local merge back push the base to origin. Off by default: publishing the base is the user's call */
+  pushBaseAfterMerge: Type.Boolean(),
   /** R17: merge-back squash subjects and publish commit / PR text come from `textModel` (fallback `tide: <title>`) */
   generateMessages: Type.Boolean(),
 });

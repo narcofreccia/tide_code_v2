@@ -28,7 +28,7 @@ const SERVER: UserSettings = {
   limitPolicy: "reset",
   teams: [],
   inbox: { autoSettleAfterDays: 3, autoSettleOnMerge: true, workingSection: false },
-  git: { mergeStrategy: "squash", deleteBranchOnMerge: true, confirmMergeBack: true, pushThreadBranches: "never", syncBaseWithRemote: true, generateMessages: true },
+  git: { mergeStrategy: "squash", deleteBranchOnMerge: true, confirmMergeBack: true, pushThreadBranches: "never", syncBaseWithRemote: true, pushBaseAfterMerge: false, generateMessages: true },
   providerInstances: [],
   environment: { name: "mainbook" },
   glassBox: { limitsInStatusBar: true, readHarnessLogs: true },

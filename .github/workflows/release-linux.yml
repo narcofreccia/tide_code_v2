@@ -6,7 +6,7 @@
 #
 # Required repository secrets:
 #   TAURI_SIGNING_PRIVATE_KEY           contents of ~/.tauri/tidecode2.key
-#   TAURI_SIGNING_PRIVATE_KEY_PASSWORD  tidecode2
+#   TAURI_SIGNING_PRIVATE_KEY_PASSWORD  the password of that key (never written in this repo)
 #   R2_ACCESS_KEY_ID / R2_SECRET_ACCESS_KEY   the house r2 token (storage bucket)
 name: release-linux
 

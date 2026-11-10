@@ -7,8 +7,7 @@ import { dirname, join } from "node:path";
  */
 declare const TIDE_BUILD_VERSION: string | undefined;
 
-/** Bumped when the RPC/HTTP surface changes incompatibly; clients compare it via `GET /api/env`. */
-export const PROTOCOL_VERSION = 1;
+export { PROTOCOL_VERSION } from "@tide/contracts";
 
 const ROOT_PACKAGE = "tide-code-v2";
 

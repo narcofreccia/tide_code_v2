@@ -26,7 +26,7 @@ describe("Settings › Git merge-back defaults", () => {
   it("shows the server's values", () => {
     serve();
     useServerSettings.setState({
-      settings: { ...defaultUserSettings(), git: { mergeStrategy: "rebase", deleteBranchOnMerge: false, confirmMergeBack: true, pushThreadBranches: "never", syncBaseWithRemote: true, generateMessages: true } },
+      settings: { ...defaultUserSettings(), git: { mergeStrategy: "rebase", deleteBranchOnMerge: false, confirmMergeBack: true, pushThreadBranches: "never", syncBaseWithRemote: true, pushBaseAfterMerge: false, generateMessages: true } },
     });
     render(<GitSection />);
     expect(screen.getByRole("combobox", { name: "Merge back strategy" }).textContent).toContain("Rebase");
@@ -45,7 +45,7 @@ describe("Settings › Git merge-back defaults", () => {
     expect(rpc).toHaveBeenCalledWith("settings.set", { patch: { git: { deleteBranchOnMerge: false } } });
     await act(async () => fireEvent.click(screen.getByRole("switch", { name: "Ask before merging back from the inbox" })));
     expect(rpc).toHaveBeenCalledWith("settings.set", { patch: { git: { confirmMergeBack: false } } });
-    expect(useServerSettings.getState().settings.git).toEqual({ mergeStrategy: "merge", deleteBranchOnMerge: false, confirmMergeBack: false, pushThreadBranches: "never", syncBaseWithRemote: true, generateMessages: true });
+    expect(useServerSettings.getState().settings.git).toEqual({ mergeStrategy: "merge", deleteBranchOnMerge: false, confirmMergeBack: false, pushThreadBranches: "never", syncBaseWithRemote: true, pushBaseAfterMerge: false, generateMessages: true });
     expect(screen.getByText("Saved")).toBeDefined();
   });
 });
@@ -65,6 +65,6 @@ describe("Settings › Git remote and messages (R17)", () => {
     expect(rpc).toHaveBeenCalledWith("settings.set", { patch: { git: { syncBaseWithRemote: false } } });
     await act(async () => fireEvent.click(screen.getByRole("switch", { name: "Generate commit and PR messages" })));
     expect(rpc).toHaveBeenCalledWith("settings.set", { patch: { git: { generateMessages: false } } });
-    expect(useServerSettings.getState().settings.git).toMatchObject({ pushThreadBranches: "on-checkpoint", syncBaseWithRemote: false, generateMessages: false });
+    expect(useServerSettings.getState().settings.git).toMatchObject({ pushThreadBranches: "on-checkpoint", syncBaseWithRemote: false, pushBaseAfterMerge: false, generateMessages: false });
   });
 });

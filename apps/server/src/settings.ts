@@ -39,7 +39,7 @@ interface StoredSettings {
   titleInstructions?: string;
 }
 
-const DEFAULT_GIT: GitSettings = { mergeStrategy: "squash", deleteBranchOnMerge: true, confirmMergeBack: true, pushThreadBranches: "never", syncBaseWithRemote: true, generateMessages: true };
+const DEFAULT_GIT: GitSettings = { mergeStrategy: "squash", deleteBranchOnMerge: true, confirmMergeBack: true, pushThreadBranches: "never", syncBaseWithRemote: true, pushBaseAfterMerge: false, generateMessages: true };
 
 function loadGit(raw: unknown): Partial<GitSettings> {
   if (typeof raw !== "object" || raw === null) return {};
@@ -50,6 +50,7 @@ function loadGit(raw: unknown): Partial<GitSettings> {
     ...(typeof r.confirmMergeBack === "boolean" ? { confirmMergeBack: r.confirmMergeBack } : {}),
     ...(r.pushThreadBranches === "never" || r.pushThreadBranches === "on-checkpoint" || r.pushThreadBranches === "on-merge-request" ? { pushThreadBranches: r.pushThreadBranches } : {}),
     ...(typeof r.syncBaseWithRemote === "boolean" ? { syncBaseWithRemote: r.syncBaseWithRemote } : {}),
+    ...(typeof r.pushBaseAfterMerge === "boolean" ? { pushBaseAfterMerge: r.pushBaseAfterMerge } : {}),
     ...(typeof r.generateMessages === "boolean" ? { generateMessages: r.generateMessages } : {}),
   };
 }
