@@ -2,13 +2,16 @@ import type { Git } from "./git.ts";
 
 /**
  * R17 B4: one repository checked out on several machines meets at `origin`. Thread branches are
- * pushed there for review elsewhere, the base is fast-forwarded from it before a merge back and
- * pushed to it afterwards. Nothing here ever force-pushes or rewrites a branch: anything that is
+ * pushed there for review elsewhere, the base is fast-forwarded from it before a merge back and,
+ * only when the user asks for it, pushed to it afterwards. Nothing here ever force-pushes or rewrites a branch: anything that is
  * not a fast-forward is reported, in words, and left to the user.
  */
 
 /** fetch / push may cross a slow link; local git keeps its 120 s default */
 export const NETWORK_TIMEOUT_MS = 600_000;
+
+/** the fetch before a merge back: an unreachable origin must not hold the merge for minutes */
+export const SYNC_FETCH_TIMEOUT_MS = 15_000;
 
 const net = (git: Git): Git => git.withTimeout(NETWORK_TIMEOUT_MS);
 
@@ -41,12 +44,16 @@ export async function pushThreadBranch(git: Git, branch: string): Promise<PushRe
 
 export type FetchResult = { ok: true; found: boolean } | { ok: false; error: string };
 
-/** Updates `refs/remotes/origin/<base>` (explicit refspec: works without a tracking config). */
-export async function fetchBase(git: Git, base: string): Promise<FetchResult> {
-  const r = await net(git).tryRun(["fetch", "--quiet", "--no-tags", "origin", `+refs/heads/${base}:refs/remotes/origin/${base}`]);
+/**
+ * Updates `refs/remotes/origin/<base>` (explicit refspec: works without a tracking config).
+ * A timeout kills git and comes back as a failed run (`tryRun` never throws), usually with an
+ * empty stderr, so it reads as `ok: false` like any other unreachable origin.
+ */
+export async function fetchBase(git: Git, base: string, timeoutMs = NETWORK_TIMEOUT_MS): Promise<FetchResult> {
+  const r = await git.withTimeout(timeoutMs).tryRun(["fetch", "--quiet", "--no-tags", "origin", `+refs/heads/${base}:refs/remotes/origin/${base}`]);
   if (r.code === 0) return { ok: true, found: true };
   if (/couldn't find remote ref/i.test(r.stderr)) return { ok: true, found: false };
-  return { ok: false, error: firstLine(r.stderr, "git fetch failed") };
+  return { ok: false, error: firstLine(r.stderr, `no answer from origin within ${timeoutMs >= 1000 ? `${Math.round(timeoutMs / 1000)} s` : `${timeoutMs} ms`}`) };
 }
 
 /** `<base>` against `origin/<base>` as last fetched; undefined when either side is missing. */
@@ -91,17 +98,18 @@ export async function fastForwardBase(git: Git, base: string): Promise<FastForwa
   return { outcome: "fast-forwarded", sha: remote, commits: counts.behind };
 }
 
-export type SyncResult = { ok: true; note?: string } | { ok: false; note: string };
+export type SyncResult = { ok: true; note?: string; warning?: string } | { ok: false; note: string };
 
 /**
- * Before a merge back: fetch `origin/<base>` and fast-forward the local base to it, so a merge
- * never lands on a stale base. Unreachable origin, a dirty base checkout or a diverged base all
- * refuse (`ok: false`) with a sentence the user can act on.
+ * Before a merge back: fetch `origin/<base>` (short timeout) and fast-forward the local base to
+ * it, so a merge never lands on a stale base. When origin cannot be reached the merge goes ahead
+ * on the local base with a `warning`; a dirty base checkout that is behind, or a diverged base,
+ * refuse (`ok: false`) with a sentence the user can act on, because merging there would be wrong.
  */
 export async function syncBase(git: Git, base: string): Promise<SyncResult> {
-  const fetched = await fetchBase(git, base);
+  const fetched = await fetchBase(git, base, SYNC_FETCH_TIMEOUT_MS);
   if (!fetched.ok) {
-    return { ok: false, note: `could not fetch ${base} from origin (${fetched.error}); turn off "Sync the base branch with origin" in Settings › Git to merge offline` };
+    return { ok: true, warning: `could not check ${base} against origin (${fetched.error}); merging into the local ${base}` };
   }
   if (!fetched.found) return { ok: true };
   const ff = await fastForwardBase(git, base);

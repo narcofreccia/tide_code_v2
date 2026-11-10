@@ -71,11 +71,14 @@ Reactors subscribe to events and issue further commands; they hold no business r
   an `origin`): `pushThreadBranches` `on-checkpoint` pushes the committed `tide/*` branch after each
   after-checkpoint, `on-merge-request` commits pending work and pushes once before the merge; each
   push reports `branch.pushed`, a failure posts one info activity per failure streak. With
-  `syncBaseWithRemote` a local merge-back first fetches `origin/<base>` and fast-forwards the base
-  (clean checkout → `merge --ff-only`, no checkout → CAS `update-ref`); unreachable origin, a dirty
-  checkout or a diverged base answer `merge.report error` and nothing merges. After the merge the
-  base is pushed (`git push origin <base>`); a rejected push leaves the merge `merged` and posts an
-  error activity. Nothing is ever force-pushed. Network git runs with a 600 s timeout. A remote
+  `syncBaseWithRemote` a local merge-back first fetches `origin/<base>` (15 s timeout) and
+  fast-forwards the base (clean checkout → `merge --ff-only`, no checkout → CAS `update-ref`); a
+  dirty checkout behind origin or a diverged base answer `merge.report error` and nothing merges,
+  while an unreachable origin only posts a "Base not synced" info activity and the merge uses the
+  local base. With `pushBaseAfterMerge` (off by default, independent of the sync) the base is
+  pushed after the merge (`git push origin <base>`); a rejected push leaves the merge `merged` and
+  posts an error activity. Nothing is ever force-pushed. Pushes and explicit pulls run with a 600 s
+  timeout. A remote
   thread merges on its owner machine; `vcs.baseStatus` / `vcs.pullBase` (ff-only) let another
   machine see and pull the result. **Generated text** (`vcs/messages.ts`, `git.generateMessages`):
   the squash subject, a publish commit without a title and a new PR's title/body come from

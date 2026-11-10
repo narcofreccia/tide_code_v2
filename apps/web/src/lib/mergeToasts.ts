@@ -3,6 +3,7 @@ import { selectRepoSiblings } from "@tide/client";
 import type { MergeState, Project, ReadModel, Thread } from "@tide/contracts";
 import { envOfProject, envOfThread, useEnvironments } from "../state/environments.ts";
 import { call, useModel } from "../state/model.ts";
+import { defaultGitSettings, useServerSettings } from "../state/serverSettings.ts";
 import { showToast } from "../state/toast.ts";
 import { plural } from "./format.ts";
 
@@ -19,6 +20,8 @@ export interface PullContext {
   primaryId: string | undefined;
   envOfThread: (threadId: string) => string | undefined;
   envOfProject: (projectId: string) => string | undefined;
+  /** whether that machine pushes its base after a merge (`git.pushBaseAfterMerge`, off by default) */
+  pushesBase: (envId: string) => boolean;
 }
 
 function snapshot(model: ReadModel): Seen {
@@ -28,12 +31,14 @@ function snapshot(model: ReadModel): Seen {
 }
 
 /**
- * R17 B4: a thread merged on a machine other than the primary pushed its base there; the
- * primary's own checkout of the same repo (a sibling project) is what "Pull here" updates.
+ * R17 B4: a thread merged on a machine other than the primary, which pushed its base to origin
+ * (only with `pushBaseAfterMerge` on); the primary's own checkout of the same repo (a sibling
+ * project) is what "Pull here" updates. Without the push there is nothing new on origin to pull.
  */
 export function pullTargetFor(model: ReadModel, thread: Thread, ctx: PullContext): Project | undefined {
   const owner = ctx.envOfThread(thread.id);
   if (owner === undefined || ctx.primaryId === undefined || owner === ctx.primaryId) return undefined;
+  if (!ctx.pushesBase(owner)) return undefined;
   return selectRepoSiblings(model, thread.projectId).find((p) => ctx.envOfProject(p.id) === ctx.primaryId);
 }
 
@@ -77,8 +82,14 @@ export async function pullBaseHere(projectId: string, base: string): Promise<voi
   }
 }
 
+/** The owner's own settings (mirrored per environment); a machine not loaded yet counts as the default, off. */
+function pushesBase(envId: string): boolean {
+  const git = useServerSettings.getState().byEnv[envId]?.settings.git;
+  return { ...defaultGitSettings(), ...git }.pushBaseAfterMerge;
+}
+
 function pullContext(): PullContext {
-  return { primaryId: useEnvironments.getState().primaryId, envOfThread, envOfProject };
+  return { primaryId: useEnvironments.getState().primaryId, envOfThread, envOfProject, pushesBase };
 }
 
 /**

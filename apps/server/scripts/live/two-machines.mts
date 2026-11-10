@@ -23,13 +23,13 @@ const projA = pa.events.find((e: any) => e.event.type === "project.created").eve
 console.log("repo:", JSON.stringify(projA.repo));
 
 step("B: projectsDir setting + project.ensure (clone)");
-await B.call("settings.set", { patch: { environment: { projectsDir: `${L}/B` }, git: { pushThreadBranches: "on-merge-request" } } });
+await B.call("settings.set", { patch: { environment: { projectsDir: `${L}/B` }, git: { pushThreadBranches: "on-merge-request", pushBaseAfterMerge: true } } });
 const ens = await B.call<any>("project.ensure", { repo: { remoteUrl: projA.repo.remoteUrl, cloneUrl: projA.repo.cloneUrl, defaultBranch: projA.repo.defaultBranch }, title: "lanb" });
 console.log("ensure:", JSON.stringify(ens));
 const ens2 = await B.call<any>("project.ensure", { repo: { remoteUrl: projA.repo.remoteUrl, cloneUrl: projA.repo.cloneUrl, defaultBranch: projA.repo.defaultBranch }, title: "lanb" });
 console.log("ensure again (reuse):", JSON.stringify(ens2));
 
-step("B: thread with worktree, commit in it, thread.merge → base pushed");
+step("B: thread with worktree, commit in it, thread.merge → base pushed (pushBaseAfterMerge on)");
 const tb = await B.call<any>("orchestration.dispatch", { command: { type: "thread.create", projectId: ens.projectId, provider: "claude", mode: "auto", useWorktree: true, title: "work on B" } });
 const threadB = tb.events.find((e: any) => e.event.type === "thread.created").event.thread.id;
 let wt: string | undefined;

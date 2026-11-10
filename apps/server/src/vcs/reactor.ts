@@ -40,7 +40,7 @@ export interface VcsReactorOptions {
   onDetach?: (threadId: string, worktreePath: string) => void;
   /** a publish opened/updated the thread's PR or a merge landed: the PR watcher refreshes it */
   onPrChange?: (threadId: string) => void;
-  /** R17: `git.pushThreadBranches` / `syncBaseWithRemote` / `generateMessages`, read at event time; absent = all off */
+  /** R17/R18: `git.pushThreadBranches` / `syncBaseWithRemote` / `pushBaseAfterMerge` / `generateMessages`, read at event time; absent = all off */
   settings?: Pick<SettingsStore, "get">;
   /** R17 C5: harnesses for generated commit / PR text (`settings.git.generateMessages`) */
   oneShot?: OneShotDeps;
@@ -49,9 +49,12 @@ export interface VcsReactorOptions {
   log?: (msg: string, data?: unknown) => void;
 }
 
-const GIT_OFF: Pick<GitSettings, "pushThreadBranches" | "syncBaseWithRemote" | "generateMessages"> = {
+type ReactorGitSettings = Pick<GitSettings, "pushThreadBranches" | "syncBaseWithRemote" | "pushBaseAfterMerge" | "generateMessages">;
+
+const GIT_OFF: ReactorGitSettings = {
   pushThreadBranches: "never",
   syncBaseWithRemote: false,
+  pushBaseAfterMerge: false,
   generateMessages: false,
 };
 
@@ -272,7 +275,7 @@ export class VcsReactor {
     await this.#dispatch({ type: "activity.upsert", activity });
   }
 
-  #gitSettings(): Pick<GitSettings, "pushThreadBranches" | "syncBaseWithRemote" | "generateMessages"> {
+  #gitSettings(): ReactorGitSettings {
     return this.#settings?.get().git ?? GIT_OFF;
   }
 
@@ -509,6 +512,10 @@ export class VcsReactor {
    * Merge-back of the thread's branch into its base (see MergeBack). The outcome is reported as
    * `merge.report`; with `deleteBranch` the worktree goes through the ordinary detach path, the
    * `tide/*` branch is deleted and the thread's checkpoint refs are dropped.
+   *
+   * With an origin: `syncBaseWithRemote` fetches and fast-forwards the base before a local merge
+   * (an unreachable origin only warns; a dirty-behind or diverged base refuses), and
+   * `pushBaseAfterMerge` pushes the base after it. The two are independent; the push is off by default.
    */
   async #mergeBack(threadId: string, strategy: MergeStrategy, deleteBranch: boolean): Promise<void> {
     const ctx = this.#context(threadId);
@@ -516,16 +523,16 @@ export class VcsReactor {
     const { thread, project } = ctx;
     const gitSettings = this.#gitSettings();
     const root = this.#git(project.rootPath);
-    const remote = (gitSettings.pushThreadBranches !== "never" || gitSettings.syncBaseWithRemote) && (await hasOrigin(root));
+    const remote =
+      (gitSettings.pushThreadBranches !== "never" || gitSettings.syncBaseWithRemote || gitSettings.pushBaseAfterMerge) && (await hasOrigin(root));
     const local = !(await this.#merge.usesPr(thread));
     if (remote && gitSettings.pushThreadBranches === "on-merge-request") {
       await this.#merge.commitPending(thread).catch((err: unknown) => this.#log("[vcs] commit before push failed", err));
       await this.#pushBranch(threadId);
     }
-    const sync = remote && local && gitSettings.syncBaseWithRemote && thread.baseBranch !== undefined;
     let synced: string | undefined;
-    if (sync && thread.baseBranch !== undefined) {
-      // a stale base is never merged into: fast-forward from origin first, or refuse
+    if (remote && local && gitSettings.syncBaseWithRemote && thread.baseBranch !== undefined) {
+      // a known-stale base is never merged into: fast-forward from origin first, or refuse
       const before = await syncBase(root, thread.baseBranch);
       if (!before.ok) {
         await this.#dispatch({ type: "merge.report", threadId, outcome: "error", error: before.note });
@@ -533,6 +540,8 @@ export class VcsReactor {
         return;
       }
       synced = before.note;
+      // origin out of reach: the merge proceeds on the local base, and the thread says so
+      if (before.warning !== undefined) await this.#info(threadId, "info", `Base not synced: ${before.warning}`);
     }
     const result = await this.#merge.merge(project, thread, strategy, deleteBranch);
     if (result.outcome === "conflicted") {
@@ -563,7 +572,7 @@ export class VcsReactor {
     const where = result.pr !== undefined ? `via pull request #${result.pr.number}` : `(${strategy}${result.sha !== undefined ? ` ${result.sha.slice(0, 8)}` : ""})`;
     const notes = [synced, result.note].filter((n): n is string => n !== undefined).map((n) => `. ${n}`).join("");
     await this.#info(threadId, "info", `Merged ${thread.branch ?? "branch"} into ${thread.baseBranch ?? "base"} ${where}${notes}`);
-    if (sync && thread.baseBranch !== undefined && result.pr === undefined) {
+    if (remote && local && gitSettings.pushBaseAfterMerge && thread.baseBranch !== undefined && result.pr === undefined) {
       // the merge stands either way (settle already fired); a failed push is the user's to resolve
       const pushed = await pushBase(root, thread.baseBranch);
       if (!pushed.ok) await this.#info(threadId, "error", `${thread.baseBranch} merged locally but not pushed: ${pushed.error}`);

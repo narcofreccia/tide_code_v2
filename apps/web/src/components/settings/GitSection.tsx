@@ -41,6 +41,7 @@ export const META: SectionMeta = {
     "Pull requests",
     "Push thread branches to origin",
     "Sync the base branch with origin",
+    "Push the base branch after merging",
     "Generate commit and PR messages",
     "push",
     "pull",
@@ -140,12 +141,23 @@ export function GitSection() {
         />
         <SettingRow
           label="Sync the base branch with origin"
-          help="Before a merge back, fast-forward the base from origin (a stale or diverged base is refused); after it, push the base"
+          help="Before a merge back, fetch the base from origin and fast-forward it. A diverged base, or a dirty one behind origin, is refused; if origin cannot be reached, the merge uses the local base"
           control={(id) => (
             <SettingToggle
               id={id}
               checked={git.syncBaseWithRemote}
               onChange={(syncBaseWithRemote) => patchGit({ syncBaseWithRemote })}
+            />
+          )}
+        />
+        <SettingRow
+          label="Push the base branch after merging"
+          help="After a merge back, push the base to origin. Off: the merge stays on this machine until you push it"
+          control={(id) => (
+            <SettingToggle
+              id={id}
+              checked={git.pushBaseAfterMerge}
+              onChange={(pushBaseAfterMerge) => patchGit({ pushBaseAfterMerge })}
             />
           )}
         />

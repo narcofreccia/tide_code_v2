@@ -13,4 +13,5 @@ S=$S node --experimental-strip-types scripts/live/two-machines.mts    # repo ide
 ```
 
 `fresh-session.mts` needs a logged-in Claude; `two-machines.mts` needs none (the merge is a
-local commit) but uses the text model for the squash subject when one is available.
+local commit) but uses the text model for the squash subject when one is available. It turns on
+`git.pushBaseAfterMerge` on machine B (off by default), so B's merge reaches origin and A can pull it.

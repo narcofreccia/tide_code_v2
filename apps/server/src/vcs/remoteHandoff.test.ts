@@ -144,7 +144,7 @@ describe("B4 — thread branches through origin", { timeout: 20_000 }, () => {
 });
 
 describe("B4 — merge back against origin", { timeout: 20_000 }, () => {
-  it("fast-forwards a stale base from origin first, then pushes the merged base", async () => {
+  it("by default fast-forwards a stale base from origin first and leaves origin's base alone", async () => {
     const h = await harness(cleanups);
     const r = await withOrigin(h);
     const thread = await newThread(h, { useWorktree: true, title: "Feature" });
@@ -154,11 +154,49 @@ describe("B4 — merge back against origin", { timeout: 20_000 }, () => {
     const after = await merge(h, thread.id);
     expect(after.merge?.status).toBe("merged");
     expect(after.mergedAt).toBeDefined();
-    const main = await h.repo.git.revParse("refs/heads/main");
     expect(await h.repo.git.run(["merge-base", "--is-ancestor", fromB, "main"])).toBe("");
     expect((await h.repo.git.show("main", "feature.txt")).content).toBe("feature.txt\n");
-    expect(await remoteSha(r, "refs/heads/main")).toBe(main);
+    expect(await remoteSha(r, "refs/heads/main")).toBe(fromB);
     expect(texts(h, thread.id, "info").at(-1)).toMatch(/main fast-forwarded to origin \(1 new commit\)/);
+    expect(texts(h, thread.id, "error")).toEqual([]);
+  });
+
+  it("pushBaseAfterMerge pushes the merged base to origin", async () => {
+    const h = await harness(cleanups);
+    const r = await withOrigin(h);
+    setGit(h, { pushBaseAfterMerge: true });
+    const thread = await newThread(h, { useWorktree: true, title: "Feature" });
+    await uncommittedTurn(h, thread.id, "feature.txt");
+    await bCommitsToMain(r, "b.txt");
+
+    expect((await merge(h, thread.id)).merge?.status).toBe("merged");
+    expect(await remoteSha(r, "refs/heads/main")).toBe(await h.repo.git.revParse("refs/heads/main"));
+    expect(texts(h, thread.id, "error")).toEqual([]);
+  });
+
+  it("pushBaseAfterMerge pushes even with syncBaseWithRemote off", async () => {
+    const h = await harness(cleanups);
+    const r = await withOrigin(h);
+    setGit(h, { syncBaseWithRemote: false, pushBaseAfterMerge: true });
+    const thread = await newThread(h, { useWorktree: true, title: "Feature" });
+    await uncommittedTurn(h, thread.id, "feature.txt");
+    expect((await merge(h, thread.id)).merge?.status).toBe("merged");
+    expect(await remoteSha(r, "refs/heads/main")).toBe(await h.repo.git.revParse("refs/heads/main"));
+  });
+
+  it("an unreachable origin merges on the local base and says the base was not synced", async () => {
+    const h = await harness(cleanups);
+    await withOrigin(h);
+    const thread = await newThread(h, { useWorktree: true, title: "Feature" });
+    await uncommittedTurn(h, thread.id, "feature.txt");
+    await h.repo.git.run(["remote", "set-url", "origin", "/nonexistent/origin.git"]);
+
+    const after = await merge(h, thread.id);
+    expect(after.merge?.status).toBe("merged");
+    expect((await h.repo.git.show("main", "feature.txt")).content).toBe("feature.txt\n");
+    const infos = texts(h, thread.id, "info");
+    expect(infos.some((t) => /^Base not synced: could not check main against origin \(.+\); merging into the local main$/.test(t))).toBe(true);
+    expect(infos.at(-1)).toMatch(/^Merged tide\/feature into main/);
     expect(texts(h, thread.id, "error")).toEqual([]);
   });
 
@@ -181,6 +219,7 @@ describe("B4 — merge back against origin", { timeout: 20_000 }, () => {
   it("a rejected base push keeps the merge and says main was not pushed", async () => {
     const h = await harness(cleanups);
     const r = await withOrigin(h);
+    setGit(h, { pushBaseAfterMerge: true });
     const hook = join(r.origin, "hooks", "pre-receive");
     await writeFile(hook, "#!/bin/sh\nwhile read old new ref; do [ \"$ref\" = refs/heads/main ] && exit 1; done\nexit 0\n", "utf8");
     await chmod(hook, 0o755);

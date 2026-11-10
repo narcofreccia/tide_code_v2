@@ -1,5 +1,5 @@
 import { afterEach, describe, expect, it } from "vitest";
-import { baseAheadBehind, fastForwardBase, fetchBase, hasOrigin, pushBase, pushThreadBranch, syncBase } from "./remoteSync.ts";
+import { baseAheadBehind, fastForwardBase, fetchBase, hasOrigin, pushBase, pushThreadBranch, SYNC_FETCH_TIMEOUT_MS, syncBase } from "./remoteSync.ts";
 import { createRemotePair, type RemotePair } from "./testing/remoteRepos.ts";
 import { createTempRepo } from "./testing/tempRepo.ts";
 
@@ -91,12 +91,22 @@ describe("remoteSync", { timeout: 20_000 }, () => {
     expect(await baseAheadBehind(p.a.git, "main")).toEqual({ ahead: 1, behind: 0 });
   });
 
-  it("refuses to merge onto an unreachable origin", async () => {
+  it("an unreachable origin does not refuse: it warns that the local base is used", async () => {
     const p = await pair();
     await p.a.git.run(["remote", "set-url", "origin", "/nonexistent/origin.git"]);
     const r = await syncBase(p.a.git, "main");
-    expect(r.ok).toBe(false);
-    expect(r.note).toMatch(/^could not fetch main from origin/);
+    expect(r.ok).toBe(true);
+    expect(r.ok && r.warning).toMatch(/^could not check main against origin \(.+\); merging into the local main$/);
+  });
+
+  it("a fetch that hangs is cut by its timeout and reported, not thrown", async () => {
+    const p = await pair();
+    // origin answers only after 10 s; the fetch gives up after 300 ms
+    await p.a.git.run(["config", "remote.origin.uploadpack", "sleep 10; git-upload-pack"]);
+    const started = Date.now();
+    expect(await fetchBase(p.a.git, "main", 300)).toEqual({ ok: false, error: "no answer from origin within 300 ms" });
+    expect(Date.now() - started).toBeLessThan(5_000);
+    expect(SYNC_FETCH_TIMEOUT_MS).toBe(15_000);
   });
 
   it("pushes the base and explains a rejection", async () => {

@@ -40,10 +40,11 @@ describe("mergeOutcomeToasts", () => {
     const repo = { remoteUrl: "github.com/acme/app", cloneUrl: "git@github.com:acme/app.git", defaultBranch: "main", detectedAt: 1 };
     const project = (id: string): Project => ({ id, title: id, rootPath: `/${id}`, repo, createdAt: 1, updatedAt: 1 }) as Project;
     const owners: Record<string, string> = { "p-remote": "env-b", "p-here": "env-a", t1: "env-b" };
-    const ctx = (primaryId: string): PullContext => ({
+    const ctx = (primaryId: string, pushes = true): PullContext => ({
       primaryId,
       envOfThread: (id) => owners[id],
       envOfProject: (id) => owners[id],
+      pushesBase: () => pushes,
     });
     const model = modelWith({
       projects: { "p-remote": project("p-remote"), "p-here": project("p-here") },
@@ -54,5 +55,7 @@ describe("mergeOutcomeToasts", () => {
     ]);
     // merged on the primary itself: nothing to pull
     expect(mergeToastItems(new Map([["t1", undefined]]), model, ctx("env-b"))).toEqual([{ text: "Merged Fix into main" }]);
+    // the owner does not push its base (the default): origin has nothing new, so no pull is offered
+    expect(mergeToastItems(new Map([["t1", undefined]]), model, ctx("env-a", false))).toEqual([{ text: "Merged Fix into main" }]);
   });
 });

@@ -67,4 +67,16 @@ describe("Settings › Git remote and messages (R17)", () => {
     expect(rpc).toHaveBeenCalledWith("settings.set", { patch: { git: { generateMessages: false } } });
     expect(useServerSettings.getState().settings.git).toMatchObject({ pushThreadBranches: "on-checkpoint", syncBaseWithRemote: false, pushBaseAfterMerge: false, generateMessages: false });
   });
+
+  it("pushing the base after a merge is its own toggle, off by default (R18)", async () => {
+    const rpc = serve();
+    render(<GitSection />);
+    expect(screen.getByText(/fetch the base from origin and fast-forward it/).textContent).not.toMatch(/push/i);
+    const push = screen.getByRole("switch", { name: "Push the base branch after merging" }) as HTMLInputElement;
+    expect(push.checked).toBe(false);
+    expect(screen.getByText(/Off: the merge stays on this machine until you push it/)).toBeDefined();
+    await act(async () => fireEvent.click(push));
+    expect(rpc).toHaveBeenCalledWith("settings.set", { patch: { git: { pushBaseAfterMerge: true } } });
+    expect(useServerSettings.getState().settings.git).toMatchObject({ syncBaseWithRemote: true, pushBaseAfterMerge: true });
+  });
 });
