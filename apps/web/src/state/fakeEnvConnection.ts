@@ -1,4 +1,4 @@
-import { emptyReadModel, type ClientCommand, type ReadModel, type RpcChunk, type RpcInput, type RpcOutput, type StreamMethodName, type UnaryMethodName } from "@tide/contracts";
+import { emptyReadModel, type ClientCommand, type ReadModel } from "@tide/contracts";
 import type { EnvConnectionSnapshot, EnvironmentConnectionOptions, ModelStore, ModelStoreState, StreamHandle } from "@tide/client";
 import { setConnectionFactory, setFrameScheduler, type EnvConnectionLike } from "./envManager.ts";
 import { defaultUserSettings } from "./serverSettings.ts";
@@ -73,14 +73,16 @@ export class FakeEnvConnection implements EnvConnectionLike {
   }
 
   // prototype methods on purpose (like the real EnvironmentConnection): a caller that detaches
-  // `conn.call` loses `this` and must fail here as it did in production (R9 live check)
-  call<M extends UnaryMethodName>(method: M, params: RpcInput<M>): Promise<RpcOutput<M>> {
+  // `conn.call` loses `this` and must fail here as it did in production (R9 live check).
+  // Typed loosely (`unknown` in, `never` out) and not per method: comparing two generic
+  // signatures over the whole RPC table runs TypeScript into its instantiation limit (TS2589).
+  call(method: string, params: unknown): Promise<never> {
     this.calls.push({ method, params });
     const handler = this.handlers[method];
-    return (handler ? Promise.resolve(handler(params)) : Promise.reject(new Error(`unmocked ${method}`))) as Promise<RpcOutput<M>>;
+    return (handler ? Promise.resolve(handler(params)) : Promise.reject(new Error(`unmocked ${method}`))) as Promise<never>;
   }
 
-  stream<M extends StreamMethodName>(method: M, params: RpcInput<M>, _onChunk: (chunk: RpcChunk<M>) => void): StreamHandle {
+  stream(method: string, params: unknown, _onChunk: (chunk: never) => void): StreamHandle {
     this.streams.push({ method, params });
     return { id: `s${this.streams.length}`, cancel: () => undefined, done: new Promise<void>(() => undefined) };
   }

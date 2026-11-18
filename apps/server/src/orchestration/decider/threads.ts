@@ -162,6 +162,7 @@ export function decideThread(model: ReadModel, command: ThreadCommand, ctx: Deci
         limited: {
           ...(command.resetsAt !== undefined ? { resetsAt: command.resetsAt } : {}),
           ...(command.note !== undefined ? { note: command.note } : {}),
+          ...(command.window !== undefined ? { window: command.window } : {}),
           // a policy the user already chose for this thread wins over the global setting
           resume: thread.limited?.resume ?? ctx.limitPolicy ?? "manual",
           at: ctx.now,

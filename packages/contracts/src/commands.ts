@@ -1,5 +1,5 @@
 import { Type, type Static } from "typebox";
-import { Activity, ApprovalDecision, CheckpointStats, ExpertSpec, ExpertsPhase, ImageInput, InteractionMode, Limited, LinkAccess, MergeStrategy, ProviderKind, PullRequest, RateLimit, RuntimeMode, Schedule, SettleReason, Team, Triage, TurnUsage, HandoffJudge, Verdict, AttachmentRef, ProjectIcon, RunStack, RepoIdentity, TaskThreadMode } from "./domain.ts";
+import { Activity, ApprovalDecision, CheckpointStats, ExpertSpec, ExpertsPhase, ImageInput, InteractionMode, Limited, LinkAccess, MergeStrategy, ProviderKind, PullRequest, Quota, QuotaScope, QuotaState, LimitWindow, RateLimit, RuntimeMode, Schedule, SettleReason, Team, Triage, TurnUsage, HandoffJudge, Verdict, AttachmentRef, ProjectIcon, RunStack, RepoIdentity, TaskThreadMode } from "./domain.ts";
 
 // Commands = validated intents. ClientCommand may arrive over RPC; InternalCommand is
 // issued only by server reactors (driver ingestion) and is rejected at the RPC boundary.
@@ -258,6 +258,10 @@ export const ThreadSnooze = Type.Object({ type: Type.Literal("thread.snooze"), c
 export const ThreadResume = Type.Object({ type: Type.Literal("thread.resume"), commandId: CommandId, threadId: Type.String(), continue: Type.Optional(Type.Boolean()) });
 /** Choose what happens when the harness reports its limit: wait for the user, or resume at reset. */
 export const ThreadLimitPolicy = Type.Object({ type: Type.Literal("thread.limit-policy"), commandId: CommandId, threadId: Type.String(), resume: Limited.properties.resume });
+/** R20: set or (with `quota` absent) remove the usage cap of a project or a thread. */
+export const QuotaSet = Type.Object({ type: Type.Literal("quota.set"), commandId: CommandId, scope: QuotaScope, id: Type.String(), quota: Type.Optional(Quota) });
+/** R20: let a held scope run again until its window resets (a day for a cap with no window). */
+export const QuotaLift = Type.Object({ type: Type.Literal("quota.lift"), commandId: CommandId, scope: QuotaScope, id: Type.String() });
 /** Start/stop polling the thread's PR; a watched thread is woken on CI failure, new comments or conflicts. */
 export const PrWatch = Type.Object({ type: Type.Literal("pr.watch"), commandId: CommandId, threadId: Type.String(), enabled: Type.Boolean() });
 
@@ -326,6 +330,7 @@ export const ClientCommand = Type.Union([
   TurnSteer, TurnEdit, TurnReorder, TurnPromote, ThreadFork, ThreadSide, ThreadRollback, ThreadSnooze, ThreadResume, ThreadLimitPolicy, PrWatch, ThreadSettle, ThreadUnsettle,
   TaskCreate, TaskUpdate, TaskDelete, TaskRunNow, TeamRun,
   ExpertsCreate, ExpertsStart, ExpertsPost, ExpertsSetPhase, ExpertsArchive,
+  QuotaSet, QuotaLift,
 ]);
 export type ClientCommand = Static<typeof ClientCommand>;
 
@@ -445,7 +450,11 @@ export const RollbackReport = Type.Object({
   nativeSessionId: Type.Optional(Type.String()),
 });
 /** provider reactor: the harness stopped because the subscription window is exhausted */
-export const ThreadLimited = Type.Object({ type: Type.Literal("thread.limited"), threadId: Type.String(), resetsAt: Type.Optional(Type.Number()), note: Type.Optional(Type.String()) });
+export const ThreadLimited = Type.Object({ type: Type.Literal("thread.limited"), threadId: Type.String(), resetsAt: Type.Optional(Type.Number()), note: Type.Optional(Type.String()), window: Type.Optional(LimitWindow) });
+/** R20 quota worker: what it measured for a scope (dispatched on a status change or a coarse step only) */
+export const QuotaMeter = Type.Object({ type: Type.Literal("quota.meter"), scope: QuotaScope, id: Type.String(), state: QuotaState });
+/** R20 cost repair: add `usage` (a delta, negative to take cost back) to a turn's stored usage, once per turn */
+export const UsageCorrect = Type.Object({ type: Type.Literal("usage.correct"), turnId: Type.String(), usage: TurnUsage, reason: Type.String({ minLength: 1, maxLength: 200 }) });
 /** provider reactor: how the turn's handoff reached the harness */
 export const HandoffDelivered = Type.Object({ type: Type.Literal("handoff.delivered"), turnId: Type.String(), delivery: Type.Union([Type.Literal("inline"), Type.Literal("native")]) });
 
@@ -489,6 +498,7 @@ export const InternalCommand = Type.Union([
   WorktreeAttach, CheckpointRecord, PrUpdate, WorktreeDetachedReport, MergeReport, ThreadTriage, BranchPushed,
   SteerFallback, RollbackReport, ThreadLimited, HandoffDelivered, TaskFire,
   ExpertsExpertStatus, JudgeRecord, HandoffRefine,
+  QuotaMeter, UsageCorrect,
 ]);
 export type InternalCommand = Static<typeof InternalCommand>;
 

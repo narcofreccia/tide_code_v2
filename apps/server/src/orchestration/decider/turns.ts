@@ -183,6 +183,8 @@ export function decideTurn(model: ReadModel, command: TurnCommand, ctx: DecideCo
     case "usage.report": {
       const turn = model.turns[command.turnId];
       if (!turn) return fail("not-found", `unknown turn ${command.turnId}`);
+      const reporter = model.threads[turn.threadId];
+      const providerId = turn.providerId ?? turn.provider ?? (reporter !== undefined ? instanceKey(reporter) : undefined);
       return ok({
         type: "usage.reported",
         turnId: turn.id,
@@ -190,6 +192,8 @@ export function decideTurn(model: ReadModel, command: TurnCommand, ctx: DecideCo
         ...(command.usage !== undefined ? { usage: command.usage } : {}),
         ...(command.contextUsage !== undefined ? { contextUsage: command.contextUsage } : {}),
         ...(command.rateLimit !== undefined ? { rateLimit: command.rateLimit } : {}),
+        // R20: a rate-limit frame can precede `turn.started`, so the thread's instance stands in until the turn knows its own
+        ...(providerId !== undefined ? { providerId } : {}),
         at: ctx.now,
       });
     }

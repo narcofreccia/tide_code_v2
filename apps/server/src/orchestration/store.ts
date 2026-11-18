@@ -68,7 +68,13 @@ export function aggregateIdOf(event: DomainEvent): string | null {
     case "handoff.refined":
     case "branch.pushed":
     case "session.boundary":
+    case "usage.corrected":
+    case "turn.released":
       return event.threadId;
+    case "quota.changed":
+    case "quota.lifted":
+    case "quota.metered":
+      return event.id;
     case "judge.recorded":
       return event.target.id;
     case "handoff.recorded":

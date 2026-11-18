@@ -1,5 +1,5 @@
 import { Type, type Static } from "typebox";
-import { Activity, ApprovalDecision, CheckpointStats, ExpertsFinding, ExpertsMessage, ExpertsPhase, ExpertsSession, Handoff, ImageInput, Limited, MergeStrategy, Message, Project, ProjectLink, ProposedPlan, ProviderKind, PullRequest, RateLimit, ScheduledTask, SettleReason, Thread, Triage, Turn, TurnUsage, HandoffJudge, Verdict, ProjectIcon, RunStack, RepoIdentity } from "./domain.ts";
+import { Activity, ApprovalDecision, CheckpointStats, ExpertsFinding, ExpertsMessage, ExpertsPhase, ExpertsSession, Handoff, ImageInput, Limited, MergeStrategy, Message, Project, ProjectLink, ProposedPlan, ProviderKind, PullRequest, Quota, QuotaScope, QuotaState, RateLimit, ScheduledTask, SettleReason, Thread, Triage, Turn, TurnUsage, HandoffJudge, Verdict, ProjectIcon, RunStack, RepoIdentity } from "./domain.ts";
 
 // Events = persisted facts. Payloads are self-contained so the projector
 // never needs to look anything up outside the event.
@@ -179,8 +179,23 @@ export const UsageReported = evt("usage.reported", {
   usage: Type.Optional(TurnUsage),
   contextUsage: Type.Optional(Type.Object({ used: Type.Number(), window: Type.Number() })),
   rateLimit: Type.Optional(RateLimit),
+  /** R20: the instance that ran the turn (`Thread.providerId ?? Thread.provider`), so a windowed `rateLimit` can be filed under it */
+  providerId: Type.Optional(Type.String()),
   at: Type.Number(),
 });
+/**
+ * R20: adjusts a turn's stored usage after the fact (the cost repair). `usage` is a delta like
+ * any report and may be negative. Does not touch `Thread.updatedAt`: nothing happened in the thread.
+ */
+export const UsageCorrected = evt("usage.corrected", { turnId: Type.String(), threadId: Type.String(), usage: TurnUsage, reason: Type.String(), at: Type.Number() });
+/** R20: `quota` absent = the cap was removed (its measured state goes with it). */
+export const QuotaChanged = evt("quota.changed", { scope: QuotaScope, id: Type.String(), quota: Type.Optional(Quota), at: Type.Number() });
+/** R20: the user lifted a hold until `until`. */
+export const QuotaLifted = evt("quota.lifted", { scope: QuotaScope, id: Type.String(), until: Type.Number(), at: Type.Number() });
+/** R20: the quota worker's measurement; `state` is complete (a lift still in force is carried in it). */
+export const QuotaMetered = evt("quota.metered", { scope: QuotaScope, id: Type.String(), state: QuotaState });
+/** R20: a queued turn that a quota held (`turn.settled.holdQueue`) becomes the thread's live turn. */
+export const TurnReleased = evt("turn.released", { threadId: Type.String(), turnId: Type.String(), at: Type.Number() });
 export const AssistantDelta = evt("assistant.delta", {
   turnId: Type.String(),
   threadId: Type.String(),
@@ -200,6 +215,8 @@ export const TurnSettled = evt("turn.settled", {
   threadId: Type.String(),
   status: Type.Union([Type.Literal("completed"), Type.Literal("interrupted"), Type.Literal("error")]),
   error: Type.Optional(Type.String()),
+  /** R20: a quota holds this thread, so its oldest queued turn is not promoted; a `turn.released` starts it later */
+  holdQueue: Type.Optional(Type.Literal(true)),
   settledAt: Type.Number(),
 });
 
@@ -296,6 +313,7 @@ export const DomainEvent = Type.Union([
   RollbackRequested, RollbackCompleted, RollbackFailed,
   ThreadLimitedEvt, ThreadLimitPolicyChanged, ThreadSnoozed, ThreadResumed, PrWatchChanged, ThreadSettled, ThreadUnsettled,
   TaskCreated, TaskUpdated, TaskDeleted, TaskFired,
+  UsageCorrected, QuotaChanged, QuotaLifted, QuotaMetered, TurnReleased,
 ]);
 export type DomainEvent = Static<typeof DomainEvent>;
 export type EventOf<T extends DomainEvent["type"]> = Extract<DomainEvent, { type: T }>;

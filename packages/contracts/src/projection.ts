@@ -1,5 +1,6 @@
-import type { Activity, AttentionKind, ExpertsSession, Handoff, Message, Project, ReadModel, Thread, TimelineEntry, Turn, TurnUsage } from "./domain.ts";
+import type { Activity, AttentionKind, ExpertsSession, Handoff, Message, Project, ReadModel, Thread, TimelineEntry, Turn } from "./domain.ts";
 import type { DomainEvent, EventRecord } from "./events.ts";
+import { applyUsageEvent } from "./projectionUsage.ts";
 
 // Pure projector shared by server and clients. Returns a new model; never
 // mutates input. Unknown event types are ignored so old clients survive.
@@ -132,19 +133,6 @@ function findPendingByRequest<K extends "approval" | "user-input">(model: ReadMo
     if (a && a.kind === kind && a.requestId === requestId && a.status === "pending") return a;
   }
   return undefined;
-}
-
-function addUsage(prev: TurnUsage | undefined, delta: TurnUsage): TurnUsage {
-  if (!prev) return delta;
-  const sum = (a?: number, b?: number): number | undefined => (a === undefined && b === undefined ? undefined : (a ?? 0) + (b ?? 0));
-  const out: TurnUsage = { inputTokens: prev.inputTokens + delta.inputTokens, outputTokens: prev.outputTokens + delta.outputTokens };
-  const cr = sum(prev.cacheReadTokens, delta.cacheReadTokens);
-  const cw = sum(prev.cacheWriteTokens, delta.cacheWriteTokens);
-  const cost = sum(prev.costUsd, delta.costUsd);
-  if (cr !== undefined) out.cacheReadTokens = cr;
-  if (cw !== undefined) out.cacheWriteTokens = cw;
-  if (cost !== undefined) out.costUsd = cost;
-  return out;
 }
 
 function upsertActivity(model: ReadModel, activity: Activity): ReadModel {
@@ -431,19 +419,13 @@ export function applyEvent(model: ReadModel, event: DomainEvent): ReadModel {
     }
     case "plan.progressed":
       return withThread(model, event.threadId, { planProgress: { steps: event.steps, updatedAt: event.at }, updatedAt: event.at });
-    case "usage.reported": {
-      // every report is a delta: a turn's usage is the sum of its reports, a thread's cost the sum of its turns'
-      const turn = model.turns[event.turnId];
-      let next: ReadModel = model;
-      if (turn && event.usage) next = { ...next, turns: { ...next.turns, [turn.id]: { ...turn, usage: addUsage(turn.usage, event.usage) } } };
-      const t = next.threads[event.threadId];
-      if (!t) return next;
-      const patch: Partial<Thread> = { updatedAt: event.at };
-      if (event.contextUsage) patch.contextUsage = event.contextUsage;
-      if (event.rateLimit) patch.rateLimit = event.rateLimit;
-      if (event.usage?.costUsd !== undefined) patch.totalCostUsd = (t.totalCostUsd ?? 0) + event.usage.costUsd;
-      return withThread(next, event.threadId, patch);
-    }
+    case "usage.reported":
+    case "usage.corrected":
+    case "quota.changed":
+    case "quota.lifted":
+    case "quota.metered":
+    case "turn.released":
+      return applyUsageEvent(model, event);
     case "turn.settled": {
       const turn = model.turns[event.turnId];
       let messages = model.messages;
@@ -477,8 +459,9 @@ export function applyEvent(model: ReadModel, event: DomainEvent): ReadModel {
         const provider = turn?.providerId ?? turn?.provider;
         const known = provider === undefined ? undefined : t.providerSessions?.[provider];
         if (provider !== undefined && known !== undefined) patched.providerSessions = { ...t.providerSessions, [provider]: { ...known, lastTurnId: event.turnId } };
-        // the oldest queued turn becomes the live one; the thread never goes idle in between
-        const queued = Object.values(next.turns)
+        // the oldest queued turn becomes the live one; the thread never goes idle in between.
+        // R20: unless a quota holds the thread: then it goes idle with its queue, until a `turn.released`
+        const queued = event.holdQueue === true ? undefined : Object.values(next.turns)
           .filter((x) => x.threadId === t.id && x.status === "queued")
           .sort((a, b) => a.requestedAt - b.requestedAt)[0];
         if (queued) {

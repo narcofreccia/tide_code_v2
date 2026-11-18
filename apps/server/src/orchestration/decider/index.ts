@@ -6,6 +6,7 @@ import { decideJudge } from "./judge.ts";
 import { decidePlan } from "./plans.ts";
 import { decideLineage } from "./lineage.ts";
 import { decideProject } from "./projects.ts";
+import { decideQuota } from "./quota.ts";
 import { decideSide } from "./side.ts";
 import { decideSteer } from "./steer.ts";
 import { decideTask } from "./tasks.ts";
@@ -127,6 +128,12 @@ export function decide(model: ReadModel, command: Command, ctx: DecideContext): 
     case "judge.record":
     case "handoff.refine":
       return decideJudge(model, command, ctx);
+
+    case "quota.set":
+    case "quota.lift":
+    case "quota.meter":
+    case "usage.correct":
+      return decideQuota(model, command, ctx);
 
     default: {
       const _exhaustive: never = command;

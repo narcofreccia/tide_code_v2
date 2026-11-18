@@ -41,6 +41,7 @@ export const METHOD_ACCESS: Record<keyof typeof rpcMethods, AccessNeeded> = {
   "ports.list": "limited",
   "project.detectIcon": "limited",
   "usage.summary": "limited",
+  "usage.repair": "full",
   "providers.acpRegistry": "limited",
   "threads.search": "limited",
   "thread.regenerateTitle": "limited",
@@ -139,6 +140,9 @@ export const COMMAND_ACCESS: Record<ClientCommand["type"], AccessNeeded> = {
   "thread.snooze": "limited",
   "thread.resume": "limited",
   "thread.limit-policy": "limited",
+  // R20: the cap is the owner's guard on their subscription; a limited device neither changes nor lifts it
+  "quota.set": "full",
+  "quota.lift": "full",
   "pr.watch": "limited",
   "thread.settle": "limited",
   "thread.unsettle": "limited",
