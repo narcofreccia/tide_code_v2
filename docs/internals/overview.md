@@ -52,7 +52,9 @@ Reactors subscribe to events and issue further commands; they hold no business r
   full or delta — goes inline as `handoff.text + "---" + "User message:"` ahead of the prompt.
   Either way `handoff.delivered` records how. **Limits**: a `usage` report with
   `rateLimit.status: limited`, or an error matching the usage-limit wording, dispatches
-  `thread.limited` after the settle.
+  `thread.limited` (with the report's window) after the settle, and that settle carries
+  `holdQueue`, so queued turns do not run into the same limit. A `turn.released` event starts a
+  held turn the way a promoted queued turn starts.
 - `Scheduler` (`scheduling/`) — every 5 s dispatches `task.fire` for enabled `ScheduledTask`s whose
   `nextRunAt` is due (commandId `scheduled:<task>:<nextRunAt>` so ticks and restarts never double-fire;
   `nextFireAt` is computed from now, so missed fixed slots are skipped and an overdue interval fires once;
@@ -116,8 +118,15 @@ Reactors subscribe to events and issue further commands; they hold no business r
   rolled-back turns' checkpoint refs, then (c) `rollback.report`. The session stays open: the
   native id may change after a rollback (Pi, Claude) and the next `turn.start` records it.
   Recovery reports a rollback left `rolling` by a dead process as failed.
-- `LimitsWorker` (`orchestration/limits.ts`) — every 60 s, a limited thread whose policy is
-  `reset` and whose `resetsAt` has passed gets `thread.resume { continue: true }`.
+- `LimitsWorker` (`orchestration/limits.ts`) — every 60 s, from `limitPhase` (contracts
+  `quota.ts`): a limited thread whose policy is `reset` and whose window reopened (its `resetsAt`
+  passed, or the account's gauge answered open since) gets `thread.resume { continue: true }`. No
+  reset time and nothing heard: a probe after 60 minutes, then with doubling waits. Settled,
+  archived and running threads are skipped, one resume per instance per tick, a refusal backs off
+  instead of ending the retries. A `manual` thread is never resumed: the web shows "Limit reset,
+  continue?" and lists it in the Inbox. Settling or archiving a limited thread clears the limit.
+- `QuotaWorker` (`quota/worker.ts`) — meters usage quotas and records `quota.meter` on a change;
+  the hold is enforced in `decide()` (`decider/quotaGate.ts`). See `usage.md`, "Quotas".
 - `SettlementReactor` (`orchestration/settlement.ts`) — on the event that sets `mergedAt` (`pr.updated`
   merged, once per thread even when later syncs repeat the forge's `mergedAt` / `merge.completed`) and every 10 min for threads idle past `inbox.autoSettleAfterDays`, sends
   `thread.settle { reason }`; the decider refuses it for running, waiting, pinned or opted-out threads.
