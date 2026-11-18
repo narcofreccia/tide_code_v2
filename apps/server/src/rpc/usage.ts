@@ -1,9 +1,13 @@
 import { homedir } from "node:os";
-import type { Engine } from "../orchestration/engine.ts";
+import { join } from "node:path";
+import { CommandError, type Engine } from "../orchestration/engine.ts";
+import type { EventStore } from "../orchestration/store.ts";
 import type { SettingsStore } from "../settings.ts";
 import { ExternalCache, scanExternal, type ExternalResult } from "../usage/external.ts";
 import { UsageIndex } from "../usage/index.ts";
+import { claudeConfigDirs, costStateReader, type CostStateReader } from "../usage/ingest/costStates.ts";
 import { exclusionFrom } from "../usage/ingest/dedupe.ts";
+import { planRepair, REPAIR_REASON, repairTotals, scanRepairEvents } from "../usage/repair.ts";
 import { summarize } from "../usage/summary.ts";
 import { DAY_MS } from "../usage/types.ts";
 import { RpcException, type RpcRouter } from "./router.ts";
@@ -19,13 +23,20 @@ export interface UsageHandlerDeps {
   now?: () => number;
   /** tests replace the scan */
   scan?: typeof scanExternal;
+  /** `usage.repair` reads the stored reports from the log */
+  store?: Pick<EventStore, "readAll">;
+  /** tests replace the transcript reader (default: Claude's config dirs under `home`) */
+  costStates?: CostStateReader;
 }
 
 export const DEFAULT_WINDOW_MS = 30 * DAY_MS;
 /** a wider window would make a cold scan read years of logs */
 export const MAX_WINDOW_MS = 400 * DAY_MS;
 
-/** `usage.summary`: Tide's turns plus (opt-in by setting) the harnesses' own local logs. */
+/**
+ * `usage.summary`: Tide's turns plus (opt-in by setting) the harnesses' own local logs.
+ * `usage.repair`: the R20 cost repair (dry run unless `apply`).
+ */
 export function registerUsageHandlers(router: RpcRouter, deps: UsageHandlerDeps): void {
   const now = deps.now ?? Date.now;
   const cache = new ExternalCache({ now });
@@ -70,4 +81,38 @@ export function registerUsageHandlers(router: RpcRouter, deps: UsageHandlerDeps)
       ...(externalNote !== undefined ? { externalNote } : {}),
     });
   });
+
+  router.register("usage.repair", async (input) => {
+    if (deps.store === undefined) throw new RpcException("internal", "the event log is not available to this server");
+    const home = deps.home ?? homedir();
+    const instanceHomes = (deps.settings?.get().providerInstances ?? []).flatMap((p) => (p.kind === "claude" && p.home !== undefined ? [expandHome(p.home, home)] : []));
+    const read = deps.costStates ?? costStateReader(claudeConfigDirs(home, process.env, instanceHomes));
+    const scan = scanRepairEvents(deps.store.readAll());
+    const costStates = new Map<string, number[]>();
+    for (const session of scan.sessions) {
+      const totals = await read(session.id).catch(() => undefined);
+      if (totals !== undefined) costStates.set(session.id, totals);
+    }
+    const model = deps.engine.getModel();
+    const rows = planRepair({ scan, costStates, titleOf: (id) => model.threads[id]?.title });
+    let applied = 0;
+    if (input.apply === true) {
+      for (const row of rows) {
+        if (row.applied || (row.evidence === "heuristic" && input.includeHeuristic !== true)) continue;
+        try {
+          await deps.engine.dispatch({ type: "usage.correct", turnId: row.turnId, usage: { inputTokens: 0, outputTokens: 0, costUsd: row.correctedUsd - row.storedUsd }, reason: REPAIR_REASON });
+          applied++;
+        } catch (err) {
+          // corrected meanwhile (another repair run): it is applied all the same
+          if (!(err instanceof CommandError && err.code === "conflict")) throw err;
+        }
+        row.applied = true;
+      }
+    }
+    return repairTotals(rows, applied);
+  });
+}
+
+function expandHome(path: string, home: string): string {
+  return path === "~" ? home : path.startsWith("~/") ? join(home, path.slice(2)) : path;
 }

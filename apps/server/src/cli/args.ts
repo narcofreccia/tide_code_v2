@@ -13,7 +13,8 @@ export type CliCommand =
   | { cmd: "update"; check: boolean; yes: boolean }
   | { cmd: "backup"; out?: string; includeKeys: boolean }
   | { cmd: "restore"; archive: string; force: boolean; newIdentity: boolean }
-  | { cmd: "token"; action: "rotate" };
+  | { cmd: "token"; action: "rotate" }
+  | { cmd: "usage"; action: "repair"; apply: boolean; includeHeuristic: boolean };
 
 export class CliError extends Error {}
 
@@ -46,6 +47,10 @@ export const USAGE = `usage:
   tide token rotate
              write a new master token to <TIDE_HOME>/server.json (restart the server to use it);
              devices paired with a code keep working, holders of the old master token pair again
+  tide usage repair [--apply] [--include-heuristic]
+             find usage reports where a resumed Claude session stored its cumulative cost as one
+             turn's (a dry run unless --apply); rows the session transcript confirms are corrected,
+             rows inferred without it only with --include-heuristic; needs the server running
   tide --version
   tide --mcp  (internal: the Tide MCP stdio server)
 
@@ -165,6 +170,17 @@ export function parseCli(argv: string[]): CliCommand {
     case "token": {
       if (rest.length === 1 && rest[0] === "rotate") return { cmd: "token", action: "rotate" };
       throw new CliError("usage: tide token rotate");
+    }
+    case "usage": {
+      const [action, ...flags] = rest;
+      if (action !== "repair") throw new CliError("usage: tide usage repair [--apply] [--include-heuristic]");
+      const out: { cmd: "usage"; action: "repair"; apply: boolean; includeHeuristic: boolean } = { cmd: "usage", action, apply: false, includeHeuristic: false };
+      for (const arg of flags) {
+        if (arg === "--apply") out.apply = true;
+        else if (arg === "--include-heuristic") out.includeHeuristic = true;
+        else throw new CliError(`unknown argument ${arg} for tide usage repair`);
+      }
+      return out;
     }
     default:
       // flags without a subcommand: the original `tide-server --port … --host …` form

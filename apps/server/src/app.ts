@@ -18,6 +18,7 @@ import type { DecideDefaults } from "./orchestration/decider/index.ts";
 import { Engine } from "./orchestration/engine.ts";
 import { DelegateWaits, DelegationReactor, type CancelTimer } from "./orchestration/delegation.ts";
 import { LimitsWorker } from "./orchestration/limits.ts";
+import { harnessLogSpend, QuotaWorker } from "./quota/worker.ts";
 import { SettlementReactor } from "./orchestration/settlement.ts";
 import { markChildrenLost, threadsWithBackgroundChildren } from "./orchestration/background.ts";
 import { continueAfterRestart, recoverLostChildren, recoverRollbacks, recoverUnsettledTurns, SHUTDOWN_ERROR, unsettledTurns } from "./orchestration/recovery.ts";
@@ -101,6 +102,8 @@ export interface App {
   vcs: VcsReactor;
   rollback: RollbackService;
   limits: LimitsWorker;
+  /** R20: meters project and thread quotas */
+  quotas: QuotaWorker;
   settlement: SettlementReactor;
   delegation: DelegationReactor;
   delegateWaits: DelegateWaits;
@@ -217,6 +220,8 @@ export async function createApp(options: AppOptions): Promise<App> {
   rollback.start();
   const limits = new LimitsWorker({ engine, log });
   limits.start();
+  const quotas = new QuotaWorker({ engine, settings, outside: harnessLogSpend({ engine, tideHome: config.tideHome }), log });
+  quotas.start();
   const settlement = new SettlementReactor({ engine, settings, log });
   settlement.start();
   prWatch.start();
@@ -334,6 +339,7 @@ export async function createApp(options: AppOptions): Promise<App> {
     vcs,
     rollback,
     limits,
+    quotas,
     settlement,
     delegation,
     delegateWaits,
@@ -354,6 +360,7 @@ export async function createApp(options: AppOptions): Promise<App> {
       repoBackfill.stop();
       rollback.stop();
       limits.stop();
+      quotas.stop();
       settlement.stop();
       // delegation keeps listening until the sessions closed (see below)
       for (const site of decisionSites) site.stop();
@@ -380,7 +387,7 @@ export async function createApp(options: AppOptions): Promise<App> {
 
       // 3. give the reactors a bounded window to finish their git/driver work before the
       //    store they write into is closed under them
-      await withTimeout(Promise.all([reactor.drain(), vcs.drain(), triage.drain(), rollback.drain(), prWatch.drain(), scheduler.drain(), delegation.drain(), ...decisionSites.map((site) => site.drain())]), options.shutdownTimeoutMs ?? DEFAULT_SHUTDOWN_TIMEOUT_MS, log);
+      await withTimeout(Promise.all([reactor.drain(), vcs.drain(), quotas.drain(), triage.drain(), rollback.drain(), prWatch.drain(), scheduler.drain(), delegation.drain(), ...decisionSites.map((site) => site.drain())]), options.shutdownTimeoutMs ?? DEFAULT_SHUTDOWN_TIMEOUT_MS, log);
 
       workspace.close();
       await sessions.closeAll();

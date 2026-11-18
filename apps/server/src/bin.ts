@@ -74,6 +74,18 @@ async function main(): Promise<number | undefined> {
       const { resolve } = await import("node:path");
       return runRestore({ archive: resolve(command.archive), force: command.force, newIdentity: command.newIdentity }, { tideHome: tideHomeOf(), log: (line) => console.log(line) });
     }
+    case "usage": {
+      // R20: goes through the running server's RPC; a server that is not up is said in plain words
+      const { runUsageRepair, UsageCliError } = await import("./cli/usage.ts");
+      try {
+        console.log(await runUsageRepair({ apply: command.apply, includeHeuristic: command.includeHeuristic }));
+        return 0;
+      } catch (err) {
+        if (!(err instanceof UsageCliError)) throw err;
+        console.error(`tide: ${err.message}`);
+        return 1;
+      }
+    }
     case "token": {
       const { rotateToken } = await import("./cli/token.ts");
       console.log(rotateToken());

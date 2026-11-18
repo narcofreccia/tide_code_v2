@@ -1,0 +1,3542 @@
+{
+ "note": "Numbers from a real thread whose Claude session was resumed many times (ids replaced). costStates are the cost-state lines of the session transcript.",
+ "events": [
+  {
+   "seq": 17166,
+   "ts": 1793566764990,
+   "type": "turn.started",
+   "turnId": "turn-1",
+   "nativeSessionId": "session-1",
+   "provider": "claude"
+  },
+  {
+   "seq": 17430,
+   "ts": 1793566868649,
+   "type": "usage.reported",
+   "turnId": "turn-1",
+   "costUsd": 4.3750628,
+   "inputTokens": 226,
+   "outputTokens": 6656
+  },
+  {
+   "seq": 17433,
+   "ts": 1793566869262,
+   "type": "turn.settled",
+   "turnId": "turn-1",
+   "status": "completed"
+  },
+  {
+   "seq": 17711,
+   "ts": 1793566983486,
+   "type": "turn.started",
+   "turnId": "turn-2",
+   "nativeSessionId": "session-1",
+   "provider": "claude"
+  },
+  {
+   "seq": 17726,
+   "ts": 1793566987924,
+   "type": "usage.reported",
+   "turnId": "turn-2",
+   "costUsd": 3.96079525,
+   "inputTokens": 4,
+   "outputTokens": 32
+  },
+  {
+   "seq": 17728,
+   "ts": 1793566987936,
+   "type": "turn.settled",
+   "turnId": "turn-2",
+   "status": "completed"
+  },
+  {
+   "seq": 17737,
+   "ts": 1793567056984,
+   "type": "turn.started",
+   "turnId": "turn-3",
+   "nativeSessionId": "session-1",
+   "provider": "claude"
+  },
+  {
+   "seq": 17774,
+   "ts": 1793567117117,
+   "type": "usage.reported",
+   "turnId": "turn-3",
+   "costUsd": 1.0697217,
+   "inputTokens": 32,
+   "outputTokens": 3317
+  },
+  {
+   "seq": 17776,
+   "ts": 1793567117146,
+   "type": "turn.settled",
+   "turnId": "turn-3",
+   "status": "completed"
+  },
+  {
+   "seq": 17779,
+   "ts": 1793567124854,
+   "type": "turn.started",
+   "turnId": "turn-4",
+   "nativeSessionId": "session-1",
+   "provider": "claude"
+  },
+  {
+   "seq": 17940,
+   "ts": 1793567369724,
+   "type": "usage.reported",
+   "turnId": "turn-4",
+   "costUsd": 3.20570425,
+   "inputTokens": 96,
+   "outputTokens": 6124
+  },
+  {
+   "seq": 17942,
+   "ts": 1793567369747,
+   "type": "turn.settled",
+   "turnId": "turn-4",
+   "status": "completed"
+  },
+  {
+   "seq": 18015,
+   "ts": 1793567634956,
+   "type": "turn.started",
+   "turnId": "turn-5",
+   "nativeSessionId": "session-1",
+   "provider": "claude"
+  },
+  {
+   "seq": 18160,
+   "ts": 1793567686997,
+   "type": "usage.reported",
+   "turnId": "turn-5",
+   "costUsd": 2.7309205,
+   "inputTokens": 66,
+   "outputTokens": 3243
+  },
+  {
+   "seq": 18162,
+   "ts": 1793567687005,
+   "type": "turn.settled",
+   "turnId": "turn-5",
+   "status": "completed"
+  },
+  {
+   "seq": 18171,
+   "ts": 1793567984187,
+   "type": "turn.started",
+   "turnId": "turn-6",
+   "nativeSessionId": "session-1",
+   "provider": "claude"
+  },
+  {
+   "seq": 18346,
+   "ts": 1793568134714,
+   "type": "usage.reported",
+   "turnId": "turn-6",
+   "costUsd": 2.57237575,
+   "inputTokens": 66,
+   "outputTokens": 8028
+  },
+  {
+   "seq": 18348,
+   "ts": 1793568134723,
+   "type": "turn.settled",
+   "turnId": "turn-6",
+   "status": "completed"
+  },
+  {
+   "seq": 18354,
+   "ts": 1793568302543,
+   "type": "turn.started",
+   "turnId": "turn-7",
+   "nativeSessionId": "session-1",
+   "provider": "claude"
+  },
+  {
+   "seq": 18617,
+   "ts": 1793568504809,
+   "type": "usage.reported",
+   "turnId": "turn-7",
+   "costUsd": 4.1965162,
+   "inputTokens": 62,
+   "outputTokens": 5121
+  },
+  {
+   "seq": 18619,
+   "ts": 1793568504816,
+   "type": "turn.settled",
+   "turnId": "turn-7",
+   "status": "completed"
+  },
+  {
+   "seq": 18650,
+   "ts": 1793568535121,
+   "type": "turn.started",
+   "turnId": "turn-8",
+   "nativeSessionId": "session-1",
+   "provider": "claude"
+  },
+  {
+   "seq": 18712,
+   "ts": 1793568575860,
+   "type": "usage.reported",
+   "turnId": "turn-8",
+   "costUsd": 1.27333665,
+   "inputTokens": 100,
+   "outputTokens": 1717
+  },
+  {
+   "seq": 18714,
+   "ts": 1793568575867,
+   "type": "turn.settled",
+   "turnId": "turn-8",
+   "status": "completed"
+  },
+  {
+   "seq": 18783,
+   "ts": 1793568698613,
+   "type": "turn.started",
+   "turnId": "turn-9",
+   "nativeSessionId": "session-1",
+   "provider": "claude"
+  },
+  {
+   "seq": 18980,
+   "ts": 1793569075324,
+   "type": "usage.reported",
+   "turnId": "turn-9",
+   "costUsd": 4.2985627,
+   "inputTokens": 32,
+   "outputTokens": 5881
+  },
+  {
+   "seq": 18982,
+   "ts": 1793569075331,
+   "type": "turn.settled",
+   "turnId": "turn-9",
+   "status": "completed"
+  },
+  {
+   "seq": 18994,
+   "ts": 1793569085962,
+   "type": "turn.started",
+   "turnId": "turn-10",
+   "nativeSessionId": "session-1",
+   "provider": "claude"
+  },
+  {
+   "seq": 19198,
+   "ts": 1793569313954,
+   "type": "usage.reported",
+   "turnId": "turn-10",
+   "costUsd": 3.33600105,
+   "inputTokens": 0,
+   "outputTokens": 2808
+  },
+  {
+   "seq": 19200,
+   "ts": 1793569313974,
+   "type": "turn.settled",
+   "turnId": "turn-10",
+   "status": "completed"
+  },
+  {
+   "seq": 19207,
+   "ts": 1793569315145,
+   "type": "turn.started",
+   "turnId": "turn-11",
+   "nativeSessionId": "session-1",
+   "provider": "claude"
+  },
+  {
+   "seq": 19211,
+   "ts": 1793569316889,
+   "type": "usage.reported",
+   "turnId": "turn-11",
+   "costUsd": 0,
+   "inputTokens": 0,
+   "outputTokens": 0
+  },
+  {
+   "seq": 19213,
+   "ts": 1793569317591,
+   "type": "turn.settled",
+   "turnId": "turn-11",
+   "status": "completed"
+  },
+  {
+   "seq": 19216,
+   "ts": 1793569323063,
+   "type": "turn.started",
+   "turnId": "turn-12",
+   "nativeSessionId": "session-1",
+   "provider": "claude"
+  },
+  {
+   "seq": 19283,
+   "ts": 1793569347537,
+   "type": "usage.reported",
+   "turnId": "turn-12",
+   "costUsd": 0.4720847,
+   "inputTokens": 66,
+   "outputTokens": 1838
+  },
+  {
+   "seq": 19285,
+   "ts": 1793569347560,
+   "type": "turn.settled",
+   "turnId": "turn-12",
+   "status": "completed"
+  },
+  {
+   "seq": 19333,
+   "ts": 1793569388457,
+   "type": "turn.started",
+   "turnId": "turn-13",
+   "nativeSessionId": "session-1",
+   "provider": "claude"
+  },
+  {
+   "seq": 19564,
+   "ts": 1793569632283,
+   "type": "usage.reported",
+   "turnId": "turn-13",
+   "costUsd": 3.6804144,
+   "inputTokens": 36,
+   "outputTokens": 614
+  },
+  {
+   "seq": 19566,
+   "ts": 1793569632306,
+   "type": "turn.settled",
+   "turnId": "turn-13",
+   "status": "completed"
+  },
+  {
+   "seq": 19571,
+   "ts": 1793569653954,
+   "type": "turn.started",
+   "turnId": "turn-14",
+   "nativeSessionId": "session-1",
+   "provider": "claude"
+  },
+  {
+   "seq": 19689,
+   "ts": 1793569820730,
+   "type": "usage.reported",
+   "turnId": "turn-14",
+   "costUsd": 1.7501597,
+   "inputTokens": 0,
+   "outputTokens": 5383
+  },
+  {
+   "seq": 19691,
+   "ts": 1793569820739,
+   "type": "turn.settled",
+   "turnId": "turn-14",
+   "status": "completed"
+  },
+  {
+   "seq": 19728,
+   "ts": 1793569846366,
+   "type": "turn.started",
+   "turnId": "turn-15",
+   "nativeSessionId": "session-1",
+   "provider": "claude"
+  },
+  {
+   "seq": 19789,
+   "ts": 1793569894989,
+   "type": "usage.reported",
+   "turnId": "turn-15",
+   "costUsd": 0.9029332,
+   "inputTokens": 32,
+   "outputTokens": 930
+  },
+  {
+   "seq": 19791,
+   "ts": 1793569894997,
+   "type": "turn.settled",
+   "turnId": "turn-15",
+   "status": "completed"
+  },
+  {
+   "seq": 19806,
+   "ts": 1793569937680,
+   "type": "turn.started",
+   "turnId": "turn-16",
+   "nativeSessionId": "session-1",
+   "provider": "claude"
+  },
+  {
+   "seq": 19848,
+   "ts": 1793569955974,
+   "type": "usage.reported",
+   "turnId": "turn-16",
+   "costUsd": 0.55513995,
+   "inputTokens": 36,
+   "outputTokens": 461
+  },
+  {
+   "seq": 19850,
+   "ts": 1793569955988,
+   "type": "turn.settled",
+   "turnId": "turn-16",
+   "status": "completed"
+  },
+  {
+   "seq": 19862,
+   "ts": 1793569978344,
+   "type": "turn.started",
+   "turnId": "turn-17",
+   "nativeSessionId": "session-1",
+   "provider": "claude"
+  },
+  {
+   "seq": 19875,
+   "ts": 1793569984166,
+   "type": "usage.reported",
+   "turnId": "turn-17",
+   "costUsd": 0.31929775,
+   "inputTokens": 4,
+   "outputTokens": 49
+  },
+  {
+   "seq": 19877,
+   "ts": 1793569984177,
+   "type": "turn.settled",
+   "turnId": "turn-17",
+   "status": "completed"
+  },
+  {
+   "seq": 19882,
+   "ts": 1793569990510,
+   "type": "turn.started",
+   "turnId": "turn-18",
+   "nativeSessionId": "session-1",
+   "provider": "claude"
+  },
+  {
+   "seq": 19917,
+   "ts": 1793570051898,
+   "type": "usage.reported",
+   "turnId": "turn-18",
+   "costUsd": 0.28762425,
+   "inputTokens": 0,
+   "outputTokens": 22
+  },
+  {
+   "seq": 19919,
+   "ts": 1793570051906,
+   "type": "turn.settled",
+   "turnId": "turn-18",
+   "status": "completed"
+  },
+  {
+   "seq": 19923,
+   "ts": 1793570088792,
+   "type": "turn.started",
+   "turnId": "turn-19",
+   "nativeSessionId": "session-1",
+   "provider": "claude"
+  },
+  {
+   "seq": 19958,
+   "ts": 1793570109246,
+   "type": "usage.reported",
+   "turnId": "turn-19",
+   "costUsd": 0.2714055,
+   "inputTokens": 30,
+   "outputTokens": 1066
+  },
+  {
+   "seq": 19960,
+   "ts": 1793570109254,
+   "type": "turn.settled",
+   "turnId": "turn-19",
+   "status": "completed"
+  },
+  {
+   "seq": 19963,
+   "ts": 1793570123893,
+   "type": "turn.started",
+   "turnId": "turn-20",
+   "nativeSessionId": "session-1",
+   "provider": "claude"
+  },
+  {
+   "seq": 20294,
+   "ts": 1793570736286,
+   "type": "usage.reported",
+   "turnId": "turn-20",
+   "costUsd": 2.78288471,
+   "inputTokens": 452,
+   "outputTokens": 11421
+  },
+  {
+   "seq": 20296,
+   "ts": 1793570736303,
+   "type": "turn.settled",
+   "turnId": "turn-20",
+   "status": "completed"
+  },
+  {
+   "seq": 20299,
+   "ts": 1793570736801,
+   "type": "turn.started",
+   "turnId": "turn-21",
+   "nativeSessionId": "session-1",
+   "provider": "claude"
+  },
+  {
+   "seq": 20391,
+   "ts": 1793570806550,
+   "type": "usage.reported",
+   "turnId": "turn-21",
+   "costUsd": 0.71020192,
+   "inputTokens": 98,
+   "outputTokens": 2692
+  },
+  {
+   "seq": 20393,
+   "ts": 1793570806560,
+   "type": "turn.settled",
+   "turnId": "turn-21",
+   "status": "completed"
+  },
+  {
+   "seq": 20403,
+   "ts": 1793570814670,
+   "type": "turn.started",
+   "turnId": "turn-22",
+   "nativeSessionId": "session-1",
+   "provider": "claude"
+  },
+  {
+   "seq": 20853,
+   "ts": 1793571144812,
+   "type": "usage.reported",
+   "turnId": "turn-22",
+   "costUsd": 2.84463102,
+   "inputTokens": 260,
+   "outputTokens": 11967
+  },
+  {
+   "seq": 20855,
+   "ts": 1793571144823,
+   "type": "turn.settled",
+   "turnId": "turn-22",
+   "status": "completed"
+  },
+  {
+   "seq": 20859,
+   "ts": 1793571290761,
+   "type": "turn.started",
+   "turnId": "turn-23",
+   "nativeSessionId": "session-1",
+   "provider": "claude"
+  },
+  {
+   "seq": 21159,
+   "ts": 1793572026689,
+   "type": "usage.reported",
+   "turnId": "turn-23",
+   "costUsd": 3.86718775,
+   "inputTokens": 256,
+   "outputTokens": 6372
+  },
+  {
+   "seq": 21161,
+   "ts": 1793572026701,
+   "type": "turn.settled",
+   "turnId": "turn-23",
+   "status": "error"
+  },
+  {
+   "seq": 21165,
+   "ts": 1793572027131,
+   "type": "turn.started",
+   "turnId": "turn-24",
+   "nativeSessionId": "session-1",
+   "provider": "claude"
+  },
+  {
+   "seq": 21166,
+   "ts": 1793572027983,
+   "type": "usage.reported",
+   "turnId": "turn-24",
+   "costUsd": 0,
+   "inputTokens": 0,
+   "outputTokens": 0
+  },
+  {
+   "seq": 21168,
+   "ts": 1793572027991,
+   "type": "turn.settled",
+   "turnId": "turn-24",
+   "status": "error"
+  },
+  {
+   "seq": 21171,
+   "ts": 1793572028395,
+   "type": "turn.started",
+   "turnId": "turn-25",
+   "nativeSessionId": "session-1",
+   "provider": "claude"
+  },
+  {
+   "seq": 21172,
+   "ts": 1793572029197,
+   "type": "usage.reported",
+   "turnId": "turn-25",
+   "costUsd": 0,
+   "inputTokens": 0,
+   "outputTokens": 0
+  },
+  {
+   "seq": 21174,
+   "ts": 1793572029206,
+   "type": "turn.settled",
+   "turnId": "turn-25",
+   "status": "error"
+  },
+  {
+   "seq": 21177,
+   "ts": 1793572029529,
+   "type": "turn.started",
+   "turnId": "turn-26",
+   "nativeSessionId": "session-1",
+   "provider": "claude"
+  },
+  {
+   "seq": 21178,
+   "ts": 1793572030379,
+   "type": "usage.reported",
+   "turnId": "turn-26",
+   "costUsd": 0,
+   "inputTokens": 0,
+   "outputTokens": 0
+  },
+  {
+   "seq": 21180,
+   "ts": 1793572030391,
+   "type": "turn.settled",
+   "turnId": "turn-26",
+   "status": "error"
+  },
+  {
+   "seq": 21184,
+   "ts": 1793572095311,
+   "type": "turn.started",
+   "turnId": "turn-27",
+   "nativeSessionId": "session-1",
+   "provider": "claude"
+  },
+  {
+   "seq": 21187,
+   "ts": 1793572096656,
+   "type": "usage.reported",
+   "turnId": "turn-27",
+   "costUsd": 0,
+   "inputTokens": 0,
+   "outputTokens": 0
+  },
+  {
+   "seq": 21189,
+   "ts": 1793572096668,
+   "type": "turn.settled",
+   "turnId": "turn-27",
+   "status": "error"
+  },
+  {
+   "seq": 21195,
+   "ts": 1793572107617,
+   "type": "turn.started",
+   "turnId": "turn-28",
+   "nativeSessionId": "session-1",
+   "provider": "claude"
+  },
+  {
+   "seq": 21681,
+   "ts": 1793572535352,
+   "type": "usage.reported",
+   "turnId": "turn-28",
+   "costUsd": 6.6424842,
+   "inputTokens": 68,
+   "outputTokens": 24024
+  },
+  {
+   "seq": 21683,
+   "ts": 1793572536186,
+   "type": "turn.settled",
+   "turnId": "turn-28",
+   "status": "completed"
+  },
+  {
+   "seq": 21686,
+   "ts": 1793572536556,
+   "type": "turn.started",
+   "turnId": "turn-29",
+   "nativeSessionId": "session-1",
+   "provider": "claude"
+  },
+  {
+   "seq": 21767,
+   "ts": 1793572621820,
+   "type": "usage.reported",
+   "turnId": "turn-29",
+   "costUsd": 0.3371856,
+   "inputTokens": 8,
+   "outputTokens": 1568
+  },
+  {
+   "seq": 21769,
+   "ts": 1793572621834,
+   "type": "turn.settled",
+   "turnId": "turn-29",
+   "status": "completed"
+  },
+  {
+   "seq": 21773,
+   "ts": 1793572771201,
+   "type": "turn.started",
+   "turnId": "turn-30",
+   "nativeSessionId": "session-1",
+   "provider": "claude"
+  },
+  {
+   "seq": 21855,
+   "ts": 1793572811515,
+   "type": "usage.reported",
+   "turnId": "turn-30",
+   "costUsd": 0.4765742,
+   "inputTokens": 6,
+   "outputTokens": 2125
+  },
+  {
+   "seq": 21857,
+   "ts": 1793572811525,
+   "type": "turn.settled",
+   "turnId": "turn-30",
+   "status": "completed"
+  },
+  {
+   "seq": 21933,
+   "ts": 1793572882300,
+   "type": "turn.started",
+   "turnId": "turn-31",
+   "nativeSessionId": "session-1",
+   "provider": "claude"
+  },
+  {
+   "seq": 22367,
+   "ts": 1793574049973,
+   "type": "usage.reported",
+   "turnId": "turn-31",
+   "costUsd": 6.2122216,
+   "inputTokens": 2,
+   "outputTokens": 3022
+  },
+  {
+   "seq": 22369,
+   "ts": 1793574049986,
+   "type": "turn.settled",
+   "turnId": "turn-31",
+   "status": "completed"
+  },
+  {
+   "seq": 22372,
+   "ts": 1793574050575,
+   "type": "turn.started",
+   "turnId": "turn-32",
+   "nativeSessionId": "session-1",
+   "provider": "claude"
+  },
+  {
+   "seq": 22482,
+   "ts": 1793574085927,
+   "type": "usage.reported",
+   "turnId": "turn-32",
+   "costUsd": 1.4544534,
+   "inputTokens": 8,
+   "outputTokens": 2560
+  },
+  {
+   "seq": 22484,
+   "ts": 1793574085944,
+   "type": "turn.settled",
+   "turnId": "turn-32",
+   "status": "completed"
+  },
+  {
+   "seq": 22488,
+   "ts": 1793574207733,
+   "type": "turn.started",
+   "turnId": "turn-33",
+   "nativeSessionId": "session-1",
+   "provider": "claude"
+  },
+  {
+   "seq": 22602,
+   "ts": 1793574281823,
+   "type": "usage.reported",
+   "turnId": "turn-33",
+   "costUsd": 1.2667052,
+   "inputTokens": 12,
+   "outputTokens": 1680
+  },
+  {
+   "seq": 22604,
+   "ts": 1793574281840,
+   "type": "turn.settled",
+   "turnId": "turn-33",
+   "status": "completed"
+  },
+  {
+   "seq": 22634,
+   "ts": 1793574325143,
+   "type": "turn.started",
+   "turnId": "turn-34",
+   "nativeSessionId": "session-1",
+   "provider": "claude"
+  },
+  {
+   "seq": 22901,
+   "ts": 1793574812863,
+   "type": "usage.reported",
+   "turnId": "turn-34",
+   "costUsd": 2.965815,
+   "inputTokens": 24,
+   "outputTokens": 5864
+  },
+  {
+   "seq": 22903,
+   "ts": 1793574812880,
+   "type": "turn.settled",
+   "turnId": "turn-34",
+   "status": "completed"
+  },
+  {
+   "seq": 22925,
+   "ts": 1793576556822,
+   "type": "turn.started",
+   "turnId": "turn-35",
+   "nativeSessionId": "session-1",
+   "provider": "claude"
+  },
+  {
+   "seq": 23043,
+   "ts": 1793576615865,
+   "type": "usage.reported",
+   "turnId": "turn-35",
+   "costUsd": 39.01405065,
+   "inputTokens": 16,
+   "outputTokens": 4714
+  },
+  {
+   "seq": 23045,
+   "ts": 1793576616436,
+   "type": "turn.settled",
+   "turnId": "turn-35",
+   "status": "completed"
+  },
+  {
+   "seq": 23049,
+   "ts": 1793576725101,
+   "type": "turn.started",
+   "turnId": "turn-36",
+   "nativeSessionId": "session-1",
+   "provider": "claude"
+  },
+  {
+   "seq": 23051,
+   "ts": 1793576804604,
+   "type": "usage.reported",
+   "turnId": "turn-36",
+   "costUsd": 0.3232002,
+   "inputTokens": 0,
+   "outputTokens": 0
+  },
+  {
+   "seq": 23053,
+   "ts": 1793576804857,
+   "type": "turn.settled",
+   "turnId": "turn-36",
+   "status": "completed"
+  },
+  {
+   "seq": 23058,
+   "ts": 1793577070475,
+   "type": "turn.started",
+   "turnId": "turn-37",
+   "nativeSessionId": "session-1",
+   "provider": "claude"
+  },
+  {
+   "seq": 23119,
+   "ts": 1793577102106,
+   "type": "usage.reported",
+   "turnId": "turn-37",
+   "costUsd": 1.0177342,
+   "inputTokens": 4,
+   "outputTokens": 3190
+  },
+  {
+   "seq": 23121,
+   "ts": 1793577102114,
+   "type": "turn.settled",
+   "turnId": "turn-37",
+   "status": "completed"
+  },
+  {
+   "seq": 23150,
+   "ts": 1793577132580,
+   "type": "turn.started",
+   "turnId": "turn-38",
+   "nativeSessionId": "session-1",
+   "provider": "claude"
+  },
+  {
+   "seq": 23286,
+   "ts": 1793577351585,
+   "type": "usage.reported",
+   "turnId": "turn-38",
+   "costUsd": 2.0000328,
+   "inputTokens": 2,
+   "outputTokens": 255
+  },
+  {
+   "seq": 23288,
+   "ts": 1793577351594,
+   "type": "turn.settled",
+   "turnId": "turn-38",
+   "status": "completed"
+  },
+  {
+   "seq": 23292,
+   "ts": 1793603837123,
+   "type": "turn.started",
+   "turnId": "turn-39",
+   "nativeSessionId": "session-1",
+   "provider": "claude"
+  },
+  {
+   "seq": 23414,
+   "ts": 1793603844641,
+   "type": "usage.reported",
+   "turnId": "turn-39",
+   "costUsd": 0.580485,
+   "inputTokens": 4,
+   "outputTokens": 447
+  },
+  {
+   "seq": 23416,
+   "ts": 1793603844648,
+   "type": "turn.settled",
+   "turnId": "turn-39",
+   "status": "completed"
+  },
+  {
+   "seq": 23420,
+   "ts": 1793603874902,
+   "type": "turn.started",
+   "turnId": "turn-40",
+   "nativeSessionId": "session-1",
+   "provider": "claude"
+  },
+  {
+   "seq": 23680,
+   "ts": 1793614052040,
+   "type": "usage.reported",
+   "turnId": "turn-40",
+   "costUsd": 1.7834902,
+   "inputTokens": 24,
+   "outputTokens": 21123
+  },
+  {
+   "seq": 23682,
+   "ts": 1793614052048,
+   "type": "turn.settled",
+   "turnId": "turn-40",
+   "status": "completed"
+  },
+  {
+   "seq": 23688,
+   "ts": 1793632825676,
+   "type": "turn.started",
+   "turnId": "turn-41",
+   "nativeSessionId": "session-1",
+   "provider": "claude"
+  },
+  {
+   "seq": 23821,
+   "ts": 1793632938443,
+   "type": "usage.reported",
+   "turnId": "turn-41",
+   "costUsd": 47.25960095,
+   "inputTokens": 6,
+   "outputTokens": 12670
+  },
+  {
+   "seq": 23823,
+   "ts": 1793632939091,
+   "type": "turn.settled",
+   "turnId": "turn-41",
+   "status": "completed"
+  },
+  {
+   "seq": 23876,
+   "ts": 1793632960334,
+   "type": "turn.started",
+   "turnId": "turn-42",
+   "nativeSessionId": "session-1",
+   "provider": "claude"
+  },
+  {
+   "seq": 24179,
+   "ts": 1793633415008,
+   "type": "usage.reported",
+   "turnId": "turn-42",
+   "costUsd": 5.0418356,
+   "inputTokens": 2,
+   "outputTokens": 756
+  },
+  {
+   "seq": 24181,
+   "ts": 1793633415015,
+   "type": "turn.settled",
+   "turnId": "turn-42",
+   "status": "completed"
+  },
+  {
+   "seq": 24221,
+   "ts": 1793633590977,
+   "type": "turn.started",
+   "turnId": "turn-43",
+   "nativeSessionId": "session-1",
+   "provider": "claude"
+  },
+  {
+   "seq": 24419,
+   "ts": 1793634184704,
+   "type": "usage.reported",
+   "turnId": "turn-43",
+   "costUsd": 4.3032008,
+   "inputTokens": 6,
+   "outputTokens": 102
+  },
+  {
+   "seq": 24421,
+   "ts": 1793634184711,
+   "type": "turn.settled",
+   "turnId": "turn-43",
+   "status": "completed"
+  },
+  {
+   "seq": 24436,
+   "ts": 1793634236951,
+   "type": "turn.started",
+   "turnId": "turn-44",
+   "nativeSessionId": "session-1",
+   "provider": "claude"
+  },
+  {
+   "seq": 24667,
+   "ts": 1793634759833,
+   "type": "usage.reported",
+   "turnId": "turn-44",
+   "costUsd": 3.6466926,
+   "inputTokens": 4,
+   "outputTokens": 169
+  },
+  {
+   "seq": 24669,
+   "ts": 1793634759841,
+   "type": "turn.settled",
+   "turnId": "turn-44",
+   "status": "completed"
+  },
+  {
+   "seq": 24672,
+   "ts": 1793634793289,
+   "type": "turn.started",
+   "turnId": "turn-45",
+   "nativeSessionId": "session-1",
+   "provider": "claude"
+  },
+  {
+   "seq": 24765,
+   "ts": 1793635060938,
+   "type": "usage.reported",
+   "turnId": "turn-45",
+   "costUsd": 1.5332786,
+   "inputTokens": 10,
+   "outputTokens": 3766
+  },
+  {
+   "seq": 24767,
+   "ts": 1793635060953,
+   "type": "turn.settled",
+   "turnId": "turn-45",
+   "status": "completed"
+  },
+  {
+   "seq": 24791,
+   "ts": 1793635121199,
+   "type": "turn.started",
+   "turnId": "turn-46",
+   "nativeSessionId": "session-1",
+   "provider": "claude"
+  },
+  {
+   "seq": 24813,
+   "ts": 1793635128464,
+   "type": "usage.reported",
+   "turnId": "turn-46",
+   "costUsd": 0.3409282,
+   "inputTokens": 6,
+   "outputTokens": 353
+  },
+  {
+   "seq": 24815,
+   "ts": 1793635128468,
+   "type": "turn.settled",
+   "turnId": "turn-46",
+   "status": "completed"
+  },
+  {
+   "seq": 24836,
+   "ts": 1793635163802,
+   "type": "turn.started",
+   "turnId": "turn-47",
+   "nativeSessionId": "session-1",
+   "provider": "claude"
+  },
+  {
+   "seq": 24871,
+   "ts": 1793635283383,
+   "type": "usage.reported",
+   "turnId": "turn-47",
+   "costUsd": 0.3033962,
+   "inputTokens": 0,
+   "outputTokens": 1542
+  },
+  {
+   "seq": 24873,
+   "ts": 1793635283390,
+   "type": "turn.settled",
+   "turnId": "turn-47",
+   "status": "completed"
+  },
+  {
+   "seq": 24951,
+   "ts": 1793635389164,
+   "type": "turn.started",
+   "turnId": "turn-48",
+   "nativeSessionId": "session-1",
+   "provider": "claude"
+  },
+  {
+   "seq": 25255,
+   "ts": 1793635700203,
+   "type": "usage.reported",
+   "turnId": "turn-48",
+   "costUsd": 0.84196641,
+   "inputTokens": 16,
+   "outputTokens": 5047
+  },
+  {
+   "seq": 25257,
+   "ts": 1793635700210,
+   "type": "turn.settled",
+   "turnId": "turn-48",
+   "status": "completed"
+  },
+  {
+   "seq": 25261,
+   "ts": 1793639696124,
+   "type": "turn.started",
+   "turnId": "turn-49",
+   "nativeSessionId": "session-1",
+   "provider": "claude"
+  },
+  {
+   "seq": 25566,
+   "ts": 1793640186505,
+   "type": "usage.reported",
+   "turnId": "turn-49",
+   "costUsd": 66.66506796,
+   "inputTokens": 54,
+   "outputTokens": 18260
+  },
+  {
+   "seq": 25568,
+   "ts": 1793640187099,
+   "type": "turn.settled",
+   "turnId": "turn-49",
+   "status": "completed"
+  },
+  {
+   "seq": 25572,
+   "ts": 1793651319422,
+   "type": "turn.started",
+   "turnId": "turn-50",
+   "nativeSessionId": "session-1",
+   "provider": "claude"
+  },
+  {
+   "seq": 25660,
+   "ts": 1793651335341,
+   "type": "usage.reported",
+   "turnId": "turn-50",
+   "costUsd": 68.67723896,
+   "inputTokens": 4,
+   "outputTokens": 1132
+  },
+  {
+   "seq": 25662,
+   "ts": 1793651336011,
+   "type": "turn.settled",
+   "turnId": "turn-50",
+   "status": "completed"
+  },
+  {
+   "seq": 25666,
+   "ts": 1793652034776,
+   "type": "turn.started",
+   "turnId": "turn-51",
+   "nativeSessionId": "session-1",
+   "provider": "claude"
+  },
+  {
+   "seq": 26052,
+   "ts": 1793653176041,
+   "type": "usage.reported",
+   "turnId": "turn-51",
+   "costUsd": 1.6563944,
+   "inputTokens": 40,
+   "outputTokens": 14590
+  },
+  {
+   "seq": 26054,
+   "ts": 1793653176051,
+   "type": "turn.settled",
+   "turnId": "turn-51",
+   "status": "completed"
+  },
+  {
+   "seq": 26058,
+   "ts": 1793654936634,
+   "type": "turn.started",
+   "turnId": "turn-52",
+   "nativeSessionId": "session-1",
+   "provider": "claude"
+  },
+  {
+   "seq": 26272,
+   "ts": 1793654954084,
+   "type": "usage.reported",
+   "turnId": "turn-52",
+   "costUsd": 0.1011676,
+   "inputTokens": 4,
+   "outputTokens": 1826
+  },
+  {
+   "seq": 26274,
+   "ts": 1793654954095,
+   "type": "turn.settled",
+   "turnId": "turn-52",
+   "status": "completed"
+  },
+  {
+   "seq": 26278,
+   "ts": 1793655226414,
+   "type": "turn.started",
+   "turnId": "turn-53",
+   "nativeSessionId": "session-1",
+   "provider": "claude"
+  },
+  {
+   "seq": 26424,
+   "ts": 1793655286349,
+   "type": "usage.reported",
+   "turnId": "turn-53",
+   "costUsd": 0.6990698,
+   "inputTokens": 4,
+   "outputTokens": 4167
+  },
+  {
+   "seq": 26426,
+   "ts": 1793655286358,
+   "type": "turn.settled",
+   "turnId": "turn-53",
+   "status": "completed"
+  },
+  {
+   "seq": 26615,
+   "ts": 1793655457047,
+   "type": "turn.started",
+   "turnId": "turn-54",
+   "nativeSessionId": "session-1",
+   "provider": "claude"
+  },
+  {
+   "seq": 26667,
+   "ts": 1793655572097,
+   "type": "usage.reported",
+   "turnId": "turn-54",
+   "costUsd": 2.7856651,
+   "inputTokens": 4,
+   "outputTokens": 78
+  },
+  {
+   "seq": 26669,
+   "ts": 1793655572106,
+   "type": "turn.settled",
+   "turnId": "turn-54",
+   "status": "completed"
+  },
+  {
+   "seq": 26772,
+   "ts": 1793655840524,
+   "type": "turn.started",
+   "turnId": "turn-55",
+   "nativeSessionId": "session-1",
+   "provider": "claude"
+  },
+  {
+   "seq": 27039,
+   "ts": 1793656640419,
+   "type": "usage.reported",
+   "turnId": "turn-55",
+   "costUsd": 4.1264082,
+   "inputTokens": 4,
+   "outputTokens": 2488
+  },
+  {
+   "seq": 27041,
+   "ts": 1793656640429,
+   "type": "turn.settled",
+   "turnId": "turn-55",
+   "status": "completed"
+  },
+  {
+   "seq": 27045,
+   "ts": 1793659693957,
+   "type": "turn.started",
+   "turnId": "turn-56",
+   "nativeSessionId": "session-1",
+   "provider": "claude"
+  },
+  {
+   "seq": 27114,
+   "ts": 1793659730779,
+   "type": "usage.reported",
+   "turnId": "turn-56",
+   "costUsd": 78.33611866,
+   "inputTokens": 4,
+   "outputTokens": 3165
+  },
+  {
+   "seq": 27116,
+   "ts": 1793659731476,
+   "type": "turn.settled",
+   "turnId": "turn-56",
+   "status": "completed"
+  },
+  {
+   "seq": 27269,
+   "ts": 1793660095718,
+   "type": "turn.started",
+   "turnId": "turn-57",
+   "nativeSessionId": "session-1",
+   "provider": "claude"
+  },
+  {
+   "seq": 27447,
+   "ts": 1793660609912,
+   "type": "turn.settled",
+   "turnId": "turn-57",
+   "status": "interrupted"
+  },
+  {
+   "seq": 27451,
+   "ts": 1793687553227,
+   "type": "turn.started",
+   "turnId": "turn-58",
+   "nativeSessionId": "session-1",
+   "provider": "claude"
+  },
+  {
+   "seq": 27453,
+   "ts": 1793687553703,
+   "type": "usage.reported",
+   "turnId": "turn-58",
+   "costUsd": 83.00877166,
+   "inputTokens": 0,
+   "outputTokens": 0
+  },
+  {
+   "seq": 27455,
+   "ts": 1793687554289,
+   "type": "turn.settled",
+   "turnId": "turn-58",
+   "status": "completed"
+  },
+  {
+   "seq": 27458,
+   "ts": 1793687557034,
+   "type": "turn.started",
+   "turnId": "turn-59",
+   "nativeSessionId": "session-1",
+   "provider": "claude"
+  },
+  {
+   "seq": 27539,
+   "ts": 1793687568136,
+   "type": "usage.reported",
+   "turnId": "turn-59",
+   "costUsd": 2.5786486,
+   "inputTokens": 6,
+   "outputTokens": 1038
+  },
+  {
+   "seq": 27541,
+   "ts": 1793687568366,
+   "type": "turn.settled",
+   "turnId": "turn-59",
+   "status": "completed"
+  },
+  {
+   "seq": 27545,
+   "ts": 1793687942596,
+   "type": "turn.started",
+   "turnId": "turn-60",
+   "nativeSessionId": "session-1",
+   "provider": "claude"
+  },
+  {
+   "seq": 27578,
+   "ts": 1793687962103,
+   "type": "usage.reported",
+   "turnId": "turn-60",
+   "costUsd": 0.1971002,
+   "inputTokens": 0,
+   "outputTokens": 1286
+  },
+  {
+   "seq": 27580,
+   "ts": 1793687962110,
+   "type": "turn.settled",
+   "turnId": "turn-60",
+   "status": "completed"
+  },
+  {
+   "seq": 27730,
+   "ts": 1793688256998,
+   "type": "turn.started",
+   "turnId": "turn-61",
+   "nativeSessionId": "session-1",
+   "provider": "claude"
+  },
+  {
+   "seq": 28160,
+   "ts": 1793690480709,
+   "type": "usage.reported",
+   "turnId": "turn-61",
+   "costUsd": 5.7903586,
+   "inputTokens": 8,
+   "outputTokens": 1172
+  },
+  {
+   "seq": 28162,
+   "ts": 1793690480719,
+   "type": "turn.settled",
+   "turnId": "turn-61",
+   "status": "completed"
+  },
+  {
+   "seq": 28166,
+   "ts": 1793697517973,
+   "type": "turn.started",
+   "turnId": "turn-62",
+   "nativeSessionId": "session-1",
+   "provider": "claude"
+  },
+  {
+   "seq": 28339,
+   "ts": 1793697537686,
+   "type": "usage.reported",
+   "turnId": "turn-62",
+   "costUsd": 94.27785646,
+   "inputTokens": 4,
+   "outputTokens": 1612
+  },
+  {
+   "seq": 28341,
+   "ts": 1793697538268,
+   "type": "turn.settled",
+   "turnId": "turn-62",
+   "status": "completed"
+  },
+  {
+   "seq": 28345,
+   "ts": 1793697683233,
+   "type": "turn.started",
+   "turnId": "turn-63",
+   "nativeSessionId": "session-1",
+   "provider": "claude"
+  },
+  {
+   "seq": 28429,
+   "ts": 1793697727037,
+   "type": "usage.reported",
+   "turnId": "turn-63",
+   "costUsd": 0.5951509,
+   "inputTokens": 2,
+   "outputTokens": 2816
+  },
+  {
+   "seq": 28431,
+   "ts": 1793697727047,
+   "type": "turn.settled",
+   "turnId": "turn-63",
+   "status": "completed"
+  },
+  {
+   "seq": 28462,
+   "ts": 1793697753084,
+   "type": "turn.started",
+   "turnId": "turn-64",
+   "nativeSessionId": "session-1",
+   "provider": "claude"
+  },
+  {
+   "seq": 28662,
+   "ts": 1793698379570,
+   "type": "usage.reported",
+   "turnId": "turn-64",
+   "costUsd": 1.9928414,
+   "inputTokens": 4,
+   "outputTokens": 203
+  },
+  {
+   "seq": 28664,
+   "ts": 1793698379577,
+   "type": "turn.settled",
+   "turnId": "turn-64",
+   "status": "completed"
+  },
+  {
+   "seq": 28680,
+   "ts": 1793698553712,
+   "type": "turn.started",
+   "turnId": "turn-65",
+   "nativeSessionId": "session-1",
+   "provider": "claude"
+  },
+  {
+   "seq": 29021,
+   "ts": 1793700268460,
+   "type": "usage.reported",
+   "turnId": "turn-65",
+   "costUsd": 4.9903344,
+   "inputTokens": 2,
+   "outputTokens": 2403
+  },
+  {
+   "seq": 29023,
+   "ts": 1793700268468,
+   "type": "turn.settled",
+   "turnId": "turn-65",
+   "status": "completed"
+  },
+  {
+   "seq": 29119,
+   "ts": 1793700412170,
+   "type": "turn.started",
+   "turnId": "turn-66",
+   "nativeSessionId": "session-1",
+   "provider": "claude"
+  },
+  {
+   "seq": 29259,
+   "ts": 1793700546877,
+   "type": "usage.reported",
+   "turnId": "turn-66",
+   "costUsd": 0.58005493,
+   "inputTokens": 0,
+   "outputTokens": 1951
+  },
+  {
+   "seq": 29261,
+   "ts": 1793700546885,
+   "type": "turn.settled",
+   "turnId": "turn-66",
+   "status": "completed"
+  },
+  {
+   "seq": 29312,
+   "ts": 1793700597934,
+   "type": "turn.started",
+   "turnId": "turn-67",
+   "nativeSessionId": "session-1",
+   "provider": "claude"
+  },
+  {
+   "seq": 29414,
+   "ts": 1793700800180,
+   "type": "usage.reported",
+   "turnId": "turn-67",
+   "costUsd": 1.6351347,
+   "inputTokens": 2,
+   "outputTokens": 1086
+  },
+  {
+   "seq": 29416,
+   "ts": 1793700800188,
+   "type": "turn.settled",
+   "turnId": "turn-67",
+   "status": "completed"
+  },
+  {
+   "seq": 29419,
+   "ts": 1793701024550,
+   "type": "turn.started",
+   "turnId": "turn-68",
+   "nativeSessionId": "session-1",
+   "provider": "claude"
+  },
+  {
+   "seq": 29641,
+   "ts": 1793701261252,
+   "type": "usage.reported",
+   "turnId": "turn-68",
+   "costUsd": 0.65980518,
+   "inputTokens": 4,
+   "outputTokens": 4314
+  },
+  {
+   "seq": 29643,
+   "ts": 1793701261261,
+   "type": "turn.settled",
+   "turnId": "turn-68",
+   "status": "completed"
+  },
+  {
+   "seq": 29647,
+   "ts": 1793723726202,
+   "type": "turn.started",
+   "turnId": "turn-69",
+   "nativeSessionId": "session-1",
+   "provider": "claude"
+  },
+  {
+   "seq": 29839,
+   "ts": 1793723743263,
+   "type": "usage.reported",
+   "turnId": "turn-69",
+   "costUsd": 107.70914297,
+   "inputTokens": 2,
+   "outputTokens": 1100
+  },
+  {
+   "seq": 29841,
+   "ts": 1793723743849,
+   "type": "turn.settled",
+   "turnId": "turn-69",
+   "status": "completed"
+  },
+  {
+   "seq": 29845,
+   "ts": 1793723809585,
+   "type": "turn.started",
+   "turnId": "turn-70",
+   "nativeSessionId": "session-1",
+   "provider": "claude"
+  },
+  {
+   "seq": 29931,
+   "ts": 1793723888664,
+   "type": "usage.reported",
+   "turnId": "turn-70",
+   "costUsd": 0.5862192,
+   "inputTokens": 10,
+   "outputTokens": 1196
+  },
+  {
+   "seq": 29933,
+   "ts": 1793723888681,
+   "type": "turn.settled",
+   "turnId": "turn-70",
+   "status": "completed"
+  },
+  {
+   "seq": 29937,
+   "ts": 1793723890533,
+   "type": "turn.started",
+   "turnId": "turn-71",
+   "nativeSessionId": "session-1",
+   "provider": "claude"
+  },
+  {
+   "seq": 30092,
+   "ts": 1793723984607,
+   "type": "usage.reported",
+   "turnId": "turn-71",
+   "costUsd": 1.348041,
+   "inputTokens": 18,
+   "outputTokens": 4282
+  },
+  {
+   "seq": 30094,
+   "ts": 1793723984615,
+   "type": "turn.settled",
+   "turnId": "turn-71",
+   "status": "completed"
+  },
+  {
+   "seq": 30109,
+   "ts": 1793724009982,
+   "type": "turn.started",
+   "turnId": "turn-72",
+   "nativeSessionId": "session-1",
+   "provider": "claude"
+  },
+  {
+   "seq": 30315,
+   "ts": 1793724779038,
+   "type": "usage.reported",
+   "turnId": "turn-72",
+   "costUsd": 3.73269021,
+   "inputTokens": 10,
+   "outputTokens": 2404
+  },
+  {
+   "seq": 30317,
+   "ts": 1793724779046,
+   "type": "turn.settled",
+   "turnId": "turn-72",
+   "status": "completed"
+  },
+  {
+   "seq": 30326,
+   "ts": 1793724783877,
+   "type": "turn.started",
+   "turnId": "turn-73",
+   "nativeSessionId": "session-1",
+   "provider": "claude"
+  },
+  {
+   "seq": 30352,
+   "ts": 1793724787257,
+   "type": "usage.reported",
+   "turnId": "turn-73",
+   "costUsd": 0.09688904,
+   "inputTokens": 4,
+   "outputTokens": 134
+  },
+  {
+   "seq": 30354,
+   "ts": 1793724787264,
+   "type": "turn.settled",
+   "turnId": "turn-73",
+   "status": "completed"
+  },
+  {
+   "seq": 30358,
+   "ts": 1793727908526,
+   "type": "turn.started",
+   "turnId": "turn-74",
+   "nativeSessionId": "session-1",
+   "provider": "claude"
+  },
+  {
+   "seq": 30503,
+   "ts": 1793727957836,
+   "type": "usage.reported",
+   "turnId": "turn-74",
+   "costUsd": 114.23307961,
+   "inputTokens": 4,
+   "outputTokens": 4165
+  },
+  {
+   "seq": 30505,
+   "ts": 1793727958736,
+   "type": "turn.settled",
+   "turnId": "turn-74",
+   "status": "completed"
+  },
+  {
+   "seq": 30614,
+   "ts": 1793728034617,
+   "type": "turn.started",
+   "turnId": "turn-75",
+   "nativeSessionId": "session-1",
+   "provider": "claude"
+  },
+  {
+   "seq": 30672,
+   "ts": 1793728039387,
+   "type": "usage.reported",
+   "turnId": "turn-75",
+   "costUsd": 0.999844,
+   "inputTokens": 0,
+   "outputTokens": 260
+  },
+  {
+   "seq": 30674,
+   "ts": 1793728039395,
+   "type": "turn.settled",
+   "turnId": "turn-75",
+   "status": "completed"
+  },
+  {
+   "seq": 30678,
+   "ts": 1793728047595,
+   "type": "turn.started",
+   "turnId": "turn-76",
+   "nativeSessionId": "session-1",
+   "provider": "claude"
+  },
+  {
+   "seq": 30775,
+   "ts": 1793728057130,
+   "type": "usage.reported",
+   "turnId": "turn-76",
+   "costUsd": 0.2766266,
+   "inputTokens": 0,
+   "outputTokens": 252
+  },
+  {
+   "seq": 30777,
+   "ts": 1793728057136,
+   "type": "turn.settled",
+   "turnId": "turn-76",
+   "status": "completed"
+  },
+  {
+   "seq": 30783,
+   "ts": 1793728090901,
+   "type": "turn.started",
+   "turnId": "turn-77",
+   "nativeSessionId": "session-1",
+   "provider": "claude"
+  },
+  {
+   "seq": 31365,
+   "ts": 1793733688144,
+   "type": "usage.reported",
+   "turnId": "turn-77",
+   "costUsd": 6.744923,
+   "inputTokens": 8,
+   "outputTokens": 16706
+  },
+  {
+   "seq": 31367,
+   "ts": 1793733688152,
+   "type": "turn.settled",
+   "turnId": "turn-77",
+   "status": "completed"
+  },
+  {
+   "seq": 31403,
+   "ts": 1793733720538,
+   "type": "turn.started",
+   "turnId": "turn-78",
+   "nativeSessionId": "session-1",
+   "provider": "claude"
+  },
+  {
+   "seq": 32106,
+   "ts": 1793735148761,
+   "type": "usage.reported",
+   "turnId": "turn-78",
+   "costUsd": 11.994325,
+   "inputTokens": 6,
+   "outputTokens": 796
+  },
+  {
+   "seq": 32108,
+   "ts": 1793735148769,
+   "type": "turn.settled",
+   "turnId": "turn-78",
+   "status": "completed"
+  },
+  {
+   "seq": 32111,
+   "ts": 1793735180247,
+   "type": "turn.started",
+   "turnId": "turn-79",
+   "nativeSessionId": "session-1",
+   "provider": "claude"
+  },
+  {
+   "seq": 32348,
+   "ts": 1793735317528,
+   "type": "usage.reported",
+   "turnId": "turn-79",
+   "costUsd": 1.9689303,
+   "inputTokens": 4,
+   "outputTokens": 8937
+  },
+  {
+   "seq": 32350,
+   "ts": 1793735317536,
+   "type": "turn.settled",
+   "turnId": "turn-79",
+   "status": "completed"
+  },
+  {
+   "seq": 32527,
+   "ts": 1793735483713,
+   "type": "turn.started",
+   "turnId": "turn-80",
+   "nativeSessionId": "session-1",
+   "provider": "claude"
+  },
+  {
+   "seq": 33116,
+   "ts": 1793736509805,
+   "type": "usage.reported",
+   "turnId": "turn-80",
+   "costUsd": 12.0023512,
+   "inputTokens": 4,
+   "outputTokens": 365
+  },
+  {
+   "seq": 33118,
+   "ts": 1793736509814,
+   "type": "turn.settled",
+   "turnId": "turn-80",
+   "status": "completed"
+  },
+  {
+   "seq": 33122,
+   "ts": 1793736519739,
+   "type": "turn.started",
+   "turnId": "turn-81",
+   "nativeSessionId": "session-1",
+   "provider": "claude"
+  },
+  {
+   "seq": 33310,
+   "ts": 1793736816659,
+   "type": "usage.reported",
+   "turnId": "turn-81",
+   "costUsd": 1.9223986,
+   "inputTokens": 2,
+   "outputTokens": 1505
+  },
+  {
+   "seq": 33312,
+   "ts": 1793736816667,
+   "type": "turn.settled",
+   "turnId": "turn-81",
+   "status": "completed"
+  },
+  {
+   "seq": 33318,
+   "ts": 1793736838765,
+   "type": "turn.started",
+   "turnId": "turn-82",
+   "nativeSessionId": "session-1",
+   "provider": "claude"
+  },
+  {
+   "seq": 33406,
+   "ts": 1793736956194,
+   "type": "usage.reported",
+   "turnId": "turn-82",
+   "costUsd": 2.7958296,
+   "inputTokens": 4,
+   "outputTokens": 81
+  },
+  {
+   "seq": 33408,
+   "ts": 1793736956204,
+   "type": "turn.settled",
+   "turnId": "turn-82",
+   "status": "completed"
+  },
+  {
+   "seq": 33411,
+   "ts": 1793736986682,
+   "type": "turn.started",
+   "turnId": "turn-83",
+   "nativeSessionId": "session-1",
+   "provider": "claude"
+  },
+  {
+   "seq": 33866,
+   "ts": 1793737877688,
+   "type": "usage.reported",
+   "turnId": "turn-83",
+   "costUsd": 3.39826174,
+   "inputTokens": 20,
+   "outputTokens": 7830
+  },
+  {
+   "seq": 33868,
+   "ts": 1793737877699,
+   "type": "turn.settled",
+   "turnId": "turn-83",
+   "status": "completed"
+  },
+  {
+   "seq": 33871,
+   "ts": 1793737887610,
+   "type": "turn.started",
+   "turnId": "turn-84",
+   "nativeSessionId": "session-1",
+   "provider": "claude"
+  },
+  {
+   "seq": 34072,
+   "ts": 1793737957840,
+   "type": "usage.reported",
+   "turnId": "turn-84",
+   "costUsd": 0.41301955,
+   "inputTokens": 8,
+   "outputTokens": 2931
+  },
+  {
+   "seq": 34074,
+   "ts": 1793737957848,
+   "type": "turn.settled",
+   "turnId": "turn-84",
+   "status": "completed"
+  },
+  {
+   "seq": 34078,
+   "ts": 1793740055763,
+   "type": "turn.started",
+   "turnId": "turn-85",
+   "nativeSessionId": "session-1",
+   "provider": "claude"
+  },
+  {
+   "seq": 34204,
+   "ts": 1793740091486,
+   "type": "usage.reported",
+   "turnId": "turn-85",
+   "costUsd": 157.24144601,
+   "inputTokens": 6,
+   "outputTokens": 2377
+  },
+  {
+   "seq": 34206,
+   "ts": 1793740092618,
+   "type": "turn.settled",
+   "turnId": "turn-85",
+   "status": "completed"
+  },
+  {
+   "seq": 34210,
+   "ts": 1793740256679,
+   "type": "turn.started",
+   "turnId": "turn-86",
+   "nativeSessionId": "session-1",
+   "provider": "claude"
+  },
+  {
+   "seq": 34255,
+   "ts": 1793740277871,
+   "type": "usage.reported",
+   "turnId": "turn-86",
+   "costUsd": 0.3816034,
+   "inputTokens": 2,
+   "outputTokens": 1749
+  },
+  {
+   "seq": 34257,
+   "ts": 1793740277884,
+   "type": "turn.settled",
+   "turnId": "turn-86",
+   "status": "completed"
+  },
+  {
+   "seq": 34261,
+   "ts": 1793744906438,
+   "type": "turn.started",
+   "turnId": "turn-87",
+   "nativeSessionId": "session-1",
+   "provider": "claude"
+  },
+  {
+   "seq": 34355,
+   "ts": 1793744930561,
+   "type": "usage.reported",
+   "turnId": "turn-87",
+   "costUsd": 162.04822121,
+   "inputTokens": 4,
+   "outputTokens": 719
+  },
+  {
+   "seq": 34357,
+   "ts": 1793744931263,
+   "type": "turn.settled",
+   "turnId": "turn-87",
+   "status": "completed"
+  },
+  {
+   "seq": 34361,
+   "ts": 1793766261506,
+   "type": "turn.started",
+   "turnId": "turn-88",
+   "nativeSessionId": "session-1",
+   "provider": "claude"
+  },
+  {
+   "seq": 34528,
+   "ts": 1793766346415,
+   "type": "usage.reported",
+   "turnId": "turn-88",
+   "costUsd": 167.41866461,
+   "inputTokens": 18,
+   "outputTokens": 4131
+  },
+  {
+   "seq": 34530,
+   "ts": 1793766347007,
+   "type": "turn.settled",
+   "turnId": "turn-88",
+   "status": "completed"
+  },
+  {
+   "seq": 34534,
+   "ts": 1793766499545,
+   "type": "turn.started",
+   "turnId": "turn-89",
+   "nativeSessionId": "session-1",
+   "provider": "claude"
+  },
+  {
+   "seq": 34615,
+   "ts": 1793766508661,
+   "type": "usage.reported",
+   "turnId": "turn-89",
+   "costUsd": 0.1321792,
+   "inputTokens": 4,
+   "outputTokens": 750
+  },
+  {
+   "seq": 34617,
+   "ts": 1793766508671,
+   "type": "turn.settled",
+   "turnId": "turn-89",
+   "status": "completed"
+  },
+  {
+   "seq": 34621,
+   "ts": 1793769567381,
+   "type": "turn.started",
+   "turnId": "turn-90",
+   "nativeSessionId": "session-1",
+   "provider": "claude"
+  },
+  {
+   "seq": 35001,
+   "ts": 1793769847890,
+   "type": "usage.reported",
+   "turnId": "turn-90",
+   "costUsd": 170.31081221,
+   "inputTokens": 40,
+   "outputTokens": 14213
+  },
+  {
+   "seq": 35003,
+   "ts": 1793769848486,
+   "type": "turn.settled",
+   "turnId": "turn-90",
+   "status": "completed"
+  },
+  {
+   "seq": 35007,
+   "ts": 1793798708332,
+   "type": "turn.started",
+   "turnId": "turn-91",
+   "nativeSessionId": "session-1",
+   "provider": "claude"
+  },
+  {
+   "seq": 35407,
+   "ts": 1793799059560,
+   "type": "usage.reported",
+   "turnId": "turn-91",
+   "costUsd": 177.95422121,
+   "inputTokens": 46,
+   "outputTokens": 15804
+  },
+  {
+   "seq": 35409,
+   "ts": 1793799060211,
+   "type": "turn.settled",
+   "turnId": "turn-91",
+   "status": "completed"
+  },
+  {
+   "seq": 35413,
+   "ts": 1793823802726,
+   "type": "turn.started",
+   "turnId": "turn-92",
+   "nativeSessionId": "session-1",
+   "provider": "claude"
+  },
+  {
+   "seq": 35525,
+   "ts": 1793823849327,
+   "type": "usage.reported",
+   "turnId": "turn-92",
+   "costUsd": 183.22102161,
+   "inputTokens": 8,
+   "outputTokens": 1807
+  },
+  {
+   "seq": 35527,
+   "ts": 1793823849890,
+   "type": "turn.settled",
+   "turnId": "turn-92",
+   "status": "completed"
+  },
+  {
+   "seq": 35531,
+   "ts": 1793823921415,
+   "type": "turn.started",
+   "turnId": "turn-93",
+   "nativeSessionId": "session-1",
+   "provider": "claude"
+  },
+  {
+   "seq": 35629,
+   "ts": 1793823928695,
+   "type": "usage.reported",
+   "turnId": "turn-93",
+   "costUsd": 0.1399418,
+   "inputTokens": 4,
+   "outputTokens": 576
+  },
+  {
+   "seq": 35631,
+   "ts": 1793823928704,
+   "type": "turn.settled",
+   "turnId": "turn-93",
+   "status": "completed"
+  },
+  {
+   "seq": 35635,
+   "ts": 1793823983283,
+   "type": "turn.started",
+   "turnId": "turn-94",
+   "nativeSessionId": "session-1",
+   "provider": "claude"
+  },
+  {
+   "seq": 35851,
+   "ts": 1793824002189,
+   "type": "usage.reported",
+   "turnId": "turn-94",
+   "costUsd": 0.1629678,
+   "inputTokens": 0,
+   "outputTokens": 1121
+  },
+  {
+   "seq": 35853,
+   "ts": 1793824002199,
+   "type": "turn.settled",
+   "turnId": "turn-94",
+   "status": "completed"
+  },
+  {
+   "seq": 35857,
+   "ts": 1793824066255,
+   "type": "turn.started",
+   "turnId": "turn-95",
+   "nativeSessionId": "session-1",
+   "provider": "claude"
+  },
+  {
+   "seq": 35999,
+   "ts": 1793824142959,
+   "type": "usage.reported",
+   "turnId": "turn-95",
+   "costUsd": 0.87095,
+   "inputTokens": 4,
+   "outputTokens": 4179
+  },
+  {
+   "seq": 36001,
+   "ts": 1793824142972,
+   "type": "turn.settled",
+   "turnId": "turn-95",
+   "status": "completed"
+  },
+  {
+   "seq": 36010,
+   "ts": 1793824148533,
+   "type": "turn.started",
+   "turnId": "turn-96",
+   "nativeSessionId": "session-1",
+   "provider": "claude"
+  },
+  {
+   "seq": 36109,
+   "ts": 1793824165389,
+   "type": "usage.reported",
+   "turnId": "turn-96",
+   "costUsd": 0.4825202,
+   "inputTokens": 6,
+   "outputTokens": 1598
+  },
+  {
+   "seq": 36111,
+   "ts": 1793824165397,
+   "type": "turn.settled",
+   "turnId": "turn-96",
+   "status": "completed"
+  },
+  {
+   "seq": 36126,
+   "ts": 1793824223777,
+   "type": "turn.started",
+   "turnId": "turn-97",
+   "nativeSessionId": "session-1",
+   "provider": "claude"
+  },
+  {
+   "seq": 36605,
+   "ts": 1793826434028,
+   "type": "usage.reported",
+   "turnId": "turn-97",
+   "costUsd": 7.0178156,
+   "inputTokens": 12,
+   "outputTokens": 4974
+  },
+  {
+   "seq": 36607,
+   "ts": 1793826434038,
+   "type": "turn.settled",
+   "turnId": "turn-97",
+   "status": "completed"
+  },
+  {
+   "seq": 36611,
+   "ts": 1793826446625,
+   "type": "turn.started",
+   "turnId": "turn-98",
+   "nativeSessionId": "session-1",
+   "provider": "claude"
+  },
+  {
+   "seq": 36755,
+   "ts": 1793826468917,
+   "type": "usage.reported",
+   "turnId": "turn-98",
+   "costUsd": 0.302915,
+   "inputTokens": 6,
+   "outputTokens": 1576
+  },
+  {
+   "seq": 36757,
+   "ts": 1793826468927,
+   "type": "turn.settled",
+   "turnId": "turn-98",
+   "status": "completed"
+  },
+  {
+   "seq": 36768,
+   "ts": 1793826743964,
+   "type": "turn.started",
+   "turnId": "turn-99",
+   "nativeSessionId": "session-1",
+   "provider": "claude"
+  },
+  {
+   "seq": 36982,
+   "ts": 1793827987476,
+   "type": "usage.reported",
+   "turnId": "turn-99",
+   "costUsd": 6.5624868,
+   "inputTokens": 4,
+   "outputTokens": 252
+  },
+  {
+   "seq": 36984,
+   "ts": 1793827987484,
+   "type": "turn.settled",
+   "turnId": "turn-99",
+   "status": "completed"
+  },
+  {
+   "seq": 36987,
+   "ts": 1793827991924,
+   "type": "turn.started",
+   "turnId": "turn-100",
+   "nativeSessionId": "session-1",
+   "provider": "claude"
+  },
+  {
+   "seq": 37330,
+   "ts": 1793829436251,
+   "type": "usage.reported",
+   "turnId": "turn-100",
+   "costUsd": 3.7460242,
+   "inputTokens": 4,
+   "outputTokens": 2727
+  },
+  {
+   "seq": 37332,
+   "ts": 1793829436261,
+   "type": "turn.settled",
+   "turnId": "turn-100",
+   "status": "completed"
+  },
+  {
+   "seq": 37336,
+   "ts": 1793830968998,
+   "type": "turn.started",
+   "turnId": "turn-101",
+   "nativeSessionId": "session-1",
+   "provider": "claude"
+  },
+  {
+   "seq": 37456,
+   "ts": 1793831021077,
+   "type": "usage.reported",
+   "turnId": "turn-101",
+   "costUsd": 0.68350537,
+   "inputTokens": 2,
+   "outputTokens": 1546
+  },
+  {
+   "seq": 37458,
+   "ts": 1793831021088,
+   "type": "turn.settled",
+   "turnId": "turn-101",
+   "status": "completed"
+  },
+  {
+   "seq": 37503,
+   "ts": 1793831167598,
+   "type": "turn.started",
+   "turnId": "turn-102",
+   "nativeSessionId": "session-1",
+   "provider": "claude"
+  },
+  {
+   "seq": 37665,
+   "ts": 1793831204387,
+   "type": "usage.reported",
+   "turnId": "turn-102",
+   "costUsd": 0.72280236,
+   "inputTokens": 0,
+   "outputTokens": 2855
+  },
+  {
+   "seq": 37667,
+   "ts": 1793831204397,
+   "type": "turn.settled",
+   "turnId": "turn-102",
+   "status": "completed"
+  },
+  {
+   "seq": 37671,
+   "ts": 1793831369917,
+   "type": "turn.started",
+   "turnId": "turn-103",
+   "nativeSessionId": "session-1",
+   "provider": "claude"
+  },
+  {
+   "seq": 37890,
+   "ts": 1793831772450,
+   "type": "usage.reported",
+   "turnId": "turn-103",
+   "costUsd": 1.9454278,
+   "inputTokens": 18,
+   "outputTokens": 7555
+  },
+  {
+   "seq": 37892,
+   "ts": 1793831772461,
+   "type": "turn.settled",
+   "turnId": "turn-103",
+   "status": "completed"
+  },
+  {
+   "seq": 37896,
+   "ts": 1793834826440,
+   "type": "turn.started",
+   "turnId": "turn-104",
+   "nativeSessionId": "session-1",
+   "provider": "claude"
+  },
+  {
+   "seq": 38203,
+   "ts": 1793835131648,
+   "type": "usage.reported",
+   "turnId": "turn-104",
+   "costUsd": 208.49598094,
+   "inputTokens": 34,
+   "outputTokens": 8140
+  },
+  {
+   "seq": 38205,
+   "ts": 1793835132338,
+   "type": "turn.settled",
+   "turnId": "turn-104",
+   "status": "completed"
+  },
+  {
+   "seq": 38209,
+   "ts": 1793837077576,
+   "type": "turn.started",
+   "turnId": "turn-105",
+   "nativeSessionId": "session-1",
+   "provider": "claude"
+  },
+  {
+   "seq": 38288,
+   "ts": 1793837092017,
+   "type": "usage.reported",
+   "turnId": "turn-105",
+   "costUsd": 208.82372074,
+   "inputTokens": 4,
+   "outputTokens": 741
+  },
+  {
+   "seq": 38290,
+   "ts": 1793837092587,
+   "type": "turn.settled",
+   "turnId": "turn-105",
+   "status": "completed"
+  },
+  {
+   "seq": 38294,
+   "ts": 1793861740530,
+   "type": "turn.started",
+   "turnId": "turn-106",
+   "nativeSessionId": "session-1",
+   "provider": "claude"
+  },
+  {
+   "seq": 38385,
+   "ts": 1793861751192,
+   "type": "usage.reported",
+   "turnId": "turn-106",
+   "costUsd": 214.44630974,
+   "inputTokens": 2,
+   "outputTokens": 594
+  },
+  {
+   "seq": 38387,
+   "ts": 1793861751816,
+   "type": "turn.settled",
+   "turnId": "turn-106",
+   "status": "completed"
+  }
+ ],
+ "costStates": [
+  {
+   "timestamp": null,
+   "totalCostUSD": 31.06030325000003,
+   "models": {
+    "claude-haiku-5-5": {
+     "inputTokens": 2060,
+     "outputTokens": 22,
+     "thinkingTokens": 0,
+     "cacheReadInputTokens": 0,
+     "cacheCreationInputTokens": 0,
+     "cacheCreationEphemeral5mInputTokens": 0,
+     "cacheCreationEphemeral1hInputTokens": 0,
+     "webSearchRequests": 0,
+     "costUSD": 0.00021700000000000002
+    },
+    "claude-fable-5-1": {
+     "inputTokens": 2884,
+     "outputTokens": 118428,
+     "thinkingTokens": 29664,
+     "cacheReadInputTokens": 13517539,
+     "cacheCreationInputTokens": 420097,
+     "cacheCreationEphemeral5mInputTokens": 148184,
+     "cacheCreationEphemeral1hInputTokens": 271913,
+     "webSearchRequests": 0,
+     "costUSD": 16.62018475
+    },
+    "claude-opus-5-5": {
+     "inputTokens": 524,
+     "outputTokens": 159751,
+     "thinkingTokens": 30423,
+     "cacheReadInputTokens": 27501653,
+     "cacheCreationInputTokens": 917207,
+     "cacheCreationEphemeral5mInputTokens": 917207,
+     "cacheCreationEphemeral1hInputTokens": 0,
+     "webSearchRequests": 0,
+     "costUSD": 13.283481599999996
+    },
+    "claude-sonnet-5-5": {
+     "inputTokens": 66,
+     "outputTokens": 49028,
+     "thinkingTokens": 9553,
+     "cacheReadInputTokens": 2114279,
+     "cacheCreationInputTokens": 181832,
+     "cacheCreationEphemeral5mInputTokens": 181832,
+     "cacheCreationEphemeral1hInputTokens": 0,
+     "webSearchRequests": 0,
+     "costUSD": 1.1564199
+    }
+   }
+  },
+  {
+   "timestamp": null,
+   "totalCostUSD": 37.79940405499999,
+   "models": {
+    "claude-fable-5-1": {
+     "inputTokens": 1840,
+     "outputTokens": 62037,
+     "thinkingTokens": 16881,
+     "cacheReadInputTokens": 25400659,
+     "cacheCreationInputTokens": 120536,
+     "cacheCreationEphemeral5mInputTokens": 0,
+     "cacheCreationEphemeral1hInputTokens": 120536,
+     "webSearchRequests": 0,
+     "costUSD": 11.881134750000001
+    },
+    "claude-sonnet-5-5": {
+     "inputTokens": 70,
+     "outputTokens": 36498,
+     "thinkingTokens": 5764,
+     "cacheReadInputTokens": 2656214,
+     "cacheCreationInputTokens": 106404,
+     "cacheCreationEphemeral5mInputTokens": 106404,
+     "cacheCreationEphemeral1hInputTokens": 0,
+     "webSearchRequests": 0,
+     "costUSD": 0.8967514000000001
+    },
+    "claude-opus-5-5": {
+     "inputTokens": 608,
+     "outputTokens": 221903,
+     "thinkingTokens": 59442,
+     "cacheReadInputTokens": 64678536,
+     "cacheCreationInputTokens": 1066916,
+     "cacheCreationEphemeral5mInputTokens": 496671,
+     "cacheCreationEphemeral1hInputTokens": 570245,
+     "webSearchRequests": 0,
+     "costUSD": 24.421514199999983
+    },
+    "claude-haiku-5-5": {
+     "inputTokens": 162,
+     "outputTokens": 49226,
+     "thinkingTokens": 18870,
+     "cacheReadInputTokens": 9784504,
+     "cacheCreationInputTokens": 171525,
+     "cacheCreationEphemeral5mInputTokens": 171525,
+     "cacheCreationEphemeral1hInputTokens": 0,
+     "webSearchRequests": 0,
+     "costUSD": 0.6000037049999999
+    }
+   }
+  },
+  {
+   "timestamp": null,
+   "totalCostUSD": 44.718993054999984,
+   "models": {
+    "claude-fable-5-1": {
+     "inputTokens": 1840,
+     "outputTokens": 62037,
+     "thinkingTokens": 16881,
+     "cacheReadInputTokens": 25400659,
+     "cacheCreationInputTokens": 120536,
+     "cacheCreationEphemeral5mInputTokens": 0,
+     "cacheCreationEphemeral1hInputTokens": 120536,
+     "webSearchRequests": 0,
+     "costUSD": 11.881134750000001
+    },
+    "claude-sonnet-5-5": {
+     "inputTokens": 70,
+     "outputTokens": 36498,
+     "thinkingTokens": 5764,
+     "cacheReadInputTokens": 2656214,
+     "cacheCreationInputTokens": 106404,
+     "cacheCreationEphemeral5mInputTokens": 106404,
+     "cacheCreationEphemeral1hInputTokens": 0,
+     "webSearchRequests": 0,
+     "costUSD": 0.8967514000000001
+    },
+    "claude-opus-5-5": {
+     "inputTokens": 4180,
+     "outputTokens": 288778,
+     "thinkingTokens": 75888,
+     "cacheReadInputTokens": 75269776,
+     "cacheCreationInputTokens": 1575377,
+     "cacheCreationEphemeral5mInputTokens": 702716,
+     "cacheCreationEphemeral1hInputTokens": 872661,
+     "webSearchRequests": 0,
+     "costUSD": 31.34110319999997
+    },
+    "claude-haiku-5-5": {
+     "inputTokens": 162,
+     "outputTokens": 49226,
+     "thinkingTokens": 18870,
+     "cacheReadInputTokens": 9784504,
+     "cacheCreationInputTokens": 171525,
+     "cacheCreationEphemeral5mInputTokens": 171525,
+     "cacheCreationEphemeral1hInputTokens": 0,
+     "webSearchRequests": 0,
+     "costUSD": 0.6000037049999999
+    }
+   }
+  },
+  {
+   "timestamp": null,
+   "totalCostUSD": 63.27089936499997,
+   "models": {
+    "claude-fable-5-1": {
+     "inputTokens": 1840,
+     "outputTokens": 62037,
+     "thinkingTokens": 16881,
+     "cacheReadInputTokens": 25400659,
+     "cacheCreationInputTokens": 120536,
+     "cacheCreationEphemeral5mInputTokens": 0,
+     "cacheCreationEphemeral1hInputTokens": 120536,
+     "webSearchRequests": 0,
+     "costUSD": 11.881134750000001
+    },
+    "claude-sonnet-5-5": {
+     "inputTokens": 168,
+     "outputTokens": 99576,
+     "thinkingTokens": 18169,
+     "cacheReadInputTokens": 6568865,
+     "cacheCreationInputTokens": 319988,
+     "cacheCreationEphemeral5mInputTokens": 319988,
+     "cacheCreationEphemeral1hInputTokens": 0,
+     "webSearchRequests": 0,
+     "costUSD": 2.4529525000000003
+    },
+    "claude-opus-5-5": {
+     "inputTokens": 4666,
+     "outputTokens": 534141,
+     "thinkingTokens": 146953,
+     "cacheReadInputTokens": 112468593,
+     "cacheCreationInputTokens": 2352635,
+     "cacheCreationEphemeral5mInputTokens": 1298084,
+     "cacheCreationEphemeral1hInputTokens": 1054551,
+     "webSearchRequests": 0,
+     "costUSD": 48.12203059999997
+    },
+    "claude-haiku-5-5": {
+     "inputTokens": 234,
+     "outputTokens": 82856,
+     "thinkingTokens": 32708,
+     "cacheReadInputTokens": 13118907,
+     "cacheCreationInputTokens": 299833,
+     "cacheCreationEphemeral5mInputTokens": 299833,
+     "cacheCreationEphemeral1hInputTokens": 0,
+     "webSearchRequests": 0,
+     "costUSD": 0.8147815150000001
+    }
+   }
+  },
+  {
+   "timestamp": null,
+   "totalCostUSD": 66.66506796499996,
+   "models": {
+    "claude-fable-5-1": {
+     "inputTokens": 1840,
+     "outputTokens": 62037,
+     "thinkingTokens": 16881,
+     "cacheReadInputTokens": 25400659,
+     "cacheCreationInputTokens": 120536,
+     "cacheCreationEphemeral5mInputTokens": 0,
+     "cacheCreationEphemeral1hInputTokens": 120536,
+     "webSearchRequests": 0,
+     "costUSD": 11.881134750000001
+    },
+    "claude-sonnet-5-5": {
+     "inputTokens": 168,
+     "outputTokens": 99576,
+     "thinkingTokens": 18169,
+     "cacheReadInputTokens": 6568865,
+     "cacheCreationInputTokens": 319988,
+     "cacheCreationEphemeral5mInputTokens": 319988,
+     "cacheCreationEphemeral1hInputTokens": 0,
+     "webSearchRequests": 0,
+     "costUSD": 2.4529525000000003
+    },
+    "claude-opus-5-5": {
+     "inputTokens": 4720,
+     "outputTokens": 552401,
+     "thinkingTokens": 150426,
+     "cacheReadInputTokens": 118373036,
+     "cacheCreationInputTokens": 2583618,
+     "cacheCreationEphemeral5mInputTokens": 1298084,
+     "cacheCreationEphemeral1hInputTokens": 1285534,
+     "webSearchRequests": 0,
+     "costUSD": 51.516199199999974
+    },
+    "claude-haiku-5-5": {
+     "inputTokens": 234,
+     "outputTokens": 82856,
+     "thinkingTokens": 32708,
+     "cacheReadInputTokens": 13118907,
+     "cacheCreationInputTokens": 299833,
+     "cacheCreationEphemeral5mInputTokens": 299833,
+     "cacheCreationEphemeral1hInputTokens": 0,
+     "webSearchRequests": 0,
+     "costUSD": 0.8147815150000001
+    }
+   }
+  },
+  {
+   "timestamp": null,
+   "totalCostUSD": 78.04594406499989,
+   "models": {
+    "claude-fable-5-1": {
+     "inputTokens": 1840,
+     "outputTokens": 62037,
+     "thinkingTokens": 16881,
+     "cacheReadInputTokens": 25400659,
+     "cacheCreationInputTokens": 120536,
+     "cacheCreationEphemeral5mInputTokens": 0,
+     "cacheCreationEphemeral1hInputTokens": 120536,
+     "webSearchRequests": 0,
+     "costUSD": 11.881134750000001
+    },
+    "claude-sonnet-5-5": {
+     "inputTokens": 226,
+     "outputTokens": 119971,
+     "thinkingTokens": 21708,
+     "cacheReadInputTokens": 8456783,
+     "cacheCreationInputTokens": 408583,
+     "cacheCreationEphemeral5mInputTokens": 408583,
+     "cacheCreationEphemeral1hInputTokens": 0,
+     "webSearchRequests": 0,
+     "costUSD": 3.0672978000000004
+    },
+    "claude-opus-5-5": {
+     "inputTokens": 5010,
+     "outputTokens": 658862,
+     "thinkingTokens": 175379,
+     "cacheReadInputTokens": 143967985,
+     "cacheCreationInputTokens": 3115221,
+     "cacheCreationEphemeral5mInputTokens": 1543305,
+     "cacheCreationEphemeral1hInputTokens": 1571916,
+     "webSearchRequests": 0,
+     "costUSD": 62.28272999999995
+    },
+    "claude-haiku-5-5": {
+     "inputTokens": 234,
+     "outputTokens": 82856,
+     "thinkingTokens": 32708,
+     "cacheReadInputTokens": 13118907,
+     "cacheCreationInputTokens": 299833,
+     "cacheCreationEphemeral5mInputTokens": 299833,
+     "cacheCreationEphemeral1hInputTokens": 0,
+     "webSearchRequests": 0,
+     "costUSD": 0.8147815150000001
+    }
+   }
+  },
+  {
+   "timestamp": null,
+   "totalCostUSD": 83.00877166499991,
+   "models": {
+    "claude-fable-5-1": {
+     "inputTokens": 1840,
+     "outputTokens": 62037,
+     "thinkingTokens": 16881,
+     "cacheReadInputTokens": 25400659,
+     "cacheCreationInputTokens": 120536,
+     "cacheCreationEphemeral5mInputTokens": 0,
+     "cacheCreationEphemeral1hInputTokens": 120536,
+     "webSearchRequests": 0,
+     "costUSD": 11.881134750000001
+    },
+    "claude-sonnet-5-5": {
+     "inputTokens": 226,
+     "outputTokens": 119971,
+     "thinkingTokens": 21708,
+     "cacheReadInputTokens": 8456783,
+     "cacheCreationInputTokens": 408583,
+     "cacheCreationEphemeral5mInputTokens": 408583,
+     "cacheCreationEphemeral1hInputTokens": 0,
+     "webSearchRequests": 0,
+     "costUSD": 3.0672978000000004
+    },
+    "claude-opus-5-5": {
+     "inputTokens": 5214,
+     "outputTokens": 708616,
+     "thinkingTokens": 193087,
+     "cacheReadInputTokens": 158221673,
+     "cacheCreationInputTokens": 3330541,
+     "cacheCreationEphemeral5mInputTokens": 1745427,
+     "cacheCreationEphemeral1hInputTokens": 1585114,
+     "webSearchRequests": 0,
+     "costUSD": 67.24555759999996
+    },
+    "claude-haiku-5-5": {
+     "inputTokens": 234,
+     "outputTokens": 82856,
+     "thinkingTokens": 32708,
+     "cacheReadInputTokens": 13118907,
+     "cacheCreationInputTokens": 299833,
+     "cacheCreationEphemeral5mInputTokens": 299833,
+     "cacheCreationEphemeral1hInputTokens": 0,
+     "webSearchRequests": 0,
+     "costUSD": 0.8147815150000001
+    }
+   }
+  },
+  {
+   "timestamp": null,
+   "totalCostUSD": 91.57487906499989,
+   "models": {
+    "claude-fable-5-1": {
+     "inputTokens": 1840,
+     "outputTokens": 62037,
+     "thinkingTokens": 16881,
+     "cacheReadInputTokens": 25400659,
+     "cacheCreationInputTokens": 120536,
+     "cacheCreationEphemeral5mInputTokens": 0,
+     "cacheCreationEphemeral1hInputTokens": 120536,
+     "webSearchRequests": 0,
+     "costUSD": 11.881134750000001
+    },
+    "claude-sonnet-5-5": {
+     "inputTokens": 226,
+     "outputTokens": 119971,
+     "thinkingTokens": 21708,
+     "cacheReadInputTokens": 8456783,
+     "cacheCreationInputTokens": 408583,
+     "cacheCreationEphemeral5mInputTokens": 408583,
+     "cacheCreationEphemeral1hInputTokens": 0,
+     "webSearchRequests": 0,
+     "costUSD": 3.0672978000000004
+    },
+    "claude-opus-5-5": {
+     "inputTokens": 5464,
+     "outputTokens": 775686,
+     "thinkingTokens": 214451,
+     "cacheReadInputTokens": 176660050,
+     "cacheCreationInputTokens": 3849159,
+     "cacheCreationEphemeral5mInputTokens": 1949731,
+     "cacheCreationEphemeral1hInputTokens": 1899428,
+     "webSearchRequests": 0,
+     "costUSD": 75.81166499999993
+    },
+    "claude-haiku-5-5": {
+     "inputTokens": 234,
+     "outputTokens": 82856,
+     "thinkingTokens": 32708,
+     "cacheReadInputTokens": 13118907,
+     "cacheCreationInputTokens": 299833,
+     "cacheCreationEphemeral5mInputTokens": 299833,
+     "cacheCreationEphemeral1hInputTokens": 0,
+     "webSearchRequests": 0,
+     "costUSD": 0.8147815150000001
+    }
+   }
+  },
+  {
+   "timestamp": null,
+   "totalCostUSD": 104.73117796999986,
+   "models": {
+    "claude-fable-5-1": {
+     "inputTokens": 1840,
+     "outputTokens": 62037,
+     "thinkingTokens": 16881,
+     "cacheReadInputTokens": 25400659,
+     "cacheCreationInputTokens": 120536,
+     "cacheCreationEphemeral5mInputTokens": 0,
+     "cacheCreationEphemeral1hInputTokens": 120536,
+     "webSearchRequests": 0,
+     "costUSD": 11.881134750000001
+    },
+    "claude-sonnet-5-5": {
+     "inputTokens": 308,
+     "outputTokens": 140446,
+     "thinkingTokens": 26379,
+     "cacheReadInputTokens": 11389803,
+     "cacheCreationInputTokens": 507958,
+     "cacheCreationEphemeral5mInputTokens": 507958,
+     "cacheCreationEphemeral1hInputTokens": 0,
+     "webSearchRequests": 0,
+     "costUSD": 3.8139513
+    },
+    "claude-opus-5-5": {
+     "inputTokens": 5752,
+     "outputTokens": 886869,
+     "thinkingTokens": 250701,
+     "cacheReadInputTokens": 201810496,
+     "cacheCreationInputTokens": 4555002,
+     "cacheCreationEphemeral5mInputTokens": 2297824,
+     "cacheCreationEphemeral1hInputTokens": 2257178,
+     "webSearchRequests": 0,
+     "costUSD": 87.66903119999992
+    },
+    "claude-haiku-5-5": {
+     "inputTokens": 398,
+     "outputTokens": 137160,
+     "thinkingTokens": 59382,
+     "cacheReadInputTokens": 22279331,
+     "cacheCreationInputTokens": 464586,
+     "cacheCreationEphemeral5mInputTokens": 464586,
+     "cacheCreationEphemeral1hInputTokens": 0,
+     "webSearchRequests": 0,
+     "costUSD": 1.36706072
+    }
+   }
+  },
+  {
+   "timestamp": null,
+   "totalCostUSD": 113.47298241499986,
+   "models": {
+    "claude-fable-5-1": {
+     "inputTokens": 1840,
+     "outputTokens": 62037,
+     "thinkingTokens": 16881,
+     "cacheReadInputTokens": 25400659,
+     "cacheCreationInputTokens": 120536,
+     "cacheCreationEphemeral5mInputTokens": 0,
+     "cacheCreationEphemeral1hInputTokens": 120536,
+     "webSearchRequests": 0,
+     "costUSD": 11.881134750000001
+    },
+    "claude-sonnet-5-5": {
+     "inputTokens": 308,
+     "outputTokens": 140446,
+     "thinkingTokens": 26379,
+     "cacheReadInputTokens": 11389803,
+     "cacheCreationInputTokens": 507958,
+     "cacheCreationEphemeral5mInputTokens": 507958,
+     "cacheCreationEphemeral1hInputTokens": 0,
+     "webSearchRequests": 0,
+     "costUSD": 3.8139513
+    },
+    "claude-opus-5-5": {
+     "inputTokens": 5862,
+     "outputTokens": 919707,
+     "thinkingTokens": 259278,
+     "cacheReadInputTokens": 218696546,
+     "cacheCreationInputTokens": 5255969,
+     "cacheCreationEphemeral5mInputTokens": 2600640,
+     "cacheCreationEphemeral1hInputTokens": 2655329,
+     "webSearchRequests": 0,
+     "costUSD": 96.40272919999991
+    },
+    "claude-haiku-5-5": {
+     "inputTokens": 410,
+     "outputTokens": 140066,
+     "thinkingTokens": 59954,
+     "cacheReadInputTokens": 22450718,
+     "cacheCreationInputTokens": 504093,
+     "cacheCreationEphemeral5mInputTokens": 504093,
+     "cacheCreationEphemeral1hInputTokens": 0,
+     "webSearchRequests": 0,
+     "costUSD": 1.375167165
+    }
+   }
+  },
+  {
+   "timestamp": null,
+   "totalCostUSD": 156.74958920999973,
+   "models": {
+    "claude-fable-5-1": {
+     "inputTokens": 1840,
+     "outputTokens": 62037,
+     "thinkingTokens": 16881,
+     "cacheReadInputTokens": 25400659,
+     "cacheCreationInputTokens": 120536,
+     "cacheCreationEphemeral5mInputTokens": 0,
+     "cacheCreationEphemeral1hInputTokens": 120536,
+     "webSearchRequests": 0,
+     "costUSD": 11.881134750000001
+    },
+    "claude-sonnet-5-5": {
+     "inputTokens": 504,
+     "outputTokens": 234387,
+     "thinkingTokens": 45808,
+     "cacheReadInputTokens": 24131702,
+     "cacheCreationInputTokens": 1082426,
+     "cacheCreationEphemeral5mInputTokens": 1082426,
+     "cacheCreationEphemeral1hInputTokens": 0,
+     "webSearchRequests": 0,
+     "costUSD": 7.464113200000001
+    },
+    "claude-opus-5-5": {
+     "inputTokens": 6854,
+     "outputTokens": 1425573,
+     "thinkingTokens": 413514,
+     "cacheReadInputTokens": 306925124,
+     "cacheCreationInputTokens": 7135585,
+     "cacheCreationEphemeral5mInputTokens": 3931487,
+     "cacheCreationEphemeral1hInputTokens": 3204098,
+     "webSearchRequests": 0,
+     "costUSD": 135.21411979999985
+    },
+    "claude-haiku-5-5": {
+     "inputTokens": 192303,
+     "outputTokens": 232288,
+     "thinkingTokens": 101510,
+     "cacheReadInputTokens": 34014308,
+     "cacheCreationInputTokens": 701772,
+     "cacheCreationEphemeral5mInputTokens": 701772,
+     "cacheCreationEphemeral1hInputTokens": 0,
+     "webSearchRequests": 5,
+     "costUSD": 2.1902214600000005
+    }
+   }
+  },
+  {
+   "timestamp": null,
+   "totalCostUSD": 157.6230494099997,
+   "models": {
+    "claude-fable-5-1": {
+     "inputTokens": 1840,
+     "outputTokens": 62037,
+     "thinkingTokens": 16881,
+     "cacheReadInputTokens": 25400659,
+     "cacheCreationInputTokens": 120536,
+     "cacheCreationEphemeral5mInputTokens": 0,
+     "cacheCreationEphemeral1hInputTokens": 120536,
+     "webSearchRequests": 0,
+     "costUSD": 11.881134750000001
+    },
+    "claude-sonnet-5-5": {
+     "inputTokens": 504,
+     "outputTokens": 234387,
+     "thinkingTokens": 45808,
+     "cacheReadInputTokens": 24131702,
+     "cacheCreationInputTokens": 1082426,
+     "cacheCreationEphemeral5mInputTokens": 1082426,
+     "cacheCreationEphemeral1hInputTokens": 0,
+     "webSearchRequests": 0,
+     "costUSD": 7.464113200000001
+    },
+    "claude-opus-5-5": {
+     "inputTokens": 6868,
+     "outputTokens": 1429699,
+     "thinkingTokens": 414309,
+     "cacheReadInputTokens": 310154825,
+     "cacheCreationInputTokens": 7153703,
+     "cacheCreationEphemeral5mInputTokens": 3931487,
+     "cacheCreationEphemeral1hInputTokens": 3222216,
+     "webSearchRequests": 0,
+     "costUSD": 136.08757999999983
+    },
+    "claude-haiku-5-5": {
+     "inputTokens": 192303,
+     "outputTokens": 232288,
+     "thinkingTokens": 101510,
+     "cacheReadInputTokens": 34014308,
+     "cacheCreationInputTokens": 701772,
+     "cacheCreationEphemeral5mInputTokens": 701772,
+     "cacheCreationEphemeral1hInputTokens": 0,
+     "webSearchRequests": 5,
+     "costUSD": 2.1902214600000005
+    }
+   }
+  },
+  {
+   "timestamp": null,
+   "totalCostUSD": 162.04822120999972,
+   "models": {
+    "claude-fable-5-1": {
+     "inputTokens": 1840,
+     "outputTokens": 62037,
+     "thinkingTokens": 16881,
+     "cacheReadInputTokens": 25400659,
+     "cacheCreationInputTokens": 120536,
+     "cacheCreationEphemeral5mInputTokens": 0,
+     "cacheCreationEphemeral1hInputTokens": 120536,
+     "webSearchRequests": 0,
+     "costUSD": 11.881134750000001
+    },
+    "claude-sonnet-5-5": {
+     "inputTokens": 504,
+     "outputTokens": 234387,
+     "thinkingTokens": 45808,
+     "cacheReadInputTokens": 24131702,
+     "cacheCreationInputTokens": 1082426,
+     "cacheCreationEphemeral5mInputTokens": 1082426,
+     "cacheCreationEphemeral1hInputTokens": 0,
+     "webSearchRequests": 0,
+     "costUSD": 7.464113200000001
+    },
+    "claude-opus-5-5": {
+     "inputTokens": 6872,
+     "outputTokens": 1430418,
+     "thinkingTokens": 414339,
+     "cacheReadInputTokens": 310715704,
+     "cacheCreationInputTokens": 7691028,
+     "cacheCreationEphemeral5mInputTokens": 3931487,
+     "cacheCreationEphemeral1hInputTokens": 3759541,
+     "webSearchRequests": 0,
+     "costUSD": 140.51275179999985
+    },
+    "claude-haiku-5-5": {
+     "inputTokens": 192303,
+     "outputTokens": 232288,
+     "thinkingTokens": 101510,
+     "cacheReadInputTokens": 34014308,
+     "cacheCreationInputTokens": 701772,
+     "cacheCreationEphemeral5mInputTokens": 701772,
+     "cacheCreationEphemeral1hInputTokens": 0,
+     "webSearchRequests": 5,
+     "costUSD": 2.1902214600000005
+    }
+   }
+  },
+  {
+   "timestamp": null,
+   "totalCostUSD": 167.55084380999972,
+   "models": {
+    "claude-fable-5-1": {
+     "inputTokens": 1840,
+     "outputTokens": 62037,
+     "thinkingTokens": 16881,
+     "cacheReadInputTokens": 25400659,
+     "cacheCreationInputTokens": 120536,
+     "cacheCreationEphemeral5mInputTokens": 0,
+     "cacheCreationEphemeral1hInputTokens": 120536,
+     "webSearchRequests": 0,
+     "costUSD": 11.881134750000001
+    },
+    "claude-sonnet-5-5": {
+     "inputTokens": 504,
+     "outputTokens": 234387,
+     "thinkingTokens": 45808,
+     "cacheReadInputTokens": 24131702,
+     "cacheCreationInputTokens": 1082426,
+     "cacheCreationEphemeral5mInputTokens": 1082426,
+     "cacheCreationEphemeral1hInputTokens": 0,
+     "webSearchRequests": 0,
+     "costUSD": 7.464113200000001
+    },
+    "claude-opus-5-5": {
+     "inputTokens": 6894,
+     "outputTokens": 1435299,
+     "thinkingTokens": 416027,
+     "cacheReadInputTokens": 315751957,
+     "cacheCreationInputTokens": 8240736,
+     "cacheCreationEphemeral5mInputTokens": 3931487,
+     "cacheCreationEphemeral1hInputTokens": 4309249,
+     "webSearchRequests": 0,
+     "costUSD": 146.01537439999984
+    },
+    "claude-haiku-5-5": {
+     "inputTokens": 192303,
+     "outputTokens": 232288,
+     "thinkingTokens": 101510,
+     "cacheReadInputTokens": 34014308,
+     "cacheCreationInputTokens": 701772,
+     "cacheCreationEphemeral5mInputTokens": 701772,
+     "cacheCreationEphemeral1hInputTokens": 0,
+     "webSearchRequests": 5,
+     "costUSD": 2.1902214600000005
+    }
+   }
+  },
+  {
+   "timestamp": null,
+   "totalCostUSD": 170.31081220999968,
+   "models": {
+    "claude-fable-5-1": {
+     "inputTokens": 1840,
+     "outputTokens": 62037,
+     "thinkingTokens": 16881,
+     "cacheReadInputTokens": 25400659,
+     "cacheCreationInputTokens": 120536,
+     "cacheCreationEphemeral5mInputTokens": 0,
+     "cacheCreationEphemeral1hInputTokens": 120536,
+     "webSearchRequests": 0,
+     "costUSD": 11.881134750000001
+    },
+    "claude-sonnet-5-5": {
+     "inputTokens": 504,
+     "outputTokens": 234387,
+     "thinkingTokens": 45808,
+     "cacheReadInputTokens": 24131702,
+     "cacheCreationInputTokens": 1082426,
+     "cacheCreationEphemeral5mInputTokens": 1082426,
+     "cacheCreationEphemeral1hInputTokens": 0,
+     "webSearchRequests": 0,
+     "costUSD": 7.464113200000001
+    },
+    "claude-opus-5-5": {
+     "inputTokens": 6934,
+     "outputTokens": 1449512,
+     "thinkingTokens": 421170,
+     "cacheReadInputTokens": 327228219,
+     "cacheCreationInputTokens": 8263273,
+     "cacheCreationEphemeral5mInputTokens": 3931487,
+     "cacheCreationEphemeral1hInputTokens": 4331786,
+     "webSearchRequests": 0,
+     "costUSD": 148.7753427999998
+    },
+    "claude-haiku-5-5": {
+     "inputTokens": 192303,
+     "outputTokens": 232288,
+     "thinkingTokens": 101510,
+     "cacheReadInputTokens": 34014308,
+     "cacheCreationInputTokens": 701772,
+     "cacheCreationEphemeral5mInputTokens": 701772,
+     "cacheCreationEphemeral1hInputTokens": 0,
+     "webSearchRequests": 5,
+     "costUSD": 2.1902214600000005
+    }
+   }
+  },
+  {
+   "timestamp": null,
+   "totalCostUSD": 177.95422120999967,
+   "models": {
+    "claude-fable-5-1": {
+     "inputTokens": 1840,
+     "outputTokens": 62037,
+     "thinkingTokens": 16881,
+     "cacheReadInputTokens": 25400659,
+     "cacheCreationInputTokens": 120536,
+     "cacheCreationEphemeral5mInputTokens": 0,
+     "cacheCreationEphemeral1hInputTokens": 120536,
+     "webSearchRequests": 0,
+     "costUSD": 11.881134750000001
+    },
+    "claude-sonnet-5-5": {
+     "inputTokens": 504,
+     "outputTokens": 234387,
+     "thinkingTokens": 45808,
+     "cacheReadInputTokens": 24131702,
+     "cacheCreationInputTokens": 1082426,
+     "cacheCreationEphemeral5mInputTokens": 1082426,
+     "cacheCreationEphemeral1hInputTokens": 0,
+     "webSearchRequests": 0,
+     "costUSD": 7.464113200000001
+    },
+    "claude-opus-5-5": {
+     "inputTokens": 6980,
+     "outputTokens": 1465316,
+     "thinkingTokens": 428042,
+     "cacheReadInputTokens": 339828344,
+     "cacheCreationInputTokens": 8864163,
+     "cacheCreationEphemeral5mInputTokens": 3931487,
+     "cacheCreationEphemeral1hInputTokens": 4932676,
+     "webSearchRequests": 0,
+     "costUSD": 156.4187517999998
+    },
+    "claude-haiku-5-5": {
+     "inputTokens": 192303,
+     "outputTokens": 232288,
+     "thinkingTokens": 101510,
+     "cacheReadInputTokens": 34014308,
+     "cacheCreationInputTokens": 701772,
+     "cacheCreationEphemeral5mInputTokens": 701772,
+     "cacheCreationEphemeral1hInputTokens": 0,
+     "webSearchRequests": 5,
+     "costUSD": 2.1902214600000005
+    }
+   }
+  },
+  {
+   "timestamp": null,
+   "totalCostUSD": 205.85837853999976,
+   "models": {
+    "claude-fable-5-1": {
+     "inputTokens": 1840,
+     "outputTokens": 62037,
+     "thinkingTokens": 16881,
+     "cacheReadInputTokens": 25400659,
+     "cacheCreationInputTokens": 120536,
+     "cacheCreationEphemeral5mInputTokens": 0,
+     "cacheCreationEphemeral1hInputTokens": 120536,
+     "webSearchRequests": 0,
+     "costUSD": 11.881134750000001
+    },
+    "claude-sonnet-5-5": {
+     "inputTokens": 504,
+     "outputTokens": 234387,
+     "thinkingTokens": 45808,
+     "cacheReadInputTokens": 24131702,
+     "cacheCreationInputTokens": 1082426,
+     "cacheCreationEphemeral5mInputTokens": 1082426,
+     "cacheCreationEphemeral1hInputTokens": 0,
+     "webSearchRequests": 0,
+     "costUSD": 7.464113200000001
+    },
+    "claude-opus-5-5": {
+     "inputTokens": 7410,
+     "outputTokens": 1650537,
+     "thinkingTokens": 482910,
+     "cacheReadInputTokens": 400506868,
+     "cacheCreationInputTokens": 10855151,
+     "cacheCreationEphemeral5mInputTokens": 5256214,
+     "cacheCreationEphemeral1hInputTokens": 5598937,
+     "webSearchRequests": 0,
+     "costUSD": 184.2143195999999
+    },
+    "claude-haiku-5-5": {
+     "inputTokens": 192327,
+     "outputTokens": 265335,
+     "thinkingTokens": 114761,
+     "cacheReadInputTokens": 34962448,
+     "cacheCreationInputTokens": 824654,
+     "cacheCreationEphemeral5mInputTokens": 824654,
+     "cacheCreationEphemeral1hInputTokens": 0,
+     "webSearchRequests": 5,
+     "costUSD": 2.2988109900000007
+    }
+   }
+  },
+  {
+   "timestamp": null,
+   "totalCostUSD": 208.49598093999973,
+   "models": {
+    "claude-fable-5-1": {
+     "inputTokens": 1840,
+     "outputTokens": 62037,
+     "thinkingTokens": 16881,
+     "cacheReadInputTokens": 25400659,
+     "cacheCreationInputTokens": 120536,
+     "cacheCreationEphemeral5mInputTokens": 0,
+     "cacheCreationEphemeral1hInputTokens": 120536,
+     "webSearchRequests": 0,
+     "costUSD": 11.881134750000001
+    },
+    "claude-sonnet-5-5": {
+     "inputTokens": 504,
+     "outputTokens": 234387,
+     "thinkingTokens": 45808,
+     "cacheReadInputTokens": 24131702,
+     "cacheCreationInputTokens": 1082426,
+     "cacheCreationEphemeral5mInputTokens": 1082426,
+     "cacheCreationEphemeral1hInputTokens": 0,
+     "webSearchRequests": 0,
+     "costUSD": 7.464113200000001
+    },
+    "claude-opus-5-5": {
+     "inputTokens": 7444,
+     "outputTokens": 1658677,
+     "thinkingTokens": 486024,
+     "cacheReadInputTokens": 411717764,
+     "cacheCreationInputTokens": 10882716,
+     "cacheCreationEphemeral5mInputTokens": 5256214,
+     "cacheCreationEphemeral1hInputTokens": 5626502,
+     "webSearchRequests": 0,
+     "costUSD": 186.83995479999987
+    },
+    "claude-haiku-5-5": {
+     "inputTokens": 206824,
+     "outputTokens": 266370,
+     "thinkingTokens": 114866,
+     "cacheReadInputTokens": 34962448,
+     "cacheCreationInputTokens": 824654,
+     "cacheCreationEphemeral5mInputTokens": 824654,
+     "cacheCreationEphemeral1hInputTokens": 0,
+     "webSearchRequests": 6,
+     "costUSD": 2.3107781900000006
+    }
+   }
+  },
+  {
+   "timestamp": null,
+   "totalCostUSD": 208.82372073999971,
+   "models": {
+    "claude-fable-5-1": {
+     "inputTokens": 1840,
+     "outputTokens": 62037,
+     "thinkingTokens": 16881,
+     "cacheReadInputTokens": 25400659,
+     "cacheCreationInputTokens": 120536,
+     "cacheCreationEphemeral5mInputTokens": 0,
+     "cacheCreationEphemeral1hInputTokens": 120536,
+     "webSearchRequests": 0,
+     "costUSD": 11.881134750000001
+    },
+    "claude-sonnet-5-5": {
+     "inputTokens": 504,
+     "outputTokens": 234387,
+     "thinkingTokens": 45808,
+     "cacheReadInputTokens": 24131702,
+     "cacheCreationInputTokens": 1082426,
+     "cacheCreationEphemeral5mInputTokens": 1082426,
+     "cacheCreationEphemeral1hInputTokens": 0,
+     "webSearchRequests": 0,
+     "costUSD": 7.464113200000001
+    },
+    "claude-opus-5-5": {
+     "inputTokens": 7448,
+     "outputTokens": 1659418,
+     "thinkingTokens": 486088,
+     "cacheReadInputTokens": 413137803,
+     "cacheCreationInputTokens": 10886328,
+     "cacheCreationEphemeral5mInputTokens": 5256214,
+     "cacheCreationEphemeral1hInputTokens": 5630114,
+     "webSearchRequests": 0,
+     "costUSD": 187.16769459999986
+    },
+    "claude-haiku-5-5": {
+     "inputTokens": 206824,
+     "outputTokens": 266370,
+     "thinkingTokens": 114866,
+     "cacheReadInputTokens": 34962448,
+     "cacheCreationInputTokens": 824654,
+     "cacheCreationEphemeral5mInputTokens": 824654,
+     "cacheCreationEphemeral1hInputTokens": 0,
+     "webSearchRequests": 6,
+     "costUSD": 2.3107781900000006
+    }
+   }
+  },
+  {
+   "timestamp": null,
+   "totalCostUSD": 214.44630973999972,
+   "models": {
+    "claude-fable-5-1": {
+     "inputTokens": 1840,
+     "outputTokens": 62037,
+     "thinkingTokens": 16881,
+     "cacheReadInputTokens": 25400659,
+     "cacheCreationInputTokens": 120536,
+     "cacheCreationEphemeral5mInputTokens": 0,
+     "cacheCreationEphemeral1hInputTokens": 120536,
+     "webSearchRequests": 0,
+     "costUSD": 11.881134750000001
+    },
+    "claude-sonnet-5-5": {
+     "inputTokens": 504,
+     "outputTokens": 234387,
+     "thinkingTokens": 45808,
+     "cacheReadInputTokens": 24131702,
+     "cacheCreationInputTokens": 1082426,
+     "cacheCreationEphemeral5mInputTokens": 1082426,
+     "cacheCreationEphemeral1hInputTokens": 0,
+     "webSearchRequests": 0,
+     "costUSD": 7.464113200000001
+    },
+    "claude-opus-5-5": {
+     "inputTokens": 7450,
+     "outputTokens": 1660012,
+     "thinkingTokens": 486246,
+     "cacheReadInputTokens": 413150628,
+     "cacheCreationInputTokens": 11587345,
+     "cacheCreationEphemeral5mInputTokens": 5256214,
+     "cacheCreationEphemeral1hInputTokens": 6331131,
+     "webSearchRequests": 0,
+     "costUSD": 192.79028359999987
+    },
+    "claude-haiku-5-5": {
+     "inputTokens": 206824,
+     "outputTokens": 266370,
+     "thinkingTokens": 114866,
+     "cacheReadInputTokens": 34962448,
+     "cacheCreationInputTokens": 824654,
+     "cacheCreationEphemeral5mInputTokens": 824654,
+     "cacheCreationEphemeral1hInputTokens": 0,
+     "webSearchRequests": 6,
+     "costUSD": 2.3107781900000006
+    }
+   }
+  }
+ ]
+}

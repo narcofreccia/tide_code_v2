@@ -208,7 +208,7 @@ export async function startServer(deps: ServerDeps): Promise<ServerHandle> {
     ...(deps.acp !== undefined ? { acp: deps.acp } : {}),
   });
   registerSearchHandlers(router, { engine });
-  registerUsageHandlers(router, { engine, settings, tideHome: config.tideHome, dataDir: config.dataDir });
+  registerUsageHandlers(router, { engine, settings, store, tideHome: config.tideHome, dataDir: config.dataDir });
   registerPrHandlers(router, { engine, forges });
   registerAgentHandlers(router, { engine });
   registerAgentThreadHandlers(router, {
