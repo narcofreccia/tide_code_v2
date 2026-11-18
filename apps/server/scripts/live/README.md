@@ -15,3 +15,20 @@ S=$S node --experimental-strip-types scripts/live/two-machines.mts    # repo ide
 `fresh-session.mts` needs a logged-in Claude; `two-machines.mts` needs none (the merge is a
 local commit) but uses the text model for the squash subject when one is available. It turns on
 `git.pushBaseAfterMerge` on machine B (off by default), so B's merge reaches origin and A can pull it.
+
+## R20: usage after a resume, quota hold
+
+One scratch server is enough (`home1`, any free port; pass it as `PORT`). Both need a logged-in Claude
+and spend a few one-line haiku turns.
+
+```sh
+S=$S PORT=3821 node --experimental-strip-types scripts/live/usage-resume.mts first    # two turns
+# stop the server and start it again on the same TIDE_HOME, then:
+S=$S PORT=3821 node --experimental-strip-types scripts/live/usage-resume.mts second   # turn 3 must cost its own delta
+mkdir -p $S/smoke-quota && (cd $S/smoke-quota && git init -q -b main . && echo hello > a.txt && git add . && git commit -qm init)
+S=$S PORT=3821 node --experimental-strip-types scripts/live/quota-hold.mts            # cap reached → queue held → refused → lift → runs
+```
+
+`usage-resume.mts` fails if the turn after the restart carries the session's running total (the
+bug R20 fixed in the Claude driver). `quota-hold.mts` uses a repo of its own, because earlier spend
+in the same project counts against the cap.
