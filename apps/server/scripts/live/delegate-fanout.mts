@@ -3,6 +3,7 @@
 // Needs a scratch server (see README) and every harness named below logged in.
 //   ORCH=claude DELEGATES=codex,claude   orchestrator and the two delegates (defaults)
 //   WAIT=1        the orchestrator blocks in tide_delegate (completion "wait") instead of being woken
+//   NOWAIT=1      the first delegate does not wait for its sub-agent: it must still count as busy until the sub-agent ends
 //   MODE=…        runtime mode of the orchestrator; delegates never get a broader one
 //   APPROVE_ALL=1 accept every approval card; without it only Tide's own tools are accepted
 import { readFileSync } from "node:fs";
@@ -13,6 +14,7 @@ const port = process.env.PORT ?? "3821";
 const orchestrator = process.env.ORCH ?? "claude";
 const [first = "codex", second = "claude"] = (process.env.DELEGATES ?? "codex,claude").split(",");
 const wait = process.env.WAIT === "1";
+const noWait = process.env.NOWAIT === "1";
 const mode = process.env.MODE ?? "auto-accept-edits";
 const approveAll = process.env.APPROVE_ALL === "1";
 const timeoutS = Number(process.env.TIMEOUT_S ?? "480");
@@ -21,8 +23,8 @@ const token = (JSON.parse(readFileSync(`${S}/home1/server.json`, "utf8")) as { t
 const c = await WsTestClient.open(`ws://127.0.0.1:${port}/ws?token=${token}`);
 const sleep = (ms: number) => new Promise((r) => setTimeout(r, ms));
 type Turn = { id: string; threadId: string; status: string; requestedAt: number; settledAt?: number };
-type Activity = { id: string; kind: string; threadId: string; status?: string; childKey?: string; parentToolUseId?: string; requestId?: string; toolName?: string; name?: string };
-type Message = { role: string; text: string; notification?: { source: string; summary: string } };
+type Activity = { id: string; kind: string; threadId: string; status?: string; updatedAt: number; childKey?: string; parentToolUseId?: string; requestId?: string; toolName?: string; name?: string };
+type Message = { role: string; text: string; turnId: string; notification?: { source: string; summary: string } };
 type Thread = { id: string; provider: string; status: string; delegatedBy?: string; title?: string };
 type Model = { threads: Record<string, Thread>; turns: Record<string, Turn>; activities: Record<string, Activity>; messages: Record<string, Message>; threadMessages: Record<string, string[]> };
 const model = () => c.call<Model>("model.get", {});
@@ -48,7 +50,9 @@ const projectId: string = existing?.id ?? (await dispatch({ type: "project.creat
 const t = await dispatch({ type: "thread.create", projectId, provider: orchestrator, ...(process.env.MODEL ? { model: process.env.MODEL } : {}), mode, useWorktree: false });
 const parentId: string = t.events.find((e) => e.event.type === "thread.created").event.thread.id;
 
-const taskA = "Spawn one sub-agent and have it read the file a.txt in the current directory. Wait for the sub-agent to finish. Then reply with exactly: A-DONE followed by the content of the file.";
+const taskA = noWait
+  ? "Spawn one sub-agent and have it read the file a.txt in the current directory and then run the shell command: sleep 20. Do not wait for the sub-agent. Reply at once with exactly: A-DONE spawned"
+  : "Spawn one sub-agent and have it read the file a.txt in the current directory. Wait for the sub-agent to finish. Then reply with exactly: A-DONE followed by the content of the file.";
 const taskB = "Reply with exactly: B-DONE";
 const after = wait
   ? 'Pass completion "wait" in both calls. When both have returned, reply with one line that quotes the final reply of each delegate.'
@@ -96,6 +100,14 @@ if (a !== undefined) {
   check("delegate a used a sub-agent", agents.length > 0, agents.map((s) => `${s.name ?? "?"}:${s.status}`).join(", "));
   check("the sub-agent's rows nest under it", nested.length > 0, `${nested.length} nested of ${rows.length} rows`);
   check("no sub-agent left running", agents.every((s) => s.status !== "running"));
+  if (noWait) {
+    // the delegate's own turn ended first; it is finished for the orchestrator only once its sub-agent is
+    const agentEnd = Math.max(...agents.map((s) => s.updatedAt));
+    const ownEnd = turnsOf(m, a.id)[0]?.settledAt ?? Infinity;
+    const wokenAt = Math.max(...messagesOf(m, parentId).filter((x) => x.notification?.source === "delegate").map((x) => m.turns[x.turnId]?.requestedAt ?? 0));
+    check("the sub-agent outlived its delegate's turn", ownEnd < agentEnd, `turn settled ${ownEnd}, sub-agent ended ${agentEnd}`);
+    check("the orchestrator heard of delegate a only after its sub-agent ended", wokenAt >= agentEnd, `woken ${wokenAt}, sub-agent ended ${agentEnd}`);
+  }
 }
 const parentTurns = turnsOf(m, parentId);
 const wakeUps = messagesOf(m, parentId).filter((x) => x.notification?.source === "delegate");

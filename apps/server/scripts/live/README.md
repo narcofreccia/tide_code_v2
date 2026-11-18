@@ -42,6 +42,7 @@ orchestrator conversation and two short delegate turns.
 mkdir -p $S/smoke-fanout && (cd $S/smoke-fanout && git init -q -b main . && echo hello > a.txt && git add . && git commit -qm init)
 S=$S PORT=3821 node --experimental-strip-types scripts/live/delegate-fanout.mts                          # Claude orchestrator → Codex (with a sub-agent) + Claude
 S=$S PORT=3821 ORCH=codex DELEGATES=claude,codex WAIT=1 node --experimental-strip-types scripts/live/delegate-fanout.mts   # Codex orchestrator blocking in tide_delegate
+S=$S PORT=3821 NOWAIT=1 node --experimental-strip-types scripts/live/delegate-fanout.mts                 # the Codex delegate does not wait for its sub-agent
 ```
 
 `delegate-fanout.mts` checks that the two delegates run on the harnesses asked for, that the first
@@ -49,4 +50,6 @@ one's sub-agent rows nest under its sub-agent, that the orchestrator's first tur
 delegates do and that it is then woken with both results (or, with `WAIT=1`, that the results
 come back through the blocking call and no wake-up follows). It accepts approval cards for
 Tide's own tools; `APPROVE_ALL=1` accepts every card, otherwise other cards are printed and left.
-`DELEGATES=codex,opencode` needs an OpenCode 2.x the driver can find.
+With `NOWAIT=1` the first delegate ends its turn while its sub-agent still works; the script checks
+that the orchestrator hears of that delegate only after the sub-agent ended. A second run reuses the
+project of the first. `DELEGATES=codex,opencode` needs an OpenCode 2.x the driver can find.
