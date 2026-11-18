@@ -19,11 +19,23 @@ export function eventSessionId(event: OpencodeEvent): string | undefined {
   return typeof info?.metadata?.sessionID === "string" ? info.metadata.sessionID : undefined;
 }
 
+/** `session.created` names the new session; a sub-agent's also names the session that spawned it. */
+function createdParentId(event: OpencodeEvent): string | undefined {
+  if (event.type !== "session.created") return undefined;
+  const parent = (event as { data?: { parentID?: unknown } }).data?.parentID;
+  return typeof parent === "string" ? parent : undefined;
+}
+
 /**
  * One `GET /api/event` subscription per driver instance. OpenCode 2's event stream is
  * server-wide (no directory or session filter — verified on 2.0.27), so N threads on one
  * stream each would be N copies of every event. Events are routed by session id; events that
  * name no session are offered to listeners that asked for them (`wantsUnscoped`).
+ *
+ * Sub-agents run in child sessions with their own ids. A child's `session.created` (which
+ * carries `parentID`) is delivered to the parent's listeners; a listener that wants the child
+ * calls `follow(child, parent)`, and the child's events reach the parent's listeners until the
+ * returned function is called. Following is transitive: a grandchild routes to the same root.
  */
 export class EventHub {
   #api: () => Promise<OpencodeApi>;
@@ -34,11 +46,30 @@ export class EventHub {
   #running: Promise<void> | undefined;
   #connecting: Promise<void> | undefined;
   #onDead: () => void;
+  #tap: ((event: OpencodeEvent) => void) | undefined;
+  /** followed child session id -> the root session whose listeners receive its events */
+  #follows = new Map<string, string>();
 
-  constructor(api: () => Promise<OpencodeApi>, log: (msg: string) => void, onDead: () => void = () => undefined) {
+  constructor(api: () => Promise<OpencodeApi>, log: (msg: string) => void, onDead: () => void = () => undefined, tap?: (event: OpencodeEvent) => void) {
     this.#api = api;
     this.#log = log;
     this.#onDead = onDead;
+    this.#tap = tap;
+  }
+
+  /** Routes `childId`'s events to the listeners of `parentId` (or of the root `parentId` follows). */
+  follow(childId: string, parentId: string): () => void {
+    const root = this.#follows.get(parentId) ?? parentId;
+    if (childId === root) return () => undefined;
+    this.#follows.set(childId, root);
+    return () => {
+      if (this.#follows.get(childId) === root) this.#follows.delete(childId);
+    };
+  }
+
+  /** How many child sessions are followed right now (tests check nothing leaks). */
+  get followed(): number {
+    return this.#follows.size;
   }
 
   add(sessionId: string, listener: HubListener, wantsUnscoped = false): () => void {
@@ -83,12 +114,16 @@ export class EventHub {
   }
 
   #dispatch(event: OpencodeEvent): void {
+    this.#tap?.(event);
     const sessionId = eventSessionId(event);
     if (sessionId === undefined) {
       for (const listener of [...this.#unscoped]) listener.onEvent(event);
       return;
     }
-    for (const listener of [...(this.#listeners.get(sessionId) ?? [])]) listener.onEvent(event);
+    let target = this.#follows.get(sessionId) ?? sessionId;
+    const parent = createdParentId(event);
+    if (parent !== undefined && !this.#listeners.has(target)) target = this.#follows.get(parent) ?? parent;
+    for (const listener of [...(this.#listeners.get(target) ?? [])]) listener.onEvent(event);
   }
 
   async close(): Promise<void> {

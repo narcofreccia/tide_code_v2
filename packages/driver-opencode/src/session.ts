@@ -9,7 +9,7 @@ import type {
   TurnInput,
 } from "@tide/contracts";
 import { AsyncQueue } from "./async-queue.ts";
-import type { EventHub } from "./hub.ts";
+import { eventSessionId, type EventHub } from "./hub.ts";
 import { OpencodeNormalizer, ZERO_TOKENS } from "./normalize.ts";
 import { grantCovers, replyFor, sessionRuleset, userRules, type SessionGrant } from "./permissions.ts";
 import { rollbackTarget } from "./turns.ts";
@@ -71,7 +71,10 @@ export class OpencodeSession implements ProviderSession {
   #normalizer: OpencodeNormalizer | undefined;
   #baseline: { cost: number; tokens: WireTokens };
   #forms = new Map<string, WireForm>();
-  #pending = new Map<string, { action: string; resources: string[]; save: string[] }>();
+  /** open permission asks by request id; `sessionId` is the session that asked (this one or a sub-agent's) */
+  #pending = new Map<string, { action: string; resources: string[]; save: string[]; sessionId: string }>();
+  /** sub-agent sessions followed on the hub during the running turn -> stop following */
+  #children = new Map<string, () => void>();
   #grants: SessionGrant[] = [];
   #unsubscribe: () => void;
   #turnActive = false;
@@ -116,6 +119,7 @@ export class OpencodeSession implements ProviderSession {
       onUnknown: (type) => {
         if (process.env["TIDE_DEBUG_OPENCODE"]) this.#env.log(`[opencode] unhandled event ${type}`);
       },
+      onChildSession: (childId, parentId, created) => this.#followChild(childId, parentId, created),
     });
     const self = this;
     async function* stream(): AsyncGenerator<NormalizedEvent, void> {
@@ -129,6 +133,7 @@ export class OpencodeSession implements ProviderSession {
       } finally {
         const latest = self.#normalizer?.latestUsage;
         if (latest) self.#baseline = latest;
+        self.#unfollowChildren();
         self.#turnActive = false;
         self.#mailbox = undefined;
         self.#normalizer = undefined;
@@ -182,21 +187,45 @@ export class OpencodeSession implements ProviderSession {
     }
   }
 
+  /**
+   * A sub-agent's child session: its events reach this session's listener until the turn
+   * ends. A new child copies the parent's ruleset at creation (core `Session.create`:
+   * `permissions ?? parent.permissions`), so it already carries the thread's mode. A resumed
+   * child keeps the ruleset of the turn that created it, so the current one is applied.
+   */
+  #followChild(childId: string, parentId: string, created: boolean): void {
+    if (this.#closed || this.#children.has(childId)) return;
+    this.#children.set(childId, this.#deps.hub.follow(childId, parentId));
+    if (created) return;
+    this.#deps.api.setPermissions({ sessionId: childId, permissions: this.ruleset() }).catch((error: unknown) => {
+      this.#env.log(`[opencode] could not apply the thread's permissions to sub-agent session ${childId}: ${error instanceof Error ? error.message : String(error)}`);
+    });
+  }
+
+  #unfollowChildren(): void {
+    for (const unfollow of this.#children.values()) unfollow();
+    this.#children.clear();
+  }
+
   #onEvent(event: OpencodeEvent): void {
-    if (event.type === "form.created") {
+    const normalizer = this.#normalizer;
+    const origin = eventSessionId(event);
+    // a sub-agent's request is ours only while its turn runs (the hub stops delivering after)
+    const ours = origin === this.nativeSessionId || (origin !== undefined && normalizer?.owns(origin) === true);
+    if (event.type === "form.created" && ours) {
       const form = (event as EventOf<"form.created">).data.form as unknown as WireForm;
       this.#forms.set(form.id, form);
     }
-    if (event.type === "permission.asked") {
+    if (event.type === "permission.asked" && ours && origin !== undefined) {
       const asked = (event as EventOf<"permission.asked">).data;
-      // "accept for session": answered here, never surfaced again for this session
+      // "accept for session": answered here, never surfaced again in this thread (sub-agents included)
       if (grantCovers(this.#grants, asked.action, asked.resources)) {
-        void this.#reply(asked.id, "once");
+        void this.#reply(origin, asked.id, "once");
         return;
       }
-      this.#pending.set(asked.id, { action: asked.action, resources: asked.resources, save: asked.save ?? [] });
+      this.#pending.set(asked.id, { action: asked.action, resources: asked.resources, save: asked.save ?? [], sessionId: origin });
     }
-    this.#push(this.#normalizer?.next(event) ?? []);
+    this.#push(normalizer?.next(event) ?? []);
   }
 
   /** The hub's stream died (server gone): the running turn can never settle on its own. */
@@ -204,9 +233,9 @@ export class OpencodeSession implements ProviderSession {
     this.#push(this.#normalizer?.abort(reason) ?? []);
   }
 
-  async #reply(requestId: string, decision: "once" | "always" | "reject"): Promise<void> {
+  async #reply(sessionId: string, requestId: string, decision: "once" | "always" | "reject"): Promise<void> {
     try {
-      await this.#deps.api.replyPermission({ sessionId: this.nativeSessionId, requestId, decision });
+      await this.#deps.api.replyPermission({ sessionId, requestId, decision });
     } catch (error) {
       this.#env.log(`[opencode] permission reply ${requestId} failed: ${error instanceof Error ? error.message : String(error)}`);
     }
@@ -219,7 +248,8 @@ export class OpencodeSession implements ProviderSession {
       const patterns = pending.save.length > 0 ? pending.save : pending.resources;
       this.#grants.push({ action: pending.action, patterns });
     }
-    await this.#deps.api.replyPermission({ sessionId: this.nativeSessionId, requestId, decision: replyFor(decision) });
+    // the reply goes to the session that asked: a sub-agent's ask lives in its child session
+    await this.#deps.api.replyPermission({ sessionId: pending?.sessionId ?? this.nativeSessionId, requestId, decision: replyFor(decision) });
   }
 
   /**
@@ -238,7 +268,7 @@ export class OpencodeSession implements ProviderSession {
       else if (typeof raw === "number" || typeof raw === "boolean") answer[field.key] = raw;
     }
     if (form === undefined) for (const [key, value] of Object.entries(answers)) if (typeof value === "string") answer[key] = value;
-    await this.#deps.api.replyForm({ sessionId: this.nativeSessionId, formId: requestId, answer });
+    await this.#deps.api.replyForm({ sessionId: form?.sessionID ?? this.nativeSessionId, formId: requestId, answer });
   }
 
   /**
@@ -268,7 +298,14 @@ export class OpencodeSession implements ProviderSession {
       if (agent !== this.#agent) await api.switchAgent({ sessionId: this.nativeSessionId, agent });
       this.#agent = agent;
       if (settings.mode !== this.#settings.mode || settings.interaction !== this.#settings.interaction) {
-        await api.setPermissions({ sessionId: this.nativeSessionId, permissions: this.ruleset(settings) });
+        const permissions = this.ruleset(settings);
+        await api.setPermissions({ sessionId: this.nativeSessionId, permissions });
+        // sub-agents running now hold a copy of the old ruleset
+        for (const childId of this.#children.keys()) {
+          await api.setPermissions({ sessionId: childId, permissions }).catch((error: unknown) => {
+            this.#env.log(`[opencode] could not update sub-agent session ${childId}'s permissions: ${error instanceof Error ? error.message : String(error)}`);
+          });
+        }
       }
       this.#settings = { ...settings };
       return "applied";
@@ -317,19 +354,30 @@ export class OpencodeSession implements ProviderSession {
     this.#turns = this.#turns.slice(0, Math.max(0, this.#turns.length - turns));
   }
 
+  /**
+   * Interrupting the parent interrupts a foreground sub-agent too (core's subagent tool:
+   * `onInterrupt → sessions.interrupt(child)`), but a `background: true` one keeps running.
+   * Every child followed in this turn is therefore interrupted as well; an idle one ignores it.
+   */
   async interrupt(): Promise<void> {
     this.#normalizer?.markInterrupted();
-    try {
-      await this.#deps.api.interrupt({ sessionId: this.nativeSessionId });
-    } catch (error) {
-      this.#env.log(`[opencode] interrupt failed: ${error instanceof Error ? error.message : String(error)}`);
-    }
+    const sessions = [this.nativeSessionId, ...this.#children.keys()];
+    await Promise.all(
+      sessions.map(async (sessionId) => {
+        try {
+          await this.#deps.api.interrupt({ sessionId });
+        } catch (error) {
+          this.#env.log(`[opencode] interrupt of ${sessionId} failed: ${error instanceof Error ? error.message : String(error)}`);
+        }
+      }),
+    );
   }
 
   async close(): Promise<void> {
     if (this.#closed) return;
     this.#closed = true;
     this.#unsubscribe();
+    this.#unfollowChildren();
     this.#mailbox?.close();
     // MCP registrations are per location on a shared server; this thread's must go with it.
     for (const name of this.#deps.mcpNames ?? []) {

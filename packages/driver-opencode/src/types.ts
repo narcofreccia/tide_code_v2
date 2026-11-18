@@ -42,6 +42,11 @@ export interface OpencodeConfig {
    * a recorded transcript here, with `serverUrl` set so no server is discovered or spawned).
    */
   fetchImpl?: typeof fetch;
+  /**
+   * Test seam: sees every raw event of the server-wide stream before routing (the live test
+   * records fixtures with it). Not user-facing.
+   */
+  eventTap?: (event: OpencodeEvent) => void;
 }
 
 export type { ModelRef };

@@ -69,7 +69,7 @@ export class OpencodeInstance implements ProviderInstance {
     this.#config = config;
     this.#env = env;
     this.#server = new OpencodeServer(config, env, seams);
-    this.#hub = new EventHub(() => this.api(), (msg) => env.log(msg), () => this.#server.invalidate());
+    this.#hub = new EventHub(() => this.api(), (msg) => env.log(msg), () => this.#server.invalidate(), config.eventTap);
   }
 
   /** Resolves the endpoint (shared service, configured URL or private server) and a client for it. */

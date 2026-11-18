@@ -50,6 +50,10 @@ export class FakeOpencodeApi implements OpencodeApi {
   #messageSeq = 0;
   readonly permissionReplies: { requestId: string; decision: PermissionReply }[] = [];
   readonly formReplies: { formId: string; answer: Record<string, FormValue> }[] = [];
+  /** the session id each permission / form reply was sent against, in order */
+  readonly permissionReplySessions: string[] = [];
+  readonly formReplySessions: string[] = [];
+  readonly interruptedSessions: string[] = [];
   readonly rulesets: { sessionId: string; permissions: PermissionRule[] }[] = [];
   readonly agentSwitches: string[] = [];
   readonly modelSwitches: ModelRef[] = [];
@@ -173,15 +177,18 @@ export class FakeOpencodeApi implements OpencodeApi {
     if (index !== -1) this.messageLog = this.messageLog.slice(0, index);
   }
 
-  async interrupt(): Promise<void> {
+  async interrupt(input: { sessionId: string }): Promise<void> {
+    this.interruptedSessions.push(input.sessionId);
     this.interrupts++;
   }
 
-  async replyPermission(input: { requestId: string; decision: PermissionReply }): Promise<void> {
+  async replyPermission(input: { sessionId: string; requestId: string; decision: PermissionReply }): Promise<void> {
+    this.permissionReplySessions.push(input.sessionId);
     this.permissionReplies.push({ requestId: input.requestId, decision: input.decision });
   }
 
-  async replyForm(input: { formId: string; answer: Record<string, FormValue> }): Promise<void> {
+  async replyForm(input: { sessionId: string; formId: string; answer: Record<string, FormValue> }): Promise<void> {
+    this.formReplySessions.push(input.sessionId);
     this.formReplies.push({ formId: input.formId, answer: input.answer });
   }
 
@@ -240,6 +247,12 @@ export class FakeOpencodeApi implements OpencodeApi {
   // --- event helpers (shapes as recorded from opencode 2.0.27) ---
   emit(type: string, data: Record<string, unknown>, created = ++this.#seq): void {
     this.events.push({ id: `evt_${created}`, created, type, data: { sessionID: this.sessionId, ...data } } as unknown as OpencodeEvent);
+  }
+
+  /** An event of another session (a sub-agent's child session). */
+  emitIn(sessionId: string, type: string, data: Record<string, unknown>): void {
+    const created = ++this.#seq;
+    this.events.push({ id: `evt_${created}`, created, type, data: { ...data, sessionID: sessionId } } as unknown as OpencodeEvent);
   }
 
   step(agent = "build"): void {

@@ -7,9 +7,10 @@ import { OpencodeNormalizer } from "../src/normalize.ts";
 import type { OpencodeEvent } from "../src/wire.ts";
 
 /**
- * Replays turns recorded from a real `opencode serve` 2.0.27 (free `opencode/big-pickle`
- * model, no login) by `scripts/record-fixture.ts`. The recorder answered every permission
- * with `once` and every form with its first option.
+ * Replays turns recorded from a real `opencode serve` (free `opencode/big-pickle` model, no
+ * login): 2.0.27 by `scripts/record-fixture.ts`, the `subagent-*` ones 2.0.29 by
+ * `test/live.test.ts`. The recorders answered every permission with `once` and every form
+ * with its first option.
  */
 const fixtureDir = join(dirname(fileURLToPath(import.meta.url)), "fixtures");
 
@@ -71,6 +72,48 @@ describe("recorded opencode 2 fixtures", () => {
     expect(input?.requestId).toMatch(/^frm_/);
     expect(input?.questions[0]?.id).toBe("q0");
     expect(input?.questions[0]?.options?.length).toBeGreaterThanOrEqual(2);
+    expect(of(events, "settled")).toEqual([{ type: "settled", status: "completed" }]);
+    expect(normalizer.unknownCount).toBe(0);
+  });
+
+  it("sub-agent turn (2.0.29): the child session's tool nests under the child row; child text and end stay out", () => {
+    const raw = load("subagent-turn");
+    const sessionId = (raw[0] as { data: { sessionID: string } }).data.sessionID;
+    const learned: [string, string, boolean][] = [];
+    const normalizer = new OpencodeNormalizer({ sessionId, onChildSession: (child, parent, created) => learned.push([child, parent, created]) });
+    const events = raw.flatMap((event) => normalizer.next(event));
+    expect(learned).toHaveLength(1);
+    expect(learned[0]?.[1]).toBe(sessionId);
+    expect(learned[0]?.[2]).toBe(true);
+    const activities = events.flatMap((event) => (event.type === "activity" ? [event.activity] : []));
+    const child = activities.find((activity) => activity.kind === "child" && activity.status === "done");
+    if (child?.kind !== "child") throw new Error("no finished child row");
+    expect(child.report).toContain("sub-ok");
+    expect(child.report).not.toContain("<subagent");
+    const nested = activities.filter((activity) => activity.kind === "tool" && activity.parentToolUseId === child.childKey);
+    expect(nested.map((tool) => (tool.kind === "tool" ? [tool.toolName, tool.status] : []))).toEqual([
+      ["shell", "running"],
+      ["shell", "ok"],
+    ]);
+    // only the parent's own messages stream as text
+    const parentMessages = new Set(raw.flatMap((event) => (event.type === "session.text.delta" && (event as { data: { sessionID: string } }).data.sessionID === sessionId ? [(event as { data: { assistantMessageID: string } }).data.assistantMessageID] : [])));
+    expect(of(events, "assistant.delta").every((delta) => parentMessages.has(delta.messageKey))).toBe(true);
+    expect(of(events, "settled")).toEqual([{ type: "settled", status: "completed" }]);
+    expect(events.at(-1)?.type).toBe("settled");
+    expect(normalizer.unknownCount).toBe(0);
+  });
+
+  it("sub-agent permission (2.0.29): the child's ask is an approval under the child row; usage adds the child's steps", () => {
+    const { events, normalizer } = replay("subagent-permission");
+    const activities = events.flatMap((event) => (event.type === "activity" ? [event.activity] : []));
+    const child = activities.find((activity) => activity.kind === "child");
+    if (child?.kind !== "child") throw new Error("no child row");
+    const approval = activities.find((activity) => activity.kind === "approval");
+    expect(approval).toMatchObject({ toolName: "shell", parentToolUseId: child.childKey, input: { command: "echo sub-perm-ok" } });
+    expect(normalizer.childSessions).toHaveLength(1);
+    // parent cumulative total (input 10363, output 86 + 84 reasoning, cache read 12288)
+    // + child steps (input 10273 + 600, output 18 + 7 + 20 reasoning, cache read 9728)
+    expect(of(events, "usage")[0]?.usage).toMatchObject({ inputTokens: 21236, outputTokens: 215, cacheReadTokens: 22016, cacheWriteTokens: 0 });
     expect(of(events, "settled")).toEqual([{ type: "settled", status: "completed" }]);
     expect(normalizer.unknownCount).toBe(0);
   });
