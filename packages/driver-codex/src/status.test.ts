@@ -4,7 +4,7 @@ import type { DriverEnv } from "@tide/contracts";
 import { fakeSpawn } from "./fake-app-server.ts";
 import { codexDriver } from "./index.ts";
 import { CODEX_CAPS, FREE_PLAN_NOTE, INSTALL_HINT, LOGIN_COMMAND, LOGIN_HINT, accountLabel, parseVersion, toModelInfo } from "./status.ts";
-import { mcpEnvAndArgs } from "./app-server.ts";
+import { mcpEnvAndArgs, TIDE_MCP_TOOL_TIMEOUT_SEC } from "./app-server.ts";
 import { collaborationModeFor, policyFor } from "./modes.ts";
 
 const env: DriverEnv = { dataDir: tmpdir(), log: () => undefined };
@@ -156,10 +156,22 @@ describe("mode mapping", () => {
 
   it("adds MCP servers as merging dotted -c overrides, leaving the user's own untouched", () => {
     expect(mcpEnvAndArgs([{ name: "tide", command: "node", args: ["a b.js"], env: { K: "v" } }])).toEqual({
-      args: ["-c", 'mcp_servers.tide.command="node"', "-c", 'mcp_servers.tide.args=["a b.js"]', "-c", 'mcp_servers.tide.env_vars=["K"]'],
+      args: ["-c", 'mcp_servers.tide.command="node"', "-c", 'mcp_servers.tide.args=["a b.js"]', "-c", "mcp_servers.tide.tool_timeout_sec=900.0", "-c", 'mcp_servers.tide.env_vars=["K"]'],
       env: { K: "v" },
     });
     expect(mcpEnvAndArgs([])).toEqual({ args: [], env: {} });
+  });
+
+  it("gives every Tide MCP server a tool timeout above the 600 s its blocking tools can take", () => {
+    const { args } = mcpEnvAndArgs([
+      { name: "tide", command: "node" },
+      { name: "tide-experts", command: "node", args: ["x.js"] },
+    ]);
+    const timeouts = args.filter((arg) => arg.includes(".tool_timeout_sec="));
+    expect(timeouts).toEqual(["mcp_servers.tide.tool_timeout_sec=900.0", "mcp_servers.tide-experts.tool_timeout_sec=900.0"]);
+    // each value must parse as a TOML float (codex rejects a string: "expected f64") and exceed 600
+    for (const arg of timeouts) expect(Number(arg.split("=")[1])).toBeGreaterThan(600);
+    expect(TIDE_MCP_TOOL_TIMEOUT_SEC).toBeGreaterThan(600);
   });
 
   it("keeps MCP secrets off argv, and only falls back to the visible form on a value collision", () => {

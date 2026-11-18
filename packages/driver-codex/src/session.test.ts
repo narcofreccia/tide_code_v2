@@ -82,7 +82,7 @@ describe("codex session", () => {
     });
     expect(server.calls("thread/resume")[0]).toMatchObject({ threadId: "thread-existing", approvalPolicy: "never", sandbox: "danger-full-access" });
     expect(server.calls("thread/start")).toHaveLength(0);
-    expect(server.args).toEqual(["app-server", "-c", 'mcp_servers.tide.command="node"', "-c", 'mcp_servers.tide.args=["mcp.js"]', "-c", 'mcp_servers.tide.env_vars=["TOKEN"]']);
+    expect(server.args).toEqual(["app-server", "-c", 'mcp_servers.tide.command="node"', "-c", 'mcp_servers.tide.args=["mcp.js"]', "-c", "mcp_servers.tide.tool_timeout_sec=900.0", "-c", 'mcp_servers.tide.env_vars=["TOKEN"]']);
     expect(server.env["TOKEN"]).toBe("x");
     await session.close();
   });

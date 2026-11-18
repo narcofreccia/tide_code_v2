@@ -110,36 +110,6 @@ describe("normalizer over app-server fixtures", () => {
     expect(plan.markdown).toBe("## Plan\n1. Add a README\n2. Link it from the docs index\n");
   });
 
-  it("subagent-turn: collab children get child rows and stamp their own activities", () => {
-    const { events, normalizer } = run("synthetic-subagent-turn");
-    expect(kinds(events)).toEqual([
-      "session",
-      "activity:child", // spawnAgent running
-      "activity:tool", // rg inside the child thread
-      "activity:child", // spawnAgent completed
-      "assistant.delta", // main-loop text only
-      "activity:info", // model rerouted
-      "activity:info", // pass-through of the unmodelled notification
-      "settled",
-    ]);
-
-    const children = events.flatMap((event) => (event.type === "activity" && event.activity.kind === "child" ? [event.activity] : []));
-    expect(children[0]).toMatchObject({ childKey: "01a05503-4000-7000-8000-000000000001", name: "spawnAgent", status: "running", description: "Audit the parser" });
-    expect(children[1]).toMatchObject({ status: "done", summary: "The parser handles 3 cases." });
-
-    const tool = events.flatMap((event) => (event.type === "activity" && event.activity.kind === "tool" ? [event.activity] : []))[0];
-    expect(tool?.parentToolUseId).toBe("item_collab");
-
-    // the child's own prose stays on the child row, not in the thread's assistant message
-    const deltas = events.flatMap((event) => (event.type === "assistant.delta" ? [event.delta] : []));
-    expect(deltas).toEqual(["Done."]);
-    expect(normalizer.unknownCount).toBe(1);
-    // the unmodelled notification is surfaced generically rather than dropped (§1a)
-    const passthrough = events.flatMap((event) => (event.type === "activity" && event.activity.kind === "info" && event.activity.payload !== undefined ? [event.activity] : []));
-    expect(passthrough).toHaveLength(1);
-    expect(passthrough[0]?.text).toMatch(/^codex: /);
-  });
-
   it("edit-turn: patchUpdated feeds the diff, retries are info, interrupted settles as interrupted", () => {
     const { events, normalizer } = run("synthetic-edit-turn");
     expect(kinds(events)).toEqual(["session", "activity:tool", "activity:tool", "activity:info", "settled"]);

@@ -30,6 +30,8 @@ export interface ServerRequestContext {
   id: RequestId;
   /** diff last reported for the item, when the request is a file change */
   diffFor: (itemId: string) => string | undefined;
+  /** set when the request comes from a sub-agent thread: the card nests under that child row */
+  parentToolUseId?: string | undefined;
 }
 
 /**
@@ -81,7 +83,7 @@ export class ApprovalBroker {
     const requestId = String(context.id);
     const gate = deferred<ApprovalDecision>();
     this.#approvals.set(requestId, { gate, reply });
-    this.#emit(activity);
+    this.#emit(withParent(activity, context.parentToolUseId));
     void gate.promise.then((decision) => {
       this.#approvals.delete(requestId);
       this.#respond(context.id, reply(decision));
@@ -181,7 +183,7 @@ export class ApprovalBroker {
     const requestId = String(context.id);
     const gate = deferred<Record<string, unknown>>();
     this.#userInputs.set(requestId, gate);
-    this.#emit({ type: "activity", activity: { kind: "user-input", requestId, status: "pending", questions } });
+    this.#emit(withParent({ type: "activity", activity: { kind: "user-input", requestId, status: "pending", questions } }, context.parentToolUseId));
     void gate.promise.then((answers) => {
       this.#userInputs.delete(requestId);
       this.#respond(context.id, reply(answers));
@@ -224,6 +226,11 @@ export class ApprovalBroker {
         this.#respondError(id, -32601, note);
     }
   }
+}
+
+function withParent(event: NormalizedEvent, parentToolUseId: string | undefined): NormalizedEvent {
+  if (parentToolUseId === undefined || event.type !== "activity") return event;
+  return { ...event, activity: { ...event.activity, parentToolUseId } };
 }
 
 /** Tide answers are keyed by question id and valued by option label(s); Codex wants `{answers: string[]}`. */

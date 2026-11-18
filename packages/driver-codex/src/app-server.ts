@@ -10,6 +10,13 @@ const CLIENT_INFO = { name: "tide", title: "Tide", version: typeof TIDE_BUILD_VE
 
 /** A handshake that never answers must not hang `openSession` forever. */
 export const INITIALIZE_TIMEOUT_MS = 45_000;
+/**
+ * `mcp_servers.<name>.tool_timeout_sec` (a TOML float) for Tide's own MCP servers. Their
+ * `tide_delegate` (completion=wait) and `tide_thread_wait` tools block for up to 600 s, so the
+ * limit sits well above that. Codex 0.170 enforces the key ("timed out awaiting tools/call
+ * after 3s" with 3), and rejects a non-number ("expected f64").
+ */
+export const TIDE_MCP_TOOL_TIMEOUT_SEC = 900;
 /** How long a SIGTERM'd app-server has to exit before it is SIGKILLed. */
 export const KILL_GRACE_MS = 5_000;
 
@@ -58,6 +65,7 @@ export function mcpEnvAndArgs(servers: McpServerSpec[], log?: (message: string) 
     const key = `mcp_servers.${server.name}`;
     args.push("-c", `${key}.command=${JSON.stringify(server.command)}`);
     if (server.args && server.args.length > 0) args.push("-c", `${key}.args=[${server.args.map((a) => JSON.stringify(a)).join(", ")}]`);
+    args.push("-c", `${key}.tool_timeout_sec=${TIDE_MCP_TOOL_TIMEOUT_SEC.toFixed(1)}`);
 
     const forwarded: string[] = [];
     for (const [name, value] of Object.entries(server.env ?? {})) {

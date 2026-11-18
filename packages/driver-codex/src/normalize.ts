@@ -1,4 +1,5 @@
 import type { NormalizedEvent } from "@tide/contracts";
+import { CodexChildren } from "./children.ts";
 import { toolActivity, toolShape, truncate } from "./items.ts";
 import type { ItemCompletedNotification } from "./generated/v2/ItemCompletedNotification.ts";
 import type { ItemStartedNotification } from "./generated/v2/ItemStartedNotification.ts";
@@ -35,7 +36,7 @@ export function rawPayload(value: unknown): unknown {
 }
 
 export interface NormalizerOptions {
-  /** the thread this session drives; notifications for other threads are ignored unless they are its collab children */
+  /** the thread this session drives; notifications for other threads are ignored unless they come from its sub-agent threads */
   threadId?: string;
   /** called for notifications the normalizer does not model; never throws */
   onUnknown?: (method: string) => void;
@@ -51,14 +52,13 @@ interface Delta {
 /**
  * Stateful but I/O-free translator from `codex app-server` notifications to
  * `NormalizedEvent`s. State is only what the stream cannot repeat: aggregated output and
- * plan deltas, the ids that already streamed text, and the collab child threads whose rows
- * must be stamped with a `parentToolUseId`.
+ * plan deltas, the ids that already streamed text, and the sub-agent child threads (see
+ * `children.ts`) whose rows are stamped with a `parentToolUseId`.
  */
 export class CodexNormalizer {
   #options: NormalizerOptions;
   #threadId: string | undefined;
-  /** child threadId -> the collab tool-call item that spawned it */
-  #children = new Map<string, string>();
+  #children = new CodexChildren();
   #commandOutput = new Map<string, string>();
   #planText = new Map<string, string>();
   #streamedMessages = new Set<string>();
@@ -73,7 +73,7 @@ export class CodexNormalizer {
   #messageKeys = new Map<string, string>();
   #patches = new Map<string, string>();
   #interrupted = false;
-  /** last cumulative `total` per thread (main + collab children), to turn totals into deltas */
+  /** last cumulative `total` per thread (main + sub-agent threads), to turn totals into deltas */
   #lastTotal = new Map<string, TokenUsageBreakdown>();
   /** the turn currently running, needed by `turn/interrupt` */
   turnId: string | undefined;
@@ -89,6 +89,11 @@ export class CodexNormalizer {
     this.#interrupted = true;
   }
 
+  /** `parentToolUseId` for a server request from `threadId`: the child's id when it is a sub-agent thread. */
+  parentFor(threadId: string | undefined): string | undefined {
+    return this.#children.parentFor(threadId);
+  }
+
   /** Diff last reported for a file-change item; used to enrich its approval request. */
   patchFor(itemId: string): string | undefined {
     return this.#patches.get(itemId);
@@ -99,7 +104,20 @@ export class CodexNormalizer {
     const threadId = typeof payload["threadId"] === "string" ? payload["threadId"] : undefined;
     if (method === "thread/started") return this.#threadStarted(payload);
     if (threadId !== undefined && this.#threadId !== undefined && threadId !== this.#threadId && !this.#children.has(threadId)) return [];
-    const parent = threadId !== undefined ? this.#children.get(threadId) : undefined;
+    const parent = this.#children.parentFor(threadId);
+    if (parent !== undefined) {
+      // A sub-agent's own turn lifecycle and plan settle its row, never the session's turn.
+      switch (method) {
+        case "turn/started":
+          return this.#children.turnStarted(parent);
+        case "turn/completed":
+          return this.#children.turnCompleted(parent, (payload as unknown as TurnCompletedNotification).turn);
+        case "turn/plan/updated":
+          return this.#children.planUpdated(parent, payload["plan"]);
+        case "item/plan/delta":
+          return [];
+      }
+    }
 
     switch (method) {
       case "turn/started":
@@ -138,7 +156,7 @@ export class CodexNormalizer {
       case "turn/completed":
         return this.#turnCompleted(payload as unknown as TurnCompletedNotification);
       case "error":
-        return this.#error(payload);
+        return this.#error(payload, parent);
       case "model/rerouted":
         return this.#info(`Model rerouted from ${String(payload["fromModel"])} to ${String(payload["toModel"])} (${String(payload["reason"])})`);
       case "thread/compacted":
@@ -152,7 +170,7 @@ export class CodexNormalizer {
         this.#options.onUnknown?.(method);
         // Pass through, don't translate (CLAUDE.md §1a): the row appears generically with
         // the raw notification attached rather than vanishing.
-        return [{ type: "activity", activity: { kind: "info", text: `codex: ${method}`, payload: rawPayload(params) } }];
+        return [{ type: "activity", activity: { kind: "info", text: `codex: ${method}`, payload: rawPayload(params), ...(parent !== undefined ? { parentToolUseId: parent } : {}) } }];
     }
   }
 
@@ -170,19 +188,17 @@ export class CodexNormalizer {
     return key;
   }
 
-  #info(text: string, kind: "info" | "error" = "info"): NormalizedEvent[] {
-    return [{ type: "activity", activity: { kind, text } }];
+  #info(text: string, kind: "info" | "error" = "info", parent?: string): NormalizedEvent[] {
+    return [{ type: "activity", activity: { kind, text, ...(parent !== undefined ? { parentToolUseId: parent } : {}) } }];
   }
 
   #threadStarted(payload: Record<string, unknown>): NormalizedEvent[] {
-    const thread = payload["thread"] as { id?: string; parentThreadId?: string | null } | undefined;
+    const thread = payload["thread"] as { id?: string; parentThreadId?: string | null; agentNickname?: string | null } | undefined;
     const id = thread?.id;
     if (typeof id !== "string") return [];
-    // A collab child announces itself with our thread as its parent.
-    if (this.#threadId !== undefined && id !== this.#threadId) {
-      if (thread?.parentThreadId === this.#threadId) this.#children.set(id, this.#children.get(id) ?? id);
-      return [];
-    }
+    // A sub-agent announces itself with our thread (or one of its children) as its parent.
+    if (this.#threadId !== undefined && id !== this.#threadId) return this.#children.announced({ ...thread, id }, this.#threadId);
+    if (typeof thread?.parentThreadId === "string") return []; // a child seen before our own thread is known: not ours to claim
     this.#threadId ??= id;
     return [{ type: "session", nativeSessionId: id }];
   }
@@ -236,7 +252,7 @@ export class CodexNormalizer {
 
   #item(item: ThreadItem | undefined, completed: boolean, parent: string | undefined): NormalizedEvent[] {
     if (!item) return [];
-    if (item.type === "plan") return completed ? this.#planProposed(item.id, item.text) : [];
+    if (item.type === "plan") return completed ? (parent !== undefined ? this.#childPlan(item.text, parent) : this.#planProposed(item.id, item.text)) : [];
     if (item.type === "agentMessage") return completed ? this.#agentMessage(item, parent) : [];
     if (item.type === "collabAgentToolCall") return this.#collab(item, parent);
     if (item.type === "subAgentActivity") return this.#subAgent(item, parent);
@@ -247,6 +263,11 @@ export class CodexNormalizer {
     return [{ type: "activity", activity: toolActivity(shape, parent) }];
   }
 
+  /** A sub-agent's plan is an info row under its child row, never a ProposedPlan of the thread. */
+  #childPlan(text: string, parent: string): NormalizedEvent[] {
+    return text === "" ? [] : this.#info(truncate(text, 4000), "info", parent);
+  }
+
   #planProposed(itemId: string, text: string): NormalizedEvent[] {
     const markdown = text !== "" ? text : (this.#planText.get(itemId) ?? "");
     this.#planText.delete(itemId);
@@ -254,7 +275,7 @@ export class CodexNormalizer {
   }
 
   #agentMessage(item: Extract<ThreadItem, { type: "agentMessage" }>, parent: string | undefined): NormalizedEvent[] {
-    if (parent !== undefined) return [];
+    if (parent !== undefined) return this.#children.message(parent, item.text);
     const key = this.#keyForMessage(item.id);
     const streamed = this.#streamedMessages.delete(item.id);
     // A completed message closes its slot: reasoning that follows belongs to the next one.
@@ -265,42 +286,11 @@ export class CodexNormalizer {
   }
 
   #collab(item: Extract<ThreadItem, { type: "collabAgentToolCall" }>, parent: string | undefined): NormalizedEvent[] {
-    const events: NormalizedEvent[] = [];
-    for (const child of item.receiverThreadIds.length > 0 ? item.receiverThreadIds : [item.id]) {
-      this.#children.set(child, item.id);
-      const state = item.agentsStates[child];
-      events.push({
-        type: "activity",
-        activity: {
-          kind: "child",
-          childKey: child,
-          name: item.tool,
-          status: item.status === "inProgress" ? "running" : item.status === "failed" ? "error" : "done",
-          childThreadId: child,
-          ...(item.prompt ? { description: truncate(item.prompt, 500) } : {}),
-          ...(state?.message ? { summary: truncate(state.message, 1000) } : {}),
-          ...(parent !== undefined ? { parentToolUseId: parent } : {}),
-        },
-      });
-    }
-    return events;
+    return this.#children.collab(item, parent);
   }
 
   #subAgent(item: Extract<ThreadItem, { type: "subAgentActivity" }>, parent: string | undefined): NormalizedEvent[] {
-    this.#children.set(item.agentThreadId, this.#children.get(item.agentThreadId) ?? item.id);
-    return [
-      {
-        type: "activity",
-        activity: {
-          kind: "child",
-          childKey: item.agentThreadId,
-          name: item.agentPath,
-          status: item.kind === "started" ? "running" : item.kind === "interrupted" ? "error" : "done",
-          childThreadId: item.agentThreadId,
-          ...(parent !== undefined ? { parentToolUseId: parent } : {}),
-        },
-      },
-    ];
+    return this.#children.subAgent(item, parent);
   }
 
   #planProgress(payload: Record<string, unknown>): NormalizedEvent[] {
@@ -353,10 +343,10 @@ export class CodexNormalizer {
     return [{ type: "settled", status: "error", error: truncate(error, 1000) }];
   }
 
-  #error(payload: Record<string, unknown>): NormalizedEvent[] {
+  #error(payload: Record<string, unknown>, parent: string | undefined): NormalizedEvent[] {
     const error = payload["error"] as { message?: unknown } | undefined;
     const message = truncate(String(error?.message ?? "codex error"), 500);
     // Retries are chatter; only the terminal failure is worth an error row.
-    return this.#info(message, payload["willRetry"] === true ? "info" : "error");
+    return this.#info(message, payload["willRetry"] === true ? "info" : "error", parent);
   }
 }

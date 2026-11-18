@@ -31,6 +31,9 @@ import type { ThreadStartResponse } from "./generated/v2/ThreadStartResponse.ts"
 import type { TurnStartResponse } from "./generated/v2/TurnStartResponse.ts";
 import type { UserInput } from "./generated/v2/UserInput.ts";
 
+/** Cap on sub-agent rows held between turns; approval and question requests are always held. */
+const MAX_HELD_EVENTS = 500;
+
 /**
  * One long-lived `codex app-server` child per Tide thread, killed on `close()`.
  *
@@ -68,8 +71,10 @@ export class CodexSession implements ProviderSession {
   #revertUnsupported = false;
   /** the running turn's id, once `turn/start` answered (undefined if it failed) */
   #turnStart: Deferred<string | undefined> | undefined;
+  /** sub-agent rows and request cards that arrived with no turn running; shown when the next turn starts */
+  #held: NormalizedEvent[] = [];
 
-  private constructor(env: DriverEnv, options: OpenSessionOptions, server: AppServer, model: string, userConfig: UserSandboxConfig) {
+  private constructor(env: DriverEnv, options: OpenSessionOptions, server: AppServer, model: string, userConfig: UserSandboxConfig, threadId: string) {
     this.#env = env;
     this.#options = options;
     this.#server = server;
@@ -77,6 +82,7 @@ export class CodexSession implements ProviderSession {
     this.#effort = options.effort;
     this.#userConfig = userConfig;
     this.#normalizer = new CodexNormalizer({
+      threadId,
       onUnknown: (method) => {
         if (process.env["TIDE_DEBUG_CODEX"]) env.log(`[codex] unhandled notification ${method}`);
       },
@@ -152,15 +158,32 @@ export class CodexSession implements ProviderSession {
       throw options.resume !== undefined && options.forkFrom === undefined ? resumeRefusal(error) : error;
     }
 
-    session = new CodexSession(env, options, server, started.model ?? options.model ?? config.defaultModel ?? "", userConfig);
+    session = new CodexSession(env, options, server, started.model ?? options.model ?? config.defaultModel ?? "", userConfig, started.thread.id);
     session.nativeSessionId = started.thread.id;
     for (const buffered of notifications) session.#notification(buffered.method, buffered.params);
     for (const buffered of requests) session.#request(buffered.method, buffered.params, buffered.id);
     return session;
   }
 
+  /**
+   * Between turns there is no stream to write to. A Codex sub-agent can outlive the turn that
+   * spawned it (the parent may end its turn without waiting), so its rows and — above all —
+   * its approval and question requests can arrive then. Those are held and replayed at the
+   * start of the next turn; the request itself stays parked, nothing is answered on the
+   * user's behalf. Other between-turn chatter (rate limits, status) is dropped as before.
+   */
   #emit(event: NormalizedEvent): void {
-    this.#mailbox?.push(event);
+    if (this.#mailbox) {
+      this.#mailbox.push(event);
+      return;
+    }
+    if (event.type !== "activity") return;
+    const activity = event.activity;
+    const request = activity.kind === "approval" || activity.kind === "user-input";
+    if (!request && activity.kind !== "child" && activity.parentToolUseId === undefined) return;
+    if (!request && this.#held.length >= MAX_HELD_EVENTS) return; // a long unattended child: requests are kept, further rows are dropped
+    if (request) this.#env.log(`[codex] ${activity.kind} request ${activity.requestId} arrived between turns (sub-agent ${activity.parentToolUseId ?? "unknown"}); holding it for the next turn`);
+    this.#held.push(event);
   }
 
   /** The app-server is gone: end whatever turn was running rather than waiting forever. */
@@ -182,7 +205,8 @@ export class CodexSession implements ProviderSession {
 
   #request(method: string, params: unknown, id: RequestId): void {
     const payload = (typeof params === "object" && params !== null ? params : {}) as Record<string, unknown>;
-    const handled = this.#broker.handle({ method, params: payload, id, diffFor: (itemId) => this.#normalizer.patchFor(itemId) });
+    const threadId = typeof payload["threadId"] === "string" ? payload["threadId"] : undefined;
+    const handled = this.#broker.handle({ method, params: payload, id, diffFor: (itemId) => this.#normalizer.patchFor(itemId), parentToolUseId: this.#normalizer.parentFor(threadId) });
     if (!handled) {
       this.#env.log(`[codex] declining unmodelled server request ${method}`);
       this.#broker.decline(id, method, params);
@@ -195,6 +219,7 @@ export class CodexSession implements ProviderSession {
     this.#turnActive = true;
     this.#interruptRequested = false;
     const mailbox = new AsyncQueue<NormalizedEvent>();
+    for (const event of this.#held.splice(0)) mailbox.push(event);
     this.#mailbox = mailbox;
     const turnStart = deferred<string | undefined>();
     this.#turnStart = turnStart;
