@@ -1,0 +1,5 @@
+{"_header": {"synthetic": true, "note": "agy acp reopened with session/resume (no replay)", "schema": "ACP v1 unstable session/resume"}}
+{"_dir": "c2a", "jsonrpc": "2.0", "id": 0, "method": "initialize", "params": {"protocolVersion": 1}}
+{"jsonrpc": "2.0", "id": 0, "result": {"protocolVersion": 1, "agentCapabilities": {"sessionCapabilities": {"resume": {}}}}}
+{"_dir": "c2a", "jsonrpc": "2.0", "id": 1, "method": "session/resume", "params": {"sessionId": "agy_old", "cwd": "<CWD>", "mcpServers": [], "_meta": {"antigravity": {"systemPrompt": {"append": "Be terse."}}}}}
+{"jsonrpc": "2.0", "id": 1, "result": {"modes": {"currentModeId": "default", "availableModes": [{"id": "default", "name": "Default"}, {"id": "accept-edits", "name": "Accept Edits"}, {"id": "plan", "name": "Plan"}]}}}

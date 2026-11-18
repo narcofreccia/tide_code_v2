@@ -129,6 +129,8 @@ describe("provider instances over RPC", () => {
     expect(agents).toEqual([
       { id: "gemini", name: "Gemini CLI", website: "https://gemini.example", distribution: "npx", configured: true },
       { id: "goose", name: "Goose", distribution: "none" },
+      // R20: Tide's own entry, listed beside the fetched registry (launches `agy` from PATH)
+      expect.objectContaining({ id: "antigravity", name: "Antigravity", distribution: "binary" }),
     ]);
     // no ACP driver in this test build: the instance is listed, greyed out
     const acp = (await client.call<ProviderStatusDto[]>("providers.list", {})).find((p) => p.id === "acp:gemini");

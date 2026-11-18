@@ -4,7 +4,7 @@ import { nodeSpawn } from "./spawn.ts";
 import type { AcpConfig, AcpDeps } from "./types.ts";
 
 export { AcpInstance, CLIENT_VERSION } from "./instance.ts";
-export { AcpSession, AcpAuthRequiredError, PROTOCOL_VERSION, INITIALIZE_TIMEOUT_MS, authHint, clientInitialize, isAuthRequired } from "./session.ts";
+export { AcpSession, AcpAuthRequiredError, PROTOCOL_VERSION, INITIALIZE_TIMEOUT_MS, authHint, clientInitialize, isAuthRequired, systemPromptMeta } from "./session.ts";
 export { AcpNormalizer, ACP_SILENT_UPDATES, toSlashCommands, toolDiff, toolInput, toolName, toolOutput, truncate } from "./normalize.ts";
 export { decisionOption, modePattern, modeSelector, planModeId, planPermission, targetModeId } from "./permissions.ts";
 export type { ModeSelector, PermissionPlan } from "./permissions.ts";
@@ -15,8 +15,10 @@ export { AcpConnection, RpcError, rpcError, splitLines } from "./jsonrpc.ts";
 export { acpCaps, installHint, probeStatus, sessionFacts } from "./status.ts";
 export type { AgentFacts } from "./status.ts";
 export { agentEnv, nodeSpawn, toAcpMcpServers } from "./spawn.ts";
+export { ACP_PROFILES, ANTIGRAVITY_PROFILE, profileForCommand, withProfileQuirks } from "./profiles.ts";
+export type { AcpProfile } from "./profiles.ts";
 export { ACP_ERROR } from "./types.ts";
-export type { AcpConfig, AcpDeps, ChildLike, SpawnLike, TimerLike } from "./types.ts";
+export type { AcpConfig, AcpDeps, AcpQuirks, ChildLike, SpawnLike, TimerLike } from "./types.ts";
 
 export function createAcpInstance(config: AcpConfig, env: DriverEnv, deps: Partial<AcpDeps> = {}): ProviderInstance {
   return new AcpInstance(config, env, { ...deps, spawn: deps.spawn ?? nodeSpawn });

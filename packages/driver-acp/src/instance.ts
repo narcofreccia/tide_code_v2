@@ -1,5 +1,6 @@
 import type { DriverEnv, OpenSessionOptions, ProviderInstance, ProviderSession, ProviderStatus, SlashCommandInfo } from "@tide/contracts";
 import { readCommandsCache, writeCommandsCache } from "./commands-cache.ts";
+import { withProfileQuirks } from "./profiles.ts";
 import { AcpSession } from "./session.ts";
 import { agentEnv } from "./spawn.ts";
 import { installHint, isNotFound, probeStatus, type AgentFacts } from "./status.ts";
@@ -29,7 +30,7 @@ export class AcpInstance implements ProviderInstance {
   #sessions = new Set<AcpSession>();
 
   constructor(config: AcpConfig, env: DriverEnv, deps: AcpDeps) {
-    this.#config = config;
+    this.#config = withProfileQuirks(config);
     this.#env = env;
     this.#deps = deps;
     this.#label = config.label ?? env.instance?.label ?? config.command;

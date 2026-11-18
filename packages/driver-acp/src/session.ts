@@ -12,6 +12,7 @@ import {
   type AcpConfig,
   type AcpInitializeResult,
   type AcpNewSessionResult,
+  type AcpQuirks,
   type AcpPermissionRequest,
   type AcpPromptUsage,
   type AcpSessionUpdate,
@@ -30,10 +31,10 @@ import {
 export const PROTOCOL_VERSION = 1;
 export const INITIALIZE_TIMEOUT_MS = 90_000;
 
-export function clientInitialize(version: string): Record<string, unknown> {
+export function clientInitialize(version: string, quirks?: AcpQuirks): Record<string, unknown> {
   return {
     protocolVersion: PROTOCOL_VERSION,
-    clientCapabilities: { fs: { readTextFile: true, writeTextFile: true }, terminal: false },
+    clientCapabilities: { fs: { readTextFile: true, writeTextFile: quirks?.advertiseFsWrite !== false }, terminal: false },
     clientInfo: { name: "tide", version },
   };
 }
@@ -45,6 +46,13 @@ export class AcpAuthRequiredError extends Error {
     super(hint);
     this.hint = hint;
   }
+}
+
+/** `_meta` carrying the system prompt at the quirk's path; undefined = use the first-prompt block. */
+export function systemPromptMeta(quirks: AcpQuirks | undefined, text: string | undefined): Record<string, unknown> | undefined {
+  const path = quirks?.systemPromptMeta;
+  if (!path || path.length === 0 || (text ?? "").trim() === "") return undefined;
+  return path.reduceRight<unknown>((inner, key) => ({ [key]: inner }), text) as Record<string, unknown>;
 }
 
 export function authHint(label: string, init: AcpInitializeResult | undefined): string {
@@ -131,17 +139,23 @@ export class AcpSession implements ProviderSession {
     });
   }
 
+  get #quirks(): AcpQuirks | undefined {
+    return this.#ctx.config.quirks;
+  }
+
   #log(message: string): void {
     this.#ctx.env.log(`[acp:${this.#ctx.label}] ${message}`);
   }
 
   /** initialize → session/new | session/load → apply model/effort/mode. */
   async start(version = "0.0.0"): Promise<void> {
-    const init = await this.#conn.request<AcpInitializeResult>("initialize", clientInitialize(version), this.#ctx.initializeTimeoutMs ?? INITIALIZE_TIMEOUT_MS);
+    const init = await this.#conn.request<AcpInitializeResult>("initialize", clientInitialize(version, this.#quirks), this.#ctx.initializeTimeoutMs ?? INITIALIZE_TIMEOUT_MS);
     this.init = init;
     this.#ctx.onInitialized?.(init);
+    const meta = systemPromptMeta(this.#quirks, this.#options.systemPromptAppend);
     const base = {
       cwd: this.#options.cwd,
+      ...(meta ? { _meta: meta } : {}),
       mcpServers: toAcpMcpServers(this.#options.mcpServers),
       ...(init.agentCapabilities?.sessionCapabilities?.additionalDirectories && this.#options.linkedDirs?.length
         ? { additionalDirectories: this.#options.linkedDirs.map((dir) => dir.path) }
@@ -161,8 +175,8 @@ export class AcpSession implements ProviderSession {
     }
     this.nativeSessionId = result.sessionId;
     // a session that did not resume never saw the preamble either
-    this.#preamblePending = (this.#options.resume === undefined || this.resumeFailed !== undefined) && (this.#options.systemPromptAppend ?? "").trim() !== "";
-    this.settings = new AcpSettings(this.#conn, result.sessionId, result, (message) => this.#log(message), this.#ctx.config.defaultModel);
+    this.#preamblePending = meta === undefined && (this.#options.resume === undefined || this.resumeFailed !== undefined) && (this.#options.systemPromptAppend ?? "").trim() !== "";
+    this.settings = new AcpSettings(this.#conn, result.sessionId, result, (message) => this.#log(message), this.#ctx.config.defaultModel, this.#quirks?.keepAgentMode === true);
     await this.settings.apply({ model: this.#options.model, effort: this.#options.effort, mode: this.#mode, interaction: this.#interaction });
   }
 
@@ -172,7 +186,11 @@ export class AcpSession implements ProviderSession {
    * session and `resumeFailed` says why, so the server can mark the lost history.
    */
   async #load(init: AcpInitializeResult, base: Record<string, unknown>, sessionId: string): Promise<AcpNewSessionResult | undefined> {
-    if (init.agentCapabilities?.loadSession !== true) {
+    // the resume method only where the agent offers it; an agent that offers just `loadSession` still reopens that way
+    const resumable = init.agentCapabilities?.sessionCapabilities?.["resume"] !== undefined && init.agentCapabilities.sessionCapabilities["resume"] !== null;
+    const method = this.#quirks?.resumeMethod === "resume" && resumable ? "session/resume" : "session/load";
+    const supported = method === "session/resume" || init.agentCapabilities?.loadSession === true;
+    if (!supported) {
       this.resumeFailed = `${this.#ctx.label} cannot load earlier sessions`;
       this.#log(`agent cannot load sessions; starting a new one instead of ${sessionId}`);
       return undefined;
@@ -180,13 +198,13 @@ export class AcpSession implements ProviderSession {
     this.#normalizer.muted = true;
     this.#normalizer.costBaselineUnknown = true;
     try {
-      const loaded = await this.#conn.request<Omit<AcpNewSessionResult, "sessionId"> | null>("session/load", { ...base, sessionId });
+      const loaded = await this.#conn.request<Omit<AcpNewSessionResult, "sessionId"> | null>(method, { ...base, sessionId });
       return { ...loaded, sessionId };
     } catch (error) {
       if (isAuthRequired(error)) throw error;
       const message = error instanceof Error ? error.message : String(error);
       this.resumeFailed = `${this.#ctx.label} could not load session ${sessionId}: ${message}`;
-      this.#log(`session/load failed (${message}); starting a new session`);
+      this.#log(`${method} failed (${message}); starting a new session`);
       this.#normalizer.costBaselineUnknown = false;
       return undefined;
     } finally {

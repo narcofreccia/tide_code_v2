@@ -1,4 +1,6 @@
 import { describe, expect, it } from "vitest";
+import { ANTIGRAVITY_PROFILE } from "@tide/driver-acp";
+import { localAgent } from "./acpRegistry.ts";
 import { HARNESS_INSTALLS, acpInstallHint, installHintFor } from "./installHints.ts";
 
 describe("install hints", () => {
@@ -21,5 +23,11 @@ describe("install hints", () => {
     expect(acpInstallHint({ ...base, repository: "https://github.com/a/a" })).toEqual({ url: "https://github.com/a/a" });
     expect(acpInstallHint(base)).toBeUndefined();
     expect(acpInstallHint(undefined)).toBeUndefined();
+  });
+
+  it("points Antigravity at Google's site and says where to get the CLI", () => {
+    const agy = localAgent(ANTIGRAVITY_PROFILE);
+    expect(acpInstallHint(agy)).toEqual({ url: "https://antigravity.google" });
+    expect(agy.description).toMatch(/Antigravity download page.*`agy`.*sign in/);
   });
 });

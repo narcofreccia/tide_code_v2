@@ -34,8 +34,10 @@ export class AcpSettings {
   #baseMode: string | undefined;
   #currentMode: string | undefined;
   #defaultModel: string | undefined;
+  #keepAgentMode: boolean;
 
-  constructor(conn: AcpConnection, sessionId: string, knobs: SessionKnobs, log: (message: string) => void, defaultModel?: string) {
+  constructor(conn: AcpConnection, sessionId: string, knobs: SessionKnobs, log: (message: string) => void, defaultModel?: string, keepAgentMode = false) {
+    this.#keepAgentMode = keepAgentMode;
     this.#conn = conn;
     this.#sessionId = sessionId;
     this.#log = log;
@@ -139,7 +141,7 @@ export class AcpSettings {
       const effort = wanted.effort;
       await attempt(`set effort ${effort}`, () => this.#setEffort(effort));
     }
-    const modeId = targetModeId(this.modeSelector, this.#baseMode, wanted.mode, wanted.interaction);
+    const modeId = targetModeId(this.modeSelector, this.#baseMode, this.#keepAgentMode ? "approval-required" : wanted.mode, wanted.interaction);
     if (modeId !== undefined) await attempt(`set mode ${modeId}`, () => this.#setMode(modeId));
     return ok;
   }

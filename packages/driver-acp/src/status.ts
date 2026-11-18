@@ -120,7 +120,7 @@ export async function probeStatus(
     ...(deps.timers ? { timers: deps.timers } : {}),
   });
   try {
-    const init = await conn.request<AcpInitializeResult>("initialize", clientInitialize(version), deps.initializeTimeoutMs ?? INITIALIZE_TIMEOUT_MS);
+    const init = await conn.request<AcpInitializeResult>("initialize", clientInitialize(version, config.quirks), deps.initializeTimeoutMs ?? INITIALIZE_TIMEOUT_MS);
     const next: AgentFacts = { ...facts, init };
     if (next.models === undefined) {
       try {

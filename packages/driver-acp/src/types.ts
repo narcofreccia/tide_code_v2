@@ -17,6 +17,28 @@ export interface AcpConfig {
   label?: string;
   /** model id used when a thread does not pin one */
   defaultModel?: string;
+  /** per-agent deviations from plain ACP; absent = generic behaviour (see `profiles.ts`) */
+  quirks?: AcpQuirks;
+}
+
+/** Optional agent quirks. Every field is independent and defaults to today's generic behaviour. */
+export interface AcpQuirks {
+  /** `false`: do not advertise `fs.writeTextFile`, so the agent keeps its own diff edits (default `true`) */
+  advertiseFsWrite?: boolean;
+  /**
+   * Never select an agent mode for the runtime mode (full-access, accept-edits…): the agent stays
+   * in its own initial mode and Tide answers its permission requests from the runtime mode.
+   * Plan interaction may still select the agent's plan mode.
+   */
+  keepAgentMode?: boolean;
+  /**
+   * Where the system prompt goes: the object path inside `session/new|load` `_meta`
+   * (e.g. `["antigravity", "systemPrompt", "append"]`). Absent = a `<tide-context>` block in
+   * the first prompt.
+   */
+  systemPromptMeta?: string[];
+  /** `"resume"`: reopen with `session/resume` (needs `sessionCapabilities.resume`) instead of `session/load` */
+  resumeMethod?: "load" | "resume";
 }
 
 /** The slice of a Readable the line reader uses. */
