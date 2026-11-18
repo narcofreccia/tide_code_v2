@@ -139,7 +139,7 @@ export class ClaudeSession implements ProviderSession {
     if (options.forkFrom !== undefined) this.#forkFrom = options.forkFrom;
     this.#permissionMode = options.interaction === "plan" ? "plan" : (MODE_TO_PERMISSION[options.mode] ?? "default");
     this.#autoModeFallbackAvailable = this.#permissionMode === "auto";
-    this.#broker = new ApprovalBroker((event) => this.#emit(event), options.linkedDirs ?? []);
+    this.#broker = new ApprovalBroker((event) => this.#emit(event), options.linkedDirs ?? [], (agentId) => this.#normalizer.childKeyForAgent(agentId));
     this.#normalizer = this.#newNormalizer();
   }
 

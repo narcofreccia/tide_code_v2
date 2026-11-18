@@ -173,6 +173,11 @@ export class ClaudeNormalizer {
     this.#usage = options.usage ?? new UsageTracker();
   }
 
+  /** The SDK's `agentID` (canUseTool) is the sub-agent's task id; returns its child row's key. */
+  childKeyForAgent(agentId: string): string | undefined {
+    return this.#taskChild.get(agentId);
+  }
+
   /** Backgrounded sub-agents that have not reported yet (they keep Claude Code busy between turns). */
   backgroundCount(): number {
     let count = 0;
@@ -531,7 +536,8 @@ export class ClaudeNormalizer {
         });
       }
 
-      if (tool.name === "TodoWrite") {
+      // a sub-agent's todo list is its own; only the main agent's drives the thread plan
+      if (tool.name === "TodoWrite" && parent === null) {
         const steps = planSteps(input);
         if (steps) events.push({ type: "plan.progress", steps });
       }

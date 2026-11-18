@@ -17,6 +17,8 @@ export interface CanUseToolContext {
   suggestions?: unknown[];
   /** `mcp__*` tools: the serving MCP server (untrusted `name`; sdk.d.ts CanUseTool options) */
   mcpServer?: { name: string; source: string };
+  /** set when the request comes from inside a sub-agent (its task id) */
+  agentID?: string;
 }
 
 type Destination = "session" | "localSettings";
@@ -63,9 +65,13 @@ export class ApprovalBroker {
   #approvals = new Map<string, Deferred<ApprovalDecision>>();
   #userInputs = new Map<string, Deferred<Record<string, unknown>>>();
 
-  constructor(emit: (event: NormalizedEvent) => void, links: LinkedDir[] = []) {
+  /** maps a sub-agent id to the childKey of its row, so its approvals nest under it */
+  #childKeyFor: (agentId: string) => string | undefined;
+
+  constructor(emit: (event: NormalizedEvent) => void, links: LinkedDir[] = [], childKeyFor: (agentId: string) => string | undefined = () => undefined) {
     this.#emit = emit;
     this.#links = links;
+    this.#childKeyFor = childKeyFor;
   }
 
   async handle(toolName: string, input: Record<string, unknown>, context: CanUseToolContext): Promise<PermissionResultShape> {
@@ -86,11 +92,13 @@ export class ApprovalBroker {
   async #approval(toolName: string, input: Record<string, unknown>, context: CanUseToolContext): Promise<PermissionResultShape> {
     const requestId = context.toolUseID;
     const diff = isDiffTool(toolName) ? previewDiff(toolName, input) : undefined;
+    const parentToolUseId = context.agentID !== undefined ? this.#childKeyFor(context.agentID) : undefined;
     this.#emit({
       type: "activity",
       activity: {
         kind: "approval",
         requestId,
+        ...(parentToolUseId !== undefined ? { parentToolUseId } : {}),
         toolName,
         input,
         status: "pending",

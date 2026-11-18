@@ -65,3 +65,21 @@ describe("ApprovalBroker acceptForSession / acceptAlways", () => {
     expect(events[0]).toMatchObject({ activity: { kind: "approval", title: 'Claude wants to query - MCP server "db" (project)' } });
   });
 });
+
+describe("ApprovalBroker sub-agent attribution", () => {
+  function raise(agentID: string | undefined) {
+    const events: NormalizedEvent[] = [];
+    const broker = new ApprovalBroker((event) => events.push(event), [], (id) => (id === "task-1" ? "toolu_task" : undefined));
+    void broker.handle("Bash", { command: "ls" }, { toolUseID: "t1", ...(agentID !== undefined ? { agentID } : {}) });
+    broker.respondApproval("t1", "decline");
+    const found = events.find((e) => e.type === "activity" && e.activity.kind === "approval");
+    return found && found.type === "activity" ? found.activity : undefined;
+  }
+  it("nests under the child row the agentID maps to", () => {
+    expect(raise("task-1")).toMatchObject({ parentToolUseId: "toolu_task" });
+  });
+  it("has no parent without an agentID or for an unknown one", () => {
+    expect(raise(undefined)).not.toHaveProperty("parentToolUseId");
+    expect(raise("task-zzz")).not.toHaveProperty("parentToolUseId");
+  });
+});

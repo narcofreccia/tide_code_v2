@@ -329,3 +329,21 @@ describe("background-subagent fixture (harness-initiated turns)", () => {
     expect(tools).toEqual(["Agent", "Agent", "Agent", "Bash", "AskUserQuestion"]);
   });
 });
+
+describe("TodoWrite and the thread plan", () => {
+  const todo = (parent: string | null, id: string): ClaudeMessage =>
+    ({ type: "assistant", parent_tool_use_id: parent, message: { id: `m-${id}`, role: "assistant", content: [{ type: "tool_use", id, name: "TodoWrite", input: { todos: [{ content: "Step", status: "pending", activeForm: "Stepping" }] } }] } }) as ClaudeMessage;
+
+  it("a top-level TodoWrite updates the plan", () => {
+    const events = new ClaudeNormalizer({ partialMessages: true }).next(todo(null, "toolu_top"));
+    expect(events.filter((e) => e.type === "plan.progress")).toHaveLength(1);
+  });
+
+  it("a sub-agent's TodoWrite is a nested tool row and leaves the plan alone", () => {
+    const events = new ClaudeNormalizer({ partialMessages: true }).next(todo("toolu_task", "toolu_sub"));
+    expect(events.some((e) => e.type === "plan.progress")).toBe(false);
+    expect(events).toHaveLength(1);
+    expect(events[0]).toMatchObject({ type: "activity", activity: { kind: "tool", toolName: "TodoWrite", parentToolUseId: "toolu_task" } });
+  });
+});
+

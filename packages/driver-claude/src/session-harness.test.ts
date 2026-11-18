@@ -276,6 +276,21 @@ describe("ClaudeSession harness-initiated turns", () => {
     expect(h.idle).toHaveLength(4);
   });
 
+  it("a background sub-agent's TodoWrite while idle opens no harness turn and no plan update", async () => {
+    const h = harness();
+    const [first] = runs();
+    await userTurn(h, "spin up some subagents", first!);
+    h.query().push(
+      { type: "system", subtype: "task_started", task_id: "task-sub", tool_use_id: PARENT, description: "Audit feature gaps", subagent_type: "Explore" } as ClaudeMessage,
+      { type: "assistant", parent_tool_use_id: PARENT, message: { id: "sub-todo", role: "assistant", content: [{ type: "tool_use", id: "toolu_sub_todo", name: "TodoWrite", input: { todos: [{ content: "Look", status: "pending", activeForm: "Looking" }] } }] } } as ClaudeMessage,
+    );
+    await tick();
+    await tick();
+    expect(h.openedCount()).toBe(0);
+    expect(h.idle.some((event) => event.type === "plan.progress")).toBe(false);
+    expect(h.idle.some((event) => event.type === "activity" && event.activity.kind === "tool" && event.activity.toolName === "TodoWrite" && event.activity.parentToolUseId === PARENT)).toBe(true);
+  });
+
   it("without an idle-activity listener the sub-agent's work is held and replayed at the head of the turn it wakes", async () => {
     const h = harness({ idleListener: false });
     const [first, report] = runs();
