@@ -36,9 +36,9 @@ export class AcpInstance implements ProviderInstance {
     this.#label = config.label ?? env.instance?.label ?? config.command;
   }
 
-  async status(): Promise<ProviderStatus> {
+  async status(refresh = false): Promise<ProviderStatus> {
     const cached = this.#status;
-    if (cached && Date.now() - cached.at < STATUS_TTL_MS) return cached.value;
+    if (!refresh && cached && Date.now() - cached.at < STATUS_TTL_MS) return cached.value;
     this.#statusInFlight ??= probeStatus(this.#config, this.#env, this.#deps, this.#label, this.#facts, CLIENT_VERSION, (commands) => this.#setCommands(commands))
       .then(({ status, facts }) => {
         // a live session may have learned context usage while the probe ran

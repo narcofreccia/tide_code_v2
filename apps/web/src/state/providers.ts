@@ -24,6 +24,7 @@ interface ProvidersState {
   byEnv: Record<string, EnvProviderStatus[]>;
   loading: boolean;
   error: string | null;
+  errorsByEnv: Partial<Record<string, string>>;
   /** set once a `providers.list` call started, so the hook only fetches once */
   requested: boolean;
 }
@@ -52,6 +53,7 @@ function unknownRoster(hint: string): ProviderStatusDto[] {
 export const useProvidersStore = create<ProvidersState>(() => ({
   providers: [],
   byEnv: {},
+  errorsByEnv: {},
   loading: false,
   error: null,
   requested: false,
@@ -65,7 +67,7 @@ function flatten(byEnv: Record<string, EnvProviderStatus[]>): EnvProviderStatus[
   return order.flatMap((id) => byEnv[id] ?? []);
 }
 
-const inflight = new Set<string>();
+const inflight = new Map<string, symbol>();
 
 /**
  * Fetches the harness roster once per session; `refresh` forces a re-probe. With
@@ -89,15 +91,18 @@ export function loadProviders(refresh = false): void {
     });
 }
 
-function setEnvRoster(envId: string, roster: EnvProviderStatus[] | undefined, error?: string | null): void {
+function setEnvRoster(envId: string, roster: EnvProviderStatus[] | undefined, error: string | null): void {
   useProvidersStore.setState((s) => {
     const { [envId]: _old, ...rest } = s.byEnv;
     const byEnv = roster === undefined ? rest : { ...s.byEnv, [envId]: roster };
+    const { [envId]: _error, ...errorsByEnv } = s.errorsByEnv;
+    if (error !== null) errorsByEnv[envId] = error;
     return {
       byEnv,
+      errorsByEnv,
       providers: flatten(byEnv),
       loading: inflight.size > 0,
-      ...(error === undefined ? {} : { error }),
+      ...(envId === useEnvironments.getState().primaryId ? { error } : {}),
     };
   });
 }
@@ -105,18 +110,20 @@ function setEnvRoster(envId: string, roster: EnvProviderStatus[] | undefined, er
 /** R9: (re)loads one environment's roster; called whenever it connects. */
 export function loadProvidersFor(envId: string, refresh = false): void {
   if (inflight.has(envId) && !refresh) return;
-  inflight.add(envId);
+  const request = Symbol();
+  inflight.set(envId, request);
   useProvidersStore.setState({ loading: true, requested: true });
   call("providers.list", refresh ? { refresh: true } : {}, { envId })
     .then((providers) => {
+      if (inflight.get(envId) !== request) return;
       inflight.delete(envId);
       setEnvRoster(envId, providers.map((p) => ({ ...p, envId })), null);
     })
     .catch((err: unknown) => {
+      if (inflight.get(envId) !== request) return;
       inflight.delete(envId);
       const error = err instanceof Error ? err.message : String(err);
-      const isPrimary = envId === useEnvironments.getState().primaryId;
-      setEnvRoster(envId, unknownRoster(error).map((p) => ({ ...p, envId })), isPrimary ? error : undefined);
+      setEnvRoster(envId, unknownRoster(error).map((p) => ({ ...p, envId })), error);
     });
 }
 
@@ -124,7 +131,7 @@ export function loadProvidersFor(envId: string, refresh = false): void {
 export function dropProvidersFor(envId: string): void {
   inflight.delete(envId);
   if (!(envId in useProvidersStore.getState().byEnv)) return;
-  setEnvRoster(envId, undefined);
+  setEnvRoster(envId, undefined, null);
 }
 
 /** R9: the primary changed; its roster goes first. */
@@ -297,10 +304,10 @@ export function unavailableReason(p: ProviderStatusDto): string | undefined {
 
 /** Test seam: replaces the roster without touching the connection. */
 export function setProvidersForTest(providers: EnvProviderStatus[]): void {
-  useProvidersStore.setState({ providers, byEnv: {}, loading: false, error: null, requested: true });
+  useProvidersStore.setState({ providers, byEnv: {}, errorsByEnv: {}, loading: false, error: null, requested: true });
 }
 
 export function resetProviders(): void {
   inflight.clear();
-  useProvidersStore.setState({ providers: [], byEnv: {}, loading: false, error: null, requested: false });
+  useProvidersStore.setState({ providers: [], byEnv: {}, errorsByEnv: {}, loading: false, error: null, requested: false });
 }

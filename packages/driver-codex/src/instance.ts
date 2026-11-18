@@ -26,9 +26,9 @@ export class CodexInstance implements ProviderInstance {
     this.#env = env;
   }
 
-  async status(): Promise<ProviderStatus> {
+  async status(refresh = false): Promise<ProviderStatus> {
     const cached = this.#status;
-    if (cached && Date.now() - cached.at < STATUS_TTL_MS) return cached.value;
+    if (!refresh && cached && Date.now() - cached.at < STATUS_TTL_MS) return cached.value;
     this.#statusInFlight ??= buildStatus(this.#config, this.#env)
       .then((value) => {
         this.#status = { at: Date.now(), value };

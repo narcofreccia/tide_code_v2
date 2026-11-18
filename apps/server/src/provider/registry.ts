@@ -269,7 +269,7 @@ export class DriverRegistry {
     let dto: ProviderStatusDto;
     try {
       const instance = await this.#instanceOf(entry);
-      dto = toDto(await instance.status(), entry);
+      dto = toDto(await instance.status(refresh), entry);
     } catch (err) {
       this.#env.log(`[provider] status(${id}) failed`, err);
       dto = unusable(entry, err);

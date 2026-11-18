@@ -1,4 +1,5 @@
 import { useEffect, useId, useRef, useState } from "react";
+import { createPortal } from "react-dom";
 import { useEscape } from "../../lib/useEscape.ts";
 import { Button } from "./Button.tsx";
 import styles from "./Dialog.module.css";
@@ -65,6 +66,7 @@ export function Dialog({
   children,
   variant = "form",
   size = "sm",
+  centered = false,
 }: {
   title: string;
   onCancel: () => void;
@@ -72,6 +74,7 @@ export function Dialog({
   variant?: "form" | "palette" | "sheet";
   /** width of the `form` panel: 420 / 560 / 760px, never wider than 90vw */
   size?: DialogSize;
+  centered?: boolean;
 }) {
   const palette = variant === "palette";
   const sheet = variant === "sheet";
@@ -81,9 +84,9 @@ export function Dialog({
   useEscape(onCancel, { blurFirst: !palette, root: panel });
   const onKeyDown = useFocusTrap(panel);
 
-  return (
+  const overlay = (
     <div
-      className={`${styles.scrim} ${palette ? styles.paletteScrim : ""} ${sheet ? styles.sheetScrim : ""}`}
+      className={`${styles.scrim} ${centered ? styles.centered : ""} ${palette ? styles.paletteScrim : ""} ${sheet ? styles.sheetScrim : ""}`}
       onMouseDown={onCancel}
     >
       <div
@@ -106,6 +109,7 @@ export function Dialog({
       </div>
     </div>
   );
+  return centered ? createPortal(overlay, document.body) : overlay;
 }
 
 /** One-field prompt (new file, rename). Submits on Enter. */

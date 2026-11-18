@@ -1,4 +1,4 @@
-import { useState } from "react";
+import { useContext, useEffect, useState } from "react";
 import type { ProviderInstanceConfig, ProviderKind, ProviderStatusDto } from "@tide/contracts";
 import { BUNDLED_PROVIDERS } from "../../lib/vocab.ts";
 import { loadProvidersFor, loadProviders, orderedInstances, placeholderStatus, providersOf, useProviders, useProvidersStore } from "../../state/providers.ts";
@@ -12,7 +12,7 @@ import { AcpRegistryDialog } from "./providers/AcpRegistryDialog.tsx";
 import { InstanceDialog } from "./providers/InstanceDialog.tsx";
 import type { SectionMeta } from "./search.ts";
 import { SettingNote, SettingsGroup } from "./ui/SettingsGroup.tsx";
-import { SettingsPage } from "./ui/SettingsPage.tsx";
+import { SettingsGateContext, SettingsPage } from "./ui/SettingsPage.tsx";
 
 type Sheet =
   | { type: "account"; kind: ProviderKind; instance?: ProviderInstanceConfig }
@@ -50,7 +50,12 @@ export function ProvidersSection() {
   /** Re-probes the machine whose settings are shown. */
   const refresh = (): void => (envId === undefined ? loadProviders(true) : loadProvidersFor(envId, true));
   const loading = useProvidersStore((s) => s.loading);
-  const error = useProvidersStore((s) => s.error);
+  const error = useProvidersStore((s) => envId === undefined ? s.error : s.errorsByEnv[envId]);
+  const gate = useContext(SettingsGateContext);
+  const [refreshingCard, setRefreshingCard] = useState<string>();
+  useEffect(() => {
+    if (!loading) setRefreshingCard(undefined);
+  }, [loading]);
   const configured = useSelectedSettings((s) => s.settings.providerInstances);
   const [sheet, setSheet] = useState<Sheet>(null);
   const taken = configured.map((c) => c.id);
@@ -83,7 +88,7 @@ export function ProvidersSection() {
           <>
             <Button onClick={() => setSheet({ type: "acp" })}>Add ACP agent…</Button>
             <Button onClick={refresh} disabled={loading}>
-              {loading ? "Refreshing…" : "Refresh all"}
+              {loading && refreshingCard === undefined ? "Refreshing…" : "Refresh all"}
             </Button>
           </>
         }
@@ -97,6 +102,12 @@ export function ProvidersSection() {
               key={status.id}
               status={status}
               instance={instance}
+              onRefresh={() => {
+                setRefreshingCard(status.id);
+                refresh();
+              }}
+              refreshDisabled={loading}
+              refreshing={loading && refreshingCard === status.id}
               onAddAccount={bundled ? () => setSheet({ type: "account", kind: status.kind }) : undefined}
               onEdit={instance ? () => setSheet({ type: "account", kind: instance.kind, instance }) : undefined}
               onRemove={instance ? () => setSheet({ type: "remove", instance }) : undefined}
@@ -104,7 +115,7 @@ export function ProvidersSection() {
           );
         })}
       </SettingsGroup>
-      {sheet?.type === "account" ? (
+      {sheet?.type === "account" && gate.status === "ready" ? (
         <InstanceDialog
           kind={sheet.kind}
           instance={sheet.instance}

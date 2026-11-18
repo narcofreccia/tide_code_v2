@@ -1,9 +1,10 @@
 import { afterEach, describe, expect, it } from "vitest";
-import { cleanup, fireEvent, render, screen, waitFor, within } from "@testing-library/react";
+import { act, cleanup, fireEvent, render, screen, waitFor, within } from "@testing-library/react";
 import type { AcpRegistryAgent, UserSettings, UserSettingsPatch } from "@tide/contracts";
 import { ProvidersSection } from "../ProvidersSection.tsx";
 import { CODEX_WORK, PROVIDER_FIXTURE } from "../fixtures.ts";
 import { mockRpc, resetUi } from "../../../testHarness.ts";
+import { useEnvironments } from "../../../state/envStore.ts";
 import { setProvidersForTest } from "../../../state/providers.ts";
 import { defaultUserSettings, resetServerSettings, useServerSettings } from "../../../state/serverSettings.ts";
 import { instanceId, parseEnv, splitArgs } from "./instances.ts";
@@ -12,6 +13,7 @@ afterEach(() => {
   cleanup();
   resetUi();
   resetServerSettings();
+  useEnvironments.setState(useEnvironments.getInitialState());
 });
 
 describe("instance ids and fields", () => {
@@ -49,6 +51,45 @@ function mount(settings: Partial<UserSettings> = {}) {
 }
 
 describe("Settings › Providers instances", () => {
+  it("opens the account sheet outside the scrolled settings content and restores focus", () => {
+    const { container } = render(<div style={{ overflow: "auto" }}><ProvidersSection /></div>);
+    container.firstElementChild!.scrollTop = 300;
+    const trigger = within(screen.getByRole("article", { name: "Codex" })).getByRole("button", { name: "Add account" });
+    trigger.focus();
+    fireEvent.click(trigger);
+    const dialog = screen.getByRole("dialog", { name: "Add Codex account" });
+    expect(dialog.parentElement?.parentElement).toBe(document.body);
+    expect(dialog.parentElement?.className).toContain("centered");
+    fireEvent.click(within(dialog).getByRole("button", { name: "Cancel" }));
+    expect(screen.queryByRole("dialog")).toBeNull();
+    expect(document.activeElement).toBe(trigger);
+  });
+
+  it("refreshes the selected machine and reports the result on the card", async () => {
+    mount();
+    act(() => {
+      useEnvironments.setState({ primaryId: "local" });
+      useServerSettings.setState({
+        selectedId: "remote",
+        byEnv: { remote: { settings: defaultUserSettings(), loaded: true } },
+      });
+    });
+    const rpc = mockRpc({
+      "providers.list": () => PROVIDER_FIXTURE.map((status) =>
+        status.id === "codex" ? { ...status, installed: true, loggedIn: true } : status,
+      ),
+    });
+    const card = within(screen.getByRole("article", { name: "Codex" }));
+    fireEvent.click(card.getByRole("button", { name: "Refresh" }));
+    expect(rpc).toHaveBeenCalledExactlyOnceWith("providers.list", { refresh: true }, { envId: "remote" });
+    expect((card.getByRole("button", { name: "Refreshing…" }) as HTMLButtonElement).disabled).toBe(true);
+    await card.findByText(/Installed · logged in/);
+
+    mockRpc({ "providers.list": () => { throw new Error("remote is offline"); } });
+    fireEvent.click(card.getByRole("button", { name: "Refresh" }));
+    expect((await screen.findByRole("alert")).textContent).toContain("remote is offline");
+  });
+
   it("adds a second account of a bundled harness", async () => {
     const { patches } = mount();
     const codex = within(screen.getByRole("article", { name: "Codex" }));

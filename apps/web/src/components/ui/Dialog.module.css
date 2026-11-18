@@ -79,3 +79,12 @@
 @media (prefers-reduced-motion: reduce) {
   .sheet { animation: none; }
 }
+
+.centered {
+  align-items: center;
+  padding: 16px;
+}
+
+.centered .sheet {
+  max-height: calc(100dvh - 32px);
+}

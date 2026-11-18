@@ -115,7 +115,7 @@ export function InstanceFields({
 export function InstanceDialog(props: React.ComponentProps<typeof InstanceFields>) {
   const title = props.instance ? `Edit ${props.instance.label}` : props.kind === "acp" ? "Add ACP agent" : `Add ${PROVIDER_LABELS[props.kind]} account`;
   return (
-    <Dialog title={title} onCancel={props.onCancel} variant="sheet">
+    <Dialog title={title} onCancel={props.onCancel} variant="sheet" centered>
       <InstanceFields {...props} />
     </Dialog>
   );

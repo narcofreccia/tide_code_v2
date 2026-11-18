@@ -46,6 +46,10 @@ describe("status", () => {
     expect(servers[0]?.killed).toBe(1);
     expect(await instance.status()).toBe(status);
     expect(servers).toHaveLength(1);
+    const refreshed = await instance.status(true);
+    expect(refreshed).not.toBe(status);
+    expect(servers).toHaveLength(2);
+    expect(await instance.status()).toBe(refreshed);
     await instance.dispose();
   });
 

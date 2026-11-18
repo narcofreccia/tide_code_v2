@@ -1,7 +1,7 @@
 import type { ProviderInstanceConfig, ProviderStatusDto } from "@tide/contracts";
 import { PROVIDER_LABELS, RUNTIME_MODES, RUNTIME_MODE_HINTS, RUNTIME_MODE_LABELS } from "../../lib/vocab.ts";
 import { installOf, resolveLoginCommand, runOrCopy } from "../../lib/providerLogin.ts";
-import { loadProviders, modelChoiceValue, modelChoices } from "../../state/providers.ts";
+import { modelChoiceValue, modelChoices } from "../../state/providers.ts";
 import { setProviderDefault, useSelectedSettings } from "../../state/serverSettings.ts";
 import { useUi } from "../../state/ui.ts";
 import { Button } from "../ui/Button.tsx";
@@ -87,12 +87,18 @@ export function ProviderCard({
   status,
   instance,
   onAddAccount,
+  onRefresh,
+  refreshDisabled,
+  refreshing,
   onEdit,
   onRemove,
 }: {
   status: ProviderStatusDto;
   /** set for an instance the user added (an account or an ACP agent) */
   instance?: ProviderInstanceConfig | undefined;
+  onRefresh?: () => void;
+  refreshDisabled?: boolean;
+  refreshing?: boolean;
   onAddAccount?: (() => void) | undefined;
   onEdit?: (() => void) | undefined;
   onRemove?: (() => void) | undefined;
@@ -127,9 +133,11 @@ export function ProviderCard({
               Add account
             </Button>
           ) : null}
-          <Button variant="quiet" onClick={() => loadProviders(true)} title={`Re-probe ${name}`}>
-            Refresh
-          </Button>
+          {onRefresh ? (
+            <Button variant="quiet" onClick={onRefresh} disabled={refreshDisabled} title={`Re-probe ${name}`}>
+              {refreshing ? "Refreshing…" : "Refresh"}
+            </Button>
+          ) : null}
           {instance && onEdit && onRemove ? <InstanceMenu name={name} onEdit={onEdit} onRemove={onRemove} /> : null}
         </span>
       </header>

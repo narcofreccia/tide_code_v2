@@ -243,7 +243,8 @@ export interface ProviderSession {
 
 export interface ProviderInstance {
   readonly kind: ProviderKind;
-  status(): Promise<ProviderStatus>;
+  /** A forced read skips the completed status cache. */
+  status(refresh?: boolean): Promise<ProviderStatus>;
   /** R8: slash commands + skills available in `cwd` (project-level ones included); only when `caps.commands` */
   listCommands?(options: { cwd: string }): Promise<SlashCommandInfo[]>;
   openSession(options: OpenSessionOptions): Promise<ProviderSession>;

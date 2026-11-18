@@ -100,9 +100,9 @@ export class OpencodeInstance implements ProviderInstance {
     return value;
   }
 
-  async status(): Promise<ProviderStatus> {
+  async status(refresh = false): Promise<ProviderStatus> {
     const cached = this.#status;
-    if (cached && Date.now() - cached.at < STATUS_TTL_MS) return this.#withMcpHint(cached.value);
+    if (!refresh && cached && Date.now() - cached.at < STATUS_TTL_MS) return this.#withMcpHint(cached.value);
     this.#statusInFlight ??= buildStatus(this.#config, this.#env, async () => {
       const api = await this.api();
       const version = this.#server.current?.version;
