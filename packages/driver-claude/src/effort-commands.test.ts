@@ -47,7 +47,7 @@ describe("claude efforts", () => {
       seen = o ?? {};
       return fakeQuery({ ...(applyFlagSettings ? { applyFlagSettings } : {}), setPermissionMode: async () => undefined });
     };
-    const s = new ClaudeSession({}, env, options, queryFn);
+    const s = new ClaudeSession({ costStatesImpl: async () => [] }, env, options, queryFn);
     return { s, seen: () => seen };
   }
 

@@ -270,14 +270,17 @@ describe("codex session", () => {
     await session.close();
   });
 
-  it("reads account/rateLimits once per turn and reports the tightest window", async () => {
+  it("reads account/rateLimits once per turn and reports each window, the tightest last", async () => {
     const { session, server } = await harness();
     server.rateLimits = { rateLimits: { limitId: "codex", limitName: null, primary: { usedPercent: 95, windowDurationMins: 300, resetsAt: 1788141000 }, secondary: { usedPercent: 20, windowDurationMins: 10080, resetsAt: 1788700000 }, rateLimitReachedType: null, spendControlReached: null } };
     const { events, done } = collect(session.send({ text: "hi" }));
     await tick();
     expect(server.calls("account/rateLimits/read")).toHaveLength(1);
-    const limit = events.flatMap((event) => (event.type === "usage" && event.rateLimit ? [event.rateLimit] : []))[0];
-    expect(limit).toMatchObject({ status: "warning", remainingPct: 5, resetsAt: 1788141000000, note: "codex 95% used (5h window)" });
+    const limits = events.flatMap((event) => (event.type === "usage" && event.rateLimit ? [event.rateLimit] : []));
+    expect(limits).toMatchObject([
+      { status: "ok", remainingPct: 80, resetsAt: 1788700000000, window: "weekly", windowMins: 10080 },
+      { status: "warning", remainingPct: 5, resetsAt: 1788141000000, note: "codex 95% used (5h window)", window: "session", windowMins: 300 },
+    ]);
     completeTurn(server);
     await done;
     await session.close();

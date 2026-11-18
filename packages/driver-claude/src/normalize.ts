@@ -5,7 +5,6 @@ import type {
   AssistantMessage,
   ClaudeMessage,
   ContentBlock,
-  RateLimitInfoShape,
   RateLimitMessage,
   ResultMessage,
   StreamEventMessage,
@@ -15,6 +14,7 @@ import type {
   ToolUseBlock,
   UserMessage,
 } from "./sdk-shapes.ts";
+import { rateLimitEvents, UsageTracker } from "./usage.ts";
 
 const MAX_OUTPUT_CHARS = 4096;
 const MAX_PAYLOAD_CHARS = 4096;
@@ -59,20 +59,8 @@ export interface NormalizerOptions {
   now?: () => number;
   /** id for the compaction row, so "Compacting…" and "Context compacted" land on one row (tests) */
   newId?: () => string;
-}
-
-/** Cumulative per-`query()` figures from the previous `result`, to turn totals into per-turn deltas. */
-interface Cumulative {
-  input: number;
-  output: number;
-  cacheRead: number;
-  cacheWrite: number;
-  cost: number;
-}
-
-/** Delta of two cumulative counters; a counter that went backwards (new query) restarts from zero. */
-function delta(now: number, before: number): number {
-  return now >= before ? now - before : now;
+  /** the session's usage tracker, which outlives this normalizer (a fresh one when omitted) */
+  usage?: UsageTracker;
 }
 
 interface TrackedTool {
@@ -177,11 +165,12 @@ export class ClaudeNormalizer {
   #interrupted = false;
   /** the "Compacting conversation…" row in flight; its compact_boundary replaces it */
   #compactingId: string | undefined;
-  #reported: Cumulative = { input: 0, output: 0, cacheRead: 0, cacheWrite: 0, cost: 0 };
+  #usage: UsageTracker;
   unknownCount = 0;
 
   constructor(options: NormalizerOptions) {
     this.#opts = options;
+    this.#usage = options.usage ?? new UsageTracker();
   }
 
   /** Backgrounded sub-agents that have not reported yet (they keep Claude Code busy between turns). */
@@ -442,30 +431,13 @@ export class ClaudeNormalizer {
 
   #rateLimit(message: RateLimitMessage): NormalizedEvent[] {
     const info = message.rate_limit_info;
-    if (!info || info.status === undefined) return [];
-    const nominal = info.status === "allowed";
-    const used = usedFraction(info);
-    const resets = info.rateLimitType ? info.unifiedWindows?.[info.rateLimitType]?.resetsAt : undefined;
-    const resetsAt = info.resetsAt ?? resets;
-    const overage = info.isUsingOverage ?? info.overageInUse;
-    const status = nominal ? "ok" : info.status === "allowed_warning" || overageOnly(info) ? "warning" : "limited";
-    const note = `${info.rateLimitType ?? "rate limit"}${used !== undefined ? ` ${Math.round(used * 100)}% used` : ""}${info.status === "rejected" ? " (rejected)" : ""}`;
-    const events: NormalizedEvent[] = [
-      {
-        type: "usage",
-        rateLimit: {
-          status,
-          ...(used !== undefined ? { remainingPct: Math.max(0, Math.min(100, Math.round((1 - used) * 100))) } : {}),
-          // the CLI reports epoch seconds; the contract's `at` is epoch ms, so resetsAt follows suit
-          ...(typeof resetsAt === "number" ? { resetsAt: resetsAt * 1000 } : {}),
-          ...(typeof overage === "boolean" ? { overage } : {}),
-          note,
-          at: (this.#opts.now ?? Date.now)(),
-        },
-      },
-    ];
+    const events = rateLimitEvents(info, (this.#opts.now ?? Date.now)());
     // A nominal frame is per-request housekeeping: it feeds the gauge but earns no timeline row.
-    if (!nominal) events.push(...this.#info(`Rate limit ${info.status}${info.rateLimitType ? ` on ${info.rateLimitType}` : ""}${used !== undefined ? ` (${Math.round(used * 100)}% used)` : ""}`));
+    const own = events.at(-1);
+    if (info && own?.type === "usage" && info.status !== "allowed") {
+      const remaining = own.rateLimit?.remainingPct;
+      events.push(...this.#info(`Rate limit ${info.status}${info.rateLimitType ? ` on ${info.rateLimitType}` : ""}${remaining !== undefined ? ` (${100 - remaining}% used)` : ""}`));
+    }
     return events;
   }
 
@@ -639,32 +611,10 @@ export class ClaudeNormalizer {
   }
 
   #result(message: ResultMessage): NormalizedEvent[] {
-    // `usage` and `total_cost_usd` are cumulative for the whole query() (one per session);
-    // the contract wants this turn's delta only.
-    const usage = message.usage ?? {};
-    const now: Cumulative = {
-      input: usage.input_tokens ?? 0,
-      output: usage.output_tokens ?? 0,
-      cacheRead: usage.cache_read_input_tokens ?? 0,
-      cacheWrite: usage.cache_creation_input_tokens ?? 0,
-      cost: typeof message.total_cost_usd === "number" ? message.total_cost_usd : this.#reported.cost,
-    };
-    const before = this.#reported;
-    this.#reported = now;
-    const cost = delta(now.cost, before.cost);
     const events: NormalizedEvent[] = [];
     if (message.resume_reason) events.push(...this.#info(`Turn resumed after a restart (${message.resume_reason})`));
     if (message.startup_failure_reason) events.push(...this.#info(`Claude Code failed to start: ${message.startup_failure_reason}`));
-    events.push({
-      type: "usage",
-      usage: {
-        inputTokens: delta(now.input, before.input),
-        outputTokens: delta(now.output, before.output),
-        ...(typeof usage.cache_read_input_tokens === "number" ? { cacheReadTokens: delta(now.cacheRead, before.cacheRead) } : {}),
-        ...(typeof usage.cache_creation_input_tokens === "number" ? { cacheWriteTokens: delta(now.cacheWrite, before.cacheWrite) } : {}),
-        ...(typeof message.total_cost_usd === "number" ? { costUsd: Math.round(cost * 1e8) / 1e8 } : {}),
-      },
-    });
+    events.push({ type: "usage", usage: this.#usage.result(message) });
 
     if (this.#interrupted) {
       this.#interrupted = false;
@@ -679,21 +629,4 @@ export class ClaudeNormalizer {
     events.push({ type: "settled", status: "error", error: truncate(error, 1000) });
     return events;
   }
-}
-
-/** Used share of the window, 0..1. The CLI reports fractions (0.18); a stray >1 value is read as percent. */
-/**
- * A rejection that does not stop work: the exhausted window is an *overage* window
- * (`overage`, `seven_day_overage_included`) — extra usage on top of the plan, whose
- * regular windows still allow requests. Such a frame is a warning, never a block; the
- * server only marks a thread limited when its turn actually fails (docs/internals/providers.md).
- */
-function overageOnly(info: RateLimitInfoShape): boolean {
-  return info.status === "rejected" && info.rateLimitType !== undefined && info.rateLimitType.includes("overage");
-}
-
-function usedFraction(info: RateLimitInfoShape): number | undefined {
-  const raw = info.utilization ?? (info.rateLimitType ? info.unifiedWindows?.[info.rateLimitType]?.utilization : undefined);
-  if (typeof raw !== "number" || !Number.isFinite(raw)) return undefined;
-  return raw > 1 ? raw / 100 : raw;
 }

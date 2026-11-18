@@ -1,3 +1,4 @@
+import type { CostStatesFn } from "./cost-state.ts";
 import type { ClaudeMessage, TranscriptEntry } from "./sdk-shapes.ts";
 
 export interface ClaudeConfig {
@@ -14,6 +15,8 @@ export interface ClaudeConfig {
   queryImpl?: QueryFn;
   /** Test seam: replaces the SDK's `getSessionMessages()` (transcript reader used by rollback). */
   sessionMessagesImpl?: SessionMessagesFn;
+  /** Test seam: replaces the transcript `cost-state` reader used to baseline a resumed query's cost. */
+  costStatesImpl?: CostStatesFn;
 }
 
 export interface ContextUsageReport {

@@ -68,7 +68,7 @@ function harness(overrides: Partial<OpenSessionOptions> = {}, transcript: Transc
     return transcript;
   };
   const options: OpenSessionOptions = { threadId: "t1", cwd: "/repo", mode: "approval-required", interaction: "default", mcpServers: [], ...overrides };
-  const session = new ClaudeSession({ sessionMessagesImpl }, env, options, queryFn);
+  const session = new ClaudeSession({ sessionMessagesImpl, costStatesImpl: async () => [] }, env, options, queryFn);
   return { session, queries, reads, last: () => queries[queries.length - 1]! };
 }
 

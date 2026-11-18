@@ -1,4 +1,3 @@
-import { randomUUID } from "node:crypto";
 import type {
   ApprovalDecision,
   DriverEnv,
@@ -10,15 +9,18 @@ import type {
   SteerTarget,
   TurnInput,
 } from "@tide/contracts";
+import { readCostStates } from "./cost-state.ts";
 import { ApprovalBroker, type CanUseToolContext, type PermissionResultShape } from "./approvals.ts";
 import { AsyncQueue } from "./async-queue.ts";
-import { instanceEnv } from "./env.ts";
+import { claudeConfigDir, instanceEnv } from "./env.ts";
 import { CONTINUED_REASON, HarnessTurn, type HarnessTurnListener, isIdleActivity, isSubstantive, Preamble, reportedReason } from "./harness-turn.ts";
 import { ClaudeNormalizer } from "./normalize.ts";
 import { markResumeRefused } from "./resume-refused.ts";
 import { SessionLedger } from "./rollback.ts";
 import type { ClaudeMessage, ResultMessage, TranscriptEntry } from "./sdk-shapes.ts";
 import type { ClaudeConfig, QueryFn, QueryLike, SessionMessagesFn } from "./types.ts";
+import { UsageTracker } from "./usage.ts";
+import { buildUserMessage, type UserMessageEnvelope } from "./user-message.ts";
 
 /**
  * Streaming-input mode: one `query()` per session, fed by an async iterable we push user
@@ -73,26 +75,6 @@ export const MODE_TO_PERMISSION: Record<string, string> = {
   "full-access": "bypassPermissions",
 };
 
-interface UserMessageEnvelope {
-  type: "user";
-  message: { role: "user"; content: string | Record<string, unknown>[] };
-  parent_tool_use_id: null;
-  session_id: string;
-  uuid: string;
-}
-
-function buildUserMessage(input: TurnInput, sessionId: string): UserMessageEnvelope {
-  const images = input.images ?? [];
-  const content =
-    images.length === 0
-      ? input.text
-      : [
-          ...images.map((image) => ({ type: "image", source: { type: "base64", media_type: image.mediaType, data: image.data } })),
-          { type: "text", text: input.text },
-        ];
-  return { type: "user", message: { role: "user", content }, parent_tool_use_id: null, session_id: sessionId, uuid: randomUUID() };
-}
-
 export class ClaudeSession implements ProviderSession {
   nativeSessionId: string | undefined;
 
@@ -104,6 +86,8 @@ export class ClaudeSession implements ProviderSession {
 
   #broker: ApprovalBroker;
   #normalizer: ClaudeNormalizer;
+  /** per-turn usage deltas; outlives each query and its normalizer */
+  #usage = new UsageTracker();
   #inbox = new AsyncQueue<UserMessageEnvelope>();
   #abort = new AbortController();
   #mailbox: AsyncQueue<NormalizedEvent> | undefined;
@@ -163,6 +147,7 @@ export class ClaudeSession implements ProviderSession {
     const env = this.#env;
     return new ClaudeNormalizer({
       partialMessages: true,
+      usage: this.#usage,
       // the frame itself is passed through to the timeline; this is just driver-debug noise
       onUnknown: (type, subtype) => {
         if (process.env["TIDE_DEBUG_CLAUDE"]) env.log(`[claude] unhandled message ${type}${subtype ? `/${subtype}` : ""}`);
@@ -253,6 +238,7 @@ export class ClaudeSession implements ProviderSession {
   }
 
   async #idleMessage(message: ClaudeMessage): Promise<void> {
+    if (message.type === "result") await this.#usage.ready();
     const reported = this.#normalizer.notificationName(message);
     const events = this.#normalizer.next(message);
     if (reported !== undefined && !this.#harness) this.#openHarness(reportedReason(reported));
@@ -390,6 +376,9 @@ export class ClaudeSession implements ProviderSession {
   #ensureQuery(): AsyncIterator<ClaudeMessage> {
     if (this.#iterator) return this.#iterator;
     this.#resumed = this.#forkFrom ? undefined : this.nativeSessionId;
+    const source = this.#forkFrom ?? this.nativeSessionId;
+    const configDir = claudeConfigDir(this.#config, this.#env, this.#options.env);
+    this.#usage.beginQuery(source, () => (this.#config.costStatesImpl ?? readCostStates)(source ?? "", { cwd: this.#options.cwd, ...(configDir ? { configDir } : {}) }));
     this.#query = this.#queryFn({ prompt: this.#inbox.drain(), options: this.#buildOptions() });
     this.#iterator = this.#query[Symbol.asyncIterator]();
     return this.#iterator;
@@ -473,6 +462,7 @@ export class ClaudeSession implements ProviderSession {
         }
         this.#claim(pending);
         this.#started = true;
+        if (!step.done && step.value.type === "result") await this.#usage.ready();
         if (step.done) {
           this.#abandonBackground();
           mailbox.push({ type: "settled", status: this.#interruptRequested ? "interrupted" : "error", error: "claude stream ended before the turn settled" });
@@ -560,9 +550,8 @@ export class ClaudeSession implements ProviderSession {
   }
 
   /**
-   * The `result` message's token counts are cumulative per query() call, so they cannot be
-   * read as "context in use". The CLI's own `get_context_usage` control request can, so we
-   * ask for it once per settled turn. Best effort: an older CLI simply has no such method.
+   * The `result` message's token counts are per turn or per query, never "context in use".
+   * The CLI's own `get_context_usage` control request is, so we ask for it once per settled turn. Best effort: an older CLI simply has no such method.
    */
   async #contextUsage(): Promise<{ used: number; window: number } | undefined> {
     const getter = this.#query?.getContextUsage;

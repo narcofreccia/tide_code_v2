@@ -10,3 +10,8 @@ export function instanceEnv(config: ClaudeConfig, env: DriverEnv): Record<string
     ...(instance?.home ? { CLAUDE_CONFIG_DIR: instance.home } : {}),
   };
 }
+
+/** The `CLAUDE_CONFIG_DIR` the spawned CLI sees (same precedence as the session's env), if any. */
+export function claudeConfigDir(config: ClaudeConfig, env: DriverEnv, sessionEnv: Record<string, string> = {}): string | undefined {
+  return sessionEnv["CLAUDE_CONFIG_DIR"] ?? instanceEnv(config, env)["CLAUDE_CONFIG_DIR"] ?? process.env["CLAUDE_CONFIG_DIR"];
+}

@@ -86,7 +86,7 @@ function harness(opts: { idleListener?: boolean } = {}) {
     return query as unknown as ReturnType<QueryFn>;
   };
   const options: OpenSessionOptions = { threadId: "t1", cwd: "/repo", mode: "approval-required", interaction: "default", mcpServers: [] };
-  const session = new ClaudeSession({}, env, options, queryFn);
+  const session = new ClaudeSession({ costStatesImpl: async () => [] }, env, options, queryFn);
   const turns = new AsyncQueue<HarnessTurn>();
   let opened = 0;
   session.onHarnessTurn((turn) => {
@@ -394,7 +394,7 @@ describe("ClaudeSession harness-initiated turns", () => {
       queries.push(query);
       return query as unknown as ReturnType<QueryFn>;
     };
-    const session = new ClaudeSession({}, { dataDir: tmpdir(), log: (line) => logs.push(line) }, { threadId: "t", cwd: "/r", mode: "approval-required", interaction: "default", mcpServers: [] }, queryFn);
+    const session = new ClaudeSession({ costStatesImpl: async () => [] }, { dataDir: tmpdir(), log: (line) => logs.push(line) }, { threadId: "t", cwd: "/r", mode: "approval-required", interaction: "default", mcpServers: [] }, queryFn);
     const first = collect(session.send({ text: "a" }));
     await queries[0]!.nextInput();
     queries[0]!.result();

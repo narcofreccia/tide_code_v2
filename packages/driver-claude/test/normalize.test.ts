@@ -200,59 +200,15 @@ describe("silent frames", () => {
   });
 });
 
-describe("usage deltas (cumulative query() totals)", () => {
+describe("result info rows", () => {
   const result = (input: number, output: number, cost: number, extra: Record<string, unknown> = {}) =>
-    ({ type: "result", subtype: "success", session_id: "s", is_error: false, total_cost_usd: cost, usage: { input_tokens: input, output_tokens: output, cache_read_input_tokens: input * 10, cache_creation_input_tokens: 0 }, ...extra }) as ClaudeMessage;
-
-  it("reports only each turn's own cost and tokens across two results in one session", () => {
-    const n = new ClaudeNormalizer({ partialMessages: true });
-    const first = n.next(result(100, 40, 0.5)).find((e) => e.type === "usage");
-    const second = n.next(result(130, 90, 0.75)).find((e) => e.type === "usage");
-    expect(first).toEqual({ type: "usage", usage: { inputTokens: 100, outputTokens: 40, cacheReadTokens: 1000, cacheWriteTokens: 0, costUsd: 0.5 } });
-    expect(second).toEqual({ type: "usage", usage: { inputTokens: 30, outputTokens: 50, cacheReadTokens: 300, cacheWriteTokens: 0, costUsd: 0.25 } });
-  });
-
-  it("treats a counter that went backwards (fresh query) as a restart", () => {
-    const n = new ClaudeNormalizer({ partialMessages: true });
-    n.next(result(100, 40, 0.5));
-    const again = n.next(result(10, 5, 0.1)).find((e) => e.type === "usage");
-    expect(again).toMatchObject({ usage: { inputTokens: 10, outputTokens: 5, costUsd: 0.1 } });
-  });
+    ({ type: "result", subtype: "success", session_id: "s", is_error: false, total_cost_usd: cost, usage: { input_tokens: input, output_tokens: output }, ...extra }) as ClaudeMessage;
 
   it("surfaces resume_reason and startup_failure_reason as info rows", () => {
     const n = new ClaudeNormalizer({ partialMessages: true });
     const events = n.next(result(1, 1, 0.01, { resume_reason: "worker_restart", startup_failure_reason: "proxy_invalid", subtype: "error_during_execution", is_error: true }));
     const infos = events.filter((e) => e.type === "activity").map((e) => (e.type === "activity" && e.activity.kind === "info" ? e.activity.text : ""));
     expect(infos).toEqual(["Turn resumed after a restart (worker_restart)", "Claude Code failed to start: proxy_invalid"]);
-  });
-});
-
-describe("rate_limit_event", () => {
-  const frame = (info: Record<string, unknown>) => ({ type: "rate_limit_event", rate_limit_info: info }) as ClaudeMessage;
-
-  it("nominal frame feeds the gauge without a timeline row (live shape: unifiedWindows)", () => {
-    const n = new ClaudeNormalizer({ partialMessages: true, now: () => 42 });
-    const events = n.next(frame({ status: "allowed", resetsAt: 1788141000, rateLimitType: "five_hour", isUsingOverage: false, unifiedWindows: { five_hour: { utilization: 0.18, resetsAt: 1788141000 } } }));
-    expect(events).toEqual([{ type: "usage", rateLimit: { status: "ok", remainingPct: 82, resetsAt: 1788141000000, overage: false, note: "five_hour 18% used", at: 42 } }]);
-  });
-
-  it("warning and rejected frames map to warning/limited and add an info row", () => {
-    const n = new ClaudeNormalizer({ partialMessages: true, now: () => 1 });
-    const warn = n.next(frame({ status: "allowed_warning", rateLimitType: "seven_day", utilization: 0.9, isUsingOverage: true }));
-    expect(warn[0]).toMatchObject({ type: "usage", rateLimit: { status: "warning", remainingPct: 10, overage: true } });
-    expect(warn[1]).toMatchObject({ type: "activity", activity: { kind: "info", text: "Rate limit allowed_warning on seven_day (90% used)" } });
-    const limited = n.next(frame({ status: "rejected" }));
-    expect(limited[0]).toMatchObject({ rateLimit: { status: "limited" } });
-  });
-
-  it("a rejected overage window is a warning, not a block: the plan's own windows still allow requests", () => {
-    const n = new ClaudeNormalizer({ partialMessages: true, now: () => 1 });
-    const events = n.next(frame({ status: "rejected", rateLimitType: "seven_day_overage_included", isUsingOverage: false, resetsAt: 1788141000, unifiedWindows: { seven_day_overage_included: { utilization: 1 } } }));
-    expect(events[0]).toMatchObject({ type: "usage", rateLimit: { status: "warning", remainingPct: 0, note: "seven_day_overage_included 100% used (rejected)" } });
-    const plain = n.next(frame({ status: "rejected", rateLimitType: "overage" }));
-    expect(plain[0]).toMatchObject({ rateLimit: { status: "warning" } });
-    // a regular window rejecting is still a limit signal
-    expect(n.next(frame({ status: "rejected", rateLimitType: "five_hour" }))[0]).toMatchObject({ rateLimit: { status: "limited" } });
   });
 });
 

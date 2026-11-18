@@ -17,7 +17,7 @@ import { resumeRefusal } from "./resume-refused.ts";
 import { collaborationModeFor, policyFor, writableRoots } from "./modes.ts";
 import { CodexNormalizer } from "./normalize.ts";
 import { withInstance } from "./instance-config.ts";
-import { rateLimitFromSnapshot } from "./rate-limits.ts";
+import { rateLimitsFromSnapshot } from "./rate-limits.ts";
 import { fetchSkills, matchSkill, type CodexSkill } from "./skills.ts";
 import type { CodexConfig } from "./types.ts";
 import type { ThreadForkResponse } from "./generated/v2/ThreadForkResponse.ts";
@@ -260,9 +260,9 @@ export class CodexSession implements ProviderSession {
    */
   async #readRateLimits(mailbox: AsyncQueue<NormalizedEvent>): Promise<void> {
     try {
-      const response = await this.#server.request<{ rateLimits?: Parameters<typeof rateLimitFromSnapshot>[0] }>("account/rateLimits/read", {});
-      const rateLimit = rateLimitFromSnapshot(response?.rateLimits, Date.now());
-      if (rateLimit && this.#mailbox === mailbox) mailbox.push({ type: "usage", rateLimit });
+      const response = await this.#server.request<{ rateLimits?: Parameters<typeof rateLimitsFromSnapshot>[0] }>("account/rateLimits/read", {});
+      if (this.#mailbox !== mailbox) return;
+      for (const rateLimit of rateLimitsFromSnapshot(response?.rateLimits, Date.now())) mailbox.push({ type: "usage", rateLimit });
     } catch (error) {
       this.#env.log(`[codex] account/rateLimits/read unavailable: ${error instanceof Error ? error.message : String(error)}`);
     }

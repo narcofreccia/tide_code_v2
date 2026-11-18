@@ -81,7 +81,7 @@ describe("ClaudeSession additionalDirectories", () => {
       linkedDirs: links,
       systemPromptAppend: "## Linked repositories",
     };
-    void collectNothing(new ClaudeSession({}, env, options, queryFn).send({ text: "hi" }));
+    void collectNothing(new ClaudeSession({ costStatesImpl: async () => [] }, env, options, queryFn).send({ text: "hi" }));
     await tick();
     expect(captured["additionalDirectories"]).toEqual(["/repos/frontend", "/repos/infra/"]);
     expect(captured["cwd"]).toBe("/work/repo");
@@ -96,7 +96,7 @@ describe("ClaudeSession additionalDirectories", () => {
       return { [Symbol.asyncIterator]: async function* () {} } as unknown as ReturnType<QueryFn>;
     };
     const options: OpenSessionOptions = { threadId: "t1", cwd: "/work/repo", mode: "auto", interaction: "default", mcpServers: [] };
-    void collectNothing(new ClaudeSession({}, env, options, queryFn).send({ text: "hi" }));
+    void collectNothing(new ClaudeSession({ costStatesImpl: async () => [] }, env, options, queryFn).send({ text: "hi" }));
     await tick();
     expect(captured["additionalDirectories"]).toBeUndefined();
   });

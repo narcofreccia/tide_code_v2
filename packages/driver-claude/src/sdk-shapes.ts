@@ -38,7 +38,13 @@ export interface ClaudeUsage {
   cache_creation_input_tokens?: number;
 }
 
+/** `ModelUsage` (sdk.d.ts): cumulative per-model totals for the query, sub-agents included. */
 export interface ClaudeModelUsage {
+  inputTokens?: number;
+  outputTokens?: number;
+  cacheReadInputTokens?: number;
+  cacheCreationInputTokens?: number;
+  costUSD?: number;
   contextWindow?: number;
 }
 

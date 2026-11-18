@@ -3,7 +3,7 @@ import { toolActivity, toolShape, truncate } from "./items.ts";
 import type { ItemCompletedNotification } from "./generated/v2/ItemCompletedNotification.ts";
 import type { ItemStartedNotification } from "./generated/v2/ItemStartedNotification.ts";
 import type { ThreadItem } from "./generated/v2/ThreadItem.ts";
-import { rateLimitFromSnapshot } from "./rate-limits.ts";
+import { rateLimitsFromSnapshot } from "./rate-limits.ts";
 import type { TokenUsageBreakdown } from "./generated/v2/TokenUsageBreakdown.ts";
 import type { ThreadTokenUsageUpdatedNotification } from "./generated/v2/ThreadTokenUsageUpdatedNotification.ts";
 import type { TurnCompletedNotification } from "./generated/v2/TurnCompletedNotification.ts";
@@ -130,8 +130,8 @@ export class CodexNormalizer {
       case "thread/tokenUsage/updated":
         return this.#usage(payload as unknown as ThreadTokenUsageUpdatedNotification);
       case "account/rateLimits/updated": {
-        const limit = rateLimitFromSnapshot((payload as { rateLimits?: Parameters<typeof rateLimitFromSnapshot>[0] }).rateLimits, (this.#options.now ?? Date.now)());
-        return limit ? [{ type: "usage", rateLimit: limit }] : [];
+        const limits = rateLimitsFromSnapshot((payload as { rateLimits?: Parameters<typeof rateLimitsFromSnapshot>[0] }).rateLimits, (this.#options.now ?? Date.now)());
+        return limits.map((rateLimit) => ({ type: "usage", rateLimit }));
       }
       case "model/verification":
         return this.#info(`Codex requires verification for this model: ${Array.isArray(payload["verifications"]) ? payload["verifications"].join(", ") : "see Codex"}`);

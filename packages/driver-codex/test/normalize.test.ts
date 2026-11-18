@@ -236,8 +236,13 @@ describe("token usage deltas and rate limits", () => {
   it("maps account/rateLimits/updated onto the gauge", () => {
     const n = new CodexNormalizer({ now: () => 7 });
     const snapshot = (primary: number) => ({ limitId: "codex", limitName: "Codex", primary: { usedPercent: primary, windowDurationMins: 300, resetsAt: 100 }, secondary: null, rateLimitReachedType: primary >= 100 ? "rate_limit_reached" : null, spendControlReached: null });
-    expect(n.next("account/rateLimits/updated", { rateLimits: snapshot(40) })).toEqual([{ type: "usage", rateLimit: { status: "ok", remainingPct: 60, resetsAt: 100_000, note: "Codex 40% used (5h window)", at: 7 } }]);
+    expect(n.next("account/rateLimits/updated", { rateLimits: snapshot(40) })).toEqual([{ type: "usage", rateLimit: { status: "ok", remainingPct: 60, resetsAt: 100_000, note: "Codex 40% used (5h window)", window: "session", windowMins: 300, at: 7 } }]);
     expect(n.next("account/rateLimits/updated", { rateLimits: snapshot(100) })[0]).toMatchObject({ rateLimit: { status: "limited", remainingPct: 0, note: "Codex: rate limit reached" } });
     expect(n.next("account/rateLimits/updated", { rateLimits: null })).toEqual([]);
+    const both = n.next("account/rateLimits/updated", { rateLimits: { ...snapshot(10), secondary: { usedPercent: 60, windowDurationMins: 10080, resetsAt: 900 } } });
+    expect(both.map((event) => (event.type === "usage" ? [event.rateLimit?.window, event.rateLimit?.remainingPct] : []))).toEqual([
+      ["session", 90],
+      ["weekly", 40],
+    ]);
   });
 });

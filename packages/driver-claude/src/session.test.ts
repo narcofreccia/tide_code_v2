@@ -68,7 +68,7 @@ function harness(overrides: Partial<OpenSessionOptions> = {}): { session: Claude
     mcpServers: [],
     ...overrides,
   };
-  return { session: new ClaudeSession({}, env, options, queryFn), query: () => created!, logs, };
+  return { session: new ClaudeSession({ costStatesImpl: async () => [] }, env, options, queryFn), query: () => created!, logs, };
 }
 
 async function collect(stream: AsyncIterable<NormalizedEvent>, sink: NormalizedEvent[]): Promise<void> {

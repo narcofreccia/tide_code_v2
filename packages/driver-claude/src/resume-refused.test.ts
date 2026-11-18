@@ -41,7 +41,7 @@ function session(options: { resume?: string; forkFrom?: string }, frames: (q: As
     frames(messages);
     return { async *[Symbol.asyncIterator]() { yield* messages.drain(); }, async interrupt() {} } as unknown as ReturnType<QueryFn>;
   };
-  return { session: new ClaudeSession({}, env, { threadId: "t1", cwd: tmpdir(), mode: "approval-required", interaction: "default", mcpServers: [], ...options }, queryFn), queries };
+  return { session: new ClaudeSession({ costStatesImpl: async () => [] }, env, { threadId: "t1", cwd: tmpdir(), mode: "approval-required", interaction: "default", mcpServers: [], ...options }, queryFn), queries };
 }
 
 async function settledOf(stream: AsyncIterable<NormalizedEvent>): Promise<Extract<NormalizedEvent, { type: "settled" }> | undefined> {
@@ -69,7 +69,7 @@ describe("Claude resume refused (R19 L5)", () => {
         [Symbol.asyncIterator]: () => ({ next: () => Promise.reject(new Error(SDK_THROW)) }),
         async interrupt() {},
       }) as unknown as ReturnType<QueryFn>;
-    const s = new ClaudeSession({}, env, { threadId: "t1", cwd: tmpdir(), mode: "approval-required", interaction: "default", mcpServers: [], resume: GONE }, queryFn);
+    const s = new ClaudeSession({ costStatesImpl: async () => [] }, env, { threadId: "t1", cwd: tmpdir(), mode: "approval-required", interaction: "default", mcpServers: [], resume: GONE }, queryFn);
     const settled = await settledOf(s.send({ text: "hi" }));
     expect(settled?.error).toBe(`resume-refused: No conversation found with session ID: ${GONE}`);
     await s.close();
