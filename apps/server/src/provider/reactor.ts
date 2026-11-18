@@ -36,6 +36,11 @@ export interface ReactorOptions {
   /** awaited before the harness is handed the prompt (P2: the vcs before-checkpoint) */
   beforeTurn?: (threadId: string, turnId: string) => Promise<void>;
   /**
+   * R20: awaited before a turn that ran to its end is settled. The quota worker measures the usage
+   * the turn just reported here, so the settle decides on fresh figures whether the queue is held.
+   */
+  beforeSettle?: (threadId: string) => Promise<void>;
+  /**
    * Image bytes of a turn whose `turn.requested` this reactor never saw (a queued turn
    * promoted after a restart). The read model keeps only attachment metadata.
    */
@@ -64,6 +69,7 @@ export class ProviderReactor {
   #engine: Engine;
   #sessions: SessionDirectory;
   #beforeTurn: ((threadId: string, turnId: string) => Promise<void>) | undefined;
+  #beforeSettle: ((threadId: string) => Promise<void>) | undefined;
   #imagesFor: ((turnId: string) => ImageInput[] | undefined) | undefined;
   #open: OpenTurnDeps;
   #onCommands: ((threadId: string, commands: SlashCommandInfo[]) => void) | undefined;
@@ -95,6 +101,7 @@ export class ProviderReactor {
     this.#engine = options.engine;
     this.#sessions = options.sessions;
     this.#beforeTurn = options.beforeTurn;
+    this.#beforeSettle = options.beforeSettle;
     this.#imagesFor = options.imagesFor;
     this.#onCommands = options.onCommands;
     this.#secrets = options.secrets ?? secretValuesFor(options.engine);
@@ -348,6 +355,15 @@ export class ProviderReactor {
     this.resume(threadId, turnId, input);
   }
 
+  async #measured(threadId: string): Promise<void> {
+    if (this.#beforeSettle === undefined) return;
+    try {
+      await this.#beforeSettle(threadId);
+    } catch (err) {
+      this.#log("[reactor] beforeSettle hook failed", err);
+    }
+  }
+
   // ---- interrupt watchdog ----
 
   /**
@@ -540,6 +556,7 @@ export class ProviderReactor {
       if (!settled) {
         await start();
         await this.#flushHeld(threadId, turnId);
+        await this.#measured(threadId);
         await this.#dispatch({ type: "turn.settle", turnId, status: "completed" });
         settled = true;
         run.status = "completed";
@@ -693,6 +710,7 @@ export class ProviderReactor {
         const refused = event.status === "error" && thread !== undefined ? resumeRefusedRow(event.error, this.#sessions.labelOf(thread), () => ({ id: this.#newId(), threadId, turnId, at: this.#now() })) : undefined;
         if (refused !== undefined) await this.#dispatch({ type: "activity.upsert", activity: refused.activity });
         const error = refused?.error ?? event.error;
+        await this.#measured(threadId);
         await this.#dispatch({ type: "turn.settle", turnId, status: event.status, ...(error !== undefined ? { error } : {}), ...(event.status !== "completed" ? this.#holdQueue(threadId, run) : {}) });
         return true;
       default:

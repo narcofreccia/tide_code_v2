@@ -148,6 +148,13 @@ export class QuotaWorker {
       });
   }
 
+  /** A pass now, awaited: the reactor calls it before settling a turn, so the settle sees this turn's usage. */
+  async measureNow(): Promise<void> {
+    if (!this.#running) return;
+    this.request();
+    await this.drain();
+  }
+
   /** Resolves once no requested pass is pending. */
   async drain(): Promise<void> {
     while (this.#inFlight !== undefined) await this.#inFlight;

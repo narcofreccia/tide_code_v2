@@ -202,6 +202,7 @@ export async function createApp(options: AppOptions): Promise<App> {
     sessions,
     handoffReady: (handoffId) => handoffSite?.pending(handoffId),
     beforeTurn: (_threadId, turnId) => checkpoints.beforeReady(turnId),
+    beforeSettle: () => quotas.measureNow(),
     imagesFor: (turnId) => imagesOf(store, turnId),
     onCommands: (threadId, list) => {
       const model = engine.getModel();
