@@ -87,6 +87,26 @@ describe("TideConnection", () => {
     conn.close();
   });
 
+  it("aborting a call sends cancel for its id and rejects with the abort reason", async () => {
+    server.handler = (req, sock) => {
+      if (req.method === "cancel") server.send(sock, { id: req.id, result: { ok: true } });
+    };
+    const conn = connect();
+    await conn.connect();
+    const abort = new AbortController();
+    const waiting = conn.call("agent.thread.wait", { threadId: "t1" }, abort.signal);
+    await waitFor(() => server.requests.some((r) => r.method === "agent.thread.wait"));
+    const callId = server.requests.find((r) => r.method === "agent.thread.wait")?.id;
+    abort.abort(new Error("tool call aborted"));
+    await expect(waiting).rejects.toThrow("tool call aborted");
+    await waitFor(() => server.requests.some((r) => r.method === "cancel"));
+    expect(server.requests.find((r) => r.method === "cancel")?.params).toEqual({ id: callId });
+    // an already aborted signal never reaches the wire
+    await expect(conn.call("model.get", {}, abort.signal)).rejects.toThrow("tool call aborted");
+    expect(server.requests.filter((r) => r.method === "model.get")).toEqual([]);
+    conn.close();
+  });
+
   it("rejects in-flight work with `disconnected` and reconnects", async () => {
     server.handler = (req, sock) => {
       if (req.method === "server.info") server.dropClients();

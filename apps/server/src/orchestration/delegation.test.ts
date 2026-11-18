@@ -161,18 +161,86 @@ describe("DelegationReactor — wake-ups", () => {
     expect(parentPrompts(s)).toEqual([]);
   });
 
-  it("skips a parent blocked in a wait on that child, and wakes it once the wait ended", async () => {
+  it("skips a parent whose wait on that child returned the result, and wakes it for a later finish", async () => {
     const s = await setup();
     const d = await s.delegate("Child");
     const end = s.waits.begin(s.parentId, d.threadId);
     await s.finish(d.turnId, "ok");
     expect(s.clock.timers).toEqual([]);
-    end();
+    end(true);
+    await s.settle();
+    expect(s.clock.timers).toEqual([]);
+    expect(parentPrompts(s)).toEqual([]);
     const again = (await s.engine.dispatch({ type: "turn.request", threadId: d.threadId, text: "more" })).events.at(-1)?.event;
     if (again?.type !== "turn.requested") throw new Error("expected turn.requested");
     await s.engine.dispatch({ type: "turn.start", turnId: again.turn.id, provider: "codex" });
     await s.finish(again.turn.id, "more done");
     expect(s.clock.timers).toHaveLength(1);
+  });
+});
+
+describe("DelegationReactor — finishes held by a wait", () => {
+  it("wakes the parent once when the wait on the finished child ends without delivering it", async () => {
+    const s = await setup();
+    const d = await s.delegate("Child");
+    const end = s.waits.begin(s.parentId, d.threadId);
+    await s.finish(d.turnId, "ok");
+    expect(s.clock.timers).toEqual([]);
+    end(false);
+    end(false); // a second call of the same end is a no-op
+    expect(s.clock.timers).toHaveLength(1);
+    s.clock.fire();
+    await s.settle();
+    const prompts = parentPrompts(s);
+    expect(prompts).toHaveLength(1);
+    expect(prompts[0]?.text).toContain(`Delegate "Child" (codex) finished: completed. Last reply:\nok`);
+  });
+
+  it("a wait that ends before the child finishes leaves the finish to the normal wake-up", async () => {
+    const s = await setup();
+    const d = await s.delegate("Child");
+    s.waits.begin(s.parentId, d.threadId)(false);
+    await s.finish(d.turnId, "ok");
+    expect(s.clock.timers).toHaveLength(1);
+  });
+
+  it("two waits on one child: no wake-up when either delivered the result, one when neither did", async () => {
+    const s = await setup();
+    const d = await s.delegate("Child");
+    const first = s.waits.begin(s.parentId, d.threadId);
+    const second = s.waits.begin(s.parentId, d.threadId);
+    await s.finish(d.turnId, "ok");
+    second(false);
+    first(true);
+    expect(s.clock.timers).toEqual([]);
+
+    const again = (await s.engine.dispatch({ type: "turn.request", threadId: d.threadId, text: "more" })).events.at(-1)?.event;
+    if (again?.type !== "turn.requested") throw new Error("expected turn.requested");
+    await s.engine.dispatch({ type: "turn.start", turnId: again.turn.id, provider: "codex" });
+    const third = s.waits.begin(s.parentId, d.threadId);
+    const fourth = s.waits.begin(s.parentId, d.threadId);
+    await s.finish(again.turn.id, "more done");
+    third(false);
+    expect(s.clock.timers).toEqual([]);
+    fourth(false);
+    expect(s.clock.timers).toHaveLength(1);
+    s.clock.fire();
+    await s.settle();
+    expect(parentPrompts(s)).toHaveLength(1);
+  });
+
+  it("keeps a usage limit held during the wait over the error settle before it", async () => {
+    const s = await setup();
+    const d = await s.delegate("Child");
+    const end = s.waits.begin(s.parentId, d.threadId);
+    await s.finish(d.turnId, "partial", "error", "usage limit reached");
+    await s.engine.dispatch({ type: "thread.limited", threadId: d.threadId });
+    end(false);
+    s.clock.fire();
+    await s.settle();
+    const prompts = parentPrompts(s);
+    expect(prompts).toHaveLength(1);
+    expect(prompts[0]?.text).toContain("finished: hit its usage limit.");
   });
 });
 

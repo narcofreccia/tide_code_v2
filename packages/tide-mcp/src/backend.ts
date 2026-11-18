@@ -27,7 +27,8 @@ export interface AgentBackend {
   threadList(input: ThreadListInput): Promise<ThreadListResult>;
   threadRead(input: ThreadReadInput): Promise<ThreadReadResult>;
   threadSend(input: ThreadSendInput): Promise<ThreadSendResult>;
-  threadWait(input: ThreadWaitInput): Promise<ThreadWaitResult>;
+  /** `signal`: the MCP tool call was abandoned; the server ends the wait and the parent gets the normal wake-up */
+  threadWait(input: ThreadWaitInput, signal?: AbortSignal): Promise<ThreadWaitResult>;
   threadInterrupt(threadId: string): Promise<{ ok: boolean }>;
   threadDiff(input: ThreadDiffInput): Promise<ThreadDiffResult>;
   pendingList(threadId: string): Promise<PendingListResult>;
@@ -100,9 +101,9 @@ export class TideAgentBackend implements AgentBackend {
     return this.#connection.call("agent.thread.send", input);
   }
 
-  async threadWait(input: ThreadWaitInput): Promise<ThreadWaitResult> {
+  async threadWait(input: ThreadWaitInput, signal?: AbortSignal): Promise<ThreadWaitResult> {
     await this.#connect();
-    return this.#connection.call("agent.thread.wait", input);
+    return this.#connection.call("agent.thread.wait", input, signal);
   }
 
   async threadInterrupt(threadId: string): Promise<{ ok: boolean }> {

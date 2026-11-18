@@ -95,8 +95,19 @@ class FakeBackend implements AgentBackend {
   threadSend(i: ThreadSendInput) {
     return this.#rec("send", i, { turnId: "u2", delivered: "queued" as const });
   }
-  threadWait(i: ThreadWaitInput) {
-    return this.#rec("wait", i, this.waitResult);
+  /** set: threadWait blocks until its signal aborts, then rejects and resolves this promise */
+  blockWait: { started: () => void; aborted: () => void } | undefined;
+  threadWait(i: ThreadWaitInput, signal?: AbortSignal) {
+    const block = this.blockWait;
+    if (block === undefined) return this.#rec("wait", i, this.waitResult);
+    this.threadCalls.push(["wait", i]);
+    return new Promise<ThreadWaitResult>((_resolve, reject) => {
+      signal?.addEventListener("abort", () => {
+        block.aborted();
+        reject(new Error("aborted"));
+      });
+      block.started();
+    });
   }
   threadInterrupt(threadId: string) {
     return this.#rec("interrupt", threadId, { ok: true });
@@ -349,6 +360,34 @@ describe("thread tools", () => {
     expect(r.text).toContain('"waitTimedOut":true');
     expect(r.text).toContain("keeps running");
     expect(b.threadCalls[0]).toEqual(["wait", { threadId: "thread-child", timeoutMs: 1000 }]);
+  });
+
+  it("aborting the tool call aborts the backend wait, for tide_delegate and tide_thread_wait", async () => {
+    for (const [name, args] of [
+      ["tide_delegate", { provider: "codex", prompt: "do", completion: "wait" }],
+      ["tide_thread_wait", { threadId: "t1" }],
+    ] as const) {
+      const b = new FakeBackend();
+      let started!: () => void;
+      let aborted!: () => void;
+      const waitStarted = new Promise<void>((resolve) => (started = resolve));
+      const waitAborted = new Promise<void>((resolve) => (aborted = resolve));
+      b.blockWait = { started, aborted };
+      const client = await connect(b);
+      const abort = new AbortController();
+      const call = client.callTool({ name, arguments: args }, undefined, { signal: abort.signal });
+      await waitStarted;
+      abort.abort("user interrupt");
+      await expect(call).rejects.toBeDefined();
+      await waitAborted;
+      await client.close();
+    }
+  });
+
+  it("delegate forwards an explicit useWorktree:false", async () => {
+    const b = new FakeBackend();
+    await call(b, "tide_delegate", { provider: "claude", prompt: "do", useWorktree: false });
+    expect(b.commands[0]).toMatchObject({ type: "thread.delegate", useWorktree: false });
   });
 
   it("delegate async does not wait", async () => {

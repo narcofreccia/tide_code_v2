@@ -26,33 +26,70 @@ export function lastAssistantText(model: ReadModel, threadId: string): string | 
   return undefined;
 }
 
+export type DelegateOutcome = "completed" | "interrupted" | "error" | "limited";
+
+/** What the reactor knows about one delegate's finish before it is batched into a wake-up. */
+export interface HeldFinish {
+  outcome: DelegateOutcome;
+  error?: string;
+  lostAgents?: number;
+}
+
+interface WaitEntry {
+  count: number;
+  held?: HeldFinish;
+}
+
 /**
  * Which parent is blocked in `agent.thread.wait` (tide_delegate completion=wait, tide_thread_wait)
- * on which child. That call already hands the parent the result, so no wake-up is sent for it.
+ * on which child. A child that finishes while such a wait is open has its finish held here instead
+ * of batched: a wait that ends with the result in the caller's hands (`end(true)`) drops it, and
+ * when the last wait on the pair ends without that (aborted, timed out, socket gone) the held
+ * finish goes to the reactor's normal wake-up. So the parent hears of the finish exactly once.
  */
 export class DelegateWaits {
-  #waits = new Map<string, number>();
+  #waits = new Map<string, WaitEntry>();
+  #release: ((parentId: string, childId: string, finish: HeldFinish) => void) | undefined;
 
-  /** Marks `parentId` as waiting on `childId`; call the returned function when the wait ends. */
-  begin(parentId: string, childId: string): () => void {
+  /**
+   * Marks `parentId` as waiting on `childId`. Call the returned function once when the wait ends,
+   * with `consumed` = the wait returned because the child went quiet and its caller still listens.
+   */
+  begin(parentId: string, childId: string): (consumed: boolean) => void {
     const key = `${parentId}\u0000${childId}`;
-    this.#waits.set(key, (this.#waits.get(key) ?? 0) + 1);
+    const entry = this.#waits.get(key) ?? { count: 0 };
+    entry.count += 1;
+    this.#waits.set(key, entry);
     let ended = false;
-    return () => {
+    return (consumed) => {
       if (ended) return;
       ended = true;
-      const left = (this.#waits.get(key) ?? 1) - 1;
-      if (left <= 0) this.#waits.delete(key);
-      else this.#waits.set(key, left);
+      if (consumed) delete entry.held;
+      entry.count -= 1;
+      if (entry.count > 0) return;
+      this.#waits.delete(key);
+      if (entry.held !== undefined) this.#release?.(parentId, childId, entry.held);
     };
   }
 
   isWaiting(parentId: string, childId: string): boolean {
     return this.#waits.has(`${parentId}\u0000${childId}`);
   }
-}
 
-export type DelegateOutcome = "completed" | "interrupted" | "error" | "limited";
+  /** Holds the finish while a wait on the pair is open; false = no wait, the caller batches it itself. */
+  hold(parentId: string, childId: string, finish: HeldFinish): boolean {
+    const entry = this.#waits.get(`${parentId}\u0000${childId}`);
+    if (entry === undefined) return false;
+    // an error settle followed by `thread.limited` is one event for the parent: the limit
+    if (entry.held?.outcome !== "limited") entry.held = finish;
+    return true;
+  }
+
+  /** The reactor's entry for held finishes that no wait delivered. */
+  onRelease(fn: (parentId: string, childId: string, finish: HeldFinish) => void): void {
+    this.#release = fn;
+  }
+}
 
 export interface FinishedDelegate {
   threadId: string;
@@ -119,7 +156,7 @@ export interface DelegationReactorOptions {
 
 interface Batch {
   /** child id → latest outcome; insertion order = settle order */
-  delegates: Map<string, { outcome: DelegateOutcome; error?: string; lostAgents?: number }>;
+  delegates: Map<string, HeldFinish>;
   cancel: CancelTimer;
 }
 
@@ -156,6 +193,9 @@ export class DelegationReactor {
     this.#batchMs = options.batchMs ?? DELEGATE_BATCH_MS;
     this.#grayZone = options.grayZone;
     this.#log = options.log ?? ((msg, data) => (data === undefined ? console.error(msg) : console.error(msg, data)));
+    this.#waits?.onRelease((parentId, childId, finish) => {
+      if (this.#unsubscribe !== undefined) this.#enqueue(parentId, childId, finish);
+    });
   }
 
   start(): void {
@@ -271,20 +311,25 @@ export class DelegationReactor {
   #finished(child: Thread, outcome: DelegateOutcome, error: string | undefined, lostAgents: number): void {
     const parentId = child.delegatedBy;
     if (parentId === undefined) return;
+    const finish: HeldFinish = { outcome, ...(error !== undefined ? { error } : {}), ...(lostAgents > 0 ? { lostAgents } : {}) };
+    // checked now, while a wait is still registered: it may hand the parent the result itself
+    if (this.#waits?.hold(parentId, child.id, finish) === true) return;
+    this.#enqueue(parentId, child.id, finish);
+  }
+
+  #enqueue(parentId: string, childId: string, finish: HeldFinish): void {
     const parent = this.#engine.getModel().threads[parentId];
     if (!parent || parent.archivedAt !== undefined) return;
-    // checked now, while the wait is still registered: it returns the result itself
-    if (this.#waits?.isWaiting(parentId, child.id) === true) return;
     let batch = this.#batches.get(parentId);
     if (batch === undefined) {
       const cancel = this.#schedule(() => this.#flush(parentId), this.#batchMs);
       batch = { delegates: new Map(), cancel };
       this.#batches.set(parentId, batch);
     }
-    const previous = batch.delegates.get(child.id);
+    const previous = batch.delegates.get(childId);
     // an error settle followed by `thread.limited` is one event for the parent: the limit
     if (previous?.outcome === "limited") return;
-    batch.delegates.set(child.id, { outcome, ...(error !== undefined ? { error } : {}), ...(lostAgents > 0 ? { lostAgents } : {}) });
+    batch.delegates.set(childId, finish);
   }
 
   #flush(parentId: string): void {

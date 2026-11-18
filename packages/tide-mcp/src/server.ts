@@ -65,6 +65,8 @@ export async function callTool(
   board: BoardState,
   name: string,
   rawArgs: Record<string, unknown>,
+  /** the MCP request's abort signal: the harness abandoned the tool call */
+  signal?: AbortSignal,
 ): Promise<ToolResult> {
   if (isTaskTool(name)) {
     try {
@@ -82,7 +84,7 @@ export async function callTool(
   }
   if (isThreadTool(name)) {
     try {
-      return await callThreadTool(backend, name, rawArgs);
+      return await callThreadTool(backend, name, rawArgs, signal);
     } catch (err) {
       return failure(describeRpcError(err));
     }
@@ -143,7 +145,6 @@ export async function callTool(
         provider,
         prompt: requireString(rawArgs, "prompt"),
         ...(model !== undefined ? { model } : {}),
-        // R8: not in the contracts' thread.delegate yet; the server reads it structurally
         ...(providerId !== undefined ? { providerId } : {}),
         ...(mode !== undefined ? { mode } : {}),
         ...(title !== undefined ? { title } : {}),
@@ -151,7 +152,7 @@ export async function callTool(
         ...(role !== undefined ? { role } : {}),
         ...(inheritWorktreeFrom !== undefined ? { inheritWorktreeFrom } : {}),
         ...(clientRequestId !== undefined ? { commandId: clientRequestId } : {}),
-        ...(rawArgs["useWorktree"] === true ? { useWorktree: true } : {}),
+        ...(typeof rawArgs["useWorktree"] === "boolean" ? { useWorktree: rawArgs["useWorktree"] } : {}),
         });
       } catch (err) {
         return failure(describeRpcError(err));
@@ -161,7 +162,7 @@ export async function callTool(
       if (threadId === undefined) return failure("delegation did not produce a thread");
       if (waitFor) {
         try {
-          const w = await backend.threadWait({ threadId, timeoutMs });
+          const w = await backend.threadWait({ threadId, timeoutMs }, signal);
           const header = JSON.stringify({ threadId, ...(w.timedOut ? { waitTimedOut: true } : {}) });
           return text(`${header}\n${formatWait(w)}`);
         } catch (err) {
@@ -192,10 +193,10 @@ export function createTideMcpServer(options: TideMcpServerOptions): Server {
 
   server.setRequestHandler(ListToolsRequestSchema, async () => ({ tools: TOOL_DEFINITIONS }));
 
-  server.setRequestHandler(CallToolRequestSchema, async (request) => {
+  server.setRequestHandler(CallToolRequestSchema, async (request, extra) => {
     const args = (request.params.arguments ?? {}) as Record<string, unknown>;
     try {
-      return await callTool(backend, board, request.params.name, args);
+      return await callTool(backend, board, request.params.name, args, extra.signal);
     } catch (err) {
       return failure(err instanceof Error ? err.message : String(err));
     }

@@ -69,6 +69,11 @@ describe("agent thread tools: scope", () => {
     expect((await client.expectError("agent.thread.list", {})).code).toBe("forbidden");
   });
 
+  it("cancel is open to agent and client sockets alike", async () => {
+    expect(await agent.call("cancel", { id: "nothing-in-flight" })).toEqual({ ok: false });
+    expect(await client.call("cancel", { id: "nothing-in-flight" })).toEqual({ ok: false });
+  });
+
   it("list the caller's project only, delegates on request", async () => {
     const reviewer = await thread("Reviewer");
     const other = (await app.engine.dispatch({ type: "project.create", title: "Other", rootPath: "/other" })).events[0]?.event;

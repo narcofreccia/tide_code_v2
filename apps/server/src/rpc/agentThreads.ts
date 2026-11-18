@@ -163,7 +163,8 @@ function waitResult(model: ReadModel, threadId: string, turnId: string | undefin
  * Resolves once the thread is quiescent (see `threadQuiet`: no turn in flight, no background
  * sub-agent, so through the harness turn their report starts) and `turnId`, when given, has
  * settled; at once when it already is; when `turnId` is dequeued; or with `timedOut` after
- * `timeoutMs`. A timeout never cancels anything.
+ * `timeoutMs`. A timeout never cancels anything. When `signal` aborts (the caller stopped
+ * listening) it resolves at once with the current state; the caller checks `signal.aborted`.
  */
 export function waitForThread(
   engine: Engine,
@@ -172,6 +173,7 @@ export function waitForThread(
   timeoutMs: number,
   schedule: (fn: () => void, ms: number) => CancelTimer = realTimer,
   grayZone?: () => { low: number; high: number },
+  signal?: AbortSignal,
 ): Promise<WaitResult> {
   const done = (m: ReadModel): boolean => {
     if (turnId === undefined) return isQuiescent(m, threadId);
@@ -179,18 +181,21 @@ export function waitForThread(
     return turn === undefined || (turn.settledAt !== undefined && isQuiescent(m, threadId));
   };
   const model = engine.getModel();
-  if (done(model)) return Promise.resolve(waitResult(model, threadId, turnId, false, grayZone?.().low));
+  if (done(model) || signal?.aborted === true) return Promise.resolve(waitResult(model, threadId, turnId, false, grayZone?.().low));
   return new Promise((resolve) => {
     let cancel: CancelTimer | undefined;
     let finished = false;
     const off = engine.subscribe((record) => {
       if (affectsQuiet(record.event) && done(engine.getModel())) finish(false);
     });
+    const onAbort = (): void => finish(false);
+    signal?.addEventListener("abort", onAbort, { once: true });
     function finish(timedOut: boolean): void {
       if (finished) return;
       finished = true;
       off();
       cancel?.();
+      signal?.removeEventListener("abort", onAbort);
       resolve(waitResult(engine.getModel(), threadId, turnId, timedOut, grayZone?.().low));
     }
     cancel = schedule(() => finish(true), timeoutMs);
@@ -277,10 +282,16 @@ export function registerAgentThreadHandlers(router: RpcRouter, deps: AgentThread
     const caller = callerThread(model, ctx);
     const target = reachable(model, caller, input.threadId);
     const end = deps.waits?.begin(caller.id, target.id);
+    let consumed = false;
     try {
-      return await waitForThread(engine, target.id, input.turnId, input.timeoutMs ?? DEFAULT_WAIT_MS, deps.schedule, deps.grayZone);
+      const result = await waitForThread(engine, target.id, input.turnId, input.timeoutMs ?? DEFAULT_WAIT_MS, deps.schedule, deps.grayZone, ctx.signal);
+      // The result counts as delivered when the child went quiet and the caller had not cancelled
+      // or closed its socket by now. Known gap: a result written to a live socket just before the
+      // caller's cancel arrives counts as delivered, and the parent gets no wake-up for it.
+      consumed = !result.timedOut && !ctx.signal.aborted;
+      return result;
     } finally {
-      end?.();
+      end?.(consumed);
     }
   });
 

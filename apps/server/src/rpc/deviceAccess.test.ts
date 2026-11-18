@@ -199,7 +199,7 @@ describe("R19 access levels: the table", () => {
   });
 
   it("lets a limited device read, chat, answer, review and merge", () => {
-    for (const m of ["server.info", "model.subscribe", "fs.read", "fs.list", "fs.search", "vcs.threadDiff", "secret.provide", "pr.merge", "run.plan", "run.subscribe", "env.clients.list", "unsubscribe"]) expect(limited(m), m).toBeUndefined();
+    for (const m of ["server.info", "model.subscribe", "fs.read", "fs.list", "fs.search", "vcs.threadDiff", "secret.provide", "pr.merge", "run.plan", "run.subscribe", "env.clients.list", "unsubscribe", "cancel"]) expect(limited(m), m).toBeUndefined();
     for (const command of [
       { type: "thread.create", projectId: "p", provider: "claude", mode: "approval-required" },
       { type: "thread.create", projectId: "p", provider: "claude" },

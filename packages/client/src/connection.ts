@@ -75,6 +75,10 @@ interface ActiveStream {
 
 const DISCONNECTED: RpcError = { code: "disconnected", message: "connection lost" };
 
+function abortReason(signal: AbortSignal): unknown {
+  return signal.reason ?? new Error("aborted");
+}
+
 function randomPrefix(random: () => number): string {
   return Math.floor(random() * 0xffffff)
     .toString(36)
@@ -177,11 +181,39 @@ export class TideConnection {
     this.setStatus("closed");
   }
 
-  call<M extends UnaryMethodName>(method: M, params: RpcInput<M>): Promise<RpcOutput<M>> {
+  /**
+   * `signal` aborting rejects the call with the signal's reason and tells the server the caller
+   * stopped listening (`cancel`), so a handler that honours its abort signal ends early.
+   */
+  call<M extends UnaryMethodName>(method: M, params: RpcInput<M>, signal?: AbortSignal): Promise<RpcOutput<M>> {
+    if (signal?.aborted === true) return Promise.reject(abortReason(signal));
     const id = this.nextId();
     return new Promise<RpcOutput<M>>((resolve, reject) => {
-      this.pending.set(id, { resolve: resolve as (v: unknown) => void, reject });
-      this.send({ id, method, params });
+      if (signal === undefined) {
+        this.pending.set(id, { resolve: resolve as (v: unknown) => void, reject });
+        this.send({ id, method, params });
+        return;
+      }
+      const onAbort = (): void => {
+        if (!this.pending.delete(id)) return;
+        const queued = this.outbox.indexOf(payload);
+        if (queued >= 0) this.outbox.splice(queued, 1);
+        else if (this.statusValue === "open") this.call("cancel", { id }).catch(() => undefined);
+        reject(abortReason(signal));
+      };
+      const done = (): void => signal.removeEventListener("abort", onAbort);
+      this.pending.set(id, {
+        resolve: (value) => {
+          done();
+          resolve(value as RpcOutput<M>);
+        },
+        reject: (err) => {
+          done();
+          reject(err);
+        },
+      });
+      const payload = this.send({ id, method, params });
+      signal.addEventListener("abort", onAbort, { once: true });
     });
   }
 
@@ -236,10 +268,12 @@ export class TideConnection {
     for (const cb of this.statusListeners) cb(next);
   }
 
-  private send(frame: { id: string; method: string; params: unknown }): void {
+  /** Returns the serialized frame (the outbox holds it until the socket opens). */
+  private send(frame: { id: string; method: string; params: unknown }): string {
     const payload = JSON.stringify(frame);
     if (this.socket && this.statusValue === "open") this.socket.send(payload);
     else this.outbox.push(payload);
+    return payload;
   }
 
   private async authUrl(): Promise<string> {

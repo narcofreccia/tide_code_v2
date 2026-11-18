@@ -259,4 +259,5 @@ export function registerHandlers(router: RpcRouter, deps: HandlerDeps): void {
   });
 
   router.register("unsubscribe", async (input, ctx) => ({ ok: ctx.cancelStream(input.id) }));
+  router.register("cancel", async (input, ctx) => ({ ok: ctx.cancelCall(input.id) }));
 }

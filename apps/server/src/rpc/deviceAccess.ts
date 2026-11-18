@@ -50,6 +50,7 @@ export const METHOD_ACCESS: Record<keyof typeof rpcMethods, AccessNeeded> = {
   "model.subscribe": "limited",
   "model.get": "limited",
   unsubscribe: "limited",
+  cancel: "limited",
   "vcs.status": "limited",
   "vcs.baseStatus": "limited",
   // moves the project's own base checkout, not a thread's worktree

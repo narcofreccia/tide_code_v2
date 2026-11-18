@@ -33,8 +33,15 @@ export interface RpcCallContext {
    * socket = the owner (master token: the local desktop shell, the dev browser, `tide pair`).
    */
   clientId?: string;
+  /**
+   * Fires when the caller stopped listening: a `cancel` for this unary request, `unsubscribe` of
+   * this stream, or the socket closing. A handler that ignores it runs to the end as before.
+   */
+  signal: AbortSignal;
   /** cancels an active stream on this connection */
   cancelStream(id: string): boolean;
+  /** aborts the signal of an in-flight unary request on this connection; false when there is none */
+  cancelCall(id: string): boolean;
 }
 
 export interface ConnectionOptions {
@@ -52,7 +59,7 @@ export type RpcGuard = (method: string, params: unknown, ctx: RpcCallContext) =>
 
 const AGENT_PREFIX = "agent.";
 /** harmless on either kind of socket */
-const SHARED_METHODS: ReadonlySet<string> = new Set(["unsubscribe"]);
+const SHARED_METHODS: ReadonlySet<string> = new Set(["unsubscribe", "cancel"]);
 
 type Send = (frame: RpcFrame) => void;
 type UnaryFn = (input: unknown, ctx: RpcCallContext) => Promise<unknown>;
@@ -91,13 +98,15 @@ export class RpcRouter {
   }
 }
 
-/** Per-socket state: tracks in-flight streams so close/unsubscribe can cancel them. */
+/** Per-socket state: tracks in-flight streams and unary calls so close/unsubscribe/cancel can end them. */
 export class RpcConnection {
   #unary: Map<string, UnaryFn>;
   #streams: Map<string, StreamFn>;
   #connectionId: string;
   #send: Send;
-  #active = new Map<string, { cancel: (() => void) | null; closed: boolean }>();
+  #active = new Map<string, { cancel: (() => void) | null; closed: boolean; abort: AbortController }>();
+  /** in-flight unary calls by request id */
+  #calls = new Map<string, AbortController>();
   #closed = false;
   #agentThreadId: string | undefined;
   #clientId: string | undefined;
@@ -163,12 +172,15 @@ export class RpcConnection {
       return;
     }
 
+    const abort = new AbortController();
     const ctx: RpcCallContext = {
       connectionId: this.#connectionId,
       requestId: id,
       ...(this.#agentThreadId !== undefined ? { agentThreadId: this.#agentThreadId } : {}),
       ...(this.#clientId !== undefined ? { clientId: this.#clientId } : {}),
+      signal: abort.signal,
       cancelStream: (streamId) => this.cancelStream(streamId),
+      cancelCall: (callId) => this.cancelCall(callId),
     };
     const refusal = this.#guard()?.(method, params, ctx);
     if (refusal !== undefined) {
@@ -178,11 +190,15 @@ export class RpcConnection {
 
     const unary = this.#unary.get(method);
     if (unary) {
+      this.#calls.set(id, abort);
       try {
         const result = await unary(params, ctx);
-        if (!this.#closed) this.#send({ id, result });
+        // a cancelled call's caller no longer listens for this id
+        if (!this.#closed && !abort.signal.aborted) this.#send({ id, result });
       } catch (err) {
-        this.#fromThrow(id, method, err);
+        if (!abort.signal.aborted) this.#fromThrow(id, method, err);
+      } finally {
+        if (this.#calls.get(id) === abort) this.#calls.delete(id);
       }
       return;
     }
@@ -192,7 +208,7 @@ export class RpcConnection {
       this.#error(id, "method-not-found", `method ${method} has no handler`);
       return;
     }
-    const entry = { cancel: null as (() => void) | null, closed: false };
+    const entry = { cancel: null as (() => void) | null, closed: false, abort };
     this.#active.set(id, entry);
     const emit = (chunk: unknown): void => {
       if (entry.closed || this.#closed) return;
@@ -213,19 +229,32 @@ export class RpcConnection {
     if (!entry) return false;
     this.#active.delete(id);
     entry.closed = true;
+    entry.abort.abort();
     entry.cancel?.();
     if (!this.#closed) this.#send({ id, end: true });
     return true;
   }
 
-  /** Socket closed: drop every stream without writing to the dead socket. */
+  cancelCall(id: string): boolean {
+    const call = this.#calls.get(id);
+    if (call === undefined) return false;
+    this.#calls.delete(id);
+    call.abort();
+    return true;
+  }
+
+  /** Socket closed: drop every stream and abort every unary call without writing to the dead socket. */
   close(): void {
     this.#closed = true;
     for (const [, entry] of this.#active) {
       entry.closed = true;
+      entry.abort.abort();
       entry.cancel?.();
     }
     this.#active.clear();
+    const calls = [...this.#calls.values()];
+    this.#calls.clear();
+    for (const call of calls) call.abort();
   }
 
   #fromThrow(id: string, method: string, err: unknown): void {

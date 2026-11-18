@@ -204,7 +204,7 @@ export function formatDiff(r: ThreadDiffResult): string {
 }
 
 /** Handles tide_thread_* and tide_pending_*; throws raw errors (the caller maps them). */
-export async function callThreadTool(backend: AgentBackend, name: string, args: Record<string, unknown>): Promise<TextResult> {
+export async function callThreadTool(backend: AgentBackend, name: string, args: Record<string, unknown>, signal?: AbortSignal): Promise<TextResult> {
   switch (name) {
     case "tide_thread_list": {
       const projectId = optStr(args, "projectId");
@@ -262,7 +262,7 @@ export async function callThreadTool(backend: AgentBackend, name: string, args: 
             ...(turnId !== undefined ? { turnId } : {}),
             // the server accepts 1000-600000; a longer ask waits the maximum
             ...(timeoutMs !== undefined ? { timeoutMs: Math.min(Math.max(timeoutMs, 1000), 600_000) } : {}),
-          }),
+          }, signal),
         ),
       );
     }

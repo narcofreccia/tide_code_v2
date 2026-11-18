@@ -509,6 +509,12 @@ export const rpcMethods = {
   "model.subscribe": stream(Type.Object({ fromSeq: Type.Optional(Type.Number()) }), ModelChunk),
   "model.get": unary(Type.Object({}), ReadModel),
   "unsubscribe": unary(Type.Object({ id: Type.String() }), Type.Object({ ok: Type.Boolean() })),
+  /**
+   * The caller stopped listening for the unary request `id` on this connection. Its handler's abort
+   * signal fires; `ok` is false when no such request is in flight. A handler that ignores the signal
+   * runs to the end as before.
+   */
+  "cancel": unary(Type.Object({ id: Type.String() }), Type.Object({ ok: Type.Boolean() })),
   /** git state of the thread's cwd (worktree or project root) */
   "vcs.status": unary(Type.Object({ threadId: Type.String() }), VcsStatus),
   /** R17: the project's base branch against `origin` (fetch throttled server-side; `fetchedAt` says how fresh) */
