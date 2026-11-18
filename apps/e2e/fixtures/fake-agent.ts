@@ -9,11 +9,12 @@
  * - a prompt containing EDIT_TRIGGER streams two text chunks, announces an `edit` tool call on
  *   `hello.txt` with its diff, asks permission, and on approval writes the file through the
  *   client's `fs/write_text_file` (served by Tide inside the worktree), then finishes the reply;
- * - any other prompt is answered with `Echo: <prompt>`.
+ * - any other prompt is answered with `Echo: <prompt>`; one containing COST_TRIGGER also reports
+ *   COST_PER_TURN USD through `usage_update` (ACP's `cost` is cumulative per session).
  */
 import { createInterface } from "node:readline";
 import { join } from "node:path";
-import { EDIT_TRIGGER, FINAL_TEXT, NEW_CONTENT, OLD_CONTENT, STREAM_CHUNKS } from "./script.ts";
+import { COST_PER_TURN, COST_TRIGGER, EDIT_TRIGGER, FINAL_TEXT, NEW_CONTENT, OLD_CONTENT, STREAM_CHUNKS } from "./script.ts";
 
 type Id = number | string;
 interface Message {
@@ -38,7 +39,7 @@ function request(method: string, params: Record<string, unknown>): Promise<Messa
   return new Promise((resolve) => waiting.set(id, resolve));
 }
 
-const sessions = new Map<string, { cwd: string; cancel?: () => void }>();
+const sessions = new Map<string, { cwd: string; cost: number; cancel?: () => void }>();
 let sessionSeq = 0;
 
 function update(sessionId: string, body: Record<string, unknown>): void {
@@ -122,6 +123,10 @@ async function prompt(id: Id, params: Record<string, unknown>): Promise<void> {
   else {
     const last = text.trim().split("\n").at(-1) ?? "";
     update(sessionId, { sessionUpdate: "agent_message_chunk", content: { type: "text", text: `Echo: ${last}` } });
+    if (text.includes(COST_TRIGGER)) {
+      session.cost += COST_PER_TURN;
+      update(sessionId, { sessionUpdate: "usage_update", used: 1000, size: 200_000, cost: { amount: session.cost, currency: "USD" } });
+    }
     stopReason = "end_turn";
   }
   delete session.cancel;
@@ -149,12 +154,12 @@ function handle(message: Message): void {
     case "session/new": {
       sessionSeq += 1;
       const sessionId = `e2e-${process.pid}-${sessionSeq}`;
-      sessions.set(sessionId, { cwd: String(params["cwd"]) });
+      sessions.set(sessionId, { cwd: String(params["cwd"]), cost: 0 });
       send({ id: id ?? null, result: { sessionId, configOptions: [MODEL_OPTION] } });
       return;
     }
     case "session/load":
-      sessions.set(String(params["sessionId"]), { cwd: String(params["cwd"]) });
+      sessions.set(String(params["sessionId"]), { cwd: String(params["cwd"]), cost: 0 });
       send({ id: id ?? null, result: { configOptions: [MODEL_OPTION] } });
       return;
     case "session/prompt":

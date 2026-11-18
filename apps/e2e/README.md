@@ -1,8 +1,11 @@
 # @tide/e2e: browser smoke test
 
-Two Playwright specs drive the real app in Chrome against a scratch tide-server: `smoke.e2e.ts`
-(the main walk) and `devices.e2e.ts` (pairing a second browser and its access level; the
-`devices` project depends on `smoke` and reuses the project and threads it leaves). Local
+Three Playwright specs drive the real app in Chrome against a scratch tide-server: `smoke.e2e.ts`
+(the main walk), `devices.e2e.ts` (pairing a second browser and its access level; the
+`devices` project depends on `smoke` and reuses the project and threads it leaves) and
+`quota.e2e.ts` (a project usage quota that holds new turns, then Lift until reset and Remove;
+it runs after `devices` and saves three screenshots to `TIDE_E2E_SHOTS`, default
+`$TMPDIR/e2e-shots`). Local
 only: nothing in CI runs it (Actions minutes are paid; see the account rules).
 
 ```sh
@@ -46,7 +49,8 @@ runs like any other ACP agent: `providerInstances: [{ id: "acp:e2e", kind: "acp"
 args: [fake-agent.ts] }]`. No server code is test-aware. Its script (`fixtures/script.ts`): a
 prompt containing "please edit hello.txt" streams two text chunks, announces an `edit` tool call
 with a diff, asks `session/request_permission`, and on approval writes the file through Tide's
-`fs/write_text_file` (inside the worktree); any other prompt is answered `Echo: <prompt>`. It
+`fs/write_text_file` (inside the worktree); any other prompt is answered `Echo: <prompt>`, and one containing "please spend" also reports
+$0.50 through a `usage_update` (`cost` is cumulative per session in ACP). It
 exits when its stdin closes, so a killed server leaves no agent behind.
 
 Specs are `specs/*.e2e.ts`, which no vitest config collects.
