@@ -108,7 +108,7 @@ describe("status", () => {
     expect(accountLabel(null)).toBeUndefined();
     expect(accountLabel(undefined)).toBeUndefined();
     expect(accountLabel({ type: "apiKey" })).toBe("OpenAI API key");
-    expect(accountLabel({ type: "chatgpt", email: null, planType: "plus" })).toBe("ChatGPT plus plan");
+    expect(accountLabel({ type: "chatgpt", email: null, planType: "plus", workspaceName: null })).toBe("ChatGPT plus plan");
     expect(accountLabel({ type: "amazonBedrock", usesCodexManagedCredentials: false })).toBeUndefined();
   });
 
