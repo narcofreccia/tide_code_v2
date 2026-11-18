@@ -1,14 +1,14 @@
 import type { Activity, AttentionKind, Message, ReadModel, Thread, TimelineEntry, Turn } from "@tide/contracts";
 import { clipTarget as clip, countBackgroundAgents, displayToolName, shortTarget } from "@tide/client";
 import { COMPACTING_LABEL, compactionOf, isCompactPrompt } from "./compaction.ts";
-import { backgroundAgentsText } from "./vocab.ts";
+import { backgroundAgentsText, threadLimitedText } from "./vocab.ts";
 
 export { displayToolName, shortTarget };
 
 /**
  * What a rail row says a thread is doing right now, on its second line:
  * "Bash npm test", "Writing", "Thinking", "Compacting conversation…", "Needs approval",
- * "Waiting for limit reset", "Queued", "1 agent in background".
+ * "Waiting for limit reset · in 3h", "Limit reset, continue?", "Queued", "1 agent in background".
  * Pure over the read model; undefined for an idle or settled thread.
  */
 export type LiveLabelKind = "thinking" | "tool" | "waiting" | "approval" | "queued" | "limited" | "background";
@@ -128,10 +128,12 @@ function hasQueuedTurn(model: ReadModel, threadId: string): boolean {
   return queued.has(threadId);
 }
 
-export function liveLabelFor(model: ReadModel, thread: Thread): LiveLabelInfo | undefined {
+/** `now` matters only for a limited thread: its reset moves it from waiting to ready. */
+export function liveLabelFor(model: ReadModel, thread: Thread, now: number = Date.now()): LiveLabelInfo | undefined {
   if (thread.archivedAt !== undefined) return undefined;
   if (thread.attention !== undefined) return { text: ATTENTION_TEXT[thread.attention], kind: "approval" };
-  if (thread.limited !== undefined) return { text: "Waiting for limit reset", kind: "limited" };
+  const limited = threadLimitedText(thread, now, model);
+  if (limited !== undefined) return { text: limited, kind: "limited" };
   if (thread.interrupting === true) return { text: "Stopping", kind: "waiting" };
   const turn = activeTurn(model, thread);
   if (turn !== undefined) return turnLabel(model, thread, turn);

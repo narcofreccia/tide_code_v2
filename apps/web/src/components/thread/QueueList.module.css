@@ -74,3 +74,12 @@
   white-space: nowrap;
 }
 .send:hover { text-decoration: underline; }
+.held {
+  display: flex;
+  align-items: center;
+  min-height: var(--activity-h);
+  padding: 0 var(--sp-2);
+  color: var(--muted);
+  font-size: var(--fs-sm);
+  border-bottom: 1px solid var(--border);
+}

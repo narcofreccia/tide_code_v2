@@ -7,6 +7,7 @@ import { Fragment } from "react";
 import { MissionEmpty, shouldShowGettingStarted } from "./MissionEmpty.tsx";
 import { HowTideWorks, shouldShowHowItWorks } from "../shell/HowTideWorks.tsx";
 import { NowStrip } from "./NowStrip.tsx";
+import { QuotaHeldSection } from "./QuotaHeldSection.tsx";
 import { ProjectCard } from "./ProjectCard.tsx";
 import { ProjectTotals } from "./ProjectTotals.tsx";
 import { ProvidersStrip } from "./ProvidersStrip.tsx";
@@ -16,7 +17,7 @@ import styles from "./MissionControl.module.css";
 
 /**
  * The landing view, in the order you act on it: Needs you (full width, every
- * waiting card rendered inline so it can be answered here), Running now, Limited,
+ * waiting card rendered inline so it can be answered here), Running now, Held by quota, Limited,
  * the Projects grid, Snoozed, the harness roster folded to one line, and the
  * machines (environments) with their load. The
  * project scope comes from the top bar's switcher; this view only reflects it.
@@ -58,6 +59,7 @@ export function MissionControl() {
           {gettingStarted ? <MissionEmpty /> : null}
           <InboxColumn {...(scoped === undefined ? {} : { projectId: scoped })} />
           <NowStrip {...(scoped === undefined ? {} : { projectId: scoped })} />
+          <QuotaHeldSection {...(scoped === undefined ? {} : { projectId: scoped })} />
           <LimitedSection />
           <section className={styles.section} aria-label="Projects">
             <h2 className={styles.label}>Projects</h2>

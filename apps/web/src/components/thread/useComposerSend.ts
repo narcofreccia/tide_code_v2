@@ -58,8 +58,10 @@ export function promptOf(text: string, hasImages: boolean, hasFiles: boolean): s
  * nothing queues commands across a drop, so a "sent" message would be lost. `offline` is
  * the reason to show, undefined while connected.
  *
- * Blocked (`threadSendBlock`: the worktree is gone, archived, rolling back) a send does nothing
- * either: the server would refuse the turn. `blocked` says why and whether a fork can carry on.
+ * Blocked (`threadSendBlock`: the worktree is gone, archived, rolling back, a quota holds it) a
+ * send does nothing either: the server would refuse the turn. `blocked` says why and whether a fork
+ * can carry on. A quota holds new turns only: a steer into the running turn still goes (`quota`
+ * keeps the hold for the notice above the composer).
  */
 export function useComposerSend({ thread, text, images, files, followUp, onSent }: ComposerSendInput) {
   const [busy, setBusy] = useState(false);
@@ -68,14 +70,21 @@ export function useComposerSend({ thread, text, images, files, followUp, onSent 
   const running = thread.status === "running";
   const env = useThreadEnvStatus(thread.id);
   const offline = env.online ? undefined : offlineReason(env);
-  const blocked = threadSendBlock(thread);
+  // quotas live on threads and projects: re-render on those maps, read the rest of the model as is
+  useModel((s) => s.model.threads);
+  useModel((s) => s.model.projects);
+  const block = threadSendBlock(thread, { model: useModel.getState().model, now: Date.now() });
+  const quota = block?.kind === "quota" ? block.quota : undefined;
+  const steersNow = running && followUp.mode === "steer" && followUp.canSteer;
+  const blocked = quota !== undefined && steersNow ? undefined : block;
 
   /** `override` replaces the draft text (`/clear <prompt>` sends the prompt after the command). */
   const send = async (how?: FollowUpMode, background = false, override?: { text: string; fresh?: boolean }): Promise<void> => {
     const body = override?.text ?? text;
-    if ((body.trim() === "" && images.length === 0 && files.length === 0) || busy || offline !== undefined || blocked !== undefined) return;
     const fresh = override?.fresh === true || isFreshSessionArmed(thread.id);
     const steer = !fresh && running && (how ?? followUp.mode) === "steer" && followUp.canSteer;
+    const refused = block !== undefined && !(block.kind === "quota" && steer);
+    if ((body.trim() === "" && images.length === 0 && files.length === 0) || busy || offline !== undefined || refused) return;
     const imageInputs = images.map((image) => ({ mediaType: image.mediaType, data: image.data }));
     const prompt = promptOf(body, images.length > 0, files.length > 0);
     const fileKey = files.map((f) => f.id).join(",");
@@ -119,5 +128,5 @@ export function useComposerSend({ thread, text, images, files, followUp, onSent 
     }
   };
 
-  return { send, busy, uploading, offline, blocked };
+  return { send, busy, uploading, offline, blocked, quota };
 }

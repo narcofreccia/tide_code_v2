@@ -1,12 +1,16 @@
 import type { ActivityOf, AttentionKind, ProposedPlan, ReadModel, Thread } from "@tide/contracts";
-import { selectThreadsNeedingAttention } from "./selectors.ts";
+import { selectLimitReady } from "./limitSelectors.ts";
+import { isSettled, isSnoozed, selectThreadsNeedingAttention } from "./selectors.ts";
+
+/** What an inbox row waits on: a harness card, or (R20) a limit that reset and waits for Continue. */
+export type InboxAttention = AttentionKind | "limit";
 
 /** One inbox row: one thing waiting on the user, with the thread it belongs to. */
 export interface InboxItem {
-  /** stable row key: the activity / plan id, or `thread:<id>` for a bare attention flag */
+  /** stable row key: the activity / plan id, `thread:<id>` for a bare attention flag, `limit:<id>` for a reset limit */
   key: string;
   thread: Thread;
-  attention: AttentionKind;
+  attention: InboxAttention;
   /** the pending approval / user-input activity behind this row */
   activity?: ActivityOf<"approval"> | ActivityOf<"user-input">;
   /** the proposed plan behind this row */
@@ -61,7 +65,8 @@ function consequentialOf(item: InboxItem): number {
  * Everything waiting on the user — every pending card, not one per thread.
  * Ordered by triage urgency (highest first) when the decisions model scored the
  * thread, then by how long it has been waiting (oldest first). A thread flagged
- * by the projector whose card is not in the timeline still gets one bare row.
+ * by the projector whose card is not in the timeline still gets one bare row. A limited thread
+ * whose window reopened, with the `manual` policy, waits on the user too (`limit` row).
  */
 export function selectInbox(model: ReadModel, projectId?: string, now: number = Date.now()): InboxItem[] {
   const out: InboxItem[] = [];
@@ -78,6 +83,11 @@ export function selectInbox(model: ReadModel, projectId?: string, now: number = 
         ...(note === undefined ? {} : { notification: note }),
       });
     }
+  }
+  const listed = new Set(out.map((i) => i.thread.id));
+  for (const thread of selectLimitReady(model, projectId, now)) {
+    if (listed.has(thread.id) || isSettled(thread) || isSnoozed(thread, now)) continue;
+    out.push({ key: `limit:${thread.id}`, thread, attention: "limit", since: thread.limited?.resetsAt ?? thread.limited?.at ?? thread.updatedAt });
   }
   return out.sort(
     (a, b) => consequentialOf(b) - consequentialOf(a) || urgencyOf(b) - urgencyOf(a) || a.since - b.since || a.key.localeCompare(b.key),

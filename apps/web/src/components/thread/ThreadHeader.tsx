@@ -1,5 +1,5 @@
 import { useEffect, useRef, useState } from "react";
-import { selectDelegates, selectLatestSettledTurnId } from "@tide/client";
+import { selectDelegates, selectLatestSettledTurnId, selectQuotaHold } from "@tide/client";
 import type { Thread } from "@tide/contracts";
 import { fetchTerminalCommand } from "../../lib/threadActions.ts";
 import { runInThreadTerminal } from "../../lib/openInTerminal.ts";
@@ -24,6 +24,8 @@ import { useBackgroundAgentCount } from "../../state/hooks.ts";
 import { useThreadEnvStatus } from "../../state/threadEnv.ts";
 import { Pill } from "../ui/Pill.tsx";
 import { LiveLabel } from "./LiveLabel.tsx";
+import { QuotaChip } from "../quota/QuotaMeter.tsx";
+import { useTicker } from "../mission/useTicker.ts";
 import styles from "./ThreadHeader.module.css";
 
 /** Below this container width Terminal and Fork fold into the More menu. */
@@ -73,8 +75,9 @@ function useTerminalCommand(threadId: string, nativeSessionId: string | undefine
 }
 
 /** The sub-row exists only when at least one of these has something to say. */
-function hasChips(thread: Thread, delegates: number): boolean {
+function hasChips(thread: Thread, delegates: number, held: boolean): boolean {
   return (
+    held ||
     thread.pr !== undefined ||
     thread.merge !== undefined ||
     thread.mergedAt !== undefined ||
@@ -97,9 +100,16 @@ export function ThreadHeader({ thread }: { thread: Thread }) {
   const limit = useThreadDeviceLimit(thread.id);
   const command = useTerminalCommand(thread.id, thread.nativeSessionId, limit !== undefined);
   const background = useBackgroundAgentCount(thread.id);
+  // a limit reset or a quota window passing is no event: tick while either can happen
+  useTicker(thread.limited !== undefined ? 30_000 : 0);
   const now = Date.now();
+  const limits = useModel((s) => s.model.limits);
   const state = threadStateKey(thread, now, background);
-  const word = threadStateLabel(thread, now, background);
+  const word = threadStateLabel(thread, now, background, limits === undefined ? undefined : { limits });
+  // quotas live on threads and projects: re-render on those maps, read the rest of the model as is
+  useModel((s) => s.model.threads);
+  useModel((s) => s.model.projects);
+  const held = selectQuotaHold(useModel.getState().model, thread, now);
   const forkTurn = useModel((s) => selectLatestSettledTurnId(s.model, thread.id));
   const delegates = useModel((s) => selectDelegates(s.model, thread.id).length + selectSideChats(s.model, thread.id).length);
   const [menu, setMenu] = useState<MenuPosition | undefined>(undefined);
@@ -173,7 +183,7 @@ export function ThreadHeader({ thread }: { thread: Thread }) {
           </Button>
         </div>
       </div>
-      {hasChips(thread, delegates) ? (
+      {hasChips(thread, delegates, held !== undefined) ? (
         <div className={styles.sub}>
           {thread.pr ? <PrBadge pr={thread.pr} /> : null}
           <MergeGlyph thread={thread} />
@@ -183,6 +193,7 @@ export function ThreadHeader({ thread }: { thread: Thread }) {
           <SideChatsPopover threadId={thread.id} />
           <LineageChip thread={thread} />
           <LimitedBadge thread={thread} />
+          {held === undefined ? null : <QuotaChip view={held} />}
           <RollbackPill thread={thread} />
           <RateLimitBadge limit={thread.rateLimit} />
         </div>

@@ -1,6 +1,7 @@
 import type { Thread } from "@tide/contracts";
-import { relativeUntil } from "../../lib/relativeTime.ts";
+import { limitedView } from "@tide/client";
 import { continueBlock, resumeThread, setLimitPolicy, snoozeThread } from "../../lib/turnActions.ts";
+import { limitedText } from "../../lib/vocab.ts";
 import { useModel } from "../../state/model.ts";
 import { useUi } from "../../state/ui.ts";
 import { Button } from "../ui/Button.tsx";
@@ -29,16 +30,24 @@ export function LineageChip({ thread }: { thread: Thread }) {
   );
 }
 
-/** Subscription window exhausted: choose what happens next. */
+/**
+ * Subscription window exhausted: choose what happens next. The trigger says where the thread
+ * stands (`Waiting for limit reset · in 3h`, `Limit reset, continue?`, `Resuming`,
+ * `Limited · reset unknown`); once the window reopened for a manual thread, Continue leads.
+ */
 export function LimitedBadge({ thread }: { thread: Thread }) {
+  const limits = useModel((s) => s.model.limits);
   const limited = thread.limited;
   if (!limited) return null;
+  const now = Date.now();
+  const view = limitedView(limits === undefined ? undefined : { limits }, thread, now);
   const blocked = continueBlock(thread);
   const resetsAt = limited.resetsAt;
+  const ready = view?.phase === "ready";
   return (
     <Popover
-      label="Resume options"
-      title={limited.note ?? "The harness hit its usage limit"}
+      label={ready ? "Continue options" : "Resume options"}
+      title={[view === undefined ? undefined : limitedText(view, now), limited.note ?? "The harness hit its usage limit"].filter(Boolean).join("\n")}
       variant="quiet"
       align="end"
     >
@@ -50,7 +59,7 @@ export function LimitedBadge({ thread }: { thread: Thread }) {
         return (
           <div className={styles.menu}>
             <Button variant="quiet" disabled={blocked !== undefined} title={blocked} onClick={act(() => resumeThread(thread.id, true))}>
-              Resume now
+              {ready ? "Continue" : "Resume now"}
             </Button>
             <Button
               variant="quiet"

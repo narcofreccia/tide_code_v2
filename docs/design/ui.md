@@ -15,7 +15,7 @@ bar. `⌘B` (or the strip's Inbox button) collapses the rail; the strip stays. T
 | Top bar | 36px | logo (→ Mission Control) · `Project › Thread` breadcrumb, or the page heading (`--fs-md --fw-medium`) · right: env chip (multi-environment only), connection dot, theme toggle, `search` icon = command palette (`⌘K`). No project switcher: projects are picked in the rail. Carries `data-tauri-drag-region`. |
 | Strip | 44px | `--surface`, hairline right border. Top: Mission Control (`⌘0`), Inbox (toggles the rail; amber badge = threads that need you), Pull requests (badge = open PRs), Usage, Experts (new session). Bottom: Environments (only with more than one environment; → Settings › Environments), Settings (`⌘,`). 36×36 icon buttons, `title="Name (shortcut)"`; the active page has `aria-current="page"`, `--selection` fill and a 2px `--selection-bar` on the left edge. |
 | Rail | 280px, resizable 240–360 (persisted) | see **Rail anatomy** |
-| Thread | flexible, primary | header: one 32px row = state chip · title (inline rename: double-click or ✎) · branch chip (mono, tooltip = worktree path, `main checkout` when none) \| Terminal · Fork (latest settled turn) · `⋯` (below ~560px container width Terminal and Fork fold into `⋯`; Stop lives only in the composer) (New child, Roll back last turn…, Snooze ▸, Copy thread ID, Copy branch, Export as Markdown, Copy as Markdown, Remove worktree…, Archive thread…); a 24px sub-row exists only when it has chips (PR / merge, lineage `forked from <title>`, `Limited` menu, `Rolling back…`, delegates, rate limit) · pinned plan progress while running · stream of messages + activities · inline cards (approval, user-input, proposed plan) · composer |
+| Thread | flexible, primary | header: one 32px row = state chip · title (inline rename: double-click or ✎) · branch chip (mono, tooltip = worktree path, `main checkout` when none) \| Terminal · Fork (latest settled turn) · `⋯` (below ~560px container width Terminal and Fork fold into `⋯`; Stop lives only in the composer) (New child, Roll back last turn…, Snooze ▸, Usage quota…, Copy thread ID, Copy branch, Export as Markdown, Copy as Markdown, Remove worktree…, Archive thread…); a 24px sub-row exists only when it has chips (PR / merge, lineage `forked from <title>`, `Limited` menu, `Rolling back…`, delegates, rate limit) · pinned plan progress while running · stream of messages + activities · inline cards (approval, user-input, proposed plan) · composer |
 | Workbench | flexible, secondary | tab strip: **Changes** (default) · Search · open files (Monaco) · Preview \| `+` menu (Open file… `⌘P`, Search in files… `⌘⇧F`, New terminal) · **Files** toggle (`⌘⇧E`; open by default in Code focus, closed in Split, each layout remembers its last choice) · Preview (dev servers of the thread) · Terminal `` ⌘` ``. Editor bar: path as breadcrumbs (a folder opens the tree on it; the file name is plain) · Save (dot when dirty, disabled when clean). Monaco on the type scale: `--fs-sm` mono, line height 1.5× that, current line in `--selection`. Terminal drawer: a fixed one-line tab strip (`--row-h-nav`, tabs ≤160px, titles ellipsised with the harness's status glyph dropped, a dot = alive, muted = exited; right-click: Close / Close others; `plus` new; Hide right) above the terminal, which refits on resize, on open and on tab switch |
 | Status bar | 24px | `⎇ branch (worktree)` · context % + cost · diff stats · provider health · connection |
 
@@ -329,6 +329,23 @@ run; slower breathing) · `◐ needs you` (approval / question / plan ready) ·
 `✕ error` · `⏸ interrupted` · `✓ PR merged` · `⛔ limited` (usage window exhausted; the header badge
 and the Limited section show it, the status column has no glyph) · `snoozed` (hidden until its time;
 only in the collapsed Snoozed section, no glyph). Rail sorts needs-you first within a project.
+
+**Limited, in three phases** (rail live line, header chip, `Limited` badge and section use the same words;
+a 30 s ticker moves them, since the reset passing is no event):
+
+| Phase | Words | Policy `manual` | Policy `reset` |
+|---|---|---|---|
+| `waiting` (reset ahead) | `Waiting for limit reset · in 3h` | waits | resumes at reset |
+| `ready` (reset passed, or the window reported open) | `Limit reset, continue?` / `Resuming` | Inbox row "needs you" with **Continue**; one notification | server resumes it |
+| `unknown` (no reset time, nothing heard) | `Limited · reset unknown` | waits | server probes |
+
+**Usage quota** (project or thread; absent quota renders nothing):
+
+| State | What renders |
+|---|---|
+| measuring (just set, not measured) | grey meter, `quota · measuring` |
+| ok / warning / exceeded | meter on the project card and totals (`--st-ok` / `--st-needs` / `--st-error`), figures in the tooltip; one notification at warning and at exceeded per window |
+| holding (exceeded, `Hold new turns`, not lifted) | header chip `Held by quota`; composer send off with a block `Project quota reached (≈ 31% of the weekly window, cap 30%) · resets in 2d` + Lift until reset · Edit quota; queued turns `Held by quota` (`Held until the limit resets` when limited); Mission Control row `Held by quota · N threads`; Open in terminal stays |
 
 ## Design language
 

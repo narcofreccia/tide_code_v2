@@ -13,6 +13,7 @@ import { Button } from "../ui/Button.tsx";
 import { Icon } from "../ui/Icon.tsx";
 import { ContextMenu, type MenuItem, type MenuPosition } from "../ui/Menu.tsx";
 import { ProjectIcon } from "../ui/ProjectIcon.tsx";
+import { QuotaEditor } from "../quota/QuotaEditor.tsx";
 import { SettingRow } from "./ui/SettingRow.tsx";
 import { SettingText } from "./ui/SettingText.tsx";
 import ui from "./ui/settings.module.css";
@@ -75,6 +76,7 @@ export function ProjectRow({
   const [renaming, setRenaming] = useState(false);
   const [menu, setMenu] = useState<MenuPosition | undefined>(undefined);
   const [titling, setTitling] = useState(false);
+  const [quotaOpen, setQuotaOpen] = useState(false);
   // R19: a device with limited access may not change the project
   const limit = useProjectDeviceLimit(project.id);
   const off = limit === undefined ? {} : { disabled: true, hint: LIMITED_HINT };
@@ -83,6 +85,7 @@ export function ProjectRow({
     { label: "Rename", ...off, onSelect: () => setRenaming(true) },
     { label: "Icon…", ...off, onSelect: onIcon },
     { label: "Title instructions…", ...off, onSelect: () => setTitling(true) },
+    { label: "Usage quota…", ...off, onSelect: () => setQuotaOpen(true) },
     { label: "Linked repositories…", ...off, onSelect: () => useUi.getState().setLinksProject(project.id) },
     { label: "Copy path", onSelect: () => void copyText(project.rootPath, "path") },
     { label: "Archive", separatorBefore: true, ...off, onSelect: () => archiveProject(project.id) },
@@ -104,23 +107,30 @@ export function ProjectRow({
       }
       help={<MiddlePath path={project.rootPath} />}
       extra={
-        titling || project.titleInstructions !== undefined ? (
-          <SettingText
-            multiline
-            label={`Title instructions for ${project.title}`}
-            maxLength={500}
-            disabled={limit !== undefined}
-            title={limit}
-            placeholder="Uses the instructions from Settings › General"
-            value={project.titleInstructions ?? ""}
-            onCommit={(text) =>
-              dispatchOrToast("Saving the title instructions", {
-                type: "project.update",
-                projectId: project.id,
-                titleInstructions: text.trim() === "" ? null : text.trim(),
-              })
-            }
-          />
+        titling || project.titleInstructions !== undefined || quotaOpen || project.quota !== undefined ? (
+          <>
+            {titling || project.titleInstructions !== undefined ? (
+              <SettingText
+                multiline
+                label={`Title instructions for ${project.title}`}
+                maxLength={500}
+                disabled={limit !== undefined}
+                title={limit}
+                placeholder="Uses the instructions from Settings › General"
+                value={project.titleInstructions ?? ""}
+                onCommit={(text) =>
+                  dispatchOrToast("Saving the title instructions", {
+                    type: "project.update",
+                    projectId: project.id,
+                    titleInstructions: text.trim() === "" ? null : text.trim(),
+                  })
+                }
+              />
+            ) : null}
+            {quotaOpen || project.quota !== undefined ? (
+              <QuotaEditor scope="project" entity={project} limit={limit} startOn={quotaOpen} onRemoved={() => setQuotaOpen(false)} />
+            ) : null}
+          </>
         ) : undefined
       }
       control={

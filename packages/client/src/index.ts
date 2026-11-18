@@ -9,7 +9,7 @@ export {
   type TideConnectionOptions,
 } from "./connection.ts";
 export { childThreadsOf, selectChildAttention, selectChildRequests } from "./childRequests.ts";
-export { selectWaitingOn } from "./inboxSelectors.ts";
+export { selectWaitingOn, type InboxAttention } from "./inboxSelectors.ts";
 export { repoGroupOf, selectRepoGroups, selectRepoSiblings, type RepoGroup } from "./repoSelectors.ts";
 export {
   createModelStore,
@@ -130,3 +130,25 @@ export {
   type BackgroundAgentStep,
 } from "./backgroundAgents.ts";
 export { threadSendBlock, type SendBlock, type SendBlockKind } from "./sendBlock.ts";
+// R20: limit phases and usage quotas
+export {
+  limitNeedsUser,
+  limitPhaseOf,
+  limitedView,
+  selectLimitReady,
+  type LimitedView,
+} from "./limitSelectors.ts";
+export {
+  queueHoldText,
+  quotaCapText,
+  quotaFigureText,
+  quotaHoldText,
+  quotaView,
+  selectHeldProjects,
+  selectProjectQuota,
+  selectQuotaHold,
+  selectThreadQuota,
+  type HeldProject,
+  type QuotaStatus,
+  type QuotaView,
+} from "./quotaSelectors.ts";

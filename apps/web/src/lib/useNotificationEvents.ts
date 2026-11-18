@@ -4,6 +4,7 @@ import { useModel } from "../state/model.ts";
 import { useUi } from "../state/ui.ts";
 import { useNotifications } from "../state/notifications.ts";
 import { notify } from "./notify.ts";
+import { useQuotaNotifications } from "./useQuotaNotifications.ts";
 
 interface Seen {
   status: Thread["status"];
@@ -53,6 +54,8 @@ function fire(thread: Thread, prev: Seen): void {
 
 /** Mount once. Diffs thread status/attention/limited between model updates; the first model after (re)connect is a baseline. */
 export function useNotificationEvents(): void {
+  // R20: quota warnings and limits that reset (the latter on a ticker)
+  useQuotaNotifications();
   useEffect(() => {
     let prev: Map<string, Seen> | undefined;
     let prevSeq = 0;

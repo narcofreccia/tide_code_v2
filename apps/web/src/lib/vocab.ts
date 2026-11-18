@@ -1,5 +1,5 @@
-import { isThreadMerged } from "@tide/client";
-import type { InteractionMode, ProviderKind, ProviderStatusDto, RuntimeMode, Thread } from "@tide/contracts";
+import { isThreadMerged, limitedView, type LimitedView } from "@tide/client";
+import type { InteractionMode, ProviderKind, ProviderStatusDto, ReadModel, RuntimeMode, Thread } from "@tide/contracts";
 import { relativeUntil } from "./relativeTime.ts";
 
 /** The four harnesses Tide ships a driver for; each always has a default instance whose id is the kind. */
@@ -162,14 +162,28 @@ export function backgroundAgentsTip(count: number): string {
   return `${count} ${count === 1 ? "sub-agent" : "sub-agents"} working in the background`;
 }
 
-/** `Idle`, `Running`, `Needs you`, `Limited · resets in 2h`, … */
-export function threadStateLabel(thread: Thread, now: number = Date.now(), background = 0): string {
+/**
+ * R20: a limited thread in its three phases. `Waiting for limit reset · in 3h` while the reset is
+ * ahead; once the window reopened `Limit reset, continue?` (policy manual) or `Resuming` (reset);
+ * `Limited · reset unknown` when the harness gave no time and nothing was heard since.
+ */
+export function limitedText(view: LimitedView, now: number = Date.now()): string {
+  if (view.phase === "ready") return view.policy === "manual" ? "Limit reset, continue?" : "Resuming";
+  if (view.phase === "unknown" || view.resetsAt === undefined) return "Limited · reset unknown";
+  return `Waiting for limit reset · ${relativeUntil(view.resetsAt, now)}`;
+}
+
+/** `limitedText` for a thread; undefined when it is not limited. `model` supplies the limit gauges. */
+export function threadLimitedText(thread: Thread, now: number = Date.now(), model?: Pick<ReadModel, "limits">): string | undefined {
+  const view = limitedView(model, thread, now);
+  return view === undefined ? undefined : limitedText(view, now);
+}
+
+/** `Idle`, `Running`, `Needs you`, `Waiting for limit reset · in 2h`, … */
+export function threadStateLabel(thread: Thread, now: number = Date.now(), background = 0, model?: Pick<ReadModel, "limits">): string {
   const key = threadStateKey(thread, now, background);
   if (key === "background") return `Working · ${backgroundAgentsText(background)}`;
-  if (key === "limited") {
-    const at = thread.limited?.resetsAt;
-    return at === undefined ? "Limited" : `Limited · resets ${relativeUntil(at, now)}`;
-  }
+  if (key === "limited") return threadLimitedText(thread, now, model) ?? THREAD_STATE_WORDS.limited;
   if (key === "snoozed" && thread.snoozedUntil !== undefined) {
     return `Snoozed · until ${new Date(thread.snoozedUntil).toLocaleTimeString([], { hour: "2-digit", minute: "2-digit" })}`;
   }

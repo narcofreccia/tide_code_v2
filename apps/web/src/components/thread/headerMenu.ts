@@ -11,6 +11,7 @@ import { copyItems, latestSettledTurnId, settleItems } from "../shell/railMenus.
 import { addressThreadPrComments } from "../prs/prActions.ts";
 import { startSideChat } from "./useSideChat.ts";
 import { copyThreadMarkdown, exportThreadMarkdown } from "../../lib/threadExport.ts";
+import { openQuotaEditor } from "../quota/QuotaDialog.tsx";
 
 /** "Link a PR…" always (relinking replaces it); "Address review comments" when the open PR has comments. */
 export function prItems(thread: Thread): MenuItem[] {
@@ -120,6 +121,8 @@ export function headerMenu(
       ...(autoAllowOff !== undefined ? { hint: autoAllowOff } : {}),
       onSelect: () => updateThread(thread.id, { autoAllowRoutine: thread.autoAllowRoutine !== true }),
     },
+    // R20: a cap for this thread and its sub-threads; the dialog shows why a limited device cannot change it
+    { label: "Usage quota…", onSelect: () => openQuotaEditor("thread", thread.id) },
     ...prItems(thread),
     ...copyItems(thread),
     ...exportItems(thread),

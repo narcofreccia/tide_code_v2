@@ -22,6 +22,7 @@ import { QuickOpen } from "./components/shell/QuickOpen.tsx";
 import { NewThreadDialogHost } from "./components/shell/NewThreadPopover.tsx";
 import { CommandPaletteHost } from "./components/shell/CommandPalette.tsx";
 import { ThreadDialogHost } from "./components/thread/ThreadDialogs.tsx";
+import { QuotaDialogHost } from "./components/quota/QuotaDialog.tsx";
 import { ProjectDialogHost } from "./components/shell/ProjectDialogs.tsx";
 import { ProjectLinksDialogHost } from "./components/mission/ProjectLinks.tsx";
 import { useWorkbench } from "./state/workbench.ts";
@@ -117,6 +118,7 @@ export function App() {
       <QuickOpenHost />
       <CommandPaletteHost />
       <ThreadDialogHost />
+      <QuotaDialogHost />
       <ProjectDialogHost />
       <ExpertsDialogHost />
       <ProjectLinksDialogHost />

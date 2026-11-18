@@ -4,7 +4,8 @@ import { isTauri, useNotifications } from "../state/notifications.ts";
 export interface NotifyInput {
   title: string;
   body: string;
-  threadId: string;
+  /** a click opens it; absent for a project-wide notice (a quota), which only focuses the window */
+  threadId?: string;
   /** identical tags inside the dedupe window collapse to one notification */
   tag: string;
 }
@@ -34,8 +35,8 @@ function beep(): void {
   }
 }
 
-function select(threadId: string): void {
-  useUi.getState().selectThread(threadId);
+function select(threadId: string | undefined): void {
+  if (threadId !== undefined) useUi.getState().selectThread(threadId);
   window.focus();
 }
 

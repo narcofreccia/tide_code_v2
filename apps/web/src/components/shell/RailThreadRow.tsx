@@ -124,8 +124,11 @@ export const RailThreadRow = memo(function RailThreadRowView({ thread, childNode
   const projectTitle = useModel((s) => (showProject ? s.model.projects[thread.projectId]?.title : undefined));
   const selectedId = useUi((s) => (s.view === "thread" ? s.selectedThreadId : null));
   const unread = useLastSeen((s) => isUnread(thread, count, s, selectedId));
-  // a string from the store, not an object: a fresh object per render would loop the selector
-  const liveKey = useModel((s) => liveLabelKey(liveLabelFor(s.model, s.model.threads[thread.id] ?? thread)));
+  // a string from the store, not an object: a fresh object per render would loop the selector.
+  // The clock is the rail's ticker (a limit reset passing is no event), stable within a render.
+  const [mounted] = useState(Date.now);
+  const clock = now ?? mounted;
+  const liveKey = useModel((s) => liveLabelKey(liveLabelFor(s.model, s.model.threads[thread.id] ?? thread, clock)));
   const live = parseLiveLabelKey(liveKey);
   const snoozeAsked = useRailMenuRequest((s) => s.snoozeFor === thread.id);
   const settled = thread.settledAt !== undefined;

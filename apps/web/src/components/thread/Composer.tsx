@@ -1,5 +1,5 @@
 import { useEffect, useRef, useState } from "react";
-import { selectLatestSettledTurnId } from "@tide/client";
+import { queueHoldText, selectLatestSettledTurnId } from "@tide/client";
 import { getDraft, useDrafts } from "../../state/drafts.ts";
 import { useComposerDraft } from "./useComposerDraft.ts";
 import type { Thread } from "@tide/contracts";
@@ -41,6 +41,7 @@ import { FollowUpToggle } from "./FollowUpToggle.tsx";
 import { ProviderSwitchHint } from "./ProviderSwitchHint.tsx";
 import { DraftsBar } from "./DraftsBar.tsx";
 import { QueueList } from "./QueueList.tsx";
+import { QuotaBlockNotice } from "../quota/QuotaBlockNotice.tsx";
 import styles from "./Composer.module.css";
 
 const MIN_ROWS = 2;
@@ -71,7 +72,7 @@ export function Composer({ thread, scope = "main" }: { thread: Thread; scope?: C
   const slash = useSlash(thread, text, listsCommands, scope === "main");
   const harness = useThreadHarnessLabel(thread);
   const files = fileAttachments.files;
-  const { send: sendNow, busy, uploading, offline, blocked } = useComposerSend({
+  const { send: sendNow, busy, uploading, offline, blocked, quota } = useComposerSend({
     thread,
     text,
     images: attachments.images,
@@ -84,6 +85,8 @@ export function Composer({ thread, scope = "main" }: { thread: Thread; scope?: C
   });
 
   const forkTurn = useModel((s) => (blocked?.continueElsewhere === true ? selectLatestSettledTurnId(s.model, thread.id) : undefined));
+  // R20: queued turns of an idle thread wait on its limit or a quota, not on a running turn
+  const queueHeld = useModel((s) => queueHoldText(s.model, s.model.threads[thread.id] ?? thread, Date.now()));
   /** the one reason sending is off right now, for the button's title */
   const held = blocked?.reason ?? offline;
 
@@ -258,7 +261,7 @@ export function Composer({ thread, scope = "main" }: { thread: Thread; scope?: C
       {!mention && slash.query ? <SlashPicker slash={slash} cursor={cursor} onPick={pickCommand} /> : null}
       <AttachmentStrip images={attachments.images} onRemove={attachments.remove} />
       <FileChips files={files} onRemove={fileAttachments.remove} />
-      <QueueList threadId={thread.id} running={running} canSteer={followUp.canSteer} />
+      <QueueList threadId={thread.id} running={running} canSteer={followUp.canSteer} held={queueHeld} />
       <textarea
         ref={input}
         className={styles.input}
@@ -312,7 +315,8 @@ export function Composer({ thread, scope = "main" }: { thread: Thread; scope?: C
           {offline}. Sending resumes when it reconnects; your text stays here.
         </p>
       )}
-      {blocked === undefined ? null : (
+      {quota === undefined ? null : <QuotaBlockNotice view={quota} />}
+      {blocked === undefined || blocked.kind === "quota" ? null : (
         <div className={styles.blocked} role="status">
           <span>{blocked.reason}</span>
           {blocked.continueElsewhere ? (

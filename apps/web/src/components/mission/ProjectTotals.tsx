@@ -1,9 +1,10 @@
-import { selectCostRollup, selectProjects, selectProjectTotals, type ProjectTotals as Totals } from "@tide/client";
+import { quotaView, selectCostRollup, selectProjects, selectProjectTotals, type ProjectTotals as Totals } from "@tide/client";
 import { useModel } from "../../state/model.ts";
 import { formatUsd } from "../../lib/glassBox.ts";
 import { PROVIDER_LABELS } from "../../lib/vocab.ts";
 import { Pill } from "../ui/Pill.tsx";
 import { CostSummary } from "./CostSummary.tsx";
+import { QuotaMeter } from "../quota/QuotaMeter.tsx";
 import styles from "./MissionControl.module.css";
 import { plural } from "../../lib/format.ts";
 
@@ -79,9 +80,12 @@ export function ProjectTotals({ projectId, aggregate }: { projectId?: string; ag
 
   if (aggregate === true) {
     const cost = selectCostRollup(model, projects.map((p) => p.id));
+    // one project in scope: its quota beside its figures (several quotas do not fold into one)
+    const quota = projects.length === 1 && projects[0] !== undefined ? quotaView("project", projects[0]) : undefined;
     return (
       <div className={styles.headPills} aria-label="Project totals">
         <Values counts={foldCounts(totals)} cost={cost} pills />
+        {quota === undefined ? null : <QuotaMeter view={quota} />}
       </div>
     );
   }
@@ -90,6 +94,7 @@ export function ProjectTotals({ projectId, aggregate }: { projectId?: string; ag
     <ul className={styles.totalsList} aria-label="Project totals">
       {projects.map((project, i) => {
         const t = totals[i] as Totals;
+        const quota = quotaView("project", project);
         return (
           <li key={project.id} className={styles.totals}>
             <span className={styles.totalsProject}>{project.title}</span>
@@ -97,6 +102,7 @@ export function ProjectTotals({ projectId, aggregate }: { projectId?: string; ag
               counts={t}
               cost={{ todayUsd: t.costTodayUsd, lifetimeUsd: t.costLifetimeUsd, byProvider: t.costByProvider }}
             />
+            {quota === undefined ? null : <QuotaMeter view={quota} />}
           </li>
         );
       })}

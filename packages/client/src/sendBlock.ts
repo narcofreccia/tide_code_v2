@@ -1,4 +1,5 @@
-import type { Thread } from "@tide/contracts";
+import type { ReadModel, Thread } from "@tide/contracts";
+import { quotaHoldText, selectQuotaHold, type QuotaView } from "./quotaSelectors.ts";
 import { isThreadMerged } from "./selectors.ts";
 
 /**
@@ -14,17 +15,23 @@ import { isThreadMerged } from "./selectors.ts";
  * Not mirrored either: a thread whose worktree could not be created is refused by the vcs
  * reactor once the turn is sent (an error row on that turn), since the read model does not
  * record the failure.
+ *
+ * R20: with the model, a quota that holds the thread (`quotaBlock`: its own, an ancestor's or
+ * its project's) is the `quota` kind; the decider refuses with `quota-exceeded`. A steer into a
+ * running turn is not a new turn and is not held.
  */
-export type SendBlockKind = "archived" | "rolling-back" | "worktree-merged" | "worktree-removed";
+export type SendBlockKind = "archived" | "rolling-back" | "worktree-merged" | "worktree-removed" | "quota";
 
 export interface SendBlock {
   kind: SendBlockKind;
   reason: string;
   /** the work can go on in a new thread forked from this one (the worktree is what is missing) */
   continueElsewhere: boolean;
+  /** the `quota` kind: the scope that holds, with its figures and reset time */
+  quota?: QuotaView;
 }
 
-export function threadSendBlock(thread: Thread): SendBlock | undefined {
+export function threadSendBlock(thread: Thread, ctx?: { model: ReadModel; now?: number }): SendBlock | undefined {
   if (thread.archivedAt !== undefined) {
     return { kind: "archived", reason: "This thread is archived.", continueElsewhere: false };
   }
@@ -37,5 +44,7 @@ export function threadSendBlock(thread: Thread): SendBlock | undefined {
       ? { kind: "worktree-merged", reason: "This thread's worktree was removed after the merge.", continueElsewhere: true }
       : { kind: "worktree-removed", reason: "This thread's worktree was removed.", continueElsewhere: true };
   }
+  const hold = ctx === undefined ? undefined : selectQuotaHold(ctx.model, thread, ctx.now ?? Date.now());
+  if (hold !== undefined) return { kind: "quota", reason: `${quotaHoldText(hold)}.`, continueElsewhere: false, quota: hold };
   return undefined;
 }

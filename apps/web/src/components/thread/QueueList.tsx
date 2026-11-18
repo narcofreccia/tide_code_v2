@@ -166,10 +166,13 @@ export const QueueList = memo(function QueueList({
   threadId,
   running,
   canSteer,
+  held,
 }: {
   threadId: string;
   running: boolean;
   canSteer: boolean;
+  /** R20: why the queue is not moving on an idle thread (`Held by quota`, `Held until the limit resets`) */
+  held?: string | undefined;
 }) {
   const turns = useModel((s) => selectQueuedTurns(s.model, threadId));
   if (turns.length === 0) return null;
@@ -185,6 +188,11 @@ export const QueueList = memo(function QueueList({
 
   return (
     <ol className={styles.list} aria-label="Queued messages">
+      {held === undefined ? null : (
+        <li className={styles.held} role="status">
+          {held}
+        </li>
+      )}
       {turns.map((turn, index) => (
         <QueueEntry
           key={turn.id}

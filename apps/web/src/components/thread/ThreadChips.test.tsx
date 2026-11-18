@@ -42,6 +42,27 @@ describe("thread header R4", () => {
     expect(fake.dispatch).toHaveBeenCalledWith(expect.objectContaining({ type: "thread.snooze", threadId: "t1" }));
   });
 
+  it("R20: once a manual thread's limit reset, the header asks to continue and Continue leads the menu", () => {
+    const fake = mount({ limited: { resume: "manual", at: 1, resetsAt: Date.now() - 1000 } });
+    expect(screen.getByText("Limit reset, continue?")).toBeDefined();
+    fireEvent.click(screen.getByText(/Continue options/));
+    fireEvent.click(screen.getByRole("button", { name: "Continue" }));
+    expect(fake.dispatch).toHaveBeenCalledWith(expect.objectContaining({ type: "thread.resume", threadId: "t1", continue: true }));
+  });
+
+  it("R20: a chip says the project quota holds the thread", () => {
+    mockRpc({ "thread.terminalCommand": () => ({ cwd: "/", command: "claude" }) });
+    const thread = makeThread("t1");
+    const quotaState = { status: "exceeded" as const, usedPct: 103, basis: "share" as const, over: ["claude"], windowEndsAt: Date.now() + 86_400_000, at: 1 };
+    const project = { id: "p1", title: "Side project", rootPath: "/p1", createdAt: 1, updatedAt: 1, quota: { sharePct: 30, onExceed: "hold" as const }, quotaState };
+    attachFakeStore(modelWith({ projects: { p1: project }, threads: { t1: thread } }));
+    render(<ThreadHeader thread={thread} />);
+    const chip = screen.getByText("Held by quota");
+    expect(chip.getAttribute("title")).toContain("≈ 31% of the weekly window, cap 30%");
+    // Open in terminal stays available
+    expect(screen.getByRole("button", { name: /Terminal/ })).toBeDefined();
+  });
+
   it("does not offer Resume now on a thread whose worktree is gone; it says why", () => {
     const fake = mount({ branch: "tide/t1", limited: { resume: "manual", at: 1 } });
     fireEvent.click(screen.getByText(/Resume options/));

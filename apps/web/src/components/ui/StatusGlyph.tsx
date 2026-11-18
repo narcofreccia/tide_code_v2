@@ -1,6 +1,7 @@
 import type { AttentionKind, Thread } from "@tide/contracts";
 import { threadStateKey, threadStateLabel, type ThreadStateKey } from "../../lib/vocab.ts";
 import { useBackgroundAgentCount } from "../../state/hooks.ts";
+import { useModel } from "../../state/model.ts";
 import { observeVisibleAnimation } from "../../lib/visibleAnimation.ts";
 import styles from "./StatusGlyph.module.css";
 
@@ -156,6 +157,7 @@ const THREAD_LABEL_FALLBACK = { needs: "needs you", limited: "limited", snoozed:
 /** The glyph for a thread; its tooltip is `threadStateLabel`, the same word the header chip and status bar show. */
 export function ThreadGlyph({ thread }: { thread: Thread }) {
   const background = useBackgroundAgentCount(thread.id);
+  const limits = useModel((s) => s.model.limits);
   const now = Date.now();
-  return <StateGlyph state={threadStateKey(thread, now, background)} label={threadStateLabel(thread, now, background)} />;
+  return <StateGlyph state={threadStateKey(thread, now, background)} label={threadStateLabel(thread, now, background, limits === undefined ? undefined : { limits })} />;
 }

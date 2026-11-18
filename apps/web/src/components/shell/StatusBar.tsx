@@ -83,7 +83,8 @@ export function LimitsItem() {
   const on = useServerSettings((s) => s.settings.glassBox.limitsInStatusBar);
   // rate limits ride on threads: streaming deltas leave the threads map alone, so no re-render
   const threads = useModel((s) => s.model.threads);
-  const entry = useMemo(() => tightestInstance({ threads }), [threads]);
+  const limits = useModel((s) => s.model.limits);
+  const entry = useMemo(() => tightestInstance(limits === undefined ? { threads } : { threads, limits }), [threads, limits]);
   const providers = useProvidersSnapshot();
   const showUsage = useUi((s) => s.showUsage);
   if (!on) return null;
@@ -115,8 +116,9 @@ function serverHost(): string {
 /** `Idle`, `Running`, or `1 agent in background` while sub-agents outlive the turn. */
 function ThreadStateWord({ thread }: { thread: Thread }) {
   const background = useBackgroundAgentCount(thread.id);
+  const limits = useModel((s) => s.model.limits);
   const now = Date.now();
-  return <>{threadStateKey(thread, now, background) === "background" ? backgroundAgentsText(background) : threadStateLabel(thread, now)}</>;
+  return <>{threadStateKey(thread, now, background) === "background" ? backgroundAgentsText(background) : threadStateLabel(thread, now, 0, limits === undefined ? undefined : { limits })}</>;
 }
 
 export function StatusBar() {

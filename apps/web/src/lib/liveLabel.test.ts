@@ -1,7 +1,7 @@
 import { describe, expect, it } from "vitest";
 import type { Activity, Message, ReadModel, Thread, Turn } from "@tide/contracts";
 import { makeMessage, makeThread, makeTool, makeTurn, modelWith } from "../testHarness.ts";
-import { LIVE_WALK_MAX, displayToolName, liveLabelFor, liveLabelKey, parseLiveLabelKey, shortTarget } from "./liveLabel.ts";
+import { LIVE_WALK_MAX, displayToolName, liveLabelFor, liveLabelKey, parseLiveLabelKey, shortTarget, type LiveLabelInfo } from "./liveLabel.ts";
 
 const running = makeThread("t1", { status: "running", latestTurnId: "u1" });
 
@@ -96,9 +96,19 @@ describe("liveLabelFor", () => {
     expect(liveLabelFor(build(thread, [makeTurn("u1", { status: "running" })]), thread)).toEqual({ text: "Needs approval", kind: "approval" });
   });
 
-  it("says Waiting for limit reset for a limited thread", () => {
-    const thread = makeThread("t1", { limited: { resume: "reset", at: 1 } });
-    expect(liveLabelFor(build(thread, []), thread)).toEqual({ text: "Waiting for limit reset", kind: "limited" });
+  it("follows a limited thread through its phases, with both policies", () => {
+    const now = 1_000_000;
+    const label = (limited: NonNullable<Thread["limited"]>, at = now): LiveLabelInfo | undefined => {
+      const thread = makeThread("t1", { limited });
+      return liveLabelFor(build(thread, []), thread, at);
+    };
+    const waiting = { resume: "manual" as const, resetsAt: now + 3 * 3_600_000, at: 1 };
+    expect(label(waiting)).toEqual({ text: "Waiting for limit reset · in 3h", kind: "limited" });
+    expect(label({ ...waiting, resume: "reset" })?.text).toBe("Waiting for limit reset · in 3h");
+    expect(label(waiting, now + 3 * 3_600_000)?.text).toBe("Limit reset, continue?");
+    expect(label({ ...waiting, resume: "reset" }, now + 3 * 3_600_000)?.text).toBe("Resuming");
+    expect(label({ resume: "manual", at: 1 })?.text).toBe("Limited · reset unknown");
+    expect(label({ resume: "reset", at: 1 })?.text).toBe("Limited · reset unknown");
   });
 
   it("says Stopping while an interrupt is pending", () => {

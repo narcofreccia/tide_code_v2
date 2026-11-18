@@ -166,6 +166,7 @@ describe("ThreadHeader", () => {
       "Roll back last turn…no finished turn",
       "Settle",
       "Snooze",
+      "Usage quota…",
       "Link a PR…",
       "Copy thread ID",
       "Copy branch",
@@ -338,7 +339,10 @@ describe("ThreadHeader state chip", () => {
     ["needs you", { attention: "approval" }, "Needs you"],
     ["error", { status: "error" }, "Error"],
     ["interrupted", { status: "interrupted" }, "Interrupted"],
-    ["limited", { limited: { resume: "reset", resetsAt: Date.now() + 2 * 3600 * 1000 + 5000, at: 1 } }, "Limited · resets in 2h"],
+    ["limited", { limited: { resume: "reset", resetsAt: Date.now() + 2 * 3600 * 1000 + 5000, at: 1 } }, "Waiting for limit reset · in 2h"],
+    ["limit reset, manual", { limited: { resume: "manual", resetsAt: Date.now() - 1000, at: 1 } }, "Limit reset, continue?"],
+    ["limit reset, auto", { limited: { resume: "reset", resetsAt: Date.now() - 1000, at: 1 } }, "Resuming"],
+    ["limited, no reset time", { limited: { resume: "manual", at: 1 } }, "Limited · reset unknown"],
     ["merged", { mergedAt: 5 }, "Merged"],
   ];
   it.each(cases)("says %s in words, with a glyph", (_name, patch, word) => {

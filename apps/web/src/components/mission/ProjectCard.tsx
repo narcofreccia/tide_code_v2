@@ -1,5 +1,5 @@
 import { useState } from "react";
-import { repoGroupOf, selectProjectLinks } from "@tide/client";
+import { quotaView, repoGroupOf, selectProjectLinks } from "@tide/client";
 import type { Project } from "@tide/contracts";
 import { threadHarnessLabel } from "../../lib/vocab.ts";
 import { useProvidersSnapshot } from "../../state/providers.ts";
@@ -16,6 +16,7 @@ import { Pill } from "../ui/Pill.tsx";
 import { Popover } from "../ui/Popover.tsx";
 import { ThreadGlyph } from "../ui/StatusGlyph.tsx";
 import { CostSummary } from "./CostSummary.tsx";
+import { QuotaMeter } from "../quota/QuotaMeter.tsx";
 import { ThreadTags } from "./ThreadTags.tsx";
 import { ProjectExperts } from "./ProjectExperts.tsx";
 import { ProjectAutomations } from "./ProjectAutomations.tsx";
@@ -93,6 +94,7 @@ export function ProjectCard({ project }: { project: Project }) {
   const recent = groupRecent(model, ids, 3);
   const links = selectProjectLinks(model, project.id);
   const lastActive = recent[0]?.updatedAt;
+  const quota = quotaView("project", project);
 
   return (
     <article className={styles.card} aria-label={`Project ${group.label}`}>
@@ -113,6 +115,7 @@ export function ProjectCard({ project }: { project: Project }) {
           {lastActive === undefined ? null : (
             <span title={new Date(lastActive).toLocaleString()}>active {relativeTime(lastActive)}</span>
           )}
+          {quota === undefined ? null : <QuotaMeter view={quota} />}
         </span>
         {prs.open > 0 ? (
           <button

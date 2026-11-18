@@ -14,6 +14,7 @@ import { Icon } from "../ui/Icon.tsx";
 import { Pill } from "../ui/Pill.tsx";
 import { StatusGlyph } from "../ui/StatusGlyph.tsx";
 import { useTicker } from "./useTicker.ts";
+import { LimitReadyCard } from "./LimitedSection.tsx";
 import styles from "./MissionControl.module.css";
 import limited from "./Limited.module.css";
 
@@ -30,6 +31,7 @@ function isTypingTarget(target: EventTarget | null): boolean {
 /** The harness's own card for this item, so it can be answered without leaving. */
 function ItemCard({ item, active }: { item: InboxItem; active: boolean }) {
   const activity = item.activity;
+  if (item.attention === "limit") return <LimitReadyCard thread={item.thread} />;
   if (item.attention === "plan") {
     return item.plan ? <PlanCard plan={item.plan} provider={item.thread.provider} /> : null;
   }
@@ -49,12 +51,14 @@ export function InboxColumn({ projectId }: { projectId?: string }) {
   const providers = useProvidersSnapshot();
   const model = useModel((s) => s.model);
   const selectThread = useUi((s) => s.selectThread);
-  const items = selectInbox(model, projectId);
+  // "waiting 4m" ages in place; a limited thread joins the inbox when its reset passes, which no event announces
+  const waiting = useModel((s) => Object.values(s.model.threads).some((t) => t.attention !== undefined || t.limited !== undefined));
+  useTicker(waiting ? 30_000 : 0);
+  const now = Date.now();
+  const items = selectInbox(model, projectId, now);
   const [focused, setFocused] = useState(0);
   const count = items.length;
   const index = count === 0 ? 0 : Math.min(focused, count - 1);
-  // "waiting 4m" ages in place
-  const now = useTicker(count > 0 ? 30_000 : 0);
 
   const onKeyDown = (event: React.KeyboardEvent<HTMLElement>): void => {
     if (count < 2 || event.metaKey || event.ctrlKey || event.altKey || isTypingTarget(event.target)) return;
@@ -87,7 +91,11 @@ export function InboxColumn({ projectId }: { projectId?: string }) {
                 onMouseDown={() => setFocused(i)}
               >
                 <div className={styles.itemHead}>
-                  <StatusGlyph status={item.thread.status} attention={item.attention} />
+                  {item.attention === "limit" ? (
+                    <StatusGlyph status={item.thread.status} limited label="limit reset" />
+                  ) : (
+                    <StatusGlyph status={item.thread.status} attention={item.attention} />
+                  )}
                   <span className={styles.itemTitle}>{item.thread.title}</span>
                   <span className={styles.meta}>{model.projects[item.thread.projectId]?.title ?? "—"}</span>
                   <Pill>{threadHarnessLabel(providers, item.thread)}</Pill>

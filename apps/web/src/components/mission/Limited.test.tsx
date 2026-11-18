@@ -1,5 +1,5 @@
 import { afterEach, describe, expect, it } from "vitest";
-import { cleanup, fireEvent, render, screen } from "@testing-library/react";
+import { cleanup, fireEvent, render, screen, within } from "@testing-library/react";
 import { MissionControl } from "./MissionControl.tsx";
 import { useUi } from "../../state/ui.ts";
 import { attachFakeStore, makeApproval, makeMessage, makeThread, modelWith, resetUi } from "../../testHarness.ts";
@@ -24,11 +24,41 @@ describe("Mission Control R4 sections", () => {
     const fake = attachFakeStore(model);
     render(<MissionControl />);
     const section = screen.getByLabelText("Limited");
-    expect(section.textContent).toContain("resets in 3h");
+    expect(section.textContent).toContain("Waiting for limit reset · in 3h");
     fireEvent.click(screen.getByText("Resume now"));
     expect(fake.dispatch).toHaveBeenCalledWith(expect.objectContaining({ type: "thread.resume", threadId: "t1", continue: true }));
     fireEvent.click(screen.getByText("At reset"));
     expect(fake.dispatch).toHaveBeenCalledWith(expect.objectContaining({ type: "thread.limit-policy", resume: "reset" }));
+  });
+
+  it("a manual thread whose limit reset needs you: inbox row with Continue, never Nothing needs you", () => {
+    const now = Date.now();
+    const model = modelWith({
+      projects: { p1: project },
+      threads: {
+        t1: makeThread("t1", { title: "Ready", limited: { resume: "manual", at: now - 7_200_000, resetsAt: now - 60_000 } }),
+        t2: makeThread("t2", { title: "Auto", limited: { resume: "reset", at: now - 7_200_000, resetsAt: now - 60_000 } }),
+      },
+    });
+    const fake = attachFakeStore(model);
+    render(<MissionControl />);
+    expect(screen.queryByText("Nothing needs you")).toBeNull();
+    expect(screen.getByText("Needs you · 1")).toBeDefined();
+    const row = screen.getByLabelText("Inbox: Ready");
+    expect(row.textContent).toContain("Limit reset, continue?");
+    expect(screen.queryByLabelText("Inbox: Auto")).toBeNull();
+    const section = screen.getByLabelText("Limited");
+    expect(section.textContent).toContain("Resuming");
+    fireEvent.click(within(row).getByRole("button", { name: "Continue" }));
+    expect(fake.dispatch).toHaveBeenCalledWith(expect.objectContaining({ type: "thread.resume", threadId: "t1", continue: true }));
+  });
+
+  it("says when the reset time is unknown", () => {
+    const model = modelWith({ projects: { p1: project }, threads: { t1: makeThread("t1", { title: "Unknown", limited: { resume: "manual", at: 1 } }) } });
+    attachFakeStore(model);
+    render(<MissionControl />);
+    expect(screen.getByLabelText("Limited").textContent).toContain("Limited · reset unknown");
+    expect(screen.getByText("Nothing needs you")).toBeDefined();
   });
 
   it("hides Limited when empty; snoozed threads are collapsed and can be unsnoozed", () => {

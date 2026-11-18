@@ -102,15 +102,8 @@ export function selectSnoozed(model: ReadModel, now: number = Date.now()): Threa
     .sort((a, b) => (a.snoozedUntil ?? 0) - (b.snoozedUntil ?? 0) || a.id.localeCompare(b.id));
 }
 
-/** Threads that hit a usage limit, earliest reset first (unknown reset last). */
-export function selectLimited(model: ReadModel): Thread[] {
-  return Object.values(model.threads)
-    .filter((t) => t.archivedAt === undefined && t.limited !== undefined)
-    .sort(
-      (a, b) =>
-        (a.limited?.resetsAt ?? Infinity) - (b.limited?.resetsAt ?? Infinity) || a.id.localeCompare(b.id),
-    );
-}
+// selectLimited and the limit phases live in limitSelectors.ts (re-exported)
+export { selectLimited } from "./limitSelectors.ts";
 
 /** Threads whose PR is being polled, with the fields the pill shows. */
 export interface PrWatched {
