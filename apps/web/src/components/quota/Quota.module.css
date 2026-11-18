@@ -125,6 +125,17 @@
   color: var(--text-2);
   font-size: var(--fs-sm);
 }
+.blockText {
+  flex: 1 1 auto;
+  min-width: 0;
+}
+/* the two actions stay together: on a narrow composer they wrap as a pair, never one alone */
+.blockActions {
+  display: flex;
+  flex: none;
+  gap: var(--sp-1);
+  margin-left: auto;
+}
 
 /* Mission Control: one row per held project */
 .heldRow {

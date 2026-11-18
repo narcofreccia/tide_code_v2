@@ -16,13 +16,15 @@ export function QuotaBlockNotice({ view }: { view: QuotaView }) {
   const limit = view.scope === "thread" ? threadLimit : projectLimit;
   return (
     <div className={styles.block} role="status" aria-label="Quota reached">
-      <span title={quotaTitle(view)}>{quotaBlockText(view)}</span>
-      <Button variant="quiet" disabled={limit !== undefined} title={limit} onClick={() => liftQuota(view.scope, view.id)}>
-        Lift until reset
-      </Button>
-      <Button variant="quiet" disabled={limit !== undefined} title={limit} onClick={() => openQuotaEditor(view.scope, view.id)}>
-        Edit quota
-      </Button>
+      <span className={styles.blockText} title={quotaTitle(view)}>{quotaBlockText(view)}</span>
+      <span className={styles.blockActions}>
+        <Button variant="quiet" disabled={limit !== undefined} title={limit} onClick={() => liftQuota(view.scope, view.id)}>
+          Lift until reset
+        </Button>
+        <Button variant="quiet" disabled={limit !== undefined} title={limit} onClick={() => openQuotaEditor(view.scope, view.id)}>
+          Edit quota
+        </Button>
+      </span>
     </div>
   );
 }

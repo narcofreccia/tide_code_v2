@@ -36,6 +36,21 @@ describe("mergeOutcomeToasts", () => {
     expect(mergeOutcomeToasts(seen, model)).toEqual([]);
   });
 
+  it("stays quiet about merges already settled in the first snapshot (the hook mounts on an empty model)", () => {
+    const seen = new Map<string, MergeState | undefined>();
+    const loaded = modelWith({
+      threads: {
+        old: makeThread("old", { title: "Old", baseBranch: "main", merge: merge("merged", 4) }),
+        failed: makeThread("failed", { title: "Failed", merge: merge("error", 5, { error: "x" }) }),
+        live: makeThread("live", { title: "Live", baseBranch: "main", merge: merge("merging", 6) }),
+      },
+    });
+    expect(mergeOutcomeToasts(seen, loaded)).toEqual([]);
+    // the one that was still merging at load is announced when it lands
+    const landed = modelWith({ threads: { ...loaded.threads, live: makeThread("live", { title: "Live", baseBranch: "main", merge: merge("merged", 7) }) } });
+    expect(mergeOutcomeToasts(seen, landed)).toEqual(["Merged Live into main"]);
+  });
+
   it("offers to pull the base on the primary when the merge ran on another machine", () => {
     const repo = { remoteUrl: "github.com/acme/app", cloneUrl: "git@github.com:acme/app.git", defaultBranch: "main", detectedAt: 1 };
     const project = (id: string): Project => ({ id, title: id, rootPath: `/${id}`, repo, createdAt: 1, updatedAt: 1 }) as Project;

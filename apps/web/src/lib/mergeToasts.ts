@@ -44,16 +44,20 @@ export function pullTargetFor(model: ReadModel, thread: Thread, ctx: PullContext
 }
 
 /**
- * Toasts for merges that settled since `seen`: a merge whose `at` moved and whose status is
- * now merged / conflicted / error. Pure apart from `seen`, which it advances.
+ * Toasts for merges that settled since `seen`: a merge of a thread already in `seen` whose `at`
+ * moved and whose status is now merged / conflicted / error. Pure apart from `seen`, which it advances.
  */
 export function mergeToastItems(seen: Seen, model: ReadModel, ctx?: PullContext): MergeToast[] {
   const out: MergeToast[] = [];
   for (const thread of Object.values(model.threads)) {
+    const known = seen.has(thread.id);
     const before = seen.get(thread.id);
     const after = thread.merge;
     seen.set(thread.id, after);
     if (!after || after.status === "merging") continue;
+    // first sight of a thread whose merge already settled: the first snapshot after mount (the
+    // hook mounts on an empty model) or a machine that just connected. Old news, not announced.
+    if (!known) continue;
     if (before && before.at === after.at && before.status === after.status) continue;
     if (after.status === "merged") {
       const text = `Merged ${thread.title}${thread.baseBranch ? ` into ${thread.baseBranch}` : ""}`;
