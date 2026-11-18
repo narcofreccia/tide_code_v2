@@ -390,6 +390,8 @@ export const TurnSettle = Type.Object({
   turnId: Type.String(),
   status: Type.Union([Type.Literal("completed"), Type.Literal("interrupted"), Type.Literal("error")]),
   error: Type.Optional(Type.String()),
+  /** R20: the harness refused work on its usage limit: the thread's queued turns stay queued (`turn.settled.holdQueue`) instead of running into the same wall */
+  holdQueue: Type.Optional(Type.Literal(true)),
 });
 
 export const WorktreeAttach = Type.Object({
