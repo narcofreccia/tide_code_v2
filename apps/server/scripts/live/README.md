@@ -32,3 +32,21 @@ S=$S PORT=3821 node --experimental-strip-types scripts/live/quota-hold.mts      
 `usage-resume.mts` fails if the turn after the restart carries the session's running total (the
 bug R20 fixed in the Claude driver). `quota-hold.mts` uses a repo of its own, because earlier spend
 in the same project counts against the cap.
+
+## R21: delegation fan-out across harnesses
+
+One scratch server (`home1`). Needs every harness it names logged in; it spends one short
+orchestrator conversation and two short delegate turns.
+
+```sh
+mkdir -p $S/smoke-fanout && (cd $S/smoke-fanout && git init -q -b main . && echo hello > a.txt && git add . && git commit -qm init)
+S=$S PORT=3821 node --experimental-strip-types scripts/live/delegate-fanout.mts                          # Claude orchestrator → Codex (with a sub-agent) + Claude
+S=$S PORT=3821 ORCH=codex DELEGATES=claude,codex WAIT=1 node --experimental-strip-types scripts/live/delegate-fanout.mts   # Codex orchestrator blocking in tide_delegate
+```
+
+`delegate-fanout.mts` checks that the two delegates run on the harnesses asked for, that the first
+one's sub-agent rows nest under its sub-agent, that the orchestrator's first turn ends before the
+delegates do and that it is then woken with both results (or, with `WAIT=1`, that the results
+come back through the blocking call and no wake-up follows). It accepts approval cards for
+Tide's own tools; `APPROVE_ALL=1` accepts every card, otherwise other cards are printed and left.
+`DELEGATES=codex,opencode` needs an OpenCode 2.x the driver can find.
