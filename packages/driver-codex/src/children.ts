@@ -23,6 +23,8 @@ interface ChildRow {
   parent?: string;
   /** last emitted row, so repeated reports of the same state emit nothing */
   last?: string;
+  /** the child thread's own running turn, from its `turn/started` (what `turn/interrupt` needs) */
+  turnId?: string;
 }
 
 /** CollabAgentStatus (0.170 bindings) onto the child row's three states. */
@@ -51,6 +53,16 @@ export class CodexChildren {
   /** `parentToolUseId` for anything produced in `threadId`: the child's own id, or nothing for the main thread. */
   parentFor(threadId: string | undefined): string | undefined {
     return threadId !== undefined && this.#rows.has(threadId) ? threadId : undefined;
+  }
+
+  /** The child's display name (nickname or agent path), for one-line notices. */
+  nameOf(threadId: string): string | undefined {
+    return this.#rows.get(threadId)?.name;
+  }
+
+  /** Child threads still working, with their running turn when known. */
+  running(): { threadId: string; turnId?: string }[] {
+    return [...this.#rows].flatMap(([threadId, row]) => (row.status === "running" ? [{ threadId, ...(row.turnId !== undefined ? { turnId: row.turnId } : {}) }] : []));
   }
 
   /** `thread/started` for a thread whose parent is the session's thread or one of its children. */
@@ -109,16 +121,18 @@ export class CodexChildren {
     return this.#emit(item.agentThreadId);
   }
 
-  turnStarted(threadId: string): NormalizedEvent[] {
+  turnStarted(threadId: string, turnId: string | undefined): NormalizedEvent[] {
     const row = this.#rows.get(threadId);
     if (!row) return [];
     row.status = "running";
+    if (turnId !== undefined) row.turnId = turnId;
     return this.#emit(threadId);
   }
 
   turnCompleted(threadId: string, turn: TurnCompletedNotification["turn"] | undefined): NormalizedEvent[] {
     const row = this.#rows.get(threadId);
     if (!row) return [];
+    delete row.turnId;
     if (turn?.status === "completed") row.status = "done";
     else {
       row.status = "error";

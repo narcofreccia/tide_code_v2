@@ -22,6 +22,13 @@ export interface ApprovalReply {
 interface PendingApproval {
   gate: Deferred<ApprovalDecision>;
   reply: (decision: ApprovalDecision) => unknown;
+  /** the card as emitted, so a withdrawn request can close it */
+  card: NormalizedEvent;
+}
+
+interface PendingUserInput {
+  gate: Deferred<Record<string, unknown>>;
+  card: NormalizedEvent;
 }
 
 export interface ServerRequestContext {
@@ -32,6 +39,8 @@ export interface ServerRequestContext {
   diffFor: (itemId: string) => string | undefined;
   /** set when the request comes from a sub-agent thread: the card nests under that child row */
   parentToolUseId?: string | undefined;
+  /** a sub-agent's name, set when its card cannot nest under its row: shown in the card's title */
+  requester?: string | undefined;
 }
 
 /**
@@ -43,13 +52,26 @@ export class ApprovalBroker {
   #emit: (event: NormalizedEvent) => void;
   #respond: (id: RequestId, result: unknown) => void;
   #respondError: (id: RequestId, code: number, message: string) => void;
+  #onSettled: (requestId: string) => void;
   #approvals = new Map<string, PendingApproval>();
-  #userInputs = new Map<string, Deferred<Record<string, unknown>>>();
+  #userInputs = new Map<string, PendingUserInput>();
 
-  constructor(emit: (event: NormalizedEvent) => void, respond: (id: RequestId, result: unknown) => void, respondError: (id: RequestId, code: number, message: string) => void) {
+  /** `onSettled` runs once per parked request, after it was answered or withdrawn. */
+  constructor(
+    emit: (event: NormalizedEvent) => void,
+    respond: (id: RequestId, result: unknown) => void,
+    respondError: (id: RequestId, code: number, message: string) => void,
+    onSettled: (requestId: string) => void = () => undefined,
+  ) {
     this.#emit = emit;
     this.#respond = respond;
     this.#respondError = respondError;
+    this.#onSettled = onSettled;
+  }
+
+  /** Whether a parked request still waits for the user. */
+  isPending(requestId: string): boolean {
+    return this.#approvals.has(requestId) || this.#userInputs.has(requestId);
   }
 
   /** True when the request was recognised and is now awaiting the user. */
@@ -82,11 +104,14 @@ export class ApprovalBroker {
   #park(context: ServerRequestContext, activity: NormalizedEvent, reply: (decision: ApprovalDecision) => unknown): boolean {
     const requestId = String(context.id);
     const gate = deferred<ApprovalDecision>();
-    this.#approvals.set(requestId, { gate, reply });
-    this.#emit(withParent(activity, context.parentToolUseId));
+    const card = withParent(activity, context.parentToolUseId);
+    this.#approvals.set(requestId, { gate, reply, card });
+    this.#emit(card);
     void gate.promise.then((decision) => {
+      if (this.#approvals.get(requestId)?.gate !== gate) return; // withdrawn meanwhile
       this.#approvals.delete(requestId);
       this.#respond(context.id, reply(decision));
+      this.#onSettled(requestId);
     });
     return true;
   }
@@ -104,6 +129,7 @@ export class ApprovalBroker {
           toolName,
           input: input(context.params),
           status: "pending",
+          ...(context.requester !== undefined ? { title: `${toolName} (sub-agent "${context.requester}")` } : {}),
           ...(typeof context.params["reason"] === "string" ? { description: truncate(context.params["reason"], 500) } : {}),
           ...(diff ? { diff: truncate(diff, 16_000) } : {}),
         },
@@ -182,11 +208,14 @@ export class ApprovalBroker {
   #askQuestions(context: ServerRequestContext, questions: FormQuestion[], reply: (answers: Record<string, unknown>) => unknown): boolean {
     const requestId = String(context.id);
     const gate = deferred<Record<string, unknown>>();
-    this.#userInputs.set(requestId, gate);
-    this.#emit(withParent({ type: "activity", activity: { kind: "user-input", requestId, status: "pending", questions } }, context.parentToolUseId));
+    const card = withParent({ type: "activity", activity: { kind: "user-input", requestId, status: "pending", questions } }, context.parentToolUseId);
+    this.#userInputs.set(requestId, { gate, card });
+    this.#emit(card);
     void gate.promise.then((answers) => {
+      if (this.#userInputs.get(requestId)?.gate !== gate) return; // withdrawn meanwhile
       this.#userInputs.delete(requestId);
       this.#respond(context.id, reply(answers));
+      this.#onSettled(requestId);
     });
     return true;
   }
@@ -196,13 +225,32 @@ export class ApprovalBroker {
   }
 
   respondUserInput(requestId: string, answers: Record<string, unknown>): void {
-    this.#userInputs.get(requestId)?.resolve(answers);
+    this.#userInputs.get(requestId)?.gate.resolve(answers);
   }
 
   /** Releases every parked request so a closing session cannot hang the app-server. */
   cancelAll(): void {
     for (const pending of [...this.#approvals.values()]) pending.gate.resolve("cancel");
-    for (const pending of [...this.#userInputs.values()]) pending.resolve({});
+    for (const pending of [...this.#userInputs.values()]) pending.gate.resolve({});
+  }
+
+  /**
+   * Codex resolved a request nobody answered (`serverRequest/resolved`: its turn ended or was
+   * interrupted). The card is closed and nothing is sent back. False when the request was not
+   * parked here, or was already answered.
+   */
+  withdraw(requestId: string): boolean {
+    const approval = this.#approvals.get(requestId);
+    const input = this.#userInputs.get(requestId);
+    const card = approval?.card ?? input?.card;
+    if (card === undefined || card.type !== "activity") return false;
+    this.#approvals.delete(requestId);
+    this.#userInputs.delete(requestId);
+    const activity = card.activity;
+    if (activity.kind === "approval") this.#emit({ type: "activity", activity: { ...activity, status: "resolved", decision: "cancel" } });
+    else if (activity.kind === "user-input") this.#emit({ type: "activity", activity: { ...activity, status: "resolved" } });
+    this.#onSettled(requestId);
+    return true;
   }
 
   /**

@@ -27,6 +27,8 @@ export const CODEX_CAPS = {
   // R8 — Model.supportedReasoningEfforts, turn/start `effort`; skills/list (skills only, no custom prompts)
   effort: true,
   commands: true,
+  // R14 — a sub-agent outlives its parent's turn (recorded on 0.170): idle activity + harness turns
+  harnessTurns: true,
 } as const;
 
 export const LOGIN_HINT = "Run `codex login` in a terminal";

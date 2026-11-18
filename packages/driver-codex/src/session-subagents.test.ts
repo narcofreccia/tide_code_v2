@@ -56,7 +56,7 @@ describe("codex session with sub-agents", () => {
     await session.close();
   });
 
-  it("holds a child's approval that arrives between turns, answers nothing, and shows it when the next turn starts", async () => {
+  it("with no listeners wired, holds a child's approval that arrives between turns, answers nothing, and shows it when the next turn starts", async () => {
     const { session, server, logs } = await harness();
     const first = collect(session.send({ text: "spawn one, do not wait" }));
     await tick();
@@ -70,16 +70,17 @@ describe("codex session with sub-agents", () => {
     server.notify("account/rateLimits/updated", { rateLimits: null }); // between-turn chatter stays dropped
     await tick();
     expect(server.replyTo(0)).toBeUndefined();
-    expect(logs.some((line) => line.includes("arrived between turns") && line.includes(CHILD))).toBe(true);
+    expect(logs.some((line) => line.includes("arrived between turns") && line.includes("/root/make_file"))).toBe(true);
 
     const second = collect(session.send({ text: "next" }));
     await tick();
     const held = second.events.flatMap((event) => (event.type === "activity" ? [event.activity] : []));
+    // the card cannot nest under the child's row (that row's turn is settled): its title names the sub-agent
     expect(held.map((activity) => [activity.kind, activity.parentToolUseId])).toEqual([
       ["tool", CHILD],
-      ["approval", CHILD],
+      ["approval", undefined],
     ]);
-    expect(held[1]).toMatchObject({ kind: "approval", requestId: "0", toolName: "Bash", status: "pending" });
+    expect(held[1]).toMatchObject({ kind: "approval", requestId: "0", toolName: "Bash", status: "pending", title: 'Bash (sub-agent "/root/make_file")' });
 
     await session.respondApproval("0", "accept");
     await tick();

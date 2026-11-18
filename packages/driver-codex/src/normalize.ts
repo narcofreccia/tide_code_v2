@@ -94,6 +94,16 @@ export class CodexNormalizer {
     return this.#children.parentFor(threadId);
   }
 
+  /** A sub-agent thread's display name, for notices. */
+  childName(threadId: string): string | undefined {
+    return this.#children.nameOf(threadId);
+  }
+
+  /** Sub-agent threads still working, with their running turn when known. */
+  runningChildren(): { threadId: string; turnId?: string }[] {
+    return this.#children.running();
+  }
+
   /** Diff last reported for a file-change item; used to enrich its approval request. */
   patchFor(itemId: string): string | undefined {
     return this.#patches.get(itemId);
@@ -109,7 +119,7 @@ export class CodexNormalizer {
       // A sub-agent's own turn lifecycle and plan settle its row, never the session's turn.
       switch (method) {
         case "turn/started":
-          return this.#children.turnStarted(parent);
+          return this.#children.turnStarted(parent, (payload["turn"] as { id?: string } | undefined)?.id);
         case "turn/completed":
           return this.#children.turnCompleted(parent, (payload as unknown as TurnCompletedNotification).turn);
         case "turn/plan/updated":
