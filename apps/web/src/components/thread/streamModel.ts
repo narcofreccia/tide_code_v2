@@ -12,7 +12,11 @@ export interface Split {
   nested: Map<string, Activity[]>;
 }
 
-/** Moves sub-agent output under its child header so the main flow stays readable. */
+/**
+ * Moves sub-agent output under its child header so the main flow stays readable. A sub-agent's
+ * approval or question stays in the main flow: it is a card the user answers, and a child
+ * header can be collapsed or sit many turns up.
+ */
 export function splitChildren(entries: readonly TimelineItem[]): Split {
   const children = new Set<string>();
   for (const entry of entries) {
@@ -21,7 +25,7 @@ export function splitChildren(entries: readonly TimelineItem[]): Split {
   const nested = new Map<string, Activity[]>();
   const top: TimelineItem[] = [];
   for (const entry of entries) {
-    if (entry.kind === "activity" && entry.activity.kind !== "child") {
+    if (entry.kind === "activity" && entry.activity.kind !== "child" && entry.activity.kind !== "approval" && entry.activity.kind !== "user-input") {
       const parent = entry.activity.parentToolUseId;
       if (parent !== undefined && children.has(parent)) {
         const list = nested.get(parent);

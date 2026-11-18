@@ -667,8 +667,10 @@ export class ProviderReactor {
         let id = event.activity.id ?? child?.id ?? (key !== undefined ? state.activityIds.get(key) : undefined);
         id ??= this.#newId();
         if (key !== undefined) state.activityIds.set(key, id);
-        // a child settling later lands on its own row and turn; its tool rows follow it
-        const ownerTurnId = child?.turnId ?? parent?.turnId ?? turnId;
+        // a child settling later lands on its own row and turn; its tool rows follow it. A prompt
+        // stays on the turn running it: the launching turn may have settled, and that takes no prompt
+        const prompt = event.activity.kind === "approval" || event.activity.kind === "user-input";
+        const ownerTurnId = prompt ? turnId : (child?.turnId ?? parent?.turnId ?? turnId);
         if (event.activity.kind === "child") rememberChild(state.children, event.activity.childKey, event.activity.taskId, child ?? { id, turnId });
         const at = this.#now();
         const previous = this.#engine.getModel().activities[id];

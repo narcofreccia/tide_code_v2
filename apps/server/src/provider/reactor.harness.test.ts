@@ -173,6 +173,38 @@ describe("ProviderReactor: harness-initiated turns", () => {
     expect(assistantTexts(model, harnessTurn)).toEqual(["The audit is in."]);
   });
 
+  it("an approval a background sub-agent raises in a harness turn stays on that turn and can be answered", async () => {
+    const h = await harness();
+    h.control.script(
+      emit({ type: "session", nativeSessionId: "sess-1" }),
+      emit({ type: "activity", activity: { kind: "tool", toolUseId: "agent-1", toolName: "Agent", input: {}, status: "ok" } }),
+      emit({ type: "activity", activity: { kind: "child", childKey: "agent-1", name: "Audit feature gaps", status: "running" } }),
+      emit({ type: "settled", status: "completed" }),
+    );
+    await h.engine.dispatch({ type: "turn.request", threadId: h.threadId, text: "audit in the background" });
+    await h.reactor.drain();
+    const session = h.control.sessionFor(h.threadId)!;
+
+    // the card names its sub-agent, whose row sits on the first turn, settled by now
+    const asked = waitFor(h.engine, (e) => e.type === "activity.upserted" && e.activity.kind === "approval");
+    const { drained } = session.emitHarnessTurn('sub-agent "Audit feature gaps" needs approval', [
+      { type: "activity", activity: { kind: "approval", requestId: "ap1", toolName: "Bash", input: { command: "ls" }, status: "pending", parentToolUseId: "agent-1" } },
+      awaitApproval("ap1"),
+      { type: "settled", status: "completed" },
+    ]);
+    await asked;
+    const harnessTurn = all(h.events, "turn.requested")[1]!.turn.id;
+    const card = Object.values(h.engine.getModel().activities).find((a) => a.kind === "approval");
+    expect(card).toMatchObject({ turnId: harnessTurn, status: "pending", parentToolUseId: "agent-1" });
+    expect(h.engine.getModel().threads[h.threadId]?.attention).toBe("approval");
+
+    await h.engine.dispatch({ type: "approval.respond", threadId: h.threadId, requestId: "ap1", decision: "accept" });
+    await h.reactor.drain();
+    await drained;
+    expect(h.control.approvals).toEqual([{ requestId: "ap1", decision: "accept" }]);
+    expect(h.engine.getModel().turns[harnessTurn]?.status).toBe("completed");
+  });
+
   /** Turn 1 launches child `agent-1` (task `t1`); then the reactor restarts with an empty child map. */
   async function launchThenRestart(h: Harness): Promise<{ session: FakeSession; firstTurn: string; childId: string }> {
     h.control.script(
