@@ -1,4 +1,5 @@
 import type { CommandOf, Quota, QuotaState, ReadModel } from "@tide/contracts";
+import { withReleases } from "./quotaGate.ts";
 import { fail, ok, type DecideContext, type DecideResult } from "./types.ts";
 
 type QuotaCommand = CommandOf<"quota.set"> | CommandOf<"quota.lift"> | CommandOf<"quota.meter"> | CommandOf<"usage.correct">;
@@ -13,7 +14,10 @@ function scopeOf(model: ReadModel, scope: "project" | "thread", id: string): { q
 const sameQuota = (a: Quota | undefined, b: Quota | undefined): boolean =>
   a?.sharePct === b?.sharePct && a?.usdPerWeek === b?.usdPerWeek && a?.onExceed === b?.onExceed;
 
-/** R20: usage quotas and the cost repair. The hold itself is enforced in `decide()` (see index.ts). */
+/**
+ * R20: usage quotas and the cost repair. The hold itself is enforced in `decide()` (quotaGate.ts);
+ * every quota change also releases the held queues it frees.
+ */
 export function decideQuota(model: ReadModel, command: QuotaCommand, ctx: DecideContext): DecideResult {
   switch (command.type) {
     case "quota.set": {
@@ -24,7 +28,7 @@ export function decideQuota(model: ReadModel, command: QuotaCommand, ctx: Decide
         return fail("invalid-command", "a quota needs a share of the weekly window, an amount per week, or both");
       }
       if (sameQuota(entity.quota, quota)) return ok(); // idempotent
-      return ok({ type: "quota.changed", scope: command.scope, id: command.id, ...(quota !== undefined ? { quota } : {}), at: ctx.now });
+      return withReleases(model, command.scope, command.id, ok({ type: "quota.changed", scope: command.scope, id: command.id, ...(quota !== undefined ? { quota } : {}), at: ctx.now }), ctx);
     }
 
     case "quota.lift": {
@@ -33,7 +37,7 @@ export function decideQuota(model: ReadModel, command: QuotaCommand, ctx: Decide
       const state = entity.quotaState;
       if (entity.quota === undefined || state?.status !== "exceeded") return fail("conflict", `the ${command.scope}'s quota is not holding anything`);
       const until = state.windowEndsAt !== undefined && state.windowEndsAt > ctx.now ? state.windowEndsAt : ctx.now + LIFT_WITHOUT_WINDOW_MS;
-      return ok({ type: "quota.lifted", scope: command.scope, id: command.id, until, at: ctx.now });
+      return withReleases(model, command.scope, command.id, ok({ type: "quota.lifted", scope: command.scope, id: command.id, until, at: ctx.now }), ctx);
     }
 
     case "quota.meter": {
@@ -43,7 +47,7 @@ export function decideQuota(model: ReadModel, command: QuotaCommand, ctx: Decide
       // a lift the user gave outlives later measurements of the same window
       const lifted = entity.quotaState?.liftedUntil;
       const state: QuotaState = lifted !== undefined && lifted > ctx.now && command.state.liftedUntil === undefined ? { ...command.state, liftedUntil: lifted } : command.state;
-      return ok({ type: "quota.metered", scope: command.scope, id: command.id, state });
+      return withReleases(model, command.scope, command.id, ok({ type: "quota.metered", scope: command.scope, id: command.id, state }), ctx);
     }
 
     case "usage.correct": {

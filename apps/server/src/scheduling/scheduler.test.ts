@@ -92,6 +92,20 @@ describe("Scheduler", () => {
     expect(await s.scheduler.tick()).toEqual([taskId]);
   });
 
+  it("a fire held by a quota is retried until the quota frees the project", async () => {
+    const s = await setup(1_000_000);
+    await s.engine.dispatch({ type: "task.create", projectId: s.projectId, title: "T", prompt: "x", schedule: { kind: "interval", everyMs: 60_000 } });
+    const taskId = Object.keys(s.engine.getModel().scheduledTasks)[0] as string;
+    await s.engine.dispatch({ type: "quota.set", scope: "project", id: s.projectId, quota: { usdPerWeek: 1, onExceed: "hold" } });
+    await s.engine.dispatch({ type: "quota.meter", scope: "project", id: s.projectId, state: { status: "exceeded", usedPct: 120, basis: "usd", over: ["*"], at: 1 } });
+    s.advance(60_000);
+    expect(await s.scheduler.tick()).toEqual([]);
+    expect(await s.scheduler.tick()).toEqual([]);
+    expect(s.logs).toHaveLength(0);
+    await s.engine.dispatch({ type: "quota.lift", scope: "project", id: s.projectId });
+    expect(await s.scheduler.tick()).toEqual([taskId]);
+  });
+
   it("start schedules one repeating timer, stop cancels it", async () => {
     const s = await setup(1);
     const timers: { ms: number; cancelled: boolean }[] = [];

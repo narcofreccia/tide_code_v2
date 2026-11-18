@@ -90,8 +90,9 @@ export class Scheduler {
         });
         if (result.events.length > 0) fired.push(task.id);
       } catch (err) {
-        // busy (a fresh-session fire into a running thread, a rollback in progress) passes: retried next tick
-        if (err instanceof CommandError && err.code === "busy") continue;
+        // busy (a fresh-session fire into a running thread, a rollback in progress) passes: retried next tick.
+        // R20: so does a quota hold; the task fires once the quota frees its project, instead of never again
+        if (err instanceof CommandError && (err.code === "busy" || err.code === "quota-exceeded")) continue;
         this.#skipped.add(commandId);
         this.#log(`[scheduler] fire of task ${task.id} rejected`, err);
       }

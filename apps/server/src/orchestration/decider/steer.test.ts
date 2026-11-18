@@ -130,12 +130,19 @@ describe("decide: queue editing", () => {
     expect(model.turns[q.bId]).toBeUndefined();
   });
 
-  it("refuses to promote when nothing runs, or a turn that is not queued", () => {
+  it("refuses to promote a turn that is not queued", () => {
     const q = withQueue();
     expect(tryRun(q.model, { type: "turn.promote", turnId: q.liveId })).toMatchObject({ ok: false, error: { code: "conflict" } });
+  });
+
+  it("R20: promoting on an idle thread (a held queue) releases that turn", () => {
+    const q = withQueue();
     const thread = q.model.threads[q.threadId]!;
     const idle = { ...q.model, threads: { ...q.model.threads, [q.threadId]: { ...thread, status: "idle" as const } } };
-    expect(tryRun(idle, { type: "turn.promote", turnId: q.aId })).toMatchObject({ ok: false, error: { code: "conflict", message: "nothing is running; the turn will start on its own" } });
+    const { model, events } = run(idle, { type: "turn.promote", turnId: q.aId });
+    expect(events).toEqual([expect.objectContaining({ type: "turn.released", threadId: q.threadId, turnId: q.aId })]);
+    expect(model.turns[q.aId]?.status).toBe("requested");
+    expect(model.threads[q.threadId]).toMatchObject({ status: "running", latestTurnId: q.aId });
   });
 
   it("refuses a queued turn that carries images", () => {

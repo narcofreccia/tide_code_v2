@@ -1,5 +1,6 @@
 import type { CommandOf, DomainEvent, EventOf, Message, ReadModel, Thread, Turn, TurnStatus } from "@tide/contracts";
 import { autoTitleEvent } from "./autoTitle.ts";
+import { holdsQueue } from "./quotaGate.ts";
 import { attachmentsOf, badAttachment, fail, instanceKey, isArchived, ok, type DecideContext, type DecideResult } from "./types.ts";
 
 type TurnCommand =
@@ -202,12 +203,15 @@ export function decideTurn(model: ReadModel, command: TurnCommand, ctx: DecideCo
       const turn = model.turns[command.turnId];
       if (!turn) return fail("not-found", `unknown turn ${command.turnId}`);
       if (SETTLED.has(turn.status)) return fail("conflict", `turn ${turn.id} is already settled`);
+      const owner = model.threads[turn.threadId];
+      const hold = owner !== undefined && holdsQueue(model, owner, turn.id, command.holdQueue === true, ctx.now);
       return ok({
         type: "turn.settled",
         turnId: turn.id,
         threadId: turn.threadId,
         status: command.status,
         ...(command.error !== undefined ? { error: command.error } : {}),
+        ...(hold ? { holdQueue: true as const } : {}),
         settledAt: ctx.now,
       });
     }

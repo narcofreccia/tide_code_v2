@@ -7,6 +7,7 @@ import { decidePlan } from "./plans.ts";
 import { decideLineage } from "./lineage.ts";
 import { decideProject } from "./projects.ts";
 import { decideQuota } from "./quota.ts";
+import { gateTurns } from "./quotaGate.ts";
 import { decideSide } from "./side.ts";
 import { decideSteer } from "./steer.ts";
 import { decideTask } from "./tasks.ts";
@@ -24,6 +25,11 @@ export { planTitle } from "./plans.ts";
  * Never touches the store, the clock or the id generator directly.
  */
 export function decide(model: ReadModel, command: Command, ctx: DecideContext): DecideResult {
+  // R20: whatever opened a turn, a usage quota gets the last word
+  return gateTurns(model, command, route(model, command, ctx), ctx);
+}
+
+function route(model: ReadModel, command: Command, ctx: DecideContext): DecideResult {
   switch (command.type) {
     case "project.create":
     case "project.update":

@@ -1,4 +1,4 @@
-import type { Activity, ActivityOf, ReadModel, Turn } from "@tide/contracts";
+import { quotaBlock, type Activity, type ActivityOf, type ReadModel, type Turn } from "@tide/contracts";
 import { markChildrenLost } from "./background.ts";
 import type { Engine } from "./engine.ts";
 
@@ -16,8 +16,10 @@ export interface RecoveryReport {
   /** dead turns settled with RESTART_ERROR */
   turns: number;
   activities: number;
-  /** queued turns that become live because the dead turn ahead of them settled */
+  /** queued turns that become live because the dead turn ahead of them settled, or were released */
   promoted: number;
+  /** threads left idle with their queue because a quota or a usage limit holds it */
+  held: number;
   /** threads whose dead turn was settled with RESTART_ERROR (candidates for a continuation) */
   threadIds: string[];
 }
@@ -53,13 +55,14 @@ function pendingPrompts(model: ReadModel, turn: Turn): Prompt[] {
  * of them lets the projector promote the oldest one, and the provider reactor runs it. That is
  * why this pass runs *after* the reactors subscribe — the vcs reactor records the dead turn's
  * after-checkpoint, the experts reactor sees the settle, the provider reactor picks up the
- * promotion. A queued turn with nothing live ahead of it (a log that should not exist) can
- * never be promoted and is settled as dead too.
+ * promotion. R20: a queue with nothing live ahead of it is legitimate: a quota or a usage limit
+ * holds it (left alone), or the previous process stopped between a settle and the release that
+ * would have followed (its oldest turn is released and run).
  */
 export async function recoverUnsettledTurns(engine: Engine, options: RecoveryOptions = {}): Promise<RecoveryReport> {
   const log = options.log ?? (() => undefined);
   const now = options.now ?? (() => Date.now());
-  const report: RecoveryReport = { turns: 0, activities: 0, promoted: 0, threadIds: [] };
+  const report: RecoveryReport = { turns: 0, activities: 0, promoted: 0, held: 0, threadIds: [] };
 
   const byThread = new Map<string, Turn[]>();
   for (const turn of unsettledTurns(engine.getModel())) {
@@ -82,12 +85,16 @@ export async function recoverUnsettledTurns(engine: Engine, options: RecoveryOpt
     }
     const live = turns.filter((t) => t.status !== "queued");
     const queued = turns.filter((t) => t.status === "queued");
-    const dead = live.length > 0 ? live : queued;
-    for (const turn of dead) {
+    if (live.length === 0) {
+      if (await releaseHeld(engine, queued[0] as Turn, now(), log, options.resume)) report.promoted++;
+      else report.held++;
+      continue;
+    }
+    for (const turn of live) {
       // the model moves under us: a settle promotes a queued turn, which must not be killed
       const model = engine.getModel();
       const current = model.turns[turn.id];
-      if (current === undefined || (live.length > 0 && current.status !== turn.status)) continue;
+      if (current === undefined || current.status !== turn.status) continue;
       // resolved before the settle so the "cancel" decision survives the projector's own
       // blanket resolve of a settled turn's pending prompts
       for (const activity of pendingPrompts(model, turn)) {
@@ -102,10 +109,39 @@ export async function recoverUnsettledTurns(engine: Engine, options: RecoveryOpt
         if (!report.threadIds.includes(turn.threadId)) report.threadIds.push(turn.threadId);
       }
     }
-    if (live.length > 0 && queued.length > 0) report.promoted++;
+    // a quota holding the thread keeps its queue through the settle (turn.settled.holdQueue)
+    const next = queued[0];
+    if (next !== undefined) {
+      if (engine.getModel().turns[next.id]?.status === "queued") report.held++;
+      else report.promoted++;
+    }
   }
-  if (report.turns > 0) log(`[recovery] settled ${report.turns} turn(s) left running by a previous run; ${report.promoted} queued turn(s) resumed`);
+  if (report.turns > 0 || report.promoted > 0) log(`[recovery] settled ${report.turns} turn(s) left running by a previous run; ${report.promoted} queued turn(s) resumed; ${report.held} queue(s) held`);
   return report;
+}
+
+/**
+ * A queue with nothing live ahead of it: released (and run) unless a quota or a usage limit holds
+ * the thread. Returns whether the turn was released.
+ */
+async function releaseHeld(
+  engine: Engine,
+  oldest: Turn,
+  now: number,
+  log: (msg: string, data?: unknown) => void,
+  resume: RecoveryOptions["resume"],
+): Promise<boolean> {
+  const model = engine.getModel();
+  const thread = model.threads[oldest.threadId];
+  if (thread === undefined || thread.archivedAt !== undefined || thread.status === "running") return false;
+  if (thread.limited !== undefined || quotaBlock(model, thread, now) !== undefined) {
+    log(`[recovery] thread ${thread.id} keeps its queue: ${thread.limited !== undefined ? "usage limit" : "quota"}`);
+    return false;
+  }
+  // an idle thread's turn.promote is the release
+  if (!(await dispatch(engine, { type: "turn.promote", turnId: oldest.id }, log))) return false;
+  resume?.(thread.id, oldest.id);
+  return true;
 }
 
 /**

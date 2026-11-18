@@ -3,6 +3,7 @@ import { handoffTurns } from "../handoff/select.ts";
 import { DEFAULT_THREAD_TITLE } from "./autoTitle.ts";
 import { descendantsOf } from "./descendants.ts";
 import { recordHandoff } from "./handoff.ts";
+import { releaseFor } from "./quotaGate.ts";
 import { inheritedFrom } from "./vcs.ts";
 import { fail, instanceKey, isArchived, ok, planModeProblem, resolveInstance, turnRequested, type DecideContext, type DecideResult } from "./types.ts";
 
@@ -107,7 +108,7 @@ export function decideThread(model: ReadModel, command: ThreadCommand, ctx: Deci
         threadId: thread.id,
         archivedAt: ctx.now,
         ...(command.keepWorktree !== undefined ? { keepWorktree: command.keepWorktree } : {}),
-      });
+      }, ...disarm(thread, ctx));
     }
 
     case "thread.unarchive": {
@@ -188,7 +189,7 @@ export function decideThread(model: ReadModel, command: ThreadCommand, ctx: Deci
       if (reason !== "user" && (working || thread.attention !== undefined || thread.pinned === true || thread.autoSettle === false)) {
         return fail("conflict", `thread ${thread.id} is not settleable automatically`);
       }
-      return ok({ type: "thread.settled", threadId: thread.id, reason, at: ctx.now });
+      return ok({ type: "thread.settled", threadId: thread.id, reason, at: ctx.now }, ...disarm(thread, ctx));
     }
 
     case "thread.unsettle": {
@@ -218,7 +219,13 @@ export function decideThread(model: ReadModel, command: ThreadCommand, ctx: Deci
         return fail("conflict", `thread ${thread.id} has no worktree any more; archive it or start a new thread`);
       }
       const resumed: DomainEvent = { type: "thread.resumed", threadId: thread.id, at: ctx.now };
-      if (!resumeTurn) return ok(resumed);
+      if (!resumeTurn) {
+        // R20: the limit held the queue (turn.settled.holdQueue); the user lifting it starts the oldest
+        const unlimited: Thread = { ...thread };
+        delete unlimited.limited;
+        const release = thread.limited !== undefined ? releaseFor(model, unlimited, ctx) : undefined;
+        return release !== undefined ? ok(resumed, release) : ok(resumed);
+      }
       const requested = turnRequested(thread.id, CONTINUE_PROMPT, ctx, { source: "restart", summary: "resumed by the user" });
       // like turn.request: a pending handoff rides on the next turn
       const turn = thread.pendingHandoffId !== undefined ? { ...requested.turn, handoffId: thread.pendingHandoffId } : requested.turn;
@@ -232,6 +239,11 @@ export function decideThread(model: ReadModel, command: ThreadCommand, ctx: Deci
       return ok({ type: "pr.watch-changed", threadId: thread.id, enabled: command.enabled, at: ctx.now });
     }
   }
+}
+
+/** R20 (T3 port): a thread put away is never resumed automatically later, so its limit is cleared with it. */
+function disarm(thread: Thread, ctx: DecideContext): DomainEvent[] {
+  return thread.limited !== undefined ? [{ type: "thread.resumed", threadId: thread.id, at: ctx.now }] : [];
 }
 
 /** `thread "Fix" still has 2 child threads (“a”, “b”); delete them too (cascade) or first` — titles of direct children first, at most 3. */

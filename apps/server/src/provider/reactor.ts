@@ -6,73 +6,29 @@ import {
   type ImageInput,
   type InternalCommand,
   type NormalizedEvent,
-  type Project,
   type ProviderSession,
   type SlashCommandInfo,
-  type Thread,
   type TurnInput,
 } from "@tide/contracts";
 import type { Engine } from "../orchestration/engine.ts";
 import { isSecretResponse } from "./secretInput.ts";
 import { redactSecretTool, secretValuesFor, type SecretValues } from "./secretRedaction.ts";
 import { isUsageLimitError } from "../orchestration/limits.ts";
-import { attachmentFooter } from "../workspace/attachments.ts";
 import { activityKey, mergeActivity } from "./activities.ts";
-import { inlinePrompt, planHandoffDelivery, type DeliveryPlan } from "./handoffDelivery.ts";
+import { isRedundantGauge, knownGauge } from "./gauges.ts";
+import { dropTurnKeys, newThreadState, realTimer, storedInput, textOf, type ThreadState, type TurnRun } from "./turnState.ts";
+import { openTurn, type CancelTimer, type OpenTurnDeps } from "./openTurn.ts";
 import { ownerChildRow, rememberChild } from "./children.ts";
 import { dismissHarnessTurn, HarnessTurnQueue, SteerRetargets } from "./harnessTurns.ts";
-import { instanceIdOf, type HarnessTurn, type OpenHints, type SessionDirectory } from "./sessions.ts";
+import { instanceIdOf, type HarnessTurn, type SessionDirectory } from "./sessions.ts";
 import { resumeLostActivity, resumeRefusedRow, startCommand, type ResumeLoss } from "./sessionNotices.ts";
 
-interface ThreadState {
-  /** one turn at a time per thread; different threads run concurrently */
-  queue: Promise<void>;
-  /** `${turnId}:${driver activity key}` -> activity id, so updates land on the same row */
-  activityIds: Map<string, string>;
-  /** `${turnId}:${messageKey}` -> message id, so deltas assemble into one message */
-  messageIds: Map<string, string>;
-  /**
-   * childKey (and `task:<taskId>`) -> the sub-agent's row and the turn it was launched in, kept across turns: a
-   * background sub-agent reports in a later (harness-initiated) turn, and its row must settle
-   * in place rather than appear twice. Its own tool rows join that turn too.
-   */
-  children: Map<string, { id: string; turnId: string }>;
-  /** R14: idle sub-agent activity lands in arrival order (each upsert merges onto the previous one) */
-  idleQueue: Promise<void>;
-}
-
-/** What one running turn learned that matters after it settles. */
-interface TurnRun {
-  /** the harness said the subscription window is exhausted */
-  limited?: { resetsAt?: number; note?: string };
-  /** how the turn settled */
-  status?: "completed" | "interrupted" | "error";
-}
-
-/** Drops every `${turnId}:…` entry of a settled turn: harness keys (request ids, tool ids) repeat across turns. */
-/** The prompt text the harness gets: the typed text plus the "Attached files" footer for uploaded files. */
-const textOf = (m: { text: string; attachments?: ReadonlyArray<{ mediaType: string; bytes: number; name?: string; path?: string }> }): string => m.text + attachmentFooter(m.attachments);
-
-function dropTurnKeys(map: Map<string, string>, turnId: string): void {
-  const prefix = `${turnId}:`;
-  for (const key of [...map.keys()]) if (key.startsWith(prefix)) map.delete(key);
-}
-
-/** Cancels a pending timer. */
-export type CancelTimer = () => void;
+export { HANDOFF_READY_WAIT_MS, type CancelTimer } from "./openTurn.ts";
 
 /** The message a turn is settled with when the harness never honoured the interrupt. */
 export const INTERRUPT_TIMEOUT_ERROR = "driver did not honour interrupt; session closed";
 
 const DEFAULT_INTERRUPT_TIMEOUT_MS = 30_000;
-/** how long a turn waits for the handoff judge's refine before shipping the recency selection */
-export const HANDOFF_READY_WAIT_MS = 1_500;
-
-const realTimer = (fn: () => void, ms: number): CancelTimer => {
-  const timer = setTimeout(fn, ms);
-  timer.unref?.();
-  return () => clearTimeout(timer);
-};
 
 export interface ReactorOptions {
   engine: Engine;
@@ -109,11 +65,13 @@ export class ProviderReactor {
   #sessions: SessionDirectory;
   #beforeTurn: ((threadId: string, turnId: string) => Promise<void>) | undefined;
   #imagesFor: ((turnId: string) => ImageInput[] | undefined) | undefined;
-  #handoffReady: ((handoffId: string) => Promise<void> | undefined) | undefined;
+  #open: OpenTurnDeps;
   #onCommands: ((threadId: string, commands: SlashCommandInfo[]) => void) | undefined;
   #secrets: SecretValues;
   /** turns already handed to a thread's chain (from `turn.requested` or a promotion) */
   #known = new Set<string>();
+  /** R20: queued turns whose chain task found them still queued (held), until a release runs them */
+  #held = new Map<string, TurnInput>();
   #now: () => number;
   #newId: () => string;
   #log: (msg: string, data?: unknown) => void;
@@ -138,7 +96,6 @@ export class ProviderReactor {
     this.#sessions = options.sessions;
     this.#beforeTurn = options.beforeTurn;
     this.#imagesFor = options.imagesFor;
-    this.#handoffReady = options.handoffReady;
     this.#onCommands = options.onCommands;
     this.#secrets = options.secrets ?? secretValuesFor(options.engine);
     this.#interruptTimeoutMs = options.interruptTimeoutMs ?? DEFAULT_INTERRUPT_TIMEOUT_MS;
@@ -146,6 +103,7 @@ export class ProviderReactor {
     this.#now = options.now ?? (() => Date.now());
     this.#newId = options.newId ?? (() => defaultNewId());
     this.#log = options.log ?? ((msg, data) => (data === undefined ? console.error(msg) : console.error(msg, data)));
+    this.#open = { engine: this.#engine, sessions: this.#sessions, handoffReady: options.handoffReady, schedule: this.#schedule, dispatch: (c) => this.#dispatch(c), log: this.#log };
   }
 
   start(): void {
@@ -261,6 +219,7 @@ export class ProviderReactor {
         return;
       case "turn.dequeued":
         this.#known.delete(event.turnId);
+        this.#held.delete(event.turnId);
         this.#retargets.forget(event.threadId, event.turnId);
         this.#track(this.#releaseHarnessTurn(this.#harnessTurns.take(event.turnId), "dequeued", event.turnId));
         return;
@@ -286,6 +245,7 @@ export class ProviderReactor {
       case "turn.settled": {
         this.#cancelInterruptWatchdog(event.turnId);
         this.#known.delete(event.turnId);
+        this.#held.delete(event.turnId);
         const state = this.#threads.get(event.threadId);
         if (state) {
           dropTurnKeys(state.activityIds, event.turnId);
@@ -295,6 +255,9 @@ export class ProviderReactor {
         this.#runPromoted(event.threadId, event.turnId);
         return;
       }
+      case "turn.released":
+        this.#release(event.threadId, event.turnId);
+        return;
       default:
         return;
     }
@@ -362,19 +325,27 @@ export class ProviderReactor {
   #runPromoted(threadId: string, settledTurnId: string): void {
     const next = this.#engine.getModel().threads[threadId]?.latestTurnId;
     if (next === undefined || next === settledTurnId) return;
-    this.resume(threadId, next);
+    this.#release(threadId, next);
   }
 
   /** Runs a `requested` turn this reactor never saw requested (promoted after a restart, or left unsent by a graceful shutdown). */
-  resume(threadId: string, next: string): void {
+  resume(threadId: string, next: string, known?: TurnInput): void {
     const model = this.#engine.getModel();
     if (this.#known.has(next)) return;
     if (model.threads[threadId]?.latestTurnId !== next || model.turns[next]?.status !== "requested") return;
-    const message = (model.threadMessages[threadId] ?? []).map((id) => model.messages[id]).find((m) => m?.turnId === next && m.role === "user");
-    const images = this.#imagesFor?.(next);
-    const input: TurnInput = { text: message !== undefined ? textOf(message) : "", ...(images !== undefined && images.length > 0 ? { images } : {}) };
+    const input = known ?? storedInput(model, threadId, next, this.#imagesFor);
     this.#known.add(next);
     this.#enqueue(threadId, () => this.#runTurn(threadId, next, input));
+  }
+
+  /**
+   * R20: a promoted or released queued turn. If its chain task has not run yet it still waits there
+   * (`#known`); otherwise it starts with the input that task kept (`#held`), or from the model.
+   */
+  #release(threadId: string, turnId: string): void {
+    const input = this.#held.get(turnId);
+    this.#held.delete(turnId);
+    this.resume(threadId, turnId, input);
   }
 
   // ---- interrupt watchdog ----
@@ -417,7 +388,7 @@ export class ProviderReactor {
   #state(threadId: string): ThreadState {
     let state = this.#threads.get(threadId);
     if (!state) {
-      state = { queue: Promise.resolve(), activityIds: new Map(), messageIds: new Map(), children: new Map(), idleQueue: Promise.resolve() };
+      state = newThreadState();
       this.#threads.set(threadId, state);
     }
     return state;
@@ -491,7 +462,15 @@ export class ProviderReactor {
     const attached = this.#harnessTurns.take(turnId);
     this.#retargets.forget(threadId, turnId);
     // dequeued while waiting, or settled by recovery/shutdown: nothing to run
-    if (this.#engine.getModel().turns[turnId]?.status !== "requested") return this.#releaseHarnessTurn(attached, "turn no longer requested", turnId);
+    const status = this.#engine.getModel().turns[turnId]?.status;
+    if (status !== "requested") {
+      // R20: still queued = held by the settle before it; `turn.released` starts it again
+      if (status === "queued" && attached === undefined) {
+        this.#known.delete(turnId);
+        this.#held.set(turnId, input);
+      }
+      return this.#releaseHarnessTurn(attached, "turn no longer requested", turnId);
+    }
     // Gives the vcs reactor its window to snapshot the working tree before the first tool
     // call, and to attach a worktree, so the session below opens in the final cwd.
     if (this.#beforeTurn) {
@@ -538,7 +517,7 @@ export class ProviderReactor {
     const run: TurnRun = {};
     try {
       // an attached turn never opens/reconfigures: that could close the very session running it
-      const opened = attached === undefined ? await this.#openFor(thread, project, turnId, input) : undefined;
+      const opened = attached === undefined ? await openTurn(this.#open, thread, project, turnId, input) : undefined;
       if (opened !== undefined) lost = this.#sessions.takeResumeLoss(threadId);
       this.#sessions.touch(threadId);
       const nativeSessionId = (opened?.session ?? this.#sessions.peek(threadId))?.nativeSessionId;
@@ -574,10 +553,10 @@ export class ProviderReactor {
         // R19 L5: a resume the harness refused gets its own row (the web offers a fresh session)
         const refused = resumeRefusedRow(message, this.#sessions.labelOf(thread), () => ({ id: this.#newId(), threadId, turnId, at: this.#now() }));
         await this.#dispatch({ type: "activity.upsert", activity: refused?.activity ?? this.#errorActivity(threadId, turnId, message) });
-        await this.#dispatch({ type: "turn.settle", turnId, status: "error", error: refused?.error ?? message });
+        if (isUsageLimitError(message)) run.limited ??= { note: message };
+        await this.#dispatch({ type: "turn.settle", turnId, status: "error", error: refused?.error ?? message, ...this.#holdQueue(threadId, run) });
         settled = true;
         run.status = "error";
-        if (isUsageLimitError(message)) run.limited ??= { note: message };
       }
     } finally {
       if (this.#live.get(threadId) === turnId) {
@@ -586,6 +565,14 @@ export class ProviderReactor {
       }
     }
     if (settled) await this.#settleLimit(threadId, run);
+  }
+
+  /**
+   * R20: a turn the limit cut short keeps the thread's queue, so the next turn does not run into
+   * the same wall. A harness turn waiting behind it is already running on the harness: not held.
+   */
+  #holdQueue(threadId: string, run: TurnRun): { holdQueue?: true } {
+    return run.limited !== undefined && !this.#harnessTurns.hasPending(threadId) ? { holdQueue: true } : {};
   }
 
   /**
@@ -606,75 +593,8 @@ export class ProviderReactor {
         threadId,
         ...(run.limited.resetsAt !== undefined ? { resetsAt: run.limited.resetsAt } : {}),
         ...(run.limited.note !== undefined ? { note: run.limited.note } : {}),
+        ...(run.limited.window !== undefined ? { window: run.limited.window } : {}),
       });
-    }
-  }
-
-  /**
-   * Gets the thread's session and the prompt to send. A turn carrying a handoff is delivered
-   * natively when the harness can fork its source session (then `rollback` trims the turns after
-   * the fork point), otherwise the history goes inline ahead of the user's text.
-   */
-  async #openFor(thread: Thread, project: Project, turnId: string, input: TurnInput): Promise<{ session: ProviderSession; prompt: TurnInput }> {
-    const handoffId = this.#engine.getModel().turns[turnId]?.handoffId;
-    // R17: the turn after a session boundary opens a brand-new native session (a native fork wins)
-    const hints: OpenHints = this.#engine.getModel().turns[turnId]?.freshSession === true ? { fresh: true } : {};
-    if (handoffId !== undefined) await this.#awaitHandoff(handoffId);
-    const model = this.#engine.getModel();
-    const hasHandoff = handoffId !== undefined;
-    let plan: DeliveryPlan | undefined;
-    if (hasHandoff) {
-      let caps = {};
-      try {
-        caps = await this.#sessions.caps(instanceIdOf(thread));
-      } catch (err) {
-        this.#log("[reactor] could not read driver caps", err);
-      }
-      plan = planHandoffDelivery(model, thread, turnId, caps);
-    }
-    if (plan === undefined) return { session: await this.#sessions.getOrOpen(thread, project, hints), prompt: input };
-    let delivery = plan.delivery;
-    let session: ProviderSession | undefined;
-    // a live session (should not exist on a fork's first turn) would ignore the fork request
-    if (plan.delivery === "native" && this.#sessions.peek(thread.id) === undefined) {
-      const { forkFrom, rollback } = plan;
-      try {
-        session = await this.#sessions.getOrOpen(thread, project, { forkFrom });
-        if (rollback > 0) {
-          if (session.rollback === undefined) throw new Error(`${thread.provider} driver does not implement rollback`);
-          await session.rollback(rollback);
-        }
-      } catch (err) {
-        this.#log("[reactor] native fork failed; delivering the handoff inline", err);
-        await this.#sessions.close(thread.id);
-        session = undefined;
-        delivery = "inline";
-      }
-    } else delivery = "inline";
-    session ??= await this.#sessions.getOrOpen(thread, project, hints);
-    await this.#dispatch({ type: "handoff.delivered", turnId, delivery });
-    // re-read: a refine that landed while the session opened is the text to ship (later ones are refused)
-    const handoff = this.#engine.getModel().handoffs[plan.handoff.id] ?? plan.handoff;
-    return { session, prompt: delivery === "native" ? input : { ...input, text: inlinePrompt(handoff, input.text) } };
-  }
-
-  /** Gives the handoff judge a short window to refine the selection; never blocks a turn longer. */
-  async #awaitHandoff(handoffId: string): Promise<void> {
-    let ready: Promise<void> | undefined;
-    try {
-      ready = this.#handoffReady?.(handoffId);
-    } catch (err) {
-      this.#log("[reactor] handoffReady failed", err);
-    }
-    if (ready === undefined) return;
-    let cancel: CancelTimer | undefined;
-    const timeout = new Promise<void>((resolve) => {
-      cancel = this.#schedule(resolve, HANDOFF_READY_WAIT_MS);
-    });
-    try {
-      await Promise.race([ready.catch(() => undefined), timeout]);
-    } finally {
-      cancel?.();
     }
   }
 
@@ -750,8 +670,10 @@ export class ProviderReactor {
           run.limited = {
             ...(event.rateLimit.resetsAt !== undefined ? { resetsAt: event.rateLimit.resetsAt } : {}),
             ...(event.rateLimit.note !== undefined ? { note: event.rateLimit.note } : {}),
+            ...(event.rateLimit.window !== undefined ? { window: event.rateLimit.window } : {}),
           };
         }
+        if (isRedundantGauge(event, knownGauge(this.#engine.getModel(), turnId, event.rateLimit))) return false;
         await this.#dispatch({
           type: "usage.report",
           turnId,
@@ -771,12 +693,7 @@ export class ProviderReactor {
         const refused = event.status === "error" && thread !== undefined ? resumeRefusedRow(event.error, this.#sessions.labelOf(thread), () => ({ id: this.#newId(), threadId, turnId, at: this.#now() })) : undefined;
         if (refused !== undefined) await this.#dispatch({ type: "activity.upsert", activity: refused.activity });
         const error = refused?.error ?? event.error;
-        await this.#dispatch({
-          type: "turn.settle",
-          turnId,
-          status: event.status,
-          ...(error !== undefined ? { error } : {}),
-        });
+        await this.#dispatch({ type: "turn.settle", turnId, status: event.status, ...(error !== undefined ? { error } : {}), ...(event.status !== "completed" ? this.#holdQueue(threadId, run) : {}) });
         return true;
       default:
         return false;

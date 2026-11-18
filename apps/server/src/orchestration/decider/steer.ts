@@ -1,4 +1,5 @@
-import type { CommandOf, Message, ReadModel, Thread, Turn, TurnStatus } from "@tide/contracts";
+import { quotaBlock, type CommandOf, type Message, type ReadModel, type Thread, type Turn, type TurnStatus } from "@tide/contracts";
+import { quotaMessage } from "./quotaGate.ts";
 import { attachmentsOf, badAttachment, fail, isArchived, ok, type DecideContext, type DecideResult } from "./types.ts";
 
 type SteerCommand =
@@ -112,6 +113,14 @@ export function decideSteer(model: ReadModel, command: SteerCommand, ctx: Decide
       const thread = model.threads[queuedTurn.threadId];
       if (!thread) return fail("not-found", `unknown thread ${queuedTurn.threadId}`);
       const live = liveTurn(model, thread);
+      if (!live && thread.status !== "running") {
+        if (isArchived(thread)) return fail("conflict", `thread ${thread.id} is archived`);
+        // R20: an idle thread with a queue was held (quota, usage limit, or a restart between the
+        // settle and the release): promoting starts that turn, unless a quota still holds it
+        const block = quotaBlock(model, thread, ctx.now);
+        if (block !== undefined) return fail("quota-exceeded", quotaMessage(model, block));
+        return ok({ type: "turn.released", threadId: thread.id, turnId: queuedTurn.id, at: ctx.now });
+      }
       if (!live) return fail("conflict", "nothing is running; the turn will start on its own");
       // dequeuing would drop the handoff the queued turn was carrying to the harness
       if (queuedTurn.handoffId !== undefined) return fail("conflict", `turn ${queuedTurn.id} carries a handoff; it cannot be promoted`);
