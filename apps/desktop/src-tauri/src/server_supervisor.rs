@@ -26,7 +26,11 @@ pub const LOADING_HTML: &str = include_str!("../../loading.html");
 pub const SPLASH_URL: &str = "tide-shell://localhost/";
 
 const STATUS_EVENT: &str = "tide://server-status";
-const HEALTH_TIMEOUT: Duration = Duration::from_secs(15);
+/// The first boot of a new version replays the whole event log (no usable snapshot), which takes
+/// tens of seconds on a large store. A server that is still alive is waiting on that, not hung,
+/// so it gets this long; past HEALTH_SLOW the splash says what it is doing.
+const HEALTH_TIMEOUT: Duration = Duration::from_secs(300);
+const HEALTH_SLOW: Duration = Duration::from_secs(10);
 const HEALTH_INTERVAL: Duration = Duration::from_millis(100);
 const BACKOFF_MIN: Duration = Duration::from_secs(1);
 const BACKOFF_MAX: Duration = Duration::from_secs(30);
@@ -391,7 +395,12 @@ fn boot(app: &AppHandle, inner: &Shared, port: &mut Option<u16>) -> Result<Insta
     inner.lock().map_err(|_| "supervisor poisoned")?.child = Some(child);
 
     let deadline = Instant::now() + HEALTH_TIMEOUT;
+    let mut told_slow = false;
     while Instant::now() < deadline {
+        if !told_slow && started_at.elapsed() >= HEALTH_SLOW {
+            told_slow = true;
+            set_status(app, inner, "starting", Some("loading your history — the first start after an update can take a minute".into()));
+        }
         if exited(inner) {
             return Err(format!("{} exited before becoming healthy (port {port_no})", launcher.describe()));
         }

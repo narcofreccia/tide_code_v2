@@ -139,6 +139,16 @@ export async function createApp(options: AppOptions): Promise<App> {
   // read per command, after `registry` below exists
   // a snapshot is trusted only by the build that wrote it; source runs always replay (the projector changes without a version change)
   const engine = new Engine({ store, defaults: () => deciderDefaults(settings, registry), log: (msg) => log(msg), snapshotTag: IS_BUILD ? VERSION : null });
+  // a new build replays the whole log once; keep the result now, not only at a clean shutdown,
+  // so a slow first boot (or one the shell gives up on) is not paid again on the next start
+  if (engine.snapshotStale) {
+    try {
+      const snap = engine.snapshot();
+      if (snap !== undefined) log(`[app] snapshot at seq ${snap.seq} after a full replay (${Math.round(snap.bytes / 1024)} KiB, ${Math.round(snap.ms)} ms)`);
+    } catch (err) {
+      log("[app] snapshot after replay failed", err);
+    }
+  }
   const registry = new DriverRegistry({ env: { dataDir: config.dataDir, log } });
   if (options.registerDrivers) await options.registerDrivers(registry);
   else await registerBundledDrivers(registry, config.providers, log);

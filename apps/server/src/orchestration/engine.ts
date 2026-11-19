@@ -103,6 +103,8 @@ export class Engine {
   #snapshotTag: string | null | undefined;
   /** events appended since the newest snapshot */
   #sinceSnapshot = 0;
+  /** boot replayed from the start although a tag is set: the stored snapshot (if any) is not this build's */
+  #snapshotStale = false;
   #compactor: Compactor;
   #autoCompact: boolean;
   /** threads with a turn settled since the last maintenance step */
@@ -144,6 +146,7 @@ export class Engine {
     }
     const model = replay(snapshot?.model ?? emptyReadModel(), tail);
     this.#sinceSnapshot = tail.length;
+    this.#snapshotStale = typeof tag === "string" && snapshot === undefined;
     const ms = Math.round(performance.now() - started);
     this.#log(
       snapshot !== undefined
@@ -154,16 +157,26 @@ export class Engine {
   }
 
   /**
-   * Writes the current model as a snapshot (no-op when the newest one is already at this seq).
-   * Synchronous: it runs between commands, so the model it serialises is never mid-dispatch.
+   * True after a boot that could not use the stored snapshot (none, or another build's): the app
+   * writes one right away so the next boot is fast even if this process never shuts down cleanly.
+   */
+  get snapshotStale(): boolean {
+    return this.#snapshotStale;
+  }
+
+  /**
+   * Writes the current model as a snapshot (no-op when the newest one is already at this seq and
+   * was written by this build). Synchronous: it runs between commands, so the model it serialises
+   * is never mid-dispatch.
    */
   snapshot(): SnapshotResult | undefined {
     const seq = this.#model.seq;
-    if (seq === 0 || seq <= this.#store.snapshots.latestSeq()) return undefined;
+    if (seq === 0 || (!this.#snapshotStale && seq <= this.#store.snapshots.latestSeq())) return undefined;
     const started = performance.now();
     const bytes = this.#store.snapshots.write(seq, JSON.stringify(this.#model), this.#now());
     if (typeof this.#snapshotTag === "string") this.#store.setMeta(SNAPSHOT_TAG, this.#snapshotTag);
     this.#sinceSnapshot = 0;
+    this.#snapshotStale = false;
     return { seq, bytes, ms: performance.now() - started };
   }
 

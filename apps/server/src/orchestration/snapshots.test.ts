@@ -147,4 +147,23 @@ describe("snapshot tag (R18)", () => {
     new Engine({ store, snapshotTag: null, log });
     expect(lines.at(-1)).toContain("no snapshot");
   });
+
+  it("a new build re-tags the snapshot at the same seq, so only its first boot replays", async () => {
+    const store = await memoryStore();
+    const lines: string[] = [];
+    const log = (m: string): void => void lines.push(m);
+    const old = new Engine({ store, snapshotTag: "1.0.0", log });
+    await old.dispatch({ type: "project.create", title: "P", rootPath: "/tmp/p" });
+    await old.drain();
+    expect(old.snapshot()).toBeDefined();
+    const upgraded = new Engine({ store, snapshotTag: "1.0.1", log });
+    expect(upgraded.snapshotStale).toBe(true);
+    // no new events since the old snapshot: the write must still happen
+    expect(upgraded.snapshot()?.seq).toBe(old.getModel().seq);
+    expect(upgraded.snapshotStale).toBe(false);
+    expect(upgraded.snapshot()).toBeUndefined();
+    const next = new Engine({ store, snapshotTag: "1.0.1", log });
+    expect(lines.at(-1)).toContain("from snapshot");
+    expect(next.snapshotStale).toBe(false);
+  });
 });
