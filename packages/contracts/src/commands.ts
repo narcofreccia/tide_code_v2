@@ -478,6 +478,8 @@ export const ThreadDelegate = Type.Object({
   mode: Type.Optional(RuntimeMode),
   title: Type.Optional(Type.String()),
   prompt: Type.String({ minLength: 1 }),
+  /** R22: images the child gets with its first turn (the server reads them from the caller's checkout) */
+  images: Type.Optional(Type.Array(ImageInput, { maxItems: 8 })),
   useWorktree: Type.Optional(Type.Boolean()),
   /** W1: label of one of the calling project's links; the delegate runs with that repo as its main repo */
   repo: Type.Optional(Type.String({ minLength: 1 })),

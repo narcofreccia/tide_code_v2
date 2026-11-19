@@ -514,8 +514,10 @@ export const Message = Type.Object({
    * user attachments. Images: metadata only (bytes ride on the turn.requested event). R11 files:
    * `name` + `path` (relative to the thread cwd, under `.tide/attachments/`), written by `attachments.upload`
    * so the agent can read the real bytes; the prompt gets an "Attached files" footer.
+   * R22: `inline` marks an image the harness also got as pixels; its `name` + `path` name the copy the
+   * server saves in the thread cwd when the turn runs, so the agent can hand it to a sub-agent or delegate.
    */
-  attachments: Type.Optional(Type.Array(Type.Object({ mediaType: Type.String(), bytes: Type.Number(), name: Type.Optional(Type.String()), path: Type.Optional(Type.String()), lines: Type.Optional(Type.Number()) }))),
+  attachments: Type.Optional(Type.Array(Type.Object({ mediaType: Type.String(), bytes: Type.Number(), name: Type.Optional(Type.String()), path: Type.Optional(Type.String()), lines: Type.Optional(Type.Number()), inline: Type.Optional(Type.Boolean()) }))),
   createdAt: Type.Number(),
   /** true while the assistant is still streaming into this message */
   streaming: Type.Optional(Type.Boolean()),

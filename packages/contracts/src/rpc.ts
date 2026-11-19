@@ -623,7 +623,11 @@ export const rpcMethods = {
   "run.subscribe": stream(Type.Object({ projectId: Type.String() }), RunSessionChunk),
   // agent-facing (Tide MCP server; socket authenticated with a per-thread agent ticket → ctx.agentThreadId)
   /** experts board / delegation commands; the server stamps author/from/fromThreadId from the authenticated thread */
-  "agent.dispatch": unary(Type.Object({ command: AgentCommand }), DispatchResult),
+  /**
+   * R22: `imagePaths` (only with `thread.delegate`) are image files in the caller's checkout; the server
+   * reads them and puts the bytes on the command's `images`.
+   */
+  "agent.dispatch": unary(Type.Object({ command: AgentCommand, imagePaths: Type.Optional(Type.Array(Type.String({ minLength: 1 }), { maxItems: 8 })) }), DispatchResult),
   /** what the calling thread needs to know: its experts session (if any), unread messages, findings */
   "agent.context": unary(
     Type.Object({ sinceMessageId: Type.Optional(Type.String()) }),
@@ -654,7 +658,7 @@ export const rpcMethods = {
   ),
   /** `auto` steers a running turn when the harness can, else queues; `queue` always waits; `steer` fails when nothing runs */
   "agent.thread.send": unary(
-    Type.Object({ threadId: Type.String(), text: Type.String({ minLength: 1 }), mode: Type.Optional(Type.Union([Type.Literal("auto"), Type.Literal("queue"), Type.Literal("steer")])), commandId: Type.Optional(Type.String({ minLength: 1 })), /** R17: start the target on a brand-new native session (not with mode steer) */ freshSession: Type.Optional(Type.Boolean()) }),
+    Type.Object({ threadId: Type.String(), text: Type.String({ minLength: 1 }), mode: Type.Optional(Type.Union([Type.Literal("auto"), Type.Literal("queue"), Type.Literal("steer")])), commandId: Type.Optional(Type.String({ minLength: 1 })), /** R17: start the target on a brand-new native session (not with mode steer) */ freshSession: Type.Optional(Type.Boolean()), /** R22: image files in the caller's checkout, sent to the target as images */ imagePaths: Type.Optional(Type.Array(Type.String({ minLength: 1 }), { maxItems: 8 })) }),
     Type.Object({ turnId: Type.Optional(Type.String()), messageId: Type.Optional(Type.String()), delivered: Type.Union([Type.Literal("started"), Type.Literal("queued"), Type.Literal("steered")]) }),
   ),
   /** resolves when the thread's live turn settles (or at once when idle); a timeout never cancels anything */
