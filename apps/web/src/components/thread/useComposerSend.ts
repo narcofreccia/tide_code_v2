@@ -15,6 +15,7 @@ import { useProvidersStore } from "../../state/providers.ts";
 import { showToast } from "../../state/toast.ts";
 import { useUi } from "../../state/ui.ts";
 import type { PendingImage } from "../../lib/images.ts";
+import { MESSAGE_SENT_EVENT } from "./useStreamScroll.ts";
 
 interface Pending {
   text: string;
@@ -97,6 +98,8 @@ export function useComposerSend({ thread, text, images, files, followUp, onSent 
       if (fresh) disarmFreshSession(thread.id);
       forgetFiles(files.map((f) => f.id));
       onSent();
+      // the reader who just sent wants to watch the answer: the stream follows again
+      window.dispatchEvent(new CustomEvent(MESSAGE_SENT_EVENT, { detail: { threadId: thread.id } }));
       if (background) useUi.getState().showMission();
     };
     setBusy(true);

@@ -9,12 +9,29 @@
  * - a prompt containing EDIT_TRIGGER streams two text chunks, announces an `edit` tool call on
  *   `hello.txt` with its diff, asks permission, and on approval writes the file through the
  *   client's `fs/write_text_file` (served by Tide inside the worktree), then finishes the reply;
+ * - a prompt containing LONG_TRIGGER streams a long turn (reasoning, a wide code block, many
+ *   paragraphs) at a steady pace, for the follow-scroll spec;
  * - any other prompt is answered with `Echo: <prompt>`; one containing COST_TRIGGER also reports
  *   COST_PER_TURN USD through `usage_update` (ACP's `cost` is cumulative per session).
  */
 import { createInterface } from "node:readline";
 import { join } from "node:path";
-import { COST_PER_TURN, COST_TRIGGER, EDIT_TRIGGER, FINAL_TEXT, NEW_CONTENT, OLD_CONTENT, STREAM_CHUNKS } from "./script.ts";
+import {
+  COST_PER_TURN,
+  COST_TRIGGER,
+  EDIT_TRIGGER,
+  FINAL_TEXT,
+  LONG_TRIGGER,
+  NEW_CONTENT,
+  OLD_CONTENT,
+  PARAGRAPH,
+  STREAM_CHUNKS,
+  STREAM_PARAGRAPHS,
+  STREAM_STEP_MS,
+  STREAM_THOUGHTS,
+  THOUGHT_LINE,
+  WIDE_CODE,
+} from "./script.ts";
 
 type Id = number | string;
 interface Message {
@@ -105,6 +122,24 @@ async function editTurn(sessionId: string, cwd: string, cancelled: Promise<"canc
   return "end_turn";
 }
 
+/** Reasoning, then a reply with a wide code block and many paragraphs, one chunk per step. */
+async function longTurn(sessionId: string, cancelled: Promise<"cancelled">): Promise<string> {
+  let stop = false;
+  void cancelled.then(() => (stop = true));
+  const step = (): Promise<void> => new Promise((resolve) => setTimeout(resolve, STREAM_STEP_MS));
+  for (let i = 1; i <= STREAM_THOUGHTS && !stop; i++) {
+    update(sessionId, { sessionUpdate: "agent_thought_chunk", content: { type: "text", text: `${THOUGHT_LINE} ${i}\n` } });
+    await step();
+  }
+  const say = (text: string): void => update(sessionId, { sessionUpdate: "agent_message_chunk", content: { type: "text", text } });
+  say(`Here is the plan.\n\n\`\`\`ts\n${WIDE_CODE}\n${WIDE_CODE}\n\`\`\`\n\n`);
+  for (let i = 1; i <= STREAM_PARAGRAPHS && !stop; i++) {
+    await step();
+    say(`${PARAGRAPH} ${i}: the agent keeps writing so the stream keeps growing below the reader.\n\n`);
+  }
+  return stop ? "cancelled" : "end_turn";
+}
+
 async function prompt(id: Id, params: Record<string, unknown>): Promise<void> {
   const sessionId = String(params["sessionId"]);
   const session = sessions.get(sessionId);
@@ -120,6 +155,7 @@ async function prompt(id: Id, params: Record<string, unknown>): Promise<void> {
   const text = handoff < 0 ? whole : whole.slice(handoff + USER_MESSAGE.length);
   let stopReason: string;
   if (text.includes(EDIT_TRIGGER)) stopReason = await editTurn(sessionId, session.cwd, cancelled);
+  else if (text.includes(LONG_TRIGGER)) stopReason = await longTurn(sessionId, cancelled);
   else {
     const last = text.trim().split("\n").at(-1) ?? "";
     update(sessionId, { sessionUpdate: "agent_message_chunk", content: { type: "text", text: `Echo: ${last}` } });

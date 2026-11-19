@@ -17,6 +17,8 @@ export default defineConfig({
     { name: "devices", testMatch: "devices.e2e.ts", dependencies: ["smoke"] },
     // after devices: a project quota would hold the turns devices sends
     { name: "quota", testMatch: "quota.e2e.ts", dependencies: ["devices"] },
+    // after quota: its cap is removed by then, so the long turns are not held
+    { name: "stream", testMatch: "stream.e2e.ts", dependencies: ["quota"] },
   ],
   globalSetup: "./global-setup.ts",
   fullyParallel: false,

@@ -126,6 +126,7 @@ describe("Stream", () => {
     Object.defineProperty(list, "scrollHeight", { configurable: true, get: () => metrics.scrollHeight });
     Object.defineProperty(list, "clientHeight", { configurable: true, get: () => metrics.clientHeight });
     act(() => void vi.advanceTimersByTime(300)); // past the switch grace
+    list.scrollTop = 1600; // at the end, where the reader starts going up
     fireEvent.wheel(list, { deltaY: -120 });
     list.scrollTop = 100;
     fireEvent.scroll(list);

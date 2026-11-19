@@ -5,7 +5,10 @@ Three Playwright specs drive the real app in Chrome against a scratch tide-serve
 `devices` project depends on `smoke` and reuses the project and threads it leaves) and
 `quota.e2e.ts` (a project usage quota that holds new turns, then Lift until reset and Remove;
 it runs after `devices` and saves three screenshots to `TIDE_E2E_SHOTS`, default
-`$TMPDIR/e2e-shots`). Local
+`$TMPDIR/e2e-shots`) and `stream.e2e.ts` (after `quota`: while a long scripted turn streams,
+a wheel-up over the live reasoning body and a sideways swipe over a code block keep the stream on
+the end, and a real wheel-up leaves the view where the reader stopped; it reads the controller's
+`tide.debug.scroll` log). Local
 only: nothing in CI runs it (Actions minutes are paid; see the account rules).
 
 ```sh
@@ -50,7 +53,9 @@ args: [fake-agent.ts] }]`. No server code is test-aware. Its script (`fixtures/s
 prompt containing "please edit hello.txt" streams two text chunks, announces an `edit` tool call
 with a diff, asks `session/request_permission`, and on approval writes the file through Tide's
 `fs/write_text_file` (inside the worktree); any other prompt is answered `Echo: <prompt>`, and one containing "please spend" also reports
-$0.50 through a `usage_update` (`cost` is cumulative per session in ACP). It
+$0.50 through a `usage_update` (`cost` is cumulative per session in ACP). One containing
+"please stream long" streams 40 reasoning lines, a wide code block and 90 paragraphs, one chunk
+every 80ms. It
 exits when its stdin closes, so a killed server leaves no agent behind.
 
 Specs are `specs/*.e2e.ts`, which no vitest config collects.

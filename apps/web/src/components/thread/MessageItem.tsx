@@ -131,7 +131,10 @@ function StreamTail({ tail, offset, shown }: { tail: string; offset: number; sho
 
 type MessageAttachment = NonNullable<Message["attachments"]>[number];
 
-/** Images are metadata pills; R11 files live in the worktree and open in the workbench. */
+/**
+ * Images are metadata pills; an inline image the server also saved (`inline` + `path`) opens
+ * that copy. R11 files live in the worktree and open in the workbench.
+ */
 function Attachments({ message }: { message: Message }) {
   const list = message.attachments ?? [];
   if (list.length === 0) return null;
@@ -145,6 +148,16 @@ function Attachments({ message }: { message: Message }) {
           <Pill key={`${attachment.mediaType}-${i}`}>
             <Icon name="image" size={12} /> {attachment.mediaType} · {formatBytes(attachment.bytes)}
           </Pill>
+        ) : attachment.inline === true ? (
+          <button
+            key={attachment.path}
+            type="button"
+            className={styles.fileChip}
+            title={`Open ${attachment.path}`}
+            onClick={() => open(attachment)}
+          >
+            <Icon name="image" size={12} /> {attachment.mediaType} · {formatBytes(attachment.bytes)}
+          </button>
         ) : (
           <button
             key={attachment.path}

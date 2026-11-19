@@ -7,6 +7,7 @@ import { MessageItem, splitStreamingTail } from "./MessageItem.tsx";
 import { STEER_FALLBACK_NOTE } from "./steerFallback.ts";
 import { MarkdownPre } from "./VisualBlocks.tsx";
 import { useUi } from "../../state/ui.ts";
+import { activeTab } from "../../state/workbench.ts";
 import { attachFakeStore, makeMessage, makeTurn, modelWith, resetUi } from "../../testHarness.ts";
 
 afterEach(() => {
@@ -73,6 +74,26 @@ describe("MessageItem", () => {
       />,
     );
     expect(screen.getByText(/image\/png · 120 KB/)).toBeDefined();
+  });
+
+  it("opens the saved copy of an inline image, and leaves one without a path a plain pill", () => {
+    attachFakeStore(modelWith({}));
+    const path = ".tide/attachments/m1/shot.png";
+    render(
+      <MessageItem
+        message={makeMessage("m1", {
+          attachments: [
+            { mediaType: "image/png", bytes: 2048, name: "shot.png", path, inline: true },
+            { mediaType: "image/jpeg", bytes: 1024, inline: true },
+          ],
+        })}
+      />,
+    );
+    const chip = screen.getByRole("button", { name: /image\/png · 2 KB/ });
+    expect(chip.getAttribute("title")).toBe(`Open ${path}`);
+    fireEvent.click(chip);
+    expect(activeTab("t1")).toEqual({ kind: "file", path });
+    expect(screen.getByText(/image\/jpeg · 1 KB/).closest("button")).toBeNull();
   });
 
   describe("reasoning", () => {

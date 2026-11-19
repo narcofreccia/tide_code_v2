@@ -3,6 +3,7 @@ import { activeTab } from "../../state/workbench.ts";
 import { COMPOSE_EVENT } from "../../lib/cite.ts";
 import { act, cleanup, fireEvent, render, screen, waitFor } from "@testing-library/react";
 import { Composer } from "./Composer.tsx";
+import { MESSAGE_SENT_EVENT } from "./useStreamScroll.ts";
 import { attachFakeStore, makeThread, modelWith, resetUi } from "../../testHarness.ts";
 import { PROVIDER_FIXTURE } from "../settings/fixtures.ts";
 import { setProvidersForTest } from "../../state/providers.ts";
@@ -130,6 +131,23 @@ describe("Composer", () => {
       expect.objectContaining({ type: "turn.request", threadId: "t1", text: "and then this" }),
     );
     expect(screen.getByText("Stop")).toBeDefined();
+  });
+
+  it("tells the stream a message was sent or queued, so it follows again", async () => {
+    attachFakeStore(modelWith({}));
+    const seen: unknown[] = [];
+    const onSent = (e: Event): void => void seen.push((e as CustomEvent).detail);
+    window.addEventListener(MESSAGE_SENT_EVENT, onSent);
+    try {
+      render(<Composer thread={makeThread("t1", { status: "running" })} />);
+      fireEvent.change(screen.getByLabelText("Message"), { target: { value: "and then this" } });
+      await act(async () => {
+        fireEvent.click(screen.getAllByText("Queue").at(-1)!);
+      });
+      expect(seen).toEqual([{ threadId: "t1" }]);
+    } finally {
+      window.removeEventListener(MESSAGE_SENT_EVENT, onSent);
+    }
   });
 
   it("attaches a pasted image and sends it with the turn", async () => {
