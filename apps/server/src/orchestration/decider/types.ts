@@ -70,10 +70,21 @@ export const fail = (code: string, message: string): DecideResult => ({ ok: fals
 
 export const isArchived = (e: { archivedAt?: number }): boolean => e.archivedAt !== undefined;
 
-/** Attachment metadata kept on a user message (the image bytes ride only on the event; files are on disk). */
-export function attachmentsOf(images: ImageInput[] | undefined, files?: AttachmentRef[]): Pick<Message, "attachments"> {
+const IMAGE_EXT: Record<string, string> = { "image/png": "png", "image/jpeg": "jpg", "image/jpg": "jpg", "image/gif": "gif", "image/webp": "webp" };
+
+/** File extension for a pasted image's saved copy; an unknown type keeps a neutral `.img`. */
+export const imageExt = (mediaType: string): string => IMAGE_EXT[mediaType.toLowerCase()] ?? "img";
+
+/**
+ * Attachment metadata kept on a user message (the image bytes ride only on the event; files are on disk).
+ * R22: each image also names the copy the provider reactor saves at `.tide/attachments/<messageId>/image-<n>.<ext>`.
+ */
+export function attachmentsOf(images: ImageInput[] | undefined, files: AttachmentRef[] | undefined, messageId: string): Pick<Message, "attachments"> {
   const list = [
-    ...(images ?? []).map((img) => ({ mediaType: img.mediaType, bytes: Math.floor((img.data.length * 3) / 4) })),
+    ...(images ?? []).map((img, i) => {
+      const name = `image-${i + 1}.${imageExt(img.mediaType)}`;
+      return { mediaType: img.mediaType, bytes: Math.floor((img.data.length * 3) / 4), name, path: `.tide/attachments/${messageId}/${name}`, inline: true };
+    }),
     ...(files ?? []).map((f) => ({ mediaType: f.mediaType, bytes: f.bytes, name: f.name, path: f.path, ...(f.lines !== undefined ? { lines: f.lines } : {}) })),
   ];
   return list.length === 0 ? {} : { attachments: list };
@@ -87,22 +98,25 @@ export function badAttachment(files: AttachmentRef[] | undefined): string | unde
   return undefined;
 }
 
-/** Builds the `turn.requested` event that seeds a thread with `text`. */
+/** Builds the `turn.requested` event that seeds a thread with `text` (and `images`, saved like a pasted image). */
 export function turnRequested(
   threadId: string,
   text: string,
   ctx: DecideContext,
   notification?: Message["notification"],
+  images?: ImageInput[],
 ): EventOf<"turn.requested"> {
   const turn: Turn = { id: ctx.newId(), threadId, status: "requested", requestedAt: ctx.now };
+  const messageId = ctx.newId();
   const userMessage: Message = {
-    id: ctx.newId(),
+    id: messageId,
     threadId,
     turnId: turn.id,
     role: "user",
     text,
+    ...attachmentsOf(images, undefined, messageId),
     ...(notification !== undefined ? { notification } : {}),
     createdAt: ctx.now,
   };
-  return { type: "turn.requested", turn, userMessage };
+  return { type: "turn.requested", turn, userMessage, ...(images !== undefined && images.length > 0 ? { images } : {}) };
 }

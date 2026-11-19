@@ -113,3 +113,23 @@ describe("decide: experts.synthesis.set phase gate", () => {
     expect(decide(done, synth(sessionId), ctx)).toMatchObject({ ok: false, error: { code: "conflict" } });
   });
 });
+
+describe("decide: thread.delegate images (R22)", () => {
+  it("hands the images to the child's first turn, with saved-copy paths on its message", () => {
+    const root = rootThread();
+    const images = [{ mediaType: "image/png", data: "AAAA" }];
+    const result = run(root.model, { type: "thread.delegate", fromThreadId: root.threadId, provider: "codex", prompt: "look", images });
+    const requested = result.events.find((e) => e.type === "turn.requested");
+    if (requested?.type !== "turn.requested") throw new Error("expected turn.requested");
+    expect(requested.images).toEqual(images);
+    expect(requested.userMessage.attachments).toEqual([{ mediaType: "image/png", bytes: 3, name: "image-1.png", path: `.tide/attachments/${requested.userMessage.id}/image-1.png`, inline: true }]);
+  });
+
+  it("carries no images or attachments when none are given", () => {
+    const root = rootThread();
+    const requested = run(root.model, { type: "thread.delegate", fromThreadId: root.threadId, provider: "codex", prompt: "go" }).events.find((e) => e.type === "turn.requested");
+    if (requested?.type !== "turn.requested") throw new Error("expected turn.requested");
+    expect(requested.images).toBeUndefined();
+    expect(requested.userMessage.attachments).toBeUndefined();
+  });
+});

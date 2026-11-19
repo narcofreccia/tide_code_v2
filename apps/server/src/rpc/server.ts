@@ -43,6 +43,7 @@ import { PairingCodes, safeEqual } from "./pairing.ts";
 import { registerRunStackHandlers } from "./runStack.ts";
 import { registerVcsHandlers } from "./vcs.ts";
 import { createWorkspaceServices, registerWorkspaceHandlers, type WorkspaceServices } from "./workspace.ts";
+import { threadCwdResolver } from "./threadCwd.ts";
 import { RpcRouter } from "./router.ts";
 import { TicketIssuer } from "./tickets.ts";
 import { createListener, schemes } from "./tls.ts";
@@ -210,9 +211,11 @@ export async function startServer(deps: ServerDeps): Promise<ServerHandle> {
   registerSearchHandlers(router, { engine });
   registerUsageHandlers(router, { engine, settings, store, tideHome: config.tideHome, dataDir: config.dataDir });
   registerPrHandlers(router, { engine, forges });
-  registerAgentHandlers(router, { engine });
+  const cwdFor = threadCwdResolver(engine);
+  registerAgentHandlers(router, { engine, cwdFor });
   registerAgentThreadHandlers(router, {
     engine,
+    cwdFor,
     registry,
     ...(deps.delegateWaits !== undefined ? { waits: deps.delegateWaits } : {}),
     ...(deps.settings !== undefined ? { grayZone: () => (deps.settings as SettingsStore).get().decisions.grayZone } : {}),

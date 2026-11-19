@@ -152,7 +152,7 @@ describe("decide: turns", () => {
     if (evt?.type !== "turn.requested") throw new Error("expected turn.requested");
     expect(evt.turn.status).toBe("queued");
     expect(evt.images).toEqual([{ mediaType: "image/png", data: "AAAA" }]);
-    expect(evt.userMessage.attachments).toEqual([{ mediaType: "image/png", bytes: 3 }]);
+    expect(evt.userMessage.attachments).toEqual([{ mediaType: "image/png", bytes: 3, name: "image-1.png", path: `.tide/attachments/${evt.userMessage.id}/image-1.png`, inline: true }]);
     expect(second.model.threads[threadId]?.latestTurnId).toBe(firstTurn);
     expect(decide(second.model, { type: "turn.dequeue", turnId: firstTurn }, ctx)).toMatchObject({ ok: false, error: { code: "conflict" } });
     const dequeued = run(second.model, { type: "turn.dequeue", turnId: evt.turn.id });
@@ -483,9 +483,24 @@ describe("decide: R11 attachments and project icons", () => {
     const { model, threadId } = withThread();
     const r = run(model, { type: "turn.request", threadId, text: "see", images: [{ mediaType: "image/png", data: "AAAA" }], attachments: [ref] });
     const requested = r.events.find((e) => e.type === "turn.requested");
-    expect(requested?.type === "turn.requested" && requested.userMessage.attachments).toEqual([{ mediaType: "image/png", bytes: 3 }, { mediaType: "application/pdf", bytes: 1200, name: "spec.pdf", path: ref.path }]);
+    if (requested?.type !== "turn.requested") throw new Error("expected turn.requested");
+    const imagePath = `.tide/attachments/${requested.userMessage.id}/image-1.png`;
+    expect(requested.userMessage.attachments).toEqual([{ mediaType: "image/png", bytes: 3, name: "image-1.png", path: imagePath, inline: true }, { mediaType: "application/pdf", bytes: 1200, name: "spec.pdf", path: ref.path }]);
     const steered = run(r.model, { type: "turn.steer", threadId, text: "also", attachments: [ref] }).events[0];
     expect(steered?.type === "turn.steered" && steered.message.attachments?.[0]).toMatchObject({ name: "spec.pdf", path: ref.path });
+  });
+
+  it("R22: names a saved copy for every image, numbered per message, with the extension of its type", () => {
+    const { model, threadId } = withThread();
+    const images = [{ mediaType: "image/jpeg", data: "AAAA" }, { mediaType: "image/webp", data: "AAAA" }, { mediaType: "image/x-odd", data: "AAAA" }];
+    const requested = run(model, { type: "turn.request", threadId, text: "look", images }).events.find((e) => e.type === "turn.requested");
+    if (requested?.type !== "turn.requested") throw new Error("expected turn.requested");
+    const dir = `.tide/attachments/${requested.userMessage.id}`;
+    expect(requested.userMessage.attachments?.map((a) => [a.name, a.path, a.inline])).toEqual([
+      ["image-1.jpg", `${dir}/image-1.jpg`, true],
+      ["image-2.webp", `${dir}/image-2.webp`, true],
+      ["image-3.img", `${dir}/image-3.img`, true],
+    ]);
   });
 
   it("refuses attachment paths outside .tide/attachments/", () => {

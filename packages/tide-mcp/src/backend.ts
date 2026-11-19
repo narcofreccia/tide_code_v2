@@ -21,7 +21,8 @@ export type SecretRequestResult = RpcOutput<"agent.secret.request">;
 
 /** The slice of the Tide RPC surface the MCP tools need; faked in tests. */
 export interface AgentBackend {
-  dispatch(command: AgentCommand): Promise<AgentDispatchResult>;
+  /** `imagePaths` (only with thread.delegate): image files in the caller's checkout the server sends along */
+  dispatch(command: AgentCommand, imagePaths?: string[]): Promise<AgentDispatchResult>;
   context(sinceMessageId?: string): Promise<AgentContext>;
   threadStatus(threadId: string): Promise<AgentThreadStatus>;
   threadList(input: ThreadListInput): Promise<ThreadListResult>;
@@ -71,9 +72,9 @@ export class TideAgentBackend implements AgentBackend {
     await this.#ready;
   }
 
-  async dispatch(command: AgentCommand): Promise<AgentDispatchResult> {
+  async dispatch(command: AgentCommand, imagePaths?: string[]): Promise<AgentDispatchResult> {
     await this.#connect();
-    return this.#connection.call("agent.dispatch", { command });
+    return this.#connection.call("agent.dispatch", { command, ...(imagePaths !== undefined && imagePaths.length > 0 ? { imagePaths } : {}) });
   }
 
   async context(sinceMessageId?: string): Promise<AgentContext> {

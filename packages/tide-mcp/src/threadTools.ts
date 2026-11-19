@@ -14,6 +14,23 @@ const str = (description: string): Record<string, unknown> => ({ type: "string",
 const num = (description: string): Record<string, unknown> => ({ type: "number", description });
 const ok = (value: string): TextResult => ({ content: [{ type: "text", text: value }] });
 
+/** R22: the `images` input of tide_delegate / tide_thread_send. */
+export const IMAGES_INPUT: Record<string, unknown> = {
+  type: "array",
+  items: { type: "string" },
+  maxItems: 8,
+  description:
+    "Paths of image files in your checkout that the other thread needs to see: images the user attached to you (listed under their message) or a screenshot you saved. Pass only the ones the task needs.",
+};
+
+/** The `images` argument as a list of paths; anything that is not a non-empty string is dropped. */
+export function imagePathsOf(args: Record<string, unknown>): string[] | undefined {
+  const raw = args["images"];
+  if (!Array.isArray(raw)) return undefined;
+  const paths = raw.filter((p): p is string => typeof p === "string" && p !== "");
+  return paths.length > 0 ? paths : undefined;
+}
+
 /** Appended to the system prompt the server injects (the server picks this up). */
 export const THREAD_TOOLS_HINT = [
   "Tide thread tools: you can see and drive other threads in this project.",
@@ -36,6 +53,7 @@ export const THREAD_TOOLS_HINT = [
   "a prompt Tide sends on an interval or at fixed times, into a thread or as a new thread each run, within your project only.",
   "When the user's message carries a \"Delegate to:\" line naming a provider, providerId and optional model, call tide_delegate with exactly those ids for that part of the work (completion \"wait\" when the user needs the result in this reply).",
   "Need an API key or token? Call tide_request_secret — never ask for secrets in chat.",
+  "Images the user attached are saved on disk, with their paths listed under the message: for your own harness's sub-agent put the path in its prompt (it shares your checkout); for another thread pass the paths in `images` to tide_delegate or tide_thread_send (a delegate has its own checkout, so a bare path in the prompt does not reach it).",
 ].join(" ");
 
 export const THREAD_TOOL_DEFINITIONS: ToolDef[] = [
@@ -83,6 +101,7 @@ export const THREAD_TOOL_DEFINITIONS: ToolDef[] = [
           type: "boolean",
           description: "Start the target on a brand-new harness session: its native context is dropped, Tide history stays. Refused while the target is running and with mode steer.",
         },
+        images: IMAGES_INPUT,
         clientRequestId: str("Idempotency key."),
       },
       required: ["threadId", "text"],
@@ -242,11 +261,13 @@ export async function callThreadTool(backend: AgentBackend, name: string, args: 
     case "tide_thread_send": {
       const mode = optStr(args, "mode");
       const clientRequestId = optStr(args, "clientRequestId");
+      const imagePaths = imagePathsOf(args);
       const r = await backend.threadSend({
         threadId: reqStr(args, "threadId"),
         text: reqStr(args, "text"),
         ...(mode === "auto" || mode === "queue" || mode === "steer" ? { mode } : {}),
         ...(args["freshSession"] === true ? { freshSession: true } : {}),
+        ...(imagePaths !== undefined ? { imagePaths } : {}),
         ...(clientRequestId !== undefined ? { commandId: clientRequestId } : {}),
       });
       const how = { started: "started a new turn", queued: "queued behind the running turn", steered: "steered the running turn" }[r.delivered];

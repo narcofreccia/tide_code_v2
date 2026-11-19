@@ -2,10 +2,14 @@ import type { AgentCommand, ExpertsSession, ReadModel, RpcOutput, Thread } from 
 import { CommandError, type Engine } from "../orchestration/engine.ts";
 import { agentStatus, isQuiescent } from "../orchestration/background.ts";
 import { lastAssistantText } from "../orchestration/delegation.ts";
+import { readImagePaths } from "../workspace/attachments.ts";
 import { RpcException, type RpcCallContext, type RpcRouter } from "./router.ts";
+import { threadCwdResolver } from "./threadCwd.ts";
 
 export interface AgentHandlerDeps {
   engine: Engine;
+  /** R22: thread -> cwd, where `imagePaths` are read from (default: from the read model) */
+  cwdFor?: (threadId: string) => string;
 }
 
 interface Caller {
@@ -53,8 +57,11 @@ function stampIdentity(command: AgentCommand, caller: Caller, model: ReadModel):
       if (identity !== "lead") throw new RpcException("forbidden", "only the panel lead can set the synthesis");
       return command;
     }
-    case "thread.delegate":
-      return { ...command, fromThreadId: caller.thread.id };
+    case "thread.delegate": {
+      // R22: images reach a delegate only as `imagePaths` read from the caller's checkout
+      const { images: _wire, ...rest } = command;
+      return { ...rest, fromThreadId: caller.thread.id };
+    }
     case "task.create":
       return { ...command, projectId: caller.thread.projectId, createdByThreadId: caller.thread.id };
     case "task.update":
@@ -70,10 +77,16 @@ function stampIdentity(command: AgentCommand, caller: Caller, model: ReadModel):
 }
 
 export function registerAgentHandlers(router: RpcRouter, deps: AgentHandlerDeps): void {
+  const cwdFor = deps.cwdFor ?? threadCwdResolver(deps.engine);
   router.register("agent.dispatch", async (input, ctx) => {
     const model = deps.engine.getModel();
     const caller = callerOf(model, ctx);
-    const command = stampIdentity(input.command, caller, model);
+    let command = stampIdentity(input.command, caller, model);
+    const imagePaths = input.imagePaths ?? [];
+    if (imagePaths.length > 0) {
+      if (command.type !== "thread.delegate") throw new RpcException("invalid-params", `imagePaths only go with thread.delegate, not ${command.type}`);
+      command = { ...command, images: await readImagePaths(cwdFor(caller.thread.id), imagePaths) };
+    }
     try {
       return await deps.engine.dispatch(command);
     } catch (err) {

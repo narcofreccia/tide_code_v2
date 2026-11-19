@@ -22,6 +22,7 @@ import { ownerChildRow, rememberChild } from "./children.ts";
 import { dismissHarnessTurn, HarnessTurnQueue, SteerRetargets } from "./harnessTurns.ts";
 import { instanceIdOf, type HarnessTurn, type SessionDirectory } from "./sessions.ts";
 import { resumeLostActivity, resumeRefusedRow, startCommand, type ResumeLoss } from "./sessionNotices.ts";
+import { steerImages, turnImages } from "./turnImages.ts";
 
 export { HANDOFF_READY_WAIT_MS, type CancelTimer } from "./openTurn.ts";
 
@@ -284,7 +285,8 @@ export class ProviderReactor {
    * named by its key: when the harness already moved on to its next turn (which waits behind
    * this one in Tide), that queued fallback is promoted into it once it runs (`#retargetFallback`).
    */
-  async #steer(threadId: string, turnId: string, messageId: string, input: TurnInput): Promise<void> {
+  async #steer(threadId: string, turnId: string, messageId: string, steered: TurnInput): Promise<void> {
+    const input = await steerImages(this.#open, threadId, messageId, steered);
     const fallback = (reason: string): Promise<void> => this.#dispatch({ type: "steer.fallback", messageId, reason });
     const session = this.#sessions.peek(threadId);
     const thread = this.#engine.getModel().threads[threadId];
@@ -505,6 +507,7 @@ export class ProviderReactor {
       await this.#dispatch({ type: "turn.settle", turnId, status: "error", error: "thread or project is gone" });
       return this.#releaseHarnessTurn(attached, "thread or project is gone", turnId);
     }
+    input = await turnImages(this.#open, thread, project, turnId, input);
 
     let started = false;
     /** D1: set once the session is open: the resume it was asked for did not hold */

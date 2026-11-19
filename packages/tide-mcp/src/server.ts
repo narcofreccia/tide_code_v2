@@ -3,7 +3,7 @@ import { CallToolRequestSchema, ListToolsRequestSchema, type CallToolResult } fr
 import type { ProviderKind, RuntimeMode } from "@tide/contracts";
 import type { AgentBackend } from "./backend.ts";
 import { TOOL_DEFINITIONS } from "./tools.ts";
-import { callThreadTool, describeRpcError, formatWait, isThreadTool } from "./threadTools.ts";
+import { callThreadTool, describeRpcError, formatWait, imagePathsOf, isThreadTool } from "./threadTools.ts";
 import { callTaskTool, isTaskTool } from "./taskTools.ts";
 import { callSecretTool, isSecretTool } from "./secretTools.ts";
 
@@ -153,7 +153,7 @@ export async function callTool(
         ...(inheritWorktreeFrom !== undefined ? { inheritWorktreeFrom } : {}),
         ...(clientRequestId !== undefined ? { commandId: clientRequestId } : {}),
         ...(typeof rawArgs["useWorktree"] === "boolean" ? { useWorktree: rawArgs["useWorktree"] } : {}),
-        });
+        }, imagePathsOf(rawArgs));
       } catch (err) {
         return failure(describeRpcError(err));
       }

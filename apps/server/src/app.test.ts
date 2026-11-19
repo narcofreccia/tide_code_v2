@@ -140,7 +140,7 @@ describe("createApp — restart recovery of queued turns", () => {
       expect(model.threads[threadId]?.status).toBe("idle");
       // only the queued prompt reached the harness, with its image read back from the log
       const inputs = control.sessionFor(threadId)?.inputs ?? [];
-      expect(inputs.map((i) => i.text)).toEqual(["second"]);
+      expect(inputs.map((i) => i.text.split("\n\n")[0])).toEqual(["second"]);
       expect(inputs[0]?.images).toEqual([{ mediaType: "image/png", data: "AAAA" }]);
     } finally {
       await app.close();

@@ -32,6 +32,10 @@ describe("decide: turn.steer", () => {
     expect(steered).toMatchObject({ turnId: live.turnId, threadId: base.threadId, images: [img] });
     expect(steered.message).toMatchObject({ role: "user", turnId: live.turnId, text: "also tests", steer: true, attachments: [{ mediaType: "image/png", bytes: 3 }] });
     expect(model.messages[steered.message.id]?.steer).toBe(true);
+    // R22: the saved copy is named after the steer message, and a fallback turn keeps that path
+    expect(steered.message.attachments).toEqual([{ mediaType: "image/png", bytes: 3, name: "image-1.png", path: `.tide/attachments/${steered.message.id}/image-1.png`, inline: true }]);
+    const fell = eventOf(run(model, { type: "steer.fallback", messageId: steered.message.id, reason: "no cap" }).events, "turn.steer-fell-back");
+    expect(fell.userMessage.attachments).toEqual(steered.message.attachments);
   });
 
   it("refuses when nothing is running", () => {

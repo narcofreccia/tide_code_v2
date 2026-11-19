@@ -77,6 +77,7 @@ export const BASE_TOOL_DEFINITIONS: ToolDefinition[] = [
         timeoutMs: { type: "number", description: "With completion=wait: how long to wait, 1000-600000, default 600000. A timeout never cancels the child." },
         clientRequestId: str("Idempotency key: repeating the call with the same id does not create a second thread."),
         repo: str("Label of a writable linked repository to run the delegate in; it becomes that thread's main repo. Read-only links are refused. Omit to use this project's repo."),
+        images: IMAGES_INPUT,
         inheritWorktreeFrom: str("threadId of a thread in this project: run in that thread's checkout, e.g. to review its branch. Cannot be combined with useWorktree or repo. The child cannot merge or publish; the source thread does."),
       },
       required: ["provider", "prompt"],
@@ -93,7 +94,7 @@ export const BASE_TOOL_DEFINITIONS: ToolDefinition[] = [
   },
 ];
 
-import { THREAD_TOOL_DEFINITIONS } from "./threadTools.ts";
+import { IMAGES_INPUT, THREAD_TOOL_DEFINITIONS } from "./threadTools.ts";
 import { TASK_TOOL_DEFINITIONS } from "./taskTools.ts";
 import { SECRET_TOOL_DEFINITIONS } from "./secretTools.ts";
 

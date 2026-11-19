@@ -174,13 +174,13 @@ export function decideAgent(model: ReadModel, command: AgentCommand, ctx: Decide
             ...(inherit.baseBranch !== undefined ? { baseBranch: inherit.baseBranch } : {}),
             at: ctx.now,
           },
-          turnRequested(thread.id, delegatePrompt(command.prompt, from.title, command.role), ctx),
+          turnRequested(thread.id, delegatePrompt(command.prompt, from.title, command.role), ctx, undefined, command.images),
         );
       }
       return ok(
         ...extra,
         { type: "thread.created", thread, useWorktree: command.useWorktree ?? ctx.worktreeByDefault ?? true },
-        turnRequested(thread.id, delegatePrompt(command.prompt, from.title, command.role), ctx),
+        turnRequested(thread.id, delegatePrompt(command.prompt, from.title, command.role), ctx, undefined, command.images),
       );
     }
   }

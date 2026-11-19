@@ -159,7 +159,8 @@ describe("ProviderReactor: queued turns and reasoning", () => {
     expect(model.turns[second.turn.id]?.status).toBe("completed");
     expect(model.threads[h.threadId]?.status).toBe("idle");
     const session = h.control.sessionFor(h.threadId);
-    expect(session?.inputs.map((i) => i.text)).toEqual(["first", "second"]);
+    expect(session?.inputs.map((i) => i.text.split("\n\n")[0])).toEqual(["first", "second"]);
+    expect(session?.inputs[1]?.text).toContain(`.tide/attachments/${second.userMessage.id}/image-1.png`);
     expect(session?.inputs[1]?.images).toEqual([{ mediaType: "image/png", data: "AAAA" }]);
     const assistant = (model.threadMessages[h.threadId] ?? []).map((id) => model.messages[id]).filter((m) => m?.role === "assistant");
     expect(assistant.map((m) => [m?.reasoning, m?.text])).toEqual([["let me think", "one"], [undefined, "two"]]);

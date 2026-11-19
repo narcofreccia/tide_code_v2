@@ -46,13 +46,14 @@ export function decideSteer(model: ReadModel, command: SteerCommand, ctx: Decide
       if (!turn) return fail("conflict", NOTHING_RUNNING);
       const badFile = badAttachment(command.attachments);
       if (badFile !== undefined) return fail("invalid-command", badFile);
+      const messageId = ctx.newId();
       const message: Message = {
-        id: ctx.newId(),
+        id: messageId,
         threadId: thread.id,
         turnId: turn.id,
         role: "user",
         text: command.text,
-        ...attachmentsOf(command.images, command.attachments),
+        ...attachmentsOf(command.images, command.attachments, messageId),
         steer: true,
         createdAt: ctx.now,
       };

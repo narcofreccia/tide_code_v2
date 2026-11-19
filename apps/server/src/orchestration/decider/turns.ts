@@ -68,13 +68,14 @@ export function decideTurn(model: ReadModel, command: TurnCommand, ctx: DecideCo
         requestedAt: ctx.now,
       };
       const images = command.images ?? [];
+      const messageId = ctx.newId();
       const userMessage: Message = {
-        id: ctx.newId(),
+        id: messageId,
         threadId: thread.id,
         turnId: turn.id,
         role: "user",
         text: command.text,
-        ...attachmentsOf(images, command.attachments),
+        ...attachmentsOf(images, command.attachments, messageId),
         ...(command.notification !== undefined ? { notification: command.notification } : {}),
         createdAt: ctx.now,
       };

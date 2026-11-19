@@ -144,7 +144,9 @@ describe("ProviderReactor: limits keep the queue", () => {
     await h.reactor.drain();
     expect(h.events.filter((e) => e.type === "turn.released")).toHaveLength(1);
     const inputs = h.claude.sessionFor(h.threadId)?.inputs ?? [];
-    expect(inputs.map((i) => i.text)).toEqual(["first", "second"]);
+    // R22: the image's saved-copy path rides in the prompt footer
+    expect(inputs.map((i) => i.text.split("\n\n")[0])).toEqual(["first", "second"]);
+    expect(inputs[1]?.text).toContain("Attached images");
     expect(inputs[1]?.images).toEqual([IMAGE]);
     expect(h.engine.getModel().turns[secondId]?.status).toBe("completed");
     expect(h.events.filter((e) => e.type === "turn.started" && e.turnId === secondId)).toHaveLength(1);
@@ -161,7 +163,9 @@ describe("ProviderReactor: limits keep the queue", () => {
     await restarted.drain();
     restarted.stop();
     const inputs = h.claude.sessionFor(h.threadId)?.inputs ?? [];
-    expect(inputs.map((i) => i.text)).toEqual(["first", "second"]);
+    // R22: the image's saved-copy path rides in the prompt footer
+    expect(inputs.map((i) => i.text.split("\n\n")[0])).toEqual(["first", "second"]);
+    expect(inputs[1]?.text).toContain("Attached images");
     expect(inputs[1]?.images).toEqual([IMAGE]);
     expect(h.engine.getModel().turns[secondId]?.status).toBe("completed");
   });

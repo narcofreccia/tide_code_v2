@@ -5,8 +5,10 @@ import { affectsQuiet, agentStatus, isQuiescent } from "../orchestration/backgro
 import { lastAssistantText, type DelegateWaits } from "../orchestration/delegation.ts";
 import type { DriverRegistry } from "../provider/registry.ts";
 import { instanceIdOf } from "../provider/sessions.ts";
+import { readImagePaths } from "../workspace/attachments.ts";
 import { pendingSecret as pendingSecretCard } from "./agentSecrets.ts";
 import { RpcException, type RpcCallContext, type RpcRouter } from "./router.ts";
+import { threadCwdResolver } from "./threadCwd.ts";
 
 export type CancelTimer = () => void;
 
@@ -20,6 +22,8 @@ export interface AgentThreadDeps {
   waits?: DelegateWaits;
   /** gray zone getter: a judge verdict below `low` is left out of `agent.thread.wait` */
   grayZone?: () => { low: number; high: number };
+  /** R22: thread -> cwd, where `imagePaths` are read from (default: from the read model) */
+  cwdFor?: (threadId: string) => string;
 }
 
 const DEFAULT_LIST_LIMIT = 20;
@@ -214,6 +218,7 @@ async function dispatch(engine: Engine, command: Command): Promise<Awaited<Retur
 /** R4: agents acting on other threads, under the same privilege ceiling as delegation. */
 export function registerAgentThreadHandlers(router: RpcRouter, deps: AgentThreadDeps): void {
   const { engine } = deps;
+  const cwdFor = deps.cwdFor ?? threadCwdResolver(engine);
 
   router.register("agent.thread.list", async (input, ctx) => {
     const model = engine.getModel();
@@ -249,9 +254,12 @@ export function registerAgentThreadHandlers(router: RpcRouter, deps: AgentThread
       steer = (await deps.registry.status(instanceIdOf(target))).caps.steer === true;
     }
     const commandId = input.commandId !== undefined ? { commandId: input.commandId } : {};
+    // R22: read from the caller's checkout; the target saves its own copies when the message runs
+    const imagePaths = input.imagePaths ?? [];
+    const images = imagePaths.length > 0 ? { images: await readImagePaths(cwdFor(caller.id), imagePaths) } : {};
     if (steer) {
       try {
-        const result = await dispatch(engine, { type: "turn.steer", threadId: target.id, text: input.text, ...commandId });
+        const result = await dispatch(engine, { type: "turn.steer", threadId: target.id, text: input.text, ...images, ...commandId });
         const steered = result.events.find((r) => r.event.type === "turn.steered")?.event;
         if (steered?.type !== "turn.steered") throw new RpcException("internal", "turn.steer produced no message");
         return { turnId: steered.turnId, messageId: steered.message.id, delivered: "steered" as const };
@@ -266,6 +274,7 @@ export function registerAgentThreadHandlers(router: RpcRouter, deps: AgentThread
       text: input.text,
       notification: { source: "system", summary: `message from thread "${caller.title}"` },
       ...(fresh ? { freshSession: true as const } : {}),
+      ...images,
       ...commandId,
     });
     const requested = result.events.find((r) => r.event.type === "turn.requested")?.event;
