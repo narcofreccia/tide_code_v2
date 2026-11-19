@@ -228,6 +228,20 @@ worktree `git rev-parse --git-path info/exclude` resolves to the common dir; `.g
 and the provider reactor appends `Attached files (read them from disk):` + one `- path (mime, size)` line per
 file to the prompt only (the stored message text is unchanged). Worktree threads lose their uploads with the
 worktree; at server start, `.tide/attachments/<id>` dirs older than 30 days under each project root are removed.
+**Images (R22).** A pasted image still reaches the harness as pixels (`turn.requested.images`), and the decider
+also names a copy on its `Message.attachments` entry: `inline: true`, `path` `.tide/attachments/<messageId>/image-<n>.<ext>`.
+The provider reactor writes that copy (`provider/turnImages.ts` → `saveInlineImages`) when the turn runs, after the
+worktree is attached, and before a steer; a write that fails is logged and the turn runs anyway. The prompt gets a
+second footer, `Attached images (also saved on disk):`, with the paths and what to do with them, so the model can put
+a path in the prompt of its own harness's sub-agent (same checkout, text-only input). When the instance does not take
+images (`caps.images`), the pixels are dropped and the path is the route. For another thread, `tide_delegate` and
+`tide_thread_send` take `images`: paths in the caller's checkout, sent as `imagePaths` on `agent.dispatch` /
+`agent.thread.send`. `readImagePaths` resolves them (real path inside the caller's cwd, regular file, ≤ 5 MB, ≤ 8,
+png/jpeg/gif/webp by magic bytes) and puts the bytes on `thread.delegate.images` or the `turn.request` / `turn.steer`;
+`images` sent on the wire with `thread.delegate` are dropped. The target then saves its own copy like any turn with
+images. Limits: only images travel this way (an uploaded file does not follow a delegate into its own worktree); a
+harness sub-agent gets the path, not pixels; messages older than R22 have no copy; the new attachment field bumped
+`MODEL_SCHEMA` to 3 (one replay at boot).
 `ports.list` runs `lsof -nP -iTCP -sTCP:LISTEN -Fpcn` (fallback `ss -ltnp`) plus `ps -axo pid=,ppid=,comm=`
 (cached 3 s) and returns listeners whose process descends from a terminal shell of the thread; harness child
 pids are not exposed by `SessionDirectory`, so a server the agent starts itself is found only when it runs in

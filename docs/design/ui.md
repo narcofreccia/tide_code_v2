@@ -110,7 +110,7 @@ every follow-up queues. Queued messages form a **QueueList** above the composer:
 edited, moved, dragged, promoted (`Send now as steer`, only when the harness can steer) or removed
 (`×`). A queued user message carries a `queued` pill. Images can be pasted or dropped into the composer (max 8, ~5 MB each) when
 the harness accepts them; they show as thumbnails before sending and as `🖼 image/png · 120 KB`
-pills on the sent message. Assistant extended thinking renders as a collapsed "Thinking"
+pills on the sent message; the pill opens the copy the server saved in the thread's checkout. Assistant extended thinking renders as a collapsed "Thinking"
 disclosure above the answer. A settled turn gets a subtle footer under its last assistant
 message: duration, tokens in/out, cost, or the error that ended it. Model / mode / interaction
 can be changed mid-turn — they apply from the next turn, and the pill says so.
@@ -224,15 +224,20 @@ Composer: textarea, `@` mentions (worktree files), paste images, mode/provider/m
 - **Composer.** `--surface`, hairline (accent while focused), `--radius-lg`; the textarea is
   borderless inside it at `--fs-base`, `line-height: 1.5`, 2 rows growing to 12; toolbar pills `--fs-sm`.
 - **Follow, release, restore.** The stream follows the end while you read the end: every new row,
-  delta or late resize (composer growing, a row expanding, a diagram finishing) re-pins the bottom
-  before paint. Reading up releases it, and only input does: wheel up, a touch drag, a press on the
-  scrollbar, `PageUp` / `Home` / `↑`. Scrolling back within 40px of the end follows again. While
-  released, a row above the view that grows or collapses does not move what you are reading.
-  Output for this thread that lands while released raises a `⌄ New text` pill at the bottom centre
-  after 150ms; it hides as soon as the stream follows again, jumps to the end on click, and never
-  appears in the first 300ms after a thread switch. Each thread remembers where you left it (the
-  last 100 threads): switching back restores that row and offset before paint, or the end if you
-  were following.
+  delta or late resize (composer growing, a row expanding, a diagram finishing, a row that mounts on
+  its own) re-pins the bottom before paint. Reading up releases it, and only a gesture the stream
+  itself takes does: wheel up (not a sideways swipe, not a pinch, not a wheel over a box inside a row
+  that can still scroll up, such as live thinking, tool output or a diff), a touch drag down, a press
+  on the scrollbar, `PageUp` / `Home` / `↑`. A release after which the stream has not moved up more
+  than 4px within 120ms of the gesture's last input is undone. Reaching the end, scrolling back
+  within 40px of it, or sending a message follows again. While released, a row above the view that
+  grows or collapses does not move what you are reading. Output for this thread that lands while
+  released raises a `⌄ New text` pill at the bottom centre after 150ms; it hides as soon as the
+  stream follows again, jumps to the end on click, and never appears in the first 300ms after a
+  thread switch. Each thread remembers where you left it (the last 100 threads): switching back
+  restores that row and offset before paint, or the end if you were following or had stopped within
+  40px of it. `localStorage["tide.debug.scroll"] = "1"` logs every follow/release change with its
+  cause to the console.
 
 **Workbench › Changes**: turn selector (`Turn 3 of 5 ▾`, "all turns"), file list with +/−, unified/split toggle, Monaco diff. Actions: revert turn, open file, commit+push+PR.
 **Workbench › File**: Monaco, write-enabled, dirty dot, `⌘S`. Open from diff, tree, `@mention`, activity line.
