@@ -53,3 +53,21 @@ Tide's own tools; `APPROVE_ALL=1` accepts every card, otherwise other cards are 
 With `NOWAIT=1` the first delegate ends its turn while its sub-agent still works; the script checks
 that the orchestrator hears of that delegate only after the sub-agent ended. A second run reuses the
 project of the first. `DELEGATES=codex,opencode` needs an OpenCode 2.x the driver can find.
+
+## R22: an image handed to a sub-agent and a delegate
+
+One scratch server (`home1`). Needs both harnesses logged in; it spends one short orchestrator turn
+with one sub-agent and one short delegate turn.
+
+```sh
+mkdir -p $S/smoke-image && (cd $S/smoke-image && git init -q -b main . && echo hello > a.txt && git add . && git commit -qm init)
+S=$S PORT=3821 node --experimental-strip-types scripts/live/image-handoff.mts                      # Claude orchestrator → own sub-agent + Codex delegate
+S=$S PORT=3821 ORCH=codex DELEGATE=claude node --experimental-strip-types scripts/live/image-handoff.mts
+```
+
+`image-handoff.mts` sends the orchestrator a flat green png and forbids it to name the colour to its
+workers. It checks that the image got a saved copy in the orchestrator's checkout, that the
+sub-agent's own rows open that file, that the delegate's first message carries the image with a copy
+in the delegate's checkout, that the delegate's prompt does not contain the colour, and that both
+workers answer "green". The "sub-agent opened the file" check only runs for a Claude orchestrator:
+Codex records no rows for what its sub-agent opened, so there the sub-agent's answer is the only evidence.
