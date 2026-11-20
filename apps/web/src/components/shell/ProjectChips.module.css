@@ -1,16 +1,14 @@
 .row {
   display: flex;
+  flex-wrap: wrap;
   gap: var(--sp-1);
   margin: 0;
   padding: 0 var(--sp-2) var(--sp-2);
   list-style: none;
-  overflow-x: auto;
-  scrollbar-width: none;
 }
-.row::-webkit-scrollbar { display: none; }
-.fade { mask-image: linear-gradient(to right, #000 calc(100% - 24px), transparent); }
 .chip {
   flex: none;
+  max-width: 100%;
   position: relative;
   display: flex;
   align-items: center;
@@ -38,13 +36,14 @@
 .active .main { color: var(--text); }
 .icon { display: inline-flex; }
 .icon > * { width: 14px; height: 14px; }
-.name { max-width: 120px; overflow: hidden; text-overflow: ellipsis; }
+.name { min-width: 0; max-width: 160px; overflow: hidden; text-overflow: ellipsis; }
 .count { color: var(--muted); font-variant-numeric: tabular-nums; }
 .dot { width: 6px; height: 6px; border-radius: 50%; }
 .running { background: var(--st-running); }
 .needs { background: var(--st-needs); }
 .more {
-  display: none;
+  display: inline-flex;
+  visibility: hidden;
   align-items: center;
   justify-content: center;
   width: 18px;
@@ -58,6 +57,6 @@
   cursor: pointer;
 }
 .chip:hover .more,
-.chip:focus-within .more { display: inline-flex; }
+.chip:focus-within .more { visibility: visible; }
 .more:hover { color: var(--text); background: var(--surface-hover); }
 .pin { display: inline-flex; color: var(--muted); }

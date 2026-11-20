@@ -101,7 +101,7 @@ describe("ProjectChips", () => {
     expect(fake.dispatch).toHaveBeenCalledWith(expect.objectContaining({ type: "project.update", projectId: "p2", pinned: false }));
   });
 
-  it("shows one chip per repo: clones on two machines scope together, counts sum", () => {
+  it("shows one chip per repo, named by the project: clones on two machines scope together, counts sum", () => {
     const repo = { remoteUrl: "github.com/acme/web", cloneUrl: "https://github.com/acme/web.git", defaultBranch: "main", detectedAt: 1 };
     attachFakeStore(
       modelWith({
@@ -116,17 +116,19 @@ describe("ProjectChips", () => {
     render(<Rail />);
     const chips = within(screen.getByRole("list", { name: "Projects" }));
     expect(chips.getAllByRole("listitem")).toHaveLength(3);
-    expect(chips.getByText("acme/web").closest("button")?.textContent).toContain("· 2");
-    fireEvent.click(chips.getByText("acme/web"));
+    expect(chips.getByText("web").closest("button")?.textContent).toContain("· 2");
+    // the chip carries the project's name; the repo and every clone's path are in its tooltip
+    expect(chips.getByText("web").closest("button")?.getAttribute("title")).toBe("acme/web\n/src/p1\n/src/p2");
+    fireEvent.click(chips.getByText("web"));
     expect(useUi.getState().projectFilter).toEqual(["p1", "p2"]);
     expect(useUi.getState().selectedProjectId).toBe("p1");
     expect(screen.queryByText("Three")).toBeNull();
-    expect(chips.getByText("acme/web").closest("button")?.getAttribute("aria-pressed")).toBe("true");
+    expect(chips.getByText("web").closest("button")?.getAttribute("aria-pressed")).toBe("true");
     // cmd-click on the active repo removes the whole group
-    fireEvent.click(chips.getByText("acme/web"), { metaKey: true });
+    fireEvent.click(chips.getByText("web"), { metaKey: true });
     expect(useUi.getState().projectFilter).toEqual([]);
     fireEvent.click(chips.getByText("Atlas"));
-    fireEvent.click(chips.getByText("acme/web"), { metaKey: true });
+    fireEvent.click(chips.getByText("web"), { metaKey: true });
     expect(useUi.getState().projectFilter).toEqual(["p3", "p1", "p2"]);
   });
 });

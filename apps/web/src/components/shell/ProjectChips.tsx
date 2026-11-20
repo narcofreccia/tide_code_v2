@@ -13,9 +13,6 @@ import { projectMenu } from "./railMenus.ts";
 import { useProjectScope } from "./useProjectScope.ts";
 import styles from "./ProjectChips.module.css";
 
-/** Past this many chips the row scrolls and fades at its edge. */
-const FADE_AFTER = 5;
-
 function ProjectChip({ group, active }: { group: RepoGroup; active: boolean }) {
   const selectProjects = useUi((s) => s.selectProjects);
   const { lead, projects } = group;
@@ -39,6 +36,9 @@ function ProjectChip({ group, active }: { group: RepoGroup; active: boolean }) {
     useUi.setState({ projectFilter: filter, selectedProjectId: filter.length === 1 ? (filter[0] ?? null) : null });
   };
   const project = lead;
+  // the project's own short name; the repo (owner/name) and every clone's path are in the tooltip
+  const name = lead.title || group.label;
+  const tooltip = [group.label !== name ? group.label : undefined, ...projects.map((p) => p.rootPath)].filter(Boolean).join("\n");
   const [menu, setMenu] = useState<MenuPosition | undefined>(undefined);
   return (
     <li
@@ -51,14 +51,14 @@ function ProjectChip({ group, active }: { group: RepoGroup; active: boolean }) {
       <button
         type="button"
         className={styles.main}
-        title={projects.map((p) => p.rootPath).join("\n")}
+        title={tooltip}
         aria-pressed={active}
         onClick={(e) => (e.metaKey || e.ctrlKey ? toggleGroup() : selectProjects(ids))}
       >
         <span className={styles.icon}>
           <ProjectIcon project={project} />
         </span>
-        <span className={styles.name}>{group.label}</span>
+        <span className={styles.name}>{name}</span>
         {project.pinned === true ? (
           <span className={styles.pin} data-chip-pinned="">
             <Icon name="pin" size={10} />
@@ -76,7 +76,7 @@ function ProjectChip({ group, active }: { group: RepoGroup; active: boolean }) {
       <button
         type="button"
         className={styles.more}
-        aria-label={`Actions for ${group.label}`}
+        aria-label={`Actions for ${name}`}
         title="More actions"
         onClick={(e) => {
           const rect = e.currentTarget.getBoundingClientRect();
@@ -92,8 +92,8 @@ function ProjectChip({ group, active }: { group: RepoGroup; active: boolean }) {
 
 /**
  * The rail's scope: `All` then one chip per repository (pinned first; click filters to it and every clone of it on other machines, ⌘-click adds or removes the whole
- * repo). Chips are a filter over the groups below, not a tree. With a single repository there is nothing to filter, so
- * the row is not drawn.
+ * repo), named by the project's title. Chips are a filter over the groups below, not a tree, and wrap onto more lines rather
+ * than hide past the rail's edge. With a single repository there is nothing to filter, so the row is not drawn.
  */
 export function ProjectChips({ projects }: { projects: readonly Project[] }) {
   const clearProjectFilter = useUi((s) => s.clearProjectFilter);
@@ -102,7 +102,7 @@ export function ProjectChips({ projects }: { projects: readonly Project[] }) {
   if (groups.length <= 1) return null;
   const all = scope.length === 0;
   return (
-    <ul className={`${styles.row} ${groups.length + 1 > FADE_AFTER ? styles.fade : ""}`} aria-label="Projects">
+    <ul className={styles.row} aria-label="Projects">
       <li className={`${styles.chip} ${all ? styles.active : ""}`}>
         <button type="button" className={styles.main} aria-pressed={all} onClick={clearProjectFilter}>
           <span className={styles.name}>All</span>
