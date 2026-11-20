@@ -9,6 +9,7 @@ import { acquireHomeLock, hostLockProbes, releaseHomeLock, updateHomeLock } from
 import { PARENT_PID_ENV, parentPidFrom, watchParent } from "./parentWatch.ts";
 import { clearRuntime, writeRuntime } from "./runtime.ts";
 import { StoreSchemaError } from "../orchestration/migrations.ts";
+import { applyShellPath } from "../shellPath.ts";
 
 export interface BannerInput {
   environmentId: string;
@@ -76,6 +77,9 @@ export async function runServe(args: string[], legacy: boolean): Promise<void> {
   const lock = { pid: process.pid, port: config.port, startedAt, version: config.version, ...(certPath !== undefined ? { certPath } : {}) };
   await acquireHomeLock(config.tideHome, lock, config.environmentId, hostLockProbes());
   process.on("exit", () => releaseHomeLock(config.tideHome));
+
+  // a Finder/launchd start has a bare PATH and the harness CLIs live on the user's: adopt the login shell's
+  await applyShellPath();
 
   let app: Awaited<ReturnType<typeof createApp>>;
   try {

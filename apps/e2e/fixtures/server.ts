@@ -66,6 +66,8 @@ function serverEnv(state: E2EState): NodeJS.ProcessEnv {
     TMPDIR: join(state.root, "tmp"),
     LANG: "en_US.UTF-8",
     GIT_CONFIG_NOSYSTEM: "1",
+    // keep the login-shell PATH probe (and /etc/zprofile's path_helper) from adding the developer's CLIs
+    TIDE_NO_SHELL_PATH: "1",
   };
 }
 

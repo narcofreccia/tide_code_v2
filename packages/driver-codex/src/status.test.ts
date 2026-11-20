@@ -1,9 +1,11 @@
+import { chmodSync, mkdirSync, mkdtempSync, writeFileSync } from "node:fs";
 import { tmpdir } from "node:os";
+import { join } from "node:path";
 import { describe, expect, it } from "vitest";
 import type { DriverEnv } from "@tide/contracts";
 import { fakeSpawn } from "./fake-app-server.ts";
 import { codexDriver } from "./index.ts";
-import { CODEX_CAPS, FREE_PLAN_NOTE, INSTALL_HINT, LOGIN_COMMAND, LOGIN_HINT, accountLabel, parseVersion, toModelInfo } from "./status.ts";
+import { CODEX_CAPS, FREE_PLAN_NOTE, INSTALL_HINT, LOGIN_COMMAND, LOGIN_HINT, accountLabel, detectBinary, parseVersion, toModelInfo } from "./status.ts";
 import { mcpEnvAndArgs, TIDE_MCP_TOOL_TIMEOUT_SEC } from "./app-server.ts";
 import { collaborationModeFor, policyFor } from "./modes.ts";
 
@@ -117,7 +119,7 @@ describe("status", () => {
   });
 
   it("reports a missing binary with an install hint and no models", async () => {
-    const instance = await codexDriver.create({ binaryPath: "/nonexistent/codex", env: { PATH: "/nonexistent" } }, env);
+    const instance = await codexDriver.create({ binaryPath: "/nonexistent/codex", env: { PATH: "/nonexistent", HOME: "/nonexistent" } }, env);
     const status = await instance.status();
     expect(status.installed).toBe(false);
     expect(status.hint).toBe(INSTALL_HINT);
@@ -125,6 +127,29 @@ describe("status", () => {
     expect(status.loginCommand).toBeUndefined();
     expect(status.models).toEqual([]);
     await instance.dispose();
+  });
+
+  /** A scratch HOME with an executable `codex` at `<home>/<dir>/codex`. */
+  function fakeCodex(home: string, dir: string): string {
+    mkdirSync(join(home, dir), { recursive: true });
+    const file = join(home, dir, "codex");
+    writeFileSync(file, "#!/bin/sh\n");
+    chmodSync(file, 0o755);
+    return file;
+  }
+
+  it("falls back to ~/.local/bin/codex (from config.env.HOME) when PATH has no codex", async () => {
+    const home = mkdtempSync(join(tmpdir(), "codex-home-"));
+    const local = fakeCodex(home, ".local/bin");
+    expect(await detectBinary({ env: { PATH: "/nonexistent", HOME: home } })).toBe(local);
+  });
+
+  it("prefers a codex on PATH over the fixed location", async () => {
+    const home = mkdtempSync(join(tmpdir(), "codex-home-"));
+    fakeCodex(home, ".local/bin");
+    const onPath = fakeCodex(home, "pinned");
+    // `/usr/bin/env which` resolves `which` itself through this PATH, so it keeps the system dirs
+    expect(await detectBinary({ env: { PATH: [join(home, "pinned"), "/usr/bin", "/bin"].join(":"), HOME: home } })).toBe(onPath);
   });
 
   it("offers `codex resume <threadId>` as the terminal escape hatch", async () => {

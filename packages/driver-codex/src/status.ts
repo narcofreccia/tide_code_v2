@@ -1,5 +1,7 @@
 import { execFile } from "node:child_process";
 import { existsSync } from "node:fs";
+import { homedir } from "node:os";
+import { join } from "node:path";
 import { promisify } from "node:util";
 import type { DriverEnv, ModelInfo, ProviderStatus } from "@tide/contracts";
 import { AppServer, mergedEnv } from "./app-server.ts";
@@ -57,7 +59,10 @@ export async function detectBinary(config: CodexConfig): Promise<string | undefi
   // `config.env` also steers detection, so a pinned PATH finds the intended codex.
   const which = await exec("/usr/bin/env", ["which", "codex"], 5_000, mergedEnv(config));
   const resolved = which?.trim().split("\n")[0]?.trim();
-  return resolved && resolved !== "" ? resolved : undefined;
+  if (resolved && resolved !== "") return resolved;
+  // where the standalone installer puts it, for a server started without the user's PATH
+  const local = join(config.env?.["HOME"] ?? homedir(), ".local", "bin", "codex");
+  return existsSync(local) ? local : undefined;
 }
 
 export function parseVersion(output: string): string | undefined {
