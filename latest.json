@@ -1,10 +1,10 @@
 {
-  "version": "0.3.4",
-  "notes": "v0.3.4",
-  "pub_date": "2026-11-20T21:26:33Z",
+  "version": "0.3.5",
+  "notes": "v0.3.5",
+  "pub_date": "2026-11-20T21:52:43Z",
   "platforms": {
     "darwin-aarch64": {
-      "signature": "dW50cnVzdGVkIGNvbW1lbnQ6IHNpZ25hdHVyZSBmcm9tIHRhdXJpIHNlY3JldCBrZXkKUlVURFlJczZXUGlBM3c5MDR3MVlZWEl6SGEzanRwTG5GWHZhOTl4cHF5OWxXUndSL01Id1JCOFVUcUMvSHFnenBqa1VqZUFiSVVqaFQzUlBLRUJkWm1Nc2lTRnUyTWZnZGdJPQp0cnVzdGVkIGNvbW1lbnQ6IHRpbWVzdGFtcDoxNzk1MjA5ODcwCWZpbGU6VGlkZSBDb2RlLmFwcC50YXIuZ3oKMHg0Q2RURmdCQTlvVlJ1YmhpRHM0SnloYnBXNjJvNHN4Z3poWVN4RUNoQzY2YkhVK3RDcUpVdHlkZkw5cDd3NUdzK1FsdUNSZFpGUThPVm85bnV1RFE9PQo=",
+      "signature": "dW50cnVzdGVkIGNvbW1lbnQ6IHNpZ25hdHVyZSBmcm9tIHRhdXJpIHNlY3JldCBrZXkKUlVURFlJczZXUGlBMytyMkM1NXFNSUgraSt3c25mZWNUOG5sUm9KZzlOVzZHSi9SVHVDMWFFOCtHSDhYVUxldlZ6VDRyaU1VWlAybHRQQU1ZQU9NRVRpQ1VpenF0Rlhxb2dZPQp0cnVzdGVkIGNvbW1lbnQ6IHRpbWVzdGFtcDoxNzk1MjExNDczCWZpbGU6VGlkZSBDb2RlLmFwcC50YXIuZ3oKc0Z6U2dKMENoejRaWGx4VzNaYTFCWGZYUU5wdGxkZnlHUEVaYUhYem14SnViVmhGMm13WXVLekdCWWd4YTlmbWRpQ2JCQWx3Z3BYVEpHMHVSSXpBREE9PQo=",
       "url": "https://pub-7b3e5bbd605d43adbeb4601a962d84bd.r2.dev/tidecode/mac/tide.app.tar.gz"
     },
     "windows-x86_64": {
@@ -15,8 +15,8 @@
   "server": {
     "aarch64-apple-darwin": {
       "url": "https://pub-7b3e5bbd605d43adbeb4601a962d84bd.r2.dev/tidecode/server/aarch64-apple-darwin/tide-server.tar.gz",
-      "sha256": "16be37bfe68ada6d46cf9f9c90241f09990fe96ff2c6163809b4031e5a003f9e",
-      "version": "0.3.4"
+      "sha256": "3b3c5118d7dbc908f5b8fa352d1675e9e1373d82e31e7a4b679e24e795723966",
+      "version": "0.3.5"
     },
     "x86_64-unknown-linux-gnu": {
       "url": "https://pub-7b3e5bbd605d43adbeb4601a962d84bd.r2.dev/tidecode/server/x86_64-unknown-linux-gnu/tide-server.tar.gz",
@@ -26,7 +26,7 @@
   },
   "web": {
     "url": "https://pub-7b3e5bbd605d43adbeb4601a962d84bd.r2.dev/tidecode/web/web.tar.gz",
-    "sha256": "6f118094157f42030c05a05bfdb670747bf3201696f8cd250acb6a83e935f314",
-    "version": "0.3.4"
+    "sha256": "c682482737eee8cc182f16562f4982368b1bc6541704046c727f47c0867ab6f7",
+    "version": "0.3.5"
   }
 }
