@@ -251,6 +251,12 @@ export class DriverRegistry {
    * an instance lives); undefined until one was read, or when the harness is not installed (its
    * caps are then placeholders, not an answer). Synchronous, for the decider defaults.
    */
+  /** Model ids from the last status read of `id`, whatever its age; undefined until one was read. */
+  cachedModels(id: string): string[] | undefined {
+    const dto = this.#status.get(id)?.dto;
+    return dto === undefined || !dto.installed ? undefined : dto.models.map((m) => m.id);
+  }
+
   cachedCaps(id: string): Partial<DriverCaps> | undefined {
     const dto = this.#status.get(id)?.dto;
     // the DTO spreads the driver's caps, so R14+ flags the wire schema does not list are still here
