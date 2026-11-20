@@ -123,7 +123,7 @@ hardened sidecar without them means the server silently never starts.
 Verify by hand:
 
 ```sh
-codesign -d --entitlements :- "apps/desktop/src-tauri/target/release/bundle/macos/Tide.app/Contents/MacOS/tide-server"
+codesign -d --entitlements :- "apps/desktop/src-tauri/target/release/bundle/macos/Tide Code.app/Contents/MacOS/tide-server"
 ```
 
 ## Windows and Linux — GitHub Actions
@@ -177,6 +177,6 @@ and pointing the lazy import at it. Same note lives in the header of
 
 `apps/desktop/src-tauri/src/updater.rs` runs once per launch, after the server reports
 ready so it never competes with the splash. It checks the manifest, and on a hit shows a
-native dialog — *"Tide &lt;version&gt; is available — Install and relaunch?"* — then
+native dialog — *"Tide Code &lt;version&gt; is available — Install and relaunch?"* — then
 downloads, installs and restarts. Any failure is logged and ignored; the app still starts.
 The web client stays Tauri-free (CLAUDE.md §4), so no update UI lives there.

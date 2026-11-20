@@ -167,7 +167,7 @@ Every release overwrites these files in place, so the links never change.
 | `live manifest is X and this build is Y (a downgrade)` | the version is not higher than what is live | bump higher; `ALLOW_DOWNGRADE=1` only for a deliberate reset |
 | Tests fail in step 1 of the build | a real failure on main | fix and commit, rerun. `--skip-tests` is for local experiments only |
 | Notarization rejected / times out | Apple credentials or a service hiccup | check `.env.build`; `xcrun notarytool history --apple-id … --team-id …`; rerun |
-| Entitlements guard fails | a binary in `Tide.app` lacks the JIT entitlements | do not ship; see *The entitlements guard* in `docs/RELEASING.md` |
+| Entitlements guard fails | a binary in `Tide Code.app` lacks the JIT entitlements | do not ship; see *The entitlements guard* in `docs/RELEASING.md` |
 | Uploads failed after the build succeeded | R2 credentials or network | `pnpm release:mac --manifest-only` is **not** enough: rerun the full command |
 | Windows job: `version mismatch` | main was not pushed, or the input is wrong | `git push origin main`, rerun with the right `version` |
 | Installed app never offers the update | manifest version not higher, or signature mismatch | `curl $BASE/latest.json`; the version must be higher than the installed one |

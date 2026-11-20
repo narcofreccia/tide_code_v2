@@ -81,7 +81,7 @@ fn close_gracefully(handle: tauri::AppHandle) {
         return;
     }
     if let Some(sup) = handle.try_state::<Supervisor>() {
-        sup.show_splash("closing", "Closing Tide…".into());
+        sup.show_splash("closing", "Closing Tide Code…".into());
     }
     std::thread::spawn(move || {
         std::thread::sleep(std::time::Duration::from_millis(350));

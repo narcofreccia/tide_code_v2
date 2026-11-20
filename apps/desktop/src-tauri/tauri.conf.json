@@ -1,6 +1,6 @@
 {
   "$schema": "../node_modules/@tauri-apps/cli/schema.json",
-  "productName": "Tide",
+  "productName": "Tide Code",
   "version": "../../../package.json",
   "identifier": "dev.tide.code",
   "build": {
@@ -14,7 +14,7 @@
     "windows": [
       {
         "label": "main",
-        "title": "Tide",
+        "title": "Tide Code",
         "dragDropEnabled": false,
         "url": "tide-shell://localhost/",
         "width": 1440,

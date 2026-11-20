@@ -75,7 +75,7 @@ export function compareVersions(a: string, b: string): number {
 export function insideTauriBundle(execPath: string): boolean {
   if (/\.app\/Contents\/MacOS\//.test(execPath)) return true;
   const dir = dirname(execPath);
-  return ["Tide.exe", "tide-desktop", "tide-desktop.exe"].some((name) => existsSync(join(dir, name)));
+  return ["Tide Code.exe", "Tide.exe", "tide-desktop", "tide-desktop.exe"].some((name) => existsSync(join(dir, name)));
 }
 
 const isArtifact = (v: unknown): v is Artifact =>

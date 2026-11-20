@@ -118,7 +118,7 @@ jobs:
           MSYS_NO_PATHCONV=1 timeout 180 "$setup" /S || { echo "installer failed or hung (exit $?)"; exit 1; }
           localappdata="$(cygpath -u "$LOCALAPPDATA")"
           for _ in $(seq 1 30); do
-            server="$(find "$localappdata/Tide" "$localappdata/Programs/Tide" "/c/Program Files/Tide" -name 'tide-server*.exe' 2>/dev/null | head -1 || true)"
+            server="$(find "$localappdata/Tide Code" "$localappdata/Programs/Tide Code" "/c/Program Files/Tide Code" -name 'tide-server*.exe' 2>/dev/null | head -1 || true)"
             [ -n "$server" ] && break
             sleep 2
           done

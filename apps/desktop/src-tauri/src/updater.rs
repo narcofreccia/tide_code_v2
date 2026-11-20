@@ -45,7 +45,7 @@ fn check(app: &AppHandle, declined: &mut Option<String>) -> Result<(), Box<dyn s
     }
     let accepted = app
         .dialog()
-        .message(format!("Tide {} is available — Install and relaunch?", update.version))
+        .message(format!("Tide Code {} is available — Install and relaunch?", update.version))
         .title("Update available")
         .kind(MessageDialogKind::Info)
         .buttons(MessageDialogButtons::OkCancelCustom("Install".into(), "Later".into()))
@@ -56,7 +56,7 @@ fn check(app: &AppHandle, declined: &mut Option<String>) -> Result<(), Box<dyn s
     }
 
     let sup = app.state::<Supervisor>();
-    sup.show_splash("updating", format!("Downloading Tide {}…", update.version));
+    sup.show_splash("updating", format!("Downloading Tide Code {}…", update.version));
     let (mut done, mut last_pct) = (0u64, 0u64);
     let version = update.version.clone();
     let progress = app.clone();
@@ -66,7 +66,7 @@ fn check(app: &AppHandle, declined: &mut Option<String>) -> Result<(), Box<dyn s
             let pct = total.map_or(0, |t| done * 100 / t.max(1));
             if pct != last_pct {
                 last_pct = pct;
-                progress.state::<Supervisor>().show_splash("updating", format!("Downloading Tide {version}… {pct}%"));
+                progress.state::<Supervisor>().show_splash("updating", format!("Downloading Tide Code {version}… {pct}%"));
             }
         },
         || {},

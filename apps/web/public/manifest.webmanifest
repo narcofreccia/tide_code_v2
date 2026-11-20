@@ -1,6 +1,6 @@
 {
   "name": "Tide Code",
-  "short_name": "Tide",
+  "short_name": "Tide Code",
   "description": "Agentic code editor and orchestrator for Claude Code, Codex, OpenCode and Pi.",
   "start_url": "/",
   "scope": "/",

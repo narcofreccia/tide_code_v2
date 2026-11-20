@@ -214,7 +214,7 @@ fn supervise(app: AppHandle, inner: Shared) {
                 }
                 Some(Err(err)) => {
                     show_splash(&app, &inner);
-                    set_status(&app, &inner, "failed", Some(format!("{err}\nUse the Tide menu to connect again or run the local server.")));
+                    set_status(&app, &inner, "failed", Some(format!("{err}\nUse the Tide Code menu to connect again or run the local server.")));
                     if !wait_retry(&inner) {
                         return;
                     }
