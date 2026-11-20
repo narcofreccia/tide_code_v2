@@ -150,6 +150,35 @@ live("codex driver (live)", () => {
     expect(lastChild).toMatchObject({ kind: "child", status: "done" });
     expect(backgroundAfter).toBe(false);
   }, 420_000);
+
+  // A sub-agent that messages its parent names the session's own thread in a `subAgentActivity`
+  // item. That item once filed the parent as a child, and the parent's turn never settled.
+  it("records a sub-agent that sends a message to its parent", async () => {
+    const cwd = mkdtempSync(join(tmpdir(), "tide-codex-live-"));
+    const tap = new RawTap();
+    const instance = await codexDriver.create({ ...codexDriver.defaultConfig(), spawnImpl: tap.spawn }, env);
+    const session = await instance.openSession({ threadId: "live-sub-return", cwd, mode: "auto", interaction: "default", mcpServers: [] });
+
+    const events: NormalizedEvent[] = [];
+    const prompt = "Spawn exactly one sub-agent. Its task: first use its send_message tool to send the text `ping` to its parent agent `/root`, then reply done. Wait for it to finish, then reply in one line with the word you received.";
+    for await (const event of session.send({ text: prompt })) {
+      events.push(event);
+      if (event.type === "activity" && event.activity.kind === "approval") void session.respondApproval(event.activity.requestId, "accept");
+    }
+    const main = session.nativeSessionId;
+    await session.close();
+    await instance.dispose();
+    tap.write("subagent-return-turn", cwd);
+
+    const namesMain = (line: RawLine): boolean => {
+      const item = (line.params as { item?: { type?: string; agentThreadId?: string } } | null)?.item;
+      return item?.type === "subAgentActivity" && item.agentThreadId === main;
+    };
+    expect(tap.lines.some(namesMain)).toBe(true);
+    expect(events.at(-1)).toMatchObject({ type: "settled", status: "completed" });
+    expect(events.some((event) => event.type === "activity" && event.activity.kind === "child" && event.activity.childKey === main)).toBe(false);
+    expect(events.some((event) => event.type === "assistant.delta")).toBe(true);
+  }, 300_000);
 });
 
 interface RawLine {

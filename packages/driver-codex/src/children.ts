@@ -42,17 +42,27 @@ function stateStatus(status: CollabAgentStatus): ChildStatus {
  * The row's status follows the child itself: its own `turn/started` / `turn/completed`,
  * `subAgentActivity` items and the `agentsStates` reported on collab tool calls. The collab
  * call's own status is not used for it: `spawnAgent` completes as soon as the agent exists.
+ *
+ * The session's own thread is never a child: a sub-agent reporting back names its parent
+ * (`agentPath: "/root"`), and a row for it would route the session's own turn into that row.
  */
 export class CodexChildren {
   #rows = new Map<string, ChildRow>();
+  #main: string | undefined;
+
+  /** The session's own thread, once known (resume: at once; new thread: on its `thread/started`). */
+  setMain(threadId: string): void {
+    this.#main = threadId;
+    this.#rows.delete(threadId);
+  }
 
   has(threadId: string): boolean {
-    return this.#rows.has(threadId);
+    return threadId !== this.#main && this.#rows.has(threadId);
   }
 
   /** `parentToolUseId` for anything produced in `threadId`: the child's own id, or nothing for the main thread. */
   parentFor(threadId: string | undefined): string | undefined {
-    return threadId !== undefined && this.#rows.has(threadId) ? threadId : undefined;
+    return threadId !== undefined && this.has(threadId) ? threadId : undefined;
   }
 
   /** The child's display name (nickname or agent path), for one-line notices. */
@@ -70,6 +80,7 @@ export class CodexChildren {
     const parentId = thread.parentThreadId ?? undefined;
     if (parentId === undefined || (parentId !== mainThreadId && !this.#rows.has(parentId))) return [];
     const row = this.#row(thread.id, this.parentFor(parentId));
+    if (!row) return [];
     if (thread.agentNickname && row.name === PLACEHOLDER_NAME) row.name = thread.agentNickname;
     return this.#emit(thread.id);
   }
@@ -97,6 +108,7 @@ export class CodexChildren {
       // Only a spawn creates a row; other tools only update the children they report on.
       if (!known && !spawn) continue;
       const row = this.#row(child, parent);
+      if (!row) continue;
       if (spawn && !known && item.prompt) row.description = truncate(item.prompt, 500);
       if (spawn && item.status === "failed") row.status = "error";
       const state = item.agentsStates[child];
@@ -114,6 +126,7 @@ export class CodexChildren {
   subAgent(item: SubAgentItem, parent: string | undefined): NormalizedEvent[] {
     const known = this.#rows.has(item.agentThreadId);
     const row = this.#row(item.agentThreadId, parent);
+    if (!row) return [];
     if (!known || row.name === PLACEHOLDER_NAME) row.name = item.agentPath;
     if (item.kind === "started") row.status = "running";
     else if (item.kind === "completed") row.status = "done";
@@ -161,7 +174,9 @@ export class CodexChildren {
     return this.#emit(threadId);
   }
 
-  #row(childId: string, parent: string | undefined): ChildRow {
+  /** The row for `childId`, created on first sight; never one for the session's own thread. */
+  #row(childId: string, parent: string | undefined): ChildRow | undefined {
+    if (childId === this.#main) return undefined;
     let row = this.#rows.get(childId);
     if (!row) {
       row = { name: PLACEHOLDER_NAME, status: "running", ...(parent !== undefined ? { parent } : {}) };

@@ -18,6 +18,7 @@ import type { RequestId } from "./jsonrpc.ts";
 import { resumeRefusal } from "./resume-refused.ts";
 import { collaborationModeFor, policyFor, writableRoots } from "./modes.ts";
 import { CodexNormalizer } from "./normalize.ts";
+import { isNoActiveTurn, missedEndNotice } from "./missed-end.ts";
 import { CodexHarnessTurn, CONTINUED_REASON, isIdleActivity, pendingRequest, requestReason } from "./harness-turn.ts";
 import { TurnLedger } from "./turn-ledger.ts";
 import { withInstance } from "./instance-config.ts";
@@ -34,6 +35,13 @@ import type { TurnSteerResponse } from "./generated/v2/TurnSteerResponse.ts";
 import type { ThreadStartResponse } from "./generated/v2/ThreadStartResponse.ts";
 import type { TurnStartResponse } from "./generated/v2/TurnStartResponse.ts";
 import type { UserInput } from "./generated/v2/UserInput.ts";
+
+/** The turn a `turn/steer` or `turn/interrupt` targeted, captured before the request went out. */
+interface TargetTurn {
+  mailbox: AsyncQueue<NormalizedEvent> | undefined;
+  harness: CodexHarnessTurn | undefined;
+  turnId: string;
+}
 
 /** Fallback with no listeners wired: cap on sub-agent rows held between turns; requests are always held. */
 const MAX_HELD_EVENTS = 500;
@@ -466,7 +474,7 @@ export class CodexSession implements ProviderSession {
       const expectedTurnId = harness.nativeSettled === undefined ? harness.nativeTurnId : undefined;
       if (this.#closed || threadId === undefined || expectedTurnId === undefined) throw new Error("no turn is running on this codex session (a sub-agent's request is waiting)");
       const params: TurnSteerParams = { threadId, input: turnInput(input, (await this.#skills) ?? []), expectedTurnId };
-      await this.#server.request<TurnSteerResponse>("turn/steer", params);
+      await this.#steerRequest(params, { mailbox: undefined, harness, turnId: expectedTurnId });
       return;
     }
     if (target?.turnKey !== undefined) throw new Error("that codex turn is no longer running");
@@ -475,7 +483,39 @@ export class CodexSession implements ProviderSession {
     const expectedTurnId = this.#normalizer.turnId ?? (await turnStart.promise);
     if (expectedTurnId === undefined || !this.#turnActive) throw new Error("no turn is running on this codex session");
     const params: TurnSteerParams = { threadId, input: turnInput(input, (await this.#skills) ?? []), expectedTurnId };
-    await this.#server.request<TurnSteerResponse>("turn/steer", params);
+    await this.#steerRequest(params, { mailbox: this.#mailbox, harness: undefined, turnId: expectedTurnId });
+  }
+
+  /** The error always reaches the caller (the server queues the message as the next turn). */
+  async #steerRequest(params: TurnSteerParams, target: TargetTurn): Promise<void> {
+    try {
+      await this.#server.request<TurnSteerResponse>("turn/steer", params);
+    } catch (error) {
+      if (isNoActiveTurn(error)) this.#missedEnd(target, "completed");
+      throw error;
+    }
+  }
+
+  /**
+   * Codex says the turn a request targeted is over while Tide still holds it open. Codex writes a
+   * turn's `turn/completed` before the answer to a later request on the same pipe, so that end was
+   * missed: settle the turn here. Does nothing once that turn settled or another one took its place.
+   */
+  #missedEnd(target: TargetTurn, status: "completed" | "interrupted"): void {
+    const running = this.#normalizer.turnId;
+    if (running !== undefined && running !== target.turnId) return;
+    const settled: Extract<NormalizedEvent, { type: "settled" }> = { type: "settled", status };
+    const { mailbox, harness } = target;
+    if (mailbox !== undefined && this.#mailbox === mailbox) {
+      mailbox.push(missedEndNotice());
+      mailbox.push(settled);
+      mailbox.close();
+      this.#mailbox = undefined;
+    } else if (harness !== undefined && this.#harness === harness && harness.nativeSettled === undefined && harness.nativeTurnId === target.turnId) {
+      harness.push(missedEndNotice());
+      this.#toHarness(harness, settled);
+    } else return;
+    this.#normalizer.turnEnded();
   }
 
   /**
@@ -551,11 +591,14 @@ export class CodexSession implements ProviderSession {
     if (threadId === undefined) return;
     const turnId = this.#normalizer.turnId;
     const targets = turnId !== undefined ? [{ threadId, turnId }] : requestOnly ? this.#normalizer.runningChildren().flatMap((child) => (child.turnId !== undefined ? [{ threadId: child.threadId, turnId: child.turnId }] : [])) : [];
+    // only the parent's own turn can have a missed end to settle; sub-agent turns only end their rows
+    const parentTurn: TargetTurn | undefined = turnId !== undefined ? { mailbox: this.#mailbox, harness: this.#mailbox === undefined ? harness : undefined, turnId } : undefined;
     for (const target of targets) {
       try {
         await this.#server.request("turn/interrupt", target);
       } catch (error) {
         this.#env.log(`[codex] interrupt failed: ${error instanceof Error ? error.message : String(error)}`);
+        if (parentTurn !== undefined && target.turnId === parentTurn.turnId && isNoActiveTurn(error)) this.#missedEnd(parentTurn, "interrupted");
       }
     }
   }

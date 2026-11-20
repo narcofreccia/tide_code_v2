@@ -109,6 +109,20 @@ describe("codex sub-agents, recorded (subagent-approval-turn.ndjson: the child o
   });
 });
 
+describe("codex sub-agents, recorded (subagent-return-turn.ndjson: the child sends a message to its parent)", () => {
+  it("keeps the session's own thread out of the child rows, so its reply and its turn/completed stay its own", () => {
+    const { events } = replay("subagent-return-turn");
+    const main = events.flatMap((event) => (event.type === "session" ? [event.nativeSessionId] : []))[0];
+    expect(main).toBeDefined();
+    const children = activities(events, "child");
+    expect(children.length).toBeGreaterThan(0);
+    expect(children.map((child) => child.childKey)).not.toContain(main);
+    expect(events.some((event) => event.type === "assistant.delta")).toBe(true);
+    expect(events.filter((event) => event.type === "settled")).toEqual([{ type: "settled", status: "completed" }]);
+    expect(events.at(-1)).toEqual({ type: "settled", status: "completed" });
+  });
+});
+
 describe("codex sub-agents, collab tool calls and child plans (shapes from the 0.170 bindings, not recorded)", () => {
   it("synthetic-subagent-turn: a spawn names its row once and every child row nests under it", () => {
     const { events } = replay("synthetic-subagent-turn");

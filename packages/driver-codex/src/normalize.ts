@@ -82,11 +82,18 @@ export class CodexNormalizer {
   constructor(options: NormalizerOptions = {}) {
     this.#options = options;
     this.#threadId = options.threadId;
+    if (options.threadId !== undefined) this.#children.setMain(options.threadId);
   }
 
   /** Marks the turn as user-interrupted so `turn/completed` settles as `interrupted`. */
   markInterrupted(): void {
     this.#interrupted = true;
+  }
+
+  /** Codex ended the running turn without Tide seeing its `turn/completed`: forget it, and any pending interrupt mark. */
+  turnEnded(): void {
+    this.turnId = undefined;
+    this.#interrupted = false;
   }
 
   /** `parentToolUseId` for a server request from `threadId`: the child's id when it is a sub-agent thread. */
@@ -210,6 +217,7 @@ export class CodexNormalizer {
     if (this.#threadId !== undefined && id !== this.#threadId) return this.#children.announced({ ...thread, id }, this.#threadId);
     if (typeof thread?.parentThreadId === "string") return []; // a child seen before our own thread is known: not ours to claim
     this.#threadId ??= id;
+    this.#children.setMain(this.#threadId);
     return [{ type: "session", nativeSessionId: id }];
   }
 
