@@ -16,6 +16,27 @@ runs the user's installed CLI/SDK and their subscription.
 OpenCode `plan` agent; Pi = system-prompt + `tide_propose_plan` tool, and in plan mode shell
 commands go through a parsed read-only policy (`readonly-shell.ts`) instead of a regex allowlist.
 
+### Finding the harness binaries
+
+Each driver looks for its CLI in this order: the configured `binaryPath`, then `PATH`
+(`/usr/bin/env which <name>`), then a fixed install location where one exists
+(`~/.local/bin/claude`, `~/.local/bin/codex`, `~/.opencode/bin/opencode`; Pi also tries the
+workspace's `node_modules/.bin/pi` before `PATH`).
+
+An app started from Finder or the Dock gets launchd's `PATH` (`/usr/bin:/bin:/usr/sbin:/sbin`),
+and the server sidecar inherits it. So `serve` reads `PATH` from the user's login shell before
+the drivers start (`apps/server/src/shellPath.ts`): `$SHELL -ilc`, then `-lc`, 5 s each, the value
+taken between two markers so rc-file output is ignored. Everything the server spawns inherits the
+result: harness processes, `git`, `gh`, `rg`, terminals, MCP servers.
+
+- A bare `PATH` (system dirs only) takes the shell's order, as in the user's terminal.
+- A `PATH` that was set up (a terminal, a `tide service` plist) keeps its order and gains the
+  entries it lacks.
+- If the shell cannot be read, the existing ones of `~/.local/bin`, `/opt/homebrew/bin`,
+  `/usr/local/bin`, `~/.bun/bin` are appended. A CLI under nvm (Pi) is then not found.
+- macOS and Linux only. `TIDE_NO_SHELL_PATH=1` turns it off; the e2e fixture sets it.
+- The server logs one `[path]` line at boot.
+
 ### Fresh session (R17)
 
 A turn requested with `freshSession` (composer `/clear`-style, `agent.thread.send {freshSession}`,
