@@ -5,6 +5,7 @@
 //! else — orchestration, providers, git, files — lives in the server.
 
 mod launcher;
+mod splash_theme;
 mod process;
 mod server_supervisor;
 mod shell_config;
@@ -39,6 +40,9 @@ pub fn run() {
         .register_uri_scheme_protocol(LOADING_SCHEME, splash::handle)
         .invoke_handler(tauri::generate_handler![server_endpoint])
         .setup(|app| {
+            if let Some(win) = app.get_webview_window("main") {
+                splash_theme::apply_to_window(&win, launcher::tide_home().ok().as_deref());
+            }
             if let Err(err) = splash::install_menu(app.handle()) {
                 eprintln!("[tide-shell] menu: {err}");
             }

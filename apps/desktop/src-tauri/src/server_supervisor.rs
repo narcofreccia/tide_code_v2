@@ -20,6 +20,7 @@ use tauri::{AppHandle, Emitter, Manager};
 use crate::launcher::{free_port, resolve_launcher, tide_home};
 use crate::process::{self, LogSink};
 use crate::shell_config::{self, Mode};
+use crate::splash_theme;
 
 /// The splash page, embedded so it works identically in dev and in the bundle.
 pub const LOADING_HTML: &str = include_str!("../../loading.html");
@@ -110,12 +111,8 @@ impl Supervisor {
 
     /// Menu "Connect to another machine…": the splash with its pairing form open.
     pub fn show_connect(&self) {
-        if let Ok(mut i) = self.inner.lock() {
-            i.navigated = None;
-        }
-        if let (Some(win), Ok(url)) = (self.app.get_webview_window("main"), format!("{SPLASH_URL}?connect=1").parse()) {
-            let _ = win.navigate(url);
-        }
+        let was_app = self.inner.lock().map(|mut i| i.navigated.take().is_some()).unwrap_or(false);
+        navigate_to_splash(&self.app, was_app, "&connect=1");
     }
 
     /// Splash "Retry" button, and any `shell.json` mode change: the supervisor starts over,
@@ -507,10 +504,31 @@ fn set_status(app: &AppHandle, inner: &Shared, state: &str, message: Option<Stri
 fn show_splash(app: &AppHandle, inner: &Shared) {
     let was_app = inner.lock().map(|mut i| i.navigated.take().is_some()).unwrap_or(false);
     if was_app {
-        if let (Some(win), Ok(url)) = (app.get_webview_window("main"), SPLASH_URL.parse()) {
+        navigate_to_splash(app, true, "");
+    }
+}
+
+/// From the web app the page itself navigates, so the splash learns the theme it painted
+/// (`splash_theme`); if that page does not answer, the shell navigates plainly after a moment.
+/// `extra` goes on the splash query (`&connect=1`).
+fn navigate_to_splash(app: &AppHandle, from_app: bool, extra: &str) {
+    let Some(win) = app.get_webview_window("main") else { return };
+    let plain = format!("{SPLASH_URL}?{}", extra.trim_start_matches('&'));
+    if !from_app || win.eval(splash_theme::handover_script(SPLASH_URL, extra)).is_err() {
+        if let Ok(url) = plain.parse() {
             let _ = win.navigate(url);
         }
+        return;
     }
+    std::thread::spawn(move || {
+        std::thread::sleep(Duration::from_millis(400));
+        let on_splash = win.url().map(|u| u.scheme() == "tide-shell").unwrap_or(true);
+        if !on_splash {
+            if let Ok(url) = plain.parse() {
+                let _ = win.navigate(url);
+            }
+        }
+    });
 }
 
 /// The web app never imports Tauri: it learns the endpoint from its own query string.
@@ -525,6 +543,8 @@ fn open_web_app(app: &AppHandle, inner: &Shared, endpoint: &Endpoint) {
     let Some(win) = app.get_webview_window("main") else { return };
     match target.parse() {
         Ok(url) => {
+            // the splash pinned the window to the saved theme; the app's own `system` must see the OS
+            let _ = win.set_theme(None);
             let _ = win.navigate(url);
             if let Ok(mut i) = inner.lock() {
                 i.navigated = Some(target);

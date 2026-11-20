@@ -1,5 +1,5 @@
 <!doctype html>
-<html lang="en">
+<html lang="en" data-theme="__TIDE_THEME__">
   <head>
     <meta charset="utf-8" />
     <title>Tide Code</title>
@@ -15,8 +15,10 @@
         --accent: #5b9dff;
         --danger: #ef6a6a;
       }
+      /* The app's own theme choice wins (the shell stamps data-theme); without one, the OS decides. */
+      :root[data-theme="light"] { color-scheme: light; --bg: #f6f7f9; --text: #131722; --label: #6a7285; --border: #dfe2e8; --accent: #2f6fe0; --danger: #c93b3b; }
       @media (prefers-color-scheme: light) {
-        :root { color-scheme: light; --bg: #f6f7f9; --text: #131722; --label: #6a7285; --border: #dfe2e8; --accent: #2f6fe0; --danger: #c93b3b; }
+        :root:not([data-theme="dark"]) { color-scheme: light; --bg: #f6f7f9; --text: #131722; --label: #6a7285; --border: #dfe2e8; --accent: #2f6fe0; --danger: #c93b3b; }
       }
       html, body { height: 100%; margin: 0; }
       body {

@@ -8,6 +8,7 @@ use tauri::{AppHandle, Manager, Runtime, UriSchemeContext};
 use crate::launcher::tide_home;
 use crate::server_supervisor::{Supervisor, LOADING_HTML};
 use crate::shell_config::{self, Mode, Remote, ShellConfig};
+use crate::splash_theme;
 
 const MENU_CONNECT: &str = "tide-connect";
 const MENU_LOCAL: &str = "tide-local";
@@ -30,7 +31,9 @@ pub fn handle<R: Runtime>(ctx: UriSchemeContext<'_, R>, req: Request<Vec<u8>>) -
         "/remote" => outcome(sup.as_deref(), save_remote(req.body())),
         _ => {
             let version = app.package_info().version.to_string();
-            (200, "text/html; charset=utf-8", LOADING_HTML.replace("__TIDE_VERSION__", &version).into_bytes())
+            let theme = splash_theme::resolve(tide_home().ok().as_deref(), req.uri().query());
+            let html = LOADING_HTML.replace("__TIDE_VERSION__", &version).replace("__TIDE_THEME__", theme);
+            (200, "text/html; charset=utf-8", html.into_bytes())
         }
     };
     Response::builder().status(status).header("Content-Type", mime).body(body).expect("static response")
