@@ -23,7 +23,17 @@ describe("Settings › Providers", () => {
       "Codex",
       "OpenCode",
       "Pi",
+      "Antigravity",
     ]);
+  });
+
+  it("offers Refresh on every card but no Add account on Antigravity (one keyring entry)", () => {
+    setProvidersForTest(PROVIDER_FIXTURE);
+    render(<ProvidersSection />);
+    const agy = within(screen.getByLabelText("Antigravity"));
+    expect(agy.getByRole("button", { name: "Refresh" })).toBeDefined();
+    expect(agy.queryByRole("button", { name: "Add account" })).toBeNull();
+    expect(within(screen.getByLabelText("Codex")).getByRole("button", { name: "Add account" })).toBeDefined();
   });
 
   it("shows the status line of each harness", () => {

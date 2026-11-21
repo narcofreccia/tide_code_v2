@@ -66,7 +66,7 @@ export function useThreadDraft(
 }
 
 /**
- * Which instances a picker offers. `bundled`: the four default harnesses only —
+ * Which instances a picker offers. `bundled`: the default harnesses only —
  * for surfaces whose contract stores a bare kind (team stages, experts, automations,
  * forks, plan implementation). `all`: every configured account and ACP agent.
  */

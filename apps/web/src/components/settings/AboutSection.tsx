@@ -10,6 +10,7 @@ const LINKS = [
   { href: "https://claude.com/claude-code", label: "Claude Code" },
   { href: "https://developers.openai.com/codex/cli", label: "Codex CLI" },
   { href: "https://opencode.ai", label: "OpenCode" },
+  { href: "https://antigravity.google", label: "Antigravity" },
 ];
 
 export const META: SectionMeta = {

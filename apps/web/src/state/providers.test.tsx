@@ -37,6 +37,7 @@ describe("provider roster honesty", () => {
       "Codex · checking…",
       "OpenCode · checking…",
       "Pi · checking…",
+      "Antigravity · checking…",
     ]);
   });
 
@@ -51,7 +52,7 @@ describe("provider roster honesty", () => {
 
     await waitFor(() => expect(useProvidersStore.getState().error).toBe("connection lost"));
     const roster = useProvidersStore.getState().providers;
-    expect(roster).toHaveLength(4);
+    expect(roster).toHaveLength(5);
     expect(roster.every((p) => !p.installed && !p.loggedIn && p.hint === "connection lost")).toBe(true);
   });
 
@@ -82,7 +83,7 @@ describe("provider roster honesty", () => {
     mockRpc({ "providers.list": () => PROVIDER_FIXTURE });
     render(<HarnessFields name="Thread" provider="claude" model="" onChange={() => undefined} />);
 
-    await waitFor(() => expect(useProvidersStore.getState().providers).toHaveLength(4));
+    await waitFor(() => expect(useProvidersStore.getState().providers).toHaveLength(5));
     const offered = options("Thread provider");
     expect(offered[0]).toEqual({ text: "Claude Code", disabled: "false" });
     expect(offered[1]?.disabled).toBe("true");

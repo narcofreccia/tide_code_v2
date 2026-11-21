@@ -13,7 +13,7 @@ export { COMPOSE_EVENT };
 export const EXAMPLE_PROMPT = "Explain the structure of this repo, then suggest one small cleanup.";
 
 const EXPLAINERS: Array<{ term: string; body: string }> = [
-  { term: "Agent", body: "which coding tool does the work (Claude Code, Codex, OpenCode, Pi)." },
+  { term: "Agent", body: "which coding tool does the work (Claude Code, Codex, OpenCode, Pi, Antigravity)." },
   { term: "Model", body: "the model that agent uses; the default is whatever it picks itself." },
   { term: "Permissions", body: "how often it asks before editing files or running commands." },
   { term: "Build / Plan", body: "Build makes changes; Plan proposes a plan first and changes nothing until you approve." },

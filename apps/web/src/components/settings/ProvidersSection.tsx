@@ -1,6 +1,6 @@
 import { useContext, useEffect, useState } from "react";
 import type { ProviderInstanceConfig, ProviderKind, ProviderStatusDto } from "@tide/contracts";
-import { BUNDLED_PROVIDERS } from "../../lib/vocab.ts";
+import { BUNDLED_PROVIDERS, SINGLE_ACCOUNT_KINDS } from "../../lib/vocab.ts";
 import { loadProvidersFor, loadProviders, orderedInstances, placeholderStatus, providersOf, useProviders, useProvidersStore } from "../../state/providers.ts";
 import { useEnvironments } from "../../state/environments.ts";
 import { selectedSettings, setProviderInstances, useSelectedSettings, useServerSettings } from "../../state/serverSettings.ts";
@@ -37,7 +37,7 @@ export const META: SectionMeta = {
   title: "Providers",
   blurb:
     "Tide drives the CLIs you already pay for. Log in with each tool’s own command; Tide never stores provider credentials.",
-  keywords: ["Add ACP agent", "Add account", "default model", "default mode", "login", "Claude Code", "Codex", "OpenCode", "Pi"],
+  keywords: ["Add ACP agent", "Add account", "default model", "default mode", "login", "Claude Code", "Codex", "OpenCode", "Pi", "Antigravity"],
   perEnvironment: true,
 };
 
@@ -96,7 +96,7 @@ export function ProvidersSection() {
         {error ? <SettingNote role="alert">Could not read harness status: {error}</SettingNote> : null}
         {cardsOf(providers, configured).map((status) => {
           const instance = configured.find((c) => c.id === status.id);
-          const bundled = status.id === status.kind && BUNDLED_PROVIDERS.includes(status.kind);
+          const bundled = status.id === status.kind && BUNDLED_PROVIDERS.includes(status.kind) && !SINGLE_ACCOUNT_KINDS.has(status.kind);
           return (
             <ProviderCard
               key={status.id}

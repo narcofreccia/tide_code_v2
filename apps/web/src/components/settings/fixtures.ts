@@ -10,7 +10,7 @@ const NO_CAPS: ProviderStatusDto["caps"] = {
   openInTerminal: false,
 };
 
-const LABELS: Record<ProviderKind, string> = { claude: "Claude Code", codex: "Codex", opencode: "OpenCode", pi: "Pi", acp: "ACP agent" };
+const LABELS: Record<ProviderKind, string> = { claude: "Claude Code", codex: "Codex", opencode: "OpenCode", pi: "Pi", antigravity: "Antigravity", acp: "ACP agent" };
 
 function missing(kind: ProviderKind): ProviderStatusDto {
   return {
@@ -51,6 +51,7 @@ export const PROVIDER_FIXTURE: ProviderStatusDto[] = [
   missing("codex"),
   missing("opencode"),
   missing("pi"),
+  missing("antigravity"),
 ];
 
 export const LOGGED_OUT: ProviderStatusDto = {

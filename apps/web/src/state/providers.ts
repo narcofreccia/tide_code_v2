@@ -42,7 +42,7 @@ const NO_CAPS: ProviderStatusDto["caps"] = {
 /**
  * What the roster looks like when the server could not be asked. A harness is
  * never presented as ready unless the server said so, so a failed probe reads as
- * "not installed" with the reason attached rather than as four working harnesses.
+ * "not installed" with the reason attached rather than as working harnesses.
  */
 function unknownRoster(hint: string): ProviderStatusDto[] {
   return BUNDLED_PROVIDERS.map((kind) => ({
@@ -274,7 +274,7 @@ export function instanceGroup(p: { id: string; kind: ProviderKind }): InstanceGr
 const GROUP_ORDER: InstanceGroup[] = ["Harnesses", "Accounts", "ACP agents"];
 
 /**
- * Every instance a picker can offer, grouped. The four bundled kinds always appear
+ * Every instance a picker can offer, grouped. The bundled kinds always appear
  * (a missing one reads "not installed"), so the list is stable before and after a probe.
  */
 export function orderedInstances(providers: readonly ProviderStatusDto[]): ProviderStatusDto[] {

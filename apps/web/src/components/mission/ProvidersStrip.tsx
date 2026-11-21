@@ -37,7 +37,7 @@ export function rosterSummary(providers: ProviderStatusDto[], loading: boolean):
 }
 
 /**
- * The four harnesses Tide drives, folded to one summary line; opened, each shows its
+ * The harnesses Tide drives, folded to one summary line; opened, each shows its
  * rate-limit state when a thread reported one that is not ok. A chip opens Settings › Providers; a harness
  * that is installed but logged out offers to run its own login command in the
  * selected thread's terminal (and copies it when there is no thread).

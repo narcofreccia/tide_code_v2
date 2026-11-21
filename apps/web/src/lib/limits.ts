@@ -88,7 +88,7 @@ export function tightness(entry: InstanceLimits): number {
   return worst;
 }
 
-const SHORT: Record<ProviderKind, string> = { claude: "Claude", codex: "Codex", opencode: "OpenCode", pi: "Pi", acp: "ACP" };
+const SHORT: Record<ProviderKind, string> = { claude: "Claude", codex: "Codex", opencode: "OpenCode", pi: "Pi", antigravity: "Antigravity", acp: "ACP" };
 
 /** `Claude`, `Codex · work`: short enough for the status bar. */
 export function shortInstanceLabel(providers: readonly ProviderStatusDto[], id: string): string {

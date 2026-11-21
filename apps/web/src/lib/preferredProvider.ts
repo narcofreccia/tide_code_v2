@@ -15,7 +15,7 @@ const FALLBACK: ProviderKind = BUNDLED_PROVIDERS[0] ?? "claude";
  * chose, e.g. the project's newest thread) wins while it is usable; otherwise the first usable
  * instance in roster order; otherwise `preferred` anyway, so the picker still shows something and
  * the form says what to fix. An empty roster (still loading) never overrides the preference.
- * `bundled` limits the choice to the four default instances (surfaces that store a bare kind).
+ * `bundled` limits the choice to the default instances (surfaces that store a bare kind).
  */
 export function preferredProviderId(
   providers: readonly ProviderStatusDto[],

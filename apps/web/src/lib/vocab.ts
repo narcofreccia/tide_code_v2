@@ -1,9 +1,13 @@
 import { isThreadMerged, limitedView, type LimitedView } from "@tide/client";
+import { BUNDLED_PROVIDER_KINDS } from "@tide/contracts";
 import type { InteractionMode, ProviderKind, ProviderStatusDto, ReadModel, RuntimeMode, Thread } from "@tide/contracts";
 import { relativeUntil } from "./relativeTime.ts";
 
-/** The four harnesses Tide ships a driver for; each always has a default instance whose id is the kind. */
-export const BUNDLED_PROVIDERS: ProviderKind[] = ["claude", "codex", "opencode", "pi"];
+/** The harnesses Tide ships a driver for; each always has a default instance whose id is the kind. */
+export const BUNDLED_PROVIDERS: ProviderKind[] = [...BUNDLED_PROVIDER_KINDS];
+
+/** `agy` keeps every Google sign-in in one OS keyring entry, so a second account would silently be the first. */
+export const SINGLE_ACCOUNT_KINDS: ReadonlySet<ProviderKind> = new Set(["antigravity"]);
 
 /** Every kind; `acp` has no default instance — each ACP agent is its own configured instance. */
 export const PROVIDERS: ProviderKind[] = [...BUNDLED_PROVIDERS, "acp"];
@@ -14,11 +18,12 @@ export const PROVIDER_LABELS: Record<ProviderKind, string> = {
   codex: "Codex",
   opencode: "OpenCode",
   pi: "Pi",
+  antigravity: "Antigravity",
   acp: "ACP agent",
 };
 
 /** One-letter harness mark, used where a full name does not fit (rail tooltips). */
-export const PROVIDER_MONOGRAMS: Record<ProviderKind, string> = { claude: "C", codex: "X", opencode: "O", pi: "P", acp: "A" };
+export const PROVIDER_MONOGRAMS: Record<ProviderKind, string> = { claude: "C", codex: "X", opencode: "O", pi: "P", antigravity: "G", acp: "A" };
 
 export function isProviderKind(value: string): value is ProviderKind {
   return (PROVIDERS as string[]).includes(value);
@@ -84,6 +89,7 @@ export const RUNTIME_MODE_KIND_HINTS: Partial<Record<ProviderKind, Partial<Recor
   codex: { auto: "Never asks; commands run in Codex's workspace sandbox" },
   opencode: { auto: "Edits, shell commands and web fetches run without asking" },
   pi: { auto: "Auto on Pi runs every tool without asking (pi has no sandbox)" },
+  antigravity: { auto: "Approves every request the agent makes, commands included" },
   acp: { auto: "Approves every request the agent makes, commands included" },
 };
 

@@ -252,7 +252,7 @@ describe("Mission Control — providers", () => {
     render(<MissionControl />);
     const strip = within(screen.getByLabelText("Providers"));
     // folded to one line until opened
-    expect(strip.getByText("2 agents ready · 1 needs login · 1 not installed")).toBeDefined();
+    expect(strip.getByText("2 agents ready · 1 needs login · 2 not installed")).toBeDefined();
     expect(strip.queryByLabelText("Claude Code: ready")).toBeNull();
     fireEvent.click(strip.getByRole("button", { name: /Harnesses/ }));
     expect(strip.getByLabelText("Claude Code: ready")).toBeDefined();

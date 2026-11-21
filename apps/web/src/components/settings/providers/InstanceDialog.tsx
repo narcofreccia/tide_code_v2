@@ -12,6 +12,7 @@ const HOME_VARIABLE: Record<ProviderKind, string> = {
   codex: "CODEX_HOME",
   opencode: "HOME",
   pi: "HOME",
+  antigravity: "HOME",
   acp: "HOME",
 };
 

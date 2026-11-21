@@ -67,7 +67,7 @@ export type HarnessStep =
   | { state: "ready"; ready: ProviderStatusDto[] };
 
 /**
- * Where the harness step stands, over every instance the server reports (the bundled four and any
+ * Where the harness step stands, over every instance the server reports (the bundled kinds and any
  * ACP agent): nothing installed → install one; installed but signed out → log in; one usable → done.
  */
 export function harnessStep(providers: readonly ProviderStatusDto[], checking: boolean, error: string | null): HarnessStep {
