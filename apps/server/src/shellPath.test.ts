@@ -1,6 +1,6 @@
 import { delimiter } from "node:path";
 import { describe, expect, it } from "vitest";
-import { applyShellPath, isBarePath, mergePath, readShellPath, type ShellRunner } from "./shellPath.ts";
+import { applyShellPath, execRunner, isBarePath, mergePath, readShellPath, type ShellRunner } from "./shellPath.ts";
 
 const join = (...entries: string[]): string => entries.join(delimiter);
 
@@ -37,6 +37,16 @@ describe("readShellPath", () => {
   it("gives undefined when both attempts fail or the PATH is empty", async () => {
     expect(await readShellPath({ shell: "/bin/zsh", env: {}, run: fakeRunner({}).run })).toBeUndefined();
     expect(await readShellPath({ shell: "/bin/zsh", env: {}, run: fakeRunner({ "-ilc": wrapped(""), "-lc": wrapped("  ") }).run })).toBeUndefined();
+  });
+});
+
+describe("execRunner", () => {
+  // an interactive shell that shares our terminal takes it over and hands it back to our process group
+  it.skipIf(process.platform === "win32")("runs the shell in a session of its own, away from our terminal", async () => {
+    const out = await execRunner("/bin/sh", ["-c", "ps -o pid=,pgid= -p $$"], { env: { ...process.env }, timeoutMs: 5_000 });
+    const [pid, pgid] = out.trim().split(/\s+/);
+    expect(pid).toMatch(/^\d+$/);
+    expect(pgid).toBe(pid);
   });
 });
 

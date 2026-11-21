@@ -1,4 +1,4 @@
-import { execFile } from "node:child_process";
+import { spawn } from "node:child_process";
 import { existsSync } from "node:fs";
 import { homedir } from "node:os";
 import { delimiter, join } from "node:path";
@@ -16,11 +16,20 @@ const SCRIPT = `echo ${START}; printenv PATH; echo ${END}`;
 /** Runs `file args` and resolves with its stdout; rejects on failure or timeout. */
 export type ShellRunner = (file: string, args: string[], options: { env: NodeJS.ProcessEnv; timeoutMs: number }) => Promise<string>;
 
-const execRunner: ShellRunner = (file, args, { env, timeoutMs }) =>
+/**
+ * `detached` gives the shell a session of its own, so it has no terminal. An interactive zsh
+ * that finds one takes it over and, on exit, leaves it with our process group: started by the
+ * desktop shell from a terminal (`pnpm desktop:dev`), Ctrl-C then reached only this server,
+ * which the shell restarts, and the dev session could not be stopped.
+ */
+export const execRunner: ShellRunner = (file, args, { env, timeoutMs }) =>
   new Promise((resolve, reject) => {
-    const child = execFile(file, args, { env, timeout: timeoutMs, encoding: "utf8" }, (err, stdout) => (err ? reject(err) : resolve(stdout)));
-    // an interactive shell must never wait on our stdin
-    child.stdin?.end();
+    // stdin is /dev/null: an interactive shell must never wait on ours
+    const child = spawn(file, args, { env, timeout: timeoutMs, detached: true, stdio: ["ignore", "pipe", "ignore"] });
+    let stdout = "";
+    child.stdout.setEncoding("utf8").on("data", (chunk: string) => (stdout += chunk));
+    child.once("error", reject);
+    child.once("close", (code, signal) => (code === 0 ? resolve(stdout) : reject(new Error(`${file} exited with ${signal ?? code}`))));
   });
 
 export interface ReadShellPathOptions {
