@@ -71,3 +71,20 @@ sub-agent's own rows open that file, that the delegate's first message carries t
 in the delegate's checkout, that the delegate's prompt does not contain the colour, and that both
 workers answer "green". The "sub-agent opened the file" check only runs for a Claude orchestrator:
 Codex records no rows for what its sub-agent opened, so there the sub-agent's answer is the only evidence.
+
+## R23: a model named the way the picker shows it
+
+One scratch server (`home1`, the `smoke-fanout` repo above). Needs both harnesses logged in; it spends
+one short orchestrator turn and one one-line delegate turn.
+
+```sh
+S=$S PORT=3821 node --experimental-strip-types scripts/live/delegate-model.mts                                    # Codex orchestrator → Claude on "Haiku 5.5"
+S=$S PORT=3821 ORCH=claude MODEL=haiku DELEGATE=codex SPELLED="GPT-6 Luna" EXPECT=gpt-6-luna node --experimental-strip-types scripts/live/delegate-model.mts
+```
+
+`delegate-model.mts` asks the orchestrator to delegate "on the Haiku 5.5 model" and checks that the
+delegate's thread carries the id the target harness lists (`haiku`), that its turn completes and
+that the orchestrator reports the reply. It does not tell which layer supplied the id: the
+orchestrator may take it from its hint or from `tide_harnesses`, or the server may replace the
+spelling at dispatch. `SPELLED` and `EXPECT` depend on what the harness lists that day; the first
+check prints the list.
