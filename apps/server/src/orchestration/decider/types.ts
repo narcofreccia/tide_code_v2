@@ -1,4 +1,4 @@
-import type { AttachmentRef, DomainEvent, EventOf, ImageInput, Message, ProviderKind, RuntimeMode, Turn, UserSettings } from "@tide/contracts";
+import { BUNDLED_PROVIDER_KINDS, type AttachmentRef, type DomainEvent, type EventOf, type ImageInput, type Message, type ProviderKind, type RuntimeMode, type Turn, type UserSettings } from "@tide/contracts";
 
 /** The user settings the decider reads (supplied by the engine from `SettingsStore`). */
 export interface DecideDefaults {
@@ -32,7 +32,7 @@ export function providerDefault(ctx: DecideContext, provider: ProviderKind, prov
   return (providerId !== undefined ? ctx.providerDefaults?.[providerId] : undefined) ?? ctx.providerDefaults?.[provider] ?? {};
 }
 
-const BUNDLED_KINDS: readonly string[] = ["claude", "codex", "opencode", "pi"];
+const BUNDLED_KINDS: readonly string[] = BUNDLED_PROVIDER_KINDS;
 
 /** R8: the registry key of the instance running a thread (the kind for its default instance). */
 export function instanceKey(thread: { provider: ProviderKind; providerId?: string }): string {

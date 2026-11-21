@@ -1,4 +1,5 @@
 import { describe, expect, it } from "vitest";
+import { resolveInstance } from "./types.ts";
 import { completeTurn, ctx, eventOf, run, tryRun, withThread } from "./r4.fixtures.ts";
 
 /** A claude thread (default instance) with one settled turn on session "claude-sess". */
@@ -86,6 +87,17 @@ describe("decide: provider instances (R8)", () => {
     const cleared = run(set.model, { type: "thread.update", threadId: h.threadId, effort: "" });
     expect(eventOf(cleared.events, "thread.updated")).toMatchObject({ clearEffort: true, patch: {} });
     expect(cleared.model.threads[h.threadId]?.effort).toBeUndefined();
+  });
+
+  it("treats antigravity as a bundled default instance and accepts it as a delegate target", () => {
+    expect(resolveInstance(ctx, "antigravity")).toEqual({ kind: "antigravity" });
+    withInstances(() => {
+      const h = withHistory();
+      const out = run(h.model, { type: "thread.delegate", fromThreadId: h.threadId, provider: "antigravity", prompt: "review", useWorktree: false });
+      expect(eventOf(out.events, "thread.created").thread).toMatchObject({ provider: "antigravity" });
+      const explicit = run(h.model, { type: "thread.delegate", fromThreadId: h.threadId, provider: "antigravity", prompt: "review", useWorktree: false, ...{ providerId: "antigravity" } });
+      expect(eventOf(explicit.events, "thread.created").thread.providerId).toBeUndefined();
+    });
   });
 
   it("delegates onto an instance and reads its providerDefaults before the kind's", () =>

@@ -1,8 +1,10 @@
 import { homedir } from "node:os";
 import { join } from "node:path";
+import { ACP_PROFILES } from "@tide/driver-acp";
 import type { DriverEnv, ProviderDriver, ProviderInstanceConfig, ProviderKind } from "@tide/contracts";
 import type { ProviderConfigs } from "../config.ts";
 import { platformKey, resolveLaunch, type AcpLaunch, type AcpRegistry } from "./acpRegistry.ts";
+import { ANTIGRAVITY_ONE_ACCOUNT } from "../settings.ts";
 import type { InstanceFactory, InstanceSpec } from "./registry.ts";
 
 type AnyDriver = ProviderDriver<Record<string, unknown>>;
@@ -46,6 +48,7 @@ export function createInstanceFactory(deps: FactoryDeps): InstanceFactory {
   return (config: ProviderInstanceConfig, env: DriverEnv): InstanceSpec => {
     const home = config.home !== undefined ? expandHome(config.home) : undefined;
     if (config.kind === "acp") return acpSpec(config, env, home, deps);
+    if (config.kind === "antigravity") throw new Error(ANTIGRAVITY_ONE_ACCOUNT);
     const driver = deps.drivers[config.kind];
     if (!driver) throw new Error(`no ${config.kind} driver in this build`);
     const base = deps.providers[config.kind] ?? {};
@@ -77,10 +80,16 @@ function acpSpec(config: ProviderInstanceConfig, env: DriverEnv, home: string | 
   } else {
     const agentId = config.acpAgentId ?? "";
     const agent = deps.acp.find(agentId);
-    if (!agent) throw new Error(`ACP agent ${agentId} is not in the registry; refresh it or configure a command`);
-    const resolved = resolveLaunch(agent, deps.platform ?? platformKey());
-    if (!resolved) throw new Error(`${agent.name} ships only as a prebuilt binary for this platform; install it and configure its command instead`);
-    launch = { command: resolved.command, args: [...resolved.args, ...(config.args ?? [])], env: resolved.env };
+    if (agent) {
+      const resolved = resolveLaunch(agent, deps.platform ?? platformKey());
+      if (!resolved) throw new Error(`${agent.name} ships only as a prebuilt binary for this platform; install it and configure its command instead`);
+      launch = { command: resolved.command, args: [...resolved.args, ...(config.args ?? [])], env: resolved.env };
+    } else {
+      // an instance saved before Antigravity became a built-in harness still names it by agent id
+      const profile = ACP_PROFILES.find((p) => p.id === agentId);
+      if (!profile) throw new Error(`ACP agent ${agentId} is not in the registry; refresh it or configure a command`);
+      launch = { command: profile.command, args: [...profile.args, ...(config.args ?? [])], env: {} };
+    }
   }
   const mergedEnv = { ...launch.env, ...config.env };
   const driverConfig: Record<string, unknown> = {

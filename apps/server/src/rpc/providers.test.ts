@@ -99,8 +99,8 @@ describe("provider instances over RPC", () => {
   it("adds an instance on settings.set, runs a thread on it, and defers disposal while its session lives", async () => {
     await client.call("settings.set", { patch: { providerInstances: [{ id: "claude:work", kind: "claude", label: "Claude (work)", home: "/acct/work" }] } });
     const list = await client.call<ProviderStatusDto[]>("providers.list", {});
-    expect(list.map((p) => p.id)).toEqual(["claude", "codex", "opencode", "pi", "claude:work"]);
-    expect(list[4]).toMatchObject({ kind: "claude", label: "Claude (work)", installed: true });
+    expect(list.map((p) => p.id)).toEqual(["claude", "codex", "opencode", "pi", "antigravity", "claude:work"]);
+    expect(list[5]).toMatchObject({ kind: "claude", label: "Claude (work)", installed: true });
 
     const threadId = await createThread({ providerId: "claude:work", effort: "high" });
     claude.scriptFor(threadId, emit({ type: "settled", status: "completed" }));
@@ -129,8 +129,6 @@ describe("provider instances over RPC", () => {
     expect(agents).toEqual([
       { id: "gemini", name: "Gemini CLI", website: "https://gemini.example", distribution: "npx", configured: true },
       { id: "goose", name: "Goose", distribution: "none" },
-      // R20: Tide's own entry, listed beside the fetched registry (launches `agy` from PATH)
-      expect.objectContaining({ id: "antigravity", name: "Antigravity", distribution: "binary" }),
     ]);
     // no ACP driver in this test build: the instance is listed, greyed out
     const acp = (await client.call<ProviderStatusDto[]>("providers.list", {})).find((p) => p.id === "acp:gemini");

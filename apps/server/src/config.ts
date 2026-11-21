@@ -2,7 +2,7 @@ import { randomBytes } from "node:crypto";
 import { existsSync, mkdirSync, readFileSync, writeFileSync } from "node:fs";
 import { homedir } from "node:os";
 import { dirname, join, resolve } from "node:path";
-import { newId, type ProviderKind } from "@tide/contracts";
+import { BUNDLED_PROVIDER_KINDS, newId, type ProviderKind } from "@tide/contracts";
 import { readTlsFiles, TLS_CERT_ENV, TLS_KEY_ENV, type TlsFiles } from "./rpc/tls.ts";
 import { VERSION } from "./version.ts";
 
@@ -113,7 +113,7 @@ interface ServerIdentity {
   providers: ProviderConfigs;
 }
 
-const PROVIDER_KINDS: readonly ProviderKind[] = ["claude", "codex", "opencode", "pi"];
+const PROVIDER_KINDS: readonly ProviderKind[] = BUNDLED_PROVIDER_KINDS;
 
 function readProviders(value: unknown): ProviderConfigs {
   if (typeof value !== "object" || value === null) return {};

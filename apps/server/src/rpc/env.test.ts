@@ -29,13 +29,18 @@ const config: ServerConfig = {
 
 type Chunk = { kind?: string; line: string; done?: boolean; ok?: boolean };
 
-async function boot(runUpdate?: UpdateRunner) {
+async function boot(runUpdate?: UpdateRunner, extra: Record<string, boolean> = {}) {
   const store = new EventStore(await openDatabase(":memory:"));
   const engine = new Engine({ store });
   const registry = new DriverRegistry({ env: { dataDir: ":memory:", log: () => undefined } });
   const claude = createFakeDriver("claude");
   claude.control.statusResult = { ...claude.control.statusResult, installed: true, version: "2.1.0" };
   registry.register(claude.driver);
+  for (const [kind, installed] of Object.entries(extra)) {
+    const fake = createFakeDriver(kind as "antigravity");
+    fake.control.statusResult = { ...fake.control.statusResult, installed };
+    registry.register(fake.driver);
+  }
   const settings = new SettingsStore({});
   settings.set({ environment: { name: "studio-mac", sshHost: "me@studio" } });
   const handle = await startServer({
@@ -136,6 +141,26 @@ describe("env.updateHarnesses", () => {
       expect(calls).toEqual(["claude update"]); // only harnesses registered on this server
       expect(chunks.map((c) => c.line)).toEqual(["$ claude update", "Updating…", "claude: 2.1.0", "all harnesses updated"]);
       expect(chunks.at(-1)).toMatchObject({ done: true, ok: true });
+    } finally {
+      await b.close();
+    }
+  });
+
+  it("updates Antigravity with `agy update`, and skips a kind that is not installed without failing the run", async () => {
+    const calls: string[] = [];
+    const runner: UpdateRunner = async (command, args) => {
+      calls.push(`${command} ${args.join(" ")}`);
+      return 0;
+    };
+    const b = await boot(runner, { antigravity: false });
+    try {
+      const chunks = await collect(b.port);
+      expect(calls).toEqual(["claude update"]);
+      expect(chunks.find((c) => c.kind === "antigravity")).toEqual({ kind: "antigravity", line: "antigravity: not installed, skipped", done: true, ok: true });
+      expect(chunks.at(-1)).toMatchObject({ line: "all harnesses updated", ok: true });
+      calls.length = 0;
+      await collect(b.port, ["antigravity"]); // asked for by name: it runs
+      expect(calls).toEqual(["agy update"]);
     } finally {
       await b.close();
     }

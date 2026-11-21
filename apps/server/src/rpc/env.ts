@@ -23,6 +23,7 @@ export const UPDATE_COMMANDS: Partial<Record<ProviderKind, { command: string; ar
   codex: { command: "npm", args: ["i", "-g", "@openai/codex@latest"] },
   opencode: { command: "opencode", args: ["upgrade"] },
   pi: { command: "npm", args: ["i", "-g", "@earendil-works/pi-coding-agent@latest"] },
+  antigravity: { command: "agy", args: ["update"] },
 };
 
 /** Runs one command, reporting stdout/stderr line by line; resolves with the exit code. */
@@ -197,12 +198,18 @@ export function registerEnvHandlers(router: RpcRouter, deps: EnvDeps): void {
     if (updating) throw new RpcException("busy", "a harness update is already running on this machine");
     updating = true;
     const abort = new AbortController();
+    const explicit = input.kinds !== undefined;
     const kinds = input.kinds ?? BUNDLED_KINDS.filter((k) => deps.registry.has(k));
     void (async () => {
       let allOk = true;
       try {
         for (const kind of kinds) {
           if (abort.signal.aborted) break;
+          // a harness the user never installed is not a failure of "update all"
+          if (!explicit && (await deps.registry.status(kind).catch(() => undefined))?.installed === false) {
+            emit({ kind, line: `${kind}: not installed, skipped`, done: true, ok: true });
+            continue;
+          }
           const update = UPDATE_COMMANDS[kind];
           if (update === undefined) {
             emit({ kind, line: `${kind}: no update command; update it the way you installed it`, done: true, ok: false });

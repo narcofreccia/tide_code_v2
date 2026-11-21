@@ -1,6 +1,5 @@
 import { mkdirSync, readFileSync, renameSync, writeFileSync } from "node:fs";
 import { join } from "node:path";
-import { ACP_PROFILES, type AcpProfile } from "@tide/driver-acp";
 import type { AcpRegistryAgent } from "@tide/contracts";
 import snapshot from "./acpRegistry.snapshot.json" with { type: "json" };
 
@@ -35,25 +34,8 @@ export interface AcpAgentEntry {
   license?: string;
   license_url?: string;
   icon?: string;
-  distribution: { npx?: PackageDist; uvx?: PackageDist; binary?: Record<string, BinaryTarget>; local?: { command: string; args: string[] } };
+  distribution: { npx?: PackageDist; uvx?: PackageDist; binary?: Record<string, BinaryTarget> };
 }
-
-/**
- * Agents the user installs themselves and Tide launches from PATH (a CLI with an ACP mode),
- * from the driver's profiles. They are not in the public registry; they are listed beside it.
- */
-const LOCAL_ENTRIES: Record<string, Omit<AcpAgentEntry, "id" | "name" | "distribution">> = {
-  antigravity: {
-    description: "Google's Antigravity agent. Install its CLI from Google's Antigravity download page, then run `agy` once in a terminal to sign in.",
-    website: "https://antigravity.google",
-  },
-};
-
-export function localAgent(profile: AcpProfile): AcpAgentEntry {
-  return { id: profile.id, name: profile.label, ...LOCAL_ENTRIES[profile.id], distribution: { local: { command: profile.command, args: profile.args } } };
-}
-
-const LOCAL_AGENTS: AcpAgentEntry[] = ACP_PROFILES.map(localAgent);
 
 export interface AcpLaunch {
   command: string;
@@ -73,8 +55,6 @@ export function distributionOf(agent: AcpAgentEntry, platform: string = platform
   if (agent.distribution.npx) return "npx";
   if (agent.distribution.uvx) return "uvx";
   if (agent.distribution.binary?.[platform]) return "binary";
-  // an installed CLI: reported like a binary the user has to install themselves
-  if (agent.distribution.local) return "binary";
   return "none";
 }
 
@@ -83,7 +63,6 @@ export function distributionOf(agent: AcpAgentEntry, platform: string = platform
  * download archives): the user installs the agent and configures a manual command instead.
  */
 export function resolveLaunch(agent: AcpAgentEntry, platform: string = platformKey()): AcpLaunch | undefined {
-  if (agent.distribution.local) return { command: agent.distribution.local.command, args: [...agent.distribution.local.args], env: {} };
   const dist = distributionOf(agent, platform);
   if (dist === "npx" && agent.distribution.npx) {
     const p = agent.distribution.npx;
@@ -147,8 +126,6 @@ export interface AcpRegistryOptions {
   log?: (msg: string, data?: unknown) => void;
   /** test seam: replaces the bundled snapshot */
   snapshot?: unknown;
-  /** test seam: replaces the profile-backed agents listed beside the registry */
-  localAgents?: AcpAgentEntry[];
 }
 
 export class AcpRegistry {
@@ -158,7 +135,6 @@ export class AcpRegistry {
   #ttl: number;
   #log: (msg: string, data?: unknown) => void;
   #agents: AcpAgentEntry[];
-  #local: AcpAgentEntry[];
   #fetchedAt: number | undefined;
   #loading: Promise<void> | undefined;
 
@@ -168,7 +144,6 @@ export class AcpRegistry {
     this.#now = options.now ?? (() => Date.now());
     this.#ttl = options.ttlMs ?? TTL_MS;
     this.#log = options.log ?? (() => undefined);
-    this.#local = options.localAgents ?? LOCAL_AGENTS;
     const cached = this.#readCache();
     if (cached) {
       this.#agents = cached.agents;
@@ -180,17 +155,11 @@ export class AcpRegistry {
 
   /** What is known right now (cache or snapshot); never touches the network. */
   agents(): AcpAgentEntry[] {
-    return this.#merged();
+    return [...this.#agents];
   }
 
   find(id: string): AcpAgentEntry | undefined {
     return this.agents().find((a) => a.id === id);
-  }
-
-  /** The registry's agents plus the local ones it does not already list. */
-  #merged(): AcpAgentEntry[] {
-    const ids = new Set(this.#agents.map((a) => a.id));
-    return [...this.#agents, ...this.#local.filter((a) => !ids.has(a.id))];
   }
 
   get fetchedAt(): number | undefined {
@@ -200,12 +169,12 @@ export class AcpRegistry {
   /** Refetches when the cache is older than the TTL (or always with `refresh`); offline keeps what it has. */
   async load(refresh = false): Promise<AcpAgentEntry[]> {
     const fresh = this.#fetchedAt !== undefined && this.#now() - this.#fetchedAt < this.#ttl;
-    if (fresh && !refresh) return this.#merged();
+    if (fresh && !refresh) return [...this.#agents];
     this.#loading ??= this.#download().finally(() => {
       this.#loading = undefined;
     });
     await this.#loading;
-    return this.#merged();
+    return [...this.#agents];
   }
 
   async #download(): Promise<void> {

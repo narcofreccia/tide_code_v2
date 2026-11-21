@@ -21,7 +21,7 @@ export interface SummarizeInput {
   pricing?: Pricing;
 }
 
-const LABEL: Record<ProviderKind, string> = { claude: "Claude", codex: "Codex", opencode: "OpenCode", pi: "Pi", acp: "ACP agents" };
+const LABEL: Record<ProviderKind, string> = { claude: "Claude", codex: "Codex", opencode: "OpenCode", pi: "Pi", antigravity: "Antigravity", acp: "ACP agents" };
 
 /**
  * Tide's turns as buckets. Codex counts cached input inside `inputTokens` (OpenAI totals);

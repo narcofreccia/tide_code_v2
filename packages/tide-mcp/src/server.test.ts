@@ -249,6 +249,12 @@ describe("tide-mcp server", () => {
     await client.close();
   });
 
+  it("offers every bundled harness, Antigravity included, as a delegate provider", () => {
+    const delegate = TOOL_DEFINITIONS.find((tool) => tool.name === "tide_delegate");
+    expect(delegate?.inputSchema.properties["provider"]).toMatchObject({ enum: expect.arrayContaining(["claude", "codex", "opencode", "pi", "antigravity", "acp"]) });
+    expect(delegate?.description).toContain("antigravity");
+  });
+
   it("tells the agent what `repo` is for", () => {
     const delegate = TOOL_DEFINITIONS.find((tool) => tool.name === "tide_delegate");
     expect(delegate?.inputSchema.properties["repo"]).toMatchObject({ type: "string" });

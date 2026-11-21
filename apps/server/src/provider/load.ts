@@ -1,5 +1,5 @@
 import type { ProviderDriver, ProviderKind } from "@tide/contracts";
-import { acpDriver } from "@tide/driver-acp";
+import { acpDriver, antigravityDriver } from "@tide/driver-acp";
 import { claudeDriver } from "@tide/driver-claude";
 import { codexDriver } from "@tide/driver-codex";
 import { opencodeDriver } from "@tide/driver-opencode";
@@ -33,6 +33,7 @@ const BUNDLED: Record<Exclude<ProviderKind, "acp">, AnyDriver> = {
   codex: codexDriver as AnyDriver,
   opencode: opencodeDriver as AnyDriver,
   pi: piDriver as AnyDriver,
+  antigravity: antigravityDriver as AnyDriver,
 };
 
 /** Settings instances run on the bundled drivers, ACP agents on `acpDriver`. */

@@ -2,8 +2,7 @@ import { mkdtempSync, readFileSync, writeFileSync } from "node:fs";
 import { tmpdir } from "node:os";
 import { join } from "node:path";
 import { describe, expect, it } from "vitest";
-import { ANTIGRAVITY_PROFILE } from "@tide/driver-acp";
-import { AcpRegistry, distributionOf, localAgent, parseRegistry, platformKey, resolveLaunch, toRegistryDto, type AcpAgentEntry } from "./acpRegistry.ts";
+import { AcpRegistry, distributionOf, parseRegistry, platformKey, resolveLaunch, toRegistryDto, type AcpAgentEntry } from "./acpRegistry.ts";
 
 const npxAgent: AcpAgentEntry = { id: "gemini", name: "Gemini CLI", distribution: { npx: { package: "@google/gemini-cli@1.0.0", args: ["--experimental-acp"], env: { A: "1" } } } };
 const uvxAgent: AcpAgentEntry = { id: "fast", name: "fast-agent", distribution: { uvx: { package: "fast-agent-acp==0.3", args: ["serve"] } } };
@@ -51,7 +50,7 @@ describe("ACP registry launch resolution", () => {
   });
 
   it("ships a usable bundled snapshot", () => {
-    const registry = new AcpRegistry({ localAgents: [], dataDir: ":memory:" });
+    const registry = new AcpRegistry({ dataDir: ":memory:" });
     expect(registry.agents().length).toBeGreaterThan(10);
     expect(registry.fetchedAt).toBeUndefined();
   });
@@ -71,7 +70,7 @@ describe("AcpRegistry fetch + cache", () => {
       calls++;
       return ok(registryJson([npxAgent]))();
     };
-    const first = new AcpRegistry({ localAgents: [], dataDir, fetch: fetchOnce, now: () => clock.t, snapshot: registryJson([]) });
+    const first = new AcpRegistry({ dataDir, fetch: fetchOnce, now: () => clock.t, snapshot: registryJson([]) });
     expect((await first.load()).map((a) => a.id)).toEqual(["gemini"]);
     expect(first.fetchedAt).toBe(1_000);
     expect(JSON.parse(readFileSync(join(dataDir, "acp-registry.json"), "utf8"))).toMatchObject({ fetchedAt: 1_000 });
@@ -82,7 +81,7 @@ describe("AcpRegistry fetch + cache", () => {
 
     // a restarted server offline after the TTL: the disk cache answers
     clock.t += 2 * 60 * 60_000;
-    const second = new AcpRegistry({ localAgents: [], dataDir, fetch: offline, now: () => clock.t, snapshot: registryJson([]) });
+    const second = new AcpRegistry({ dataDir, fetch: offline, now: () => clock.t, snapshot: registryJson([]) });
     expect((await second.load()).map((a) => a.id)).toEqual(["gemini"]);
     expect(second.fetchedAt).toBe(1_000);
   });
@@ -90,37 +89,13 @@ describe("AcpRegistry fetch + cache", () => {
   it("falls back to the snapshot when offline with no cache, and refetches on demand", async () => {
     const dataDir = mkdtempSync(join(tmpdir(), "tide-acp-"));
     writeFileSync(join(dataDir, "acp-registry.json"), "not json");
-    const offlineRegistry = new AcpRegistry({ localAgents: [], dataDir, fetch: offline, snapshot: registryJson([uvxAgent]) });
+    const offlineRegistry = new AcpRegistry({ dataDir, fetch: offline, snapshot: registryJson([uvxAgent]) });
     expect((await offlineRegistry.load()).map((a) => a.id)).toEqual(["fast"]);
-    const bad = new AcpRegistry({ localAgents: [], dataDir: ":memory:", fetch: async () => ({ ok: false, status: 503, json: async () => ({}) }), snapshot: registryJson([uvxAgent]) });
+    const bad = new AcpRegistry({ dataDir: ":memory:", fetch: async () => ({ ok: false, status: 503, json: async () => ({}) }), snapshot: registryJson([uvxAgent]) });
     expect((await bad.load(true)).map((a) => a.id)).toEqual(["fast"]);
-    const online = new AcpRegistry({ localAgents: [], dataDir: ":memory:", fetch: ok(registryJson([npxAgent, uvxAgent])), snapshot: registryJson([uvxAgent]) });
+    const online = new AcpRegistry({ dataDir: ":memory:", fetch: ok(registryJson([npxAgent, uvxAgent])), snapshot: registryJson([uvxAgent]) });
     expect(online.find("gemini")).toBeUndefined();
     await online.load(true);
     expect(online.find("gemini")?.name).toBe("Gemini CLI");
-  });
-});
-
-describe("Antigravity (a local profile beside the registry)", () => {
-  const agy = localAgent(ANTIGRAVITY_PROFILE);
-
-  it("launches `agy acp` from PATH and is reported as something the user installs", () => {
-    expect(agy).toMatchObject({ id: "antigravity", name: "Antigravity" });
-    expect(resolveLaunch(agy)).toEqual({ command: "agy", args: ["acp"], env: {} });
-    expect(distributionOf(agy)).toBe("binary");
-    expect(toRegistryDto(agy, new Set(["antigravity"]))).toMatchObject({ id: "antigravity", distribution: "binary", configured: true });
-  });
-
-  it("is listed and found with the bundled snapshot, without the network, and not cached", async () => {
-    const dataDir = mkdtempSync(join(tmpdir(), "tide-acp-"));
-    const registry = new AcpRegistry({ dataDir, fetch: async () => ({ ok: true, status: 200, json: async () => registryJson([npxAgent]) }), snapshot: registryJson([uvxAgent]) });
-    expect(registry.find("antigravity")?.distribution.local?.command).toBe("agy");
-    expect((await registry.load(true)).map((a) => a.id)).toEqual(["gemini", "antigravity"]);
-    expect(JSON.parse(readFileSync(join(dataDir, "acp-registry.json"), "utf8")).agents.map((a: { id: string }) => a.id)).toEqual(["gemini"]);
-  });
-
-  it("a registry entry with the same id wins", () => {
-    const registry = new AcpRegistry({ dataDir: ":memory:", snapshot: registryJson([{ ...npxAgent, id: "antigravity", name: "Theirs" }]) });
-    expect(registry.find("antigravity")?.name).toBe("Theirs");
   });
 });

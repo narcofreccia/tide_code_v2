@@ -29,6 +29,12 @@ describe("resolveConfig — server.json", () => {
     expect(second.environmentId).toBe(first.environmentId);
   });
 
+  it("keeps providers.antigravity from server.json", () => {
+    const dir = home();
+    writeFileSync(join(dir, "server.json"), JSON.stringify({ environmentId: "env", token: "t", providers: { antigravity: { binaryPath: "/opt/agy" }, bogus: { x: 1 } } }), "utf8");
+    expect(resolveConfig(["--data", ":memory:"], { TIDE_HOME: dir }).providers).toEqual({ antigravity: { binaryPath: "/opt/agy" } });
+  });
+
   it("refuses to start on a corrupt file instead of rotating the token", () => {
     const dir = home();
     const file = join(dir, "server.json");

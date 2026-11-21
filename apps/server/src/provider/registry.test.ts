@@ -1,5 +1,6 @@
 import type { ProviderInstance, ProviderInstanceConfig } from "@tide/contracts";
 import { describe, expect, it } from "vitest";
+import { ANTIGRAVITY_ONE_ACCOUNT } from "../settings.ts";
 import { createInstanceFactory } from "./instances.ts";
 import { DriverRegistry } from "./registry.ts";
 import { createFakeDriver, type FakeDriverHandle } from "./testing/fakeDriver.ts";
@@ -145,12 +146,13 @@ describe("DriverRegistry instances (R8)", () => {
       ["codex", "codex", "Codex"],
       ["opencode", "opencode", "OpenCode"],
       ["pi", "pi", "Pi"],
+      ["antigravity", "antigravity", "Antigravity"],
       ["codex:personal", "codex", "Codex (personal)"],
       ["codex:work", "codex", "Codex (work)"],
     ]);
     expect(all[2]).toMatchObject({ installed: false, hint: "driver not available in this build" });
     await registry.syncInstances([work, personal]);
-    expect((await registry.statusAll()).slice(4).map((d) => d.id)).toEqual(["codex:work", "codex:personal"]);
+    expect((await registry.statusAll()).slice(5).map((d) => d.id)).toEqual(["codex:work", "codex:personal"]);
   });
 
   it("keeps an unchanged instance, replaces a changed one and removes a dropped one", async () => {
@@ -180,6 +182,27 @@ describe("DriverRegistry instances (R8)", () => {
     busy.delete(live);
     await registry.sweepRetired();
     expect(codex.control.disposed).toEqual([live]);
+  });
+
+  it("lists five bundled entries, Antigravity after Pi, and a placeholder for one with no driver", async () => {
+    const { registry } = setup();
+    const all = await registry.statusAll();
+    expect(all.slice(0, 5).map((s) => s.id)).toEqual(["claude", "codex", "opencode", "pi", "antigravity"]);
+    expect(all[4]).toMatchObject({ kind: "antigravity", label: "Antigravity", installed: false, hint: "driver not available in this build" });
+  });
+
+  it("refuses a second Antigravity account: the factory throws the reason and the card shows it", async () => {
+    const { registry } = setup();
+    expect(() => createInstanceFactory({ providers: {}, acp: { find: () => undefined }, drivers: {} })({ id: "antigravity:two", kind: "antigravity", label: "Two" }, env)).toThrow(ANTIGRAVITY_ONE_ACCOUNT);
+    await registry.syncInstances([{ id: "antigravity:two", kind: "antigravity", label: "Two" }]);
+    expect(await registry.status("antigravity:two")).toMatchObject({ kind: "antigravity", installed: false, hint: ANTIGRAVITY_ONE_ACCOUNT });
+  });
+
+  it("launches an instance saved as the ACP agent `antigravity` from the driver profile", async () => {
+    const { registry, acp } = setup();
+    await registry.syncInstances([{ id: "acp:antigravity", kind: "acp", label: "Antigravity (old)", acpAgentId: "antigravity" }]);
+    await registry.get("acp:antigravity");
+    expect(acp.control.created[0]?.config).toMatchObject({ command: "agy", args: ["acp"] });
   });
 
   it("ignores a settings id that shadows a bundled kind", async () => {

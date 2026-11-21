@@ -2,7 +2,7 @@ import { mkdtempSync, readFileSync, statSync, writeFileSync } from "node:fs";
 import { tmpdir } from "node:os";
 import { join } from "node:path";
 import { describe, expect, it } from "vitest";
-import { SettingsError, SettingsStore } from "./settings.ts";
+import { ANTIGRAVITY_ONE_ACCOUNT, SettingsError, SettingsStore } from "./settings.ts";
 import { PRESET_TEAMS } from "./teams/presets.ts";
 
 describe("SettingsStore", () => {
@@ -142,5 +142,14 @@ describe("R16 snooze options and title instructions", () => {
     store.set({ titleInstructions: "x" });
     expect(store.set({ titleInstructions: "   " }).titleInstructions).toBeUndefined();
     expect(() => store.set({ titleInstructions: "y".repeat(501) })).toThrow(SettingsError);
+  });
+});
+
+describe("Antigravity instances", () => {
+  it("refuses a second Antigravity account, with the reason", () => {
+    const store = new SettingsStore({});
+    const instance = { id: "antigravity:work", kind: "antigravity" as const, label: "Work" };
+    expect(() => store.set({ providerInstances: [instance] })).toThrow(ANTIGRAVITY_ONE_ACCOUNT);
+    expect(() => store.set({ providerInstances: [instance] })).toThrow(SettingsError);
   });
 });

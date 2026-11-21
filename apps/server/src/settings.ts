@@ -1,7 +1,7 @@
 import { mkdirSync, readFileSync, renameSync, writeFileSync } from "node:fs";
 import { hostname } from "node:os";
 import { dirname, join } from "node:path";
-import { ProviderInstanceConfig, ProviderKind, Team, type DecisionSites, type DecisionsSettings, type GitSettings, InboxSettings, type UserSettings, type UserSettingsPatch } from "@tide/contracts";
+import { BUNDLED_PROVIDER_KINDS, ProviderInstanceConfig, ProviderKind, Team, type DecisionSites, type DecisionsSettings, type GitSettings, InboxSettings, type UserSettings, type UserSettingsPatch } from "@tide/contracts";
 import { Check } from "typebox/value";
 import { JEV_CONTEXT_TOKENS, USD_PER_MILLION_INPUT_TOKENS } from "./decisions/client.ts";
 import { DEFAULT_BASE_URL, DEFAULT_MODEL } from "./decisions/wire.ts";
@@ -57,7 +57,10 @@ function loadGit(raw: unknown): Partial<GitSettings> {
 
 const DEFAULT_GLASS_BOX: UserSettings["glassBox"] = { limitsInStatusBar: true, readHarnessLogs: true };
 
-const BUNDLED_KINDS: readonly string[] = ["claude", "codex", "opencode", "pi"];
+const BUNDLED_KINDS: readonly string[] = BUNDLED_PROVIDER_KINDS;
+
+/** The `agy` CLI keeps every Google sign-in in one OS keyring entry, so a second account would silently be the first. */
+export const ANTIGRAVITY_ONE_ACCOUNT = "Antigravity supports one account: the agy CLI stores every Google sign-in in a single OS keyring entry, so a second instance would use the first account";
 
 /** ids unique, never a bundled kind's own id, kind-specific launch info present. */
 function assertProviderInstances(list: ProviderInstanceConfig[]): void {
@@ -65,6 +68,7 @@ function assertProviderInstances(list: ProviderInstanceConfig[]): void {
   for (const inst of list) {
     if (seen.has(inst.id)) throw new SettingsError(`duplicate provider instance id ${inst.id}`);
     if (BUNDLED_KINDS.includes(inst.id)) throw new SettingsError(`${inst.id} is a bundled harness; add a second account under another id`);
+    if (inst.kind === "antigravity") throw new SettingsError(ANTIGRAVITY_ONE_ACCOUNT);
     if (inst.kind === "acp" && inst.acpAgentId === undefined && inst.command === undefined) {
       throw new SettingsError(`ACP instance ${inst.id} needs a registry agent or a command`);
     }

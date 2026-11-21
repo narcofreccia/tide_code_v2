@@ -295,13 +295,14 @@ describe("rpc: providers and the terminal escape hatch", () => {
   it("lists provider status from the registry", async () => {
     const before = (await client.call("providers.list", {})) as { kind: string; installed: boolean; models: { id: string }[] }[];
     // every known harness is listed; unregistered ones are marked unusable so the UI can grey them out
-    expect(before.map((p) => p.kind)).toEqual(["claude", "codex", "opencode", "pi"]);
+    expect(before.map((p) => p.kind)).toEqual(["claude", "codex", "opencode", "pi", "antigravity"]);
     // R8: one DTO per instance; the defaults carry id = kind and the harness's name
     expect(before.map((p) => [(p as { id?: string }).id, (p as { label?: string }).label])).toEqual([
       ["claude", "Claude Code"],
       ["codex", "Codex"],
       ["opencode", "OpenCode"],
       ["pi", "Pi"],
+      ["antigravity", "Antigravity"],
     ]);
     expect(before[0]).toMatchObject({ kind: "claude", installed: true, loggedIn: true });
     expect(before[0]?.models[0]?.id).toBe("fake-model");

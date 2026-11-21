@@ -1,4 +1,5 @@
 import type { ProviderKind } from "@tide/contracts";
+import { ANTIGRAVITY_INSTALL_COMMAND, ANTIGRAVITY_URL } from "@tide/driver-acp";
 import type { AcpAgentEntry } from "./acpRegistry.ts";
 
 /**
@@ -19,7 +20,7 @@ export interface HarnessInstall {
   url: string;
 }
 
-/** The four bundled harnesses. The npm packages match the updaters in `rpc/env.ts`. */
+/** The bundled harnesses. The install commands match the updaters in `rpc/env.ts`. */
 export const HARNESS_INSTALLS: Record<Exclude<ProviderKind, "acp">, HarnessInstall> = {
   claude: { bin: "claude", label: "Claude Code", command: "npm i -g @anthropic-ai/claude-code", url: "https://claude.com/claude-code" },
   codex: { bin: "codex", label: "Codex", command: "npm i -g @openai/codex", url: "https://github.com/openai/codex" },
@@ -30,6 +31,7 @@ export const HARNESS_INSTALLS: Record<Exclude<ProviderKind, "acp">, HarnessInsta
     command: "npm i -g @earendil-works/pi-coding-agent",
     url: "https://www.npmjs.com/package/@earendil-works/pi-coding-agent",
   },
+  antigravity: { bin: "agy", label: "Antigravity", command: ANTIGRAVITY_INSTALL_COMMAND, url: ANTIGRAVITY_URL },
 };
 
 /**

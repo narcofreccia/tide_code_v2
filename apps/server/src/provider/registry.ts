@@ -1,12 +1,13 @@
-import type {
-  DriverCaps,
-  DriverEnv,
-  ProviderDriver,
-  ProviderInstance,
-  ProviderInstanceConfig,
-  ProviderKind,
-  ProviderStatus,
-  ProviderStatusDto,
+import {
+  BUNDLED_PROVIDER_KINDS,
+  type DriverCaps,
+  type DriverEnv,
+  type ProviderDriver,
+  type ProviderInstance,
+  type ProviderInstanceConfig,
+  type ProviderKind,
+  type ProviderStatus,
+  type ProviderStatusDto,
 } from "@tide/contracts";
 
 const STATUS_TTL_MS = 60_000;
@@ -21,14 +22,15 @@ const UNUSABLE_CAPS = {
   openInTerminal: false,
 } as const;
 
-/** The four bundled harnesses; each has a default instance whose id is the kind. */
-export const BUNDLED_KINDS: readonly ProviderKind[] = ["claude", "codex", "opencode", "pi"];
+/** The bundled harnesses; each has a default instance whose id is the kind. */
+export const BUNDLED_KINDS: readonly ProviderKind[] = BUNDLED_PROVIDER_KINDS;
 
 export const KIND_LABELS: Record<ProviderKind, string> = {
   claude: "Claude Code",
   codex: "Codex",
   opencode: "OpenCode",
   pi: "Pi",
+  antigravity: "Antigravity",
   acp: "ACP agent",
 };
 

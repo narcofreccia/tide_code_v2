@@ -29,7 +29,7 @@ const TARGET_PROPS = {
     description:
       "Where each run goes. continue (default with threadId): queue into threadId. fresh_session: run in threadId on a brand-new harness session (its native context is dropped, Tide history stays; a run is retried while the thread is busy). new_thread (default without threadId): a new thread per run; do not pass threadId.",
   },
-  provider: str("New-thread runs: claude | codex | opencode | pi. Defaults to the project's default."),
+  provider: str("New-thread runs: claude | codex | opencode | pi | antigravity | acp. Defaults to the project's default."),
   model: str("New-thread runs: model id; defaults to the harness default."),
   useWorktree: { type: "boolean", description: "New-thread runs: use a git worktree (default true)." },
 };
