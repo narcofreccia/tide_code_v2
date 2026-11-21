@@ -71,7 +71,7 @@ A thread with a linked PR and a watch shows a PR watch pill on its card:
 
 **First run.** Until the first thread, Mission Control is a three-step checklist: add a repository,
 set up a harness, start a thread. The harness step reads every instance the server reports (the
-four bundled harnesses and any ACP agent): with none installed it reads "Install a harness" and
+bundled harnesses and any ACP agent): with none installed it reads "Install a harness" and
 lists each one's install command with Copy and a Docs link; with some installed but signed out,
 "Log in to Claude Code or Pi" with each login command; done once one is usable. Refresh asks the
 server again past its 60 s status cache, and so does coming back to the window while the step is

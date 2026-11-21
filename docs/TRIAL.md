@@ -47,7 +47,7 @@ checkout itself. Tide disables revert and PR there and says so in the thread.
 
 ## Things the harness can still do
 
-The agent is a real Claude Code / Codex / OpenCode / Pi process with your own settings. In
+The agent is a real Claude Code / Codex / OpenCode / Pi / Antigravity process with your own settings. In
 `auto` or `full-access` mode it can run `git` itself, including `git push` or `git checkout`
 in the worktree, and a `cd ../.. && …` reaches your checkout like any shell would. Tide does
 not sandbox the harness beyond what the harness does. For a first trial use

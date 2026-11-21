@@ -5,7 +5,7 @@ Present tense; kept in sync with the code.
 ## Shape
 
 ```
-clients ── typed WS RPC ──▶ tide-server ── drivers ──▶ claude · codex · opencode · pi (the user's own CLIs)
+clients ── typed WS RPC ──▶ tide-server ── drivers ──▶ claude · codex · opencode · pi · agy (the user's own CLIs)
  web (browser / Tauri WebView)      │
  tide-mcp (agents' tools)           ├─ event store (SQLite)  decider → events → projector → read model
                                     ├─ vcs: worktrees, checkpoints, diff, restore, publish, merge-back
@@ -261,7 +261,7 @@ maps Tide's `RuntimeMode` onto the harness's own permission knobs (table in `pro
 Harnesses run with their full native configuration; Tide only adds its MCP server. Every
 thread exposes an escape hatch (`claude --resume`, `codex resume`, `opencode -s`, `pi --session`).
 
-The `DriverRegistry` is keyed by **instance**: the four bundled defaults (id = kind) plus the
+The `DriverRegistry` is keyed by **instance**: the bundled defaults (id = kind) plus the
 accounts and ACP agents in `settings.providerInstances`, re-synced on `settings.set`. A thread
 names its instance with `providerId`; switching instance hands off like a provider switch.
 ACP agents come from the public registry (`provider/acpRegistry.ts`, cached 24 h under the data

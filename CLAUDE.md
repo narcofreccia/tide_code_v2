@@ -10,7 +10,7 @@ Directives for working in this repository. Read before making changes.
 ## 1. What this is
 
 Tide v2 is a **focused agentic code editor and orchestrator**: it drives the coding
-harnesses the user already pays for — **Claude Code, Codex, OpenCode, Pi** — from one
+harnesses the user already pays for — **Claude Code, Codex, OpenCode, Pi, Antigravity** — from one
 place. Many threads per repo, each on its own git worktree, each on any harness; per-turn
 checkpoints with diff/revert/PR; a real Monaco editor + terminal bound to the thread's
 worktree; cross-harness Experts brainstorming; remote-ready. Ground-up rewrite of
@@ -20,7 +20,7 @@ worktree; cross-harness Experts brainstorming; remote-ready. Ground-up rewrite o
 a custom safety engine, a tree-sitter symbol index or project-memory store (harnesses
 already have grep/CLAUDE.md/AGENTS.md — cut by the value test in P5). Planning, sub-agents, workflows and permissions are **harness-native
 and surfaced by Tide** — before building a feature, check whether the harness already
-provides it and expose that instead. Every new capability must work for all four drivers.
+provides it and expose that instead. Every new capability must work for every driver.
 
 Reference architecture: T3 Code (`pingdotgg/t3code`). Design docs: `docs/design/ui.md`
 (layout — thread-first, workbench bound to worktree), `docs/internals/providers.md`
@@ -72,7 +72,7 @@ apps/web           React client (browser + Tauri WebView): components/{shell,mis
 apps/desktop       Tauri shell (P3)
 packages/contracts TypeBox: domain, commands, events, pure projector, rpc method table — SINGLE SOURCE OF TRUTH
 packages/client    WS connection + projection store + selectors (shared by web / future mobile)
-packages/driver-*  one package per harness (claude, codex, opencode, pi)
+packages/driver-*  one package per harness (claude, codex, opencode, pi); acp runs ACP agents and Antigravity
 packages/pi-extensions  the single Pi extension Tide loads (tide-bridge)
 packages/tide-mcp  stdio MCP server attached to every session: experts board tools + tide_delegate (cross-harness delegation)
 docs/design docs/internals   present-tense design + architecture docs
@@ -131,7 +131,8 @@ Point `TIDE_HOME` at a scratch dir when experimenting. Dev auth: web reads `?tok
 
 Installed by the user, never bundled (except Pi): `claude` (Agent SDK), `codex`
 (`codex app-server`; regenerate bindings with `codex app-server generate-ts` on upgrade),
-`opencode` (`opencode serve` + SDK), `pi` (`--mode rpc`). Facts and version notes:
+`opencode` (`opencode serve` + SDK), `pi` (`--mode rpc`), `agy` (Antigravity, `agy acp` on the
+ACP driver). Facts and version notes:
 `docs/internals/providers.md` — update it when a protocol detail changes.
 
 ## 8. Phases

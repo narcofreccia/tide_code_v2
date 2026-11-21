@@ -1,6 +1,6 @@
 # Tide v2 — Quickstart
 
-Tide drives the coding harnesses you already pay for (Claude Code, Codex, OpenCode, Pi) from
+Tide drives the coding harnesses you already pay for (Claude Code, Codex, OpenCode, Pi, Antigravity) from
 one place: many threads per repo, each in its own git worktree, with per-turn checkpoints,
 diff, revert, PR and merge-back. This page gets you from a clone to a first merged change.
 What Tide does to your repository is in [`docs/TRIAL.md`](docs/TRIAL.md).
@@ -16,6 +16,7 @@ What Tide does to your repository is in [`docs/TRIAL.md`](docs/TRIAL.md).
 | Codex | `npm i -g @openai/codex` | `codex login` | 0.147+ works (live-tested); 0.162+ for the native `thread/revert` |
 | OpenCode | `npm i -g @opencode/cli` | `opencode auth login` | **2.x only**; 1.x is refused |
 | Pi | `npm i -g @earendil-works/pi-coding-agent` (under Node 22; on Node 20 it crashes in undici) | `pi` then `/login <provider>`, or run Ollama | the credential lands in `~/.pi/agent/auth.json`; Tide reads that file |
+| Antigravity | `curl -fsSL https://antigravity.google/cli/install.sh \| bash` | `agy acp --login` | CLI 1.5 or newer; one Google account per machine |
 
 - `git` on PATH; `gh` if you want PRs from the Changes tab.
 - Desktop app only: Rust toolchain and the Tauri v2 prerequisites for macOS.
@@ -110,7 +111,7 @@ see "Encrypting the connection" in `docs/internals/remote.md`.
   Codex, Pi and OpenCode each fork natively; the new worktree branches from that turn's
   after-checkpoint. The thread header shows `forked from <title>`; click it to open the source.
 - **Rollback.** Replaces Revert. "Roll back to before this turn" undoes the chosen turn and
-  every turn after it. The harness forgets those turns on all four harnesses. "Restore files"
+  every turn after it. Claude Code, Codex, OpenCode and Pi forget those turns too. Antigravity and ACP agents can neither fork nor roll back. "Restore files"
   also resets the thread's worktree to the checkpoint taken before that turn. Rolled-back
   messages are dimmed and tagged `rolled back`.
 - **Switching provider.** The next turn after a change of harness carries a **Handoff** card

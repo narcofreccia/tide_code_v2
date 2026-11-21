@@ -12,6 +12,9 @@ runs the user's installed CLI/SDK and their subscription.
 | auto                   | `auto` (classifier)     | `never` / workspace-write (sandboxed)        | allow               | hook: allow | per agent, see [ACP agents](#acp-agents) |
 | full-access            | `bypassPermissions` (+`allowDangerouslySkipPermissions`) | `never` / `dangerFullAccess` | allow | hook: allow | per agent, see [ACP agents](#acp-agents) |
 
+Antigravity runs on the ACP driver. Where a table on this page has an ACP column or row, it
+also describes Antigravity unless [its section](#antigravity-built-in-on-the-acp-driver) says otherwise.
+
 `InteractionMode.plan` → Claude `permissionMode: "plan"`; Codex `collaborationMode`/plan;
 OpenCode `plan` agent; Pi = system-prompt + `tide_propose_plan` tool, and in plan mode shell
 commands go through a parsed read-only policy (`readonly-shell.ts`) instead of a regex allowlist.
@@ -109,8 +112,9 @@ carry), nothing is retried on its own, and the action goes once a later session 
 The registry (`apps/server/src/provider/registry.ts`) holds one entry per **instance**, keyed by
 instance id; threads point at one with `Thread.providerId` (absent = the kind's default).
 
-- **Bundled defaults** — `claude`, `codex`, `opencode`, `pi`: id = kind, labels "Claude Code",
-  "Codex", "OpenCode", "Pi", config from `server.json → providers.<kind>`. Always listed, never
+- **Bundled defaults** — `claude`, `codex`, `opencode`, `pi`, `antigravity`
+  (`BUNDLED_PROVIDER_KINDS` in contracts): id = kind, labels "Claude Code",
+  "Codex", "OpenCode", "Pi", "Antigravity", config from `server.json → providers.<kind>`. Always listed, never
   stored in settings; a settings id equal to a kind is refused (`settings.ts`) and ignored by the registry.
 - **User instances** — `settings.providerInstances` (`ProviderInstanceConfig`), mapped by
   `provider/instances.ts`. A bundled kind reuses its driver: `server.json` config, then
@@ -121,6 +125,7 @@ instance id; threads point at one with `Thread.providerId` (absent = the kind's 
   | claude | `CLAUDE_CONFIG_DIR` |
   | codex | `CODEX_HOME` (and `codexHome` in the driver config) |
   | opencode, pi | `HOME` |
+  | antigravity | refused: `agy` keeps every Google sign-in in one OS keyring entry, so a second instance would use the first account |
 
   The driver also gets `DriverEnv.instance {id, label, home?, env}`. Kind `acp` runs the ACP
   driver with a manual `command`/`args`, or with the registry agent's launch
@@ -132,7 +137,7 @@ instance id; threads point at one with `Thread.providerId` (absent = the kind's 
   added, an instance whose config changed is replaced, a dropped one removed. A replaced or
   removed instance that still serves a live session is not disposed; `SessionDirectory.close`
   sweeps it once its last session is gone.
-- **Listing** — `providers.list` returns one DTO per instance (`id`, `kind`, `label`): the four
+- **Listing** — `providers.list` returns one DTO per instance (`id`, `kind`, `label`): the bundled
   defaults first in that order, then user instances in settings order.
 - **Switching instance** (`thread.update {providerId}`, or `{provider}` = that kind's default)
   behaves like a provider switch: refused while the thread runs, the native session is cleared
@@ -621,33 +626,65 @@ Fixtures: `packages/driver-acp/test/fixtures/{opencode-acp,opencode-acp-1.1}/` r
 `node scripts/record.mjs --repo <scratch git repo> [--model id] [--cancel-after ms] -- <agent cmd>`
 (client lines carry `"_dir": "c2a"`); `synthetic/` is hand-written (header `synthetic: true`).
 
-### Antigravity (R20 profile, not live-verified)
+### Antigravity (built in, on the ACP driver)
 
-Antigravity (`agy acp`, CLI 1.5.0+) runs through this driver as a profile
-(`packages/driver-acp/src/profiles.ts`). The facts come from T3 Code's integration; `agy` was not
-installed where this was written, so the fixtures are synthetic. `AcpConfig.quirks` carries four
-generic switches, and with none set the driver behaves as before:
+Antigravity is a bundled kind (`antigravity`, R23) that runs on this driver. `antigravityDriver`
+(`packages/driver-acp/src/antigravity.ts`) launches `agy acp` with the profile's quirks and an
+`AcpFlavor`, which holds what a built-in harness needs beyond a generic ACP agent:
+
+| flavor field | Antigravity |
+|---|---|
+| `kind` | `antigravity` (status, instance, DTO) |
+| `loginCommand` | `agy acp --login`, reported while the agent answers `auth_required` |
+| `notInstalledHint` | names the installer: `curl -fsSL https://antigravity.google/cli/install.sh \| bash` |
+| `minVersion` | 1.5. An older CLI reads as installed, not logged in, with "run `agy update`", and no probe session is opened |
+| `terminalCommand` | not set, so `openInTerminal` is false |
+
+`server.json → providers.antigravity` takes `binaryPath`, `env` and `defaultModel`. The quirks are
+set in the driver config, so a binary with another name keeps them. There is one account: `agy`
+keeps every Google sign-in in one OS keyring entry, so `settings.set` and the instance factory
+refuse an extra instance of this kind, and the card has no "Add account". "Update harnesses" runs
+`agy update`.
+
+**Checked live on `agy` 1.5.14, signed out (2026-11-21).** `initialize` answers
+`agentInfo {name: "Antigravity ACP Server", version: "1.5.14"}`, `loadSession: true`,
+`promptCapabilities {image: true, audio: false, embeddedContext: true}`,
+`sessionCapabilities {resume, close, load, list, additionalDirectories}`,
+`_meta.antigravity {tier: true, systemPrompt {append: true}}` and four `authMethods`
+(`oauth-personal`, `oauth-business`, `gemini-api-key`, `agent-platform`). `session/new` then
+answers `-32000 "Authentication required"`, which the probe reports as `loggedIn: false` with
+the first method's description as the hint. One `agy acp` start to that answer takes under a
+second. Recording: `test/fixtures/antigravity-1.5/signed-out.ndjson`.
+
+**Not yet run: any signed-in session.** Models, modes, tool rows, plan mode and resume still rest
+on T3 Code's integration and on the hand-written `test/fixtures/synthetic-antigravity/`. The
+four quirks below come from there. Only the first and third match something the live
+`initialize` showed (`fs.writeTextFile` is not needed, `systemPrompt.append` is advertised).
 
 - `advertiseFsWrite: false`: no `fs.writeTextFile` in `initialize` (also in the status probe).
   With it the agent swaps its diff edits for whole-file client writes.
 - `keepAgentMode: true`: the runtime mode never picks an agent mode (the CLI accepts only
-  `default`, `accept-edits`, `plan`; the full-access pattern would have matched `auto_edit` on the
-  older runtime). Tide answers permission requests from its own runtime mode. Plan interaction
-  can still select the agent's `plan` mode.
+  `accept-edits`, `auto`, `plan`). Tide answers permission requests from its own runtime mode.
+  Plan interaction can still select the agent's `plan` mode.
 - `systemPromptMeta: ["antigravity", "systemPrompt", "append"]`: the system prompt rides in
   `_meta` at that path on `session/new` and on the reopen call; the `<tide-context>` block is skipped.
 - `resumeMethod: "resume"`: `session/resume` when the agent advertises `sessionCapabilities.resume`,
   else `session/load` when it offers `loadSession`, else a new session with `resumeFailed`.
 
-The profile applies when the launch command's basename is `agy` and the config sets no quirks of
-its own. The registry lists Antigravity as a local entry that launches `agy` from PATH
-(`acpRegistry.ts` `LOCAL_AGENTS`); the fetched registry's `antigravity-acp` binary entry is the
-IDE-extension server and is not launchable by Tide. `clientInfo.name` stays `tide`, and sign-in
-stays in the user's terminal like every other harness. Known limits: an upstream API error arrives
-as an assistant message followed by `end_turn`, so the turn shows as completed with the error as
-its last message; no rewind and no compaction over ACP; a question that reuses the standard
-permission kinds shows as an approval card; limits are not read (T3 reads them from a
-Google-internal endpoint with the OAuth refresh token, which Tide does not do).
+`agy` added by hand as an ACP agent still works: the profile applies when the launch command's
+basename is `agy` and the config sets no quirks of its own, and a stored `acpAgentId:
+"antigravity"` launches through the profile. That instance reports kind `acp` and sits under
+"ACP agents". The ACP registry no longer carries a local Antigravity entry; the fetched
+registry's `antigravity-acp` binary is the IDE-extension server and Tide cannot launch it.
+`clientInfo.name` stays `tide`.
+
+Known limits: an upstream API error arrives as an assistant message followed by `end_turn`, so
+the turn shows as completed with the error as its last message; no rewind, fork or compaction
+over ACP; no sub-agent rows and no steering; a question that reuses the standard permission
+kinds shows as an approval card; no "Open in terminal" (`agy --conversation <id>` exists, but
+whether it takes the ACP session id is unchecked); no limit windows and no usage logs, so the
+share-of-window quota and cost estimates do not cover it (T3 reads limits from a Google-internal
+endpoint with the OAuth refresh token, which Tide does not do).
 
 ## W1 linked repos — how each harness scopes a secondary directory
 

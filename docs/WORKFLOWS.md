@@ -1,6 +1,6 @@
 # Multi-harness workflows
 
-Tide runs Claude Code, Codex, OpenCode and Pi side by side. There are three ways to put more
+Tide runs Claude Code, Codex, OpenCode, Pi and Antigravity side by side. There are three ways to put more
 than one of them on the same piece of work. They differ in who drives: you, one agent, or a
 saved team.
 
