@@ -1,8 +1,9 @@
-import type { AgentCommand, ExpertsSession, ReadModel, RpcOutput, Thread } from "@tide/contracts";
+import type { AgentCommand, ExpertsSession, ReadModel, RpcOutput, Thread, UserSettings } from "@tide/contracts";
 import { CommandError, type Engine } from "../orchestration/engine.ts";
 import { agentStatus, isQuiescent } from "../orchestration/background.ts";
 import { lastAssistantText } from "../orchestration/delegation.ts";
 import { readImagePaths } from "../workspace/attachments.ts";
+import { resolveCommandModel, toAgentHarness, type AgentRegistryView } from "./agentModel.ts";
 import { RpcException, type RpcCallContext, type RpcRouter } from "./router.ts";
 import { threadCwdResolver } from "./threadCwd.ts";
 
@@ -10,6 +11,10 @@ export interface AgentHandlerDeps {
   engine: Engine;
   /** R22: thread -> cwd, where `imagePaths` are read from (default: from the read model) */
   cwdFor?: (threadId: string) => string;
+  /** R23: harness status for model checks and `agent.harnesses`; without it models pass unchecked */
+  registry?: AgentRegistryView;
+  /** R23: the user's Settings › Providers defaults (`agent.harnesses` defaultModel) */
+  providerDefaults?: () => UserSettings["providerDefaults"];
 }
 
 interface Caller {
@@ -87,12 +92,23 @@ export function registerAgentHandlers(router: RpcRouter, deps: AgentHandlerDeps)
       if (command.type !== "thread.delegate") throw new RpcException("invalid-params", `imagePaths only go with thread.delegate, not ${command.type}`);
       command = { ...command, images: await readImagePaths(cwdFor(caller.thread.id), imagePaths) };
     }
+    let modelNote: string | undefined;
+    if (deps.registry !== undefined) ({ command, modelNote } = await resolveCommandModel(command, deps.registry));
     try {
-      return await deps.engine.dispatch(command);
+      const result = await deps.engine.dispatch(command);
+      return modelNote !== undefined ? { ...result, modelNote } : result;
     } catch (err) {
       if (err instanceof CommandError) throw new RpcException(err.code, err.message);
       throw err;
     }
+  });
+
+  router.register("agent.harnesses", async (input, ctx) => {
+    callerOf(deps.engine.getModel(), ctx);
+    if (deps.registry === undefined) return { harnesses: [] };
+    const defaults = deps.providerDefaults?.() ?? {};
+    const dtos = await deps.registry.statusAll(input.refresh === true);
+    return { harnesses: dtos.map((dto) => toAgentHarness(dto, defaults)) };
   });
 
   router.register("agent.context", async (input, ctx) => {

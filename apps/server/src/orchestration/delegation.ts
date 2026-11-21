@@ -1,6 +1,7 @@
 import type { ActivityOf, EventRecord, ReadModel, Thread } from "@tide/contracts";
 import { isQuiescent, lostInRound, quiescedBy } from "./background.ts";
 import type { Engine } from "./engine.ts";
+import { quoteIds } from "../provider/modelResolve.ts";
 import { RESTART_ERROR, SHUTDOWN_ERROR } from "./recovery.ts";
 
 export type CancelTimer = () => void;
@@ -102,7 +103,12 @@ export interface FinishedDelegate {
   lostAgents?: number;
   /** the delegates-site verdict, only when it was confident enough to show */
   judge?: { label: string; source: string; confidence: number };
+  /** R23: the delegate failed and ran a model its harness does not list: the ids it does list */
+  unlistedModel?: { model: string; harness: string; ids: readonly string[] };
 }
+
+/** R23: the target harness's model ids at its last status read, and the user's default for it. */
+export type ListedModelsOf = (child: Thread) => { harness: string; ids: readonly string[]; userDefault?: string } | undefined;
 
 function clip(text: string, max: number): string {
   return text.length <= max ? text : `${text.slice(0, max)}…`;
@@ -123,8 +129,25 @@ function finishedBlock(d: FinishedDelegate): string {
     `Delegate "${d.title}" (${d.provider}) finished: ${describeOutcome(d)}.${lostNote(d.lostAgents)} Last reply:`,
     d.lastReply !== undefined ? clip(d.lastReply, DELEGATE_REPLY_CHARS) : "(no reply)",
     ...(d.judge !== undefined ? [`Judge: ${d.judge.label} (${d.judge.source} ${d.judge.confidence.toFixed(2)})`] : []),
+    ...(d.unlistedModel !== undefined ? [unlistedModelLine(d.unlistedModel)] : []),
     `Use tide_delegate_status / tide_thread_read ${d.threadId} for details.`,
   ].join("\n");
+}
+
+function unlistedModelLine(u: NonNullable<FinishedDelegate["unlistedModel"]>): string {
+  return `Its model \`${u.model}\` is not one ${u.harness} lists (${quoteIds(u.ids)}). Delegate again with a listed id, or omit \`model\` for the default.`;
+}
+
+/**
+ * R23: a failed delegate whose model its harness does not list (exact ids; the dispatch already
+ * rewrote display-name spellings). A model equal to the user's default was not the agent's
+ * choice, and an empty list says nothing.
+ */
+export function unlistedModelOf(child: Thread, outcome: DelegateOutcome, listed: ListedModelsOf | undefined): FinishedDelegate["unlistedModel"] {
+  if (outcome !== "error" || child.model === undefined || listed === undefined) return undefined;
+  const known = listed(child);
+  if (known === undefined || known.ids.length === 0 || known.ids.includes(child.model) || known.userDefault === child.model) return undefined;
+  return { model: child.model, harness: known.harness, ids: known.ids };
 }
 
 /** The wake-up a parent gets: one block per delegate, oldest first. */
@@ -151,6 +174,8 @@ export interface DelegationReactorOptions {
   batchMs?: number;
   /** gray zone getter: a delegate's judge verdict below `low` is left out of the wake-up */
   grayZone?: () => { low: number; high: number };
+  /** R23: model ids per target harness, so a delegate that died on an unlisted model says which would work */
+  listedModels?: ListedModelsOf;
   log?: (msg: string, data?: unknown) => void;
 }
 
@@ -177,6 +202,7 @@ export class DelegationReactor {
   #schedule: (fn: () => void, ms: number) => CancelTimer;
   #batchMs: number;
   #grayZone: (() => { low: number; high: number }) | undefined;
+  #listedModels: ListedModelsOf | undefined;
   #log: (msg: string, data?: unknown) => void;
   #batches = new Map<string, Batch>();
   /** delegates that hit their usage limit while still working: reported as limited once quiet */
@@ -192,6 +218,7 @@ export class DelegationReactor {
     this.#schedule = options.schedule ?? realTimer;
     this.#batchMs = options.batchMs ?? DELEGATE_BATCH_MS;
     this.#grayZone = options.grayZone;
+    this.#listedModels = options.listedModels;
     this.#log = options.log ?? ((msg, data) => (data === undefined ? console.error(msg) : console.error(msg, data)));
     this.#waits?.onRelease((parentId, childId, finish) => {
       if (this.#unsubscribe !== undefined) this.#enqueue(parentId, childId, finish);
@@ -347,6 +374,7 @@ export class DelegationReactor {
       const low = this.#grayZone?.().low;
       const j = child.judge;
       const judge = j?.label !== undefined && low !== undefined && j.confidence >= low ? { label: j.label, source: j.source, confidence: j.confidence } : undefined;
+      const unlistedModel = unlistedModelOf(child, outcome, this.#listedModels);
       delegates.push({
         threadId,
         title: child.title,
@@ -356,6 +384,7 @@ export class DelegationReactor {
         ...(lastReply !== undefined ? { lastReply } : {}),
         ...(lostAgents !== undefined ? { lostAgents } : {}),
         ...(judge !== undefined ? { judge } : {}),
+        ...(unlistedModel !== undefined ? { unlistedModel } : {}),
       });
     }
     if (delegates.length === 0) return;

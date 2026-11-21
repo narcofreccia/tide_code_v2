@@ -63,6 +63,8 @@ export async function bootReplay(drivers: readonly AnyDriver[]): Promise<ReplayH
     config: config(tideHome),
     listen: false,
     log: () => undefined,
+    // a status probe at boot would consume the replayed transport
+    warmProviderStatus: false,
     registerDrivers: (registry) => {
       for (const driver of drivers) registry.register(driver as unknown as ProviderDriver<Record<string, unknown>>);
     },

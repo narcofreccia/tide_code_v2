@@ -18,6 +18,7 @@ export type ThreadDiffInput = RpcInput<"agent.thread.diff">;
 export type ThreadDiffResult = RpcOutput<"agent.thread.diff">;
 export type SecretRequestInput = RpcInput<"agent.secret.request">;
 export type SecretRequestResult = RpcOutput<"agent.secret.request">;
+export type HarnessesResult = RpcOutput<"agent.harnesses">;
 
 /** The slice of the Tide RPC surface the MCP tools need; faked in tests. */
 export interface AgentBackend {
@@ -37,6 +38,8 @@ export interface AgentBackend {
   pendingRespond(input: PendingRespondInput): Promise<{ ok: boolean }>;
   /** R16: masked secret card on the caller's turn; resolves when the user answers */
   secretRequest(input: SecretRequestInput): Promise<SecretRequestResult>;
+  /** R23: the harnesses this machine can delegate to, with their model ids */
+  harnesses(refresh?: boolean): Promise<HarnessesResult>;
   close(): void;
 }
 
@@ -135,6 +138,11 @@ export class TideAgentBackend implements AgentBackend {
   async secretRequest(input: SecretRequestInput): Promise<SecretRequestResult> {
     await this.#connect();
     return this.#connection.call("agent.secret.request", input);
+  }
+
+  async harnesses(refresh?: boolean): Promise<HarnessesResult> {
+    await this.#connect();
+    return this.#connection.call("agent.harnesses", refresh === true ? { refresh: true } : {});
   }
 
   close(): void {

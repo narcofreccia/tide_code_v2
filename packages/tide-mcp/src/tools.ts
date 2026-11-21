@@ -64,7 +64,7 @@ export const BASE_TOOL_DEFINITIONS: ToolDefinition[] = [
         provider: { type: "string", enum: ["claude", "codex", "opencode", "pi", "antigravity", "acp"], description: "Which harness runs the task (the kind of `providerId` when you pass one)." },
         providerId: str("Optional configured instance of that harness: another account (e.g. codex:work) or an ACP agent (e.g. acp:gemini). Omit for the harness's default instance."),
         prompt: str("The complete task description; the new thread has none of your context."),
-        model: str("Optional model id for that harness."),
+        model: str("Optional model id for that harness, exactly as tide_harnesses lists it."),
         mode: {
           type: "string",
           enum: ["approval-required", "auto-accept-edits", "auto", "full-access"],
@@ -90,6 +90,14 @@ export const BASE_TOOL_DEFINITIONS: ToolDefinition[] = [
       type: "object",
       properties: { threadId: str("The threadId returned by tide_delegate.") },
       required: ["threadId"],
+    },
+  },
+  {
+    name: "tide_harnesses",
+    description: "List the harnesses tide_delegate can run here: sign-in state, default model and model ids. Pass a model id to tide_delegate exactly as listed.",
+    inputSchema: {
+      type: "object",
+      properties: { refresh: { type: "boolean", description: "Re-read every harness instead of the status cached up to a minute." } },
     },
   },
 ];

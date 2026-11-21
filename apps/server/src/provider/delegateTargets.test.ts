@@ -27,6 +27,16 @@ describe("delegateTargetsHint", () => {
     expect(hint).toContain("opencode;");
     expect(hint).toContain("exactly as listed");
   });
+  it("leaves out harnesses last read as not installed or signed out, keeps unread ones, and points at tide_harnesses", () => {
+    const status: Record<string, { installed: boolean; loggedIn: boolean }> = { claude: { installed: false, loggedIn: false }, opencode: { installed: true, loggedIn: false } };
+    const hint = delegateTargetsHint({ ...registry, cachedStatus: (id: string) => status[id] }, {}) ?? "";
+    expect(hint).not.toContain("claude");
+    expect(hint).not.toContain("opencode");
+    expect(hint).toContain("codex providerId codex:work (Work account)");
+    expect(hint).toContain("use an id exactly as listed (never one built from a model's display name)");
+    expect(hint.endsWith("tide_harnesses gives the current list.")).toBe(true);
+    expect(delegateTargetsHint({ ...registry, list: () => ["claude"], cachedStatus: (id: string) => status[id] }, {})).toBeUndefined();
+  });
   it("is empty without harnesses", () => {
     expect(delegateTargetsHint({ list: () => [], kindOf: () => undefined, labelOf: () => undefined }, {})).toBeUndefined();
   });

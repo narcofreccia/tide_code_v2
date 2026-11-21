@@ -212,7 +212,7 @@ export async function startServer(deps: ServerDeps): Promise<ServerHandle> {
   registerUsageHandlers(router, { engine, settings, store, tideHome: config.tideHome, dataDir: config.dataDir });
   registerPrHandlers(router, { engine, forges });
   const cwdFor = threadCwdResolver(engine);
-  registerAgentHandlers(router, { engine, cwdFor });
+  registerAgentHandlers(router, { engine, cwdFor, registry, providerDefaults: () => settings.get().providerDefaults });
   registerAgentThreadHandlers(router, {
     engine,
     cwdFor,

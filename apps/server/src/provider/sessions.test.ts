@@ -3,6 +3,7 @@ import { emptyReadModel, type Project, type ReadModel, type Thread, type Turn } 
 import { createInstanceFactory } from "./instances.ts";
 import { DriverRegistry } from "./registry.ts";
 import { THREAD_TOOLS_HINT } from "@tide/tide-mcp";
+import { delegateTargetsHint } from "./delegateTargets.ts";
 import { resumableSessionId, SessionDirectory } from "./sessions.ts";
 import { createFakeDriver, type FakeDriverControl } from "./testing/fakeDriver.ts";
 
@@ -260,6 +261,27 @@ describe("SessionDirectory: R4", () => {
     const sessions = new SessionDirectory({ registry, autoReap: false, mcp: { serversFor: () => [], revoke: () => undefined } });
     await sessions.getOrOpen(thread(), project);
     expect(claude.control.opened[0]?.systemPromptAppend).toContain(THREAD_TOOLS_HINT);
+  });
+
+  it("R23: puts the delegate-targets hint, with the harnesses' model ids, into the session's system prompt", async () => {
+    const registry = new DriverRegistry({ env: { dataDir: ":memory:", log: () => undefined } });
+    const claude = createFakeDriver("claude");
+    const codex = createFakeDriver("codex");
+    codex.control.statusResult = { ...codex.control.statusResult, loggedIn: false };
+    registry.register(claude.driver);
+    registry.register(codex.driver);
+    await registry.statusAll();
+    const sessions = new SessionDirectory({
+      registry,
+      autoReap: false,
+      mcp: { serversFor: () => [], revoke: () => undefined },
+      harnessHint: () => delegateTargetsHint(registry, {}),
+    });
+    await sessions.getOrOpen(thread(), project);
+    const append = claude.control.opened[0]?.systemPromptAppend ?? "";
+    expect(append).toContain("Harnesses tide_delegate can run here: claude (models fake-model).");
+    expect(append).not.toContain("codex");
+    expect(append).toContain("tide_harnesses gives the current list.");
   });
 
   it("resumes the current harness's own session after a switch back, even though another harness ran last", async () => {

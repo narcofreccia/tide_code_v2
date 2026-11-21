@@ -160,22 +160,32 @@ export async function callTool(
       const created = result.events.find((r) => r.event.type === "thread.created");
       const threadId = created?.event.type === "thread.created" ? created.event.thread.id : undefined;
       if (threadId === undefined) return failure("delegation did not produce a thread");
+      // R23: what the server did with `model` (resolved to a listed id, or not in the harness's list)
+      const note = result.modelNote !== undefined ? `\nNote: ${result.modelNote}` : "";
       if (waitFor) {
         try {
           const w = await backend.threadWait({ threadId, timeoutMs }, signal);
           const header = JSON.stringify({ threadId, ...(w.timedOut ? { waitTimedOut: true } : {}) });
-          return text(`${header}\n${formatWait(w)}`);
+          return text(`${header}${note}\n${formatWait(w)}`);
         } catch (err) {
-          return failure(`${JSON.stringify({ threadId })}\nDelegated, but waiting failed: ${describeRpcError(err)}`);
+          return failure(`${JSON.stringify({ threadId })}${note}\nDelegated, but waiting failed: ${describeRpcError(err)}`);
         }
       }
       return text(
-        `${JSON.stringify({ threadId })}\nThe task is running. Poll tide_delegate_status with this threadId until it reports settled, then read lastAssistantText.`,
+        `${JSON.stringify({ threadId })}${note}\nThe task is running. Poll tide_delegate_status with this threadId until it reports settled, then read lastAssistantText.`,
       );
     }
     case "tide_delegate_status": {
       const status = await backend.threadStatus(requireString(rawArgs, "threadId"));
       return text(JSON.stringify(status, null, 2));
+    }
+    case "tide_harnesses": {
+      try {
+        const { harnesses } = await backend.harnesses(rawArgs["refresh"] === true);
+        return text(JSON.stringify(harnesses));
+      } catch (err) {
+        return failure(describeRpcError(err));
+      }
     }
     default:
       return failure(`unknown tool ${name}`);

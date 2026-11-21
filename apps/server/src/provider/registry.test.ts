@@ -37,6 +37,25 @@ describe("DriverRegistry", () => {
     expect((await registry.statusAll())[0]?.loggedIn).toBe(true);
   });
 
+  it("R23: keeps the last status read for synchronous readers, whatever its age", async () => {
+    const clock = { t: 0 };
+    const claude = createFakeDriver("claude");
+    const codex = createFakeDriver("codex");
+    codex.control.statusResult = { ...codex.control.statusResult, installed: false };
+    const registry = new DriverRegistry({ env, now: () => clock.t });
+    registry.register(claude.driver);
+    registry.register(codex.driver);
+    expect(registry.cachedModels("claude")).toBeUndefined();
+    expect(registry.cachedStatus("claude")).toBeUndefined();
+    await registry.statusAll();
+    clock.t = 10 * 60_000;
+    expect(registry.cachedModels("claude")).toEqual(["fake-model"]);
+    expect(registry.cachedStatus("claude")).toMatchObject({ installed: true, loggedIn: true, models: [{ id: "fake-model", default: true }] });
+    // a missing CLI's list is no answer, but its status still says it is missing
+    expect(registry.cachedModels("codex")).toBeUndefined();
+    expect(registry.cachedStatus("codex")).toMatchObject({ installed: false });
+  });
+
   it("turns a failing status() into an unusable entry instead of throwing", async () => {
     const { driver, control } = createFakeDriver("claude");
     control.statusError = new Error("claude: command not found");

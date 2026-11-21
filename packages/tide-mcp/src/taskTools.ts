@@ -161,7 +161,8 @@ export async function callTaskTool(backend: AgentBackend, name: string, args: Re
       });
       const created = r.events.find((e) => e.event.type === "task.created");
       const id = created?.event.type === "task.created" ? created.event.task.id : undefined;
-      return ok(id === undefined ? "Automation created." : `Automation created. taskId=${id}`);
+      const note = r.modelNote !== undefined ? `\nNote: ${r.modelNote}` : "";
+      return ok(`${id === undefined ? "Automation created." : `Automation created. taskId=${id}`}${note}`);
     }
     case "tide_list_scheduled_tasks": {
       const { tasks } = await backend.taskList();

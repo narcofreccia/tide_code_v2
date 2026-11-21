@@ -80,6 +80,8 @@ export async function harness(cleanups: (() => Promise<void>)[], options: { log?
     gh,
     forges: fixedResolver(forge),
     registerDrivers: (registry) => registry.register(driver),
+    // tests set the fake's caps after boot, before anything reads the (cached) status
+    warmProviderStatus: false,
   });
   cleanups.push(() => app.close(), () => repo.cleanup(), () => rm(tideHome, { recursive: true, force: true }));
 

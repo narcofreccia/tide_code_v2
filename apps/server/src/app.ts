@@ -12,11 +12,11 @@ import { ExpertsSite } from "./decisions/sites/experts.ts";
 import { createJudgeService } from "./decisions/service.ts";
 import { ExpertsReactor } from "./experts/reactor.ts";
 import { TideMcpProvisioner } from "./mcp/provision.ts";
-import { delegateTargetsHint } from "./provider/delegateTargets.ts";
+import { delegateTargetsHint, userDefaultModel } from "./provider/delegateTargets.ts";
 import { AgentTokenStore } from "./rpc/agentTickets.ts";
 import type { DecideDefaults } from "./orchestration/decider/index.ts";
 import { Engine } from "./orchestration/engine.ts";
-import { DelegateWaits, DelegationReactor, type CancelTimer } from "./orchestration/delegation.ts";
+import { DelegateWaits, DelegationReactor, type CancelTimer, type ListedModelsOf } from "./orchestration/delegation.ts";
 import { LimitsWorker } from "./orchestration/limits.ts";
 import { harnessLogSpend, QuotaWorker } from "./quota/worker.ts";
 import { SettlementReactor } from "./orchestration/settlement.ts";
@@ -76,6 +76,8 @@ export interface AppOptions {
   keepStoreOpen?: boolean;
   /** R17: tests keep mDNS off the real network */
   discovery?: ServerDeps["discovery"];
+  /** R23: false skips the background harness status read at boot (default on) */
+  warmProviderStatus?: boolean;
   log?: (msg: string, data?: unknown) => void;
 }
 
@@ -161,6 +163,8 @@ export async function createApp(options: AppOptions): Promise<App> {
     void acp.load(true).then(() => registry.syncInstances(settings.get().providerInstances)).catch((err: unknown) => log("[acp] resync failed", err));
   }
   const commands = new CommandsCache();
+  // R23: the first session's delegate hint needs the harnesses' model lists before any client asks
+  const warmStatus = options.warmProviderStatus === false ? Promise.resolve() : warmProviderStatus(registry, log);
 
   // Every provider session gets the Tide MCP server, parameterised by a per-thread
   // agent token that is revoked when the session closes.
@@ -287,7 +291,14 @@ export async function createApp(options: AppOptions): Promise<App> {
 
   // after recovery: turns settled as "interrupted" by a restart must not wake their parents
   const delegateWaits = new DelegateWaits();
-  const delegation = new DelegationReactor({ engine, waits: delegateWaits, grayZone, log, ...(options.delegationSchedule !== undefined ? { schedule: options.delegationSchedule } : {}) });
+  const listedModels: ListedModelsOf = (child) => {
+    const id = instanceIdOf(child);
+    const ids = registry.cachedModels(id);
+    if (ids === undefined) return undefined;
+    const userDefault = userDefaultModel(settings.get().providerDefaults, id, child.provider);
+    return { harness: id, ids, ...(userDefault !== undefined ? { userDefault } : {}) };
+  };
+  const delegation = new DelegationReactor({ engine, waits: delegateWaits, grayZone, listedModels, log, ...(options.delegationSchedule !== undefined ? { schedule: options.delegationSchedule } : {}) });
   delegation.start();
   delegation.resumeAfterRestart(backgroundAtBoot);
 
@@ -407,6 +418,7 @@ export async function createApp(options: AppOptions): Promise<App> {
       delegation.flushAll();
       await withTimeout(delegation.drain(), options.shutdownTimeoutMs ?? DEFAULT_SHUTDOWN_TIMEOUT_MS, log);
       delegation.stop();
+      await withTimeout(warmStatus, options.shutdownTimeoutMs ?? DEFAULT_SHUTDOWN_TIMEOUT_MS, log);
       await registry.dispose();
       // B3: the next boot resumes from here instead of replaying the whole log
       try {
@@ -449,6 +461,17 @@ function deciderDefaults(settings: SettingsStore, registry: DriverRegistry): Dec
     providerInstances: s.providerInstances.map((p) => ({ id: p.id, kind: p.kind })),
     providerCaps,
   };
+}
+
+/** One background status read of every harness; logged, never thrown into boot. */
+function warmProviderStatus(registry: DriverRegistry, log: (msg: string, data?: unknown) => void): Promise<void> {
+  return registry.statusAll().then(
+    (dtos) => {
+      const state = (d: (typeof dtos)[number]): string => (!d.installed ? "not installed" : !d.loggedIn ? "not signed in" : `${d.models.length} model${d.models.length === 1 ? "" : "s"}`);
+      log(`[provider] status at boot: ${dtos.map((d) => `${d.id} ${state(d)}`).join(", ")}`);
+    },
+    (err: unknown) => log("[provider] status at boot failed", err),
+  );
 }
 
 /** Image bytes ride only on `turn.requested`; a turn promoted after a restart reads them back from the log. */

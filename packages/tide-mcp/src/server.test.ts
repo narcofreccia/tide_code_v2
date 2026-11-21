@@ -125,6 +125,9 @@ class FakeBackend implements AgentBackend {
   secretRequest(i: SecretRequestInput) {
     return this.#rec("secret", i, this.secretResult);
   }
+  harnesses(refresh?: boolean) {
+    return this.#rec("harnesses", refresh, { harnesses: [] });
+  }
 
   close(): void {
     /* nothing to release */
@@ -157,6 +160,7 @@ describe("tide-mcp server", () => {
       "tide_experts_synthesize",
       "tide_delegate",
       "tide_delegate_status",
+      "tide_harnesses",
       "tide_thread_list",
       "tide_thread_read",
       "tide_thread_send",
