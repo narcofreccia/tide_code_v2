@@ -7,13 +7,13 @@ import type { Database, SqlStatement } from "../db/sqlite.ts";
  * then stop matching and boot falls back to a full replay, which rebuilds the right model and
  * writes a fresh snapshot on the next shutdown. Forgetting a bump means a stale model.
  */
-export const MODEL_SCHEMA = 3;
+export const MODEL_SCHEMA = 4;
 /**
  * sha256 of the `ReadModel` TypeBox schema (sorted keys, annotations dropped) that MODEL_SCHEMA
  * describes. `snapshotSchema.test.ts` fails when the schema's shape changes and prints the new
  * value: bump MODEL_SCHEMA and paste it here.
  */
-export const MODEL_SCHEMA_HASH = "7511d8506e38906cd0b29659614cc95072f99de923229df29986d02de0536117";
+export const MODEL_SCHEMA_HASH = "e81712bbb851cc94095be8b925c4421561e77a0c3e887efb7f9db027c8f55906";
 
 /** How many snapshots are kept; an older one is the fallback when the newest does not parse. */
 const KEEP = 2;

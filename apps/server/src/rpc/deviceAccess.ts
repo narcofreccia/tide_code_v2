@@ -92,6 +92,7 @@ export const METHOD_ACCESS: Record<keyof typeof rpcMethods, AccessNeeded> = {
   "run.restart": "full",
   // agent sockets only (the router keeps client sockets off agent.*); fail closed regardless
   "agent.dispatch": "full",
+  "agent.harnesses": "full",
   "agent.context": "full",
   "agent.threadStatus": "full",
   "agent.thread.list": "full",

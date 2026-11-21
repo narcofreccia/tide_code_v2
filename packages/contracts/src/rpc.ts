@@ -42,6 +42,21 @@ const unary = <I extends TSchema, O extends TSchema>(input: I, output: O): Unary
 const stream = <I extends TSchema, C extends TSchema>(input: I, chunk: C): StreamMethod<I, C> => ({ kind: "stream", input, chunk });
 
 export const DispatchResult = Type.Object({ seq: Type.Number(), events: Type.Array(EventRecord) });
+/** R23: `modelNote` says what the server did with a model id an agent passed (resolved to a listed id, or not in the harness's list) */
+export const AgentDispatchResult = Type.Object({ seq: Type.Number(), events: Type.Array(EventRecord), modelNote: Type.Optional(Type.String()) });
+/** R23: one harness an agent may delegate to, as the harness itself reports it */
+export const AgentHarness = Type.Object({
+  provider: ProviderKind,
+  /** instance id; equals `provider` for a bundled default */
+  providerId: Type.String(),
+  label: Type.String(),
+  installed: Type.Boolean(),
+  loggedIn: Type.Boolean(),
+  /** the user's Settings › Providers default, else the harness's own */
+  defaultModel: Type.Optional(Type.String()),
+  models: Type.Array(Type.Object({ id: Type.String(), label: Type.String() })),
+});
+export type AgentHarness = Static<typeof AgentHarness>;
 
 /** Subscription chunk: first frame is a snapshot, then event records. */
 export const ModelChunk = Type.Union([
@@ -175,7 +190,7 @@ export type UsageRepairResult = Static<typeof UsageRepairResult>;
  * `POST /hook/<hookId>` fires a webhook scheduled task (optionally `X-Tide-Signature: sha256=<hmac>`).
  */
 /** Bumped when the RPC/HTTP surface changes incompatibly. Servers advertise it (`GET /api/env`, `server.info`, mDNS); clients warn on a mismatch (R18). */
-export const PROTOCOL_VERSION = 3;
+export const PROTOCOL_VERSION = 4;
 
 export const EnvProbe = Type.Object({ environmentId: Type.String(), name: Type.String(), version: Type.String(), protocol: Type.Number() });
 export type EnvProbe = Static<typeof EnvProbe>;
@@ -627,7 +642,9 @@ export const rpcMethods = {
    * R22: `imagePaths` (only with `thread.delegate`) are image files in the caller's checkout; the server
    * reads them and puts the bytes on the command's `images`.
    */
-  "agent.dispatch": unary(Type.Object({ command: AgentCommand, imagePaths: Type.Optional(Type.Array(Type.String({ minLength: 1 }), { maxItems: 8 })) }), DispatchResult),
+  "agent.dispatch": unary(Type.Object({ command: AgentCommand, imagePaths: Type.Optional(Type.Array(Type.String({ minLength: 1 }), { maxItems: 8 })) }), AgentDispatchResult),
+  /** R23: every harness on this machine with its model list, read from the harness (60 s cache); `refresh` reads again */
+  "agent.harnesses": unary(Type.Object({ refresh: Type.Optional(Type.Boolean()) }), Type.Object({ harnesses: Type.Array(AgentHarness) })),
   /** what the calling thread needs to know: its experts session (if any), unread messages, findings */
   "agent.context": unary(
     Type.Object({ sinceMessageId: Type.Optional(Type.String()) }),

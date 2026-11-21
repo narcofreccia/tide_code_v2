@@ -13,12 +13,18 @@ export const ProviderKind = Type.Union([
   Type.Literal("pi"),
   /** R8: any Agent Client Protocol agent (Gemini CLI, Copilot, Cline, Amp, Kimi, Goose…), one instance per agent */
   Type.Literal("acp"),
+  /** R23: Google Antigravity (`agy acp`), bundled; runs on the ACP driver */
+  Type.Literal("antigravity"),
 ]);
 export type ProviderKind = Static<typeof ProviderKind>;
 
+/** The bundled harnesses, in display order. Each has a default instance whose id is the kind; `acp` has none. */
+export const BUNDLED_PROVIDER_KINDS = ["claude", "codex", "opencode", "pi", "antigravity"] as const satisfies readonly ProviderKind[];
+export type BundledProviderKind = (typeof BUNDLED_PROVIDER_KINDS)[number];
+
 /**
  * R8: one configured harness account / agent. `id` is what threads reference (`Thread.providerId`);
- * the four bundled kinds always have a default instance whose id equals the kind. A second Codex
+ * the bundled kinds always have a default instance whose id equals the kind. A second Codex
  * account is `{ id: "codex:work", kind: "codex", home: "~/.codex-work" }`; an ACP agent is
  * `{ id: "acp:gemini", kind: "acp", acpAgentId: "gemini" }` or a manual `command` + `args`.
  */
