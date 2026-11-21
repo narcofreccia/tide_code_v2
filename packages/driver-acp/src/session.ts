@@ -109,6 +109,7 @@ export class AcpSession implements ProviderSession {
   #mode: OpenSessionOptions["mode"];
   #interaction: OpenSessionOptions["interaction"];
   #pendingCommands: SlashCommandInfo[] | undefined;
+  #pendingNotices: string[] = [];
   #announced = false;
   /** ACP has no system-prompt field: Tide's preamble rides along with the first prompt */
   #preamblePending = false;
@@ -176,7 +177,13 @@ export class AcpSession implements ProviderSession {
     this.nativeSessionId = result.sessionId;
     // a session that did not resume never saw the preamble either
     this.#preamblePending = meta === undefined && (this.#options.resume === undefined || this.resumeFailed !== undefined) && (this.#options.systemPromptAppend ?? "").trim() !== "";
-    this.settings = new AcpSettings(this.#conn, result.sessionId, result, (message) => this.#log(message), this.#ctx.config.defaultModel, this.#quirks?.keepAgentMode === true);
+    this.settings = new AcpSettings(this.#conn, result.sessionId, result, {
+      label: this.#ctx.label,
+      log: (message) => this.#log(message),
+      defaultModel: this.#ctx.config.defaultModel,
+      keepAgentMode: this.#quirks?.keepAgentMode === true,
+      onNotice: (text) => this.#notice(text),
+    });
     await this.settings.apply({ model: this.#options.model, effort: this.#options.effort, mode: this.#mode, interaction: this.#interaction });
   }
 
@@ -218,6 +225,12 @@ export class AcpSession implements ProviderSession {
 
   #emit(event: NormalizedEvent): void {
     this.#mailbox?.push(event);
+  }
+
+  /** An info row now, or at the start of the next turn when none is running (open, reconfigure). */
+  #notice(text: string): void {
+    if (this.#mailbox) this.#emit({ type: "activity", activity: { kind: "info", text } });
+    else this.#pendingNotices.push(text);
   }
 
   #notification(method: string, params: unknown): void {
@@ -423,6 +436,7 @@ export class AcpSession implements ProviderSession {
       mailbox.push({ type: "commands", commands: this.#pendingCommands });
       this.#pendingCommands = undefined;
     }
+    for (const text of this.#pendingNotices.splice(0)) mailbox.push({ type: "activity", activity: { kind: "info", text } });
     const prompt = this.#prompt(input);
     const finish = (events: NormalizedEvent[]): void => {
       for (const event of events) mailbox.push(event);

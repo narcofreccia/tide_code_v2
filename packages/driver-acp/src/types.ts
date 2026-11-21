@@ -1,4 +1,4 @@
-import type { NormalizedEvent } from "@tide/contracts";
+import type { NormalizedEvent, ProviderKind } from "@tide/contracts";
 
 /**
  * One configured ACP agent. The server resolves registry agents (`acpAgentId`) to a launch
@@ -20,6 +20,24 @@ export interface AcpConfig {
   /** per-agent deviations from plain ACP; absent = generic behaviour (see `profiles.ts`) */
   quirks?: AcpQuirks;
 }
+
+/**
+ * What differs between the generic ACP agent and a built-in harness that runs on this driver
+ * (Antigravity). The generic flavor is `{ kind: "acp" }`.
+ */
+export interface AcpFlavor {
+  kind: ProviderKind;
+  /** shell command that logs the user in; reported when the agent is installed but logged out */
+  loginCommand?: string;
+  /** replaces the generic "pick another agent from the registry" hint */
+  notInstalledHint?: (label: string, command: string) => string;
+  /** an agent older than this reports `loggedIn: false` with `hint`, and no probe session is opened */
+  minVersion?: { major: number; minor: number; hint: string };
+  /** reopen a session in the agent's own CLI; absent = `openInTerminal: false` */
+  terminalCommand?: (command: string, nativeSessionId: string, cwd: string) => string | undefined;
+}
+
+export const GENERIC_FLAVOR: AcpFlavor = { kind: "acp" };
 
 /** Optional agent quirks. Every field is independent and defaults to today's generic behaviour. */
 export interface AcpQuirks {

@@ -1,10 +1,10 @@
-import type { DriverEnv, OpenSessionOptions, ProviderInstance, ProviderSession, ProviderStatus, SlashCommandInfo } from "@tide/contracts";
+import type { DriverEnv, OpenSessionOptions, ProviderInstance, ProviderKind, ProviderSession, ProviderStatus, SlashCommandInfo } from "@tide/contracts";
 import { readCommandsCache, writeCommandsCache } from "./commands-cache.ts";
 import { withProfileQuirks } from "./profiles.ts";
 import { AcpSession } from "./session.ts";
 import { agentEnv } from "./spawn.ts";
 import { installHint, isNotFound, probeStatus, type AgentFacts } from "./status.ts";
-import type { AcpConfig, AcpDeps } from "./types.ts";
+import { GENERIC_FLAVOR, type AcpConfig, type AcpDeps, type AcpFlavor } from "./types.ts";
 
 const STATUS_TTL_MS = 60_000;
 /** Defined by the sidecar build (`bun build --define TIDE_BUILD_VERSION=…`); undefined in dev and tests. */
@@ -14,11 +14,13 @@ export const CLIENT_VERSION = typeof TIDE_BUILD_VERSION === "string" ? TIDE_BUIL
 /**
  * One configured ACP agent (`acp:gemini`, `acp:copilot`, a manual command…). Each session is
  * its own agent process: ACP agents serve one client over stdio, and `session/load` lets a new
- * process resume an old session by id.
+ * process resume an old session by id. A built-in harness on this driver (Antigravity) passes
+ * its `flavor`: kind, login command, install hint, version floor.
  */
 export class AcpInstance implements ProviderInstance {
-  readonly kind = "acp" as const;
+  readonly kind: ProviderKind;
 
+  #flavor: AcpFlavor;
   #config: AcpConfig;
   #env: DriverEnv;
   #deps: AcpDeps;
@@ -29,7 +31,9 @@ export class AcpInstance implements ProviderInstance {
   #statusInFlight: Promise<ProviderStatus> | undefined;
   #sessions = new Set<AcpSession>();
 
-  constructor(config: AcpConfig, env: DriverEnv, deps: AcpDeps) {
+  constructor(config: AcpConfig, env: DriverEnv, deps: AcpDeps, flavor: AcpFlavor = GENERIC_FLAVOR) {
+    this.kind = flavor.kind;
+    this.#flavor = flavor;
     this.#config = withProfileQuirks(config);
     this.#env = env;
     this.#deps = deps;
@@ -39,7 +43,16 @@ export class AcpInstance implements ProviderInstance {
   async status(refresh = false): Promise<ProviderStatus> {
     const cached = this.#status;
     if (!refresh && cached && Date.now() - cached.at < STATUS_TTL_MS) return cached.value;
-    this.#statusInFlight ??= probeStatus(this.#config, this.#env, this.#deps, this.#label, this.#facts, CLIENT_VERSION, (commands) => this.#setCommands(commands))
+    this.#statusInFlight ??= probeStatus({
+      config: this.#config,
+      env: this.#env,
+      deps: this.#deps,
+      label: this.#label,
+      facts: this.#facts,
+      version: CLIENT_VERSION,
+      flavor: this.#flavor,
+      onCommands: (commands) => this.#setCommands(commands),
+    })
       .then(({ status, facts }) => {
         // a live session may have learned context usage while the probe ran
         const learned = this.#facts.contextUsage === true && facts.contextUsage !== true;
@@ -94,7 +107,7 @@ export class AcpInstance implements ProviderInstance {
       await session.start(CLIENT_VERSION);
     } catch (error) {
       await session.close();
-      if (isNotFound(error)) throw new Error(installHint(this.#label, this.#config.command));
+      if (isNotFound(error)) throw new Error((this.#flavor.notInstalledHint ?? installHint)(this.#label, this.#config.command));
       throw error; // AcpAuthRequiredError carries the agent's login hint
     }
     const settings = session.settings;
@@ -135,9 +148,9 @@ export class AcpInstance implements ProviderInstance {
     this.#status = undefined;
   }
 
-  /** ACP has no portable "reopen in a terminal" command; each agent's CLI differs. */
-  terminalCommand(_nativeSessionId: string, _cwd: string): string | undefined {
-    return undefined;
+  /** ACP has no portable "reopen in a terminal" command; only a flavor that knows its CLI has one. */
+  terminalCommand(nativeSessionId: string, cwd: string): string | undefined {
+    return this.#flavor.terminalCommand?.(this.#config.command, nativeSessionId, cwd);
   }
 
   async dispose(): Promise<void> {

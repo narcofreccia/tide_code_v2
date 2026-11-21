@@ -7,7 +7,7 @@ import { toSlashCommands } from "./normalize.ts";
 import { modeSelector, planModeId } from "./permissions.ts";
 import { authHint, clientInitialize, INITIALIZE_TIMEOUT_MS, isAuthRequired } from "./session.ts";
 import { agentEnv } from "./spawn.ts";
-import { ACP_ERROR, type AcpConfig, type AcpDeps, type AcpInitializeResult, type AcpNewSessionResult } from "./types.ts";
+import { ACP_ERROR, GENERIC_FLAVOR, type AcpConfig, type AcpFlavor, type AcpDeps, type AcpInitializeResult, type AcpNewSessionResult } from "./types.ts";
 
 /**
  * `status()` for an ACP agent: spawn it, `initialize`, read capabilities / agentInfo /
@@ -31,7 +31,7 @@ export interface AgentFacts {
   authHint?: string;
 }
 
-export function acpCaps(facts: AgentFacts): DriverCaps {
+export function acpCaps(facts: AgentFacts, flavor: AcpFlavor = GENERIC_FLAVOR): DriverCaps {
   const agent = facts.init?.agentCapabilities;
   return {
     planMode: facts.planMode ?? false,
@@ -41,7 +41,7 @@ export function acpCaps(facts: AgentFacts): DriverCaps {
     resume: agent?.loadSession === true,
     // only known once the agent sends a `usage_update` carrying `used`/`size` (unstable ACP field)
     contextUsage: facts.contextUsage === true,
-    openInTerminal: false,
+    openInTerminal: flavor.terminalCommand !== undefined,
     steer: false,
     fork: false,
     rollback: false,
@@ -73,25 +73,43 @@ export function sessionFacts(result: Pick<AcpNewSessionResult, "modes" | "config
   };
 }
 
+/** `major.minor` of a version string, undefined when it does not start with two numbers. */
+function majorMinor(version: string | undefined): [number, number] | undefined {
+  const match = /^v?(\d+)\.(\d+)/.exec(version ?? "");
+  return match ? [Number(match[1]), Number(match[2])] : undefined;
+}
+
+/** True when the agent reported a version below the flavor's floor; an unknown version passes. */
+export function belowMinVersion(flavor: AcpFlavor, version: string | undefined): boolean {
+  const floor = flavor.minVersion;
+  const found = majorMinor(version);
+  if (!floor || !found) return false;
+  return found[0] < floor.major || (found[0] === floor.major && found[1] < floor.minor);
+}
+
+export interface ProbeOptions {
+  config: AcpConfig;
+  env: DriverEnv;
+  deps: AcpDeps;
+  label: string;
+  /** what earlier probes / sessions learned; the result merges into it */
+  facts: AgentFacts;
+  /** Tide's version, sent as `clientInfo.version` */
+  version: string;
+  flavor?: AcpFlavor;
+  /** an `available_commands_update` the throwaway session sends before the probe closes */
+  onCommands?: (commands: SlashCommandInfo[]) => void;
+}
+
 export interface ProbeResult {
   status: ProviderStatus;
   facts: AgentFacts;
 }
 
-/**
- * One probe. `facts` carries what earlier probes / sessions learned; the result merges into it.
- * An `available_commands_update` the throwaway session sends before the probe closes goes to
- * `onCommands`.
- */
-export async function probeStatus(
-  config: AcpConfig,
-  env: DriverEnv,
-  deps: AcpDeps,
-  label: string,
-  facts: AgentFacts,
-  version: string,
-  onCommands?: (commands: SlashCommandInfo[]) => void,
-): Promise<ProbeResult> {
+/** One probe. */
+export async function probeStatus(options: ProbeOptions): Promise<ProbeResult> {
+  const { config, env, deps, label, facts, version, onCommands } = options;
+  const flavor = options.flavor ?? GENERIC_FLAVOR;
   const cwd = join(env.dataDir, "acp-probe");
   try {
     mkdirSync(cwd, { recursive: true });
@@ -103,7 +121,7 @@ export async function probeStatus(
   try {
     child = deps.spawn(config.command, config.args ?? [], { cwd, env: agentEnv(config, env) });
   } catch (error) {
-    return notInstalled(config, label, facts, error);
+    return notInstalled(config, label, facts, flavor, error);
   }
   const conn = new AcpConnection(child, {
     label,
@@ -122,6 +140,13 @@ export async function probeStatus(
   try {
     const init = await conn.request<AcpInitializeResult>("initialize", clientInitialize(version, config.quirks), deps.initializeTimeoutMs ?? INITIALIZE_TIMEOUT_MS);
     const next: AgentFacts = { ...facts, init };
+    const agentVersion = init.agentInfo?.version ?? undefined;
+    if (flavor.minVersion && belowMinVersion(flavor, agentVersion)) {
+      return {
+        status: { kind: flavor.kind, installed: true, loggedIn: false, ...(agentVersion ? { version: agentVersion } : {}), hint: flavor.minVersion.hint, models: next.models ?? [], caps: acpCaps(next, flavor) },
+        facts: next,
+      };
+    }
     if (next.models === undefined) {
       try {
         const result = await conn.request<AcpNewSessionResult>("session/new", { cwd, mcpServers: [] }, PROBE_SESSION_TIMEOUT_MS);
@@ -134,20 +159,21 @@ export async function probeStatus(
       }
     }
     const status: ProviderStatus = {
-      kind: "acp",
+      kind: flavor.kind,
       installed: true,
       loggedIn: next.authHint === undefined,
-      ...(init.agentInfo?.version ? { version: init.agentInfo.version } : {}),
+      ...(agentVersion ? { version: agentVersion } : {}),
       ...(next.authHint ? { hint: next.authHint } : {}),
+      ...(next.authHint && flavor.loginCommand ? { loginCommand: flavor.loginCommand } : {}),
       models: next.models ?? [],
-      caps: acpCaps(next),
+      caps: acpCaps(next, flavor),
     };
     return { status, facts: next };
   } catch (error) {
-    if (isNotFound(error)) return notInstalled(config, label, facts, error);
+    if (isNotFound(error)) return notInstalled(config, label, facts, flavor, error);
     const message = error instanceof Error ? error.message : String(error);
     return {
-      status: { kind: "acp", installed: true, loggedIn: false, hint: `${label} did not answer initialize: ${message}`, models: facts.models ?? [], caps: acpCaps(facts) },
+      status: { kind: flavor.kind, installed: true, loggedIn: false, hint: `${label} did not answer initialize: ${message}`, models: facts.models ?? [], caps: acpCaps(facts, flavor) },
       facts,
     };
   } finally {
@@ -155,7 +181,8 @@ export async function probeStatus(
   }
 }
 
-function notInstalled(config: AcpConfig, label: string, facts: AgentFacts, error: unknown): ProbeResult {
+function notInstalled(config: AcpConfig, label: string, facts: AgentFacts, flavor: AcpFlavor, error: unknown): ProbeResult {
   if (!isNotFound(error)) throw error;
-  return { status: { kind: "acp", installed: false, loggedIn: false, hint: installHint(label, config.command), models: [], caps: acpCaps(facts) }, facts };
+  const hint = (flavor.notInstalledHint ?? installHint)(label, config.command);
+  return { status: { kind: flavor.kind, installed: false, loggedIn: false, hint, models: [], caps: acpCaps(facts, flavor) }, facts };
 }

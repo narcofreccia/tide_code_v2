@@ -12,9 +12,13 @@ export interface AcpProfile {
   quirks: AcpQuirks;
 }
 
+export const ANTIGRAVITY_INSTALL_COMMAND = "curl -fsSL https://antigravity.google/cli/install.sh | bash";
+export const ANTIGRAVITY_URL = "https://antigravity.google";
+
 /**
- * Google Antigravity (`agy acp`, CLI 1.5.0+), from T3 Code's integration; not verified against a
- * live agent here.
+ * Google Antigravity (`agy acp`, CLI 1.5.0+), from T3 Code's integration. The `initialize`
+ * answer was verified live on 1.5.14 on 2026-11-21 (`systemPrompt.append` advertised in `_meta`,
+ * `sessionCapabilities.resume` present); signed-in turns are not yet verified.
  *  - no `fs.writeTextFile`: with it the agent swaps its diff edits for whole-file client writes
  *  - the agent stays in its own mode (its CLI only accepts default / accept-edits / plan) and
  *    Tide answers permission requests from the runtime mode

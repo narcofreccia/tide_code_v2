@@ -3,7 +3,7 @@ import { mkdtempSync } from "node:fs";
 import { tmpdir } from "node:os";
 import { join } from "node:path";
 import type { DriverEnv, ProviderDriver } from "@tide/contracts";
-import { createAcpInstance, nodeSpawn as acpNodeSpawn, type AcpConfig, type SpawnLike as AcpSpawnLike } from "@tide/driver-acp";
+import { createAcpInstance, createAntigravityInstance, nodeSpawn as acpNodeSpawn, type AcpConfig, type AntigravityConfig, type SpawnLike as AcpSpawnLike } from "@tide/driver-acp";
 import { claudeDriver, type ClaudeConfig, type QueryFn } from "@tide/driver-claude";
 import { codexDriver, type CodexConfig } from "@tide/driver-codex";
 import { opencodeDriver, type OpencodeConfig } from "@tide/driver-opencode";
@@ -87,6 +87,13 @@ export function replayAcpDriver(replay: Replay, config: Partial<AcpConfig> = {})
   return { driver, replay, transport: spawn };
 }
 
+/** Antigravity: the ACP driver with its flavor; `agy acp` and the profile quirks by default. */
+export function replayAntigravityDriver(replay: Replay, config: Partial<AntigravityConfig> = {}): ReplayDriver<AntigravityConfig, ReplaySpawn> {
+  const spawn = replaySpawn(replay);
+  const driver = wrap<AntigravityConfig>("antigravity", async (base, env) => createAntigravityInstance({ ...base, ...config }, env, { spawn: spawn as unknown as AcpSpawnLike }));
+  return { driver, replay, transport: spawn };
+}
+
 // ---- recording variants: the same real drivers over their real transport, tapped ----
 
 export function recordCodexDriver(recorder: Recorder, config: Partial<CodexConfig> = {}): ProviderDriver<CodexConfig> {
@@ -106,6 +113,12 @@ export function recordPiDriver(recorder: Recorder, config: Partial<PiConfig> = {
 export function recordAcpDriver(recorder: Recorder, config: Partial<AcpConfig> = {}): ProviderDriver<AcpConfig> {
   return wrap<AcpConfig>("acp", async (base, env) =>
     createAcpInstance({ ...ACP_DEFAULT, ...(base.command ? base : {}), ...config }, env, { spawn: recordSpawn(acpNodeSpawn, recorder) as unknown as AcpSpawnLike }),
+  );
+}
+
+export function recordAntigravityDriver(recorder: Recorder, config: Partial<AntigravityConfig> = {}): ProviderDriver<AntigravityConfig> {
+  return wrap<AntigravityConfig>("antigravity", async (base, env) =>
+    createAntigravityInstance({ ...base, ...config }, env, { spawn: recordSpawn(acpNodeSpawn, recorder) as unknown as AcpSpawnLike }),
   );
 }
 

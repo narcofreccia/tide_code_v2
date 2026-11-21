@@ -23,6 +23,18 @@ export interface WantedSettings {
   interaction: InteractionMode;
 }
 
+export interface SettingsOptions {
+  /** the agent's display name, used in notices */
+  label: string;
+  log: (message: string) => void;
+  /** model used when the thread does not pin one */
+  defaultModel?: string | undefined;
+  /** see `AcpQuirks.keepAgentMode` */
+  keepAgentMode?: boolean;
+  /** a user-facing line (the asked-for model could not be selected) */
+  onNotice?: (text: string) => void;
+}
+
 export class AcpSettings {
   #conn: AcpConnection;
   #sessionId: string;
@@ -35,13 +47,17 @@ export class AcpSettings {
   #currentMode: string | undefined;
   #defaultModel: string | undefined;
   #keepAgentMode: boolean;
+  #label: string;
+  #onNotice: (text: string) => void;
 
-  constructor(conn: AcpConnection, sessionId: string, knobs: SessionKnobs, log: (message: string) => void, defaultModel?: string, keepAgentMode = false) {
-    this.#keepAgentMode = keepAgentMode;
+  constructor(conn: AcpConnection, sessionId: string, knobs: SessionKnobs, options: SettingsOptions) {
+    this.#keepAgentMode = options.keepAgentMode === true;
     this.#conn = conn;
     this.#sessionId = sessionId;
-    this.#log = log;
-    this.#defaultModel = defaultModel;
+    this.#log = options.log;
+    this.#label = options.label;
+    this.#onNotice = options.onNotice ?? (() => undefined);
+    this.#defaultModel = options.defaultModel;
     this.ingest(knobs);
     this.#baseMode = this.#currentMode;
   }
@@ -94,6 +110,7 @@ export class AcpSettings {
     const selector = this.models;
     if (!selector) {
       this.#log(`model ${model} requested but the agent exposes no model selector; ignored`);
+      this.#modelUnavailable(model);
       return;
     }
     if (selector.current === model) return;
@@ -102,6 +119,11 @@ export class AcpSettings {
       await this.#conn.request("session/set_model", { sessionId: this.#sessionId, modelId: model });
       if (this.#legacyModels) this.#legacyModels = { ...this.#legacyModels, currentModelId: model };
     }
+  }
+
+  /** A thread or delegate must see that it runs on another model than it asked for. */
+  #modelUnavailable(model: string): void {
+    this.#onNotice(`model ${model} is not available on ${this.#label}; running on ${this.currentModel ?? "its default model"}`);
   }
 
   async #setEffort(effort: string): Promise<void> {
@@ -123,20 +145,22 @@ export class AcpSettings {
 
   /**
    * Moves the agent towards `wanted`. Every knob is independent and best-effort: a failure is
-   * logged and reported (false), never thrown, so a picky agent cannot block a session.
+   * logged and reported (false), never thrown, so a picky agent cannot block a session. A model
+   * that could not be selected is also a notice, so the user sees which model actually runs.
    */
   async apply(wanted: WantedSettings): Promise<boolean> {
     let ok = true;
-    const attempt = async (what: string, run: () => Promise<void>): Promise<void> => {
+    const attempt = async (what: string, run: () => Promise<void>, onFail?: () => void): Promise<void> => {
       try {
         await run();
       } catch (error) {
         ok = false;
         this.#log(`${what} failed: ${error instanceof Error ? error.message : String(error)}`);
+        onFail?.();
       }
     };
     const model = wanted.model ?? this.#defaultModel;
-    if (model !== undefined) await attempt(`set model ${model}`, () => this.#setModel(model));
+    if (model !== undefined) await attempt(`set model ${model}`, () => this.#setModel(model), () => this.#modelUnavailable(model));
     if (wanted.effort !== undefined) {
       const effort = wanted.effort;
       await attempt(`set effort ${effort}`, () => this.#setEffort(effort));

@@ -1,7 +1,7 @@
 import type { DriverEnv, ProviderDriver, ProviderInstance } from "@tide/contracts";
 import { AcpInstance } from "./instance.ts";
 import { nodeSpawn } from "./spawn.ts";
-import type { AcpConfig, AcpDeps } from "./types.ts";
+import type { AcpConfig, AcpDeps, AcpFlavor } from "./types.ts";
 
 export { AcpInstance, CLIENT_VERSION } from "./instance.ts";
 export { AcpSession, AcpAuthRequiredError, PROTOCOL_VERSION, INITIALIZE_TIMEOUT_MS, authHint, clientInitialize, isAuthRequired, systemPromptMeta } from "./session.ts";
@@ -12,16 +12,18 @@ export { effortSelector, modelSelector } from "./models.ts";
 export { AcpSettings } from "./settings.ts";
 export { FsPolicy } from "./fs.ts";
 export { AcpConnection, RpcError, rpcError, splitLines } from "./jsonrpc.ts";
-export { acpCaps, installHint, probeStatus, sessionFacts } from "./status.ts";
-export type { AgentFacts } from "./status.ts";
+export { acpCaps, belowMinVersion, installHint, probeStatus, sessionFacts } from "./status.ts";
+export type { AgentFacts, ProbeOptions } from "./status.ts";
 export { agentEnv, nodeSpawn, toAcpMcpServers } from "./spawn.ts";
-export { ACP_PROFILES, ANTIGRAVITY_PROFILE, profileForCommand, withProfileQuirks } from "./profiles.ts";
+export { ACP_PROFILES, ANTIGRAVITY_INSTALL_COMMAND, ANTIGRAVITY_PROFILE, ANTIGRAVITY_URL, profileForCommand, withProfileQuirks } from "./profiles.ts";
+export { ANTIGRAVITY_FLAVOR, antigravityDriver, createAntigravityInstance } from "./antigravity.ts";
+export type { AntigravityConfig } from "./antigravity.ts";
 export type { AcpProfile } from "./profiles.ts";
-export { ACP_ERROR } from "./types.ts";
-export type { AcpConfig, AcpDeps, AcpQuirks, ChildLike, SpawnLike, TimerLike } from "./types.ts";
+export { ACP_ERROR, GENERIC_FLAVOR } from "./types.ts";
+export type { AcpConfig, AcpDeps, AcpFlavor, AcpQuirks, ChildLike, SpawnLike, TimerLike } from "./types.ts";
 
-export function createAcpInstance(config: AcpConfig, env: DriverEnv, deps: Partial<AcpDeps> = {}): ProviderInstance {
-  return new AcpInstance(config, env, { ...deps, spawn: deps.spawn ?? nodeSpawn });
+export function createAcpInstance(config: AcpConfig, env: DriverEnv, deps: Partial<AcpDeps> = {}, flavor?: AcpFlavor): ProviderInstance {
+  return new AcpInstance(config, env, { ...deps, spawn: deps.spawn ?? nodeSpawn }, flavor);
 }
 
 /**
