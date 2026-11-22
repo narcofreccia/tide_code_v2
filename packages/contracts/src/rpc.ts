@@ -2,7 +2,7 @@ import { Type, type Static, type TSchema } from "typebox";
 import { AgentCommand, ClientCommand } from "./commands.ts";
 import { EventRecord } from "./events.ts";
 import { UserSettings, UserSettingsPatch } from "./settings.ts";
-import { AttachmentRef, JudgeSite, JudgeSource, MergeStrategy, ProjectIcon, ProviderInstanceConfig, ProviderKind, PullRequest, ReadModel, RepoIdentity, RuntimeMode, ScheduledTask, SlashCommandInfo, Team, RunPlan, RunProfile, RunRepo, RunServiceStatus, RunSession } from "./domain.ts";
+import { AttachmentRef, JudgeSite, JudgeSource, MergeStrategy, ProjectIcon, ProviderInstanceConfig, ProviderKind, PullRequest, RateLimit, ReadModel, RepoIdentity, RuntimeMode, ScheduledTask, SlashCommandInfo, Team, RunPlan, RunProfile, RunRepo, RunServiceStatus, RunSession } from "./domain.ts";
 
 export * from "./settings.ts";
 
@@ -92,6 +92,8 @@ export const ProviderStatusDto = Type.Object({
     /** R14/R17: the harness can start turns on its own (background sub-agent reports) and the server may subscribe to them */
     harnessTurns: Type.Optional(Type.Boolean()),
   }),
+  /** live subscription rate-limit windows read during the status probe, when the harness exposes them */
+  rateLimits: Type.Optional(Type.Array(RateLimit)),
 });
 
 // ---- R10: pull requests (forge-backed; GitHub first) ----

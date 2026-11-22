@@ -83,6 +83,8 @@ export interface ProviderStatus {
   loginCommand?: string;
   models: ModelInfo[];
   caps: DriverCaps;
+  /** live subscription rate-limit windows read during the status probe, when the harness exposes them */
+  rateLimits?: RateLimit[];
 }
 
 export interface McpServerSpec {

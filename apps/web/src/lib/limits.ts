@@ -64,7 +64,11 @@ export function isStaleThreadRateLimit(provider: ProviderKind, limit: RateLimit,
  * no window (an overage window), and every report from an older server, is read from the threads,
  * its window guessed from the harness's note.
  */
-export function selectInstanceLimits(model: Pick<ReadModel, "threads" | "limits">, now = Date.now()): InstanceLimits[] {
+export function selectInstanceLimits(
+  model: Pick<ReadModel, "threads" | "limits">,
+  now = Date.now(),
+  providers: readonly ProviderStatusDto[] = [],
+): InstanceLimits[] {
   const byId = new Map<string, InstanceLimits>();
   const put = (id: string, provider: ProviderKind, window: LimitWindow, limit: RateLimit): void => {
     const entry = byId.get(id) ?? { id, provider, windows: {} };
@@ -85,7 +89,16 @@ export function selectInstanceLimits(model: Pick<ReadModel, "threads" | "limits"
     if (provider === undefined) continue;
     for (const [window, limit] of Object.entries(windows)) {
       const key = FROM_MODEL[window as keyof typeof FROM_MODEL];
-      if (key !== undefined && limit !== undefined) put(id, provider, key, limit);
+      if (key !== undefined && limit !== undefined && !(limit.resetsAt !== undefined && limit.resetsAt <= now)) {
+        put(id, provider, key, limit);
+      }
+    }
+  }
+  for (const p of providers) {
+    const id = p.id || p.kind;
+    for (const limit of p.rateLimits ?? []) {
+      if (limit.resetsAt !== undefined && limit.resetsAt <= now) continue;
+      put(id, p.kind, limitWindow(limit), limit);
     }
   }
   return [...byId.values()].sort((a, b) => a.id.localeCompare(b.id));
@@ -123,10 +136,13 @@ export function windowsText(entry: InstanceLimits): string {
 }
 
 /** The instance closest to its limit, or undefined when nothing reported a usable number. */
-export function tightestInstance(model: Pick<ReadModel, "threads" | "limits">): InstanceLimits | undefined {
+export function tightestInstance(
+  model: Pick<ReadModel, "threads" | "limits">,
+  providers: readonly ProviderStatusDto[] = [],
+): InstanceLimits | undefined {
   let best: InstanceLimits | undefined;
   let bestScore = -1;
-  for (const entry of selectInstanceLimits(model)) {
+  for (const entry of selectInstanceLimits(model, Date.now(), providers)) {
     const score = tightness(entry);
     if (score > bestScore) {
       best = entry;

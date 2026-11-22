@@ -75,4 +75,27 @@ describe("limits", () => {
     });
     expect(selectInstanceLimits(model, 5_000)).toEqual([]);
   });
+
+  it("merges live provider status rateLimits so newer status probes supersede stale turn gauges", () => {
+    const model = modelWith({});
+    model.limits = {
+      claude: { weekly: { status: "ok", remainingPct: 37, window: "weekly", resetsAt: 99_000, at: 10 } },
+    };
+    const providers = [
+      {
+        id: "claude",
+        kind: "claude" as const,
+        label: "Claude Code",
+        installed: true,
+        loggedIn: true,
+        models: [],
+        caps: { planMode: true, subagents: true, mcp: true, images: true, resume: true, contextUsage: true, openInTerminal: true },
+        rateLimits: [
+          { status: "limited" as const, remainingPct: 0, window: "weekly" as const, resetsAt: 99_000, note: "seven_day 100% used", at: 50 },
+        ],
+      },
+    ];
+    const limits = selectInstanceLimits(model, 20, providers);
+    expect(limits[0]?.windows.wk).toMatchObject({ status: "limited", remainingPct: 0, at: 50 });
+  });
 });

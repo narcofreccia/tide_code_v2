@@ -84,8 +84,11 @@ export function LimitsItem() {
   // rate limits ride on threads: streaming deltas leave the threads map alone, so no re-render
   const threads = useModel((s) => s.model.threads);
   const limits = useModel((s) => s.model.limits);
-  const entry = useMemo(() => tightestInstance(limits === undefined ? { threads } : { threads, limits }), [threads, limits]);
   const providers = useProvidersSnapshot();
+  const entry = useMemo(
+    () => tightestInstance(limits === undefined ? { threads } : { threads, limits }, providers),
+    [threads, limits, providers],
+  );
   const showUsage = useUi((s) => s.showUsage);
   if (!on) return null;
   if (!entry) return null;

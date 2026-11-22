@@ -1,6 +1,7 @@
 import type { NormalizedEvent, RateLimit, TurnUsage } from "@tide/contracts";
 import { type CostState, type CostStatesFn, sumModelUsage, type TokenTotals } from "./cost-state.ts";
 import type { RateLimitInfoShape, ResultMessage } from "./sdk-shapes.ts";
+import type { SdkUsageResponse, SdkUsageWindow } from "./types.ts";
 
 /**
  * Turns Claude Code's cumulative `result` figures into per-turn deltas.
@@ -214,4 +215,71 @@ export function rateLimitEvents(info: RateLimitInfoShape | undefined, at: number
     }),
   );
   return events;
+}
+
+function parseIsoMs(iso: string | null | undefined): number | undefined {
+  if (!iso) return undefined;
+  const ms = Date.parse(iso);
+  return Number.isFinite(ms) ? ms : undefined;
+}
+
+function windowFromUsage(
+  label: string,
+  w: SdkUsageWindow | null | undefined,
+  at: number,
+  slot?: { window: "session" | "weekly"; windowMins: number },
+): RateLimit | undefined {
+  if (!w || typeof w.utilization !== "number" || !Number.isFinite(w.utilization)) return undefined;
+  const used = Math.max(0, Math.min(100, w.utilization));
+  const resetsAt = parseIsoMs(w.resets_at);
+  const status: RateLimit["status"] = used >= 100 ? "limited" : used >= WARNING_USED_FRACTION * 100 ? "warning" : "ok";
+  return {
+    status,
+    remainingPct: Math.max(0, Math.min(100, Math.round(100 - used))),
+    ...(resetsAt !== undefined ? { resetsAt } : {}),
+    ...(slot ?? {}),
+    note: `${label} ${Math.round(used)}% used`,
+    at,
+  };
+}
+
+/**
+ * Maps `Query.usage_EXPERIMENTAL_...({ skipBehaviors: true })` (structured `/usage`) into
+ * Tide `RateLimit[]`. Always includes `five_hour` (`session`) and `seven_day` (`weekly`) when
+ * reported, plus any per-model or extra-usage window that is in warning/limited state.
+ */
+export function rateLimitsFromUsageResponse(response: SdkUsageResponse | undefined, at: number): RateLimit[] {
+  if (!response?.rate_limits_available || !response.rate_limits) return [];
+  const rl = response.rate_limits;
+  const out: RateLimit[] = [];
+  const five = windowFromUsage("five_hour", rl.five_hour, at, WINDOWS["five_hour"]);
+  if (five) out.push(five);
+  const seven = windowFromUsage("seven_day", rl.seven_day, at, WINDOWS["seven_day"]);
+  if (seven) out.push(seven);
+
+  const extras: Array<[string, SdkUsageWindow | null | undefined]> = [
+    ["seven_day_opus", rl.seven_day_opus],
+    ["seven_day_sonnet", rl.seven_day_sonnet],
+    ...(rl.model_scoped ?? []).map((m): [string, SdkUsageWindow] => [m.display_name, { utilization: m.utilization, resets_at: m.resets_at }]),
+  ];
+  let worstExtra: RateLimit | undefined;
+  for (const [label, win] of extras) {
+    const parsed = windowFromUsage(label, win, at);
+    if (!parsed || parsed.status === "ok") continue;
+    if (!worstExtra || (parsed.remainingPct ?? 100) < (worstExtra.remainingPct ?? 100)) worstExtra = parsed;
+  }
+  const extra = rl.extra_usage;
+  if (extra?.is_enabled && typeof extra.utilization === "number" && Number.isFinite(extra.utilization) && extra.utilization >= WARNING_USED_FRACTION * 100) {
+    const used = Math.max(0, Math.min(100, extra.utilization));
+    const parsed: RateLimit = {
+      status: used >= 100 ? "limited" : "warning",
+      remainingPct: Math.max(0, Math.min(100, Math.round(100 - used))),
+      overage: true,
+      note: `extra_usage ${Math.round(used)}% used`,
+      at,
+    };
+    if (!worstExtra || (parsed.remainingPct ?? 100) < (worstExtra.remainingPct ?? 100)) worstExtra = parsed;
+  }
+  if (worstExtra) out.push(worstExtra);
+  return out;
 }

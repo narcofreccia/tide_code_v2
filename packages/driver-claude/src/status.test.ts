@@ -6,6 +6,7 @@ import type { DriverEnv } from "@tide/contracts";
 import { ClaudeInstance } from "./instance.ts";
 import { buildStatus, detectLogin, LOGIN_COMMAND, LOGIN_HINT } from "./status.ts";
 import type { QueryFn } from "./types.ts";
+import { rateLimitsFromUsageResponse } from "./usage.ts";
 
 const env: DriverEnv = { dataDir: tmpdir(), log: () => undefined };
 const noQuery: QueryFn = () => {
@@ -46,5 +47,28 @@ describe("claude caps", () => {
     expect(plain.terminalCommand("sess-1", "/tmp/my repo")).toBe("cd '/tmp/my repo' && claude --resume sess-1");
     const work = new ClaudeInstance({ binaryPath: "/opt/claude" }, { ...env, instance: { id: "claude:work", label: "Work", home: "/homes/work claude" } }, noQuery);
     expect(work.terminalCommand("sess-1", "/tmp/repo")).toBe("cd /tmp/repo && CLAUDE_CONFIG_DIR='/homes/work claude' /opt/claude --resume sess-1");
+  });
+
+  it("maps structured SDK /usage rate_limits into session, weekly, and exhausted per-model windows", () => {
+    const reset5h = "2026-11-22T16:00:00.000Z";
+    const reset7d = "2026-11-24T00:00:00.000Z";
+    const limits = rateLimitsFromUsageResponse(
+      {
+        subscription_type: "max",
+        rate_limits_available: true,
+        rate_limits: {
+          five_hour: { utilization: 100, resets_at: reset5h },
+          seven_day: { utilization: 63, resets_at: reset7d },
+          model_scoped: [{ display_name: "Fable", utilization: 100, resets_at: reset7d }],
+        },
+      },
+      1234,
+    );
+    expect(limits).toEqual([
+      { status: "limited", remainingPct: 0, resetsAt: Date.parse(reset5h), window: "session", windowMins: 300, note: "five_hour 100% used", at: 1234 },
+      { status: "ok", remainingPct: 37, resetsAt: Date.parse(reset7d), window: "weekly", windowMins: 10080, note: "seven_day 63% used", at: 1234 },
+      { status: "limited", remainingPct: 0, resetsAt: Date.parse(reset7d), note: "Fable 100% used", at: 1234 },
+    ]);
+    expect(rateLimitsFromUsageResponse({ rate_limits_available: false, rate_limits: null }, 1234)).toEqual([]);
   });
 });

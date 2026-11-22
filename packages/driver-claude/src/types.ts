@@ -42,6 +42,30 @@ export interface SdkSlashCommand {
   builtin?: boolean;
 }
 
+export interface SdkUsageWindow {
+  utilization: number | null;
+  resets_at: string | null;
+}
+
+export interface SdkUsageResponse {
+  subscription_type?: string | null;
+  rate_limits_available?: boolean;
+  rate_limits?: {
+    five_hour?: SdkUsageWindow | null;
+    seven_day?: SdkUsageWindow | null;
+    seven_day_opus?: SdkUsageWindow | null;
+    seven_day_sonnet?: SdkUsageWindow | null;
+    model_scoped?: Array<{ display_name: string; utilization: number | null; resets_at: string | null }>;
+    extra_usage?: {
+      is_enabled: boolean;
+      monthly_limit: number | null;
+      used_credits: number | null;
+      utilization: number | null;
+      currency?: string | null;
+    } | null;
+  } | null;
+}
+
 /** The slice of the SDK's `Query` object this driver depends on. */
 export interface QueryLike extends AsyncIterable<ClaudeMessage> {
   interrupt?: () => Promise<void>;
@@ -52,6 +76,7 @@ export interface QueryLike extends AsyncIterable<ClaudeMessage> {
   /** flag-tier settings overlay; `{ effortLevel }` changes the reasoning effort in place */
   applyFlagSettings?: (settings: Record<string, unknown>) => Promise<void>;
   getContextUsage?: () => Promise<ContextUsageReport>;
+  usage_EXPERIMENTAL_MAY_CHANGE_DO_NOT_RELY_ON_THIS_API_YET?: (opts?: { skipBehaviors?: boolean }) => Promise<SdkUsageResponse>;
 }
 
 export type QueryFn = (params: { prompt: AsyncIterable<unknown> | string; options?: Record<string, unknown> }) => QueryLike;

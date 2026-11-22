@@ -3,8 +3,9 @@ import { existsSync } from "node:fs";
 import { homedir } from "node:os";
 import { join } from "node:path";
 import { promisify } from "node:util";
-import type { DriverEnv, ModelInfo, ProviderStatus } from "@tide/contracts";
+import type { DriverEnv, ModelInfo, ProviderStatus, RateLimit } from "@tide/contracts";
 import { AppServer, mergedEnv } from "./app-server.ts";
+import { rateLimitsFromSnapshot } from "./rate-limits.ts";
 import type { CodexConfig } from "./types.ts";
 import type { Account } from "./generated/v2/Account.ts";
 import type { GetAccountResponse } from "./generated/v2/GetAccountResponse.ts";
@@ -104,6 +105,7 @@ interface Probe {
   models: ModelInfo[];
   /** e.g. `ChatGPT pro plan`, present only when signed in with a recognised account */
   account?: string;
+  rateLimits?: RateLimit[];
   /** the probe failed, so `loggedIn: false` means "unknown" */
   error?: string;
 }
@@ -127,10 +129,20 @@ export async function probe(binary: string, config: CodexConfig, env: DriverEnv)
     const account = await server.request<GetAccountResponse>("account/read", {});
     const models = await server.request<ModelListResponse>("model/list", {});
     const label = accountLabel(account.account);
+    let rateLimits: RateLimit[] = [];
+    if (account.account !== null) {
+      try {
+        const resp = await server.request<{ rateLimits?: Parameters<typeof rateLimitsFromSnapshot>[0] }>("account/rateLimits/read", {});
+        rateLimits = rateLimitsFromSnapshot(resp?.rateLimits, Date.now());
+      } catch {
+        // API-key logins and older CLIs may reject rateLimits/read; best effort only.
+      }
+    }
     return {
       loggedIn: account.account !== null,
       models: toModelInfo(models.data ?? [], config.defaultModel),
       ...(label ? { account: label } : {}),
+      ...(rateLimits.length > 0 ? { rateLimits } : {}),
     };
   } catch (error) {
     const message = error instanceof Error ? error.message : String(error);
@@ -148,7 +160,7 @@ export async function buildStatus(config: CodexConfig, env: DriverEnv): Promise<
   }
   const versionOutput = await exec(binary, ["--version"], 15_000);
   const version = versionOutput ? parseVersion(versionOutput) : undefined;
-  const { loggedIn, models, account, error } = await probe(binary, config, env);
+  const { loggedIn, models, account, rateLimits, error } = await probe(binary, config, env);
   const accountHint = account === undefined ? undefined : account === FREE_PLAN_LABEL ? account + FREE_PLAN_NOTE : account;
   return {
     kind: "codex",
@@ -158,5 +170,6 @@ export async function buildStatus(config: CodexConfig, env: DriverEnv): Promise<
     ...(loggedIn ? (accountHint ? { hint: accountHint } : {}) : { hint: error !== undefined ? probeFailedHint(error) : LOGIN_HINT, loginCommand: LOGIN_COMMAND }),
     models,
     caps: { ...CODEX_CAPS },
+    ...(rateLimits && rateLimits.length > 0 ? { rateLimits } : {}),
   };
 }

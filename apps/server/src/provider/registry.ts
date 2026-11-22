@@ -92,6 +92,7 @@ function toDto(status: ProviderStatus, entry: { id: string; kind: ProviderKind; 
       ...(m.efforts !== undefined ? { efforts: m.efforts.map((e) => ({ id: e.id, label: e.label, ...(e.default !== undefined ? { default: e.default } : {}) })) } : {}),
     })),
     caps: { ...status.caps },
+    ...(status.rateLimits && status.rateLimits.length > 0 ? { rateLimits: status.rateLimits } : {}),
   };
 }
 

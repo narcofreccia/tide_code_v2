@@ -3,9 +3,10 @@ import { existsSync } from "node:fs";
 import { homedir } from "node:os";
 import { join } from "node:path";
 import { promisify } from "node:util";
-import type { DriverEnv, ModelInfo, ProviderStatus, SlashCommandInfo } from "@tide/contracts";
+import type { DriverEnv, ModelInfo, ProviderStatus, RateLimit, SlashCommandInfo } from "@tide/contracts";
 import { claudeConfigDir, instanceEnv } from "./env.ts";
 import type { ClaudeConfig, QueryFn, SdkModelInfo, SdkSlashCommand } from "./types.ts";
+import { rateLimitsFromUsageResponse } from "./usage.ts";
 
 const run = promisify(execFile);
 
@@ -111,26 +112,49 @@ function toModelInfo(models: SdkModelInfo[], defaultModel: string | undefined): 
 }
 
 /**
- * Asks the CLI for its own model list over the SDK control channel (an idle streaming-input
- * session that is aborted right after). ~1s; the caller caches it.
+ * Asks the CLI for its own model list and (best-effort) live subscription rate-limit windows
+ * over one idle SDK control-channel session, aborted right after. ~1s; the caller caches it.
  */
-export async function listModels(queryFn: QueryFn, options: Record<string, unknown>, defaultModel: string | undefined, env: DriverEnv): Promise<ModelInfo[]> {
+async function probeModelsAndLimits(
+  queryFn: QueryFn,
+  options: Record<string, unknown>,
+  defaultModel: string | undefined,
+  env: DriverEnv,
+): Promise<{ models: ModelInfo[]; rateLimits: RateLimit[] }> {
   const abort = new AbortController();
   try {
     const idle = (async function* () {
       await new Promise((resolve) => setTimeout(resolve, 30_000).unref?.());
     })();
     const query = queryFn({ prompt: idle, options: { ...options, abortController: abort } });
-    if (!query.supportedModels) return FALLBACK_MODELS;
-    const models = await query.supportedModels();
-    const mapped = toModelInfo(models, defaultModel);
-    return mapped.length > 0 ? mapped : FALLBACK_MODELS;
+    const models = query.supportedModels
+      ? (() => {
+          return query.supportedModels().then((list) => {
+            const mapped = toModelInfo(list, defaultModel);
+            return mapped.length > 0 ? mapped : FALLBACK_MODELS;
+          });
+        })()
+      : Promise.resolve(FALLBACK_MODELS);
+    const rateLimits = query.usage_EXPERIMENTAL_MAY_CHANGE_DO_NOT_RELY_ON_THIS_API_YET
+      ? query
+          .usage_EXPERIMENTAL_MAY_CHANGE_DO_NOT_RELY_ON_THIS_API_YET({ skipBehaviors: true })
+          .then((res) => rateLimitsFromUsageResponse(res, Date.now()))
+          .catch((err) => {
+            env.log(`[claude] get_usage probe failed: ${err instanceof Error ? err.message : String(err)}`);
+            return [] as RateLimit[];
+          })
+      : Promise.resolve([] as RateLimit[]);
+    return { models: await models, rateLimits: await rateLimits };
   } catch (error) {
     env.log(`[claude] supportedModels failed, using the fallback alias list: ${error instanceof Error ? error.message : String(error)}`);
-    return FALLBACK_MODELS;
+    return { models: FALLBACK_MODELS, rateLimits: [] };
   } finally {
     abort.abort();
   }
+}
+
+export async function listModels(queryFn: QueryFn, options: Record<string, unknown>, defaultModel: string | undefined, env: DriverEnv): Promise<ModelInfo[]> {
+  return (await probeModelsAndLimits(queryFn, options, defaultModel, env)).models;
 }
 
 /** Maps `supportedCommands()` rows: Claude's own are "builtin", everything else (user/project/plugin/MCP, skills) "custom". */
@@ -179,9 +203,9 @@ export async function buildStatus(config: ClaudeConfig, env: DriverEnv, queryFn:
   const versionOutput = await exec(binary, ["--version"], 15_000, procEnv);
   const version = versionOutput ? parseVersion(versionOutput) : undefined;
   const loggedIn = await detectLogin(binary, claudeConfigDir(config, env), procEnv);
-  const models = loggedIn
-    ? await listModels(queryFn, { cwd: process.cwd(), pathToClaudeCodeExecutable: binary, env: procEnv }, config.defaultModel, env)
-    : FALLBACK_MODELS;
+  const probed = loggedIn
+    ? await probeModelsAndLimits(queryFn, { cwd: process.cwd(), pathToClaudeCodeExecutable: binary, env: procEnv }, config.defaultModel, env)
+    : { models: FALLBACK_MODELS, rateLimits: [] };
 
   return {
     kind: "claude",
@@ -189,7 +213,8 @@ export async function buildStatus(config: ClaudeConfig, env: DriverEnv, queryFn:
     loggedIn,
     ...(version ? { version } : {}),
     ...(loggedIn ? {} : { hint: LOGIN_HINT, loginCommand: LOGIN_COMMAND }),
-    models,
+    models: probed.models,
     caps: { ...CLAUDE_CAPS },
+    ...(probed.rateLimits.length > 0 ? { rateLimits: probed.rateLimits } : {}),
   };
 }
