@@ -46,7 +46,9 @@ describe("UsageView", () => {
     ]);
     const claude = within(table).getByRole("rowheader", { name: "Claude Code" }).closest("tr");
     expect(claude?.textContent).toContain("$1.75");
-    expect(within(table).getByText("outside Tide (harness logs)")).toBeDefined();
+    // Multi-harness groups start collapsed so every harness is visible at a glance; expand all to inspect child rows
+    fireEvent.click(within(table).getByRole("button", { name: "Expand all" }));
+    expect(within(table).getByText("Logs")).toBeDefined();
     expect(within(table).getAllByText("Tide")).toHaveLength(2);
     // codex reported nothing: the reported cell is a dash, the estimate is marked ≈
     expect(within(table).getAllByText("≈$0.12").length).toBeGreaterThan(0);
@@ -142,9 +144,10 @@ describe("UsageView", () => {
     render(<UsageView />);
     const table = await screen.findByRole("table");
 
-    // Filter to Tide only: external row disappears
+    // Expand all, then filter to Tide only: external row disappears
+    fireEvent.click(within(table).getByRole("button", { name: "Expand all" }));
     fireEvent.click(screen.getByRole("radio", { name: "Tide" }));
-    expect(within(table).queryByText("outside Tide (harness logs)")).toBeNull();
+    expect(within(table).queryByText("Logs")).toBeNull();
     expect(within(table).getAllByText("Tide")).toHaveLength(2);
 
     // Toggle daily chart from Tokens to Spend

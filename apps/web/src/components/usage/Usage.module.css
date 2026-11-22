@@ -280,6 +280,19 @@
   cursor: pointer;
 }
 .shareMeta { color: var(--muted); font-size: var(--fs-xs); font-weight: var(--fw-regular); font-variant-numeric: tabular-nums; margin-left: var(--sp-1); }
+.expandAll {
+  margin-left: var(--sp-2);
+  padding: 0;
+  border: 0;
+  background: transparent;
+  color: var(--muted);
+  font-size: var(--fs-xs);
+  font-weight: var(--fw-regular);
+  letter-spacing: 0;
+  text-transform: none;
+  cursor: pointer;
+}
+.expandAll:hover { color: var(--text); }
 .groupCount { color: var(--muted); font-size: var(--fs-xs); }
 .model { padding-left: var(--sp-5) !important; font-family: var(--font-mono); font-size: var(--fs-xs); color: var(--text-2); }
 .estimate { color: var(--text-2); font-style: italic; }

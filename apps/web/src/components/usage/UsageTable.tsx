@@ -25,7 +25,13 @@ function Numbers({ t }: { t: UsageTotals }) {
 }
 
 export function SourceChip({ source }: { source: UsageRow["source"] }) {
-  return source === "tide" ? <Pill tone="accent">Tide</Pill> : <Pill>outside Tide (harness logs)</Pill>;
+  return source === "tide" ? (
+    <Pill tone="accent" title="Recorded directly by Tide">
+      Tide
+    </Pill>
+  ) : (
+    <Pill title="Outside Tide (from local harness logs)">Logs</Pill>
+  );
 }
 
 /** The window at a glance: tokens, turns/calls, reported and estimated spend, in one card. */
@@ -80,20 +86,34 @@ export function UsageSummaryCards({ rows }: { rows: readonly UsageRow[] }) {
 
 /** Harness → model, with the source of each row, collapsible harness groups, subtotals and a grand total. */
 export function UsageTable({ rows, providers }: { rows: readonly UsageRow[]; providers: readonly ProviderStatusDto[] }) {
-  const [collapsed, setCollapsed] = useState<Record<string, boolean>>({});
+  const [expanded, setExpanded] = useState<Record<string, boolean>>({});
   if (rows.length === 0) return <p className={styles.note}>No turns in this window.</p>;
   const groups = groupByHarness(rows);
   const total = sumRows(rows);
   const grandTokens = totalTokens(total);
+  const defaultOpen = groups.length === 1;
+  const isOpen = (id: string): boolean => expanded[id] ?? defaultOpen;
+  const allOpen = groups.every((g) => isOpen(g.id));
 
-  const toggleGroup = (id: string): void => setCollapsed((prev) => ({ ...prev, [id]: !prev[id] }));
+  const toggleGroup = (id: string): void => setExpanded((prev) => ({ ...prev, [id]: !(prev[id] ?? defaultOpen) }));
+  const toggleAll = (): void => {
+    const next = !allOpen;
+    setExpanded(Object.fromEntries(groups.map((g) => [g.id, next])));
+  };
 
   return (
     <div className={styles.card}>
       <table className={styles.table}>
         <thead>
           <tr>
-            <th scope="col">Harness / model</th>
+            <th scope="col">
+              <span>Harness / model</span>
+              {groups.length > 1 ? (
+                <button type="button" className={styles.expandAll} onClick={toggleAll}>
+                  {allOpen ? "Collapse all" : "Expand all"}
+                </button>
+              ) : null}
+            </th>
             <th scope="col">Source</th>
             <th scope="col" className={styles.num}>In</th>
             <th scope="col" className={styles.num}>Out</th>
@@ -111,7 +131,7 @@ export function UsageTable({ rows, providers }: { rows: readonly UsageRow[]; pro
           </tr>
         </thead>
         {groups.map((group) => {
-          const isCollapsed = collapsed[group.id] === true;
+          const open = isOpen(group.id);
           const label = instanceLabel(providers, group.id);
           const share = grandTokens > 0 ? Math.round((totalTokens(group.totals) / grandTokens) * 100) : 0;
           return (
@@ -121,22 +141,21 @@ export function UsageTable({ rows, providers }: { rows: readonly UsageRow[]; pro
                   <button
                     type="button"
                     className={styles.groupToggle}
-                    aria-expanded={!isCollapsed}
+                    aria-expanded={open}
                     onClick={() => toggleGroup(group.id)}
                   >
-                    <Icon name={isCollapsed ? "chevronRight" : "chevronDown"} size={12} />
+                    <Icon name={open ? "chevronDown" : "chevronRight"} size={12} />
                     <span>{label}</span>
                     {groups.length > 1 && share > 0 ? <span className={styles.shareMeta}>{share}%</span> : null}
                   </button>
                 </th>
                 <td className={styles.groupCount}>
-                  {isCollapsed ? `${group.rows.length} ${group.rows.length === 1 ? "row" : "rows"}` : ""}
+                  {open ? "" : `${group.rows.length} ${group.rows.length === 1 ? "row" : "rows"}`}
                 </td>
                 <Numbers t={group.totals} />
               </tr>
-              {isCollapsed
-                ? null
-                : group.rows.map((row, i) => (
+              {open
+                ? group.rows.map((row, i) => (
                     <tr key={`${row.model ?? ""}|${row.source}|${i}`}>
                       <td className={styles.model}>{row.model ?? "default model"}</td>
                       <td>
@@ -144,7 +163,8 @@ export function UsageTable({ rows, providers }: { rows: readonly UsageRow[]; pro
                       </td>
                       <Numbers t={sumRows([row])} />
                     </tr>
-                  ))}
+                  ))
+                : null}
             </tbody>
           );
         })}
