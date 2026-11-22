@@ -362,9 +362,8 @@ describe("Antigravity & ACP optimizations", () => {
     await session.close();
   });
 
-  it("opens a harness turn for unsolicited post-turn swarm/subagent updates and permission prompts", async () => {
+  it("routes unsolicited post-turn updates via onIdleActivity without spawning fake turns, and opens a request-only harness turn for background approvals", async () => {
     const child = new FakeChild();
-    const timers: Array<() => void> = [];
     child.onClient = (message) => {
       const id = message.id ?? null;
       if (message.method === "initialize") {
@@ -374,25 +373,25 @@ describe("Antigravity & ACP optimizations", () => {
       if (message.method === "session/prompt") child.send({ id, result: { stopReason: "end_turn" } });
     };
     const cwd = realpathSync(mkdtempSync(join(tmpdir(), "tide-agy-bg-")));
-    const instance = createAntigravityInstance({}, env(), {
-      spawn: spawnSeq(child),
-      timers: {
-        setTimeout: (fn) => {
-          timers.push(fn);
-          return timers.length;
-        },
-        clearTimeout: () => undefined,
-      },
-    });
+    const instance = createAntigravityInstance({}, env(), { spawn: spawnSeq(child) });
     const session = await instance.openSession({ threadId: "t1", cwd, mode: "approval-required", interaction: "default", mcpServers: [] });
     const harnessTurns: Array<{ reason: string; events: Promise<NormalizedEvent[]> }> = [];
+    const idleEvents: NormalizedEvent[] = [];
     session.onHarnessTurn!((handle) => {
       harnessTurns.push({ reason: handle.reason, events: collect(handle.events) });
     });
+    session.onIdleActivity!((event) => {
+      idleEvents.push(event);
+    });
     await collect(session.send({ text: "launch background work" }));
 
-    // Unsolicited post-turn wake-up from a swarm worker / background subagent
+    // Unsolicited post-turn chunks go to onIdleActivity (never opening synthetic harness turns)
     child.send({ method: "session/update", params: { sessionId: "agy_bg", update: { sessionUpdate: "agent_message_chunk", content: { type: "text", text: "Worker finished!" } } } });
+    await new Promise((r) => setTimeout(r, 5));
+    expect(harnessTurns).toHaveLength(0);
+    expect(idleEvents.some((e) => e.type === "assistant.delta" && e.delta === "Worker finished!")).toBe(true);
+
+    // An unsolicited post-turn permission request opens a request-only harness turn and settles as soon as answered
     child.send({
       id: "perm-bg",
       method: "session/request_permission",
@@ -406,11 +405,7 @@ describe("Antigravity & ACP optimizations", () => {
     expect(harnessTurns).toHaveLength(1);
     expect(session.hasBackgroundWork!()).toBe(true);
     await session.respondApproval("tc-bg", "accept");
-    await new Promise((r) => setTimeout(r, 5));
-    // Fire idle quiescence timer
-    timers.at(-1)?.();
     const bgEvents = await harnessTurns[0]!.events;
-    expect(bgEvents.some((e) => e.type === "assistant.delta" && e.delta === "Worker finished!")).toBe(true);
     expect(bgEvents.some((e) => e.type === "activity" && e.activity.kind === "approval" && e.activity.requestId === "tc-bg")).toBe(true);
     expect(bgEvents.at(-1)).toEqual({ type: "settled", status: "completed" });
     await session.close();

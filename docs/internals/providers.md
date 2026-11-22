@@ -681,10 +681,10 @@ four quirks below come from there. Only the first and third match something the 
 - `subagents: true`: `caps.subagents: true` — `AcpSubagentTracker` (`subagents.ts`) translates
   `invoke_subagent`/`start_subagent` and `/swarm` (`swarm` tool actions `title`, `add`, `model`,
   `status`, `kill`) into `kind: "child"` sub-agent/worker rows rendered by `ChildGroup`.
-- `harnessTurns: true`: `caps.harnessTurns: true` — unsolicited post-turn `session/update`s and
-  `session/request_permission` / `session/request_user_input` requests (from `agy` 1.5.10+
-  background sub-agent or swarm wake-ups) open a harness turn (`onHarnessTurn`) and keep the
-  session off the idle reaper (`hasBackgroundWork()`) until settled after 2.5 s of quiescence.
+- `harnessTurns: true`: `caps.harnessTurns: true` — unsolicited post-turn `session/update`s land
+  live on the latest turn via `onIdleActivity` (without spawning synthetic turns), while post-turn
+  `session/request_permission` / `session/request_user_input` prompts open a request-only harness
+  turn (`onHarnessTurn`, matching Codex) that settles as soon as its pending requests are answered.
 
 `agy` added by hand as an ACP agent still works: the profile applies when the launch command's
 basename is `agy` and the config sets no quirks of its own, and a stored `acpAgentId:

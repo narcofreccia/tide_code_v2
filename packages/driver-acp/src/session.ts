@@ -30,20 +30,10 @@ import {
 
 export const PROTOCOL_VERSION = 1;
 export const INITIALIZE_TIMEOUT_MS = 90_000;
-/** Silence window before an unsolicited post-turn ACP burst (background sub-agent / swarm wake-up) settles. */
-export const HARNESS_TURN_IDLE_MS = 2_500;
-
-const REAL_TIMERS: TimerLike = {
-  setTimeout: (fn, ms) => setTimeout(fn, ms),
-  clearTimeout: (handle) => clearTimeout(handle as ReturnType<typeof setTimeout>),
-};
-
-const SUBSTANTIVE_UPDATES = new Set(["agent_message_chunk", "agent_thought_chunk", "tool_call", "tool_call_update", "plan"]);
 
 interface ActiveHarnessTurn {
   key: string;
   mailbox: AsyncQueue<NormalizedEvent>;
-  timer?: unknown;
 }
 
 export function clientInitialize(version: string, quirks?: AcpQuirks): Record<string, unknown> {
@@ -112,7 +102,6 @@ export class AcpSession implements ProviderSession {
 
   #ctx: SessionContext;
   #options: OpenSessionOptions;
-  #timers: TimerLike;
   #conn: AcpConnection;
   #normalizer: AcpNormalizer;
   #fs: FsPolicy;
@@ -140,7 +129,6 @@ export class AcpSession implements ProviderSession {
   constructor(child: ChildLike, options: OpenSessionOptions, ctx: SessionContext) {
     this.#ctx = ctx;
     this.#options = options;
-    this.#timers = ctx.timers ?? REAL_TIMERS;
     this.#mode = options.mode;
     this.#interaction = options.interaction;
     this.#fs = new FsPolicy(options.cwd, options.linkedDirs);
@@ -261,22 +249,23 @@ export class AcpSession implements ProviderSession {
     return this.#turnActive || this.#harnessTurn !== undefined;
   }
 
-  #ensureHarnessTurn(reason: string): boolean {
+  /**
+   * Opens a request-only harness turn for an unsolicited post-turn approval or question
+   * (e.g. a background sub-agent or swarm prompt while no `send()` is active), matching
+   * `driver-codex`. It settles as soon as its pending requests are answered — never on a
+   * silence timer, which would chop normal thinking pauses into spurious `turn.settled`s.
+   */
+  #ensureRequestHarnessTurn(reason: string): boolean {
     if (this.#turnActive || this.#closed || this.#quirks?.harnessTurns !== true) return false;
-    if (this.#harnessTurn !== undefined) {
-      this.#armHarnessIdleTimer();
-      return true;
-    }
+    if (this.#harnessTurn !== undefined) return true;
     if (!this.#onHarnessTurn) return false;
     this.#harnessSeq += 1;
     const key = `acp-harness-${this.#harnessSeq}`;
     const mailbox = new AsyncQueue<NormalizedEvent>();
-    this.#normalizer.beginTurn();
     this.#interrupted = false;
     const active: ActiveHarnessTurn = { key, mailbox };
     this.#harnessTurn = active;
     this.#mailbox = mailbox;
-    this.#armHarnessIdleTimer();
     this.#onHarnessTurn({
       key,
       reason,
@@ -288,28 +277,16 @@ export class AcpSession implements ProviderSession {
     return true;
   }
 
-  #armHarnessIdleTimer(): void {
-    const active = this.#harnessTurn;
-    if (!active) return;
-    if (active.timer !== undefined) this.#timers.clearTimeout(active.timer);
-    active.timer = this.#timers.setTimeout(() => {
-      if (this.#harnessTurn !== active) return;
-      if (this.#approvals.size > 0 || this.#inputs.size > 0 || this.#normalizer.hasRunningTools()) {
-        this.#armHarnessIdleTimer();
-        return;
-      }
-      this.#settleHarnessTurn("completed");
-    }, HARNESS_TURN_IDLE_MS);
+  #maybeSettleRequestHarnessTurn(): void {
+    if (this.#harnessTurn === undefined) return;
+    if (this.#approvals.size > 0 || this.#inputs.size > 0) return;
+    this.#settleHarnessTurn("completed");
   }
 
   #settleHarnessTurn(status: "completed" | "interrupted" | "error", error?: string): void {
     const active = this.#harnessTurn;
     if (!active) return;
     this.#harnessTurn = undefined;
-    if (active.timer !== undefined) {
-      this.#timers.clearTimeout(active.timer);
-      active.timer = undefined;
-    }
     if (this.#mailbox === active.mailbox) this.#mailbox = undefined;
     active.mailbox.push({ type: "settled", status, ...(error ? { error } : {}) });
     active.mailbox.close();
@@ -318,8 +295,9 @@ export class AcpSession implements ProviderSession {
   #emit(event: NormalizedEvent): void {
     if (this.#mailbox) {
       this.#mailbox.push(event);
-      if (this.#harnessTurn !== undefined) this.#armHarnessIdleTimer();
-    } else if (event.type === "activity" && event.activity.kind === "child") {
+    } else if (this.#quirks?.harnessTurns === true && event.type !== "commands" && event.type !== "session" && event.type !== "settled") {
+      // Unsolicited post-turn updates (background sub-agents, swarm posts/tools) land live on the
+      // thread's latest turn without opening/settling synthetic harness turns.
       this.#onIdleActivity?.(event);
     }
   }
@@ -339,10 +317,6 @@ export class AcpSession implements ProviderSession {
     if (!update || typeof update.sessionUpdate !== "string") return;
     if (this.nativeSessionId !== undefined && sessionId !== undefined && sessionId !== this.nativeSessionId) return;
     if (update.sessionUpdate === "config_option_update") this.settings?.ingest({ configOptions: update["configOptions"] as never });
-    if (!this.#inTurn && SUBSTANTIVE_UPDATES.has(update.sessionUpdate)) {
-      const reason = this.#normalizer.hasActiveSwarmWorkers() ? `${this.#ctx.label} swarm continued` : `${this.#ctx.label} background agent continued`;
-      this.#ensureHarnessTurn(reason);
-    }
     for (const event of this.#normalizer.next(update)) {
       if (event.type === "usage" && event.contextUsage !== undefined) this.#ctx.onContextUsage?.();
       if (event.type === "commands") {
@@ -384,21 +358,24 @@ export class AcpSession implements ProviderSession {
     const cancelled = { outcome: { outcome: "cancelled" } };
     const call = request?.toolCall;
     if (!call || !Array.isArray(request.options) || this.#interrupted) return cancelled;
-    if (!this.#inTurn && !this.#ensureHarnessTurn(`${this.#ctx.label} needs approval`)) return cancelled;
     const known = this.#normalizer.tool(call.toolCallId);
     const merged = { ...known, ...Object.fromEntries(Object.entries(call).filter(([, value]) => value !== undefined && value !== null)), toolCallId: call.toolCallId };
     if (isQuestionOptions(request.options)) {
+      if (!this.#inTurn && !this.#ensureRequestHarnessTurn(`${this.#ctx.label} asks a question`)) return cancelled;
       // a question, never auto-answered by the runtime mode
       const requestId = this.#uniqueId(call.toolCallId);
       const question = permissionQuestion(requestId, merged.title ?? toolName(merged), request.options);
       const optionId = answerOption(request.options, question.id, await this.#ask(requestId, [question]));
+      this.#maybeSettleRequestHarnessTurn();
       return optionId === undefined ? cancelled : { outcome: { outcome: "selected", optionId } };
     }
     const plan = planPermission(this.#mode, merged.kind, request.options);
     if (plan.kind === "auto") {
+      if (!this.#inTurn && this.#quirks?.harnessTurns !== true) return cancelled;
       if (plan.audit) this.#emit({ type: "activity", activity: { kind: "info", text: `auto-approved: ${merged.title ?? toolName(merged)}` } });
       return { outcome: { outcome: "selected", optionId: plan.optionId } };
     }
+    if (!this.#inTurn && !this.#ensureRequestHarnessTurn(`${this.#ctx.label} needs approval`)) return cancelled;
     const requestId = this.#uniqueId(call.toolCallId);
     const answer = deferred<string | undefined>();
     this.#approvals.set(requestId, { options: request.options, answer });
@@ -417,17 +394,17 @@ export class AcpSession implements ProviderSession {
     });
     const optionId = await answer.promise;
     this.#approvals.delete(requestId);
-    if (this.#harnessTurn !== undefined) this.#armHarnessIdleTimer();
+    this.#maybeSettleRequestHarnessTurn();
     return optionId === undefined ? cancelled : { outcome: { outcome: "selected", optionId } };
   }
 
   async #userInput(request: AcpUserInputRequest): Promise<unknown> {
     const questions = userInputQuestions(request);
     if (questions.length === 0 || this.#interrupted) return { outcome: { outcome: "cancelled" } };
-    if (!this.#inTurn && !this.#ensureHarnessTurn(`${this.#ctx.label} asks a question`)) return { outcome: { outcome: "cancelled" } };
+    if (!this.#inTurn && !this.#ensureRequestHarnessTurn(`${this.#ctx.label} asks a question`)) return { outcome: { outcome: "cancelled" } };
     this.#inputSeq += 1;
     const result = userInputResult(questions, await this.#ask(this.#uniqueId(`input-${this.#inputSeq}`), questions));
-    if (this.#harnessTurn !== undefined) this.#armHarnessIdleTimer();
+    this.#maybeSettleRequestHarnessTurn();
     return result;
   }
 
