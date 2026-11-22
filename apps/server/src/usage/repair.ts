@@ -48,6 +48,7 @@ export function scanRepairEvents(records: Iterable<EventRecord>): RepairScan {
   const turns = new Map<string, TurnFacts>();
   const order: TurnFacts[] = [];
   const stops: number[] = [];
+  const deletedThreads = new Set<string>();
   /** per thread: the session of the turn it started last, and whether a rollback came after it */
   const lastOfThread = new Map<string, { sessionId: string | undefined; rolledBack: boolean }>();
 
@@ -106,12 +107,17 @@ export function scanRepairEvents(records: Iterable<EventRecord>): RepairScan {
         if (prior) prior.rolledBack = true;
         break;
       }
+      case "thread.deleted": {
+        deletedThreads.add(event.threadId);
+        lastOfThread.delete(event.threadId);
+        break;
+      }
     }
   }
 
   const sessions = new Map<string, RepairSession>();
   for (const t of order) {
-    if (!t.claude || t.sessionId === undefined) continue;
+    if (!t.claude || t.sessionId === undefined || deletedThreads.has(t.threadId)) continue;
     let s = sessions.get(t.sessionId);
     if (!s) sessions.set(t.sessionId, (s = { id: t.sessionId, turns: [] }));
     s.turns.push(t);

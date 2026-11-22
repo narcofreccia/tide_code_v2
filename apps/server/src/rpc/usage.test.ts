@@ -145,6 +145,16 @@ describe("rpc usage.repair", () => {
     expect(cost(engine, threadId)).toBeCloseTo(9, 9);
   });
 
+  it("skips turns belonging to deleted threads instead of failing with not-found", async () => {
+    const { engine, threadId, call } = await repairSetup(new Map([["sess", [4]]]));
+    await engine.dispatch({ type: "thread.delete", threadId });
+    const dry = await call({});
+    expect(dry.rows).toEqual([]);
+    const applied = await call({ apply: true, includeHeuristic: true });
+    expect(applied.rows).toEqual([]);
+    expect(applied.appliedCount).toBe(0);
+  });
+
   it("needs the event log", async () => {
     const router = new RpcRouter();
     registerUsageHandlers(router, { engine: { getModel: () => modelWith([], []) } as unknown as Engine, dataDir: ":memory:" });

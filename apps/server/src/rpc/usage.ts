@@ -94,7 +94,7 @@ export function registerUsageHandlers(router: RpcRouter, deps: UsageHandlerDeps)
       if (totals !== undefined) costStates.set(session.id, totals);
     }
     const model = deps.engine.getModel();
-    const rows = planRepair({ scan, costStates, titleOf: (id) => model.threads[id]?.title });
+    const rows = planRepair({ scan, costStates, titleOf: (id) => model.threads[id]?.title }).filter((r) => model.turns[r.turnId] !== undefined);
     let applied = 0;
     if (input.apply === true) {
       for (const row of rows) {
@@ -103,8 +103,8 @@ export function registerUsageHandlers(router: RpcRouter, deps: UsageHandlerDeps)
           await deps.engine.dispatch({ type: "usage.correct", turnId: row.turnId, usage: { inputTokens: 0, outputTokens: 0, costUsd: row.correctedUsd - row.storedUsd }, reason: REPAIR_REASON });
           applied++;
         } catch (err) {
-          // corrected meanwhile (another repair run): it is applied all the same
-          if (!(err instanceof CommandError && err.code === "conflict")) throw err;
+          // corrected or deleted meanwhile: do not abort the rest of the repair
+          if (!(err instanceof CommandError && (err.code === "conflict" || err.code === "not-found"))) throw err;
         }
         row.applied = true;
       }
