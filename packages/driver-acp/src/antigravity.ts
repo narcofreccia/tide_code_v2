@@ -1,4 +1,5 @@
 import type { DriverEnv, ProviderDriver, ProviderInstance } from "@tide/contracts";
+import { completeAntigravity } from "./antigravity-complete.ts";
 import { AcpInstance } from "./instance.ts";
 import { ANTIGRAVITY_INSTALL_COMMAND, ANTIGRAVITY_PROFILE } from "./profiles.ts";
 import { nodeSpawn } from "./spawn.ts";
@@ -13,6 +14,7 @@ export const ANTIGRAVITY_FLAVOR: AcpFlavor = {
   loginCommand: "agy acp --login",
   notInstalledHint: (label, command) => `${label} could not be started (\`${command}\` not found): install it with \`${ANTIGRAVITY_INSTALL_COMMAND}\``,
   minVersion: { major: 1, minor: 5, hint: "Antigravity CLI 1.5 or newer is needed for ACP: run `agy update`" },
+  complete: completeAntigravity,
 };
 
 /** server.json `providers.antigravity` merged with the instance's settings. */

@@ -61,7 +61,10 @@ export class ClaudeInstance implements ProviderInstance {
   }
 
   terminalCommand(nativeSessionId: string, cwd: string): string {
-    return `cd ${shellQuote(cwd)} && claude --resume ${shellQuote(nativeSessionId)}`;
+    const configDir = instanceEnv(this.#config, this.#env)["CLAUDE_CONFIG_DIR"];
+    const envPrefix = configDir ? `CLAUDE_CONFIG_DIR=${shellQuote(configDir)} ` : "";
+    const bin = this.#config.binaryPath ? shellQuote(this.#config.binaryPath) : "claude";
+    return `cd ${shellQuote(cwd)} && ${envPrefix}${bin} --resume ${shellQuote(nativeSessionId)}`;
   }
 
   async dispose(): Promise<void> {

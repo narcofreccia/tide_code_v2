@@ -103,6 +103,7 @@ describe("codex session", () => {
     completeTurn(server);
     await done;
     expect(events).toEqual([
+      { type: "session", nativeSessionId: THREAD, model: "gpt-5.6-sol" },
       { type: "assistant.delta", messageKey: "turn#0", delta: "codex-ok" },
       { type: "settled", status: "completed" },
     ]);
@@ -123,7 +124,7 @@ describe("codex session", () => {
     server.notify("item/completed", { threadId: THREAD, turnId: TURN, item: { type: "plan", id: "p1", text: "" } });
     completeTurn(server);
     await done;
-    expect(events[0]).toEqual({ type: "plan.proposed", markdown: "## Plan\n- step one\n" });
+    expect(events.find((e) => e.type === "plan.proposed")).toEqual({ type: "plan.proposed", markdown: "## Plan\n- step one\n" });
     await session.close();
   });
 
@@ -310,7 +311,10 @@ describe("codex session", () => {
     server.failMethods.set("turn/start", "no active model");
     const { events, done } = collect(session.send({ text: "hi" }));
     await done;
-    expect(events).toEqual([{ type: "settled", status: "error", error: "no active model" }]);
+    expect(events).toEqual([
+      { type: "session", nativeSessionId: THREAD, model: "gpt-5.6-sol" },
+      { type: "settled", status: "error", error: "no active model" },
+    ]);
     await session.close();
     expect(() => session.send({ text: "hi" })).toThrow(/closed/);
   });
@@ -441,6 +445,24 @@ describe("codex session", () => {
     expect(params["collaborationMode"]).toMatchObject({ mode: "plan", settings: { model: "gpt-5.6-codex" } });
     completeTurn(server);
     await done;
+    await session.close();
+  });
+
+  it("restores the thread's initial default model when reconfigure clears model", async () => {
+    const { session, server } = await harness();
+    expect(await session.reconfigure({ mode: "auto", interaction: "default", model: "gpt-5.6-codex" })).toBe("applied");
+    const first = collect(session.send({ text: "pinned" }));
+    await tick();
+    expect(server.calls("turn/start")[0]?.["model"]).toBe("gpt-5.6-codex");
+    completeTurn(server);
+    await first.done;
+
+    expect(await session.reconfigure({ mode: "auto", interaction: "default" })).toBe("applied");
+    const second = collect(session.send({ text: "cleared" }));
+    await tick();
+    expect(server.calls("turn/start")[1]?.["model"]).toBe("gpt-5.6-sol");
+    completeTurn(server);
+    await second.done;
     await session.close();
   });
 });

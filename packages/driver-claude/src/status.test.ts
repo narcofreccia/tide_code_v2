@@ -1,7 +1,10 @@
+import { mkdtempSync, writeFileSync } from "node:fs";
 import { tmpdir } from "node:os";
+import { join } from "node:path";
 import { describe, expect, it } from "vitest";
 import type { DriverEnv } from "@tide/contracts";
-import { buildStatus, LOGIN_COMMAND, LOGIN_HINT } from "./status.ts";
+import { ClaudeInstance } from "./instance.ts";
+import { buildStatus, detectLogin, LOGIN_COMMAND, LOGIN_HINT } from "./status.ts";
 import type { QueryFn } from "./types.ts";
 
 const env: DriverEnv = { dataDir: tmpdir(), log: () => undefined };
@@ -29,5 +32,19 @@ describe("claude caps", () => {
   it("reports oneShot in status", async () => {
     const status = await buildStatus({ binaryPath: "/nonexistent/claude" }, env, noQuery);
     expect(status.caps.oneShot).toBe(true);
+  });
+
+  it("detectLogin honours a secondary account's CLAUDE_CONFIG_DIR", async () => {
+    const dir = mkdtempSync(join(tmpdir(), "claude-acct-"));
+    expect(await detectLogin("/nonexistent/claude", dir)).toBe(false);
+    writeFileSync(join(dir, ".credentials.json"), "{}");
+    expect(await detectLogin("/nonexistent/claude", dir)).toBe(true);
+  });
+
+  it("terminalCommand includes CLAUDE_CONFIG_DIR and binaryPath for extra accounts", () => {
+    const plain = new ClaudeInstance({}, env, noQuery);
+    expect(plain.terminalCommand("sess-1", "/tmp/my repo")).toBe("cd '/tmp/my repo' && claude --resume sess-1");
+    const work = new ClaudeInstance({ binaryPath: "/opt/claude" }, { ...env, instance: { id: "claude:work", label: "Work", home: "/homes/work claude" } }, noQuery);
+    expect(work.terminalCommand("sess-1", "/tmp/repo")).toBe("cd /tmp/repo && CLAUDE_CONFIG_DIR='/homes/work claude' /opt/claude --resume sess-1");
   });
 });

@@ -14,7 +14,7 @@ import type { UsageTokens } from "./types.ts";
  * (`<row>-…`); then the longest matching prefix in FAMILIES. An unknown model gets no
  * estimate (undefined), never a guess.
  */
-export const PRICING_VERSION = "2026-10";
+export const PRICING_VERSION = "2026-11";
 
 export interface Price {
   in: number;
@@ -38,9 +38,18 @@ export const MODELS: Readonly<Record<string, Price>> = {
   "claude-sonnet-4-6": p(3, 15, 0.3, 3.75),
   "claude-haiku-5-5": p(0.1, 0.5, 0.01, 0.125),
   "claude-haiku-4-5": p(1, 5, 0.1, 1.25),
+  // Claude Code short aliases recorded on Tide turns
+  fable: p(10, 50, 0.25, 12.5),
+  opus: p(4, 20, 0.2, 5),
+  "opus-5.5": p(4, 20, 0.2, 5),
+  sonnet: p(2, 10, 0.2, 2.5),
+  haiku: p(0.1, 0.5, 0.01, 0.125),
   "gpt-6.1-sol": p(5, 40, 0.5, 0),
   "gpt-6.1": p(2.5, 20, 0.25, 0),
   "gpt-6-luna": p(1.25, 10, 0.125, 0),
+  // Google Gemini / Antigravity rows (approximate API list prices)
+  "gemini-2.5-pro": p(1.25, 10, 0.3125, 0),
+  "gemini-2.5-flash": p(0.15, 0.6, 0.0375, 0),
 };
 
 /** longest prefix wins; covers dated ids, `[1m]` suffixes and minor versions the table lacks */
@@ -53,13 +62,17 @@ export const FAMILIES: readonly (readonly [prefix: string, price: Price])[] = [
   ["gpt-6.1", p(2.5, 20, 0.25, 0)],
   ["gpt-6", p(1.25, 10, 0.125, 0)],
   ["gpt-5", p(1.25, 10, 0.125, 0)],
+  ["gemini-4", p(2, 12, 0.2, 0)],
+  ["gemini-3", p(1.5, 10, 0.15, 0)],
+  ["gemini-2.5-flash", p(0.15, 0.6, 0.0375, 0)],
+  ["gemini-2.5", p(1.25, 10, 0.3125, 0)],
   ["opencode/", p(0, 0, 0, 0)],
 ];
 
-/** `anthropic/claude-x`, `anthropic.claude-x`, `openai/gpt-x` → bare id; `opencode/` stays (it marks the free tier) */
+/** `anthropic/claude-x`, `anthropic.claude-x`, `openai/gpt-x`, `google/gemini-x` → bare id; `opencode/` stays (it marks the free tier) */
 export function normalizeModel(model: string): string {
   let m = model.trim().toLowerCase();
-  m = m.replace(/^(anthropic|openai|openrouter\/[a-z-]+|us\.anthropic|eu\.anthropic)[./]/, "");
+  m = m.replace(/^(anthropic|openai|google|openrouter\/[a-z-]+|us\.anthropic|eu\.anthropic)[./]/, "");
   return m.replace(/\[[^\]]*\]$/, "");
 }
 

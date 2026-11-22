@@ -1,4 +1,4 @@
-import type { NormalizedEvent, ProviderKind } from "@tide/contracts";
+import type { CompletionRequest, CompletionResult, DriverEnv, NormalizedEvent, ProviderKind } from "@tide/contracts";
 
 /**
  * One configured ACP agent. The server resolves registry agents (`acpAgentId`) to a launch
@@ -35,6 +35,8 @@ export interface AcpFlavor {
   minVersion?: { major: number; minor: number; hint: string };
   /** reopen a session in the agent's own CLI; absent = `openInTerminal: false` */
   terminalCommand?: (command: string, nativeSessionId: string, cwd: string) => string | undefined;
+  /** one-shot tools-off completion (titles, commit messages, judge fallback); absent = `oneShot: false` */
+  complete?: (config: AcpConfig, env: DriverEnv, request: CompletionRequest, deps?: AcpDeps) => Promise<CompletionResult>;
 }
 
 export const GENERIC_FLAVOR: AcpFlavor = { kind: "acp" };
@@ -57,6 +59,12 @@ export interface AcpQuirks {
   systemPromptMeta?: string[];
   /** `"resume"`: reopen with `session/resume` (needs `sessionCapabilities.resume`) instead of `session/load` */
   resumeMethod?: "load" | "resume";
+  /** `true`: agent accepts a mid-turn `session/prompt` to steer the running turn (Antigravity 1.5.0+) */
+  steerByPrompt?: boolean;
+  /** `true`: normalize native sub-agent (`invoke_subagent`/`start_subagent`) and `/swarm` tool calls into `kind: "child"` rows */
+  subagents?: boolean;
+  /** `true`: surface unsolicited post-turn updates & permission prompts (background sub-agents / swarm wake-ups) as harness turns */
+  harnessTurns?: boolean;
 }
 
 /** The slice of a Readable the line reader uses. */

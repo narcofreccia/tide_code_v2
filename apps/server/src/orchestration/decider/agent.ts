@@ -142,7 +142,7 @@ export function decideAgent(model: ReadModel, command: AgentCommand, ctx: Decide
           extra.push({ type: "project.created", project });
         }
       }
-      // the user's per-harness defaults fill what the caller left out; the mode is still clamped
+      // the user's per-harness default fills an omitted model; permission mode always inherits from the parent (clamped if explicitly narrowed)
       const defaults = providerDefault(ctx, command.provider, providerId);
       const delegateModel = command.model ?? defaults.model;
       const thread: Thread = {
@@ -153,7 +153,7 @@ export function decideAgent(model: ReadModel, command: AgentCommand, ctx: Decide
         provider: command.provider,
         ...(providerId !== undefined ? { providerId } : {}),
         ...(delegateModel !== undefined ? { model: delegateModel } : {}),
-        mode: clampMode(command.mode ?? defaults.mode, from.mode),
+        mode: clampMode(command.mode, from.mode),
         interaction: "default",
         role: "delegate",
         ...(command.role !== undefined ? { delegateRole: command.role } : {}),

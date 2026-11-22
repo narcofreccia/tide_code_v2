@@ -7,7 +7,7 @@ import { toSlashCommands } from "./normalize.ts";
 import { modeSelector, planModeId } from "./permissions.ts";
 import { authHint, clientInitialize, INITIALIZE_TIMEOUT_MS, isAuthRequired } from "./session.ts";
 import { agentEnv } from "./spawn.ts";
-import { ACP_ERROR, GENERIC_FLAVOR, type AcpConfig, type AcpFlavor, type AcpDeps, type AcpInitializeResult, type AcpNewSessionResult } from "./types.ts";
+import { ACP_ERROR, GENERIC_FLAVOR, type AcpConfig, type AcpFlavor, type AcpDeps, type AcpInitializeResult, type AcpNewSessionResult, type AcpQuirks } from "./types.ts";
 
 /**
  * `status()` for an ACP agent: spawn it, `initialize`, read capabilities / agentInfo /
@@ -31,23 +31,25 @@ export interface AgentFacts {
   authHint?: string;
 }
 
-export function acpCaps(facts: AgentFacts, flavor: AcpFlavor = GENERIC_FLAVOR): DriverCaps {
+export function acpCaps(facts: AgentFacts, flavor: AcpFlavor = GENERIC_FLAVOR, quirks?: AcpQuirks): DriverCaps {
   const agent = facts.init?.agentCapabilities;
+  const hasResumeCap = agent?.sessionCapabilities?.["resume"] !== undefined && agent.sessionCapabilities["resume"] !== null;
   return {
     planMode: facts.planMode ?? false,
-    subagents: false,
+    subagents: quirks?.subagents === true,
     mcp: true,
     images: agent?.promptCapabilities?.image === true,
-    resume: agent?.loadSession === true,
+    resume: agent?.loadSession === true || hasResumeCap,
     // only known once the agent sends a `usage_update` carrying `used`/`size` (unstable ACP field)
     contextUsage: facts.contextUsage === true,
     openInTerminal: flavor.terminalCommand !== undefined,
-    steer: false,
+    steer: quirks?.steerByPrompt === true,
     fork: false,
     rollback: false,
-    oneShot: false,
+    oneShot: flavor.complete !== undefined,
     effort: facts.effort ?? false,
     commands: true,
+    ...(quirks?.harnessTurns === true ? { harnessTurns: true } : {}),
   };
 }
 
@@ -97,6 +99,8 @@ export interface ProbeOptions {
   /** Tide's version, sent as `clientInfo.version` */
   version: string;
   flavor?: AcpFlavor;
+  /** true when explicitly refreshing: re-probe `session/new` even if models were already cached */
+  refresh?: boolean;
   /** an `available_commands_update` the throwaway session sends before the probe closes */
   onCommands?: (commands: SlashCommandInfo[]) => void;
 }
@@ -143,11 +147,11 @@ export async function probeStatus(options: ProbeOptions): Promise<ProbeResult> {
     const agentVersion = init.agentInfo?.version ?? undefined;
     if (flavor.minVersion && belowMinVersion(flavor, agentVersion)) {
       return {
-        status: { kind: flavor.kind, installed: true, loggedIn: false, ...(agentVersion ? { version: agentVersion } : {}), hint: flavor.minVersion.hint, models: next.models ?? [], caps: acpCaps(next, flavor) },
+        status: { kind: flavor.kind, installed: true, loggedIn: false, ...(agentVersion ? { version: agentVersion } : {}), hint: flavor.minVersion.hint, models: next.models ?? [], caps: acpCaps(next, flavor, config.quirks) },
         facts: next,
       };
     }
-    if (next.models === undefined) {
+    if (options.refresh === true || next.models === undefined) {
       try {
         const result = await conn.request<AcpNewSessionResult>("session/new", { cwd, mcpServers: [] }, PROBE_SESSION_TIMEOUT_MS);
         Object.assign(next, sessionFacts(result, config.defaultModel));
@@ -166,14 +170,14 @@ export async function probeStatus(options: ProbeOptions): Promise<ProbeResult> {
       ...(next.authHint ? { hint: next.authHint } : {}),
       ...(next.authHint && flavor.loginCommand ? { loginCommand: flavor.loginCommand } : {}),
       models: next.models ?? [],
-      caps: acpCaps(next, flavor),
+      caps: acpCaps(next, flavor, config.quirks),
     };
     return { status, facts: next };
   } catch (error) {
     if (isNotFound(error)) return notInstalled(config, label, facts, flavor, error);
     const message = error instanceof Error ? error.message : String(error);
     return {
-      status: { kind: flavor.kind, installed: true, loggedIn: false, hint: `${label} did not answer initialize: ${message}`, models: facts.models ?? [], caps: acpCaps(facts, flavor) },
+      status: { kind: flavor.kind, installed: true, loggedIn: false, hint: `${label} did not answer initialize: ${message}`, models: facts.models ?? [], caps: acpCaps(facts, flavor, config.quirks) },
       facts,
     };
   } finally {
@@ -184,5 +188,5 @@ export async function probeStatus(options: ProbeOptions): Promise<ProbeResult> {
 function notInstalled(config: AcpConfig, label: string, facts: AgentFacts, flavor: AcpFlavor, error: unknown): ProbeResult {
   if (!isNotFound(error)) throw error;
   const hint = (flavor.notInstalledHint ?? installHint)(label, config.command);
-  return { status: { kind: flavor.kind, installed: false, loggedIn: false, hint, models: [], caps: acpCaps(facts, flavor) }, facts };
+  return { status: { kind: flavor.kind, installed: false, loggedIn: false, hint, models: [], caps: acpCaps(facts, flavor, config.quirks) }, facts };
 }

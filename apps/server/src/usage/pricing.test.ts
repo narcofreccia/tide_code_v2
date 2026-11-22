@@ -35,7 +35,16 @@ describe("pricing", () => {
     expect(priceFor("anthropic/claude-haiku-5-5")?.basis).toBe("exact");
   });
 
+  it("prices Claude short aliases and Google Gemini / Antigravity model families", () => {
+    expect(estimate("fable", { in: M, out: 0, cacheRead: 0, cacheWrite: 0 })).toBeCloseTo(10);
+    expect(estimate("opus", { in: M, out: 0, cacheRead: 0, cacheWrite: 0 })).toBeCloseTo(4);
+    expect(estimate("opus-5.5", { in: M, out: 0, cacheRead: 0, cacheWrite: 0 })).toBeCloseTo(4);
+    expect(estimate("gemini-2.5-pro", { in: M, out: M, cacheRead: 0, cacheWrite: 0 })).toBeCloseTo(11.25);
+    expect(estimate("google/gemini-2.5-flash", { in: M, out: M, cacheRead: 0, cacheWrite: 0 })).toBeCloseTo(0.75);
+    expect(estimate("gemini-4-neon", { in: M, out: 0, cacheRead: 0, cacheWrite: 0 })).toBeCloseTo(2);
+  });
+
   it("has a version the page can show", () => {
-    expect(PRICING_VERSION).toBe("2026-10");
+    expect(PRICING_VERSION).toBe("2026-11");
   });
 });

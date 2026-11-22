@@ -152,10 +152,13 @@ describe("status", () => {
     expect(await detectBinary({ env: { PATH: [join(home, "pinned"), "/usr/bin", "/bin"].join(":"), HOME: home } })).toBe(onPath);
   });
 
-  it("offers `codex resume <threadId>` as the terminal escape hatch", async () => {
+  it("offers `codex resume <threadId>` as the terminal escape hatch, with CODEX_HOME and binaryPath when configured", async () => {
     const instance = await codexDriver.create(codexDriver.defaultConfig(), env);
     expect(instance.terminalCommand("01a05503-390c-7520", "/tmp/my repo")).toBe("cd '/tmp/my repo' && codex resume 01a05503-390c-7520");
     await instance.dispose();
+    const work = await codexDriver.create({ binaryPath: "/opt/codex" }, { ...env, instance: { id: "codex:work", label: "Work", home: "/homes/codex work" } });
+    expect(work.terminalCommand("01a05503-390c-7520", "/tmp/repo")).toBe("cd /tmp/repo && CODEX_HOME='/homes/codex work' /opt/codex resume 01a05503-390c-7520");
+    await work.dispose();
   });
 });
 

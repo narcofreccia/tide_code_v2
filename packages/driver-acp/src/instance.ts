@@ -1,4 +1,4 @@
-import type { DriverEnv, OpenSessionOptions, ProviderInstance, ProviderKind, ProviderSession, ProviderStatus, SlashCommandInfo } from "@tide/contracts";
+import type { CompletionRequest, CompletionResult, DriverEnv, OpenSessionOptions, ProviderInstance, ProviderKind, ProviderSession, ProviderStatus, SlashCommandInfo } from "@tide/contracts";
 import { readCommandsCache, writeCommandsCache } from "./commands-cache.ts";
 import { withProfileQuirks } from "./profiles.ts";
 import { AcpSession } from "./session.ts";
@@ -19,6 +19,7 @@ export const CLIENT_VERSION = typeof TIDE_BUILD_VERSION === "string" ? TIDE_BUIL
  */
 export class AcpInstance implements ProviderInstance {
   readonly kind: ProviderKind;
+  readonly complete?: (request: CompletionRequest) => Promise<CompletionResult>;
 
   #flavor: AcpFlavor;
   #config: AcpConfig;
@@ -38,6 +39,10 @@ export class AcpInstance implements ProviderInstance {
     this.#env = env;
     this.#deps = deps;
     this.#label = config.label ?? env.instance?.label ?? config.command;
+    if (flavor.complete) {
+      const run = flavor.complete;
+      this.complete = (request) => run(this.#config, this.#env, request, this.#deps);
+    }
   }
 
   async status(refresh = false): Promise<ProviderStatus> {
@@ -51,6 +56,7 @@ export class AcpInstance implements ProviderInstance {
       facts: this.#facts,
       version: CLIENT_VERSION,
       flavor: this.#flavor,
+      refresh,
       onCommands: (commands) => this.#setCommands(commands),
     })
       .then(({ status, facts }) => {
@@ -135,6 +141,14 @@ export class AcpInstance implements ProviderInstance {
       respondUserInput: (requestId, answers) => session.respondUserInput(requestId, answers),
       interrupt: () => session.interrupt(),
       reconfigure: (settings) => session.reconfigure(settings),
+      ...(this.#config.quirks?.steerByPrompt === true ? { steer: (input, target) => session.steer(input, target) } : {}),
+      ...(this.#config.quirks?.harnessTurns === true
+        ? {
+            onHarnessTurn: (listener) => session.onHarnessTurn(listener),
+            onIdleActivity: (listener) => session.onIdleActivity(listener),
+            hasBackgroundWork: () => session.hasBackgroundWork(),
+          }
+        : {}),
       close: async () => {
         this.#sessions.delete(session);
         await session.close();

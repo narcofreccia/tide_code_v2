@@ -71,7 +71,10 @@ export class TideAgentBackend implements AgentBackend {
   }
 
   async #connect(): Promise<void> {
-    this.#ready ??= this.#connection.connect();
+    this.#ready ??= this.#connection.connect().catch((err: unknown) => {
+      this.#ready = undefined;
+      throw err;
+    });
     await this.#ready;
   }
 

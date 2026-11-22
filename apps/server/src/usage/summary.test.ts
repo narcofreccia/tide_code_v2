@@ -28,7 +28,21 @@ describe("usage summary", () => {
     const claude = s.rows.find((r) => r.provider === "claude");
     expect(claude).toMatchObject({ source: "tide", model: "claude-opus-5-5", inputTokens: M, outputTokens: M, cacheReadTokens: 10, turns: 2, costUsd: 24 });
     expect(claude?.estimatedUsd).toBeCloseTo(24, 4);
-    expect(s.pricingVersion).toBe("2026-10");
+    expect(s.pricingVersion).toBe("2026-11");
+  });
+
+  it("merges default-instance Tide turns whether providerId is omitted or equals provider", () => {
+    const m = modelWith(
+      [thread("t1", { provider: "codex", model: "gpt-6.2-astra" }), thread("t2", { provider: "codex", providerId: "codex", model: "gpt-6.2-astra" })],
+      [
+        turn("u1", "t1", AT, { inputTokens: 100, outputTokens: 20 }, { provider: "codex", model: "gpt-6.2-astra" }),
+        turn("u2", "t2", AT + 1, { inputTokens: 200, outputTokens: 30 }, { provider: "codex", providerId: "codex", model: "gpt-6.2-astra" }),
+      ],
+    );
+    const s = summarize({ model: m, since: OCT_19, until: OCT_21 });
+    expect(s.rows).toHaveLength(1);
+    expect(s.rows[0]).toMatchObject({ provider: "codex", model: "gpt-6.2-astra", source: "tide", inputTokens: 300, outputTokens: 50, turns: 2 });
+    expect(s.rows[0]?.providerId).toBeUndefined();
   });
 
   it("leaves costUsd out for Codex, estimates it, and says so", () => {

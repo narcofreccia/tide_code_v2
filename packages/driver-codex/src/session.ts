@@ -71,7 +71,9 @@ export class CodexSession implements ProviderSession {
   #broker: ApprovalBroker;
   #normalizer: CodexNormalizer;
   #mailbox: AsyncQueue<NormalizedEvent> | undefined;
+  #initialModel: string;
   #model: string;
+  #announced = false;
   /** R8: reasoning effort for the next turns; undefined = the model's default */
   #effort: string | undefined;
   /** R8: this cwd's skills, fetched lazily the first time a turn starts with `/` */
@@ -103,6 +105,7 @@ export class CodexSession implements ProviderSession {
     this.#env = env;
     this.#options = options;
     this.#server = server;
+    this.#initialModel = model;
     this.#model = model;
     this.#effort = options.effort;
     this.#userConfig = userConfig;
@@ -378,6 +381,10 @@ export class CodexSession implements ProviderSession {
         }
         self.#interruptRequested = false;
         self.#turnChildren.clear();
+        if (!self.#announced && self.nativeSessionId !== undefined) {
+          self.#announced = true;
+          mailbox.push({ type: "session", nativeSessionId: self.nativeSessionId, ...(self.#model !== "" ? { model: self.#model } : {}) });
+        }
         for (const event of self.#held.splice(0)) mailbox.push(event);
         self.#mailbox = mailbox;
         const started = self.#startTurn(input, mailbox, turnStart);
@@ -454,7 +461,7 @@ export class CodexSession implements ProviderSession {
    */
   async reconfigure(settings: SessionSettings): Promise<ReconfigureResult> {
     this.#options = { ...this.#options, mode: settings.mode, interaction: settings.interaction, ...(settings.model !== undefined ? { model: settings.model } : {}) };
-    if (settings.model !== undefined && settings.model !== "") this.#model = settings.model;
+    this.#model = settings.model !== undefined && settings.model !== "" ? settings.model : this.#initialModel;
     this.#effort = settings.effort;
     return "applied";
   }

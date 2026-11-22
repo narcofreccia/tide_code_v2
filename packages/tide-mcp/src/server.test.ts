@@ -259,6 +259,22 @@ describe("tide-mcp server", () => {
     expect(delegate?.description).toContain("antigravity");
   });
 
+  it("keeps every MCP tool definition compact (<= 1250 bytes) so Antigravity does not drop tools", () => {
+    for (const tool of TOOL_DEFINITIONS) {
+      expect(Buffer.byteLength(JSON.stringify(tool)), `${tool.name} exceeds 1250 bytes`).toBeLessThanOrEqual(1250);
+    }
+  });
+
+  it("infers provider from providerId when provider is omitted on tide_delegate", async () => {
+    const backend = new FakeBackend();
+    const client = await connect(backend);
+    await client.callTool({ name: "tide_delegate", arguments: { providerId: "codex:work", prompt: "audit" } });
+    expect(backend.commands[0]).toMatchObject({ type: "thread.delegate", provider: "codex", providerId: "codex:work" });
+    await client.callTool({ name: "tide_delegate", arguments: { providerId: "antigravity", prompt: "review" } });
+    expect(backend.commands[1]).toMatchObject({ type: "thread.delegate", provider: "antigravity", providerId: "antigravity" });
+    await client.close();
+  });
+
   it("tells the agent what `repo` is for", () => {
     const delegate = TOOL_DEFINITIONS.find((tool) => tool.name === "tide_delegate");
     expect(delegate?.inputSchema.properties["repo"]).toMatchObject({ type: "string" });

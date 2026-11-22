@@ -4,7 +4,7 @@ import { homedir } from "node:os";
 import { join } from "node:path";
 import { promisify } from "node:util";
 import type { DriverEnv, ModelInfo, ProviderStatus, SlashCommandInfo } from "@tide/contracts";
-import { instanceEnv } from "./env.ts";
+import { claudeConfigDir, instanceEnv } from "./env.ts";
 import type { ClaudeConfig, QueryFn, SdkModelInfo, SdkSlashCommand } from "./types.ts";
 
 const run = promisify(execFile);
@@ -45,20 +45,20 @@ const FALLBACK_MODELS: ModelInfo[] = [
   { id: "haiku", label: "Haiku (fallback list)", family: "haiku" },
 ];
 
-async function exec(file: string, args: string[], timeout = 10_000): Promise<string | undefined> {
+async function exec(file: string, args: string[], timeout = 10_000, env?: NodeJS.ProcessEnv): Promise<string | undefined> {
   try {
-    const { stdout } = await run(file, args, { timeout, encoding: "utf8" });
+    const { stdout } = await run(file, args, { timeout, encoding: "utf8", ...(env ? { env } : {}) });
     return stdout;
   } catch {
     return undefined;
   }
 }
 
-export async function detectBinary(config: ClaudeConfig): Promise<string | undefined> {
+export async function detectBinary(config: ClaudeConfig, env?: NodeJS.ProcessEnv): Promise<string | undefined> {
   if (config.binaryPath && existsSync(config.binaryPath)) return config.binaryPath;
   const local = join(homedir(), ".local", "bin", "claude");
   if (existsSync(local)) return local;
-  const which = await exec("/usr/bin/env", ["which", "claude"], 5_000);
+  const which = await exec("/usr/bin/env", ["which", "claude"], 5_000, env);
   const resolved = which?.trim().split("\n")[0]?.trim();
   return resolved && resolved !== "" ? resolved : undefined;
 }
@@ -70,14 +70,14 @@ export function parseVersion(output: string): string | undefined {
 /**
  * Login detection, in order of trust:
  *  1. `claude auth status` — present in Claude Code 2.1.x, prints JSON with `loggedIn`.
- *  2. otherwise, presence of `~/.claude/.credentials.json` or `~/.claude.json`.
+ *  2. otherwise, presence of `<configDir>/.credentials.json` or `~/.claude.json` (default account).
  * The file check is a weak signal on macOS, where the OAuth token lives in the Keychain and
  * `.credentials.json` never exists — so `~/.claude.json` (written on first run) is accepted
- * too. A false positive only costs a clearer error on the first turn; a false negative would
- * block a working install, which is worse.
+ * for the default config dir too. A false positive only costs a clearer error on the first turn;
+ * a false negative would block a working install, which is worse.
  */
-export async function detectLogin(binary: string): Promise<boolean> {
-  const output = await exec(binary, ["auth", "status"], 15_000);
+export async function detectLogin(binary: string, configDir?: string, env?: NodeJS.ProcessEnv): Promise<boolean> {
+  const output = await exec(binary, ["auth", "status"], 15_000, env);
   if (output !== undefined) {
     try {
       const parsed: unknown = JSON.parse(output);
@@ -87,6 +87,9 @@ export async function detectLogin(binary: string): Promise<boolean> {
     } catch {
       if (/logged\s*in|authenticated/i.test(output) && !/not\s+logged|no\s+credentials/i.test(output)) return true;
     }
+  }
+  if (configDir !== undefined && configDir !== "") {
+    return existsSync(join(configDir, ".credentials.json")) || existsSync(join(configDir, ".claude.json"));
   }
   return existsSync(join(homedir(), ".claude", ".credentials.json")) || existsSync(join(homedir(), ".claude.json"));
 }
@@ -161,7 +164,8 @@ export async function listCommands(queryFn: QueryFn, options: Record<string, unk
 }
 
 export async function buildStatus(config: ClaudeConfig, env: DriverEnv, queryFn: QueryFn): Promise<ProviderStatus> {
-  const binary = await detectBinary(config);
+  const procEnv: NodeJS.ProcessEnv = { ...process.env, ...instanceEnv(config, env) };
+  const binary = await detectBinary(config, procEnv);
   if (!binary) {
     return {
       kind: "claude",
@@ -172,11 +176,11 @@ export async function buildStatus(config: ClaudeConfig, env: DriverEnv, queryFn:
       caps: { ...CLAUDE_CAPS },
     };
   }
-  const versionOutput = await exec(binary, ["--version"], 15_000);
+  const versionOutput = await exec(binary, ["--version"], 15_000, procEnv);
   const version = versionOutput ? parseVersion(versionOutput) : undefined;
-  const loggedIn = await detectLogin(binary);
+  const loggedIn = await detectLogin(binary, claudeConfigDir(config, env), procEnv);
   const models = loggedIn
-    ? await listModels(queryFn, { cwd: process.cwd(), pathToClaudeCodeExecutable: binary, env: { ...process.env, ...instanceEnv(config, env) } }, config.defaultModel, env)
+    ? await listModels(queryFn, { cwd: process.cwd(), pathToClaudeCodeExecutable: binary, env: procEnv }, config.defaultModel, env)
     : FALLBACK_MODELS;
 
   return {

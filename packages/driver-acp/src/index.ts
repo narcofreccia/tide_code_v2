@@ -4,11 +4,13 @@ import { nodeSpawn } from "./spawn.ts";
 import type { AcpConfig, AcpDeps, AcpFlavor } from "./types.ts";
 
 export { AcpInstance, CLIENT_VERSION } from "./instance.ts";
-export { AcpSession, AcpAuthRequiredError, PROTOCOL_VERSION, INITIALIZE_TIMEOUT_MS, authHint, clientInitialize, isAuthRequired, systemPromptMeta } from "./session.ts";
+export { AcpSession, AcpAuthRequiredError, HARNESS_TURN_IDLE_MS, PROTOCOL_VERSION, INITIALIZE_TIMEOUT_MS, authHint, clientInitialize, isAuthRequired, systemPromptMeta } from "./session.ts";
+export { AcpSubagentTracker, isSubagentToolName, isSwarmToolName } from "./subagents.ts";
 export { AcpNormalizer, ACP_SILENT_UPDATES, toSlashCommands, toolDiff, toolInput, toolName, toolOutput, truncate } from "./normalize.ts";
 export { decisionOption, modePattern, modeSelector, planModeId, planPermission, targetModeId } from "./permissions.ts";
 export type { ModeSelector, PermissionPlan } from "./permissions.ts";
-export { effortSelector, modelSelector } from "./models.ts";
+export { effortSelector, inferModelFamily, modelSelector } from "./models.ts";
+export { completeAntigravity, parseAntigravityPrintOutput } from "./antigravity-complete.ts";
 export { AcpSettings } from "./settings.ts";
 export { FsPolicy } from "./fs.ts";
 export { AcpConnection, RpcError, rpcError, splitLines } from "./jsonrpc.ts";

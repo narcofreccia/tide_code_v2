@@ -279,13 +279,21 @@ describe("settings defaults in the decider", () => {
     expect(eventOf(runWith(f.model, { ...cmd, useWorktree: true }, { worktreeByDefault: false }).events, "thread.created").useWorktree).toBe(true);
   });
 
-  it("a delegate takes the provider's default model and mode, clamped to the parent", () => {
+  it("a delegate inherits its parent's permission mode by default and still clamps explicit requests", () => {
     const f = withThread(); // approval-required parent
     const defaults: DecideDefaults = { providerDefaults: { codex: { model: "gpt-5", mode: "full-access" } } };
     const d = eventOf(runWith(f.model, { type: "thread.delegate", fromThreadId: f.threadId, provider: "codex", prompt: "go" }, defaults).events, "thread.created").thread;
     expect(d).toMatchObject({ model: "gpt-5", mode: "approval-required" });
-    const explicit = eventOf(runWith(f.model, { type: "thread.delegate", fromThreadId: f.threadId, provider: "codex", prompt: "go", model: "o3" }, defaults).events, "thread.created").thread;
-    expect(explicit.model).toBe("o3");
+    const explicit = eventOf(runWith(f.model, { type: "thread.delegate", fromThreadId: f.threadId, provider: "codex", prompt: "go", model: "o3", mode: "full-access" }, defaults).events, "thread.created").thread;
+    expect(explicit).toMatchObject({ model: "o3", mode: "approval-required" });
+
+    // A full-access parent delegates in full-access even when the target harness's Settings default is narrower.
+    const fullParent = run(f.model, { type: "thread.update", threadId: f.threadId, mode: "full-access" }).model;
+    const strictDefaults: DecideDefaults = { providerDefaults: { codex: { model: "gpt-5", mode: "approval-required" } } };
+    const inherited = eventOf(runWith(fullParent, { type: "thread.delegate", fromThreadId: f.threadId, provider: "codex", prompt: "go" }, strictDefaults).events, "thread.created").thread;
+    expect(inherited).toMatchObject({ model: "gpt-5", mode: "full-access" });
+    const narrowed = eventOf(runWith(fullParent, { type: "thread.delegate", fromThreadId: f.threadId, provider: "codex", prompt: "go", mode: "auto-accept-edits" }, strictDefaults).events, "thread.created").thread;
+    expect(narrowed).toMatchObject({ model: "gpt-5", mode: "auto-accept-edits" });
   });
 
   it("plan.implement and experts threads take the provider default model", () => {

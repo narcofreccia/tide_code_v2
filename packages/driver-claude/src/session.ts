@@ -62,6 +62,13 @@ import { buildUserMessage, type UserMessageEnvelope } from "./user-message.ts";
 /** A background sub-agent's final row when the CLI process that ran it ended before it reported. */
 export const LOST_BACKGROUND_SUMMARY = "No report: the Claude Code session ended before this sub-agent finished";
 
+/**
+ * Default `MCP_TOOL_TIMEOUT` (ms) for Tide's MCP tools (`tide_delegate` with completion="wait" and
+ * `tide_thread_wait` block for up to 600 s). Placed before `process.env` / instance env so an
+ * explicit user override still wins.
+ */
+export const TIDE_MCP_TOOL_TIMEOUT_MS = 900_000;
+
 async function sdkSessionMessages(): Promise<SessionMessagesFn> {
   const module: unknown = await import("@anthropic-ai/claude-agent-sdk");
   const { getSessionMessages } = module as { getSessionMessages: SessionMessagesFn };
@@ -342,7 +349,7 @@ export class ClaudeSession implements ProviderSession {
       };
     }
     const model = options.model ?? this.#config.defaultModel;
-    const env = { ...process.env, ...instanceEnv(this.#config, this.#env), ...options.env };
+    const env = { MCP_TOOL_TIMEOUT: String(TIDE_MCP_TOOL_TIMEOUT_MS), ...process.env, ...instanceEnv(this.#config, this.#env), ...options.env };
 
     return {
       cwd: options.cwd,

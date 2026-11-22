@@ -81,7 +81,7 @@ export function decidePlan(model: ReadModel, command: PlanCommand, ctx: DecideCo
         title: planTitle(plan.markdown),
         provider: command.provider,
         ...(implModel !== undefined ? { model: implModel } : {}),
-        mode: command.mode ?? defaults.mode ?? "approval-required",
+        mode: command.mode ?? defaults.mode ?? source.mode,
         interaction: "default",
         status: "idle",
         createdAt: ctx.now,

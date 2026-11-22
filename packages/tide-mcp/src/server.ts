@@ -25,6 +25,15 @@ function optionalString(args: Record<string, unknown>, key: string): string | un
   return typeof value === "string" && value.length > 0 ? value : undefined;
 }
 
+const KNOWN_PROVIDERS = new Set(["claude", "codex", "opencode", "pi", "antigravity", "acp"]);
+
+/** Infers the harness kind from an instance id (`codex:work` → `codex`, `antigravity` → `antigravity`, `acp:gemini` → `acp`). */
+function inferProviderFromId(providerId: string | undefined): ProviderKind | undefined {
+  if (providerId === undefined) return undefined;
+  const head = providerId.split(":")[0] ?? "";
+  return KNOWN_PROVIDERS.has(head) ? (head as ProviderKind) : undefined;
+}
+
 /**
  * Session state the tools keep in memory: the board's session id (learned from
  * agent.context) and the last message the agent has already been shown.
@@ -124,10 +133,13 @@ export async function callTool(
       return text("Synthesis recorded. The user can now implement it in a new thread.");
     }
     case "tide_delegate": {
-      const provider = requireString(rawArgs, "provider") as ProviderKind;
+      const providerId = optionalString(rawArgs, "providerId");
+      const rawProvider = optionalString(rawArgs, "provider");
+      const inferredProvider = rawProvider ?? inferProviderFromId(providerId);
+      if (inferredProvider === undefined) throw new Error("`provider` is required");
+      const provider = inferredProvider as ProviderKind;
       const mode = optionalString(rawArgs, "mode") as RuntimeMode | undefined;
       const model = optionalString(rawArgs, "model");
-      const providerId = optionalString(rawArgs, "providerId");
       const title = optionalString(rawArgs, "title");
       const repo = optionalString(rawArgs, "repo");
       const role = optionalString(rawArgs, "role");

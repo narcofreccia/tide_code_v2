@@ -39,10 +39,12 @@ export function tideBuckets(model: ReadModel, since: number, until: number): Buc
     if (provider === undefined) continue;
     const cacheRead = u.cacheReadTokens ?? 0;
     const input = provider === "codex" ? Math.max(0, u.inputTokens - cacheRead) : u.inputTokens;
+    const rawProviderId = turn.providerId ?? thread?.providerId;
+    const providerId = rawProviderId === provider ? undefined : rawProviderId;
     set.add({
       at,
       provider,
-      providerId: turn.providerId ?? thread?.providerId,
+      providerId,
       model: turn.model ?? thread?.model,
       source: "tide",
       tokens: { in: input, out: u.outputTokens, cacheRead, cacheWrite: u.cacheWriteTokens ?? 0 },

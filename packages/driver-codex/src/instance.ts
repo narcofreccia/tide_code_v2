@@ -85,7 +85,9 @@ export class CodexInstance implements ProviderInstance {
 
   /** Verified against `codex resume --help`: `codex resume [SESSION_ID]`, no flag. */
   terminalCommand(nativeSessionId: string, cwd: string): string {
-    return `cd ${shellQuote(cwd)} && codex resume ${shellQuote(nativeSessionId)}`;
+    const envPrefix = this.#config.codexHome ? `CODEX_HOME=${shellQuote(this.#config.codexHome)} ` : "";
+    const bin = this.#config.binaryPath ? shellQuote(this.#config.binaryPath) : "codex";
+    return `cd ${shellQuote(cwd)} && ${envPrefix}${bin} resume ${shellQuote(nativeSessionId)}`;
   }
 
   async dispose(): Promise<void> {

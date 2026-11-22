@@ -19,8 +19,7 @@ export const IMAGES_INPUT: Record<string, unknown> = {
   type: "array",
   items: { type: "string" },
   maxItems: 8,
-  description:
-    "Paths of image files in your checkout that the other thread needs to see: images the user attached to you (listed under their message) or a screenshot you saved. Pass only the ones the task needs.",
+  description: "Image file paths in your checkout to attach.",
 };
 
 /** The `images` argument as a list of paths; anything that is not a non-empty string is dropped. */

@@ -1,5 +1,5 @@
 import { homedir } from "node:os";
-import type { EventRecord, ProviderKind, Quota, QuotaScope, QuotaState } from "@tide/contracts";
+import { BUNDLED_PROVIDER_KINDS, type EventRecord, type ProviderKind, type Quota, type QuotaScope, type QuotaState } from "@tide/contracts";
 import type { Engine } from "../orchestration/engine.ts";
 import type { CancelTimer } from "../orchestration/limits.ts";
 import type { SettingsStore } from "../settings.ts";
@@ -24,7 +24,7 @@ export interface QuotaWorkerOptions {
 
 const DEFAULT_INTERVAL_MS = 60_000;
 const STEP_PCT = 5;
-const KINDS: ReadonlySet<string> = new Set<ProviderKind>(["claude", "codex", "opencode", "pi"]);
+const KINDS: ReadonlySet<string> = new Set<string>(BUNDLED_PROVIDER_KINDS);
 /** events after which a scope's figure may have moved */
 const TRIGGERS: ReadonlySet<string> = new Set(["usage.reported", "usage.corrected", "quota.changed", "turn.settled"]);
 

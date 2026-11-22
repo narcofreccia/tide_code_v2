@@ -1,5 +1,6 @@
 import type { DriverActivity, NormalizedEvent, SlashCommandInfo } from "@tide/contracts";
 import { unifiedDiff } from "./diff.ts";
+import { AcpSubagentTracker } from "./subagents.ts";
 import type { AcpContentBlock, AcpToolCall, AcpToolContent, AcpSessionUpdate } from "./types.ts";
 
 /**
@@ -102,10 +103,13 @@ export interface NormalizerHooks {
   onCommands?: (commands: SlashCommandInfo[]) => void;
   /** the agent switched its own mode */
   onModeChange?: (modeId: string) => void;
+  /** translate Antigravity sub-agent (`invoke_subagent`/`start_subagent`) and `swarm` calls into `kind: "child"` rows */
+  subagents?: boolean;
 }
 
 export class AcpNormalizer {
   #hooks: NormalizerHooks;
+  #subagents: AcpSubagentTracker | undefined;
   #turn = 0;
   #segment = 0;
   #segmentHasText = false;
@@ -122,6 +126,22 @@ export class AcpNormalizer {
 
   constructor(hooks: NormalizerHooks = {}) {
     this.#hooks = hooks;
+    if (hooks.subagents === true) this.#subagents = new AcpSubagentTracker();
+  }
+
+  hasActiveSwarmWorkers(): boolean {
+    return this.#subagents?.hasActiveSwarmWorkers() ?? false;
+  }
+
+  hasRunningTools(): boolean {
+    for (const call of this.#tools.values()) {
+      if (call.status !== "completed" && call.status !== "failed") return true;
+    }
+    return false;
+  }
+
+  closeRunningWorkers(summary: string): NormalizedEvent[] {
+    return this.#subagents?.closeRunningWorkers(summary) ?? [];
   }
 
   beginTurn(): void {
@@ -205,6 +225,10 @@ export class AcpNormalizer {
       (merged as unknown as Record<string, unknown>)[key] = value;
     }
     this.#tools.set(patch.toolCallId, merged);
+    if (this.#subagents) {
+      const special = this.#subagents.handleToolCall(merged, toolOutput(merged), () => this.toolActivity(merged));
+      if (special !== undefined) return special;
+    }
     return [{ type: "activity", activity: this.toolActivity(merged) }];
   }
 

@@ -7,7 +7,7 @@ import { EXIT_PLAN_DENY_MESSAGE } from "./approvals.ts";
 import { AsyncQueue } from "./async-queue.ts";
 import type { PermissionResultShape } from "./approvals.ts";
 import type { ClaudeMessage } from "./sdk-shapes.ts";
-import { ClaudeSession } from "./session.ts";
+import { ClaudeSession, TIDE_MCP_TOOL_TIMEOUT_MS } from "./session.ts";
 import type { QueryFn } from "./types.ts";
 
 type CanUseTool = (toolName: string, input: Record<string, unknown>, context: { toolUseID: string; signal?: AbortSignal; title?: string }) => Promise<PermissionResultShape>;
@@ -97,6 +97,7 @@ describe("ClaudeSession", () => {
     expect(options["systemPrompt"]).toEqual({ type: "preset", preset: "claude_code", append: "be terse" });
     expect(options["mcpServers"]).toEqual({ tide: { type: "stdio", command: "node", args: ["mcp.js"], env: { A: "1" } } });
     expect((options["env"] as Record<string, string>)["TIDE_THREAD"]).toBe("t1");
+    expect(Number((options["env"] as Record<string, string>)["MCP_TOOL_TIMEOUT"])).toBeGreaterThanOrEqual(TIDE_MCP_TOOL_TIMEOUT_MS);
     // never narrow the user's own configuration
     expect(options).not.toHaveProperty("settingSources");
     expect(options).not.toHaveProperty("strictMcpConfig");

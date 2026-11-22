@@ -200,6 +200,13 @@ export function applyEvent(model: ReadModel, event: DomainEvent): ReadModel {
       if (event.nativeSessionId !== undefined) next.nativeSessionId = event.nativeSessionId;
       if (event.clearModel) delete next.model;
       if (event.clearEffort) delete next.effort;
+      const switchedProvider =
+        (event.patch.provider !== undefined && event.patch.provider !== t.provider) ||
+        (event.patch.providerId !== undefined && event.patch.providerId !== t.providerId);
+      if (switchedProvider) {
+        delete next.rateLimit;
+        delete next.contextUsage;
+      }
       return { ...model, threads: { ...model.threads, [t.id]: next } };
     }
     case "thread.archived":

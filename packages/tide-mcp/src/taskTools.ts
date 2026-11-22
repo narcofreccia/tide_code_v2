@@ -8,12 +8,11 @@ const str = (description: string): Record<string, unknown> => ({ type: "string",
 const ok = (value: string): TextResult => ({ content: [{ type: "text", text: value }] });
 
 const SCHEDULE_SCHEMA = {
-  description:
-    'When to run: {kind:"interval", everyMinutes} (minimum 1) or {kind:"fixed", times:["HH:MM",...], weekdays:[0-6]} with 0 = Sunday, server time zone, or {kind:"once", at} to run a single time (at = ISO 8601 date-time such as "2026-11-06T14:30" in server local time, or epoch milliseconds; must be in the future; the automation disables itself after it runs).',
+  description: '{kind:"interval",everyMinutes>=1} | {kind:"fixed",times:["HH:MM"],weekdays:[0-6]} | {kind:"once",at:ISO|ms}',
   type: "object",
   properties: {
     kind: { type: "string", enum: ["interval", "fixed", "once"] },
-    at: { description: "once: ISO 8601 date-time or epoch milliseconds.", oneOf: [{ type: "string" }, { type: "number" }] },
+    at: { oneOf: [{ type: "string" }, { type: "number" }] },
     everyMinutes: { type: "number" },
     times: { type: "array", items: { type: "string" } },
     weekdays: { type: "array", items: { type: "number" } },
@@ -22,53 +21,47 @@ const SCHEDULE_SCHEMA = {
 };
 
 const TARGET_PROPS = {
-  threadId: str("Send into this existing thread (queued, never interrupting). Omit to start a new thread on every run."),
-  threadMode: {
-    type: "string",
-    enum: ["continue", "fresh_session", "new_thread"],
-    description:
-      "Where each run goes. continue (default with threadId): queue into threadId. fresh_session: run in threadId on a brand-new harness session (its native context is dropped, Tide history stays; a run is retried while the thread is busy). new_thread (default without threadId): a new thread per run; do not pass threadId.",
-  },
-  provider: str("New-thread runs: claude | codex | opencode | pi | antigravity | acp. Defaults to the project's default."),
-  model: str("New-thread runs: model id; defaults to the harness default."),
-  useWorktree: { type: "boolean", description: "New-thread runs: use a git worktree (default true)." },
+  threadId: { type: "string" },
+  threadMode: { type: "string", enum: ["continue", "fresh_session", "new_thread"] },
+  provider: { type: "string" },
+  model: { type: "string" },
+  useWorktree: { type: "boolean" },
 };
 
 export const TASK_TOOL_DEFINITIONS: ToolDef[] = [
   {
     name: "tide_schedule_task",
-    description:
-      "Create an automation: a prompt Tide sends on a schedule, either into an existing thread or as a new thread each run. Use it when the user asks for something recurring (a daily review, a periodic check). Pass clientRequestId so a retry does not create it twice.",
+    description: "Create a scheduled automation (recurring or one-time) in this project.",
     inputSchema: {
       type: "object",
       properties: {
-        title: str("Short name."),
-        prompt: str("The prompt to send on each run."),
+        title: { type: "string" },
+        prompt: { type: "string" },
         schedule: SCHEDULE_SCHEMA,
         ...TARGET_PROPS,
-        clientRequestId: str("Idempotency key."),
+        clientRequestId: { type: "string" },
       },
       required: ["title", "prompt", "schedule"],
     },
   },
   {
     name: "tide_list_scheduled_tasks",
-    description: "List this project's automations. Currently unavailable to agents: the server has no agent-readable task listing. Ask the user to open Settings > Automations.",
+    description: "List this project's scheduled automations (id, title, schedule, target, state, runs, next run).",
     inputSchema: { type: "object", properties: {} },
   },
   {
     name: "tide_update_scheduled_task",
-    description: "Change an automation (only the fields you pass). Set enabled=false to pause it.",
+    description: "Update an automation (only passed fields). Set enabled=false to pause.",
     inputSchema: {
       type: "object",
       properties: {
-        taskId: str("Task id."),
-        title: str("New title."),
-        prompt: str("New prompt."),
+        taskId: { type: "string" },
+        title: { type: "string" },
+        prompt: { type: "string" },
         schedule: SCHEDULE_SCHEMA,
-        enabled: { type: "boolean", description: "Pause or resume." },
+        enabled: { type: "boolean" },
         ...TARGET_PROPS,
-        clientRequestId: str("Idempotency key."),
+        clientRequestId: { type: "string" },
       },
       required: ["taskId"],
     },

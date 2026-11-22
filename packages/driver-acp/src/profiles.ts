@@ -35,6 +35,9 @@ export const ANTIGRAVITY_PROFILE: AcpProfile = {
     keepAgentMode: true,
     systemPromptMeta: ["antigravity", "systemPrompt", "append"],
     resumeMethod: "resume",
+    steerByPrompt: true,
+    subagents: true,
+    harnessTurns: true,
   },
 };
 
