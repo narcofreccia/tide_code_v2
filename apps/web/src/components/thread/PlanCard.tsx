@@ -13,11 +13,13 @@ import { Button } from "../ui/Button.tsx";
 import { Icon } from "../ui/Icon.tsx";
 import { Popover } from "../ui/Popover.tsx";
 import { ProviderPicker, useThreadDraft } from "./ProviderPicker.tsx";
+import { MarkdownLink, markdownUrlTransform } from "./MarkdownLink.tsx";
 import markdown from "./MessageItem.module.css";
 import styles from "./Card.module.css";
 import own from "./PlanCard.module.css";
 
 const REMARK_PLUGINS = [remarkGfm];
+const MARKDOWN_COMPONENTS = { a: MarkdownLink };
 
 /**
  * A plan-mode result. "Implement" runs it in this thread (same worktree, planning
@@ -51,7 +53,9 @@ export const PlanCard = memo(function PlanCard({ plan, provider }: { plan: Propo
           )}
         </div>
         <div className={markdown.markdown}>
-          <ReactMarkdown remarkPlugins={REMARK_PLUGINS}>{plan.markdown}</ReactMarkdown>
+          <ReactMarkdown remarkPlugins={REMARK_PLUGINS} components={MARKDOWN_COMPONENTS} urlTransform={markdownUrlTransform}>
+            {plan.markdown}
+          </ReactMarkdown>
         </div>
         {plan.status === "proposed" ? (
           <>

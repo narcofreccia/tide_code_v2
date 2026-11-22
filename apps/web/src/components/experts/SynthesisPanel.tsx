@@ -3,8 +3,11 @@ import remarkGfm from "remark-gfm";
 import type { ExpertsSession, ProviderKind } from "@tide/contracts";
 import { useModel } from "../../state/model.ts";
 import { PlanCard } from "../thread/PlanCard.tsx";
+import { MarkdownLink, markdownUrlTransform } from "../thread/MarkdownLink.tsx";
 import markdown from "../thread/MessageItem.module.css";
 import styles from "./Board.module.css";
+
+const MARKDOWN_COMPONENTS = { a: MarkdownLink };
 
 /**
  * The lead's write-up. When it produced a plan the ordinary PlanCard renders it,
@@ -19,7 +22,9 @@ export function SynthesisPanel({ session, provider }: { session: ExpertsSession;
     <section className={styles.synthesis} aria-label="Synthesis">
       <h3 className={styles.laneTitle}>Synthesis</h3>
       <div className={markdown.markdown}>
-        <ReactMarkdown remarkPlugins={[remarkGfm]}>{session.synthesis.markdown}</ReactMarkdown>
+        <ReactMarkdown remarkPlugins={[remarkGfm]} components={MARKDOWN_COMPONENTS} urlTransform={markdownUrlTransform}>
+          {session.synthesis.markdown}
+        </ReactMarkdown>
       </div>
       {plan ? (
         <ul className={styles.planList}>

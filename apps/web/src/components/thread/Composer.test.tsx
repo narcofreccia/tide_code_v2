@@ -440,4 +440,22 @@ describe("Composer / R16 side chats", () => {
       expect(useToasts.getState().toasts.map((t) => t.text)).toEqual(["Wait for the turn to settle, then /clear"]);
     });
   });
+
+  describe("Antigravity Swarm toggle", () => {
+    it("shows the Swarm button only for Antigravity threads and toggles the /swarm prefix", () => {
+      attachFakeStore(modelWith({}));
+      const view = render(<Composer thread={makeThread("t1", { provider: "claude" })} />);
+      expect(screen.queryByRole("button", { name: "Swarm" })).toBeNull();
+      view.rerender(<Composer thread={makeThread("t2", { provider: "antigravity" })} />);
+      const swarm = screen.getByRole("button", { name: "Swarm" });
+      const input = screen.getByLabelText<HTMLTextAreaElement>("Message");
+      fireEvent.change(input, { target: { value: "build the menu studio" } });
+      fireEvent.click(swarm);
+      expect(input.value).toBe("/swarm build the menu studio");
+      expect(swarm.getAttribute("aria-pressed")).toBe("true");
+      fireEvent.click(swarm);
+      expect(input.value).toBe("build the menu studio");
+      expect(swarm.getAttribute("aria-pressed")).toBe("false");
+    });
+  });
 });

@@ -1,6 +1,7 @@
 import { useState } from "react";
 import ReactMarkdown from "react-markdown";
 import remarkGfm from "remark-gfm";
+import { MarkdownLink, markdownUrlTransform } from "../thread/MarkdownLink.tsx";
 import { prReadiness, selectThreadsByProject } from "@tide/client";
 import type { PullRequest } from "@tide/contracts";
 import { errorText } from "../../lib/dispatchOrToast.ts";
@@ -156,7 +157,9 @@ export function PrDetailPane({ entry, onClose }: { entry: PrEntry; onClose: () =
             {load.state === "ok" ? (
               load.data.body?.trim() ? (
                 <div className={styles.markdown}>
-                  <ReactMarkdown remarkPlugins={[remarkGfm]}>{load.data.body}</ReactMarkdown>
+                  <ReactMarkdown remarkPlugins={[remarkGfm]} components={{ a: MarkdownLink }} urlTransform={markdownUrlTransform}>
+                    {load.data.body}
+                  </ReactMarkdown>
                 </div>
               ) : (
                 <p className={styles.note}>No description.</p>

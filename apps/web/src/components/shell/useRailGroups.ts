@@ -1,9 +1,49 @@
 import { useMemo, useRef } from "react";
+import { compareByAttention } from "@tide/client";
 import type { ReadModel, Thread } from "@tide/contracts";
 import { useModel } from "../../state/model.ts";
 import { sessionThreadIds } from "./ExpertsGroup.tsx";
 import { buildRailGroups, claimedBy, railNeedsOrder, type RailGroup } from "./railGroupModel.ts";
 import { RailTreeBuilder, childrenIndex, parentOf, type RailNode } from "./railTree.ts";
+
+/**
+ * Adds non-archived delegates running in *other* projects (e.g. via `tide_delegate(repo: ...)`)
+ * into a group's child index so a parent's nested list matches its `N delegated` header count
+ * even while the rail is filtered to a single project.
+ */
+function withCrossProjectDelegates(
+  base: Map<string, Thread[]>,
+  listedIds: ReadonlySet<string>,
+  allThreads: Record<string, Thread>,
+): Map<string, Thread[]> {
+  const byParent = new Map<string, Thread[]>();
+  for (const t of Object.values(allThreads)) {
+    if (t.archivedAt !== undefined || t.delegatedBy === undefined) continue;
+    const list = byParent.get(t.delegatedBy);
+    if (list === undefined) byParent.set(t.delegatedBy, [t]);
+    else list.push(t);
+  }
+  if (byParent.size === 0) return base;
+  const seen = new Set(listedIds);
+  const queue = [...listedIds];
+  let merged: Map<string, Thread[]> | undefined;
+  while (queue.length > 0) {
+    const parentId = queue.shift()!;
+    const kids = byParent.get(parentId);
+    if (!kids) continue;
+    const extras = kids.filter((k) => !seen.has(k.id)).sort(compareByAttention);
+    if (extras.length === 0) continue;
+    merged ??= new Map([...base.entries()].map(([k, v]) => [k, [...v]]));
+    const existing = merged.get(parentId) ?? [];
+    for (const extra of extras) {
+      seen.add(extra.id);
+      existing.push(extra);
+      queue.push(extra.id);
+    }
+    merged.set(parentId, existing);
+  }
+  return merged ?? base;
+}
 
 /** One rail group with its rows resolved: loose roots and the nodes of its sessions' threads. */
 export interface RailGroupView {
@@ -65,7 +105,7 @@ export function useRailGroups(projectIds: readonly string[], now: number, workin
     const claimed = claimedBy(groups.flatMap((g) => g.sessions));
     const live = groups.filter((g) => g.key !== "archived").flatMap((g) => g.threads);
     const liveIds = new Set(live.map((t) => t.id));
-    const liveIndex = childrenIndex(live);
+    const liveIndex = withCrossProjectDelegates(childrenIndex(live), liveIds, threads);
     tree.begin();
     const views = groups.map((group): RailGroupView => {
       const loose = group.key === "archived" ? group.threads : group.threads.filter((t) => !claimed.has(t.id));
@@ -81,7 +121,8 @@ export function useRailGroups(projectIds: readonly string[], now: number, workin
           if (thread !== undefined && liveIds.has(id)) sessionNodes.set(id, tree.node(`${group.key}:session`, thread, liveIndex));
         }
       }
-      return { group, roots: tree.list(group.key, roots, childrenIndex(loose)), sessionNodes };
+      const childIndex = group.key === "archived" ? childrenIndex(loose) : withCrossProjectDelegates(childrenIndex(loose), listed, threads);
+      return { group, roots: tree.list(group.key, roots, childIndex), sessionNodes };
     });
     return { groups: views, live };
   }, [threads, expertsSessions, needsKey, scopeKey, now, workingSection, tree]);

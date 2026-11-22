@@ -4,8 +4,11 @@ import type { ExpertsFinding, ExpertsMessage, ExpertsSession } from "@tide/contr
 import { relativeTime } from "../../lib/relativeTime.ts";
 import { Icon } from "../ui/Icon.tsx";
 import { authorLabel } from "./labels.ts";
+import { MarkdownLink, markdownUrlTransform } from "../thread/MarkdownLink.tsx";
 import markdown from "../thread/MessageItem.module.css";
 import styles from "./Board.module.css";
+
+const MARKDOWN_COMPONENTS = { a: MarkdownLink };
 
 /** What the panel agreed is worth keeping: one card per shared finding. */
 export function FindingsFeed({
@@ -29,7 +32,9 @@ export function FindingsFeed({
                 <span className={styles.time}>{relativeTime(finding.createdAt)}</span>
               </div>
               <div className={markdown.markdown}>
-                <ReactMarkdown remarkPlugins={[remarkGfm]}>{finding.text}</ReactMarkdown>
+                <ReactMarkdown remarkPlugins={[remarkGfm]} components={MARKDOWN_COMPONENTS} urlTransform={markdownUrlTransform}>
+                  {finding.text}
+                </ReactMarkdown>
               </div>
             </li>
           ))}

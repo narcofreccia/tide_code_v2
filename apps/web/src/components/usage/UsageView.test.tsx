@@ -111,4 +111,50 @@ describe("UsageView", () => {
     expect(within(limits).getByText("30% used")).toBeDefined();
     expect((within(limits).getByRole("meter", { name: "5h used" }) as HTMLMeterElement).value).toBe(92);
   });
+
+  it("renders Limits above the loading skeleton before usage.summary resolves (no load jump)", async () => {
+    attachFakeStore(
+      modelWith({
+        threads: {
+          t1: makeThread("t1", { rateLimit: { status: "ok", remainingPct: 60, note: "seven_day 40% used", at: 2 } }),
+        },
+      }),
+    );
+    let resolveSummary!: (s: UsageSummary) => void;
+    mockRpc({
+      "usage.summary": () => new Promise<UsageSummary>((resolve) => (resolveSummary = resolve)),
+    });
+    render(<UsageView />);
+    const limits = screen.getByRole("region", { name: "Limits" });
+    const skeleton = screen.getByRole("status", { name: "Loading usage" });
+    // Limits precedes the loading skeleton in document order so loading stats cannot push it down
+    expect(limits.compareDocumentPosition(skeleton) & Node.DOCUMENT_POSITION_FOLLOWING).toBeTruthy();
+    await act(async () => {
+      resolveSummary(summary());
+    });
+    const table = await screen.findByRole("table");
+    expect(limits.compareDocumentPosition(table) & Node.DOCUMENT_POSITION_FOLLOWING).toBeTruthy();
+  });
+
+  it("supports source filtering, Spend chart toggle, and collapsible harness groups", async () => {
+    attachFakeStore(modelWith({}));
+    mockRpc({ "usage.summary": () => summary({ days: [{ day: "2026-10-28", tokens: 1000, estimatedUsd: 1.5 }] }) });
+    render(<UsageView />);
+    const table = await screen.findByRole("table");
+
+    // Filter to Tide only: external row disappears
+    fireEvent.click(screen.getByRole("radio", { name: "Tide" }));
+    expect(within(table).queryByText("outside Tide (harness logs)")).toBeNull();
+    expect(within(table).getAllByText("Tide")).toHaveLength(2);
+
+    // Toggle daily chart from Tokens to Spend
+    fireEvent.click(screen.getByRole("radio", { name: "Spend" }));
+    expect(screen.getByRole("list", { name: "Spend per day" })).toBeDefined();
+
+    // Collapse Claude Code harness group
+    const claudeToggle = within(table).getByRole("button", { name: /Claude Code/ });
+    expect(claudeToggle.getAttribute("aria-expanded")).toBe("true");
+    fireEvent.click(claudeToggle);
+    expect(claudeToggle.getAttribute("aria-expanded")).toBe("false");
+  });
 });

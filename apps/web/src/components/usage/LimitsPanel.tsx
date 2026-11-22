@@ -1,6 +1,6 @@
 import { selectProviderRateLimits } from "@tide/client";
 import type { RateLimit } from "@tide/contracts";
-import { LIMIT_WINDOWS, WINDOW_LABELS, selectInstanceLimits, usedPct, type InstanceLimits } from "../../lib/limits.ts";
+import { LIMIT_WINDOWS, WINDOW_LABELS, isStaleThreadRateLimit, selectInstanceLimits, usedPct, type InstanceLimits } from "../../lib/limits.ts";
 import { relativeUntil } from "../../lib/relativeTime.ts";
 import { instanceLabel } from "../../lib/vocab.ts";
 import { useModel } from "../../state/model.ts";
@@ -12,33 +12,45 @@ import styles from "./Usage.module.css";
 
 const WINDOW_NAMES = { "5h": "5-hour window", wk: "Weekly window", other: "Limit" } as const;
 
+function meterToneClass(limit: RateLimit, used: number | undefined): string {
+  if (limit.status === "limited") return styles.meterLimited ?? "";
+  if (limit.status === "warning" || (used !== undefined && used >= 80)) return styles.meterWarn ?? "";
+  return styles.meterOk ?? "";
+}
+
 function WindowLine({ window, limit }: { window: keyof typeof WINDOW_NAMES; limit: RateLimit }) {
   const used = usedPct(limit);
+  const value = limit.status === "limited" ? 100 : (used ?? 0);
   return (
     <li className={styles.window} title={rateLimitTitle(limit)}>
-      <span className={styles.windowName}>{WINDOW_NAMES[window]}</span>
+      <div className={styles.windowHead}>
+        <span className={styles.windowName}>{WINDOW_NAMES[window]}</span>
+        <span className={styles.windowRight}>
+          <span className={styles.windowText}>
+            {limit.status === "limited" ? "limited" : used === undefined ? "no number reported" : `${Math.round(used)}% used`}
+            {limit.resetsAt === undefined ? "" : ` · resets ${relativeUntil(limit.resetsAt)}`}
+          </span>
+          {limit.status === "ok" ? null : <Pill tone={limit.status === "limited" ? "limited" : "needs"}>{limit.status}</Pill>}
+        </span>
+      </div>
       <meter
-        className={styles.meter}
+        className={`${styles.meter} ${meterToneClass(limit, used)}`}
         min={0}
         max={100}
         low={70}
         high={90}
         optimum={0}
-        value={limit.status === "limited" ? 100 : (used ?? 0)}
+        value={value}
         aria-label={`${WINDOW_LABELS[window]} used`}
       />
-      <span className={styles.windowText}>
-        {limit.status === "limited" ? "limited" : used === undefined ? "no number reported" : `${Math.round(used)}% used`}
-        {limit.resetsAt === undefined ? "" : ` · resets ${relativeUntil(limit.resetsAt)}`}
-      </span>
-      {limit.status === "ok" ? null : <Pill tone={limit.status === "limited" ? "limited" : "needs"}>{limit.status}</Pill>}
     </li>
   );
 }
 
 /**
  * Every harness's last reported limit (the subscription is shared across threads, so the
- * newest report per window wins), then the threads parked on a limit.
+ * newest report per window wins), then the threads parked on a limit. Rendered at the top of
+ * the Usage page because it reads synchronously from the model with zero layout shift.
  */
 export function LimitsPanel() {
   const model = useModel((s) => s.model);
@@ -48,34 +60,52 @@ export function LimitsPanel() {
   const byKind = selectProviderRateLimits(model);
   const seen = new Set(instances.map((i) => i.provider));
   const extra: InstanceLimits[] = Object.entries(byKind)
-    .filter(([kind]) => !seen.has(kind as InstanceLimits["provider"]))
+    .filter(([kind, limit]) => !seen.has(kind as InstanceLimits["provider"]) && limit !== undefined && !isStaleThreadRateLimit(kind as InstanceLimits["provider"], limit))
     .map(([kind, limit]) => ({ id: kind, provider: kind as InstanceLimits["provider"], windows: { other: limit as RateLimit } }));
   const all = [...instances, ...extra];
   const quiet = providers.filter((p) => p.installed && p.loggedIn && !all.some((i) => i.id === (p.id || p.kind)));
 
   return (
     <section className={styles.panel} aria-label="Limits">
-      <h3 className={styles.sectionTitle}>Limits</h3>
-      {all.length === 0 ? <p className={styles.note}>No harness has reported a limit yet; they report during turns.</p> : null}
-      <ul className={styles.instances}>
-        {all.map((entry) => (
-          <li key={entry.id} className={styles.instance}>
-            <span className={styles.instanceName}>{instanceLabel(providers, entry.id)}</span>
-            <ul className={styles.windows}>
-              {LIMIT_WINDOWS.map((w) => {
-                const limit = entry.windows[w];
-                return limit ? <WindowLine key={w} window={w} limit={limit} /> : null;
-              })}
+      <div className={styles.sectionHead}>
+        <h3 className={styles.sectionTitle}>Limits</h3>
+        {quiet.length > 0 && all.length > 0 ? (
+          <span className={styles.quietInline}>
+            No limit reported yet: {quiet.map((p) => instanceLabel(providers, p.id || p.kind)).join(", ")}
+          </span>
+        ) : null}
+      </div>
+      {all.length === 0 ? (
+        <div className={styles.limitEmpty}>
+          <p className={styles.note}>No harness has reported a limit yet; limits appear here as turns run.</p>
+          {quiet.length > 0 ? (
+            <ul className={styles.quietList}>
+              {quiet.map((p) => (
+                <li key={p.id || p.kind} className={styles.quietItem}>
+                  <span className={styles.instanceName}>{instanceLabel(providers, p.id || p.kind)}</span>
+                  <span className={styles.note}>no limit reported yet</span>
+                </li>
+              ))}
             </ul>
-          </li>
-        ))}
-        {quiet.map((p) => (
-          <li key={p.id || p.kind} className={styles.instance}>
-            <span className={styles.instanceName}>{instanceLabel(providers, p.id || p.kind)}</span>
-            <span className={styles.note}>no limit reported yet</span>
-          </li>
-        ))}
-      </ul>
+          ) : null}
+        </div>
+      ) : (
+        <ul className={styles.limitGrid}>
+          {all.map((entry) => (
+            <li key={entry.id} className={styles.limitCard}>
+              <div className={styles.limitCardHead}>
+                <span className={styles.instanceName}>{instanceLabel(providers, entry.id)}</span>
+              </div>
+              <ul className={styles.windows}>
+                {LIMIT_WINDOWS.map((w) => {
+                  const limit = entry.windows[w];
+                  return limit ? <WindowLine key={w} window={w} limit={limit} /> : null;
+                })}
+              </ul>
+            </li>
+          ))}
+        </ul>
+      )}
       <LimitedSection />
     </section>
   );

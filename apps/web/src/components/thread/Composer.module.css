@@ -53,6 +53,7 @@
 .buttons :global(kbd) { margin-left: var(--sp-1); }
 
 .interrupting { color: var(--warn); }
+.swarmActive { color: var(--accent); background: var(--accent-soft); border-color: var(--accent); }
 
 .queued {
   color: var(--accent);

@@ -66,7 +66,7 @@ default open-ended window shares one key) and shares an in-flight scan between c
 `summarize()` folds day buckets (`buckets.ts`: local day × provider × instance × model × source)
 into rows and days.
 
-- **Rows.** Tide rows group by provider + `providerId` + model, `source: "tide"`. External rows
+- **Rows.** Tide rows group by provider + `providerId` + model, `source: "tide"` (a default-instance `providerId` equal to `provider` is normalized to `undefined` so turns recorded with and without an explicit default id merge into one row). External rows
   group by provider + model, `source: "external"`, no `providerId`. `turns` counts turns (Tide),
   model calls (Claude, Codex, Pi) or sessions (OpenCode).
 - **`costUsd`** is present only when every turn/call in the row reported a cost. Otherwise it is
@@ -85,11 +85,13 @@ into rows and days.
 ## Pricing
 
 `pricing.ts`: USD per million tokens (input, output, cache read, cache write), `PRICING_VERSION`
-returned as `pricingVersion`. Match order: exact id → a dated/suffixed id of a row
-(`claude-haiku-4-5-20251001`) → longest family prefix (`claude-opus`, `gpt-6.1`, `gpt-5`,
-`opencode/` = free) → none. Provider prefixes (`anthropic/`, `openai/`) and `[1m]` suffixes are
-stripped. Anthropic rows are list prices; OpenAI rows are approximate and unverified. To update:
-edit the rows, bump `PRICING_VERSION`, run `src/usage/pricing.test.ts`.
+(`"2026-11"`) returned as `pricingVersion`. Match order: exact id → a dated/suffixed id of a row
+(`claude-haiku-4-5-20251001`) → longest family prefix (`claude-opus`, Claude short aliases
+`fable`/`opus`/`opus-5.5`/`sonnet`/`haiku`, `gpt-6.1`, `gpt-5`, Gemini/Antigravity families
+`gemini-2.5-pro`/`gemini-2.5-flash`/`gemini-3`/`gemini-4`, `opencode/` = free) → none. Provider
+prefixes (`anthropic/`, `openai/`, `google/`) and `[1m]` suffixes are stripped. Anthropic rows are
+list prices; OpenAI and Gemini rows are approximate and unverified. To update: edit the rows, bump
+`PRICING_VERSION`, run `src/usage/pricing.test.ts`.
 
 ## Quotas (R20)
 

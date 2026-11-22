@@ -3,7 +3,10 @@ import remarkGfm from "remark-gfm";
 import type { PrComment } from "@tide/contracts";
 import { relativeTime } from "../../lib/relativeTime.ts";
 import { Pill, type PillTone } from "../ui/Pill.tsx";
+import { MarkdownLink, markdownUrlTransform } from "../thread/MarkdownLink.tsx";
 import styles from "./PrDetail.module.css";
+
+const MARKDOWN_COMPONENTS = { a: MarkdownLink };
 
 export interface CommentGroup {
   /** `path:line`, or undefined for the conversation */
@@ -44,7 +47,9 @@ function CommentItem({ comment }: { comment: PrComment }) {
       </div>
       {comment.body.trim() === "" ? null : (
         <div className={styles.markdown}>
-          <ReactMarkdown remarkPlugins={[remarkGfm]}>{comment.body}</ReactMarkdown>
+          <ReactMarkdown remarkPlugins={[remarkGfm]} components={MARKDOWN_COMPONENTS} urlTransform={markdownUrlTransform}>
+            {comment.body}
+          </ReactMarkdown>
         </div>
       )}
     </li>

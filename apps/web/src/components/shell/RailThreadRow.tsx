@@ -340,7 +340,7 @@ export const RailThreadRow = memo(function RailThreadRowView({ thread, childNode
       {children.length > 0 ? (
         <ul className={styles.children}>
           {children.map((c) => (
-            <RailThreadRow key={c.thread.id} thread={c.thread} childNodes={c.children} showProject={showProject ?? false} now={now} nested />
+            <RailThreadRow key={c.thread.id} thread={c.thread} childNodes={c.children} showProject={showProject || c.thread.projectId !== thread.projectId} now={now} nested />
           ))}
         </ul>
       ) : null}

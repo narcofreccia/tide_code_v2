@@ -107,4 +107,32 @@ describe("rail renders under streaming", () => {
     expect(build.mock.calls.length).toBe(calls + 1);
     expect(renders).toEqual(["c"]);
   });
+
+  it("nests a cross-project delegate under its parent even when the rail is filtered to one project", () => {
+    let model = emptyReadModel();
+    const events: DomainEvent[] = [
+      { type: "project.created", project: { id: "p1", title: "Frontend", rootPath: "/fe", createdAt: 1, updatedAt: 1 } },
+      { type: "project.created", project: { id: "p2", title: "Backend", rootPath: "/be", createdAt: 1, updatedAt: 1 } },
+      { type: "thread.created", thread: makeThread("parent", { projectId: "p1", title: "Orchestrator", updatedAt: 10 }) },
+      {
+        type: "thread.created",
+        thread: makeThread("remote-del", {
+          projectId: "p2",
+          title: "Backend worker",
+          delegatedBy: "parent",
+          parentThreadId: "parent",
+          role: "delegate",
+          status: "running",
+          updatedAt: 11,
+        }),
+      },
+    ];
+    for (const e of events) model = apply(model, e);
+    attachFakeStore(model);
+    const view = render(<RailGroups projectIds={["p1"]} showProject={false} />);
+    expect(view.getByText("Orchestrator")).toBeDefined();
+    expect(view.getByText("Backend worker")).toBeDefined();
+    // Cross-project delegate shows its project initial pill ("B" for Backend)
+    expect(view.getByTitle("Backend")).toBeDefined();
+  });
 });

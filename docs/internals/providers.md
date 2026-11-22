@@ -264,7 +264,8 @@ on close (OpenCode: see its section).
 ## Claude Code — `@anthropic-ai/claude-agent-sdk` (0.3.296; fixtures from CLI 2.1.296, usage fixtures re-recorded on CLI 2.1.327 in R20)
 
 - `query({ prompt: string | AsyncIterable<SDKUserMessage>, options })` → `AsyncGenerator<SDKMessage>` + `interrupt()`, `setPermissionMode()`, `setModel()`.
-- Options we use: `cwd`, `model`, `effort`, `permissionMode`, `canUseTool`, `resume` (session id from `system/init`; `forkSession` / `resumeSessionAt` for fork and rollback), `mcpServers: Record<name, {type:'stdio', command, args, env}>` (Tide's servers only; the user's own MCP config still loads), `additionalDirectories` (linked repos), `allowDangerouslySkipPermissions` (full-access only), `systemPrompt: {type:'preset', preset:'claude_code', append}`, `includePartialMessages: true` (token streaming), `abortController`, `pathToClaudeCodeExecutable` (when a binary is configured), `env`, `stderr`.
+- Options we use: `cwd`, `model`, `effort`, `permissionMode`, `canUseTool`, `resume` (session id from `system/init`; `forkSession` / `resumeSessionAt` for fork and rollback), `mcpServers: Record<name, {type:'stdio', command, args, env}>` (Tide's servers only; the user's own MCP config still loads), `additionalDirectories` (linked repos), `allowDangerouslySkipPermissions` (full-access only), `systemPrompt: {type:'preset', preset:'claude_code', append}`, `includePartialMessages: true` (token streaming), `abortController`, `pathToClaudeCodeExecutable` (when a binary is configured), `env` (injects `MCP_TOOL_TIMEOUT=900000` as a default floor when Tide MCP servers are attached so blocking `tide_delegate(wait)` / `tide_thread_wait` calls do not hit Claude Code's shorter default MCP timeout), `stderr`.
+- **Multi-account isolation:** status probes (`detectBinary`, `--version`, `detectLogin`) run with the instance's `CLAUDE_CONFIG_DIR` / `env`, `detectLogin` checks credentials inside that config dir, and `terminalCommand()` prefixes `CLAUDE_CONFIG_DIR=…` (and uses any configured `binaryPath`).
 - **Deliberately not set: `settingSources` and `strictMcpConfig`** (`session.ts` `#buildOptions`). Their SDK defaults load the user's and project's settings, skills, hooks, plugins and MCP servers; setting either would strip them (CLAUDE.md §1a).
 - **`systemPrompt` is always sent as `{type:'preset', preset:'claude_code'}`**, with `append` only when Tide has a preamble. An *omitted* `systemPrompt` is an empty **custom** prompt to the SDK (`sdk.d.ts`: a preset object is the opt-in for Claude Code's own prompt), so leaving it out when there is nothing to append silently strips the harness's system prompt.
 - `canUseTool(toolName, input, { signal, suggestions, toolUseID, ... })` → `{behavior:'allow', updatedInput?, updatedPermissions?} | {behavior:'deny', message, interrupt?}`. Only called when no rule/mode auto-approved. `AskUserQuestion` always reaches it → map to `user-input.requested`. `ExitPlanMode` reaches it in plan mode → its `input.plan` (markdown) is the **ProposedPlan**; deny with a message to keep planning, allow = accept plan (we still never auto-implement; implementation is a new thread).
@@ -304,7 +305,7 @@ on close (OpenCode: see its section).
   | full-access | the user's `approval_policy` as-is, else `never` | `danger-full-access` — only for an explicitly full-access thread; a user config that allows it does not widen the other modes |
 
   `writable_roots` are unioned with the thread's cwd + write-linked repos; `network_access` and `exclude_tmpdir_env_var`/`exclude_slash_tmp` carry over. A user `approval_policy = "on-failure"` (not in 0.162's enum) is sent as `on-request`; a `{granular=…}` table is ignored (the mode's level applies). `[profiles.*]` are not read.
-- **`collaborationMode` is sent on every `turn/start`**, pinned model or not. Gating it on a pinned model silently dropped plan mode for every thread running the default model; `settings.model` carries the thread's *resolved* model (the one `thread/start` reported), which is what Codex would have used anyway.
+- **`collaborationMode` is sent on every `turn/start`**, pinned model or not. Gating it on a pinned model silently dropped plan mode for every thread running the default model; `settings.model` carries the thread's *resolved* model (the one `thread/start` reported), which is what Codex would have used anyway. The first `send()` emits a `{type: "session", nativeSessionId, model}` event so unpinned threads record their resolved model; `reconfigure()` restores that initial model when `settings.model` is cleared.
 - **Sandbox network access is the user's, not Tide's.** `sandboxPolicy.networkAccess` comes from `[sandbox_workspace_write] network_access` in `$CODEX_HOME/config.toml` (default `~/.codex`), read once per session by `config-toml.ts` — a one-key TOML lookup, no dependency. Absent file or absent key ⇒ `false`, which is Codex's own default for a `workspace-write` sandbox. Hardcoding `false` used to take network away from a user whose Codex config grants it (CLAUDE.md §1a). Tide used to *replace* the sandbox/approval policy outright; it now only narrows it (table above).
 - **Plan mode:** `turn/start.collaborationMode = {mode:"plan"|"default", settings:{model, reasoning_effort, developer_instructions:null}}` (absent from the ts-rs bindings but parsed strictly by the server; `null` instructions = Codex's native plan prompt). Streaming plan text = `item/plan/delta` → ProposedPlan. Plan/todo progress = `turn/plan/updated` (steps `pending|inProgress|completed`).
 - Notifications: `turn/started`, `item/started`, `item/agentMessage/delta`, `item/commandExecution/outputDelta`, `item/fileChange/outputDelta|patchUpdated`, `item/reasoning/*Delta`, `item/mcpToolCall/progress`, `item/completed` (authoritative), `turn/completed {status: completed|interrupted|failed}`, `thread/tokenUsage/updated {total, last, modelContextWindow}` (`total` = cumulative for the thread, `last` = the request just made), `account/rateLimits/updated {rateLimits: RateLimitSnapshot}`, `model/verification`, `model/rerouted`, `thread/settings/updated`. Unmodelled ones (e.g. `thread/attachment/updated`, `thread/reverted`, `thread/queue/changed`) pass through as info rows.
@@ -326,7 +327,7 @@ on close (OpenCode: see its section).
 - **A sub-agent's items can name the session's own thread** (recorded on 0.170, `subagent-return-turn.ndjson`). When a child calls `send_message` to its parent, Codex emits in the child's thread `subAgentActivity { kind: "interacted", agentThreadId: <the session's thread>, agentPath: "/root" }`. `CodexChildren` never makes a row for the session's own thread (`setMain`), whichever item names it (`subAgentActivity`, a `collabAgentToolCall` receiver, `thread/started`). A row for it would route the session's own `agentMessage` and `turn/completed` into that row, and the turn would never settle.
 - **A turn Codex reports as gone is settled by the driver** (`missed-end.ts`, `session.ts` `#missedEnd`). `turn/steer` and `turn/interrupt` answer `-32600 "no active turn to steer|interrupt"` when the thread has no running turn. If Tide still holds that turn open, its `turn/completed` was missed (Codex writes it before the answer on the same pipe): the driver emits one info row and `settled` (`completed` after a steer, `interrupted` after an interrupt). The steer error still reaches the server, which queues the message as the next turn.
 - **A sub-agent can outlive its parent's turn** (R21, `caps.harnessTurns = true`; `harness-turn.ts`, `turn-ledger.ts`). The parent can end its turn without waiting, and the idle parent model is not woken when the child finishes (none seen within 45 s). Between turns the child's rows (child row, tool calls, info rows) go out live through `onIdleActivity`, and its final row (done, with the report) is what makes the thread quiescent and wakes a delegating parent. A child's approval or question between turns opens a harness turn (`sub-agent "<agentPath>" needs approval` / `asks a question`) that carries only the card. It has no Codex turn behind it, settles once every request it carries is answered or withdrawn (`serverRequest/resolved` with no answer closes the card as `cancel`), and later child rows go back to idle activity. A `send()` waits behind it. A steer into it is refused, so the server queues the message. Interrupting it cancels the request and sends `turn/interrupt` for each running child thread's turn. A `turn/started` on the session's thread with no send running (not seen live) opens a "Codex continued on its own" harness turn that settles on its `turn/completed` and takes steers. `hasBackgroundWork()` is true while a harness turn is open or a child is still running. With no listeners wired, the child's rows and requests are held and replayed at the next `send()`. A harness turn counts as a turn for the server but has no Codex turn: the ledger skips it when choosing `beforeTurnId`, and a dismissed one is not counted. The driver still leaves a card un-nested (title `Bash (sub-agent "…")`) unless its child row was first seen in the turn now running; the server has since stopped filing prompts under the launching turn (`reactor.ts`), so that guard is no longer needed. Not seen live: interrupting a child's turn, a question from a child, a withdrawn request, rollback across a harness turn. Child tokens used between turns are not counted.
-- Login probe: `account/read` → `{account|null, requiresOpenaiAuth}`; models: `model/list` (works even signed out). Escape hatch: `codex resume <threadId>`.
+- Login probe: `account/read` → `{account|null, requiresOpenaiAuth}`; models: `model/list` (works even signed out). Escape hatch: `codex resume <threadId>` (with `CODEX_HOME=…` prefixed for secondary accounts and any configured `binaryPath` honoured).
 - MCP: Tide's servers are added as `-c 'mcp_servers.<name>.command=…'` overrides at spawn — verified to **merge** with the user's own `mcp_servers` (non-crippling). Each also gets `-c mcp_servers.<name>.tool_timeout_sec=900.0` (a TOML float; a string is rejected with "expected f64"). The 0.170 default tool timeout is **300 s**, measured with a sleeping tool through `mcpServer/tool/call` ("timed out awaiting tools/call after 300s"; with the key set to 3 it fails at 3 s). Without the override `tide_delegate` (wait) and `tide_thread_wait`, which block for up to 600 s, would time out. Not checked: that a model-driven call takes the same path. Codex names the approval card for a Tide tool call after the server (`mcp:tide`), not the tool.
 - **MCP secrets stay off argv.** A stdio MCP server is launched with a small fixed environment (`HOME, LANG, LOGNAME, PATH, SHELL, TERM, TMPDIR, USER`) — the app-server's env is *not* inherited — plus whatever `mcp_servers.<name>.env` sets, which would put the value in `ps`. `mcp_servers.<name>.env_vars = ["NAME", …]` instead names variables to forward **from the app-server's own environment** (verified live against codex-cli 0.147). So Tide spawns `codex app-server` with `TIDE_AGENT_TOKEN` in its env and passes only the variable's *name* on the command line. One process environment holds one value per name, so if two servers want different values for the same variable the second falls back to the visible `…env.NAME=` form and the driver logs it.
 - **Lifecycle:** `initialize` carries a 45s deadline (a handshake that never answers would otherwise hang `openSession` forever); child `exit`/`error` settles the running turn with `codex app-server exited (code N)` and closes the mailbox; `close()` sends `SIGTERM` and escalates to `SIGKILL` 5s later.
@@ -553,9 +554,12 @@ the protocol (a non-JSON line is logged and skipped), stderr is logged.
   outside a turn it is held and delivered at the start of the next one); `current_mode_update`
   → info row; `usage_update {used, size}` → `usage.contextUsage`, and the delta of its
   cumulative `cost` (USD) → the turn's `costUsd`. `PromptResponse.usage` (unstable; OpenCode 2.x
-  reports the turn's own tokens there) → the turn's `usage`. `session_info_update`,
+  reports the turn's own tokens there) → the turn's `usage`, folding `thoughtTokens` into
+  `outputTokens` so reasoning tokens are not dropped. `session_info_update`,
   `config_option_update` (ingested as settings), `user_message_chunk` are silent; anything else →
-  info row `<sessionUpdate>` with the raw payload.
+  info row `<sessionUpdate>` with the raw payload. On `close()`, when the agent advertised
+  `sessionCapabilities.close`, the driver sends a best-effort `session/close` (1.5 s timeout)
+  before terminating the process.
 - **Agent → client requests:** `session/request_permission` → approval card (`requestId` =
   `toolCallId`, diff from the tool's `diff` content), reply held until `respondApproval`:
   `accept` → `allow_once`, `acceptForSession`/`acceptAlways` → `allow_always` (fallback
@@ -588,7 +592,7 @@ The mode selector is a `category: "mode"` config option (`session/set_config_opt
 `interaction: "plan"` selects it (it wins over the runtime-mode match) and the turn's final
 assistant message becomes `plan.proposed`; leaving plan returns to the matched/initial mode.
 **Model / effort:** `configOptions` `category: "model"` → `ModelInfo[]` (grouped options
-flattened, `currentValue` → default unless `defaultModel` is set), `category: "thought_level"` →
+flattened with `family` inferred from the option group or model id, `currentValue` → default unless `defaultModel` is set), `category: "thought_level"` →
 `efforts` on every model (`caps.effort`); both set with `session/set_config_option` after
 `session/new` and in `reconfigure` (`applied`; any failed knob → `reopen`). Agents that still
 send the pre-configOptions `models {currentModelId, availableModels}` block (OpenCode 1.1.36)
@@ -596,12 +600,13 @@ get `session/set_model {sessionId, modelId}`. Nothing reported → `models: []`.
 
 **Status** spawns the agent in `<dataDir>/acp-probe`, runs `initialize` (version = `agentInfo.version`,
 caps from `agentCapabilities`), opens **one** throwaway `session/new` there per instance lifetime
-to learn models / plan / effort (live sessions refresh them), then kills it; cached 60 s.
+to learn models / plan / effort (live sessions refresh them, and `status(true)` forces a fresh
+`session/new` probe so signing in or model updates appear on Refresh), then kills it; cached 60 s.
 ENOENT → `installed: false` + "install it or pick another agent from the registry". An
 `auth_required` (`-32000`) answer → `loggedIn: false`, `hint` = the first `authMethods[].description`
 (no `authenticate` call in v1); a session that later opens clears it.
 
-`caps`: `{planMode: <plan mode found>, subagents: false, mcp: true, images: promptCapabilities.image, resume: loadSession, contextUsage: <a usage_update with used/size seen>, openInTerminal: false, steer: false, fork: false, rollback: false, oneShot: false, effort: <thought_level found>, commands: true}`.
+`caps`: `{planMode: <plan mode found>, subagents: false, mcp: true, images: promptCapabilities.image, resume: loadSession || Boolean(sessionCapabilities.resume), contextUsage: <a usage_update with used/size seen>, openInTerminal: false, steer: false, fork: false, rollback: false, oneShot: Boolean(flavor.complete), effort: <thought_level found>, commands: true}`.
 **Unsupported:** client terminals (`terminal/*`), steer, fork, rollback, sub-agent rows,
 one-shot completions, an "open in terminal" command (no portable resume CLI), `authenticate`,
 elicitation, and enforcing read-only links for agents that write files themselves.
@@ -638,6 +643,7 @@ Antigravity is a bundled kind (`antigravity`, R23) that runs on this driver. `an
 | `loginCommand` | `agy acp --login`, reported while the agent answers `auth_required` |
 | `notInstalledHint` | names the installer: `curl -fsSL https://antigravity.google/cli/install.sh \| bash` |
 | `minVersion` | 1.5. An older CLI reads as installed, not logged in, with "run `agy update`", and no probe session is opened |
+| `complete` | `agy --print --output-format json --disable-slash-commands --effort low` (`antigravity-complete.ts`), enabling `caps.oneShot: true` (titles, commit messages, structured JSON via `--json-schema`; unit-tested against fake CLI, not yet live-run signed in) |
 | `terminalCommand` | not set, so `openInTerminal` is false |
 
 `server.json → providers.antigravity` takes `binaryPath`, `env` and `defaultModel`. The quirks are
@@ -670,6 +676,15 @@ four quirks below come from there. Only the first and third match something the 
   `_meta` at that path on `session/new` and on the reopen call; the `<tide-context>` block is skipped.
 - `resumeMethod: "resume"`: `session/resume` when the agent advertises `sessionCapabilities.resume`,
   else `session/load` when it offers `loadSession`, else a new session with `resumeFailed`.
+- `steerByPrompt: true`: `caps.steer: true` — `steer()` sends a mid-turn `session/prompt` into the
+  running turn (supported by `agy acp` 1.5.0+).
+- `subagents: true`: `caps.subagents: true` — `AcpSubagentTracker` (`subagents.ts`) translates
+  `invoke_subagent`/`start_subagent` and `/swarm` (`swarm` tool actions `title`, `add`, `model`,
+  `status`, `kill`) into `kind: "child"` sub-agent/worker rows rendered by `ChildGroup`.
+- `harnessTurns: true`: `caps.harnessTurns: true` — unsolicited post-turn `session/update`s and
+  `session/request_permission` / `session/request_user_input` requests (from `agy` 1.5.10+
+  background sub-agent or swarm wake-ups) open a harness turn (`onHarnessTurn`) and keep the
+  session off the idle reaper (`hasBackgroundWork()`) until settled after 2.5 s of quiescence.
 
 `agy` added by hand as an ACP agent still works: the profile applies when the launch command's
 basename is `agy` and the config sets no quirks of its own, and a stored `acpAgentId:
@@ -680,10 +695,10 @@ registry's `antigravity-acp` binary is the IDE-extension server and Tide cannot 
 
 Known limits: an upstream API error arrives as an assistant message followed by `end_turn`, so
 the turn shows as completed with the error as its last message; no rewind, fork or compaction
-over ACP; no sub-agent rows and no steering; a question that reuses the standard permission
+over ACP; a question that reuses the standard permission
 kinds shows as an approval card; no "Open in terminal" (`agy --conversation <id>` exists, but
-whether it takes the ACP session id is unchecked); no limit windows and no usage logs, so the
-share-of-window quota and cost estimates do not cover it (T3 reads limits from a Google-internal
+whether it takes the ACP session id is unchecked); no limit windows and no external usage logs, so the
+share-of-window quota does not cover it (amount-per-week quotas and Tide turn estimates cover Gemini/Claude/Codex models via `usage/pricing.ts`; T3 reads limits from a Google-internal
 endpoint with the OAuth refresh token, which Tide does not do).
 
 ## W1 linked repos — how each harness scopes a secondary directory

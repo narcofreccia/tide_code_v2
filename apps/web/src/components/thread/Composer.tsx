@@ -357,6 +357,23 @@ export function Composer({ thread, scope = "main" }: { thread: Thread; scope?: C
         <Button variant="quiet" title="Attach files" aria-label="Attach files…" onClick={() => picker.current?.click()}>
           <Icon name="link" size={14} />
         </Button>
+        {thread.provider === "antigravity" ? (
+          <Button
+            variant="quiet"
+            className={/^\/swarm(?:\s|$)/i.test(text.trimStart()) ? styles.swarmActive : undefined}
+            aria-pressed={/^\/swarm(?:\s|$)/i.test(text.trimStart())}
+            title="Toggle Antigravity Swarm (/swarm) — parallel agents collaborating on a shared message board (quota heavy)"
+            onClick={() => {
+              const next = /^\/swarm(?:\s+|$)/i.test(text.trimStart())
+                ? text.replace(/^\s*\/swarm(?:\s+|$)/i, "")
+                : `/swarm ${text.trimStart()}`;
+              sync(next, next.length);
+              input.current?.focus();
+            }}
+          >
+            Swarm
+          </Button>
+        ) : null}
         {running ? <FollowUpToggle followUp={followUp} provider={thread.provider} /> : null}
         <DraftsBar
           threadId={thread.id}

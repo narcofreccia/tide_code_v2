@@ -59,4 +59,20 @@ describe("limits", () => {
     expect(limits[0]?.windows.other?.remainingPct).toBe(95);
     expect(tightestInstance(model)?.id).toBe("codex:work");
   });
+
+  it("ignores stale Claude/Codex rate limits left on a thread after switching to another harness, and drops expired thread limits", () => {
+    const model = modelWith({
+      threads: {
+        switched: makeThread("switched", {
+          provider: "antigravity",
+          rateLimit: { status: "limited", remainingPct: 0, resetsAt: 9_000, note: "seven_day 100% used (rejected)", at: 5 },
+        }),
+        expired: makeThread("expired", {
+          provider: "claude",
+          rateLimit: { status: "warning", remainingPct: 20, resetsAt: 1_000, note: "seven_day_overage_included 80% used", at: 4 },
+        }),
+      },
+    });
+    expect(selectInstanceLimits(model, 5_000)).toEqual([]);
+  });
 });

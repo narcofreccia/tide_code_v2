@@ -45,13 +45,26 @@ function providerOf(model: Pick<ReadModel, "threads">, id: string): ProviderKind
 }
 
 /**
+ * True when a `thread.rateLimit` should not be attributed to `provider` — either because it is
+ * a stale Claude/Codex limit left behind after switching harnesses, or its reset time already passed.
+ */
+export function isStaleThreadRateLimit(provider: ProviderKind, limit: RateLimit, now = Date.now()): boolean {
+  if (limit.resetsAt !== undefined && limit.resetsAt <= now) return true;
+  const note = (limit.note ?? "").toLowerCase();
+  if (note === "") return false;
+  if (provider !== "claude" && /\b(?:five_hour|seven_day)\b/.test(note)) return true;
+  if (provider !== "codex" && /\bcodex\b.*\bwindow\b/.test(note)) return true;
+  return false;
+}
+
+/**
  * The latest rate-limit report per harness instance and window. The subscription is shared by
  * every thread on an instance, so the newest report for a window is the current one, whichever
  * thread carried it. R20 servers keep the windowed reports in `model.limits`; a report that names
  * no window (an overage window), and every report from an older server, is read from the threads,
  * its window guessed from the harness's note.
  */
-export function selectInstanceLimits(model: Pick<ReadModel, "threads" | "limits">): InstanceLimits[] {
+export function selectInstanceLimits(model: Pick<ReadModel, "threads" | "limits">, now = Date.now()): InstanceLimits[] {
   const byId = new Map<string, InstanceLimits>();
   const put = (id: string, provider: ProviderKind, window: LimitWindow, limit: RateLimit): void => {
     const entry = byId.get(id) ?? { id, provider, windows: {} };
@@ -64,6 +77,7 @@ export function selectInstanceLimits(model: Pick<ReadModel, "threads" | "limits"
     const limit = thread.rateLimit;
     if (thread.archivedAt !== undefined || !limit) continue;
     if (structured && limit.window !== undefined) continue;
+    if (isStaleThreadRateLimit(thread.provider, limit, now)) continue;
     put(thread.providerId ?? thread.provider, thread.provider, limitWindow(limit), limit);
   }
   for (const [id, windows] of Object.entries(model.limits ?? {})) {

@@ -1,8 +1,10 @@
+import { useState } from "react";
 import type { ProviderStatusDto, UsageRow } from "@tide/contracts";
 import { formatTokens, formatUsd } from "../../lib/glassBox.ts";
 import { instanceLabel } from "../../lib/vocab.ts";
+import { Icon } from "../ui/Icon.tsx";
 import { Pill } from "../ui/Pill.tsx";
-import { groupByHarness, sumRows, totalTokens, type UsageTotals } from "./usageMath.ts";
+import { cacheHitPct, groupByHarness, sumRows, totalTokens, type UsageTotals } from "./usageMath.ts";
 import styles from "./Usage.module.css";
 
 const reported = (t: UsageTotals): string => (t.costUsd === undefined ? "—" : formatUsd(t.costUsd));
@@ -15,7 +17,7 @@ function Numbers({ t }: { t: UsageTotals }) {
       <td className={styles.num}>{formatTokens(t.outputTokens)}</td>
       <td className={styles.num}>{formatTokens(t.cacheReadTokens)}</td>
       <td className={styles.num}>{formatTokens(t.cacheWriteTokens)}</td>
-      <td className={styles.num}>{t.turns}</td>
+      <td className={styles.num}>{t.turns.toLocaleString("en-US")}</td>
       <td className={styles.num}>{reported(t)}</td>
       <td className={`${styles.num} ${styles.estimate}`}>{estimated(t)}</td>
     </>
@@ -29,11 +31,29 @@ export function SourceChip({ source }: { source: UsageRow["source"] }) {
 /** The window at a glance: tokens, turns, reported and estimated spend, in one card. */
 export function UsageSummaryCards({ rows }: { rows: readonly UsageRow[] }) {
   const t = sumRows(rows);
-  const cells: { label: string; value: string }[] = [
-    { label: "Tokens", value: formatTokens(totalTokens(t)) },
-    { label: "Turns", value: String(t.turns) },
-    { label: "Reported", value: reported(t) },
-    { label: "Estimated", value: estimated(t) },
+  const groups = groupByHarness(rows);
+  const cached = cacheHitPct(t);
+  const cells: { label: string; value: string; sub?: string }[] = [
+    {
+      label: "Tokens",
+      value: formatTokens(totalTokens(t)),
+      ...(cached !== undefined ? { sub: `${cached}% cache read` } : {}),
+    },
+    {
+      label: "Turns",
+      value: t.turns.toLocaleString("en-US"),
+      sub: `${groups.length} ${groups.length === 1 ? "harness" : "harnesses"}`,
+    },
+    {
+      label: "Reported",
+      value: reported(t),
+      sub: "harness reported",
+    },
+    {
+      label: "Estimated",
+      value: estimated(t),
+      sub: "API list estimate",
+    },
   ];
   return (
     <dl className={styles.summary} aria-label="Totals">
@@ -41,17 +61,23 @@ export function UsageSummaryCards({ rows }: { rows: readonly UsageRow[] }) {
         <div key={c.label} className={styles.stat}>
           <dt className={styles.statLabel}>{c.label}</dt>
           <dd className={styles.statValue}>{c.value}</dd>
+          {c.sub !== undefined ? <dd className={styles.statSub}>{c.sub}</dd> : null}
         </div>
       ))}
     </dl>
   );
 }
 
-/** Harness → model, with the source of each row, a subtotal per harness and a grand total. */
+/** Harness → model, with the source of each row, collapsible harness groups, subtotals and a grand total. */
 export function UsageTable({ rows, providers }: { rows: readonly UsageRow[]; providers: readonly ProviderStatusDto[] }) {
+  const [collapsed, setCollapsed] = useState<Record<string, boolean>>({});
   if (rows.length === 0) return <p className={styles.note}>No turns in this window.</p>;
   const groups = groupByHarness(rows);
   const total = sumRows(rows);
+  const grandTokens = totalTokens(total);
+
+  const toggleGroup = (id: string): void => setCollapsed((prev) => ({ ...prev, [id]: !prev[id] }));
+
   return (
     <div className={styles.card}>
       <table className={styles.table}>
@@ -68,24 +94,44 @@ export function UsageTable({ rows, providers }: { rows: readonly UsageRow[]; pro
             <th scope="col" className={styles.num}>Estimated</th>
           </tr>
         </thead>
-        {groups.map((group) => (
-          <tbody key={group.id}>
-            <tr className={styles.groupRow}>
-              <th scope="row">{instanceLabel(providers, group.id)}</th>
-              <td />
-              <Numbers t={group.totals} />
-            </tr>
-            {group.rows.map((row, i) => (
-              <tr key={`${row.model ?? ""}|${row.source}|${i}`}>
-                <td className={styles.model}>{row.model ?? "default model"}</td>
-                <td>
-                  <SourceChip source={row.source} />
+        {groups.map((group) => {
+          const isCollapsed = collapsed[group.id] === true;
+          const label = instanceLabel(providers, group.id);
+          const share = grandTokens > 0 ? Math.round((totalTokens(group.totals) / grandTokens) * 100) : 0;
+          return (
+            <tbody key={group.id}>
+              <tr className={styles.groupRow}>
+                <th scope="row" aria-label={label}>
+                  <button
+                    type="button"
+                    className={styles.groupToggle}
+                    aria-expanded={!isCollapsed}
+                    onClick={() => toggleGroup(group.id)}
+                  >
+                    <Icon name={isCollapsed ? "chevronRight" : "chevronDown"} size={12} />
+                    <span>{label}</span>
+                    {groups.length > 1 && share > 0 ? <span className={styles.shareMeta}>{share}%</span> : null}
+                  </button>
+                </th>
+                <td className={styles.groupCount}>
+                  {isCollapsed ? `${group.rows.length} ${group.rows.length === 1 ? "row" : "rows"}` : ""}
                 </td>
-                <Numbers t={sumRows([row])} />
+                <Numbers t={group.totals} />
               </tr>
-            ))}
-          </tbody>
-        ))}
+              {isCollapsed
+                ? null
+                : group.rows.map((row, i) => (
+                    <tr key={`${row.model ?? ""}|${row.source}|${i}`}>
+                      <td className={styles.model}>{row.model ?? "default model"}</td>
+                      <td>
+                        <SourceChip source={row.source} />
+                      </td>
+                      <Numbers t={sumRows([row])} />
+                    </tr>
+                  ))}
+            </tbody>
+          );
+        })}
         <tfoot>
           <tr className={styles.totalRow}>
             <th scope="row">Total</th>

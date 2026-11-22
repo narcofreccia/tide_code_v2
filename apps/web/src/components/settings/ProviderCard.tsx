@@ -1,5 +1,5 @@
 import type { ProviderInstanceConfig, ProviderStatusDto } from "@tide/contracts";
-import { PROVIDER_LABELS, RUNTIME_MODES, RUNTIME_MODE_HINTS, RUNTIME_MODE_LABELS } from "../../lib/vocab.ts";
+import { PROVIDER_LABELS, runtimeModeOptions } from "../../lib/vocab.ts";
 import { installOf, resolveLoginCommand, runOrCopy } from "../../lib/providerLogin.ts";
 import { modelChoiceValue, modelChoices } from "../../state/providers.ts";
 import { setProviderDefault, useSelectedSettings } from "../../state/serverSettings.ts";
@@ -114,11 +114,7 @@ export function ProviderCard({
   // the driver's install hint usually repeats the command shown just below it
   const hint = install?.command !== undefined && status.hint?.includes(install.command) ? undefined : status.hint;
   const modelOptions: SelectOption<string>[] = modelChoices(status.models, id, [status]);
-  const modeOptions = RUNTIME_MODES.map((mode) => ({
-    value: mode,
-    label: RUNTIME_MODE_LABELS[mode],
-    description: RUNTIME_MODE_HINTS[mode],
-  }));
+  const modeOptions = runtimeModeOptions(kind);
 
   return (
     <article className={styles.card} aria-label={name}>

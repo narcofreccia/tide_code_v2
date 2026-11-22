@@ -24,17 +24,31 @@ export const folderKey = (groupKey: string): string => `project:${groupKey}`;
 
 /** Rows for a folder's threads: roots first, children nested under their parent via `siblings`. */
 function Rows({ threads, now, label, showProject = false }: { threads: Thread[]; now: number; label: string; showProject?: boolean }) {
-  const roots = useMemo(() => {
+  const allThreads = useModel((s) => s.model.threads);
+  const { roots, siblings } = useMemo(() => {
     const ids = new Set(threads.map((t) => t.id));
-    return threads.filter((t) => {
+    const rootList = threads.filter((t) => {
       const parent = parentOf(t);
       return parent === undefined || !ids.has(parent);
     });
-  }, [threads]);
+    const extras: Thread[] = [];
+    const seen = new Set(ids);
+    const queue = [...ids];
+    while (queue.length > 0) {
+      const pid = queue.shift()!;
+      for (const candidate of Object.values(allThreads)) {
+        if (candidate.archivedAt !== undefined || candidate.delegatedBy !== pid || seen.has(candidate.id)) continue;
+        seen.add(candidate.id);
+        extras.push(candidate);
+        queue.push(candidate.id);
+      }
+    }
+    return { roots: rootList, siblings: extras.length > 0 ? [...threads, ...extras] : threads };
+  }, [threads, allThreads]);
   return (
     <ul className={styles.list} aria-label={label}>
       {roots.map((t) => (
-        <RailThreadRow key={t.id} thread={t} siblings={threads} showProject={showProject} now={now} />
+        <RailThreadRow key={t.id} thread={t} siblings={siblings} showProject={showProject} now={now} />
       ))}
     </ul>
   );

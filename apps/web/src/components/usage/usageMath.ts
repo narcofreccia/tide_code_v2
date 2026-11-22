@@ -83,6 +83,24 @@ export function windowRange(window: UsageWindow, now: number, custom?: { from: s
   return { since: from, until: to };
 }
 
+export type SourceFilter = "all" | "tide" | "external";
+
+export function filterRowsBySource(rows: readonly UsageRow[], source: SourceFilter): UsageRow[] {
+  return source === "all" ? [...rows] : rows.filter((r) => r.source === source);
+}
+
+/** Spend shown for one day bar: reported cost when complete, else estimated spend. */
+export function daySpend(day: UsageSummary["days"][number]): number {
+  return day.costUsd ?? day.estimatedUsd ?? 0;
+}
+
+/** Cache-read percentage of total input (uncached + cache read + cache write); undefined when no input. */
+export function cacheHitPct(t: UsageTotals): number | undefined {
+  const denom = t.inputTokens + t.cacheReadTokens + t.cacheWriteTokens;
+  if (denom <= 0 || t.cacheReadTokens <= 0) return undefined;
+  return Math.round((t.cacheReadTokens / denom) * 100);
+}
+
 /** Tags a summary with the environment that produced it. */
 export interface EnvUsage {
   envId?: string;
