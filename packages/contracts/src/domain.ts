@@ -673,7 +673,7 @@ export const ProposedPlan = Type.Object({
   threadId: Type.String(),
   turnId: Type.String(),
   markdown: Type.String(),
-  status: Type.Union([Type.Literal("proposed"), Type.Literal("implemented"), Type.Literal("dismissed")]),
+  status: Type.Union([Type.Literal("proposed"), Type.Literal("implemented"), Type.Literal("dismissed"), Type.Literal("superseded")]),
   implementationThreadId: Type.Optional(Type.String()),
   createdAt: Type.Number(),
   updatedAt: Type.Number(),

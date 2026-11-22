@@ -216,7 +216,11 @@ describe("selectInbox", () => {
         approval("a0", { status: "resolved" }),
         approval("a2", { createdAt: 7 }),
       ],
-      plans: [plan("pl1", { threadId: "t2", createdAt: 6 }), plan("pl0", { threadId: "t2", status: "dismissed" })],
+      plans: [
+        plan("pl1", { threadId: "t2", createdAt: 6 }),
+        plan("pl0", { threadId: "t2", status: "dismissed" }),
+        plan("plOld", { threadId: "t2", status: "superseded" }),
+      ],
       timeline: {
         t1: [
           { kind: "activity", id: "a0" },
@@ -225,6 +229,7 @@ describe("selectInbox", () => {
         ],
         t2: [
           { kind: "plan", id: "pl0" },
+          { kind: "plan", id: "plOld" },
           { kind: "plan", id: "pl1" },
         ],
       },

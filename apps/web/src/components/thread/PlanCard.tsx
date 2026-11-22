@@ -28,8 +28,11 @@ const MARKDOWN_COMPONENTS = { a: MarkdownLink };
 export const PlanCard = memo(function PlanCard({ plan, provider }: { plan: ProposedPlan; provider: ProviderKind }) {
   const [draft, patch] = useThreadDraft(provider);
   const [choosing, setChoosing] = useState(false);
+  const [expanded, setExpanded] = useState(false);
   const selectThread = useUi((s) => s.selectThread);
   const implementedHere = plan.implementationThreadId === plan.threadId;
+  const superseded = plan.status === "superseded";
+  const showBody = !superseded || expanded;
   // R19: a Full access default mode is refused for a device with limited access on that machine
   const modeLimit = modeBlocked(draft.mode, useThreadDeviceLimit(plan.threadId));
   // in place it is a turn on this thread: the same refusal as the composer's (a new thread still works)
@@ -51,12 +54,19 @@ export const PlanCard = memo(function PlanCard({ plan, provider }: { plan: Propo
               {plan.status === "implemented" && implementedHere ? "implemented here" : plan.status}
             </span>
           )}
+          {superseded ? (
+            <Button variant="quiet" aria-expanded={expanded} onClick={() => setExpanded((v) => !v)}>
+              {expanded ? "Hide" : "Show"}
+            </Button>
+          ) : null}
         </div>
-        <div className={markdown.markdown}>
-          <ReactMarkdown remarkPlugins={REMARK_PLUGINS} components={MARKDOWN_COMPONENTS} urlTransform={markdownUrlTransform}>
-            {plan.markdown}
-          </ReactMarkdown>
-        </div>
+        {showBody ? (
+          <div className={markdown.markdown}>
+            <ReactMarkdown remarkPlugins={REMARK_PLUGINS} components={MARKDOWN_COMPONENTS} urlTransform={markdownUrlTransform}>
+              {plan.markdown}
+            </ReactMarkdown>
+          </div>
+        ) : null}
         {plan.status === "proposed" ? (
           <>
             <div className={styles.actions}>

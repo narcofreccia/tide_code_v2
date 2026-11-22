@@ -411,17 +411,37 @@ export function applyEvent(model: ReadModel, event: DomainEvent): ReadModel {
       return upsertActivity(model, { ...a, status: "resolved", answers: event.answers, updatedAt: event.at });
     }
     case "plan.proposed": {
-      let next: ReadModel = { ...model, plans: { ...model.plans, [event.plan.id]: event.plan } };
+      // A newer plan on the same thread supersedes any earlier unacted-on proposal so refining a
+      // plan never leaves stale "Plan ready" cards behind in the inbox or stream.
+      let plans = model.plans;
+      for (const e of model.threadTimeline[event.plan.threadId] ?? []) {
+        if (e.kind !== "plan") continue;
+        const prev = plans[e.id];
+        if (prev?.status === "proposed") {
+          plans = { ...plans, [prev.id]: { ...prev, status: "superseded", updatedAt: event.plan.createdAt } };
+        }
+      }
+      let next: ReadModel = { ...model, plans: { ...plans, [event.plan.id]: event.plan } };
       next = appendTimeline(next, event.plan.threadId, { kind: "plan", id: event.plan.id });
       return refreshAttention(next, event.plan.threadId, event.plan.createdAt);
     }
     case "plan.updated": {
       const plan = model.plans[event.planId];
       if (!plan) return model;
-      const next: ReadModel = {
-        ...model,
-        plans: { ...model.plans, [plan.id]: { ...plan, status: event.status, updatedAt: event.at, ...(event.implementationThreadId !== undefined ? { implementationThreadId: event.implementationThreadId } : {}) } },
+      let plans: ReadModel["plans"] = {
+        ...model.plans,
+        [plan.id]: { ...plan, status: event.status, updatedAt: event.at, ...(event.implementationThreadId !== undefined ? { implementationThreadId: event.implementationThreadId } : {}) },
       };
+      if (event.status === "implemented") {
+        for (const e of model.threadTimeline[plan.threadId] ?? []) {
+          if (e.kind !== "plan" || e.id === plan.id) continue;
+          const other = plans[e.id];
+          if (other?.status === "proposed") {
+            plans = { ...plans, [other.id]: { ...other, status: "superseded", updatedAt: event.at } };
+          }
+        }
+      }
+      const next: ReadModel = { ...model, plans };
       return refreshAttention(next, plan.threadId, event.at);
     }
     case "plan.progressed":
@@ -563,7 +583,29 @@ export function applyEvent(model: ReadModel, event: DomainEvent): ReadModel {
         patched.providerSessions = sessions;
       }
       if (event.nativeSessionId !== undefined) patched.nativeSessionId = event.nativeSessionId;
-      return refreshAttention({ ...model, turns, threads: { ...model.threads, [t.id]: patched } }, t.id, event.at);
+      // If rollback undid the turn whose plan superseded an earlier surviving plan, restore that
+      // newest surviving proposal so the user can act on it again.
+      let plans = model.plans;
+      let lastSurvivingPlanId: string | undefined;
+      let rolledBackPlanAfter = false;
+      for (const e of model.threadTimeline[t.id] ?? []) {
+        if (e.kind !== "plan") continue;
+        const p = plans[e.id];
+        if (!p) continue;
+        if (turns[p.turnId]?.rolledBack === true) {
+          if (lastSurvivingPlanId !== undefined) rolledBackPlanAfter = true;
+        } else {
+          lastSurvivingPlanId = p.id;
+          rolledBackPlanAfter = false;
+        }
+      }
+      if (rolledBackPlanAfter && lastSurvivingPlanId !== undefined) {
+        const prev = plans[lastSurvivingPlanId];
+        if (prev?.status === "superseded") {
+          plans = { ...plans, [prev.id]: { ...prev, status: "proposed", updatedAt: event.at } };
+        }
+      }
+      return refreshAttention({ ...model, turns, plans, threads: { ...model.threads, [t.id]: patched } }, t.id, event.at);
     }
     case "rollback.failed": {
       const t = model.threads[event.threadId];

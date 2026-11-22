@@ -474,6 +474,28 @@ describe("decide: plans", () => {
     expect(decide(implemented, { type: "plan.dismiss", planId: base.planId }, ctx)).toMatchObject({ ok: false, error: { code: "conflict" } });
     expect(decide(emptyReadModel(), { type: "plan.dismiss", planId: "nope" }, ctx)).toMatchObject({ ok: false, error: { code: "not-found" } });
   });
+
+  it("refining a plan supersedes the previous draft so implementing the new one clears plan attention", () => {
+    const first = withPlan();
+    const settled1 = run(first.model, { type: "turn.settle", turnId: first.turnId, status: "completed" }).model;
+    const refinedTurn = run(settled1, { type: "turn.request", threadId: first.threadId, text: "refine plan" });
+    const req = refinedTurn.events.find((e) => e.type === "turn.requested");
+    if (req?.type !== "turn.requested") throw new Error("expected turn.requested");
+    const second = run(refinedTurn.model, { type: "plan.propose", turnId: req.turn.id, markdown: "## Refined\n\n- better" });
+    const secondEvt = second.events[0];
+    if (secondEvt?.type !== "plan.proposed") throw new Error("expected plan.proposed");
+    expect(second.model.plans[first.planId]?.status).toBe("superseded");
+    expect(second.model.plans[secondEvt.plan.id]?.status).toBe("proposed");
+    // The superseded draft can no longer be implemented, and dismissing it is idempotent.
+    expect(decide(second.model, { type: "plan.implement", planId: first.planId, target: "here" }, ctx)).toMatchObject({ ok: false, error: { code: "conflict" } });
+    expect(decide(second.model, { type: "plan.dismiss", planId: first.planId }, ctx)).toEqual({ ok: true, events: [] });
+    // Implementing the refined plan clears thread attention completely.
+    const settled2 = run(second.model, { type: "turn.settle", turnId: req.turn.id, status: "completed" }).model;
+    const implemented = run(settled2, { type: "plan.implement", planId: secondEvt.plan.id, target: "here" }).model;
+    expect(implemented.plans[first.planId]?.status).toBe("superseded");
+    expect(implemented.plans[secondEvt.plan.id]?.status).toBe("implemented");
+    expect(implemented.threads[first.threadId]?.attention).toBeUndefined();
+  });
 });
 
 describe("decide: R11 attachments and project icons", () => {

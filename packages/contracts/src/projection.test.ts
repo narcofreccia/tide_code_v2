@@ -133,6 +133,29 @@ describe("projection — P1 activities, plans, attention", () => {
     expect(m2.threads["t1"]?.attention).toBeUndefined();
     expect(m2.plans["pl1"]?.implementationThreadId).toBe("t2");
   });
+  it("a refined plan supersedes earlier proposals; implementing the newer one clears attention; rollback restores it", () => {
+    const m = replay(base, [
+      rec(5, { type: "plan.proposed", plan: { id: "pl1", threadId: "t1", turnId: "u1", markdown: "# Draft 1", status: "proposed", createdAt: 5, updatedAt: 5 } }),
+      rec(6, { type: "turn.settled", turnId: "u1", threadId: "t1", status: "completed", settledAt: 6 }),
+      rec(7, { type: "turn.requested", turn: { id: "u2", threadId: "t1", status: "requested", requestedAt: 7 }, userMessage: { id: "m2", threadId: "t1", turnId: "u2", role: "user", text: "refine it", createdAt: 7 } }),
+      rec(8, { type: "plan.proposed", plan: { id: "pl2", threadId: "t1", turnId: "u2", markdown: "# Draft 2", status: "proposed", createdAt: 8, updatedAt: 8 } }),
+      rec(9, { type: "turn.settled", turnId: "u2", threadId: "t1", status: "completed", settledAt: 9 }),
+    ]);
+    expect(m.plans["pl1"]).toMatchObject({ status: "superseded", updatedAt: 8 });
+    expect(m.plans["pl2"]).toMatchObject({ status: "proposed" });
+    expect(m.threads["t1"]?.attention).toBe("plan");
+
+    // Implementing the refined plan clears attention completely (no stale proposal left behind).
+    const implemented = applyRecord(m, rec(10, { type: "plan.updated", planId: "pl2", status: "implemented", implementationThreadId: "t1", at: 10 }));
+    expect(implemented.plans["pl1"]?.status).toBe("superseded");
+    expect(implemented.plans["pl2"]?.status).toBe("implemented");
+    expect(implemented.threads["t1"]?.attention).toBeUndefined();
+
+    // Rolling back the refinement turn restores the earlier draft to proposed so it can still be acted on.
+    const rolledBack = applyRecord(m, rec(10, { type: "rollback.completed", threadId: "t1", turnId: "u2", turnIds: ["u2"], provider: "claude", at: 10 }));
+    expect(rolledBack.plans["pl1"]).toMatchObject({ status: "proposed", updatedAt: 10 });
+    expect(rolledBack.threads["t1"]?.attention).toBe("plan");
+  });
 });
 
 describe("projection — W2 queued turns, dequeue, reasoning", () => {

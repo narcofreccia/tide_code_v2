@@ -106,7 +106,7 @@ export function decidePlan(model: ReadModel, command: PlanCommand, ctx: DecideCo
     case "plan.dismiss": {
       const plan = model.plans[command.planId];
       if (!plan) return fail("not-found", `unknown plan ${command.planId}`);
-      if (plan.status === "dismissed") return ok(); // idempotent
+      if (plan.status === "dismissed" || plan.status === "superseded") return ok(); // idempotent
       if (plan.status === "implemented") return fail("conflict", `plan ${plan.id} is already implemented`);
       return ok({ type: "plan.updated", planId: plan.id, status: "dismissed", at: ctx.now });
     }

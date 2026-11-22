@@ -111,4 +111,21 @@ describe("PlanCard", () => {
     expect(screen.getByText("implemented here")).toBeDefined();
     expect(screen.queryByText("open implementation thread")).toBeNull();
   });
+
+  it("renders a superseded plan collapsed by default with a Show/Hide toggle and no actions", () => {
+    attachFakeStore(modelWith({}));
+    render(
+      <PlanCard
+        plan={makePlan("pl1", { status: "superseded", markdown: "## Old draft\n\n- step one" })}
+        provider="claude"
+      />,
+    );
+    expect(screen.getByText("superseded")).toBeDefined();
+    expect(screen.queryByRole("button", { name: "Implement" })).toBeNull();
+    expect(screen.queryByText("Old draft")).toBeNull();
+    fireEvent.click(screen.getByRole("button", { name: "Show" }));
+    expect(screen.getByText("Old draft")).toBeDefined();
+    fireEvent.click(screen.getByRole("button", { name: "Hide" }));
+    expect(screen.queryByText("Old draft")).toBeNull();
+  });
 });
