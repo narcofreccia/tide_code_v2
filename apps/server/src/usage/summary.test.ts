@@ -97,7 +97,7 @@ describe("usage summary", () => {
     expect(pi?.costUsd).toBeCloseTo(0.009);
     expect(s.notes.join("\n")).toMatch(/Claude Code: 3 log files read, 3 model calls, 2 from Tide's own sessions left out/);
     expect(s.notes.join("\n")).toMatch(/Claude did not report a cost for these calls; shown as an estimate/);
-    expect(s.notes.join("\n")).toMatch(/No local logs in this window for OpenCode/);
+    expect(s.notes.join("\n")).toMatch(/No local logs in this window for Antigravity, OpenCode/);
   });
 
   it("passes the reason external logs are absent through to the notes", () => {

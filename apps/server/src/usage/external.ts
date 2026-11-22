@@ -1,6 +1,7 @@
 import type { ProviderKind } from "@tide/contracts";
 import { BucketSet, type Bucket } from "./buckets.ts";
 import type { UsageIndex } from "./index.ts";
+import { scanAntigravity } from "./ingest/antigravity.ts";
 import { scanClaude } from "./ingest/claude.ts";
 import { scanCodex } from "./ingest/codex.ts";
 import { excluder, type Exclusion } from "./ingest/dedupe.ts";
@@ -16,6 +17,7 @@ export interface ExternalResult {
 export const INGESTERS: readonly (readonly [ProviderKind, string, Ingester])[] = [
   ["claude", "Claude Code", scanClaude],
   ["codex", "Codex", scanCodex],
+  ["antigravity", "Antigravity", scanAntigravity],
   ["opencode", "OpenCode", scanOpencode],
   ["pi", "Pi", scanPi],
 ];

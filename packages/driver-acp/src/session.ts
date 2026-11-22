@@ -1,4 +1,5 @@
-import type { ApprovalDecision, DriverEnv, HarnessTurnHandle, NormalizedEvent, OpenSessionOptions, ProviderSession, ReconfigureResult, SessionSettings, SlashCommandInfo, SteerTarget, TurnInput } from "@tide/contracts";
+import type { ApprovalDecision, DriverEnv, HarnessTurnHandle, NormalizedEvent, OpenSessionOptions, ProviderSession, ReconfigureResult, SessionSettings, SlashCommandInfo, SteerTarget, TurnInput, TurnUsage } from "@tide/contracts";
+import type { TranscriptUsageReader } from "./antigravity-usage.ts";
 import { AsyncQueue, deferred, type Deferred } from "./async-queue.ts";
 import { FsPolicy } from "./fs.ts";
 import { AcpConnection, RpcError, rpcError } from "./jsonrpc.ts";
@@ -91,6 +92,8 @@ export interface SessionContext {
   onCommands?: (commands: SlashCommandInfo[]) => void;
   /** the agent reported context usage (caps.contextUsage is learned, not declared) */
   onContextUsage?: () => void;
+  /** fallback per-turn token usage reader when the agent omits `PromptResponse.usage` */
+  transcriptUsage?: TranscriptUsageReader;
 }
 
 export class AcpSession implements ProviderSession {
@@ -185,6 +188,9 @@ export class AcpSession implements ProviderSession {
       throw error;
     }
     this.nativeSessionId = result.sessionId;
+    if (this.#options.resume !== undefined && this.resumeFailed === undefined && this.#ctx.transcriptUsage) {
+      await this.#ctx.transcriptUsage.baseline(result.sessionId).catch(() => undefined);
+    }
     // a session that did not resume never saw the preamble either
     this.#preamblePending = meta === undefined && (this.#options.resume === undefined || this.resumeFailed !== undefined) && (this.#options.systemPromptAppend ?? "").trim() !== "";
     this.settings = new AcpSettings(this.#conn, result.sessionId, result, {
@@ -471,10 +477,21 @@ export class AcpSession implements ProviderSession {
    * Turn usage: `PromptResponse.usage` (unstable ACP field; OpenCode 2.x reports the turn's own
    * tokens there) plus the turn's share of the cumulative `usage_update.cost`.
    */
-  #turnUsage(usage: AcpPromptUsage | undefined): NormalizedEvent[] {
+  #turnUsage(usage: AcpPromptUsage | undefined, fallback?: TurnUsage): NormalizedEvent[] {
     const cost = this.#normalizer.turnCost;
     const tokens = usage && typeof usage.inputTokens === "number" && typeof usage.outputTokens === "number" ? usage : undefined;
-    if (!tokens && cost <= 0) return [];
+    if (!tokens && !fallback && cost <= 0) return [];
+    if (!tokens && fallback) {
+      return [
+        {
+          type: "usage",
+          usage: {
+            ...fallback,
+            ...(cost > 0 ? { costUsd: cost } : {}),
+          },
+        },
+      ];
+    }
     // Reasoning/thought tokens are billed as output, matching Codex and OpenCode (docs/internals/usage.md).
     const thought = typeof tokens?.thoughtTokens === "number" && tokens.thoughtTokens > 0 ? tokens.thoughtTokens : 0;
     return [
@@ -491,9 +508,9 @@ export class AcpSession implements ProviderSession {
     ];
   }
 
-  #settle(result: { stopReason?: AcpStopReason | string; usage?: AcpPromptUsage } | null | undefined): NormalizedEvent[] {
+  #settle(result: { stopReason?: AcpStopReason | string; usage?: AcpPromptUsage } | null | undefined, fallbackUsage?: TurnUsage): NormalizedEvent[] {
     const stopReason = result?.stopReason;
-    const events: NormalizedEvent[] = this.#turnUsage(result?.usage);
+    const events: NormalizedEvent[] = this.#turnUsage(result?.usage, fallbackUsage);
     if (this.#interrupted || stopReason === "cancelled") return [...events, { type: "settled", status: "interrupted" }];
     if (stopReason === "refusal") return [...events, { type: "settled", status: "error", error: `${this.#ctx.label} refused to continue` }];
     if (stopReason === "max_tokens" || stopReason === "max_turn_requests") {
@@ -535,7 +552,11 @@ export class AcpSession implements ProviderSession {
     };
     this.#conn
       .request<{ stopReason?: AcpStopReason; usage?: AcpPromptUsage } | null>("session/prompt", { sessionId, prompt })
-      .then((result) => finish(this.#settle(result)))
+      .then(async (result) => {
+        const hasWireUsage = result?.usage !== undefined && typeof result.usage.inputTokens === "number" && typeof result.usage.outputTokens === "number";
+        const fallbackUsage = !hasWireUsage && this.#ctx.transcriptUsage ? await this.#ctx.transcriptUsage.delta(sessionId).catch(() => undefined) : undefined;
+        finish(this.#settle(result, fallbackUsage));
+      })
       .catch((error: unknown) => {
         if (isAuthRequired(error)) this.#ctx.onAuthRequired?.(authHint(this.#ctx.label, this.init));
         const message = error instanceof Error ? error.message : String(error);

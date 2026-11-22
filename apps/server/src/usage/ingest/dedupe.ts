@@ -15,10 +15,20 @@ export interface Exclusion {
 export function exclusionFrom(model: ReadModel, tideHome: string | undefined): Exclusion {
   const sessionIds = new Set<string>();
   const cwdPrefixes = new Set<string>();
+  const threadsWithUsage = new Set<string>();
+  for (const turn of Object.values(model.turns)) {
+    if (turn.usage !== undefined) threadsWithUsage.add(turn.threadId);
+  }
   if (tideHome !== undefined) cwdPrefixes.add(join(tideHome, "worktrees"));
   for (const t of Object.values(model.threads)) {
-    if (t.nativeSessionId !== undefined) sessionIds.add(t.nativeSessionId);
-    for (const s of Object.values(t.providerSessions ?? {})) sessionIds.add(s.nativeSessionId);
+    // Older Antigravity threads ran before live transcript usage was recorded: keep their
+    // session IDs eligible for the local log ingester until Tide has recorded usage for them.
+    const skipAntigravity = t.provider === "antigravity" && !threadsWithUsage.has(t.id);
+    if (t.nativeSessionId !== undefined && !skipAntigravity) sessionIds.add(t.nativeSessionId);
+    for (const [key, s] of Object.entries(t.providerSessions ?? {})) {
+      if (key === "antigravity" && !threadsWithUsage.has(t.id)) continue;
+      sessionIds.add(s.nativeSessionId);
+    }
     if (t.worktreePath !== undefined) cwdPrefixes.add(t.worktreePath);
   }
   return { sessionIds, cwdPrefixes: [...cwdPrefixes] };

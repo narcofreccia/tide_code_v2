@@ -1,4 +1,6 @@
+import { homedir } from "node:os";
 import type { CompletionRequest, CompletionResult, DriverEnv, OpenSessionOptions, ProviderInstance, ProviderKind, ProviderSession, ProviderStatus, SlashCommandInfo } from "@tide/contracts";
+import { AntigravityTranscriptUsage } from "./antigravity-usage.ts";
 import { readCommandsCache, writeCommandsCache } from "./commands-cache.ts";
 import { withProfileQuirks } from "./profiles.ts";
 import { AcpSession } from "./session.ts";
@@ -94,10 +96,12 @@ export class AcpInstance implements ProviderInstance {
     const args = this.#config.args ?? [];
     this.#env.log(`[acp:${this.#label}] ${this.#config.command} ${args.join(" ")}`);
     const child = this.#deps.spawn(this.#config.command, args, { cwd: options.cwd, env: agentEnv(this.#config, this.#env, options.env) });
+    const home = this.#config.home ?? this.#env.instance?.home ?? homedir();
     const session = new AcpSession(child, options, {
       config: this.#config,
       env: this.#env,
       label: this.#label,
+      ...(this.#flavor.kind === "antigravity" ? { transcriptUsage: new AntigravityTranscriptUsage(home) } : {}),
       ...(this.#deps.timers ? { timers: this.#deps.timers } : {}),
       ...(this.#deps.initializeTimeoutMs !== undefined ? { initializeTimeoutMs: this.#deps.initializeTimeoutMs } : {}),
       onInitialized: (init) => {

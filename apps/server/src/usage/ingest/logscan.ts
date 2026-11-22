@@ -4,7 +4,7 @@ import type { ScanOptions, UsageRecord } from "../types.ts";
 import { readLines, type LogFile } from "./files.ts";
 
 /** Parses one log file; `partial` = it stopped early (records past `until`), so it is not cached. */
-export type FileParser = (lines: AsyncIterable<string>, until: number) => Promise<{ records: FileRecord[]; partial: boolean }>;
+export type FileParser = (lines: AsyncIterable<string>, until: number, filePath?: string) => Promise<{ records: FileRecord[]; partial: boolean }>;
 
 /**
  * The shared half of every jsonl ingester: index lookup or parse, window filter, cross-file
@@ -27,7 +27,7 @@ export async function* scanLogFiles(
       if (stats) stats.filesFromIndex++;
     } else {
       if (stats) stats.filesScanned++;
-      const parsed = await parse(readLines(file.path), until);
+      const parsed = await parse(readLines(file.path), until, file.path);
       records = parsed.records;
       if (!parsed.partial) index?.put(file.path, file.mtimeMs, file.size, records);
     }

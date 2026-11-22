@@ -697,9 +697,8 @@ Known limits: an upstream API error arrives as an assistant message followed by 
 the turn shows as completed with the error as its last message; no rewind, fork or compaction
 over ACP; a question that reuses the standard permission
 kinds shows as an approval card; no "Open in terminal" (`agy --conversation <id>` exists, but
-whether it takes the ACP session id is unchecked); no limit windows and no external usage logs, so the
-share-of-window quota does not cover it (amount-per-week quotas and Tide turn estimates cover Gemini/Claude/Codex models via `usage/pricing.ts`; T3 reads limits from a Google-internal
-endpoint with the OAuth refresh token, which Tide does not do).
+whether it takes the ACP session id is unchecked); no limit windows (T3 reads limits from a Google-internal
+endpoint with the OAuth refresh token, which Tide does not do), so the share-of-window quota does not cover it. Token usage and API-list cost estimates come from `~/.gemini/antigravity-cli/brain/<sessionId>/.system_generated/logs/transcript.jsonl` (`PLANNER_RESPONSE` rows: live per-turn deltas via `AntigravityTranscriptUsage` in `driver-acp` when ACP omits `PromptResponse.usage`, plus external log ingestion via `usage/ingest/antigravity.ts`, priced via `usage/pricing.ts`).
 
 ## W1 linked repos — how each harness scopes a secondary directory
 
