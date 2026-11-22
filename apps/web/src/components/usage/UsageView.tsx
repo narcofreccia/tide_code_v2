@@ -1,11 +1,13 @@
 import { useEffect, useState } from "react";
-import type { UsageSummary } from "@tide/contracts";
+import type { UsageRepairResult, UsageSummary } from "@tide/contracts";
 import { errorText } from "../../lib/dispatchOrToast.ts";
 import { callTargets, useMultiEnv } from "../../lib/envTargets.ts";
+import { formatUsd } from "../../lib/glassBox.ts";
 import { environmentName } from "../../state/environments.ts";
 import { call } from "../../state/model.ts";
 import { useProvidersSnapshot } from "../../state/providers.ts";
 import { patchServerSettings, useServerSettings } from "../../state/serverSettings.ts";
+import { Button } from "../ui/Button.tsx";
 import { Checkbox } from "../ui/Choice.tsx";
 import { DayBars } from "./DayBars.tsx";
 import { LimitsPanel } from "./LimitsPanel.tsx";
@@ -32,7 +34,7 @@ function isoDay(at: number): string {
 }
 
 /** `usage.summary` on every connected environment for the window. */
-function useUsage(since: number, until: number, includeExternal: boolean): { results: EnvUsage[]; loading: boolean } {
+function useUsage(since: number, until: number, includeExternal: boolean, refreshKey: number): { results: EnvUsage[]; loading: boolean } {
   const [results, setResults] = useState<EnvUsage[]>([]);
   const [loading, setLoading] = useState(true);
   useEffect(() => {
@@ -56,8 +58,84 @@ function useUsage(since: number, until: number, includeExternal: boolean): { res
     return () => {
       alive = false;
     };
-  }, [since, until, includeExternal]);
+  }, [since, until, includeExternal, refreshKey]);
   return { results, loading };
+}
+
+/**
+ * Checks `usage.repair` (dry run) and surfaces a one-click banner when pre-R20 resumed Claude
+ * sessions left inflated cumulative `total_cost_usd` reports in the event log.
+ */
+function RepairBanner({ envId, onRepaired }: { envId: string | undefined; onRepaired: () => void }) {
+  const [plan, setPlan] = useState<UsageRepairResult | undefined>(undefined);
+  const [includeHeuristic, setIncludeHeuristic] = useState(false);
+  const [applying, setApplying] = useState(false);
+  const [error, setError] = useState<string | undefined>(undefined);
+
+  useEffect(() => {
+    let alive = true;
+    const req = envId === undefined ? call("usage.repair", {}) : call("usage.repair", {}, { envId });
+    req
+      .then((res) => {
+        if (!alive || !res) return;
+        setPlan(res);
+        const pending = res.rows.filter((r) => !r.applied);
+        const hasTranscript = pending.some((r) => r.evidence === "transcript");
+        setIncludeHeuristic(!hasTranscript && pending.length > 0);
+      })
+      .catch(() => {
+        // Older servers or limited devices cannot run usage.repair: stay quiet.
+      });
+    return () => {
+      alive = false;
+    };
+  }, [envId]);
+
+  const pending = plan?.rows.filter((r) => !r.applied) ?? [];
+  if (pending.length === 0) return null;
+
+  const heuristicCount = pending.filter((r) => r.evidence === "heuristic").length;
+  const eligible = pending.filter((r) => includeHeuristic || r.evidence === "transcript");
+  const storedUsd = eligible.reduce((sum, r) => sum + r.storedUsd, 0);
+  const correctedUsd = eligible.reduce((sum, r) => sum + r.correctedUsd, 0);
+
+  const apply = async (): Promise<void> => {
+    setApplying(true);
+    setError(undefined);
+    try {
+      const params = { apply: true, ...(includeHeuristic ? { includeHeuristic: true } : {}) };
+      const res = await (envId === undefined ? call("usage.repair", params) : call("usage.repair", params, { envId }));
+      setPlan(res);
+      onRepaired();
+    } catch (err) {
+      setError(errorText(err));
+    } finally {
+      setApplying(false);
+    }
+  };
+
+  return (
+    <div className={styles.repairBanner} role="status" aria-label="Claude cost repair">
+      <div className={styles.repairCopy}>
+        <strong>Inflated Claude costs detected</strong>
+        <span>
+          {eligible.length} resumed Claude {eligible.length === 1 ? "report" : "reports"} stored {formatUsd(storedUsd)} instead of{" "}
+          {formatUsd(correctedUsd)} (cumulative session cost counted per turn).
+        </span>
+        {error ? <span className={styles.error}>{error}</span> : null}
+      </div>
+      <div className={styles.repairActions}>
+        {heuristicCount > 0 ? (
+          <Checkbox checked={includeHeuristic} onChange={(e) => setIncludeHeuristic(e.target.checked)}>
+            Include {heuristicCount} without transcript
+          </Checkbox>
+        ) : null}
+        <Button variant="primary" disabled={applying || eligible.length === 0} onClick={() => void apply()}>
+          {applying ? "Repairing…" : "Repair costs"}
+        </Button>
+      </div>
+    </div>
+  );
 }
 
 /** Structural placeholder matching the KPI strip, daily chart and table heights to prevent layout shift. */
@@ -88,7 +166,17 @@ function UsageSkeleton() {
   );
 }
 
-function EnvSection({ usage, titled, source }: { usage: EnvUsage; titled: boolean; source: SourceFilter }) {
+function EnvSection({
+  usage,
+  titled,
+  source,
+  onRepaired,
+}: {
+  usage: EnvUsage;
+  titled: boolean;
+  source: SourceFilter;
+  onRepaired: () => void;
+}) {
   const providers = useProvidersSnapshot();
   const summary = usage.summary;
   const rows = summary ? filterRowsBySource(summary.rows, source) : [];
@@ -102,8 +190,9 @@ function EnvSection({ usage, titled, source }: { usage: EnvUsage; titled: boolea
       ) : null}
       {summary ? (
         <>
+          <RepairBanner envId={usage.envId} onRepaired={onRepaired} />
           {rows.length > 0 ? <UsageSummaryCards rows={rows} /> : null}
-          <DayBars days={summary.days} />
+          <DayBars days={summary.days} {...(source !== "all" ? { sourceNote: "all sources" } : {})} />
           <UsageTable rows={rows} providers={providers} />
           <div className={styles.footnote}>
             <p className={styles.legend}>
@@ -136,10 +225,11 @@ export function UsageView() {
   const readLogs = useServerSettings((s) => s.settings.glassBox.readHarnessLogs);
   const [range, setRange] = useState<UsageWindow>(30);
   const [source, setSource] = useState<SourceFilter>("all");
+  const [refreshKey, setRefreshKey] = useState(0);
   const [now] = useState(() => Date.now());
   const [custom, setCustom] = useState(() => ({ from: isoDay(now - 7 * 86_400_000), to: isoDay(now) }));
   const { since, until } = windowRange(range, now, custom);
-  const { results, loading } = useUsage(since, until, readLogs);
+  const { results, loading } = useUsage(since, until, readLogs, refreshKey);
   const multi = useMultiEnv() && results.length > 1;
   const activeSource: SourceFilter = readLogs ? source : "all";
 
@@ -204,7 +294,13 @@ export function UsageView() {
         ) : (
           <div className={`${styles.results} ${loading ? styles.updating : ""}`} aria-busy={loading}>
             {results.map((usage) => (
-              <EnvSection key={usage.envId ?? "local"} usage={usage} titled={multi} source={activeSource} />
+              <EnvSection
+                key={usage.envId ?? "local"}
+                usage={usage}
+                titled={multi}
+                source={activeSource}
+                onRepaired={() => setRefreshKey((k) => k + 1)}
+              />
             ))}
           </div>
         )}

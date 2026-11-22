@@ -28,11 +28,19 @@ export function SourceChip({ source }: { source: UsageRow["source"] }) {
   return source === "tide" ? <Pill tone="accent">Tide</Pill> : <Pill>outside Tide (harness logs)</Pill>;
 }
 
-/** The window at a glance: tokens, turns, reported and estimated spend, in one card. */
+/** The window at a glance: tokens, turns/calls, reported and estimated spend, in one card. */
 export function UsageSummaryCards({ rows }: { rows: readonly UsageRow[] }) {
   const t = sumRows(rows);
   const groups = groupByHarness(rows);
   const cached = cacheHitPct(t);
+  const hasExternal = rows.some((r) => r.source === "external");
+  const reportedRows = rows.filter((r) => r.costUsd !== undefined).length;
+  const reportedSub =
+    reportedRows === 0
+      ? "not reported by harness"
+      : reportedRows < rows.length
+        ? `partial · ${reportedRows} of ${rows.length} rows`
+        : "harness reported";
   const cells: { label: string; value: string; sub?: string }[] = [
     {
       label: "Tokens",
@@ -40,14 +48,16 @@ export function UsageSummaryCards({ rows }: { rows: readonly UsageRow[] }) {
       ...(cached !== undefined ? { sub: `${cached}% cache read` } : {}),
     },
     {
-      label: "Turns",
+      label: hasExternal ? "Turns / calls" : "Turns",
       value: t.turns.toLocaleString("en-US"),
-      sub: `${groups.length} ${groups.length === 1 ? "harness" : "harnesses"}`,
+      sub: hasExternal
+        ? `Tide turns + log API calls · ${groups.length} ${groups.length === 1 ? "harness" : "harnesses"}`
+        : `${groups.length} ${groups.length === 1 ? "harness" : "harnesses"}`,
     },
     {
       label: "Reported",
       value: reported(t),
-      sub: "harness reported",
+      sub: reportedSub,
     },
     {
       label: "Estimated",
@@ -89,7 +99,13 @@ export function UsageTable({ rows, providers }: { rows: readonly UsageRow[]; pro
             <th scope="col" className={styles.num}>Out</th>
             <th scope="col" className={styles.num}>Cache read</th>
             <th scope="col" className={styles.num}>Cache write</th>
-            <th scope="col" className={styles.num}>Turns</th>
+            <th
+              scope="col"
+              className={styles.num}
+              title="Tide rows count user turns; harness log rows count individual model API calls"
+            >
+              {rows.some((r) => r.source === "external") ? "Turns / calls" : "Turns"}
+            </th>
             <th scope="col" className={styles.num}>Reported</th>
             <th scope="col" className={styles.num}>Estimated</th>
           </tr>

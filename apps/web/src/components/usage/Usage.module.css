@@ -286,6 +286,20 @@
 .totalRow th, .totalRow td { font-weight: var(--fw-semibold); border-top: 1px solid var(--border-strong); border-bottom: 0; }
 
 .footnote { display: flex; flex-direction: column; gap: var(--sp-2); }
+.repairBanner {
+  display: flex;
+  align-items: center;
+  justify-content: space-between;
+  gap: var(--sp-3);
+  flex-wrap: wrap;
+  padding: var(--sp-3) var(--sp-4);
+  background: color-mix(in srgb, var(--st-needs) 8%, var(--surface));
+  border: 1px solid color-mix(in srgb, var(--st-needs) 35%, var(--border));
+  border-radius: var(--radius-lg);
+}
+.repairCopy { display: flex; flex-direction: column; gap: 2px; font-size: var(--fs-sm); color: var(--text-2); }
+.repairCopy strong { color: var(--text); font-weight: var(--fw-semibold); }
+.repairActions { display: flex; align-items: center; gap: var(--sp-3); flex-wrap: wrap; }
 .notesDisclosure { font-size: var(--fs-sm); color: var(--text-2); }
 .notesSummary { cursor: pointer; color: var(--muted); font-size: var(--fs-xs); user-select: none; }
 .notesSummary:hover { color: var(--text-2); }

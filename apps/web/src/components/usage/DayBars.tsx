@@ -14,7 +14,7 @@ function dayTitle(day: UsageSummary["days"][number]): string {
 }
 
 /** Tokens or spend per day as CSS columns; the height is a class from a 5 % step scale. */
-export function DayBars({ days }: { days: UsageSummary["days"] }) {
+export function DayBars({ days, sourceNote }: { days: UsageSummary["days"]; sourceNote?: string }) {
   const [metric, setMetric] = useState<ChartMetric>("tokens");
   const [activeDay, setActiveDay] = useState<UsageSummary["days"][number] | undefined>(undefined);
   if (days.length === 0) return <p className={styles.note}>No usage in this window.</p>;
@@ -31,7 +31,9 @@ export function DayBars({ days }: { days: UsageSummary["days"] }) {
     <div className={styles.chartCard}>
       <div className={styles.chartHead}>
         <div className={styles.chartTitleGroup}>
-          <span className={styles.chartTitle}>Daily activity</span>
+          <span className={styles.chartTitle}>
+            Daily activity{sourceNote ? ` (${sourceNote})` : ""}
+          </span>
           <span className={styles.chartReadout}>{activeDay ? dayTitle(activeDay) : peakLabel}</span>
         </div>
         {hasSpend ? (

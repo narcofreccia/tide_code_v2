@@ -157,4 +157,47 @@ describe("UsageView", () => {
     fireEvent.click(claudeToggle);
     expect(claudeToggle.getAttribute("aria-expanded")).toBe("false");
   });
+
+  it("shows a Claude cost repair banner when usage.repair finds inflated rows and refreshes after applying", async () => {
+    attachFakeStore(modelWith({}));
+    let repaired = false;
+    const rpc = mockRpc({
+      "usage.summary": () =>
+        summary({
+          rows: [
+            { provider: "claude", model: "opus", source: "tide", inputTokens: 1000, outputTokens: 200, cacheReadTokens: 0, cacheWriteTokens: 0, turns: 4, costUsd: repaired ? 12.5 : 500 },
+          ],
+        }),
+      "usage.repair": (params) => {
+        const p = params as { apply?: boolean };
+        if (p.apply) {
+          repaired = true;
+          return {
+            rows: [{ threadId: "t1", threadTitle: "Old", turnId: "u1", at: 1, storedUsd: 500, correctedUsd: 12.5, evidence: "transcript", applied: true }],
+            storedUsd: 500,
+            correctedUsd: 12.5,
+            appliedCount: 1,
+          };
+        }
+        return {
+          rows: [{ threadId: "t1", threadTitle: "Old", turnId: "u1", at: 1, storedUsd: 500, correctedUsd: 12.5, evidence: "transcript", applied: false }],
+          storedUsd: 500,
+          correctedUsd: 12.5,
+          appliedCount: 0,
+        };
+      },
+    });
+    render(<UsageView />);
+    const banner = await screen.findByRole("status", { name: "Claude cost repair" });
+    expect(banner.textContent).toContain("$500.00");
+    expect(banner.textContent).toContain("$12.50");
+
+    await act(async () => {
+      fireEvent.click(within(banner).getByRole("button", { name: "Repair costs" }));
+    });
+    expect(rpc).toHaveBeenCalledWith("usage.repair", { apply: true });
+    expect(screen.queryByRole("status", { name: "Claude cost repair" })).toBeNull();
+    const table = await screen.findByRole("table");
+    expect(within(table).getAllByText("$12.50").length).toBeGreaterThan(0);
+  });
 });
