@@ -62,7 +62,8 @@ if command -v cygpath >/dev/null 2>&1; then STAGE="$(cygpath -m "$STAGE")"; fi
 
 mkdir -p "$STAGE/server"
 cp "$SERVER_BIN" "$STAGE/server/tide-server.exe"
-tar -czf "$STAGE/$SERVER_TARBALL_NAME" -C "$STAGE/server" tide-server.exe
+# Relative paths inside $STAGE: GNU tar (Git Bash) treats `C:/...` as a remote `host:path`.
+(cd "$STAGE" && tar -czf "$SERVER_TARBALL_NAME" -C server tide-server.exe)
 SERVER_SHA="$(sha256sum "$STAGE/$SERVER_TARBALL_NAME" | awk '{print $1}')"
 echo "$SERVER_SHA  $SERVER_TARBALL_NAME" > "$STAGE/$SERVER_TARBALL_NAME.sha256"
 echo "==> headless $SERVER_TRIPLE $SERVER_SHA"
