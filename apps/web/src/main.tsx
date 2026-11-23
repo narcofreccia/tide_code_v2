@@ -12,7 +12,7 @@ import { registerServiceWorker } from "./lib/registerSw.ts";
 
 applyDesktopFlag();
 startClient();
-if (import.meta.env.PROD) registerServiceWorker();
+if (import.meta.env.PROD) void registerServiceWorker();
 
 const container = document.getElementById("root");
 if (!container) throw new Error("#root missing");

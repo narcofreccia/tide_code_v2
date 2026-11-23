@@ -1,5 +1,5 @@
 import { describe, expect, it } from "vitest";
-import { cacheName, isStaleCache, strategyFor } from "./policy.ts";
+import { cacheName, isShellCache, isStaleCache, strategyFor } from "./policy.ts";
 
 const origin = "https://tide.example";
 const at = (path: string, method = "GET", base = origin) => strategyFor(new URL(path, base), method, origin);
@@ -29,5 +29,7 @@ describe("service worker cache policy", () => {
     expect(isStaleCache("tide-shell-b1", cur)).toBe(true);
     expect(isStaleCache(cur, cur)).toBe(false);
     expect(isStaleCache("other-app", cur)).toBe(false);
+    expect(isShellCache(cur)).toBe(true);
+    expect(isShellCache("other-app")).toBe(false);
   });
 });

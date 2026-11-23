@@ -17,11 +17,18 @@ export function strategyFor(url: URL, method: string, origin: string): CacheStra
   return "network-first";
 }
 
+const CACHE_PREFIX = "tide-shell-";
+
 /** The per-build cache name; an older name is deleted on activate. */
 export function cacheName(buildId: string): string {
-  return `tide-shell-${buildId}`;
+  return `${CACHE_PREFIX}${buildId}`;
+}
+
+/** Any build's cache, current or not (the desktop shell retires them all). */
+export function isShellCache(name: string): boolean {
+  return name.startsWith(CACHE_PREFIX);
 }
 
 export function isStaleCache(name: string, current: string): boolean {
-  return name.startsWith("tide-shell-") && name !== current;
+  return isShellCache(name) && name !== current;
 }

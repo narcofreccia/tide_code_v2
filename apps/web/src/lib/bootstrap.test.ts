@@ -4,10 +4,14 @@ import {
   defaultServerUrl,
   httpOriginFor,
   isDesktop,
+  isRemoteLaunch,
+  isTauriOrigin,
   pairingPageUrl,
   platformOf,
   resolveRemoteLaunch,
   resolveServerUrl,
+  splashBaseFor,
+  splashUrlFor,
   wsUrlFor,
 } from "./bootstrap.ts";
 
@@ -129,5 +133,39 @@ describe("remote launch", () => {
     // the token leaves the address bar; remote=1 stays so a reload still skips the local server
     expect(window.location.search).toBe("?remote=1");
     expect(resolveRemoteLaunch()).toEqual({ url: "", token: "" });
+  });
+});
+
+describe("desktop shell splash", () => {
+  const at = (href: string) => ({ protocol: new URL(href).protocol, href });
+
+  it("recognises the shell's app origins", () => {
+    expect(isTauriOrigin(at("tauri://localhost/"))).toBe(true);
+    expect(isTauriOrigin(at("http://tauri.localhost/#/mission"))).toBe(true);
+    expect(isTauriOrigin(at("http://localhost:5173/"))).toBe(false);
+  });
+
+  it("derives the splash base on macOS/Linux and Windows", () => {
+    expect(splashBaseFor(at("tauri://localhost/#/settings"))).toBe("tide-shell://localhost/");
+    expect(splashBaseFor(at("http://tauri.localhost/?remote=1#/x"))).toBe("http://tide-shell.localhost/");
+    expect(splashBaseFor(at("https://TAURI.localhost/"))).toBe("https://tide-shell.localhost/");
+  });
+
+  it("has no splash in a browser, vite dev or a page served by tide-server", () => {
+    expect(splashBaseFor(at("http://localhost:5173/"))).toBeNull();
+    expect(splashBaseFor(at("http://192.168.1.20:3777/"))).toBeNull();
+    expect(splashBaseFor(at("https://tide.example.ts.net/"))).toBeNull();
+    expect(splashUrlFor("connect", at("http://127.0.0.1:3777/"), "dark")).toBeNull();
+  });
+
+  it("builds the action URL with the theme, encoded", () => {
+    expect(splashUrlFor("connect", at("tauri://localhost/"), "dark")).toBe("tide-shell://localhost/?theme=dark&connect=1");
+    expect(splashUrlFor("local", at("http://tauri.localhost/"), "")).toBe("http://tide-shell.localhost/?theme=system&local=1");
+    expect(splashUrlFor("local", at("tauri://localhost/"), "a&b=c")).toBe("tide-shell://localhost/?theme=a%26b%3Dc&local=1");
+  });
+
+  it("tells a remote launch from its remote=1 flag", () => {
+    expect(isRemoteLaunch({ href: "tauri://localhost/?remote=1#/settings" })).toBe(true);
+    expect(isRemoteLaunch({ href: "tauri://localhost/#/settings" })).toBe(false);
   });
 });

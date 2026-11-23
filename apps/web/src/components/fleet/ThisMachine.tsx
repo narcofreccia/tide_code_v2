@@ -10,6 +10,7 @@ import { SettingToggle } from "../settings/ui/SettingToggle.tsx";
 import { HostBars } from "./FleetBits.tsx";
 import { hostLine, harnessSummary, formatBytes } from "./envView.ts";
 import { PairDevice } from "./PairDevice.tsx";
+import { ShellActions } from "./ShellActions.tsx";
 import { PairedDevices, useOwnsEnvironment } from "./PairedDevices.tsx";
 import { useDeviceLimit } from "../../state/deviceAccess.ts";
 import { UpdateHarnesses } from "./UpdateHarnesses.tsx";
@@ -120,6 +121,7 @@ export function ThisMachine({ info, envId }: { info: ServerInfo | undefined; env
           to reach it from your network.
         </SettingNote>
       )}
+      <ShellActions />
       <PairDevice envId={envId} />
       <PairedDevices envId={envId} />
       <UpdateHarnesses limit={limit} />

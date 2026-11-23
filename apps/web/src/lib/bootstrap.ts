@@ -14,7 +14,7 @@ const DEFAULT_URL = "ws://127.0.0.1:3777/ws";
  * / `tide-shell://localhost` on macOS & Linux, or `http(s)://tauri.localhost` /
  * `http(s)://tide-shell.localhost` on Windows (WebView2).
  */
-function isTauriOrigin(location: { protocol: string; href: string }): boolean {
+export function isTauriOrigin(location: { protocol: string; href: string }): boolean {
   if (location.protocol === "tauri:" || location.protocol === "tide-shell:") return true;
   try {
     const host = new URL(location.href).hostname.toLowerCase();
@@ -195,4 +195,54 @@ export function applyDesktopFlag(): DesktopPlatform | null {
   }
   document.documentElement.dataset.desktop = platform;
   return platform;
+}
+
+// ---- desktop shell actions ----
+
+export type SplashAction = "connect" | "local";
+
+/**
+ * The shell's splash page for a page on the shell's app origin: `tauri://localhost` →
+ * `tide-shell://localhost/` (macOS & Linux), `http(s)://tauri.localhost` →
+ * `http(s)://tide-shell.localhost/` (Windows). Anything else (a browser, vite dev, a page
+ * served by tide-server) has no splash: `null`.
+ */
+export function splashBaseFor(location: { protocol: string; href: string }): string | null {
+  if (location.protocol === "tauri:") return "tide-shell://localhost/";
+  if (location.protocol !== "http:" && location.protocol !== "https:") return null;
+  try {
+    if (new URL(location.href).hostname.toLowerCase() !== "tauri.localhost") return null;
+  } catch {
+    return null;
+  }
+  return `${location.protocol}//tide-shell.localhost/`;
+}
+
+/**
+ * The splash URL that performs a shell action: `connect` opens its pairing form, `local`
+ * switches the shell back to its own server. The theme rides along as the shell passes it.
+ */
+export function splashUrlFor(action: SplashAction, location: { protocol: string; href: string }, theme: string): string | null {
+  const base = splashBaseFor(location);
+  if (base === null) return null;
+  return `${base}?theme=${encodeURIComponent(theme || "system")}&${action}=1`;
+}
+
+/** R17: the shell opened another machine; `remote=1` stays in the URL for the page's life. */
+export function isRemoteLaunch(location: { href: string }): boolean {
+  try {
+    return new URL(location.href).searchParams.get("remote") === "1";
+  } catch {
+    return false;
+  }
+}
+
+/** Leaves the app for the shell's splash page (a URL from `splashUrlFor`), which does the rest. */
+export function openSplash(url: string): void {
+  window.location.assign(url);
+}
+
+/** The current theme as the shell hands it to the splash. */
+export function currentTheme(): string {
+  return document.documentElement.dataset.theme || "system";
 }
