@@ -1,14 +1,13 @@
 #!/usr/bin/env bash
 # =============================================================================
-# Publish the Linux AppImage build to R2 — the Linux half of build_release.sh.
-# Runs in CI (.github/workflows/release-linux.yml on an ubuntu-latest runner)
-# after `tauri build --bundles appimage`; also works locally on Linux.
+# Publish the Linux .deb/.rpm + headless server build to R2 — the Linux half of
+# build_release.sh. Runs in CI (.github/workflows/release-linux.yml on ubuntu-latest)
+# after `tauri build --bundles deb,rpm`; also works locally on Linux.
 #
 # Same distribution rules as macOS (docs/RELEASING.md): FIXED artifact names
 # (permanent download links), overwrite in place with no-cache, prune extras,
-# and mutate ONLY the linux-x86_64 key of the shared latest.json via
-# scripts/release/merge_manifest.py (mac/windows entries preserved). Ends with the same
-# updater end-to-end verification as the mac script.
+# and mutate ONLY server[x86_64-unknown-linux-gnu] of the shared latest.json via
+# scripts/release/merge_manifest.py (platforms + other server/web entries preserved).
 #
 # Env: R2_ENDPOINT, R2_BUCKET (bucket/prefix), TIDE_PUBLIC_BUCKET
 # (public base, e.g. https://pub-….r2.dev/tidecode),
@@ -49,9 +48,8 @@ upload() { "${AWS[@]}" s3 cp "$1" "s3://$R2_BUCKET/linux/$2" --cache-control no-
   "${AWS[@]}" s3 rm "s3://$R2_BUCKET/linux/$key" --only-show-errors
   echo "pruned linux/$key"
 done
-for name in tide.deb tide.rpm; do
-  curl -fsIL --max-time 30 "${TIDE_PUBLIC_BUCKET%/}/linux/$name" >/dev/null && echo "verified ${TIDE_PUBLIC_BUCKET%/}/linux/$name" || true
-done
+[[ -n "$DEB_SRC" ]] && { curl -fsIL --max-time 30 "${TIDE_PUBLIC_BUCKET%/}/linux/tide.deb" >/dev/null || die "linux/tide.deb not reachable"; echo "verified ${TIDE_PUBLIC_BUCKET%/}/linux/tide.deb"; }
+[[ -n "$RPM_SRC" ]] && { curl -fsIL --max-time 30 "${TIDE_PUBLIC_BUCKET%/}/linux/tide.rpm" >/dev/null || die "linux/tide.rpm not reachable"; echo "verified ${TIDE_PUBLIC_BUCKET%/}/linux/tide.rpm"; }
 
 # --- Headless server tarball (artifact first, manifest second) -----------------------
 [[ -f "$SERVER_BIN" ]] || die "no $SERVER_BIN — run scripts/build-server-sidecar.sh --target linux-x64 first"

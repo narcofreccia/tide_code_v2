@@ -41,8 +41,6 @@ jobs:
         run: |
           sudo apt-get update
           sudo apt-get install -y libwebkit2gtk-4.1-dev libayatana-appindicator3-dev librsvg2-dev patchelf file
-          # linuxdeploy is itself an AppImage and needs FUSE on the runner (ubuntu-24.04 ships libfuse2t64)
-          sudo apt-get install -y libfuse2t64 || sudo apt-get install -y libfuse2
 
       # No `version:` here — pnpm is pinned by `packageManager` in package.json.
       - uses: pnpm/action-setup@v4
@@ -91,16 +89,24 @@ jobs:
         run: pnpm --filter @tide/desktop exec tauri build --bundles deb,rpm
 
       - name: Smoke test the bundled sidecar
+        timeout-minutes: 5
         run: |
           set -euo pipefail
           server="apps/desktop/src-tauri/binaries/tide-server-x86_64-unknown-linux-gnu"
-          TIDE_HOME="$RUNNER_TEMP/tide-smoke" "$server" --dev --port 3799 &
+          mkdir -p "$RUNNER_TEMP/tide-smoke"
+          TIDE_HOME="$RUNNER_TEMP/tide-smoke" "$server" --dev --port 3799 >"$RUNNER_TEMP/tide-smoke/server.log" 2>&1 </dev/null &
           pid=$!
+          ok=0
           for _ in $(seq 1 30); do
-            curl -fsS "http://127.0.0.1:3799/health" && break || sleep 1
+            if curl -fsS "http://127.0.0.1:3799/health"; then ok=1; break; fi
+            sleep 1
           done
-          curl -fsS "http://127.0.0.1:3799/health" || { echo "sidecar never answered /health"; kill $pid; exit 1; }
-          kill $pid || true
+          echo
+          kill "$pid" 2>/dev/null || true
+          wait "$pid" 2>/dev/null || true
+          tail -20 "$RUNNER_TEMP/tide-smoke/server.log" || true
+          [ "$ok" = 1 ] || { echo "sidecar never answered /health"; exit 1; }
+          echo "smoke test OK"
 
       - name: "Publish to R2 (fixed names linux/tide.deb, linux/tide.rpm)"
         env:

@@ -9,7 +9,7 @@
 {"t":"in","frame":{"status":200,"body":{"data":{"id":"big-pickle","providerID":"opencode","name":"Big Pickle","limit":{"context":200000}}}}}
 {"t":"expect_out","match":{"method":"POST","path":"/api/session","body":{"location":{"directory":"$any"},"agent":"build","metadata":{"tideThreadId":"$any"}}}}
 {"t":"in","frame":{"status":200,"body":{"data":{"id":"ses_1","projectID":"p","cost":0,"tokens":{"input":0,"output":0,"reasoning":0,"cache":{"read":0,"write":0}},"location":{"directory":"/repo"}}}}}
-{"t":"expect_out","match":{"method":"PUT","path":"/api/experimental/session/ses_1/instructions/entries/tide","body":{"value":"/^Tide thread tools/"}}}
+{"t":"expect_out","match":{"method":"PUT","path":"/api/experimental/session/ses_1/instructions/entries/tide","body":{"value":"/^## Tide orchestration/"}}}
 {"t":"in","frame":{"status":204}}
 {"t":"expect_out","match":{"method":"GET","path":"/api/event"}}
 {"t":"in","frame":{"status":200,"stream":true}}

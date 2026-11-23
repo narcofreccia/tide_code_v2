@@ -74,7 +74,7 @@ curl -fsS --max-time 15 "${TIDE_PUBLIC_BUCKET%/}/latest.json" -o "$STAGE/latest.
   --manifest "$STAGE/latest.json" \
   --platform "$PLATFORM_KEY" \
   --version "$VERSION" \
-  --signature "$(tr -d '\n' < "$SIG_SRC")" \
+  --signature "$(tr -d '\r\n' < "$SIG_SRC")" \
   --url "$ARTIFACT_URL" \
   --server-triple "$SERVER_TRIPLE" \
   --server-url "$SERVER_URL" \
@@ -112,5 +112,6 @@ curl -fsIL --max-time 30 "$ARTIFACT_URL" >/dev/null || die "artifact URL not rea
 HEADLESS="$(curl -fsS --max-time 20 "${TIDE_PUBLIC_BUCKET%/}/latest.json" | "$PY" -c "import json,sys; d=json.load(sys.stdin); s=(d.get('server') or {}).get('$SERVER_TRIPLE') or {}; print('ok' if s.get('version') == '$VERSION' and s.get('sha256') == '$SERVER_SHA' else 'mismatch')")"
 [[ "$HEADLESS" == "ok" ]] || die "published latest.json failed the headless verification ($HEADLESS)"
 curl -fsIL --max-time 30 "$SERVER_URL" >/dev/null || die "headless artifact not reachable: $SERVER_URL"
+curl -fsIL --max-time 30 "$SERVER_URL.sha256" >/dev/null || die "headless checksum not reachable: $SERVER_URL.sha256"
 
 echo "==> Done — fixed download link: $ARTIFACT_URL"

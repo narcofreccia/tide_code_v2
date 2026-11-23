@@ -248,7 +248,7 @@
 }
 
 .childCaret {
-  font-size: 10px;
+  font-size: var(--fs-xs);
 }
 
 .childToggle:hover,

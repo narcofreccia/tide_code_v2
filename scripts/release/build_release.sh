@@ -220,6 +220,27 @@ if [[ "$MANIFEST_ONLY" -eq 0 ]]; then
   step "Step 2: Build the tide-server sidecar for $HOST_TRIPLE"
   "$PROJECT_ROOT/scripts/build-server-sidecar.sh" "$HOST_TRIPLE"
 
+  step "Step 2b: Smoke test the bundled sidecar"
+  SMOKE_DIR="$(mktemp -d)"
+  SMOKE_BIN="$SRC_TAURI_DIR/binaries/tide-server-$HOST_TRIPLE"
+  TIDE_HOME="$SMOKE_DIR" "$SMOKE_BIN" --dev --port 3799 >"$SMOKE_DIR/server.log" 2>&1 </dev/null &
+  SMOKE_PID=$!
+  SMOKE_OK=0
+  for _ in $(seq 1 30); do
+    if curl -fsS "http://127.0.0.1:3799/health"; then SMOKE_OK=1; break; fi
+    sleep 1
+  done
+  echo
+  kill "$SMOKE_PID" 2>/dev/null || true
+  wait "$SMOKE_PID" 2>/dev/null || true
+  if [[ "$SMOKE_OK" -ne 1 ]]; then
+    tail -20 "$SMOKE_DIR/server.log" || true
+    rm -rf "$SMOKE_DIR"
+    die "sidecar failed smoke test (/health never answered)"
+  fi
+  rm -rf "$SMOKE_DIR"
+  echo "Sidecar smoke test OK"
+
   step "Step 3: Build the web client"
   (cd "$PROJECT_ROOT" && pnpm --filter @tide/web build)
   # bundled as a Tauri resource (bundle.resources) so the packaged server can serve it to other devices
@@ -247,33 +268,13 @@ if [[ "$MANIFEST_ONLY" -eq 0 ]]; then
   [[ -n "$SIGNATURE" ]] || SIGNATURE="$(tr -d '\r\n' < "$APP_TAR_GZ.sig")"
   DMG_PATH="$(ls -t "$BUNDLE_DMG_DIR"/*.dmg 2>/dev/null | head -n1 || true)"
 
-  if [[ "$SKIP_NOTARIZE" -eq 0 ]]; then
-    step "Step 5: Notarize + staple"
-    if [[ -n "${APPLE_ID:-}" && -n "${APPLE_APP_PASSWORD:-}" && -n "${APPLE_NOTARY_TEAM_ID:-}" ]]; then
-      need_cmd xcrun
-      [[ -n "$SIGNING_IDENTITY" ]] || die "no Developer ID Application identity; set APPLE_SIGNING_IDENTITY in .env.build"
-      if [[ -n "$DMG_PATH" && -f "$DMG_PATH" ]]; then
-        xcrun notarytool submit "$DMG_PATH" \
-          --apple-id "$APPLE_ID" --password "$APPLE_APP_PASSWORD" \
-          --team-id "$APPLE_NOTARY_TEAM_ID" --wait
-        xcrun stapler staple "$DMG_PATH"
-      else
-        echo "WARNING: no .dmg in $BUNDLE_DMG_DIR; nothing to notarize"
-      fi
-    else
-      echo "Skipping notarization: APPLE_ID / APPLE_APP_PASSWORD / APPLE_NOTARY_TEAM_ID not fully set"
-    fi
-  else
-    step "Step 5: Notarization SKIPPED (--skip-notarize)"
-  fi
-
   # --- Entitlements guard --------------------------------------------------
   # Hardened runtime turns library validation ON. The bun-compiled `tide-server`
   # sidecar JITs and dlopens, so every Mach-O we ship in Contents/MacOS/ must
   # carry disable-library-validation + allow-jit + allow-unsigned-executable-memory.
   # Shipping a hardened binary without them means the server never starts.
-  # Turn a violation into a build failure.
-  step "Step 6: Entitlements guard over Contents/MacOS/"
+  # Run BEFORE notarization so a violation fails in seconds instead of minutes.
+  step "Step 5: Entitlements guard over Contents/MacOS/"
   need_cmd codesign
   REQUIRED_ENTITLEMENTS=(
     "com.apple.security.cs.disable-library-validation"
@@ -303,6 +304,26 @@ if [[ "$MANIFEST_ONLY" -eq 0 ]]; then
   done
   if [[ "$GUARD_FAILED" -eq 1 ]]; then
     die "entitlements guard failed — check bundle.macOS.entitlements in tauri.conf.json (expects scripts/release/entitlements.plist)"
+  fi
+
+  if [[ "$SKIP_NOTARIZE" -eq 0 ]]; then
+    step "Step 6: Notarize + staple"
+    if [[ -n "${APPLE_ID:-}" && -n "${APPLE_APP_PASSWORD:-}" && -n "${APPLE_NOTARY_TEAM_ID:-}" ]]; then
+      need_cmd xcrun
+      [[ -n "$SIGNING_IDENTITY" ]] || die "no Developer ID Application identity; set APPLE_SIGNING_IDENTITY in .env.build"
+      if [[ -n "$DMG_PATH" && -f "$DMG_PATH" ]]; then
+        xcrun notarytool submit "$DMG_PATH" \
+          --apple-id "$APPLE_ID" --password "$APPLE_APP_PASSWORD" \
+          --team-id "$APPLE_NOTARY_TEAM_ID" --wait
+        xcrun stapler staple "$DMG_PATH"
+      else
+        echo "WARNING: no .dmg in $BUNDLE_DMG_DIR; nothing to notarize"
+      fi
+    else
+      echo "Skipping notarization: APPLE_ID / APPLE_APP_PASSWORD / APPLE_NOTARY_TEAM_ID not fully set"
+    fi
+  else
+    step "Step 6: Notarization SKIPPED (--skip-notarize)"
   fi
 
   # --- Headless artifacts (`tide update`, headless install) ---------------

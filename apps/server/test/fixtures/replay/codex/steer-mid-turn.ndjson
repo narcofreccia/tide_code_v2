@@ -23,3 +23,5 @@
 {"t":"in","frame":{"jsonrpc":"2.0","id":"$id","result":{"account":{"type":"chatgpt","email":"dev@example.com","planType":"pro"},"requiresOpenaiAuth":false}}}
 {"t":"expect_out","match":{"method":"model/list"}}
 {"t":"in","frame":{"jsonrpc":"2.0","id":"$id","result":{"data":[{"id":"gpt-5.6-sol","model":"gpt-5.6-sol","displayName":"GPT-5.6-Sol","hidden":false,"isDefault":true}],"nextCursor":null}}}
+{"t":"expect_out","match":{"method":"account/rateLimits/read"}}
+{"t":"in","frame":{"jsonrpc":"2.0","id":"$id","result":{}}}
