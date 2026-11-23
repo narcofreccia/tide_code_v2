@@ -9,13 +9,13 @@
 //
 // Exit 0: every snapshot of every round rendered. 1: at least one did not. 2: script error.
 // The report (report.json, summary.txt, PNGs, server log tail) is always written to --out.
-import { spawn, execFileSync } from "node:child_process";
+import { spawn } from "node:child_process";
 import fs from "node:fs";
 import path from "node:path";
 import { parseArgs } from "node:util";
+import { IS_WIN, collectWebviewLog, evidenceLines, webviewLogPlan, windowsEvidence, winKill } from "./desktop-ui-smoke-win.mjs";
 
-const VERSION = "1.0.0";
-const IS_WIN = process.platform === "win32";
+const VERSION = "1.1.0";
 const CMD_TIMEOUT_MS = 5000;
 const POLL_MS = 150;
 const SETTLE_MS = 12_000; // past the web app's 8 s boot gate
@@ -24,6 +24,10 @@ const RELOAD_LOAD_TIMEOUT_MS = 60_000;
 const BOOT_GATE_ALERT = "Could not reach the Tide server";
 const MAX_OTHER_CONSOLE = 50;
 const MAX_EVENTS = 1000;
+const HOSTS = ["127.0.0.1", "[::1]"]; // IPv4 and IPv6 loopback: "localhost" may resolve to either
+const FALLBACK_AFTER_MS = 3000; // list answered but no page target for this long: take another target
+const SILENT_AFTER_LISTEN_MS = 45_000;
+const SERVER_LISTENING = /tide-server listening on/;
 
 const sleep = (ms) => new Promise((r) => setTimeout(r, ms));
 const now = () => Date.now();
@@ -77,13 +81,39 @@ function findAppExe(dir) {
   return { exe: candidates[0].file, candidates: candidates.map((c) => c.file) };
 }
 
-async function getJson(port, route) {
+function errorText(e) {
+  const c = e?.cause;
+  return `${e?.name}: ${e?.message}${c ? ` (cause ${c.code ?? c.name}: ${c.message})` : ""}`;
+}
+
+/** Resolves { ok, json } or { ok: false, error } — the error text is evidence, not noise. */
+async function fetchJson(host, port, route) {
   try {
-    const res = await fetch(`http://127.0.0.1:${port}${route}`, { signal: AbortSignal.timeout(2000) });
-    return res.ok ? await res.json() : null;
-  } catch {
-    return null;
+    const res = await fetch(`http://${host}:${port}${route}`, { signal: AbortSignal.timeout(2000) });
+    if (!res.ok) return { ok: false, error: `HTTP ${res.status}: ${(await res.text()).slice(0, 200)}` };
+    return { ok: true, json: await res.json() };
+  } catch (e) {
+    return { ok: false, error: errorText(e) };
   }
+}
+
+async function getJson(port, route, host = "127.0.0.1") {
+  const r = await fetchJson(host, port, route);
+  return r.ok ? r.json : null;
+}
+
+async function portAnswers(port) {
+  for (const host of HOSTS) if (await getJson(port, "/json/version", host)) return true;
+  return false;
+}
+
+/** page first, then webview, other, then anything debuggable that is not DevTools itself. */
+function pickTarget(targets, allowFallback) {
+  const usable = (Array.isArray(targets) ? targets : []).filter((t) => t.webSocketDebuggerUrl && !String(t.url).startsWith("devtools://"));
+  const page = usable.find((t) => t.type === "page");
+  if (page || !allowFallback) return page ? { target: page } : null;
+  const alt = usable.find((t) => t.type === "webview") ?? usable.find((t) => t.type === "other") ?? usable[0];
+  return alt ? { target: alt, fallback: `no page target; attached to type "${alt.type}" (${alt.url})` } : null;
 }
 
 /** Minimal CDP client: every command resolves (never rejects), with a per-command timeout. */
@@ -191,6 +221,8 @@ class Round {
     Object.assign(this, { name, port, outDir, t0: now(), startedAt: new Date().toISOString() });
     Object.assign(this, { cdp: null, attaching: null, stopped: false, mainUrl: null, otherConsole: 0 });
     Object.assign(this, { requestUrls: new Map(), loadWaiters: [], timings: {}, notes: [], snapshots: [] });
+    Object.assign(this, { host: HOSTS[0], giveUp: () => null });
+    this.poll = { attempts: 0, versionAnswers: 0, listAnswers: 0, answeredBy: {}, firstAnswerMs: null, firstListMs: null, lastError: null, lastVersion: null, lastList: null, choice: null };
     const kinds = "console exceptions log requests badResponses failedRequests navigations loads crashes dialogs attaches cdpFailures";
     this.events = Object.fromEntries(kinds.split(" ").map((k) => [k, []]));
   }
@@ -210,19 +242,56 @@ class Round {
 
   async #attachLoop(deadline) {
     while (!this.stopped && now() < deadline) {
-      const targets = await getJson(this.port, "/json/list");
-      const page = targets?.find((t) => t.type === "page" && t.webSocketDebuggerUrl);
-      if (page) {
+      const reason = this.giveUp();
+      if (reason) {
+        this.gaveUp = reason;
+        this.notes.push(`stopped polling early: ${reason}`);
+        return false;
+      }
+      const targets = await this.#probe();
+      const pick = targets && pickTarget(targets, this.t() - this.poll.firstListMs >= FALLBACK_AFTER_MS);
+      if (pick) {
+        const { target, fallback } = pick;
+        this.poll.choice = { t: this.t(), type: target.type, url: target.url, host: this.host, fallback: fallback ?? null };
+        if (fallback) this.notes.push(fallback);
         try {
-          await this.#bind(await Cdp.connect(page.webSocketDebuggerUrl, 3000), page);
+          await this.#bind(await Cdp.connect(target.webSocketDebuggerUrl, 3000), target);
           return true;
         } catch (e) {
-          this.push("attaches", { error: String(e.message ?? e), url: page.url });
+          this.push("attaches", { error: errorText(e), url: target.url, wsUrl: target.webSocketDebuggerUrl });
         }
       }
       await sleep(POLL_MS);
     }
     return false;
+  }
+
+  /** One poll of /json/version + /json/list on each loopback host until one answers. */
+  async #probe() {
+    const p = this.poll;
+    p.attempts++;
+    for (const host of HOSTS) {
+      const v = await fetchJson(host, this.port, "/json/version");
+      if (!v.ok) {
+        p.lastError = `@${this.t()} ms ${host} /json/version: ${v.error}`;
+        continue;
+      }
+      this.host = host;
+      p.versionAnswers++;
+      p.answeredBy[host] = (p.answeredBy[host] ?? 0) + 1;
+      p.firstAnswerMs ??= this.t();
+      p.lastVersion = v.json;
+      const l = await fetchJson(host, this.port, "/json/list");
+      if (!l.ok) {
+        p.lastError = `@${this.t()} ms ${host} /json/list: ${l.error}`;
+        return null;
+      }
+      p.listAnswers++;
+      p.firstListMs ??= this.t();
+      p.lastList = l.json;
+      return l.json;
+    }
+    return null;
   }
 
   async #bind(cdp, page) {
@@ -326,9 +395,9 @@ class Round {
     if (!ev.ok) snap.page = { error: ev.error };
     else if (ev.result.exceptionDetails) snap.page = { error: ev.result.exceptionDetails.exception?.description ?? ev.result.exceptionDetails.text };
     else snap.page = ev.result.result.value;
-    const targets = await getJson(this.port, "/json/list");
+    const targets = await getJson(this.port, "/json/list", this.host);
     snap.targets = targets?.map((t) => ({ type: t.type, url: t.url, title: t.title })) ?? null;
-    snap.version = await getJson(this.port, "/json/version");
+    snap.version = await getJson(this.port, "/json/version", this.host);
     const shot = await this.send("Page.captureScreenshot", { format: "png" }, 15_000);
     if (shot.ok) {
       snap.screenshot = `${this.name}-${label}.png`;
@@ -359,8 +428,8 @@ class Round {
   }
 
   toJSON() {
-    const { name, startedAt, timings, notes, snapshots, events, pid, exe, appOrigin, reload } = this;
-    return { name, startedAt, pid, exe, timings, appOrigin, reload, notes, snapshots, events };
+    const { name, startedAt, timings, notes, snapshots, events, pid, exe, appOrigin, reload, poll, gaveUp, webviewLog, win } = this;
+    return { name, startedAt, pid, exe, timings, appOrigin, reload, gaveUp, poll, webviewLog, win, notes, snapshots, events };
   }
 }
 
@@ -377,28 +446,11 @@ function verdict(snap) {
   return { rendered: reasons.length === 0, reasons };
 }
 
-function run(cmd, args) {
-  try {
-    return { cmd: [cmd, ...args].join(" "), out: execFileSync(cmd, args, { encoding: "utf8", timeout: 30_000, stdio: "pipe" }).trim() };
-  } catch (e) {
-    return { cmd: [cmd, ...args].join(" "), error: String(e.stderr || e.message).trim() };
-  }
-}
-
 /** Kills the app, its WebView2 children and the sidecar; waits for the debugging port to go quiet. */
 async function killAll(child, exe, port) {
   const steps = [];
-  if (IS_WIN) {
-    if (child?.pid) steps.push(run("taskkill", ["/PID", String(child.pid), "/T", "/F"]));
-    if (exe) steps.push(run("taskkill", ["/IM", path.basename(exe), "/T", "/F"]));
-    const ps =
-      "Get-Process | Where-Object { $_.ProcessName -like 'tide-server*' } | Stop-Process -Force -ErrorAction SilentlyContinue; " +
-      `Get-CimInstance Win32_Process -Filter "Name='msedgewebview2.exe'" | Where-Object { $_.CommandLine -like '*remote-debugging-port=${port}*' } | ` +
-      "ForEach-Object { Stop-Process -Id $_.ProcessId -Force -ErrorAction SilentlyContinue }";
-    // -EncodedCommand sidesteps Windows argv re-quoting of the embedded double quotes
-    const encoded = Buffer.from(ps, "utf16le").toString("base64");
-    steps.push({ ...run("powershell", ["-NoProfile", "-NonInteractive", "-EncodedCommand", encoded]), cmd: `powershell: ${ps}` });
-  } else if (child?.pid) {
+  if (IS_WIN) steps.push(...(await winKill(child?.pid, exe, port)));
+  else if (child?.pid) {
     try {
       process.kill(-child.pid, "SIGKILL"); // detached => the child leads its own process group
       steps.push({ cmd: `kill -KILL -${child.pid}` });
@@ -407,18 +459,17 @@ async function killAll(child, exe, port) {
     }
   }
   const deadline = now() + 30_000;
-  while (now() < deadline && (await getJson(port, "/json/version"))) await sleep(500);
-  const portQuiet = !(await getJson(port, "/json/version"));
-  return { steps, portQuiet };
+  while (now() < deadline && (await portAnswers(port))) await sleep(500);
+  return { steps, portQuiet: !(await portAnswers(port)) };
 }
 
-function launchApp(exe, port, tideHome, round) {
-  const flag = `--remote-debugging-port=${port}`;
-  const env = {
-    ...process.env,
-    WEBVIEW2_ADDITIONAL_BROWSER_ARGUMENTS: [process.env.WEBVIEW2_ADDITIONAL_BROWSER_ARGUMENTS, flag].filter(Boolean).join(" "),
-    TIDE_HOME: tideHome,
-  };
+function launchApp(exe, port, tideHome, round, logFile) {
+  // --remote-allow-origins: newer Chromium rejects DevTools WebSocket clients sending an Origin
+  const flags = [`--remote-debugging-port=${port}`, "--remote-allow-origins=*"];
+  if (logFile) flags.push("--enable-logging", "--v=0", `--log-file=${logFile}`);
+  const extra = [process.env.WEBVIEW2_ADDITIONAL_BROWSER_ARGUMENTS, ...flags].filter(Boolean).join(" ");
+  round.browserArgs = extra;
+  const env = { ...process.env, WEBVIEW2_ADDITIONAL_BROWSER_ARGUMENTS: extra, TIDE_HOME: tideHome };
   const child = spawn(exe, [], { detached: true, stdio: "ignore", env, cwd: path.dirname(exe) });
   child.on("error", (e) => round.notes.push(`spawn error: ${e.message}`));
   child.on("exit", (code, signal) => round.notes.push(`app process exited at ${round.t()} ms (code ${code}, signal ${signal})`));
@@ -435,10 +486,28 @@ function copyServerLog(tideHome, outDir, roundName) {
   return file;
 }
 
+/** Watches only what this round appends to the shared server log; returns when it first said "listening". */
+function serverListenWatcher(tideHome, round) {
+  const log = path.join(tideHome, "logs", "server.log");
+  let offset = fs.existsSync(log) ? fs.statSync(log).size : 0;
+  return () => {
+    if (round.timings.serverListeningMs != null || !fs.existsSync(log)) return round.timings.serverListeningMs;
+    const size = fs.statSync(log).size;
+    if (size < offset) offset = 0; // rotated
+    const fd = fs.openSync(log, "r");
+    const buf = Buffer.alloc(size - offset);
+    fs.readSync(fd, buf, 0, buf.length, offset);
+    fs.closeSync(fd);
+    if (SERVER_LISTENING.test(buf.toString("utf8"))) round.timings.serverListeningMs = round.t();
+    return round.timings.serverListeningMs;
+  };
+}
+
 /** Settled snapshot, then a reload (the first navigation a fresh service worker controls) and another. */
-async function captureSnapshots(round, settleMs) {
+async function captureSnapshots(round, settleMs, onSettled = async () => {}) {
   await sleep(settleMs);
   await round.snapshot("settled");
+  await onSettled();
   const loaded = round.waitForLoad(RELOAD_LOAD_TIMEOUT_MS);
   const reload = await round.send("Page.reload", {});
   const t = round.t();
@@ -449,22 +518,43 @@ async function captureSnapshots(round, settleMs) {
 
 async function launchRound(round, opts, exe) {
   round.exe = exe;
-  const child = launchApp(exe, opts.port, opts.tideHome, round);
+  const logPlan = webviewLogPlan(opts.out, round.name);
+  const child = launchApp(exe, opts.port, opts.tideHome, round, logPlan.target);
   round.pid = child.pid;
+  const listening = serverListenWatcher(opts.tideHome, round);
+  round.giveUp = () => {
+    const at = listening();
+    const silent = round.poll.versionAnswers === 0 && round.poll.listAnswers === 0;
+    return at != null && silent && round.t() - at >= SILENT_AFTER_LISTEN_MS
+      ? `tide-server was listening at ${at} ms but the debugging port stayed silent for ${SILENT_AFTER_LISTEN_MS / 1000} s`
+      : null;
+  };
+  const early = (async () => {
+    await sleep(8000);
+    if (!round.stopped) await windowsEvidence(round, "processes", "t+8s", exe);
+    await sleep(Math.max(0, 15_000 - round.t()));
+    if (!round.stopped) await windowsEvidence(round, "desktop", "t+15s", exe);
+  })();
   try {
     const deadline = now() + opts.bootTimeoutMs;
     if (!(await round.attach(deadline))) {
-      round.missingSnapshot("settled", "no page target appeared on the debugging port before --boot-timeout");
+      await windowsEvidence(round, "desktop", "failure", exe);
+      const why = round.gaveUp ?? "no page target appeared on the debugging port before --boot-timeout";
+      round.missingSnapshot("settled", why);
       return round.missingSnapshot("after-reload", "never attached");
     }
     const reached = await round.waitFor(() => isAppOrigin(round.mainUrl), deadline);
     round.appOrigin = { reached, ms: reached ? round.t() : null, url: round.mainUrl };
-    await captureSnapshots(round, SETTLE_MS);
+    await captureSnapshots(round, SETTLE_MS, () => windowsEvidence(round, "desktop", "settled", exe));
   } finally {
+    await early;
+    await windowsEvidence(round, "processes", "before-kill", exe);
     round.stop();
     round.timings.kill = await killAll(child, exe, opts.port);
     round.serverLog = copyServerLog(opts.tideHome, opts.out, round.name);
     if (round.serverLog) round.notes.push(`server log tail: ${round.serverLog}`);
+    round.webviewLog = collectWebviewLog(logPlan, redact);
+    if (!round.webviewLog.found) round.notes.push(round.webviewLog.note);
   }
 }
 
@@ -491,6 +581,7 @@ function summarize(report) {
     lines.push("", `== ${r.name} ==`);
     if (r.appOrigin) lines.push(`app origin: ${r.appOrigin.reached ? `reached${r.appOrigin.ms === null ? "" : ` at ${r.appOrigin.ms} ms`}` : "NOT reached"} (url ${r.appOrigin.url})`);
     for (const n of r.notes) lines.push(`note: ${n}`);
+    lines.push(...evidenceLines(r));
     for (const s of r.snapshots) {
       const p = s.page ?? {};
       const sw = p.serviceWorker ?? {};
