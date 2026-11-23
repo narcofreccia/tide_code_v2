@@ -1,5 +1,6 @@
 import { spawn } from "node:child_process";
 import type { DriverEnv, McpServerSpec } from "@tide/contracts";
+import { prepareSpawn } from "@tide/contracts/cli";
 import type { AcpConfig, ChildLike, SpawnLike } from "./types.ts";
 
 /**
@@ -32,7 +33,15 @@ export function toAcpMcpServers(servers: McpServerSpec[]): { name: string; comma
  * are usually `npx … --acp`, where the real agent is a grandchild of the spawned process.
  */
 export const nodeSpawn: SpawnLike = (command, args, options) => {
-  const child = spawn(command, args, { cwd: options.cwd, env: options.env, stdio: ["pipe", "pipe", "pipe"], detached: process.platform !== "win32" });
+  const prepared = prepareSpawn(command, args, options.env);
+  const child = spawn(prepared.command, prepared.args, {
+    cwd: options.cwd,
+    env: options.env,
+    stdio: ["pipe", "pipe", "pipe"],
+    detached: process.platform !== "win32",
+    shell: prepared.shell,
+    windowsHide: prepared.windowsHide,
+  });
   const like: ChildLike = {
     stdin: child.stdin,
     stdout: child.stdout,

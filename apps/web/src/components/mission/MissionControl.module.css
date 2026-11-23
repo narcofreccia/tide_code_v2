@@ -348,9 +348,9 @@
   display: flex;
   flex-direction: column;
   align-items: center;
-  gap: var(--sp-3);
-  max-width: 420px;
-  margin: 12vh auto 0;
+  gap: var(--sp-2);
+  max-width: 680px;
+  margin: clamp(4px, 2.5vh, 28px) auto 0;
   text-align: center;
 }
 .wordmark { margin: 0; font-size: var(--fs-lg); font-weight: var(--fw-semibold); letter-spacing: 0.02em; }
@@ -358,7 +358,7 @@
 .checklist {
   list-style: none;
   width: 100%;
-  margin: var(--sp-3) 0 0;
+  margin: var(--sp-2) 0 0;
   padding: 0;
   border: 1px solid var(--border);
   border-radius: var(--radius-lg);
@@ -367,13 +367,13 @@
 }
 .checkRow {
   display: flex;
-  align-items: center;
+  align-items: flex-start;
   gap: var(--sp-3);
   min-height: 40px;
   padding: var(--sp-2) var(--sp-3);
 }
 .checkRow + .checkRow { border-top: 1px solid var(--border); }
-.checkMark { flex: none; display: inline-flex; justify-content: center; width: 14px; color: var(--muted); font-size: var(--fs-sm); }
+.checkMark { flex: none; display: inline-flex; justify-content: center; width: 14px; margin-top: 2px; color: var(--muted); font-size: var(--fs-sm); }
 .checkRow[data-done="true"] .checkMark { color: var(--ok); }
 .checkBody { display: flex; flex-direction: column; gap: 2px; min-width: 0; flex: 1; }
 .checkHint { color: var(--muted); font-size: var(--fs-sm); }

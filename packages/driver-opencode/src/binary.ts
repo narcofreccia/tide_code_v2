@@ -1,19 +1,11 @@
-import { execFile } from "node:child_process";
 import { existsSync, statSync } from "node:fs";
 import { homedir } from "node:os";
 import { join } from "node:path";
-import { promisify } from "node:util";
+import { execCommand, findBinariesOnPath, findLocalBinary } from "@tide/contracts/cli";
 import type { OpencodeConfig } from "./types.ts";
 
-const run = promisify(execFile);
-
-export async function exec(file: string, args: string[], timeout = 10_000): Promise<string | undefined> {
-  try {
-    const { stdout } = await run(file, args, { timeout, encoding: "utf8" });
-    return stdout;
-  } catch {
-    return undefined;
-  }
+export function exec(file: string, args: string[], timeout = 10_000): Promise<string | undefined> {
+  return execCommand(file, args, { timeout });
 }
 
 /**
@@ -26,13 +18,11 @@ export async function exec(file: string, args: string[], timeout = 10_000): Prom
 export async function detectBinary(config: OpencodeConfig): Promise<string | undefined> {
   if (config.binaryPath && existsSync(config.binaryPath)) return config.binaryPath;
   const candidates: string[] = [];
-  const installed = join(homedir(), ".opencode", "bin", "opencode");
-  if (existsSync(installed)) candidates.push(installed);
+  const installed = findLocalBinary(join(homedir(), ".opencode", "bin"), "opencode");
+  if (installed) candidates.push(installed);
   for (const name of ["opencode", "opencode2"]) {
-    const which = await exec("/usr/bin/env", ["which", "-a", name], 5_000);
-    for (const line of which?.split("\n") ?? []) {
-      const path = line.trim();
-      if (path !== "" && !candidates.includes(path)) candidates.push(path);
+    for (const path of findBinariesOnPath(name)) {
+      if (!candidates.includes(path)) candidates.push(path);
     }
   }
   for (const candidate of candidates) if ((majorOf(await binaryVersion(candidate)) ?? 0) >= 2) return candidate;

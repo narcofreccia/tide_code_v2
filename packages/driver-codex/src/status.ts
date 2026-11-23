@@ -1,9 +1,8 @@
-import { execFile } from "node:child_process";
 import { existsSync } from "node:fs";
 import { homedir } from "node:os";
 import { join } from "node:path";
-import { promisify } from "node:util";
 import type { DriverEnv, ModelInfo, ProviderStatus, RateLimit } from "@tide/contracts";
+import { execCommand, findBinaryOnPath, findLocalBinary } from "@tide/contracts/cli";
 import { AppServer, mergedEnv } from "./app-server.ts";
 import { rateLimitsFromSnapshot } from "./rate-limits.ts";
 import type { CodexConfig } from "./types.ts";
@@ -11,8 +10,6 @@ import type { Account } from "./generated/v2/Account.ts";
 import type { GetAccountResponse } from "./generated/v2/GetAccountResponse.ts";
 import type { Model } from "./generated/v2/Model.ts";
 import type { ModelListResponse } from "./generated/v2/ModelListResponse.ts";
-
-const run = promisify(execFile);
 
 export const CODEX_CAPS = {
   planMode: true,
@@ -46,24 +43,19 @@ export function probeFailedHint(message: string): string {
   return `Could not read Codex's login state (${message}). Refresh to retry; if you are signed out, run \`codex login\` in a terminal`;
 }
 
-async function exec(file: string, args: string[], timeout = 10_000, env?: NodeJS.ProcessEnv): Promise<string | undefined> {
-  try {
-    const { stdout } = await run(file, args, { timeout, encoding: "utf8", ...(env ? { env } : {}) });
-    return stdout;
-  } catch {
-    return undefined;
-  }
+function exec(file: string, args: string[], timeout = 10_000, env?: NodeJS.ProcessEnv): Promise<string | undefined> {
+  return execCommand(file, args, { timeout, ...(env ? { env } : {}) });
 }
 
 export async function detectBinary(config: CodexConfig): Promise<string | undefined> {
   if (config.binaryPath && existsSync(config.binaryPath)) return config.binaryPath;
+  const env = mergedEnv(config);
+  const home = config.env?.["HOME"] ?? homedir();
   // `config.env` also steers detection, so a pinned PATH finds the intended codex.
-  const which = await exec("/usr/bin/env", ["which", "codex"], 5_000, mergedEnv(config));
-  const resolved = which?.trim().split("\n")[0]?.trim();
-  if (resolved && resolved !== "") return resolved;
+  const resolved = findBinaryOnPath("codex", { env, home });
+  if (resolved) return resolved;
   // where the standalone installer puts it, for a server started without the user's PATH
-  const local = join(config.env?.["HOME"] ?? homedir(), ".local", "bin", "codex");
-  return existsSync(local) ? local : undefined;
+  return findLocalBinary(join(home, ".local", "bin"), "codex");
 }
 
 export function parseVersion(output: string): string | undefined {

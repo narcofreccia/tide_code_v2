@@ -18,6 +18,7 @@ import { ClaudeNormalizer } from "./normalize.ts";
 import { markResumeRefused } from "./resume-refused.ts";
 import { SessionLedger } from "./rollback.ts";
 import type { ClaudeMessage, ResultMessage, TranscriptEntry } from "./sdk-shapes.ts";
+import { sdkExecutableOptions } from "./status.ts";
 import type { ClaudeConfig, QueryFn, QueryLike, SessionMessagesFn } from "./types.ts";
 import { UsageTracker } from "./usage.ts";
 import { buildUserMessage, type UserMessageEnvelope } from "./user-message.ts";
@@ -374,7 +375,7 @@ export class ClaudeSession implements ProviderSession {
       // prompt, which would silently strip the Claude Code system prompt — the definition of
       // crippling the harness (CLAUDE.md §1a). The preset is the only non-crippling value.
       systemPrompt: { type: "preset", preset: "claude_code", ...(options.systemPromptAppend ? { append: options.systemPromptAppend } : {}) },
-      ...(this.#binaryPath ? { pathToClaudeCodeExecutable: this.#binaryPath } : {}),
+      ...sdkExecutableOptions(this.#binaryPath),
       // Deliberately NOT set: `settingSources` and `strictMcpConfig`. Tide must not strip the
       // user's settings, skills, hooks, plugins or project `.claude/` config (CLAUDE.md §1a).
     };

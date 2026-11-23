@@ -1,6 +1,7 @@
 import type { CompletionRequest, CompletionResult, DriverEnv, TurnUsage } from "@tide/contracts";
 import { instanceEnv } from "./env.ts";
 import type { ClaudeMessage, ResultMessage } from "./sdk-shapes.ts";
+import { sdkExecutableOptions } from "./status.ts";
 import type { ClaudeConfig, QueryFn } from "./types.ts";
 
 /**
@@ -51,7 +52,7 @@ export function buildCompletionOptions(
     // 1-word title live (2026-10-30) and blew every output cap
     thinking: { type: "disabled" },
     ...(model ? { model } : {}),
-    ...(binaryPath ? { pathToClaudeCodeExecutable: binaryPath } : {}),
+    ...sdkExecutableOptions(binaryPath),
     ...(labels ? { outputFormat: { type: "json_schema", schema: labelSchema(labels) } } : {}),
   };
 }

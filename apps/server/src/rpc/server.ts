@@ -1,9 +1,8 @@
-import { accessSync, constants } from "node:fs";
-import { delimiter, join } from "node:path";
 import type { IncomingMessage, Server } from "node:http";
 import type { Duplex } from "node:stream";
 import { WebSocketServer, type WebSocket } from "ws";
 import { newId, type DiscoveredPeer } from "@tide/contracts";
+import { findBinaryOnPath } from "@tide/contracts/cli";
 import type { ServerConfig } from "../config.ts";
 import type { Engine } from "../orchestration/engine.ts";
 import type { EventStore } from "../orchestration/store.ts";
@@ -52,16 +51,11 @@ const PING_INTERVAL_MS = 30_000;
 
 /** Host tools the UI may want to know about (Settings › Git); a cheap PATH scan at boot. */
 function detectTools(): { git: boolean; gh: boolean; rg: boolean } {
-  const has = (bin: string): boolean =>
-    (process.env["PATH"] ?? "").split(delimiter).some((dir) => {
-      try {
-        accessSync(join(dir, bin), constants.X_OK);
-        return true;
-      } catch {
-        return false;
-      }
-    });
-  return { git: has("git"), gh: has("gh"), rg: has("rg") };
+  return {
+    git: findBinaryOnPath("git") !== undefined,
+    gh: findBinaryOnPath("gh") !== undefined,
+    rg: findBinaryOnPath("rg") !== undefined,
+  };
 }
 
 export interface ServerDeps {

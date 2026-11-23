@@ -3,7 +3,7 @@ import { complete } from "./complete.ts";
 import { ClaudeSession } from "./session.ts";
 import { shellQuote } from "./shell.ts";
 import { instanceEnv } from "./env.ts";
-import { buildStatus, detectBinary, listCommands } from "./status.ts";
+import { buildStatus, detectBinary, listCommands, sdkExecutableOptions } from "./status.ts";
 import type { ClaudeConfig, QueryFn } from "./types.ts";
 
 const STATUS_TTL_MS = 60_000;
@@ -43,7 +43,7 @@ export class ClaudeInstance implements ProviderInstance {
     this.#binaryPath ??= await detectBinary(this.#config);
     return listCommands(
       this.#queryFn,
-      { cwd, ...(this.#binaryPath ? { pathToClaudeCodeExecutable: this.#binaryPath } : {}), env: { ...process.env, ...instanceEnv(this.#config, this.#env) } },
+      { cwd, ...sdkExecutableOptions(this.#binaryPath), env: { ...process.env, ...instanceEnv(this.#config, this.#env) } },
       this.#env,
     );
   }

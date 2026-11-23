@@ -1,17 +1,14 @@
-import { execFile } from "node:child_process";
 import { existsSync, readFileSync } from "node:fs";
 import { homedir } from "node:os";
 import { dirname, join } from "node:path";
 import { fileURLToPath } from "node:url";
-import { promisify } from "node:util";
 import type { DriverEnv, ModelInfo, ProviderStatus } from "@tide/contracts";
+import { execCommand, findBinaryOnPath, findLocalBinary } from "@tide/contracts/cli";
 import { BRIDGE_STATUS_HINT, bridgePathOf } from "./bridge.ts";
 import { detectLocalModels, readModelsJson } from "./local-models.ts";
 import { withEfforts } from "./commands.ts";
 import { PiRpc } from "./rpc.ts";
 import type { PiConfig, PiDeps, PiModel } from "./types.ts";
-
-const run = promisify(execFile);
 
 export const PI_CAPS = {
   // plan mode is emulated by tide-bridge (system prompt + tide_propose_plan); pi has none native
@@ -57,21 +54,16 @@ export const INSTALL_HINT = "Install pi: `npm i -g @earendil-works/pi-coding-age
 
 const API_KEY_ENV = ["ANTHROPIC_API_KEY", "OPENAI_API_KEY", "GEMINI_API_KEY"];
 
-async function exec(file: string, args: string[], timeout = 10_000): Promise<string | undefined> {
-  try {
-    const { stdout } = await run(file, args, { timeout, encoding: "utf8" });
-    return stdout;
-  } catch {
-    return undefined;
-  }
+function exec(file: string, args: string[], timeout = 10_000): Promise<string | undefined> {
+  return execCommand(file, args, { timeout });
 }
 
 /** Walks up from this file looking for a workspace `node_modules/.bin/pi`. */
 export function workspaceBinary(from = fileURLToPath(import.meta.url)): string | undefined {
   let dir = dirname(from);
   for (;;) {
-    const candidate = join(dir, "node_modules", ".bin", "pi");
-    if (existsSync(candidate)) return candidate;
+    const candidate = findLocalBinary(join(dir, "node_modules", ".bin"), "pi");
+    if (candidate) return candidate;
     const parent = dirname(dir);
     if (parent === dir) return undefined;
     dir = parent;
@@ -106,10 +98,8 @@ export interface DetectedBinary {
 /** The pi release this driver's protocol handling is written against. */
 export const TESTED_PI_VERSION = "1.1.0";
 
-async function pathBinary(): Promise<string | undefined> {
-  const which = await exec("/usr/bin/env", ["which", "pi"], 5_000);
-  const resolved = which?.trim().split("\n")[0]?.trim();
-  return resolved && resolved !== "" ? resolved : undefined;
+function pathBinary(): string | undefined {
+  return findBinaryOnPath("pi");
 }
 
 function older(version: string, than: string): boolean {

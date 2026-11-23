@@ -1,5 +1,6 @@
 import { spawn as nodeSpawn } from "node:child_process";
 import type { McpServerSpec } from "@tide/contracts";
+import { prepareSpawn } from "@tide/contracts/cli";
 import { JsonRpcConnection, type RequestId } from "./jsonrpc.ts";
 import type { ChildLike, CodexConfig, SpawnFn, TimerLike } from "./types.ts";
 
@@ -154,7 +155,17 @@ export class AppServer {
   }
 
   static async start(options: AppServerOptions): Promise<AppServer> {
-    const spawnFn: SpawnFn = options.spawn ?? ((command, args, opts) => nodeSpawn(command, args, { ...opts, stdio: ["pipe", "pipe", "pipe"] }) as unknown as ChildLike);
+    const spawnFn: SpawnFn =
+      options.spawn ??
+      ((command, args, opts) => {
+        const prepared = prepareSpawn(command, args, opts.env);
+        return nodeSpawn(prepared.command, prepared.args, {
+          ...opts,
+          stdio: ["pipe", "pipe", "pipe"],
+          shell: prepared.shell,
+          windowsHide: prepared.windowsHide,
+        }) as unknown as ChildLike;
+      });
     const mcp = mcpEnvAndArgs(options.mcpServers ?? [], options.log);
     const args = ["app-server", ...mcp.args];
     const child = spawnFn(options.binaryPath, args, { cwd: options.cwd, env: { ...options.env, ...mcp.env } });

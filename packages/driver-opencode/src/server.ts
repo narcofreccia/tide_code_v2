@@ -4,6 +4,7 @@ import { readFile } from "node:fs/promises";
 import { homedir } from "node:os";
 import { join } from "node:path";
 import type { DriverEnv } from "@tide/contracts";
+import { prepareSpawn } from "@tide/contracts/cli";
 import { assertV2, binaryVersion, detectBinary, majorOf } from "./binary.ts";
 import { authHeader, type Endpoint } from "./client.ts";
 import type { OpencodeConfig } from "./types.ts";
@@ -96,7 +97,16 @@ export class OpencodeServer {
   constructor(config: OpencodeConfig, env: DriverEnv, seams: ServerSeams = {}) {
     this.#config = config;
     this.#env = env;
-    this.#spawn = seams.spawn ?? (nodeSpawn as unknown as SpawnFn);
+    this.#spawn =
+      seams.spawn ??
+      ((command: string, args: string[], options: { cwd: string; env: NodeJS.ProcessEnv }) => {
+        const prepared = prepareSpawn(command, args, options.env);
+        return nodeSpawn(prepared.command, prepared.args, {
+          ...options,
+          shell: prepared.shell,
+          windowsHide: prepared.windowsHide,
+        }) as unknown as ServerProcess;
+      });
     this.#discover = seams.discover ?? discoverService;
     this.#killGraceMs = seams.killGraceMs ?? KILL_GRACE_MS;
   }

@@ -1,8 +1,8 @@
-/* the harness step's fix list: one line per harness, command + Copy + docs */
+/* the harness step's fix list: one compact line per harness, command + Copy + docs */
 .fixes {
   display: flex;
   flex-direction: column;
-  gap: var(--sp-1);
+  gap: 2px;
   list-style: none;
   margin: var(--sp-1) 0 0;
   padding: 0;
@@ -10,14 +10,46 @@
 
 .fix {
   display: flex;
-  flex-wrap: wrap;
+  flex-wrap: nowrap;
   align-items: center;
   gap: var(--sp-2);
-  min-height: var(--activity-h);
+  min-height: 22px;
+  min-width: 0;
+}
+
+.fix > span:last-child {
+  flex: 1;
+  flex-wrap: nowrap;
+  min-width: 0;
+}
+
+.fix code {
+  white-space: nowrap;
+  overflow: hidden;
+  text-overflow: ellipsis;
+  min-width: 0;
+}
+
+.fix button,
+.fix a {
+  flex: none;
+}
+
+@media (max-width: 640px) {
+  .fix {
+    flex-wrap: wrap;
+  }
+  .fix > span:last-child {
+    flex-wrap: wrap;
+  }
+  .fix code {
+    white-space: normal;
+  }
 }
 
 .fixName {
-  min-width: 96px;
+  flex: none;
+  width: 84px;
   font-size: var(--fs-sm);
   color: var(--text);
 }

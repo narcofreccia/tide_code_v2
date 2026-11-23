@@ -1,5 +1,6 @@
 import { spawn } from "node:child_process";
 import type { DriverEnv, ProviderDriver, ProviderInstance } from "@tide/contracts";
+import { prepareSpawn } from "@tide/contracts/cli";
 import { PiInstance } from "./instance.ts";
 import type { ChildLike, FetchLike, PiConfig, PiDeps, SpawnLike } from "./types.ts";
 
@@ -32,7 +33,15 @@ export {
 export type { ChildLike, FetchLike, PiConfig, PiDeps, SpawnLike, TimerLike } from "./types.ts";
 
 /** node's `spawn` narrowed to the slice the driver uses (declared boundary, CLAUDE.md §5). */
-const nodeSpawn: SpawnLike = (command, args, options) => spawn(command, args, { ...options, stdio: ["pipe", "pipe", "pipe"] }) as unknown as ChildLike;
+const nodeSpawn: SpawnLike = (command, args, options) => {
+  const prepared = prepareSpawn(command, args, options.env);
+  return spawn(prepared.command, prepared.args, {
+    ...options,
+    stdio: ["pipe", "pipe", "pipe"],
+    shell: prepared.shell,
+    windowsHide: prepared.windowsHide,
+  }) as unknown as ChildLike;
+};
 const nodeFetch: FetchLike = (url, init) => fetch(url, init);
 
 export function createPiInstance(config: PiConfig, env: DriverEnv, deps: Partial<PiDeps> = {}): ProviderInstance {

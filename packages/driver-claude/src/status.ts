@@ -1,14 +1,11 @@
-import { execFile } from "node:child_process";
 import { existsSync } from "node:fs";
 import { homedir } from "node:os";
 import { join } from "node:path";
-import { promisify } from "node:util";
 import type { DriverEnv, ModelInfo, ProviderStatus, RateLimit, SlashCommandInfo } from "@tide/contracts";
+import { execCommand, findBinaryOnPath, findLocalBinary, unwrapCmdShim } from "@tide/contracts/cli";
 import { claudeConfigDir, instanceEnv } from "./env.ts";
 import type { ClaudeConfig, QueryFn, SdkModelInfo, SdkSlashCommand } from "./types.ts";
 import { rateLimitsFromUsageResponse } from "./usage.ts";
-
-const run = promisify(execFile);
 
 export const CLAUDE_CAPS = {
   planMode: true,
@@ -46,22 +43,31 @@ const FALLBACK_MODELS: ModelInfo[] = [
   { id: "haiku", label: "Haiku (fallback list)", family: "haiku" },
 ];
 
-async function exec(file: string, args: string[], timeout = 10_000, env?: NodeJS.ProcessEnv): Promise<string | undefined> {
-  try {
-    const { stdout } = await run(file, args, { timeout, encoding: "utf8", ...(env ? { env } : {}) });
-    return stdout;
-  } catch {
-    return undefined;
-  }
+function exec(file: string, args: string[], timeout = 10_000, env?: NodeJS.ProcessEnv): Promise<string | undefined> {
+  return execCommand(file, args, { timeout, ...(env ? { env } : {}) });
 }
 
 export async function detectBinary(config: ClaudeConfig, env?: NodeJS.ProcessEnv): Promise<string | undefined> {
   if (config.binaryPath && existsSync(config.binaryPath)) return config.binaryPath;
-  const local = join(homedir(), ".local", "bin", "claude");
-  if (existsSync(local)) return local;
-  const which = await exec("/usr/bin/env", ["which", "claude"], 5_000, env);
-  const resolved = which?.trim().split("\n")[0]?.trim();
-  return resolved && resolved !== "" ? resolved : undefined;
+  const local = findLocalBinary(join(homedir(), ".local", "bin"), "claude");
+  const found = local ?? findBinaryOnPath("claude", { ...(env ? { env } : {}) });
+  if (!found) return undefined;
+  // On Windows, an npm global install puts a `.cmd` shim on PATH; unwrap it to its `.js`
+  // entrypoint so Claude Agent SDK (which spawns without a shell) can launch it directly.
+  return process.platform === "win32" ? (unwrapCmdShim(found) ?? found) : found;
+}
+
+/**
+ * Executable options handed to Claude Agent SDK's `query()`. When `binaryPath` is an unwrapped
+ * Windows npm `.js` entrypoint, force `executable: "node"` so a Bun-compiled tide-server does
+ * not try to spawn `"bun"` on machines that only have Node installed.
+ */
+export function sdkExecutableOptions(binaryPath: string | undefined): Record<string, unknown> {
+  if (!binaryPath) return {};
+  if (/\.(?:js|mjs|cjs)$/i.test(binaryPath)) {
+    return { pathToClaudeCodeExecutable: binaryPath, executable: "node" };
+  }
+  return { pathToClaudeCodeExecutable: binaryPath };
 }
 
 export function parseVersion(output: string): string | undefined {
@@ -204,7 +210,7 @@ export async function buildStatus(config: ClaudeConfig, env: DriverEnv, queryFn:
   const version = versionOutput ? parseVersion(versionOutput) : undefined;
   const loggedIn = await detectLogin(binary, claudeConfigDir(config, env), procEnv);
   const probed = loggedIn
-    ? await probeModelsAndLimits(queryFn, { cwd: process.cwd(), pathToClaudeCodeExecutable: binary, env: procEnv }, config.defaultModel, env)
+    ? await probeModelsAndLimits(queryFn, { cwd: process.cwd(), ...sdkExecutableOptions(binary), env: procEnv }, config.defaultModel, env)
     : { models: FALLBACK_MODELS, rateLimits: [] };
 
   return {
