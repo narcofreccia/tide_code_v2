@@ -1,0 +1,97 @@
+# Desktop UI smoke — install the published Windows build and record what its window renders.
+#
+# Downloads the published NSIS installer, installs it silently, launches the app with WebView2
+# remote debugging and runs scripts/desktop-ui-smoke.mjs, which attaches over the Chrome DevTools
+# Protocol and records console errors, failed requests, navigations, service-worker state and
+# screenshots (diagnosis for the "splash then black window" report; later a release gate).
+#
+# It builds nothing, uses no secrets and publishes nothing: the only output is the
+# `desktop-ui-smoke-report` artifact. Manual only, and the Windows job runs only when the
+# `windows` box is ticked (Windows minutes are billed 2x).
+name: desktop-ui-smoke
+
+on:
+  workflow_dispatch:
+    inputs:
+      windows:
+        description: "Run on a Windows runner (billed Windows minutes; must be ticked to run anything)"
+        required: false
+        type: boolean
+        default: false
+      installer_url:
+        description: "NSIS installer to test"
+        required: false
+        type: string
+        default: https://pub-7b3e5bbd605d43adbeb4601a962d84bd.r2.dev/tidecode/windows/tide-setup.exe
+      launches:
+        description: "Number of launches (the second reuses TIDE_HOME and the WebView2 profile)"
+        required: false
+        type: string
+        default: "2"
+
+permissions:
+  contents: read
+
+concurrency:
+  group: desktop-ui-smoke-${{ github.ref }}
+  cancel-in-progress: true
+
+jobs:
+  windows:
+    if: ${{ inputs.windows }}
+    runs-on: windows-latest
+    timeout-minutes: 15
+    defaults:
+      run:
+        shell: bash
+    steps:
+      - uses: actions/checkout@v4
+        with:
+          sparse-checkout: scripts/desktop-ui-smoke.mjs
+          sparse-checkout-cone-mode: false
+
+      - uses: actions/setup-node@v4
+        with:
+          node-version: 22
+
+      - name: Download the installer
+        env:
+          INSTALLER_URL: ${{ inputs.installer_url }}
+        run: |
+          set -euo pipefail
+          curl -fL --retry 3 -o "$RUNNER_TEMP/tide-setup.exe" "$INSTALLER_URL"
+          ls -l "$RUNNER_TEMP/tide-setup.exe"
+
+      - name: Install silently and locate the install dir
+        run: |
+          set -euo pipefail
+          setup="$RUNNER_TEMP/tide-setup.exe"
+          # MSYS_NO_PATHCONV: Git Bash otherwise rewrites `/S` into `S:/` and the installer opens its GUI.
+          MSYS_NO_PATHCONV=1 timeout 180 "$setup" /S || { echo "installer failed or hung (exit $?)"; exit 1; }
+          localappdata="$(cygpath -u "$LOCALAPPDATA")"
+          server=""
+          for _ in $(seq 1 30); do
+            server="$(find "$localappdata/Tide Code" "$localappdata/Programs/Tide Code" "/c/Program Files/Tide Code" -name 'tide-server*.exe' 2>/dev/null | head -1 || true)"
+            [ -n "$server" ] && break
+            sleep 2
+          done
+          [ -n "$server" ] || { echo "installed tide-server.exe not found"; exit 1; }
+          install_dir="$(cygpath -m "$(dirname "$server")")"
+          echo "install dir: $install_dir"
+          ls -l "$(dirname "$server")"
+          echo "INSTALL_DIR=$install_dir" >> "$GITHUB_ENV"
+
+      - name: Run the UI smoke
+        env:
+          LAUNCHES: ${{ inputs.launches }}
+        run: |
+          set -euo pipefail
+          out="$(cygpath -m "$RUNNER_TEMP/ui-smoke")"
+          node scripts/desktop-ui-smoke.mjs --install-dir "$INSTALL_DIR" --out "$out" --launches "$LAUNCHES"
+
+      - uses: actions/upload-artifact@v4
+        if: always()
+        with:
+          name: desktop-ui-smoke-report
+          path: ${{ runner.temp }}/ui-smoke
+          retention-days: 7
