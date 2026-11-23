@@ -24,7 +24,18 @@ use crate::splash_theme;
 
 /// The splash page, embedded so it works identically in dev and in the bundle.
 pub const LOADING_HTML: &str = include_str!("../../loading.html");
+/// Custom-scheme origins: macOS/Linux use `<scheme>://localhost`; Windows (WebView2) maps
+/// custom schemes onto `http://<scheme>.localhost` (wry only rewrites the initial window URL,
+/// not later `navigate()` or JS `location.replace()` calls).
+#[cfg(windows)]
+pub const SPLASH_URL: &str = "http://tide-shell.localhost/";
+#[cfg(not(windows))]
 pub const SPLASH_URL: &str = "tide-shell://localhost/";
+
+#[cfg(windows)]
+const APP_URL_BASE: &str = "http://tauri.localhost";
+#[cfg(not(windows))]
+const APP_URL_BASE: &str = "tauri://localhost";
 
 const STATUS_EVENT: &str = "tide://server-status";
 /// The first boot of a new version replays the whole event log (no usable snapshot), which takes
@@ -522,7 +533,7 @@ fn navigate_to_splash(app: &AppHandle, from_app: bool, extra: &str) {
     }
     std::thread::spawn(move || {
         std::thread::sleep(Duration::from_millis(400));
-        let on_splash = win.url().map(|u| u.scheme() == "tide-shell").unwrap_or(true);
+        let on_splash = win.url().map(|u| is_splash_url(&u)).unwrap_or(true);
         if !on_splash {
             if let Ok(url) = plain.parse() {
                 let _ = win.navigate(url);
@@ -531,10 +542,14 @@ fn navigate_to_splash(app: &AppHandle, from_app: bool, extra: &str) {
     });
 }
 
+fn is_splash_url(url: &tauri::Url) -> bool {
+    url.scheme() == "tide-shell" || url.host_str() == Some("tide-shell.localhost")
+}
+
 /// The web app never imports Tauri: it learns the endpoint from its own query string.
 /// Skipped when the webview already shows this exact URL — its WS client reconnects itself.
 fn open_web_app(app: &AppHandle, inner: &Shared, endpoint: &Endpoint) {
-    let base = if tauri::is_dev() { "http://localhost:5173" } else { "tauri://localhost" };
+    let base = if tauri::is_dev() { "http://localhost:5173" } else { APP_URL_BASE };
     let target = format!("{base}/?token={}&server={}{}", urlencode(&endpoint.token), urlencode(&endpoint.url), endpoint.query);
     if inner.lock().map(|i| i.navigated.as_deref() == Some(target.as_str())).unwrap_or(false) {
         eprintln!("[tide-shell] webview already on the app URL; not navigating");
@@ -545,7 +560,10 @@ fn open_web_app(app: &AppHandle, inner: &Shared, endpoint: &Endpoint) {
         Ok(url) => {
             // the splash pinned the window to the saved theme; the app's own `system` must see the OS
             let _ = win.set_theme(None);
-            let _ = win.navigate(url);
+            if let Err(e) = win.navigate(url) {
+                set_status(app, inner, "failed", Some(format!("cannot open web app ({target}): {e}")));
+                return;
+            }
             if let Ok(mut i) = inner.lock() {
                 i.navigated = Some(target);
             }
@@ -561,4 +579,17 @@ fn urlencode(raw: &str) -> String {
             _ => format!("%{b:02X}"),
         })
         .collect()
+}
+
+#[cfg(test)]
+mod tests {
+    use super::*;
+
+    #[test]
+    fn recognizes_splash_url_on_all_platforms() {
+        assert!(is_splash_url(&"tide-shell://localhost/".parse().unwrap()));
+        assert!(is_splash_url(&"http://tide-shell.localhost/?theme=dark".parse().unwrap()));
+        assert!(!is_splash_url(&"tauri://localhost/".parse().unwrap()));
+        assert!(!is_splash_url(&"http://tauri.localhost/".parse().unwrap()));
+    }
 }

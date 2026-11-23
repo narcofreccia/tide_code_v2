@@ -10,6 +10,21 @@ export const URL_KEY = "tide.serverUrl";
 const DEFAULT_URL = "ws://127.0.0.1:3777/ws";
 
 /**
+ * True when the page is served from Tauri's embedded asset origin: `tauri://localhost`
+ * / `tide-shell://localhost` on macOS & Linux, or `http(s)://tauri.localhost` /
+ * `http(s)://tide-shell.localhost` on Windows (WebView2).
+ */
+function isTauriOrigin(location: { protocol: string; href: string }): boolean {
+  if (location.protocol === "tauri:" || location.protocol === "tide-shell:") return true;
+  try {
+    const host = new URL(location.href).hostname.toLowerCase();
+    return host === "tauri.localhost" || host === "tide-shell.localhost";
+  } catch {
+    return false;
+  }
+}
+
+/**
  * Where to connect when nothing names a server: the build env, else — when the
  * page is served by tide-server itself (not the vite dev server, which lives on
  * another port) — the page's own origin, else the local default.
@@ -19,7 +34,9 @@ export function defaultServerUrl(
   env: { DEV: boolean; VITE_TIDE_URL?: string | undefined },
 ): string {
   if (env.VITE_TIDE_URL) return env.VITE_TIDE_URL;
-  if (!env.DEV && (location.protocol === "http:" || location.protocol === "https:")) return wsUrlFor(location.href);
+  if (!env.DEV && !isTauriOrigin(location) && (location.protocol === "http:" || location.protocol === "https:")) {
+    return wsUrlFor(location.href);
+  }
   return DEFAULT_URL;
 }
 
@@ -153,9 +170,8 @@ export function platformOf(ua: string): DesktopPlatform {
  * the shell strips the query on later navigations, so it is persisted once.
  */
 export function isDesktop(): boolean {
-  const { protocol, href } = window.location;
-  if (protocol === "tauri:" || protocol === "tide-shell:") return true;
-  const params = new URL(href).searchParams;
+  if (isTauriOrigin(window.location)) return true;
+  const params = new URL(window.location.href).searchParams;
   if (params.has("server") && !params.has("paired")) return true;
   try {
     return window.localStorage.getItem(DESKTOP_KEY) === "1";

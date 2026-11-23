@@ -89,6 +89,12 @@ describe("server url", () => {
     expect(defaultServerUrl({ protocol: "tauri:", href: "tauri://localhost/" }, { DEV: false })).toBe(
       "ws://127.0.0.1:3777/ws",
     );
+    expect(defaultServerUrl({ protocol: "http:", href: "http://tauri.localhost/" }, { DEV: false })).toBe(
+      "ws://127.0.0.1:3777/ws",
+    );
+    expect(defaultServerUrl({ protocol: "https:", href: "https://tauri.localhost/" }, { DEV: false })).toBe(
+      "ws://127.0.0.1:3777/ws",
+    );
     expect(defaultServerUrl(page, { DEV: false, VITE_TIDE_URL: "ws://env:1/ws" })).toBe("ws://env:1/ws");
   });
 
