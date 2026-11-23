@@ -555,7 +555,9 @@
       <h2>Commit log</h2>
       <table>
         <tr><th>Phase</th><th>Date</th><th>Message</th><th>SHA</th></tr>
-        <tr><td>Release</td><td>2026-11-23</td><td>chore(release): UI smoke 1.1 — evidence when the debugging port stays silent</td><td class="sha">this commit</td></tr>
+        <tr><td>Release</td><td>2026-11-23</td><td>chore(release): UI smoke 1.2 — verdict from pixels and the sidecar connection; journal</td><td class="sha">this commit</td></tr>
+        <tr><td>Release</td><td>2026-11-23</td><td>fix(desktop): drop service workers from the WebView2 profile at start</td><td class="sha">b573ae9</td></tr>
+        <tr><td>Release</td><td>2026-11-23</td><td>chore(release): UI smoke 1.1 — evidence when the debugging port stays silent</td><td class="sha">442a4b4</td></tr>
         <tr><td>Release</td><td>2026-11-23</td><td>chore(release): UI smoke gates the Windows release; journal</td><td class="sha">cadeb4b</td></tr>
         <tr><td>Release</td><td>2026-11-23</td><td>fix(desktop): app menu on macOS only; splash handles ?local=1</td><td class="sha">3f30d54</td></tr>
         <tr><td>Release</td><td>2026-11-23</td><td>fix(web): no service worker inside the desktop shell; shell actions in Settings</td><td class="sha">07d3b2f</td></tr>
@@ -836,7 +838,7 @@
 
       <h2>Open questions &amp; follow-ups</h2>
       <ul>
-        <li><strong>Windows black window, open (2026-11-23):</strong> root cause unproven. Next: push, run <code>gh workflow run desktop-ui-smoke.yml -f windows=true</code> against the published 0.3.10 installer and read the report. If a stale service worker blocks the page before its JS runs, the shell needs a one-shot purge (WebView2 <code>ClearBrowsingData</code>, service workers + cache storage). If the runner renders fine, run the script on Andrea's PC. The Windows release with the fixes is Andrea's to trigger; its new UI smoke gate has not run on Windows yet.</li>
+        <li><strong>Windows black window, fix unshipped (2026-11-23):</strong> reproduced on a runner (first launch renders, second is black). Fix on main: no worker in the shell (<code>07d3b2f</code>) + the shell deletes the profile's worker directory at start (<code>b573ae9</code>). Still to confirm: <code>gh workflow run desktop-ui-smoke.yml -f windows=true -f launches=4 -f purge_sw_before=3</code> against published 0.3.10 should give rendered / black / rendered / black; if launch 3 stays black the cause is something else in the profile. Then the Windows release (Andrea's to trigger): it is the first Windows compile of the shell changes and the first run of the UI smoke gate. Until it ships, deleting <code>%LOCALAPPDATA%\dev.tide.code\EBWebView</code> gives one working launch.</li>
         <li><strong>R23 open (2026-11-21):</strong> Antigravity has not run a turn in Tide: <code>agy</code> 1.5.14 is installed but not signed in. After the sign-in, record real sessions and decide which T3 v0.1.11 behaviours to port (authenticate, Auto mode, sub-agents, steering, background commands, Open in terminal). Does agy drop <code>tide_delegate</code> for its size (3,757 bytes)? If so, shorten the definition or split it.</li>
         <li><strong>R4 closed (2026-10-15):</strong> Rollback on a harness without native rollback — all four harnesses now roll back natively; a harness that cannot gets an info activity.</li>
         <li><strong>R4 open (2026-10-15):</strong> OpenCode 2 and Codex live rounds passed 2026-10-15; Pi pending a node-22 reinstall.</li>

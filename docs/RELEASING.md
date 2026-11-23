@@ -134,8 +134,10 @@ Tauri cannot cross-compile, so these build on GitHub-hosted runners:
   Rust stable → sidecar (`--target windows-x64`) → web build → `tauri build --bundles nsis`
   → **smoke test** (silent `/S` NSIS install, run the installed `tide-server.exe --dev
   --port 3799`, `curl /health`) → **UI smoke** (`scripts/desktop-ui-smoke.mjs`: launches the
-  installed app twice with WebView2 remote debugging and fails unless the window gets past
-  the splash and renders the web client; report uploaded as the `desktop-ui-smoke-report`
+  installed app twice and fails unless the window gets past the splash and renders the web
+  client. WebView2 ignores the remote debugging flag on the installed app, so the verdict
+  comes from the window's pixels (a black window is one colour) and from a webview process
+  holding a connection to the sidecar; report uploaded as the `desktop-ui-smoke-report`
   artifact; `skip_ui_smoke` input bypasses it) → `scripts/release/publish_windows.sh` (installer, then the
   headless `server/x86_64-pc-windows-msvc/tide-server.tar.gz` + `.sha256` and its
   `server[...]` manifest key, in one merge).
@@ -155,12 +157,16 @@ already published (default: the live `windows/tide-setup.exe`), without building
 publishing anything: `gh workflow run desktop-ui-smoke.yml -f windows=true`. Use it to see
 what an installed build does on a clean Windows machine; on your own PC,
 `node scripts/desktop-ui-smoke.mjs --install-dir "%LOCALAPPDATA%\Tide Code"` writes the same
-report.
+report. `-f launches=4 -f purge_sw_before=3` deletes the profile's `Service Worker` directory
+before the third launch, to tell a profile problem from a build problem.
 
 Inside the shell the web client's origin is `http://tauri.localhost` on Windows and
 `tauri://localhost` elsewhere. The PWA service worker is never registered on either
 (`apps/web/src/lib/registerSw.ts`): the shell ships its own assets and there is no server
-behind that origin.
+behind that origin. A worker registered there by 0.3.10 and earlier makes every launch
+after the first a black window, so on Windows the shell deletes
+`%LOCALAPPDATA%\dev.tide.code\EBWebView\Default\Service Worker` before the webview starts
+(`apps/desktop/src-tauri/src/webview_profile.rs`).
 
 Windows binaries are **not Authenticode-signed** (no cert; same as the other house apps),
 so SmartScreen warns on first run. The minisign updater signature is what the auto-updater

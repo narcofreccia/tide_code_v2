@@ -28,6 +28,11 @@ on:
         required: false
         type: string
         default: "2"
+      purge_sw_before:
+        description: "Diagnosis: delete the WebView2 profile's Service Worker directory before this launch number (>= 2; empty = never)"
+        required: false
+        type: string
+        default: ""
 
 permissions:
   contents: read
@@ -84,10 +89,13 @@ jobs:
       - name: Run the UI smoke
         env:
           LAUNCHES: ${{ inputs.launches }}
+          PURGE_SW_BEFORE: ${{ inputs.purge_sw_before }}
         run: |
           set -euo pipefail
           out="$(cygpath -m "$RUNNER_TEMP/ui-smoke")"
-          node scripts/desktop-ui-smoke.mjs --install-dir "$INSTALL_DIR" --out "$out" --launches "$LAUNCHES"
+          extra=()
+          if [ -n "$PURGE_SW_BEFORE" ]; then extra=(--purge-sw-before "$PURGE_SW_BEFORE"); fi
+          node scripts/desktop-ui-smoke.mjs --install-dir "$INSTALL_DIR" --out "$out" --launches "$LAUNCHES" "${extra[@]}"
 
       - uses: actions/upload-artifact@v4
         if: always()

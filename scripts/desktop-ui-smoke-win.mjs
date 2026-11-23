@@ -1,12 +1,13 @@
 // Evidence helpers for scripts/desktop-ui-smoke.mjs that need no CDP: Windows process lists,
-// listening ports, desktop screenshots, the process-tree kill, and the Chromium log file that
-// WebView2 (or Chrome) writes when given --enable-logging. Every helper resolves with data and
-// never throws; the Windows ones return { skipped } elsewhere. evidenceLines() renders all of it
-// for summary.txt.
+// listening ports, desktop screenshots with window/client rects and pixel analysis, the webview's
+// connection to tide-server, the process-tree kill, and the Chromium log file that WebView2 (or
+// Chrome) writes when given --enable-logging. Every helper resolves with data and never throws;
+// the Windows ones return { skipped } elsewhere. evidenceLines() renders all of it for summary.txt.
 import { execFile } from "node:child_process";
 import fs from "node:fs";
 import os from "node:os";
 import path from "node:path";
+import { pixelEvidence, pixelLine } from "./desktop-ui-smoke-png.mjs";
 
 export const IS_WIN = process.platform === "win32";
 const WEBVIEW_LOG_TAIL = 200;
@@ -73,15 +74,22 @@ try {
   return res;
 }
 
-/** Full-screen capture of the primary screen plus the app's top-level window titles/rects. */
+/**
+ * Full-screen capture of the primary screen plus the app's top-level windows: outer rect (includes
+ * the invisible resize borders), client rect in screen coordinates (below title and menu bar), and
+ * the screen work area (excludes the taskbar).
+ */
 export async function winDesktop(file, exeBaseName) {
   if (!IS_WIN) return { skipped: "not windows" };
   const procName = exeBaseName.replace(/\.exe$/i, "");
   const script = `
-$result = [ordered]@{ file = ${psQuote(file)}; screen = $null; windows = @(); errors = @() }
+$result = [ordered]@{ file = ${psQuote(file)}; screen = $null; workArea = $null; windows = @(); errors = @() }
 try {
   Add-Type -AssemblyName System.Windows.Forms, System.Drawing
-  $b = [System.Windows.Forms.Screen]::PrimaryScreen.Bounds
+  $s = [System.Windows.Forms.Screen]::PrimaryScreen
+  $b = $s.Bounds
+  $w = $s.WorkingArea
+  $result.workArea = [pscustomobject]@{ left = $w.Left; top = $w.Top; right = $w.Right; bottom = $w.Bottom }
   $bmp = New-Object System.Drawing.Bitmap $b.Width, $b.Height
   $g = [System.Drawing.Graphics]::FromImage($bmp)
   $g.CopyFromScreen($b.Location, [System.Drawing.Point]::Empty, $b.Size)
@@ -92,22 +100,114 @@ try {
 try {
   Add-Type -Namespace TideSmoke -Name User32 -MemberDefinition @'
 [DllImport("user32.dll")] public static extern bool GetWindowRect(IntPtr h, out RECT r);
+[DllImport("user32.dll")] public static extern bool GetClientRect(IntPtr h, out RECT r);
+[DllImport("user32.dll")] public static extern bool ClientToScreen(IntPtr h, ref POINT p);
 [DllImport("user32.dll")] public static extern bool IsWindowVisible(IntPtr h);
 [DllImport("user32.dll")] public static extern bool IsIconic(IntPtr h);
 public struct RECT { public int Left; public int Top; public int Right; public int Bottom; }
+public struct POINT { public int X; public int Y; }
 '@
   $result.windows = @(Get-Process -Name ${psQuote(procName)} -ErrorAction SilentlyContinue | ForEach-Object {
     $h = $_.MainWindowHandle; $r = New-Object TideSmoke.User32+RECT
     $hasRect = ($h -ne [IntPtr]::Zero) -and [TideSmoke.User32]::GetWindowRect($h, [ref]$r)
+    $outer = $null; $client = $null; $clientError = $null
+    if ($hasRect) { $outer = [pscustomobject]@{ left = $r.Left; top = $r.Top; right = $r.Right; bottom = $r.Bottom } }
+    if ($h -ne [IntPtr]::Zero) {
+      try {
+        $c = New-Object TideSmoke.User32+RECT
+        $p = New-Object TideSmoke.User32+POINT
+        if ([TideSmoke.User32]::GetClientRect($h, [ref]$c) -and [TideSmoke.User32]::ClientToScreen($h, [ref]$p)) {
+          $client = [pscustomobject]@{ left = $p.X; top = $p.Y; right = $p.X + $c.Right; bottom = $p.Y + $c.Bottom }
+        } else { $clientError = 'GetClientRect/ClientToScreen returned false' }
+      } catch { $clientError = $_.Exception.Message }
+    }
     [pscustomobject]@{ pid = $_.Id; title = $_.MainWindowTitle; handle = [int64]$h; responding = $_.Responding;
       visible = ($h -ne [IntPtr]::Zero) -and [TideSmoke.User32]::IsWindowVisible($h);
       minimized = ($h -ne [IntPtr]::Zero) -and [TideSmoke.User32]::IsIconic($h);
-      rect = $(if ($hasRect) { "$($r.Left),$($r.Top) $($r.Right - $r.Left)x$($r.Bottom - $r.Top)" } else { $null }) } })
+      rect = $(if ($hasRect) { "$($r.Left),$($r.Top) $($r.Right - $r.Left)x$($r.Bottom - $r.Top)" } else { $null });
+      outer = $outer; client = $client; clientError = $clientError } })
 } catch { $result.errors += "windows: $($_.Exception.Message)" }
-[pscustomobject]$result | ConvertTo-Json -Depth 4 -Compress`;
+[pscustomobject]$result | ConvertTo-Json -Depth 5 -Compress`;
   const res = await psJson(script, 45_000);
   res.screenshot = fs.existsSync(file) ? path.basename(file) : null;
+  if (res.screenshot) res.pixels = pixelEvidence(file, res.windows, res.workArea);
   return res;
+}
+
+/**
+ * Whether one of the app's msedgewebview2 processes holds an established TCP connection to the
+ * tide-server port: the web app opens that WebSocket once its JavaScript boots, the splash does
+ * not. Webviews = descendants of the app exe plus any carrying --webview-exe-name=<exe>; the app
+ * exe's own health checks do not count. connected is null when the query could not be made.
+ */
+export async function winServerConnection(exeBaseName, serverPort) {
+  if (!IS_WIN) return { connected: null, skipped: "not windows" };
+  if (!serverPort) return { connected: null, error: "tide-server port unknown" };
+  const script = `
+$all = @(Get-CimInstance Win32_Process | ForEach-Object { [pscustomobject]@{ id = [int]$_.ProcessId; ppid = [int]$_.ParentProcessId; name = [string]$_.Name; cmd = [string]$_.CommandLine } })
+$tree = New-Object 'System.Collections.Generic.HashSet[int]'
+foreach ($p in $all) { if ($p.name -eq ${psQuote(exeBaseName)}) { [void]$tree.Add($p.id) } }
+do {
+  $added = 0
+  foreach ($p in $all) { if ($p.id -ne 0 -and -not $tree.Contains($p.id) -and $tree.Contains($p.ppid)) { [void]$tree.Add($p.id); $added++ } }
+} while ($added -gt 0)
+$marker = ${psQuote(`--webview-exe-name=${exeBaseName}`)}
+$webviews = @($all | Where-Object { $_.name -eq 'msedgewebview2.exe' -and ($tree.Contains($_.id) -or $_.cmd.Contains($marker)) } | ForEach-Object { $_.id })
+$source = 'Get-NetTCPConnection'
+try {
+  $conns = @(Get-NetTCPConnection -State Established -RemotePort ${Number(serverPort)} -ErrorAction SilentlyContinue |
+    ForEach-Object { [pscustomobject]@{ pid = [int]$_.OwningProcess; local = "$($_.LocalAddress):$($_.LocalPort)"; remote = "$($_.RemoteAddress):$($_.RemotePort)" } })
+} catch {
+  $source = 'netstat'
+  $conns = @(netstat -ano -p TCP | Select-String 'ESTABLISHED' | ForEach-Object {
+    $f = -split $_.Line.Trim()
+    [pscustomobject]@{ pid = [int]$f[-1]; local = $f[1]; remote = $f[2] } } |
+    Where-Object { $_.remote.EndsWith(':${Number(serverPort)}') })
+}
+$names = @{}; foreach ($p in $all) { $names[$p.id] = $p.name }
+$conns = @($conns | ForEach-Object { $_ | Add-Member -NotePropertyName name -NotePropertyValue $names[$_.pid] -PassThru })
+[pscustomobject]@{ webviewPids = $webviews; appTree = @($tree); connections = $conns; source = $source } | ConvertTo-Json -Depth 4 -Compress`;
+  const res = await psJson(script, 45_000);
+  if (res.error) return { connected: null, serverPort, ...res };
+  const webviews = new Set(res.webviewPids ?? []);
+  const matching = (res.connections ?? []).filter((c) => webviews.has(c.pid));
+  return { connected: webviews.size === 0 ? false : matching.length > 0, serverPort, matching, ...res };
+}
+
+/** One-line rendering of the connection check for summary.txt. */
+export function connectionLine(c) {
+  if (!c) return "connection: n/a (not queried)";
+  if (c.connected === null) return `connection: unknown (${c.error ?? c.skipped ?? "query failed"})`;
+  const show = (list) => JSON.stringify((list ?? []).map((m) => `${m.name ?? "?"} ${m.pid} ${m.local} -> ${m.remote}`));
+  const head = `connection: ${c.connected} — webview -> tide-server :${c.serverPort} ${show(c.matching)}`;
+  return `${head}; all established to that port ${show(c.connections)} (${c.webviewPids?.length ?? 0} webview pids, via ${c.source})`;
+}
+
+/** tide-server port from a captured `tide-server.exe --port N` command line (when its log is silent). */
+export function serverPortFromProcesses(round) {
+  for (const e of [...(round.win?.processes ?? [])].reverse()) {
+    for (const p of e.processes ?? []) {
+      const m = /^tide-server/i.test(p.name ?? "") && /--port[= ](\d+)/.exec(p.commandLine ?? "");
+      if (m) return Number(m[1]);
+    }
+  }
+  return null;
+}
+
+/** Waits (killing stragglers) until no app exe and no webview using `userDataDir` is left. */
+export async function winWaitGone(exeBaseName, userDataDir, timeoutSec = 20) {
+  if (!IS_WIN) return { skipped: "not windows" };
+  const script = `
+$deadline = (Get-Date).AddSeconds(${Number(timeoutSec)}); $killed = @(); $left = @()
+do {
+  $left = @(Get-CimInstance Win32_Process | Where-Object {
+    $_.Name -eq ${psQuote(exeBaseName)} -or ($_.Name -eq 'msedgewebview2.exe' -and ([string]$_.CommandLine).Contains(${psQuote(userDataDir)})) })
+  if ($left.Count -eq 0) { break }
+  foreach ($p in $left) { $killed += [int]$p.ProcessId; Stop-Process -Id $p.ProcessId -Force -ErrorAction SilentlyContinue }
+  Start-Sleep -Milliseconds 500
+} while ((Get-Date) -lt $deadline)
+[pscustomobject]@{ gone = ($left.Count -eq 0); remaining = @($left | ForEach-Object { [int]$_.ProcessId }); killed = @($killed | Select-Object -Unique) } | ConvertTo-Json -Compress`;
+  return psJson(script, (timeoutSec + 30) * 1000);
 }
 
 /** Windows: kill the app tree, any leftover sidecar, and WebView2 browsers launched with our port. */
@@ -159,7 +259,7 @@ export function collectWebviewLog(plan, redact) {
   return { found: true, lines: lines.length, consoleLines: consoleLines.length, tail, highlights, rawRemoved: removed };
 }
 
-/** Windows evidence that needs no CDP; resolves to null elsewhere. Never throws. */
+/** Windows evidence that needs no CDP, as recorded in round.win; resolves to null elsewhere. Never throws. */
 export async function windowsEvidence(round, kind, label, exe) {
   if (!IS_WIN) return null;
   round.win ??= { processes: [], desktop: [] };
@@ -168,8 +268,9 @@ export async function windowsEvidence(round, kind, label, exe) {
     kind === "processes"
       ? await winProcesses(["tide-desktop*", "tide-server*", "msedgewebview2.exe", path.basename(exe)])
       : await winDesktop(path.join(round.outDir, `${round.name}-desktop-${label}.png`), path.basename(exe));
-  round.win[kind].push({ label, t, ...entry });
-  return entry;
+  const record = { label, t, ...entry };
+  round.win[kind].push(record);
+  return record;
 }
 
 /** Port polling, Chromium log and Windows process/desktop evidence for one round. */
@@ -205,8 +306,12 @@ export function evidenceLines(r) {
     );
   }
   for (const d of r.win?.desktop ?? []) {
-    const wins = (d.windows ?? []).map((w) => `"${w.title}" visible=${w.visible} minimized=${w.minimized} rect=${w.rect}`);
-    lines.push(`desktop @${d.label}: ${d.screenshot ?? "no screenshot"} ${d.screen ?? ""} windows=${JSON.stringify(wins)}`);
+    const wins = (d.windows ?? []).map((w) => {
+      const c = w.client ? `${w.client.left},${w.client.top} ${w.client.right - w.client.left}x${w.client.bottom - w.client.top}` : `n/a${w.clientError ? ` (${w.clientError})` : ""}`;
+      return `"${w.title}" visible=${w.visible} minimized=${w.minimized} rect=${w.rect} client=${c}`;
+    });
+    lines.push(`desktop @${d.label} (${d.t} ms): ${d.screenshot ?? "no screenshot"} ${d.screen ?? ""} windows=${JSON.stringify(wins)}`);
+    if (d.screenshot) lines.push(`   ${pixelLine(d.pixels)}`);
     for (const err of [d.error, ...(d.errors ?? [])].filter(Boolean)) lines.push(`   desktop error: ${err}`);
   }
   return lines;

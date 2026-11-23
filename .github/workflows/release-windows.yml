@@ -147,8 +147,8 @@ jobs:
       # UI smoke: the sidecar answering /health says nothing about the window. On 2026-11-23 a
       # build shipped that showed the splash and then a black window, so before publishing the
       # installed app must render the web client on a first and a second launch
-      # (scripts/desktop-ui-smoke.mjs, over WebView2 remote debugging). The report is uploaded
-      # either way.
+      # (scripts/desktop-ui-smoke.mjs: the window's pixels and the webview's connection to the
+      # sidecar; WebView2 ignores the remote debugging flag here). The report is uploaded either way.
       - name: UI smoke the installed app
         if: ${{ !inputs.skip_ui_smoke }}
         timeout-minutes: 10

@@ -4,45 +4,55 @@
 // exceptions, network failures, navigations, service workers, screenshots), then decide whether
 // the web app rendered. Zero npm dependencies, Node >= 22 (global fetch + WebSocket).
 //
+// When the debugging port never yields a page target (WebView2 may ignore
+// WEBVIEW2_ADDITIONAL_BROWSER_ARGUMENTS), the verdict falls back to OS evidence on Windows: the
+// app window's client area must not be a near-uniform colour, and a msedgewebview2 process must
+// hold an established connection to the tide-server port (the web app's WebSocket). Every
+// snapshot records its basis: "cdp" or "os-evidence".
+//
 //   node scripts/desktop-ui-smoke.mjs --install-dir "C:/Users/me/AppData/Local/Tide Code"
+//   node scripts/desktop-ui-smoke.mjs --install-dir … --launches 4 --purge-sw-before 3
 //   node scripts/desktop-ui-smoke.mjs --attach-port 9333        # app/browser already running
 //
-// Exit 0: every snapshot of every round rendered. 1: at least one did not. 2: script error.
+// Exit 0: every snapshot of every round rendered. 1: at least one did not. 2: script or usage error.
 // The report (report.json, summary.txt, PNGs, server log tail) is always written to --out.
 import { spawn } from "node:child_process";
 import fs from "node:fs";
 import path from "node:path";
 import { parseArgs } from "node:util";
-import { IS_WIN, collectWebviewLog, evidenceLines, webviewLogPlan, windowsEvidence, winKill } from "./desktop-ui-smoke-win.mjs";
+import { Cdp, HOSTS, PAGE_PROBE, consoleText, errorText, fetchJson, getJson, isAppOrigin, pickTarget, portAnswers } from "./desktop-ui-smoke-cdp.mjs";
+import { listProfile, purgeServiceWorker, userDataDir } from "./desktop-ui-smoke-profile.mjs";
+import { cdpVerdict, osVerdict, redact, writeOutputs } from "./desktop-ui-smoke-report.mjs";
+import {
+  IS_WIN, collectWebviewLog, serverPortFromProcesses, webviewLogPlan, windowsEvidence, winKill, winServerConnection,
+} from "./desktop-ui-smoke-win.mjs";
 
-const VERSION = "1.1.0";
-const CMD_TIMEOUT_MS = 5000;
+const VERSION = "1.2.0";
 const POLL_MS = 150;
 const SETTLE_MS = 12_000; // past the web app's 8 s boot gate
 const ATTACH_SETTLE_MS = 3000;
 const RELOAD_LOAD_TIMEOUT_MS = 60_000;
-const BOOT_GATE_ALERT = "Could not reach the Tide server";
 const MAX_OTHER_CONSOLE = 50;
 const MAX_EVENTS = 1000;
-const HOSTS = ["127.0.0.1", "[::1]"]; // IPv4 and IPv6 loopback: "localhost" may resolve to either
 const FALLBACK_AFTER_MS = 3000; // list answered but no page target for this long: take another target
-const SILENT_AFTER_LISTEN_MS = 45_000;
-const SERVER_LISTENING = /tide-server listening on/;
+const SILENT_AFTER_LISTEN_MS = 20_000; // also when the deciding OS evidence is taken (app visible by ~15 s)
+const SERVER_LISTENING = /tide-server listening on \S*?:(\d+)\//;
 
 const sleep = (ms) => new Promise((r) => setTimeout(r, ms));
 const now = () => Date.now();
 
-/** Hides session secrets in any text that may hold a URL. */
-function redact(text) {
-  return String(text).replace(/([?&](?:token|wsTicket)=)[\w.~%+=/-]*/g, "$1REDACTED");
-}
+const USAGE = `usage: node scripts/desktop-ui-smoke.mjs (--install-dir <dir> | --app <exe> | --attach-port <port>)
+  [--out <dir>] [--port 9333] [--launches 2] [--boot-timeout 120] [--tide-home <dir>]
+  [--purge-sw-before <n>]   Windows only, 2 <= n <= --launches: delete the WebView2 profile's
+                            Default\\Service Worker directory before launch n (diagnosis)`;
 
-function parseCli(argv) {
+/** Parses argv; throws a usage error (exit 2) on bad input. */
+function parseCli(argv, platform = process.platform) {
   const { values } = parseArgs({
     args: argv,
     strict: true,
     options: {
-      ...Object.fromEntries(["install-dir", "app", "attach-port", "tide-home"].map((k) => [k, { type: "string" }])),
+      ...Object.fromEntries(["install-dir", "app", "attach-port", "tide-home", "purge-sw-before"].map((k) => [k, { type: "string" }])),
       out: { type: "string", default: "./desktop-ui-smoke-report" },
       port: { type: "string", default: "9333" },
       launches: { type: "string", default: "2" },
@@ -63,9 +73,18 @@ function parseCli(argv) {
     tideHomeIsDefault: !values["tide-home"],
     installDir: values["install-dir"] ?? null,
     app: values.app ?? null,
+    purgeSwBefore: values["purge-sw-before"] === undefined ? null : int("purge-sw-before"),
   };
   if (!opts.help && opts.attachPort === null && !opts.installDir && !opts.app) {
     throw new Error("pass --install-dir <dir>, --app <exe> or --attach-port <port>");
+  }
+  const n = opts.purgeSwBefore;
+  if (n !== null) {
+    // the profile dir is read from a webview command line of an earlier launch, so launch 1 cannot be purged
+    if (n < 2) throw new Error("--purge-sw-before must be >= 2: the profile is found from an earlier launch's msedgewebview2 command line");
+    if (opts.attachPort !== null) throw new Error("--purge-sw-before needs launches (--install-dir or --app), not --attach-port");
+    if (n > opts.launches) throw new Error(`--purge-sw-before ${n} is past --launches ${opts.launches}`);
+    if (platform !== "win32") throw new Error(`--purge-sw-before works on Windows only (this is ${platform})`);
   }
   return opts;
 }
@@ -80,140 +99,6 @@ function findAppExe(dir) {
   if (candidates.length === 0) throw new Error(`no app .exe found in ${dir}`);
   return { exe: candidates[0].file, candidates: candidates.map((c) => c.file) };
 }
-
-function errorText(e) {
-  const c = e?.cause;
-  return `${e?.name}: ${e?.message}${c ? ` (cause ${c.code ?? c.name}: ${c.message})` : ""}`;
-}
-
-/** Resolves { ok, json } or { ok: false, error } — the error text is evidence, not noise. */
-async function fetchJson(host, port, route) {
-  try {
-    const res = await fetch(`http://${host}:${port}${route}`, { signal: AbortSignal.timeout(2000) });
-    if (!res.ok) return { ok: false, error: `HTTP ${res.status}: ${(await res.text()).slice(0, 200)}` };
-    return { ok: true, json: await res.json() };
-  } catch (e) {
-    return { ok: false, error: errorText(e) };
-  }
-}
-
-async function getJson(port, route, host = "127.0.0.1") {
-  const r = await fetchJson(host, port, route);
-  return r.ok ? r.json : null;
-}
-
-async function portAnswers(port) {
-  for (const host of HOSTS) if (await getJson(port, "/json/version", host)) return true;
-  return false;
-}
-
-/** page first, then webview, other, then anything debuggable that is not DevTools itself. */
-function pickTarget(targets, allowFallback) {
-  const usable = (Array.isArray(targets) ? targets : []).filter((t) => t.webSocketDebuggerUrl && !String(t.url).startsWith("devtools://"));
-  const page = usable.find((t) => t.type === "page");
-  if (page || !allowFallback) return page ? { target: page } : null;
-  const alt = usable.find((t) => t.type === "webview") ?? usable.find((t) => t.type === "other") ?? usable[0];
-  return alt ? { target: alt, fallback: `no page target; attached to type "${alt.type}" (${alt.url})` } : null;
-}
-
-/** Minimal CDP client: every command resolves (never rejects), with a per-command timeout. */
-class Cdp {
-  static connect(url, timeoutMs) {
-    return new Promise((resolve, reject) => {
-      const ws = new WebSocket(url);
-      const fail = (why) => (clearTimeout(timer), ws.close(), reject(new Error(why)));
-      const timer = setTimeout(() => fail("websocket connect timeout"), timeoutMs);
-      ws.addEventListener("open", () => (clearTimeout(timer), resolve(new Cdp(ws))));
-      ws.addEventListener("error", () => fail("websocket error"));
-    });
-  }
-
-  constructor(ws) {
-    this.ws = ws;
-    this.nextId = 1;
-    this.pending = new Map();
-    this.onEvent = () => {};
-    this.onClose = () => {};
-    ws.addEventListener("message", (ev) => this.#receive(ev.data));
-    ws.addEventListener("close", () => {
-      for (const done of this.pending.values()) done({ ok: false, error: "socket closed" });
-      this.pending.clear();
-      this.onClose();
-    });
-  }
-
-  #receive(data) {
-    let msg = {};
-    try { msg = JSON.parse(typeof data === "string" ? data : Buffer.from(data).toString("utf8")); } catch {}
-    if (msg.id !== undefined) {
-      const done = this.pending.get(msg.id);
-      this.pending.delete(msg.id);
-      done?.(msg.error ? { ok: false, error: msg.error.message ?? JSON.stringify(msg.error) } : { ok: true, result: msg.result });
-    } else if (msg.method) {
-      this.onEvent(msg.method, msg.params ?? {});
-    }
-  }
-
-  send(method, params = {}, timeoutMs = CMD_TIMEOUT_MS) {
-    if (this.ws.readyState !== WebSocket.OPEN) return Promise.resolve({ ok: false, error: "socket not open" });
-    const id = this.nextId++;
-    return new Promise((resolve) => {
-      const timer = setTimeout(() => {
-        this.pending.delete(id);
-        resolve({ ok: false, timedOut: true, error: `${method} timed out after ${timeoutMs} ms` });
-      }, timeoutMs);
-      this.pending.set(id, (r) => (clearTimeout(timer), resolve(r)));
-      this.ws.send(JSON.stringify({ id, method, params }));
-    });
-  }
-
-  close() {
-    this.ws.close();
-  }
-}
-
-function isAppOrigin(url) {
-  const u = URL.parse(url ?? "");
-  return !!u && (u.hostname === "tauri.localhost" || u.protocol === "tauri:");
-}
-
-function consoleText(args = []) {
-  return args
-    .map((a) => (a.value !== undefined ? (typeof a.value === "string" ? a.value : JSON.stringify(a.value)) : a.description ?? a.unserializableValue ?? a.type))
-    .join(" ");
-}
-
-const PAGE_PROBE = `(async () => {
-  const within = (p, ms) => Promise.race([p, new Promise((_, no) => setTimeout(() => no(new Error("timeout")), ms))]);
-  const squash = (s) => (s || "").replace(/\\s+/g, " ").trim();
-  const root = document.getElementById("root");
-  const out = {
-    href: location.href,
-    readyState: document.readyState,
-    isSecureContext,
-    rootChildren: root ? root.childElementCount : null,
-    bodyText: squash(document.body && document.body.innerText).slice(0, 600),
-    alerts: [...document.querySelectorAll("[role=alert]")].map((e) => squash(e.innerText || e.textContent)),
-    dataset: { ...document.documentElement.dataset },
-    userAgent: navigator.userAgent,
-  };
-  try {
-    if ("serviceWorker" in navigator) {
-      const regs = await within(navigator.serviceWorker.getRegistrations(), 3000);
-      out.serviceWorker = {
-        count: regs.length,
-        controlled: navigator.serviceWorker.controller !== null,
-        registrations: regs.map((r) => ({ scope: r.scope, activeScriptURL: r.active ? r.active.scriptURL : null,
-          activeState: r.active ? r.active.state : null, installing: !!r.installing, waiting: !!r.waiting })),
-      };
-    } else out.serviceWorker = { unavailable: true };
-  } catch (e) { out.serviceWorker = { error: String(e) }; }
-  try { out.caches = typeof caches === "undefined" ? null : await within(caches.keys(), 3000); }
-  catch (e) { out.caches = { error: String(e) }; }
-  out.resources = performance.getEntriesByType("resource").slice(0, 40)
-    .map((r) => ({ name: r.name, transferSize: r.transferSize, responseStatus: r.responseStatus }));
-  return out;
-})()`;
 
 /** One capture round: owns the CDP attachment (re-attaching if the target goes away) and its data. */
 class Round {
@@ -409,7 +294,7 @@ class Round {
       failedRequests: this.events.failedRequests.length,
       crashes: this.events.crashes.length,
     };
-    snap.verdict = verdict(snap);
+    snap.verdict = cdpVerdict(snap);
     this.snapshots.push(snap);
     return snap;
   }
@@ -417,7 +302,15 @@ class Round {
   /** Records a snapshot that could not be taken at all (never attached). */
   missingSnapshot(label, reason) {
     const snap = { label, t: this.t(), mainUrl: this.mainUrl, page: { error: reason } };
-    snap.verdict = { rendered: false, reasons: [reason] };
+    snap.verdict = { rendered: false, basis: "cdp", reasons: [reason] };
+    this.snapshots.push(snap);
+  }
+
+  /** CDP never attached: decide from the deciding desktop capture and the webview connection check. */
+  osSnapshot(label, cdpReason, desktop, connection) {
+    const pixels = desktop?.pixels ?? (desktop ? { error: desktop.error ?? "no screenshot" } : null);
+    const snap = { label, t: desktop?.t ?? this.t(), cdpReason, screenshot: desktop?.screenshot ?? null, pixels, connection };
+    snap.verdict = osVerdict({ pixels, connection });
     this.snapshots.push(snap);
   }
 
@@ -428,22 +321,9 @@ class Round {
   }
 
   toJSON() {
-    const { name, startedAt, timings, notes, snapshots, events, pid, exe, appOrigin, reload, poll, gaveUp, webviewLog, win } = this;
-    return { name, startedAt, pid, exe, timings, appOrigin, reload, gaveUp, poll, webviewLog, win, notes, snapshots, events };
+    const { name, startedAt, timings, notes, snapshots, events, pid, exe, appOrigin, reload, poll, gaveUp, webviewLog, win, serverPort, purge } = this;
+    return { name, startedAt, pid, exe, purge, timings, serverPort, appOrigin, reload, gaveUp, poll, webviewLog, win, notes, snapshots, events };
   }
-}
-
-function verdict(snap) {
-  const page = snap.page ?? {};
-  const url = page.href ?? snap.mainUrl;
-  const reasons = [];
-  if (page.error) reasons.push(`page probe failed: ${page.error}`);
-  if (!isAppOrigin(url)) reasons.push(`main frame not on the app origin (${url})`);
-  if (!(page.rootChildren >= 1)) reasons.push(`#root children: ${page.rootChildren ?? "none"}`);
-  if (!page.bodyText) reasons.push("body text empty");
-  if ((page.alerts ?? []).some((a) => a.includes(BOOT_GATE_ALERT))) reasons.push(`alert: ${BOOT_GATE_ALERT}`);
-  if (snap.counts?.crashes > 0) reasons.push("target crashed");
-  return { rendered: reasons.length === 0, reasons };
 }
 
 /** Kills the app, its WebView2 children and the sidecar; waits for the debugging port to go quiet. */
@@ -486,7 +366,7 @@ function copyServerLog(tideHome, outDir, roundName) {
   return file;
 }
 
-/** Watches only what this round appends to the shared server log; returns when it first said "listening". */
+/** Watches only what this round appends to the shared server log; returns when it first said "listening" (and learns the port). */
 function serverListenWatcher(tideHome, round) {
   const log = path.join(tideHome, "logs", "server.log");
   let offset = fs.existsSync(log) ? fs.statSync(log).size : 0;
@@ -498,7 +378,11 @@ function serverListenWatcher(tideHome, round) {
     const buf = Buffer.alloc(size - offset);
     fs.readSync(fd, buf, 0, buf.length, offset);
     fs.closeSync(fd);
-    if (SERVER_LISTENING.test(buf.toString("utf8"))) round.timings.serverListeningMs = round.t();
+    const m = SERVER_LISTENING.exec(buf.toString("utf8"));
+    if (m) {
+      round.timings.serverListeningMs = round.t();
+      round.serverPort = Number(m[1]);
+    }
     return round.timings.serverListeningMs;
   };
 }
@@ -538,10 +422,8 @@ async function launchRound(round, opts, exe) {
   try {
     const deadline = now() + opts.bootTimeoutMs;
     if (!(await round.attach(deadline))) {
-      await windowsEvidence(round, "desktop", "failure", exe);
       const why = round.gaveUp ?? "no page target appeared on the debugging port before --boot-timeout";
-      round.missingSnapshot("settled", why);
-      return round.missingSnapshot("after-reload", "never attached");
+      return await decideFromOs(round, exe, why);
     }
     const reached = await round.waitFor(() => isAppOrigin(round.mainUrl), deadline);
     round.appOrigin = { reached, ms: reached ? round.t() : null, url: round.mainUrl };
@@ -558,6 +440,18 @@ async function launchRound(round, opts, exe) {
   }
 }
 
+/** The deciding OS evidence: a desktop capture (pixels) plus the webview -> tide-server connection. */
+async function decideFromOs(round, exe, why) {
+  const desktop = await windowsEvidence(round, "desktop", "deciding", exe);
+  let connection = null;
+  if (IS_WIN) {
+    round.serverPort ??= serverPortFromProcesses(round);
+    connection = { t: round.t(), ...(await winServerConnection(path.basename(exe), round.serverPort)) };
+    round.win.connection = connection;
+  }
+  round.osSnapshot("settled", why, desktop, connection);
+}
+
 async function attachRound(round, opts) {
   try {
     if (!(await round.attach(now() + 10_000))) {
@@ -572,55 +466,6 @@ async function attachRound(round, opts) {
     if (log) round.notes.push(`server log tail: ${log}`);
   }
 }
-
-function summarize(report) {
-  const lines = [`desktop-ui-smoke ${VERSION}  ${report.platform}  ${report.startedAt}`];
-  if (report.exe) lines.push(`app: ${report.exe}`);
-  if (report.error) lines.push(`SCRIPT ERROR: ${report.error}`);
-  for (const r of report.rounds) {
-    lines.push("", `== ${r.name} ==`);
-    if (r.appOrigin) lines.push(`app origin: ${r.appOrigin.reached ? `reached${r.appOrigin.ms === null ? "" : ` at ${r.appOrigin.ms} ms`}` : "NOT reached"} (url ${r.appOrigin.url})`);
-    for (const n of r.notes) lines.push(`note: ${n}`);
-    lines.push(...evidenceLines(r));
-    for (const s of r.snapshots) {
-      const p = s.page ?? {};
-      const sw = p.serviceWorker ?? {};
-      lines.push(
-        `-- ${s.label}: ${s.verdict.rendered ? "RENDERED" : "NOT RENDERED"}`,
-        `   url: ${p.href ?? s.mainUrl}`,
-        `   root children: ${p.rootChildren ?? "n/a"}  readyState: ${p.readyState ?? "n/a"}  secure: ${p.isSecureContext ?? "n/a"}`,
-        `   alerts: ${JSON.stringify(p.alerts ?? [])}`,
-        `   service workers: ${sw.count ?? (sw.error || (sw.unavailable ? "unavailable" : "n/a"))}  controlled: ${sw.controlled ?? "n/a"}  caches: ${JSON.stringify(p.caches ?? null)}`,
-        `   console errors so far: ${s.counts?.consoleErrors ?? "n/a"}  exceptions: ${s.counts?.exceptions ?? "n/a"}  failed requests: ${s.counts?.failedRequests ?? "n/a"}`,
-        `   body: ${(p.bodyText ?? "").slice(0, 200)}`,
-      );
-      if (p.error) lines.push(`   probe error: ${p.error}`);
-      if (!s.verdict.rendered) lines.push(`   why: ${s.verdict.reasons.join("; ")}`);
-    }
-    const ev = r.events;
-    const problems = [
-      ...ev.console.filter((c) => c.type === "error").map((c) => `[${c.t} ms] console.error: ${c.text}${c.source ? ` (${c.source})` : ""}`),
-      ...ev.exceptions.map((x) => `[${x.t} ms] exception: ${x.description ?? x.text} (${x.url}:${x.line})`),
-      ...ev.failedRequests.map((f) => `[${f.t} ms] request failed: ${f.url} ${f.errorText}${f.blockedReason ? ` blocked=${f.blockedReason}` : ""}${f.canceled ? " canceled" : ""}`),
-      ...ev.crashes.map((c) => `[${c.t} ms] TARGET CRASHED`),
-    ];
-    lines.push(`first problems (${Math.min(problems.length, 20)} of ${problems.length}):`, ...problems.slice(0, 20).map((l) => `   ${l}`));
-  }
-  lines.push("", `VERDICT: ${report.verdict.pass ? "PASS" : "FAIL"}`);
-  return redact(lines.join("\n")) + "\n";
-}
-
-function writeOutputs(report, outDir) {
-  fs.mkdirSync(outDir, { recursive: true });
-  report.finishedAt = new Date().toISOString();
-  fs.writeFileSync(path.join(outDir, "report.json"), redact(JSON.stringify(report, null, 2)));
-  const summary = summarize(report);
-  fs.writeFileSync(path.join(outDir, "summary.txt"), summary);
-  process.stdout.write(summary);
-}
-
-const USAGE = `usage: node scripts/desktop-ui-smoke.mjs (--install-dir <dir> | --app <exe> | --attach-port <port>)
-  [--out <dir>] [--port 9333] [--launches 2] [--boot-timeout 120] [--tide-home <dir>]`;
 
 async function main() {
   const report = {
@@ -649,19 +494,23 @@ async function main() {
       report.preClean = await killAll(null, found.exe, opts.port); // single-instance: nothing may be running
       for (let i = 1; i <= opts.launches; i++) {
         const round = new Round(`launch-${i}`, opts.port, opts.out);
+        if (opts.purgeSwBefore === i) round.purge = await purgeServiceWorker(report.rounds, found.exe);
         report.rounds.push(round);
         await launchRound(round, opts, found.exe);
       }
+      // every launch is killed by now: show whether a service worker registered in the profile
+      if (IS_WIN) report.profile = listProfile(userDataDir(report.rounds));
     }
     const failures = report.rounds.flatMap((r) => r.snapshots.filter((s) => !s.verdict.rendered).map((s) => `${r.name}/${s.label}`));
     report.verdict = { pass: failures.length === 0, failures };
     code = failures.length === 0 ? 0 : 1;
   } catch (e) {
     report.error = e?.stack ?? String(e);
+    if (report.options === undefined) console.error(`${e?.message ?? e}\n${USAGE}`);
     code = 2;
   } finally {
     try {
-      writeOutputs(JSON.parse(JSON.stringify(report)), outDir);
+      writeOutputs(JSON.parse(JSON.stringify(report)), outDir, VERSION);
     } catch (e) {
       console.error(`could not write the report: ${e?.stack ?? e}`);
       code = 2;
