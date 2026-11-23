@@ -134,7 +134,7 @@ Tauri cannot cross-compile, so these build on GitHub-hosted runners:
   Rust stable → sidecar (`--target windows-x64`) → web build → `tauri build --bundles nsis`
   → **smoke test** (silent `/S` NSIS install, run the installed `tide-server.exe --dev
   --port 3799`, `curl /health`) → **UI smoke** (`scripts/desktop-ui-smoke.mjs`: launches the
-  installed app twice and fails unless the window gets past the splash and renders the web
+  installed app four times and fails unless the window gets past the splash and renders the web
   client. WebView2 ignores the remote debugging flag on the installed app, so the verdict
   comes from the window's pixels (a black window is one colour) and from a webview process
   holding a connection to the sidecar; report uploaded as the `desktop-ui-smoke-report`

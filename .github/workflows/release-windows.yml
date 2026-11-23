@@ -146,7 +146,8 @@ jobs:
 
       # UI smoke: the sidecar answering /health says nothing about the window. On 2026-11-23 a
       # build shipped that showed the splash and then a black window, so before publishing the
-      # installed app must render the web client on a first and a second launch
+      # installed app must render the web client on four launches in a row (the black window
+      # was intermittent: one run rendered three launches before the fourth went black)
       # (scripts/desktop-ui-smoke.mjs: the window's pixels and the webview's connection to the
       # sidecar; WebView2 ignores the remote debugging flag here). The report is uploaded either way.
       - name: UI smoke the installed app
@@ -157,7 +158,7 @@ jobs:
           localappdata="$(cygpath -u "$LOCALAPPDATA")"
           server="$(find "$localappdata/Tide Code" "$localappdata/Programs/Tide Code" "/c/Program Files/Tide Code" -name 'tide-server*.exe' 2>/dev/null | head -1 || true)"
           [ -n "$server" ] || { echo "installed tide-server.exe not found"; exit 1; }
-          node scripts/desktop-ui-smoke.mjs --install-dir "$(cygpath -m "$(dirname "$server")")" --out "$(cygpath -m "$RUNNER_TEMP/ui-smoke")"
+          node scripts/desktop-ui-smoke.mjs --install-dir "$(cygpath -m "$(dirname "$server")")" --out "$(cygpath -m "$RUNNER_TEMP/ui-smoke")" --launches 4
 
       - name: Upload the UI smoke report
         if: ${{ always() && !inputs.skip_ui_smoke }}
