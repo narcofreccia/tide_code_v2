@@ -21,7 +21,8 @@ import styles from "./Projects.module.css";
 
 /** `/Users/me/dev/tide` with the folder name kept whole and the parent ellipsised in the middle. */
 export function MiddlePath({ path }: { path: string }) {
-  const cut = path.lastIndexOf("/", path.length - 2);
+  // either separator: a Windows root path (`C:\src\app`) splits too
+  const cut = Math.max(path.lastIndexOf("/", path.length - 2), path.lastIndexOf("\\", path.length - 2));
   const head = cut > 0 ? path.slice(0, cut + 1) : "";
   const tail = cut > 0 ? path.slice(cut + 1) : path;
   return (

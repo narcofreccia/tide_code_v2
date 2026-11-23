@@ -5,6 +5,7 @@ import { showToast } from "../state/toast.ts";
 import { deviceLimitOf, projectDeviceLimitOf, refusedForLimit } from "../state/deviceAccess.ts";
 import { useUi } from "../state/ui.ts";
 import { dispatchOrToast, errorText } from "./dispatchOrToast.ts";
+import { samePath } from "./paths.ts";
 
 /** an archived project's Undo stays up long enough to reach for it */
 export const ARCHIVE_UNDO_MS = 8000;
@@ -43,12 +44,6 @@ export function archiveProject(projectId: string): void {
   const ui = useUi.getState();
   if (ui.selectedProjectId === projectId) ui.selectProject(null);
   if (ui.allThreadsProjectId === projectId) ui.showAllThreads(null);
-}
-
-/** `/a/b/` and `/a/b` name the same folder. */
-function samePath(a: string, b: string): boolean {
-  const trim = (p: string): string => (p.length > 1 ? p.replace(/\/+$/, "") : p);
-  return trim(a) === trim(b);
 }
 
 /** The archived project at `rootPath` (on `envId`, when both sides know their machine). */

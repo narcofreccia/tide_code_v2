@@ -2,18 +2,19 @@ import { useState } from "react";
 import { useEnvironments } from "../../state/environments.ts";
 import { patchServerSettings, useServerSettings } from "../../state/serverSettings.ts";
 import { useDeviceLimit } from "../../state/deviceAccess.ts";
+import { isAbsolutePath } from "../../lib/paths.ts";
 import { EnvSelect } from "../fleet/EnvSelect.tsx";
 import { DEFAULT_PROJECTS_DIR, settingsOfEnv } from "../shell/useRunOn.ts";
 import { SettingRow } from "./ui/SettingRow.tsx";
 import { SettingsGroup } from "./ui/SettingsGroup.tsx";
 import { SettingText } from "./ui/SettingText.tsx";
 
-const ABSOLUTE = /^(~$|~\/|\/|[A-Za-z]:[\\/])/;
+const HOME_RELATIVE = /^(~$|~\/)/;
 
-/** "~/code", "/srv/repos" or "C:\\repos"; empty restores the default. */
+/** "~/code", "/srv/repos", "C:\\repos" or "\\\\nas\\repos"; empty restores the default. */
 export function validateProjectsDir(value: string): string | undefined {
   const trimmed = value.trim();
-  return trimmed === "" || ABSOLUTE.test(trimmed) ? undefined : "Use an absolute path (or one starting with ~/)";
+  return trimmed === "" || HOME_RELATIVE.test(trimmed) || isAbsolutePath(trimmed) ? undefined : "Use an absolute path (or one starting with ~/)";
 }
 
 /**

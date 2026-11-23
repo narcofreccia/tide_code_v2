@@ -1,7 +1,8 @@
 import { useState } from "react";
 import type { LinkAccess } from "@tide/contracts";
 import type { LinkDraft } from "../../lib/linkActions.ts";
-import { basename, FolderPicker } from "../shell/FolderPicker.tsx";
+import { basename, isAbsolutePath } from "../../lib/paths.ts";
+import { FolderPicker } from "../shell/FolderPicker.tsx";
 import { Button } from "../ui/Button.tsx";
 import { Radio } from "../ui/Choice.tsx";
 import styles from "./ProjectLinks.module.css";
@@ -47,7 +48,7 @@ export function LinkEditor({
     const path = draft.path.trim();
     const label = draft.label.trim() || basename(path);
     if (path === "") return setError("Choose a repository folder");
-    if (!path.startsWith("/")) return setError("Path must be absolute");
+    if (!isAbsolutePath(path)) return setError("Path must be absolute");
     if (label === "") return setError("A label is required");
     setError(null);
     onSubmit({ ...draft, path, label });

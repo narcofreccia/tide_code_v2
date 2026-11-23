@@ -1,7 +1,7 @@
 import { afterEach, describe, expect, it } from "vitest";
 import { cleanup, fireEvent, render, screen, waitFor, within } from "@testing-library/react";
 import { AddProjectForm } from "./AddProjectForm.tsx";
-import { basename, breadcrumbs, FolderPicker } from "./FolderPicker.tsx";
+import { FolderPicker } from "./FolderPicker.tsx";
 import { attachFakeStore, mockRpc, modelWith, resetUi } from "../../testHarness.ts";
 
 afterEach(() => {
@@ -43,19 +43,6 @@ function mockBrowse() {
   });
   return calls;
 }
-
-describe("breadcrumbs", () => {
-  it("splits an absolute path into clickable segments", () => {
-    expect(breadcrumbs("/Users/dev/tide")).toEqual([
-      { label: "/", path: "/" },
-      { label: "Users", path: "/Users" },
-      { label: "dev", path: "/Users/dev" },
-      { label: "tide", path: "/Users/dev/tide" },
-    ]);
-    expect(breadcrumbs("/")).toEqual([{ label: "/", path: "/" }]);
-    expect(basename("/Users/dev/tide/")).toBe("tide");
-  });
-});
 
 describe("FolderPicker", () => {
   it("lists the folders fs.browse reports, flagging git repos", async () => {
@@ -181,5 +168,122 @@ describe("New project", () => {
     fireEvent.change(screen.getByLabelText("Folder name"), { target: { value: "my-app" } });
     fireEvent.click(screen.getByText("Create project"));
     await waitFor(() => expect(calls).toEqual([{ parentPath: HOME, name: "my-app" }]));
+  });
+});
+
+/** A Windows host: `fs.browse` answers with drive paths, as `node:path` on win32 does. */
+function mockWindowsBrowse(extra: Record<string, (params: never) => unknown> = {}) {
+  const calls: BrowseParams[] = [];
+  const winListing = (path: string, dirs: string[], parent?: string) => ({
+    path,
+    ...(parent === undefined ? {} : { parent }),
+    home: "C:\\Users\\andre",
+    isGitRepo: false,
+    dirs: dirs.map((name) => ({ name, path: `${path.replace(/\\$/, "")}\\${name}`, isGitRepo: false })),
+    recent: [],
+  });
+  const table: Record<string, ReturnType<typeof winListing>> = {
+    "C:\\": winListing("C:\\", ["Users"]),
+    "C:\\Users": winListing("C:\\Users", ["andre"], "C:\\"),
+    "C:\\Users\\andre": winListing("C:\\Users\\andre", ["Desktop"], "C:\\Users"),
+    "C:\\Users\\andre\\Desktop": winListing("C:\\Users\\andre\\Desktop", [], "C:\\Users\\andre"),
+  };
+  mockRpc({
+    "fs.browse": (params: never) => {
+      const p = params as BrowseParams;
+      calls.push(p);
+      const hit = table[p.path ?? "C:\\Users\\andre"];
+      if (!hit) throw new Error(`no such directory: ${p.path}`);
+      return hit;
+    },
+    ...extra,
+  });
+  return calls;
+}
+
+describe("FolderPicker on a Windows server", () => {
+  it("shows drive-path crumbs that browse real Windows paths", async () => {
+    const calls = mockWindowsBrowse();
+    render(<FolderPicker onPick={() => undefined} onClose={() => undefined} />);
+    await screen.findByRole("option", { name: /Desktop/ });
+    const crumbs = within(screen.getByRole("navigation", { name: "Path" })).getAllByRole("button");
+    expect(crumbs.map((c) => c.textContent)).toEqual(["C:", "Users", "andre"]);
+    fireEvent.click(screen.getByRole("button", { name: "Users" }));
+    await waitFor(() => expect(calls[1]?.path).toBe("C:\\Users"));
+    fireEvent.click(await screen.findByRole("button", { name: "C:" }));
+    await waitFor(() => expect(calls[2]?.path).toBe("C:\\"));
+    // the drive root has no parent: no ".." row
+    await screen.findByRole("option", { name: /Users/ });
+    expect(screen.queryByRole("option", { name: /\.\./ })).toBeNull();
+  });
+
+  it("goes up one folder with the server's parent", async () => {
+    const calls = mockWindowsBrowse();
+    render(<FolderPicker onPick={() => undefined} onClose={() => undefined} />);
+    fireEvent.click(await screen.findByRole("option", { name: /\.\./ }));
+    await waitFor(() => expect(calls[1]?.path).toBe("C:\\Users"));
+  });
+});
+
+describe("Add project with Windows paths", () => {
+  it("creates a new project under a picked Windows parent folder", async () => {
+    attachFakeStore(modelWith({}));
+    const calls: unknown[] = [];
+    mockWindowsBrowse({
+      "project.init": (params: never) => {
+        calls.push(params);
+        return { projectId: "p-new", rootPath: "C:\\Users\\andre\\Desktop\\my-app" };
+      },
+    });
+    render(<AddProjectForm onDone={() => undefined} />);
+    fireEvent.click(screen.getByLabelText("New project"));
+    fireEvent.click(screen.getByText("Browse…"));
+    fireEvent.click(await screen.findByRole("option", { name: /Desktop/ }));
+    await waitFor(() => expect(screen.getByRole("button", { name: "Desktop" })).toBeDefined());
+    fireEvent.click(screen.getByText("Create here"));
+    expect(screen.getByLabelText<HTMLInputElement>("Parent folder").value).toBe("C:\\Users\\andre\\Desktop");
+    fireEvent.change(screen.getByLabelText("Folder name"), { target: { value: "my-app" } });
+    fireEvent.click(screen.getByText("Create project"));
+    await waitFor(() => expect(calls).toEqual([{ parentPath: "C:\\Users\\andre\\Desktop", name: "my-app" }]));
+    expect(screen.queryByText(/must be absolute/)).toBeNull();
+  });
+
+  it.each(["C:\\", "D:/work", "\\\\nas\\projects"])("accepts the typed parent %s", async (parent) => {
+    attachFakeStore(modelWith({}));
+    const calls: unknown[] = [];
+    mockRpc({
+      "project.init": (params: never) => {
+        calls.push(params);
+        return { projectId: "p-new", rootPath: `${parent}\\my-app` };
+      },
+    });
+    render(<AddProjectForm onDone={() => undefined} />);
+    fireEvent.click(screen.getByLabelText("New project"));
+    fireEvent.change(screen.getByLabelText("Parent folder"), { target: { value: parent } });
+    fireEvent.change(screen.getByLabelText("Folder name"), { target: { value: "my-app" } });
+    fireEvent.click(screen.getByText("Create project"));
+    await waitFor(() => expect(calls).toEqual([{ parentPath: parent, name: "my-app" }]));
+    expect(screen.queryByText(/must be absolute/)).toBeNull();
+  });
+
+  it("still refuses a relative parent", () => {
+    attachFakeStore(modelWith({}));
+    render(<AddProjectForm onDone={() => undefined} />);
+    fireEvent.click(screen.getByLabelText("New project"));
+    fireEvent.change(screen.getByLabelText("Parent folder"), { target: { value: "Desktop" } });
+    fireEvent.change(screen.getByLabelText("Folder name"), { target: { value: "my-app" } });
+    fireEvent.click(screen.getByText("Create project"));
+    expect(screen.getByText("Parent path must be absolute")).toBeDefined();
+  });
+
+  it("adds an existing repository at a typed Windows path, named from its folder", () => {
+    const fake = attachFakeStore(modelWith({}));
+    render(<AddProjectForm onDone={() => undefined} />);
+    const input = screen.getByLabelText("Project root path");
+    fireEvent.change(input, { target: { value: "C:\\src\\atlas\\" } });
+    fireEvent.blur(input);
+    expect(screen.getByLabelText<HTMLInputElement>("Project title").value).toBe("atlas");
+    fireEvent.click(screen.getByText("Create"));
+    expect(fake.dispatch).toHaveBeenCalledWith({ type: "project.create", title: "atlas", rootPath: "C:\\src\\atlas\\" });
   });
 });

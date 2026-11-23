@@ -59,6 +59,11 @@ describe("markdownUrlTransform & parseFileLink", () => {
   it("computes paths relative to a thread worktree or project root", () => {
     expect(relativeToRoot("/repo/src/Menu.jsx", "/repo")).toBe("src/Menu.jsx");
     expect(relativeToRoot("/Users/mac/.gemini/brain/plan.md", "/repo")).toBeUndefined();
+    expect(relativeToRoot("C:\\wt\\t1\\src\\Menu.jsx", "C:\\wt\\t1")).toBe("src/Menu.jsx");
+    expect(relativeToRoot("c:/WT/t1/src/Menu.jsx", "C:\\wt\\t1\\")).toBe("src/Menu.jsx");
+    expect(relativeToRoot("\\\\nas\\repo\\a.ts", "\\\\nas\\repo")).toBe("a.ts");
+    expect(relativeToRoot("C:\\wt\\t10\\a.ts", "C:\\wt\\t1")).toBeUndefined();
+    expect(parseFileLink("\\\\nas\\repo\\a.ts")?.absolute).toBe(true);
   });
 });
 

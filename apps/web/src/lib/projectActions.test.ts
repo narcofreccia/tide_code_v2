@@ -15,6 +15,14 @@ describe("project actions", () => {
     expect(archivedProjectAt(model, "/src/live")).toBeUndefined();
   });
 
+  it("matches a Windows root whatever its trailing separator or case", () => {
+    const win: Project = { ...gone, id: "p3", rootPath: "C:\\src\\Old" };
+    const model = modelWith({ projects: { p3: win } });
+    expect(archivedProjectAt(model, "c:\\src\\old\\")?.id).toBe("p3");
+    expect(archivedProjectAt(model, "C:/src/Old")?.id).toBe("p3");
+    expect(archivedProjectAt(model, "C:\\src\\Older")).toBeUndefined();
+  });
+
   it("adding an archived project's path restores it instead of creating a duplicate", async () => {
     const fake = attachFakeStore(modelWith({ projects: { p1: live, p2: gone } }));
     await expect(addProject("Old again", "/src/old")).resolves.toBe("restored");

@@ -1,5 +1,5 @@
 import { describe, expect, it } from "vitest";
-import { isEditTool, toolFilePath, toolFilePaths } from "./activity.ts";
+import { isEditTool, shortenPath, toolFilePath, toolFilePaths } from "./activity.ts";
 
 const patch = (body: string) => `*** Begin Patch\n${body}\n*** End Patch`;
 
@@ -30,5 +30,13 @@ describe("toolFilePaths", () => {
     expect(toolFilePaths({ toolName: "Bash", input: { command: "ls" } })).toEqual([]);
     expect(toolFilePaths({ toolName: "Edit" })).toEqual([]);
     expect(toolFilePaths({ toolName: "Edit", input: "string" })).toEqual([]);
+  });
+});
+
+describe("shortenPath", () => {
+  it("keeps the tail of POSIX and Windows paths", () => {
+    expect(shortenPath("/Users/me/repo/src/components/foo.ts")).toBe("…/src/components/foo.ts");
+    expect(shortenPath("src/foo.ts")).toBe("src/foo.ts");
+    expect(shortenPath("C:\\Users\\andre\\repo\\src\\components\\foo.ts")).toBe("…\\src\\components\\foo.ts");
   });
 });

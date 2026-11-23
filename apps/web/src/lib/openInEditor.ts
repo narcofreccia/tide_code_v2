@@ -3,6 +3,7 @@ import { envOfThread, useEnvironments, type EnvironmentsState } from "../state/e
 import { envOpt, envSshHost, isLocalEnv } from "../components/fleet/envView.ts";
 import { deviceLimitOf } from "../state/deviceAccess.ts";
 import { call } from "../state/model.ts";
+import { isAbsolutePath } from "./paths.ts";
 import { showToast } from "../state/toast.ts";
 
 /**
@@ -23,9 +24,14 @@ export interface EditorTarget {
   sshHost?: string | undefined;
 }
 
-/** Spaces and the like are escaped; slashes and `@` stay readable. */
+/**
+ * Spaces and the like are escaped; slashes and `@` stay readable. A Windows path takes the
+ * form the editors document, `vscode://file/C:/Users/…`: backslashes become slashes rather
+ * than `%5C`.
+ */
 function encodePath(path: string): string {
-  return encodeURI(path.startsWith("/") ? path : `/${path}`);
+  const slashed = isAbsolutePath(path) && !path.startsWith("/") ? path.replace(/\\/g, "/") : path;
+  return encodeURI(slashed.startsWith("/") ? slashed : `/${slashed}`);
 }
 
 /** The editor URL, or undefined when the folder is out of reach (remote, no SSH host). */

@@ -57,6 +57,7 @@ describe("Settings › Environments › Projects folder", () => {
     expect(validateProjectsDir("code")).toMatch(/absolute/);
     expect(validateProjectsDir("~/code")).toBeUndefined();
     expect(validateProjectsDir("C:\\\\repos")).toBeUndefined();
+    expect(validateProjectsDir("\\\\nas\\repos")).toBeUndefined();
     expect(validateProjectsDir("")).toBeUndefined();
   });
 });

@@ -2,6 +2,7 @@ import { useEffect, useRef } from "react";
 import type { DiffFile } from "@tide/contracts";
 import { diffStatus, linkedKey, type LinkedDiffGroup } from "../../lib/linkedDiff.ts";
 import { uniqueByPath } from "../../lib/diffStats.ts";
+import { joinPath } from "../../lib/paths.ts";
 import { Button } from "../ui/Button.tsx";
 import { Icon } from "../ui/Icon.tsx";
 import styles from "./FileList.module.css";
@@ -40,7 +41,7 @@ function linkedRows(group: LinkedDiffGroup): Row[] {
     key: linkedKey(group, file.path),
     path: file.path,
     status: diffStatus(file.status),
-    title: `${group.path.replace(/\/+$/, "")}/${file.path}`,
+    title: joinPath(group.path, file.path),
   }));
 }
 

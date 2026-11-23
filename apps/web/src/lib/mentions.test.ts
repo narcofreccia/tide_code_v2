@@ -71,6 +71,16 @@ describe("normalizePastedPath", () => {
   it("leaves paths outside the worktree alone", () => {
     expect(normalizePastedPath("/other/a.ts", "/wt/t1")).toBe("/other/a.ts");
   });
+
+  it.each([
+    ["C:\\wt\\t1\\src\\a.ts", "C:\\wt\\t1", "src/a.ts"],
+    ["c:/wt/t1/src/a.ts", "C:\\wt\\t1\\", "src/a.ts"],
+    ["\\\\nas\\wt\\t1\\a.ts", "\\\\nas\\wt\\t1", "a.ts"],
+    ["C:\\wt\\t10\\a.ts", "C:\\wt\\t1", "C:\\wt\\t10\\a.ts"],
+    ["D:\\other\\a.ts", "C:\\wt\\t1", "D:\\other\\a.ts"],
+  ])("relativises %s inside the Windows worktree %s", (text, cwd, expected) => {
+    expect(normalizePastedPath(text, cwd)).toBe(expected);
+  });
 });
 
 describe("thread mentions", () => {

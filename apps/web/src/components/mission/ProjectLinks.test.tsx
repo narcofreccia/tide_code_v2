@@ -134,3 +134,20 @@ describe("links affordance", () => {
     expect(screen.getByText("Link a repo")).toBeDefined();
   });
 });
+
+describe("ProjectLinks with Windows paths", () => {
+  it.each([
+    ["C:\\src\\web", "web"],
+    ["\\\\nas\\repos\\web", "web"],
+  ])("links %s and names it from its folder", async (path, label) => {
+    const fake = attachFakeStore(fixture());
+    render(<ProjectLinks projectId="p1" />);
+    fireEvent.click(screen.getByText("Add repository…"));
+    fireEvent.change(screen.getByLabelText("Repository path"), { target: { value: path } });
+    fireEvent.click(screen.getByText("Link repository"));
+    expect(screen.queryByText("Path must be absolute")).toBeNull();
+    await waitFor(() =>
+      expect(fake.dispatch).toHaveBeenCalledWith(expect.objectContaining({ type: "project.link.add", projectId: "p1", path, label })),
+    );
+  });
+});

@@ -2,6 +2,7 @@ import { afterEach, describe, expect, it } from "vitest";
 import { act, cleanup, fireEvent, render, screen, within } from "@testing-library/react";
 import type { Project } from "@tide/contracts";
 import { ProjectsSection } from "./ProjectsSection.tsx";
+import { MiddlePath } from "./ProjectRows.tsx";
 import { attachFakeStore, makeThread, modelWith, resetUi } from "../../testHarness.ts";
 import { useToasts } from "../../state/toast.ts";
 import { useUi } from "../../state/ui.ts";
@@ -105,5 +106,16 @@ describe("Settings › Projects", () => {
     openMenu("Tide");
     fireEvent.click(screen.getByRole("menuitem", { name: "Linked repositories…" }));
     expect(useUi.getState().linksProjectId).toBe("p1");
+  });
+});
+
+describe("MiddlePath", () => {
+  it.each([
+    ["/Users/dev/tide", "/Users/dev/", "tide"],
+    ["C:\\Users\\andre\\tide", "C:\\Users\\andre\\", "tide"],
+  ])("keeps the folder name of %s whole", (path, head, tail) => {
+    const { container } = render(<MiddlePath path={path} />);
+    const spans = container.querySelectorAll("span span");
+    expect([...spans].map((s) => s.textContent)).toEqual([head, tail]);
   });
 });

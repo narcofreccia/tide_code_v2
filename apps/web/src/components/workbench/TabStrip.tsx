@@ -3,6 +3,7 @@ import { useIsDirty } from "../../state/docs.ts";
 import { useModel } from "../../state/model.ts";
 import { closeSideChat } from "../thread/useSideChat.ts";
 import { fileGlyph } from "../../lib/fileIcons.ts";
+import { basename } from "../../lib/paths.ts";
 import {
   closeTab,
   moveTab,
@@ -23,7 +24,7 @@ function label(tab: WorkbenchTab): string {
   if (tab.kind === "experts") return "Board";
   if (tab.kind === "preview") return "Preview";
   if (tab.kind === "side") return "Side chat";
-  return tab.path.slice(tab.path.lastIndexOf("/") + 1);
+  return basename(tab.path) || tab.path;
 }
 
 function FileTabButton({

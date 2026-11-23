@@ -1,6 +1,7 @@
 import type { AnchorHTMLAttributes } from "react";
 import { envOpt, envSshHost, isLocalEnv } from "../fleet/envView.ts";
 import { editorUrl, launchEditorUrl, type EditorApp } from "../../lib/openInEditor.ts";
+import { isAbsolutePath, relativeTo } from "../../lib/paths.ts";
 import { deviceLimitOf } from "../../state/deviceAccess.ts";
 import { envOfThread, useEnvironments } from "../../state/environments.ts";
 import { call, useModel } from "../../state/model.ts";
@@ -61,7 +62,7 @@ export function parseFileLink(href: string): ParsedFileLink | undefined {
     // Windows `file:///C:/foo` → `C:/foo`
     if (/^\/[a-zA-Z]:[\\/]/.test(body)) body = body.slice(1);
     rawPath = safeDecode(body);
-    absolute = rawPath.startsWith("/") || /^[a-zA-Z]:[\\/]/.test(rawPath);
+    absolute = isAbsolutePath(rawPath);
   } else {
     const schemeMatch = /^([a-zA-Z][a-zA-Z0-9+.-]*):/.exec(trimmed);
     if (schemeMatch && !(schemeMatch[1]!.length === 1 && /^[a-zA-Z]:[\\/]/.test(trimmed))) return undefined;
@@ -69,7 +70,7 @@ export function parseFileLink(href: string): ParsedFileLink | undefined {
     const beforeHash = hashIdx >= 0 ? trimmed.slice(0, hashIdx) : trimmed;
     hash = hashIdx >= 0 ? trimmed.slice(hashIdx + 1) : "";
     rawPath = safeDecode(beforeHash);
-    absolute = rawPath.startsWith("/") || /^[a-zA-Z]:[\\/]/.test(rawPath);
+    absolute = isAbsolutePath(rawPath);
   }
 
   let line: number | undefined;
@@ -102,12 +103,7 @@ export function parseFileLink(href: string): ParsedFileLink | undefined {
 
 /** Returns `absPath` relative to `root`, or `undefined` when outside `root`. */
 export function relativeToRoot(absPath: string, root: string | undefined): string | undefined {
-  if (!root) return undefined;
-  const normRoot = root.replace(/\\/g, "/").replace(/\/+$/, "");
-  const normPath = absPath.replace(/\\/g, "/");
-  if (normRoot === "" || !normPath.startsWith(`${normRoot}/`)) return undefined;
-  const rel = normPath.slice(normRoot.length + 1);
-  return rel === "" ? undefined : rel;
+  return root ? relativeTo(absPath, root) : undefined;
 }
 
 function editorFileUrl(app: EditorApp, file: ParsedFileLink, local: boolean, sshHost?: string): string | undefined {

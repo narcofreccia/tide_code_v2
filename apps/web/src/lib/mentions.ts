@@ -4,6 +4,7 @@
  * so the model reads them as literals rather than prose.
  */
 import type { ProviderKind } from "@tide/contracts";
+import { isAbsolutePath, relativeTo } from "./paths.ts";
 
 export interface MentionQuery {
   /** index of the `@` in the text */
@@ -189,9 +190,15 @@ export function insertAt(value: string, caret: number, text: string): Insertion 
   return { text: next, caret: before.length + lead.length + text.length + tail.length };
 }
 
-/** A pasted absolute path inside the worktree becomes a relative one. */
+/**
+ * A pasted absolute path inside the worktree becomes a relative one. A Windows worktree
+ * (`C:\wt\t1`) matches either separator and any case, and yields a `/`-separated path.
+ */
 export function normalizePastedPath(text: string, cwd: string | undefined): string {
   if (!cwd || cwd === "") return text;
+  if (isAbsolutePath(cwd) && !cwd.startsWith("/")) {
+    return /[\r\n]/.test(text) ? text : (relativeTo(text, cwd) ?? text);
+  }
   const prefix = cwd.endsWith("/") ? cwd : `${cwd}/`;
   if (!text.startsWith(prefix)) return text;
   return text.slice(prefix.length);

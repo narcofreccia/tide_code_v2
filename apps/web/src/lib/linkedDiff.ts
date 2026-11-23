@@ -1,4 +1,5 @@
 import type { DiffFile, DiffResult, LinkedChanges } from "@tide/contracts";
+import { joinPath } from "./paths.ts";
 
 /** One linked repository's working-tree changes for a turn. */
 export type LinkedDiffGroup = LinkedChanges;
@@ -19,10 +20,6 @@ export function linkedGroups(diff: DiffResult | undefined): LinkedDiffGroup[] {
   const groups = diff?.linked;
   if (!Array.isArray(groups)) return [];
   return groups.filter((g) => Array.isArray(g.files) && g.files.length > 0);
-}
-
-export function joinPath(root: string, relative: string): string {
-  return `${root.replace(/\/+$/, "")}/${relative.replace(/^\/+/, "")}`;
 }
 
 /** Row key for a linked file; a space cannot occur in the link id. */

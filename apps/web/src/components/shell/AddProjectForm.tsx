@@ -8,7 +8,8 @@ import { EnvSelect } from "../fleet/EnvSelect.tsx";
 import { envOpt } from "../fleet/envView.ts";
 import { Button } from "../ui/Button.tsx";
 import { Radio } from "../ui/Choice.tsx";
-import { basename, FolderPicker } from "./FolderPicker.tsx";
+import { basename, isAbsolutePath } from "../../lib/paths.ts";
+import { FolderPicker } from "./FolderPicker.tsx";
 import styles from "./AddProjectForm.module.css";
 
 type Mode = "existing" | "new";
@@ -48,14 +49,14 @@ export function AddProjectForm({ onDone, variant = "inline" }: { onDone: () => v
   /** A typed (not picked) path names the project too, when no title was given. */
   const deriveTitle = (): void => {
     const p = rootPath.trim();
-    if (title.trim() === "" && p.startsWith("/")) setTitle(basename(p));
+    if (title.trim() === "" && isAbsolutePath(p)) setTitle(basename(p));
   };
 
   const submitExisting = (): void => {
     const p = rootPath.trim();
-    const t = title.trim() || (p.startsWith("/") ? basename(p) : "");
+    const t = title.trim() || (isAbsolutePath(p) ? basename(p) : "");
     if (!t || !p) return setError("Title and root path are required");
-    if (!p.startsWith("/")) return setError("Root path must be absolute");
+    if (!isAbsolutePath(p)) return setError("Root path must be absolute");
     setBusy(true);
     setError(null);
     // a path that belongs to an archived project restores it instead of registering a duplicate
@@ -66,7 +67,7 @@ export function AddProjectForm({ onDone, variant = "inline" }: { onDone: () => v
     const parent = parentPath.trim();
     const n = name.trim();
     if (!parent) return setError("Choose where to create the project");
-    if (!parent.startsWith("/")) return setError("Parent path must be absolute");
+    if (!isAbsolutePath(parent)) return setError("Parent path must be absolute");
     if (!NAME_RE.test(n)) return setError("Folder name: letters, digits, . _ - only");
     setBusy(true);
     setError(null);

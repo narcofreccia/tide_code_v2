@@ -1,5 +1,6 @@
 import type { ActivityOf } from "@tide/contracts";
 import type { InboxItem } from "@tide/client";
+import { pathTail } from "./paths.ts";
 
 /** Leading glyph per tool family; unknown tools fall back to ▸ (pass through, don't drop). */
 const GLYPHS: [RegExp, string][] = [
@@ -17,11 +18,9 @@ export function toolGlyph(toolName: string): string {
   return "▸";
 }
 
-/** Keeps the tail of a long path readable: `…/src/components/foo.ts`. */
+/** Keeps the tail of a long path readable: `…/src/components/foo.ts` (or `…\src\…` on Windows). */
 export function shortenPath(path: string, segments = 3): string {
-  const parts = path.split("/").filter(Boolean);
-  if (parts.length <= segments) return path;
-  return `…/${parts.slice(-segments).join("/")}`;
+  return pathTail(path, segments);
 }
 
 function firstString(input: unknown, keys: string[]): string | undefined {

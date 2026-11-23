@@ -29,6 +29,8 @@ describe("editorUrl", () => {
       "vscode://file/Users/me/repo/.tide/wt/a%20b",
     );
     expect(editorUrl("cursor", { path: "/srv/x", local: true })).toBe("cursor://file/srv/x");
+    expect(editorUrl("vscode", { path: "C:\\Users\\andre\\my app", local: true })).toBe("vscode://file/C:/Users/andre/my%20app");
+    expect(editorUrl("vscode", { path: "C:\\repo", local: false, sshHost: "win-box" })).toBe("vscode://vscode-remote/ssh-remote+win-box/C:/repo");
   });
 
   it("opens a remote folder over Remote-SSH when an SSH host is known", () => {

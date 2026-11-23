@@ -2,28 +2,13 @@ import { useCallback, useEffect, useRef, useState } from "react";
 import type { RpcOutput } from "@tide/contracts";
 import { call } from "../../state/model.ts";
 import { envOpt } from "../fleet/envView.ts";
+import { breadcrumbs } from "../../lib/paths.ts";
 import { Button } from "../ui/Button.tsx";
 import { Checkbox } from "../ui/Choice.tsx";
 import { Dialog } from "../ui/Dialog.tsx";
 import styles from "./FolderPicker.module.css";
 
 type Listing = RpcOutput<"fs.browse">;
-
-/** `/a/b/c` → [{label:"/", path:"/"}, {label:"a", path:"/a"}, …] */
-export function breadcrumbs(path: string): { label: string; path: string }[] {
-  const parts = path.split("/").filter(Boolean);
-  const crumbs = [{ label: "/", path: "/" }];
-  let at = "";
-  for (const part of parts) {
-    at = `${at}/${part}`;
-    crumbs.push({ label: part, path: at });
-  }
-  return crumbs;
-}
-
-export function basename(path: string): string {
-  return path.replace(/\/+$/, "").split("/").pop() ?? "";
-}
 
 /**
  * Directory browser for "Add a repository". Typing an absolute path into the
