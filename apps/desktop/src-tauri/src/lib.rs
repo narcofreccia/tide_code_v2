@@ -43,7 +43,10 @@ pub fn run() {
             if let Some(win) = app.get_webview_window("main") {
                 splash_theme::apply_to_window(&win, launcher::tide_home().ok().as_deref());
             }
-            if let Err(err) = splash::install_menu(app.handle()) {
+            // Windows/Linux get no app menu (Tauri would draw it inside the window); the web
+            // app's Settings offers the same actions there.
+            #[cfg(target_os = "macos")]
+            if let Err(err) = splash::menu::install(app.handle()) {
                 eprintln!("[tide-shell] menu: {err}");
             }
             app.manage(Supervisor::start(app.handle().clone()));

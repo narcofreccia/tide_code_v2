@@ -93,6 +93,12 @@ struct Inner {
     navigated: Option<String>,
 }
 
+impl Inner {
+    fn left_app(&mut self) {
+        self.navigated = None;
+    }
+}
+
 type Shared = Arc<Mutex<Inner>>;
 
 pub struct Supervisor {
@@ -120,10 +126,25 @@ impl Supervisor {
         self.inner.lock().map(|i| i.status.clone()).unwrap_or_default()
     }
 
-    /// Menu "Connect to another machine…": the splash with its pairing form open.
+    /// macOS menu "Connect to another machine…": the splash with its pairing form open.
+    /// (On Windows/Linux the web app navigates to the splash with `?connect=1` itself.)
+    #[cfg(target_os = "macos")]
     pub fn show_connect(&self) {
         let was_app = self.inner.lock().map(|mut i| i.navigated.take().is_some()).unwrap_or(false);
         navigate_to_splash(&self.app, was_app, "&connect=1");
+    }
+
+    /// The splash page was served: the window is off the web app, however it got there.
+    /// Called from the scheme handler on the main thread, so it only takes the lock briefly.
+    pub fn left_app(&self) {
+        if let Ok(mut i) = self.inner.lock() {
+            i.left_app();
+        }
+    }
+
+    /// This shell's own sidecar is up and the window has an endpoint for it.
+    pub fn local_server_running(&self) -> bool {
+        self.inner.lock().map(|i| i.child.is_some() && i.endpoint.is_some()).unwrap_or(false)
     }
 
     /// Splash "Retry" button, and any `shell.json` mode change: the supervisor starts over,
@@ -222,7 +243,7 @@ fn supervise(app: AppHandle, inner: Shared) {
                 }
                 Some(Err(err)) => {
                     show_splash(&app, &inner);
-                    set_status(&app, &inner, "failed", Some(format!("{err}\nUse the Tide Code menu to connect again or run the local server.")));
+                    set_status(&app, &inner, "failed", Some(format!("{err}\nConnect again, or run the local server.")));
                     if !wait_retry(&inner) {
                         return;
                     }
@@ -591,5 +612,14 @@ mod tests {
         assert!(is_splash_url(&"http://tide-shell.localhost/?theme=dark".parse().unwrap()));
         assert!(!is_splash_url(&"tauri://localhost/".parse().unwrap()));
         assert!(!is_splash_url(&"http://tauri.localhost/".parse().unwrap()));
+    }
+
+    #[test]
+    fn serving_the_splash_forgets_the_app_url() {
+        let mut inner = Inner { navigated: Some("tauri://localhost/?token=t".into()), ..Inner::default() };
+        inner.left_app();
+        assert_eq!(inner.navigated, None);
+        inner.left_app();
+        assert_eq!(inner.navigated, None);
     }
 }

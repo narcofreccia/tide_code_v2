@@ -45,7 +45,7 @@
       button { display: none; font: inherit; font-size: 12px; color: var(--text); background: transparent; border: 1px solid var(--border); border-radius: 6px; padding: 4px 14px; cursor: pointer; }
       button:hover { border-color: var(--accent); }
       body[data-state="failed"] #retry, body[data-state="in-use"] #retry, body[data-state="in-use"] #attach,
-      body[data-state="failed"] #open-connect, body[data-state="in-use"] #open-connect, form button { display: block; }
+      body[data-state="failed"] #open-connect, body[data-state="in-use"] #open-connect, body[data-state="failed"] #run-local, form button { display: block; }
       /* "Connect to another machine": pair with a 6-digit code, the shell stores the token */
       form { display: none; flex-direction: column; gap: 8px; margin-top: 24px; width: 260px; }
       body.connect form { display: flex; }
@@ -81,6 +81,7 @@
       <button id="retry" type="button">Retry</button>
       <button id="attach" type="button">Use that server</button>
       <button id="open-connect" type="button">Connect to another machine</button>
+      <button id="run-local" type="button">Run the local server</button>
     </div>
     <form id="connect" autocomplete="off">
       <label>Server URL<input id="connect-url" type="text" placeholder="http://192.168.1.20:3777" required spellcheck="false" /></label>
@@ -148,6 +149,12 @@
         window.__tideStatus("starting");
         fetch("attach").catch(function () {});
       };
+      // Windows/Linux have no app menu: a failed remote must still offer the way back.
+      document.getElementById("run-local").onclick = function () {
+        progress = 0.04;
+        window.__tideStatus("starting");
+        fetch("local").catch(function () {});
+      };
 
       // Pairing runs here: the server's CORS is open, and the shell only stores {url, token}.
       var form = document.getElementById("connect");
@@ -193,9 +200,22 @@
       if (/[?&]connect=1/.test(window.location.search)) showConnect(true);
 
       // Anything pushed before this page finished loading is fetched from the shell.
-      fetch("status").then(function (r) { return r.json(); }).then(function (s) {
+      var initial = fetch("status").then(function (r) { return r.json(); }).then(function (s) {
         if (s && s.state) window.__tideStatus(s.state, s.message);
       }).catch(function () {});
+
+      // "Run the local server" from the web app's Settings (Windows/Linux): ask the shell once,
+      // after the initial status so that cannot overwrite the answer. On success the shell
+      // brings the window back to the app; a refusal shows as a failed start.
+      if (/[?&]local=1/.test(window.location.search)) {
+        initial.then(function () {
+          progress = 0.04;
+          window.__tideStatus("starting");
+          return fetch("local").then(function (r) {
+            if (!r.ok) return r.text().then(function (t) { window.__tideStatus("failed", t || "Cannot switch to the local server"); });
+          }, function () {});
+        });
+      }
       if (window.__TAURI__ && window.__TAURI__.event) {
         window.__TAURI__.event.listen("tide://server-status", function (e) {
           window.__tideStatus(e.payload.state, e.payload.message);
