@@ -83,16 +83,48 @@ function purgeLines(purge) {
   ];
 }
 
-function profileLines(profile) {
-  if (!profile) return [];
-  if (profile.error) return ["", `webview2 profile: ${profile.error}`];
-  const sw = profile.serviceWorker ?? {};
-  const lines = ["", `webview2 profile after the last kill: ${profile.path}`, `   entries: ${JSON.stringify(profile.entries ?? [])}`];
-  if (!sw.exists) lines.push("   Service Worker: absent");
-  else {
-    lines.push(`   Service Worker: ${sw.totalBytes} bytes in ${JSON.stringify((sw.children ?? []).map((c) => `${c.name}${c.dir ? "/" : ""} ${c.bytes}`))}`);
-  }
-  return lines;
+const stat = (name, st) => `${name} ${st?.files ?? 0} files ${st?.bytes ?? 0} B`;
+
+/** One compact line: what a launch left in the WebView2 profile after it was killed. */
+function profileAfterLine(p) {
+  if (!p) return null;
+  if (p.error) return `profile after: ${p.error}`;
+  const sw = p.serviceWorker ?? {};
+  const swText = sw.exists
+    ? `Service Worker yes — ${["Database", "ScriptCache", "CacheStorage"].map((n) => stat(n, sw.parts?.[n])).join(", ")}`
+    : "Service Worker no";
+  return `profile after: ${swText}; ${stat("Local Storage", p.localStorage)}`;
+}
+
+/** The Service Worker state a launch left, for the next launch's row in the table. */
+function swLeftText(p) {
+  if (!p) return "n/a (not recorded)";
+  if (p.error) return `n/a (${p.error})`;
+  const sw = p.serviceWorker ?? {};
+  if (!sw.exists) return "no Service Worker dir";
+  const sc = sw.parts?.ScriptCache?.files ?? 0;
+  return `${sc > 0 ? "registered" : "not registered"}: ScriptCache ${sc} files, CacheStorage ${sw.parts?.CacheStorage?.bytes ?? 0} B`;
+}
+
+function purgeCell(purge) {
+  if (!purge) return "no";
+  if (purge.error && !purge.path) return "ERROR";
+  return purge.deleted ? "yes" : purge.existed ? "FAILED" : "yes (absent)";
+}
+
+/** One row per launch: purged before? / Service Worker left by the previous launch / verdict. */
+function launchTable(rounds) {
+  const rows = rounds.map((r, i) => {
+    const verdict = r.snapshots.length
+      ? r.snapshots.map((s) => `${s.verdict.rendered ? "RENDERED" : "NOT RENDERED"} (${s.verdict.basis ?? "cdp"})`).join(", ")
+      : "no snapshot";
+    const prev = r.name === "attach" ? "n/a" : i === 0 ? "fresh install" : swLeftText(rounds[i - 1].profileAfter);
+    return [r.name, purgeCell(r.purge), prev, verdict];
+  });
+  const head = ["launch", "purged before", "Service Worker left by previous launch", "verdict"];
+  const width = head.map((h, c) => Math.max(h.length, ...rows.map((row) => row[c].length)));
+  const fmt = (row) => `   ${row.map((v, c) => (c === row.length - 1 ? v : v.padEnd(width[c]))).join("  ")}`;
+  return [fmt(head), fmt(width.map((w) => "-".repeat(w))), ...rows.map(fmt)];
 }
 
 export function summarize(report, version) {
@@ -105,6 +137,8 @@ export function summarize(report, version) {
     if (r.appOrigin) lines.push(`app origin: ${r.appOrigin.reached ? `reached${r.appOrigin.ms === null ? "" : ` at ${r.appOrigin.ms} ms`}` : "NOT reached"} (url ${r.appOrigin.url})`);
     for (const n of r.notes) lines.push(`note: ${n}`);
     lines.push(...evidenceLines(r));
+    const after = profileAfterLine(r.profileAfter);
+    if (after) lines.push(after);
     for (const s of r.snapshots) {
       const basis = s.verdict.basis ?? "cdp";
       lines.push(`-- ${s.label}: ${s.verdict.rendered ? "RENDERED" : "NOT RENDERED"} (basis: ${basis})`);
@@ -122,12 +156,11 @@ export function summarize(report, version) {
       lines.push(`first problems (${Math.min(problems.length, 20)} of ${problems.length}):`, ...problems.slice(0, 20).map((l) => `   ${l}`));
     }
   }
-  lines.push(...profileLines(report.profile));
-  lines.push("", "by launch:");
-  for (const r of report.rounds) {
-    const marks = r.snapshots.map((s) => `${s.label} ${s.verdict.rendered ? "RENDERED" : "NOT RENDERED"} (${s.verdict.basis ?? "cdp"})`);
-    lines.push(`   ${r.name}: ${marks.join(", ") || "no snapshot"}`);
+  if (report.profile) {
+    const p = report.profile;
+    lines.push("", `webview2 profile: ${p.error ?? `${p.path} (full listing of Default in report.json)`}`);
   }
+  lines.push("", "by launch:", ...launchTable(report.rounds));
   lines.push("", `VERDICT: ${report.verdict.pass ? "PASS" : "FAIL"}`);
   return redact(lines.join("\n")) + "\n";
 }

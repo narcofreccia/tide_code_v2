@@ -49,36 +49,59 @@ export async function purgeServiceWorker(earlierRounds, exe) {
   return { userDataDir: dir, processesGone, ...(await deleteDir(path.join(dir, "Default", "Service Worker"))) };
 }
 
-function treeBytes(dir) {
-  let total = 0;
-  for (const e of fs.readdirSync(dir, { recursive: true, withFileTypes: true })) {
-    if (!e.isFile()) continue;
-    try {
-      total += fs.statSync(path.join(e.parentPath ?? e.path, e.name)).size;
-    } catch {}
+/** Recursive file count and bytes under `dir`; { files: 0, bytes: 0, exists: false } when absent. */
+function treeStats(dir) {
+  const out = { exists: fs.existsSync(dir), files: 0, bytes: 0 };
+  if (!out.exists) return out;
+  try {
+    if (!fs.statSync(dir).isDirectory()) return { ...out, files: 1, bytes: fs.statSync(dir).size };
+    for (const e of fs.readdirSync(dir, { recursive: true, withFileTypes: true })) {
+      if (!e.isFile()) continue;
+      out.files++;
+      try {
+        out.bytes += fs.statSync(path.join(e.parentPath ?? e.path, e.name)).size;
+      } catch {}
+    }
+  } catch (e) {
+    out.error = String(e?.message ?? e);
   }
-  return total;
+  return out;
 }
 
-/** Shallow listing of <profile>\Default; for Service Worker, its children with sizes. Never throws. */
-export function listProfile(dir) {
+const SW_PARTS = ["Database", "ScriptCache", "CacheStorage"];
+
+/**
+ * The profile state a launch leaves behind: Service Worker (children with sizes, and file
+ * count/bytes of Database, ScriptCache and CacheStorage) plus Local Storage. Never throws.
+ */
+export function profileState(dir) {
   if (!dir) return { error: "no --user-data-dir on any msedgewebview2 command line captured" };
   const def = path.join(dir, "Default");
   try {
-    const entries = fs.readdirSync(def, { withFileTypes: true }).map((e) => (e.isDirectory() ? `${e.name}/` : e.name));
     const swDir = path.join(def, "Service Worker");
     const serviceWorker = { path: swDir, exists: fs.existsSync(swDir) };
     if (serviceWorker.exists) {
       serviceWorker.children = fs.readdirSync(swDir, { withFileTypes: true }).map((e) => {
-        const full = path.join(swDir, e.name);
-        let bytes = null;
-        try { bytes = e.isDirectory() ? treeBytes(full) : fs.statSync(full).size; } catch {}
-        return { name: e.name, dir: e.isDirectory(), bytes };
+        const st = treeStats(path.join(swDir, e.name));
+        return { name: e.name, dir: e.isDirectory(), files: st.files, bytes: st.bytes };
       });
-      serviceWorker.totalBytes = serviceWorker.children.reduce((n, c) => n + (c.bytes ?? 0), 0);
+      serviceWorker.totalBytes = serviceWorker.children.reduce((n, c) => n + c.bytes, 0);
+      serviceWorker.parts = Object.fromEntries(SW_PARTS.map((name) => [name, treeStats(path.join(swDir, name))]));
     }
-    return { path: def, entries, serviceWorker };
+    return { path: def, serviceWorker, localStorage: treeStats(path.join(def, "Local Storage")) };
   } catch (e) {
-    return { path: def, error: `cannot list ${def}: ${e?.message ?? e}` };
+    return { path: def, error: `cannot read ${def}: ${e?.message ?? e}` };
+  }
+}
+
+/** Shallow listing of <profile>\Default plus profileState(). Never throws. */
+export function listProfile(dir) {
+  const state = profileState(dir);
+  if (state.error) return state;
+  try {
+    const entries = fs.readdirSync(state.path, { withFileTypes: true }).map((e) => (e.isDirectory() ? `${e.name}/` : e.name));
+    return { ...state, entries };
+  } catch (e) {
+    return { ...state, error: `cannot list ${state.path}: ${e?.message ?? e}` };
   }
 }

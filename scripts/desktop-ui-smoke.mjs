@@ -8,10 +8,11 @@
 // WEBVIEW2_ADDITIONAL_BROWSER_ARGUMENTS), the verdict falls back to OS evidence on Windows: the
 // app window's client area must not be a near-uniform colour, and a msedgewebview2 process must
 // hold an established connection to the tide-server port (the web app's WebSocket). Every
-// snapshot records its basis: "cdp" or "os-evidence".
+// snapshot records its basis: "cdp" or "os-evidence". On Windows each launch also records the
+// WebView2 profile state it left behind (Service Worker, Local Storage) after it was killed.
 //
 //   node scripts/desktop-ui-smoke.mjs --install-dir "C:/Users/me/AppData/Local/Tide Code"
-//   node scripts/desktop-ui-smoke.mjs --install-dir … --launches 4 --purge-sw-before 3
+//   node scripts/desktop-ui-smoke.mjs --install-dir … --launches 8 --purge-sw-before 5-8
 //   node scripts/desktop-ui-smoke.mjs --attach-port 9333        # app/browser already running
 //
 // Exit 0: every snapshot of every round rendered. 1: at least one did not. 2: script or usage error.
@@ -21,13 +22,13 @@ import fs from "node:fs";
 import path from "node:path";
 import { parseArgs } from "node:util";
 import { Cdp, HOSTS, PAGE_PROBE, consoleText, errorText, fetchJson, getJson, isAppOrigin, pickTarget, portAnswers } from "./desktop-ui-smoke-cdp.mjs";
-import { listProfile, purgeServiceWorker, userDataDir } from "./desktop-ui-smoke-profile.mjs";
+import { listProfile, profileState, purgeServiceWorker, userDataDir } from "./desktop-ui-smoke-profile.mjs";
 import { cdpVerdict, osVerdict, redact, writeOutputs } from "./desktop-ui-smoke-report.mjs";
 import {
   IS_WIN, collectWebviewLog, serverPortFromProcesses, webviewLogPlan, windowsEvidence, winKill, winServerConnection,
 } from "./desktop-ui-smoke-win.mjs";
 
-const VERSION = "1.2.0";
+const VERSION = "1.3.0";
 const POLL_MS = 150;
 const SETTLE_MS = 12_000; // past the web app's 8 s boot gate
 const ATTACH_SETTLE_MS = 3000;
@@ -43,8 +44,23 @@ const now = () => Date.now();
 
 const USAGE = `usage: node scripts/desktop-ui-smoke.mjs (--install-dir <dir> | --app <exe> | --attach-port <port>)
   [--out <dir>] [--port 9333] [--launches 2] [--boot-timeout 120] [--tide-home <dir>]
-  [--purge-sw-before <n>]   Windows only, 2 <= n <= --launches: delete the WebView2 profile's
-                            Default\\Service Worker directory before launch n (diagnosis)`;
+  [--purge-sw-before <list>]  Windows only; launch numbers like 5 | 5,6,7,8 | 5-8 | 3,5-8, each
+                              2 <= n <= --launches: delete the WebView2 profile's
+                              Default\\Service Worker directory before each of them (diagnosis)`;
+
+/** "3,5-8" -> [3, 5, 6, 7, 8]; throws a usage error on anything else. */
+function parseLaunchList(text) {
+  const bad = () => new Error(`--purge-sw-before takes launch numbers like 5, 5,6,7,8, 5-8 or 3,5-8 (got "${text}")`);
+  const out = new Set();
+  for (const part of String(text).split(",").map((p) => p.trim())) {
+    const m = /^(\d+)(?:-(\d+))?$/.exec(part);
+    if (!m) throw bad();
+    const [a, b] = [Number(m[1]), Number(m[2] ?? m[1])];
+    if (b < a) throw bad();
+    for (let n = a; n <= b; n++) out.add(n);
+  }
+  return [...out].sort((x, y) => x - y);
+}
 
 /** Parses argv; throws a usage error (exit 2) on bad input. */
 function parseCli(argv, platform = process.platform) {
@@ -73,19 +89,18 @@ function parseCli(argv, platform = process.platform) {
     tideHomeIsDefault: !values["tide-home"],
     installDir: values["install-dir"] ?? null,
     app: values.app ?? null,
-    purgeSwBefore: values["purge-sw-before"] === undefined ? null : int("purge-sw-before"),
+    purgeSwBefore: values["purge-sw-before"] === undefined ? [] : parseLaunchList(values["purge-sw-before"]),
   };
   if (!opts.help && opts.attachPort === null && !opts.installDir && !opts.app) {
     throw new Error("pass --install-dir <dir>, --app <exe> or --attach-port <port>");
   }
-  const n = opts.purgeSwBefore;
-  if (n !== null) {
+  for (const n of opts.purgeSwBefore) {
     // the profile dir is read from a webview command line of an earlier launch, so launch 1 cannot be purged
     if (n < 2) throw new Error("--purge-sw-before must be >= 2: the profile is found from an earlier launch's msedgewebview2 command line");
     if (opts.attachPort !== null) throw new Error("--purge-sw-before needs launches (--install-dir or --app), not --attach-port");
     if (n > opts.launches) throw new Error(`--purge-sw-before ${n} is past --launches ${opts.launches}`);
-    if (platform !== "win32") throw new Error(`--purge-sw-before works on Windows only (this is ${platform})`);
   }
+  if (opts.purgeSwBefore.length && platform !== "win32") throw new Error(`--purge-sw-before works on Windows only (this is ${platform})`);
   return opts;
 }
 
@@ -321,8 +336,8 @@ class Round {
   }
 
   toJSON() {
-    const { name, startedAt, timings, notes, snapshots, events, pid, exe, appOrigin, reload, poll, gaveUp, webviewLog, win, serverPort, purge } = this;
-    return { name, startedAt, pid, exe, purge, timings, serverPort, appOrigin, reload, gaveUp, poll, webviewLog, win, notes, snapshots, events };
+    const { name, startedAt, timings, notes, snapshots, events, pid, exe, appOrigin, reload, poll, gaveUp, webviewLog, win, serverPort, purge, profileAfter } = this;
+    return { name, startedAt, pid, exe, purge, profileAfter, timings, serverPort, appOrigin, reload, gaveUp, poll, webviewLog, win, notes, snapshots, events };
   }
 }
 
@@ -494,9 +509,11 @@ async function main() {
       report.preClean = await killAll(null, found.exe, opts.port); // single-instance: nothing may be running
       for (let i = 1; i <= opts.launches; i++) {
         const round = new Round(`launch-${i}`, opts.port, opts.out);
-        if (opts.purgeSwBefore === i) round.purge = await purgeServiceWorker(report.rounds, found.exe);
+        if (opts.purgeSwBefore.includes(i)) round.purge = await purgeServiceWorker(report.rounds, found.exe);
         report.rounds.push(round);
         await launchRound(round, opts, found.exe);
+        // the launch is killed by now: record what it left in the profile
+        if (IS_WIN) round.profileAfter = profileState(userDataDir(report.rounds));
       }
       // every launch is killed by now: show whether a service worker registered in the profile
       if (IS_WIN) report.profile = listProfile(userDataDir(report.rounds));
