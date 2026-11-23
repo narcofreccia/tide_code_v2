@@ -125,6 +125,11 @@ export class FakeAppServer implements ChildLike {
       this.notify("item/completed", { threadId, turnId: this.turnId, item: { type: "agentMessage", id: "msg-1", text: this.autoReply } });
       this.notify("turn/completed", { threadId, turn: { id: this.turnId, items: [], status: this.autoStatus } });
     }
+    if (message.method === "thread/compact/start" && this.autoReply !== undefined) {
+      const threadId = message.params?.["threadId"];
+      this.notify("thread/compacted", { threadId, turnId: this.turnId });
+      this.notify("turn/completed", { threadId, turn: { id: this.turnId, items: [], status: this.autoStatus } });
+    }
   }
 
   #result(message: Written): unknown {

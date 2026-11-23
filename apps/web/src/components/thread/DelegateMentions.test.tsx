@@ -49,6 +49,13 @@ describe("@delegate mentions", () => {
     expect(screen.queryByLabelText("Delegate to")).toBeNull();
   });
 
+  it("allows targeting models on this thread's own harness when a slash is typed", async () => {
+    const { input } = mount();
+    fireEvent.change(input, { target: { value: "ask @claude/" } });
+    const list = await screen.findByRole("listbox", { name: "Delegate to a harness" });
+    expect(list.textContent).toContain("Claude Code");
+  });
+
   it("sends the Delegate to: line", async () => {
     const { fake, input } = mount();
     fireEvent.change(input, { target: { value: "review this @delegate:codex:work/gpt-5-mini" } });

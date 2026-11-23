@@ -171,4 +171,21 @@ describe("decide: handoff.delivered", () => {
     expect(model.turns[turnId]?.handoffDelivery).toBe("inline");
     expect(tryRun(model, { type: "handoff.delivered", turnId: first.turnId, delivery: "native" })).toMatchObject({ ok: false, error: { code: "conflict" } });
   });
+
+  it("defers a pending handoff across leading slash-command turns and delivers it on the next prompt", () => {
+    const base = withThread("claude");
+    const first = completeTurn(base.model, base.threadId, "fix the login", "done");
+    const switched = run(first.model, { type: "thread.update", threadId: base.threadId, provider: "codex" });
+    const handoffId = eventOf(switched.events, "handoff.recorded").handoff.id;
+
+    // Leading slash command reaches the harness verbatim; pendingHandoffId stays pending.
+    const slash = run(switched.model, { type: "turn.request", threadId: base.threadId, text: "/compact" });
+    expect(eventOf(slash.events, "turn.requested").turn.handoffId).toBeUndefined();
+    expect(slash.model.threads[base.threadId]?.pendingHandoffId).toBe(handoffId);
+
+    // Next regular prompt (or a path like /tmp/foo.ts) claims the pending handoff.
+    const next = run(slash.model, { type: "turn.request", threadId: base.threadId, text: "/tmp/a.ts has a typo" });
+    expect(eventOf(next.events, "turn.requested").turn.handoffId).toBe(handoffId);
+    expect(next.model.threads[base.threadId]?.pendingHandoffId).toBeUndefined();
+  });
 });

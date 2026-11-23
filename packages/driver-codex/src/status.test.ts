@@ -182,9 +182,21 @@ describe("mode mapping", () => {
     expect(collaborationModeFor("default", "m").mode).toBe("default");
   });
 
-  it("adds MCP servers as merging dotted -c overrides, leaving the user's own untouched", () => {
+  it("adds MCP servers as merging dotted -c overrides, splitting tide into tide + tide-direct", () => {
     expect(mcpEnvAndArgs([{ name: "tide", command: "node", args: ["a b.js"], env: { K: "v" } }])).toEqual({
-      args: ["-c", 'mcp_servers.tide.command="node"', "-c", 'mcp_servers.tide.args=["a b.js"]', "-c", "mcp_servers.tide.tool_timeout_sec=900.0", "-c", 'mcp_servers.tide.env_vars=["K"]'],
+      args: [
+        "-c", 'mcp_servers.tide.command="node"',
+        "-c", 'mcp_servers.tide.args=["a b.js"]',
+        "-c", "mcp_servers.tide.tool_timeout_sec=900.0",
+        "-c", 'mcp_servers.tide.disabled_tools=["tide_delegate", "tide_thread_wait"]',
+        "-c", 'mcp_servers.tide.env_vars=["K"]',
+        "-c", 'mcp_servers.tide-direct.command="node"',
+        "-c", 'mcp_servers.tide-direct.args=["a b.js"]',
+        "-c", "mcp_servers.tide-direct.tool_timeout_sec=900.0",
+        "-c", 'mcp_servers.tide-direct.enabled_tools=["tide_delegate", "tide_thread_wait"]',
+        "-c", 'mcp_servers.tide-direct.omit_tools_from=["code_mode", "deferred"]',
+        "-c", 'mcp_servers.tide-direct.env_vars=["K"]',
+      ],
       env: { K: "v" },
     });
     expect(mcpEnvAndArgs([])).toEqual({ args: [], env: {} });
@@ -196,7 +208,7 @@ describe("mode mapping", () => {
       { name: "tide-experts", command: "node", args: ["x.js"] },
     ]);
     const timeouts = args.filter((arg) => arg.includes(".tool_timeout_sec="));
-    expect(timeouts).toEqual(["mcp_servers.tide.tool_timeout_sec=900.0", "mcp_servers.tide-experts.tool_timeout_sec=900.0"]);
+    expect(timeouts).toEqual(["mcp_servers.tide.tool_timeout_sec=900.0", "mcp_servers.tide-direct.tool_timeout_sec=900.0", "mcp_servers.tide-experts.tool_timeout_sec=900.0"]);
     // each value must parse as a TOML float (codex rejects a string: "expected f64") and exceed 600
     for (const arg of timeouts) expect(Number(arg.split("=")[1])).toBeGreaterThan(600);
     expect(TIDE_MCP_TOOL_TIMEOUT_SEC).toBeGreaterThan(600);

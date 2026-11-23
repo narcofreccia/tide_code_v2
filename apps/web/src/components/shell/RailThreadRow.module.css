@@ -217,3 +217,42 @@
   padding: 0 0 0 var(--sp-1);
   border-left: 1px solid var(--border);
 }
+
+.childBar {
+  display: flex;
+  align-items: center;
+  justify-content: space-between;
+  gap: var(--sp-1);
+  margin: 0 0 0 13px;
+  padding: 2px var(--sp-2) 2px var(--sp-2);
+  border-left: 1px solid var(--border);
+}
+
+.childToggle,
+.childArchive {
+  border: 0;
+  border-radius: var(--radius-sm);
+  background: transparent;
+  color: var(--muted);
+  font-size: var(--fs-xs);
+  line-height: 18px;
+  padding: 0 var(--sp-1);
+  cursor: pointer;
+  transition: color var(--dur-fast) var(--ease), background var(--dur-fast) var(--ease);
+}
+
+.childToggle {
+  display: inline-flex;
+  align-items: center;
+  gap: 4px;
+}
+
+.childCaret {
+  font-size: 10px;
+}
+
+.childToggle:hover,
+.childArchive:hover {
+  color: var(--text);
+  background: var(--surface-hover);
+}

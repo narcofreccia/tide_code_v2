@@ -33,7 +33,8 @@ export function useDelegateMatches(threadId: string, query: string | undefined):
     const slash = q.indexOf("/");
     const head = slash < 0 ? q : q.slice(0, slash);
     const modelQuery = slash < 0 ? undefined : q.slice(slash + 1);
-    const live = providers.filter((p) => p.installed && p.loggedIn && p.id !== own);
+    // Include this thread's own harness when explicitly targeting a model (`@codex/…`, `@delegate:claude/haiku`).
+    const live = providers.filter((p) => p.installed && p.loggedIn && (modelQuery !== undefined || p.id !== own));
     const ranked = head === "" ? live : fuzzyRank(head, live, (p) => `${p.id} ${p.label}`, DELEGATE_LIMIT).map((r) => r.item);
     const out: DelegateMatch[] = [];
     for (const p of ranked) {

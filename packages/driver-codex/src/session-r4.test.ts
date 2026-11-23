@@ -74,7 +74,20 @@ describe("codex fork", () => {
   it("opens with thread/fork and reports the new thread id", async () => {
     const { session, server } = await harness({ forkFrom: "thread-source", model: "gpt-5.6" });
     expect(server.calls("thread/fork")).toEqual([
-      { threadId: "thread-source", cwd: "/tmp/repo", approvalPolicy: "untrusted", sandbox: "workspace-write", excludeTurns: true, model: "gpt-5.6" },
+      {
+        threadId: "thread-source",
+        cwd: "/tmp/repo",
+        approvalPolicy: "untrusted",
+        sandbox: "workspace-write",
+        config: {
+          "tools.update_plan.enabled": true,
+          mcp_optional_startup_grace_ms: 10_000,
+          "features.concurrent_reasoning_summaries": true,
+        },
+        multiAgentMode: "proactive",
+        excludeTurns: true,
+        model: "gpt-5.6",
+      },
     ]);
     expect(server.calls("thread/start")).toHaveLength(0);
     expect(server.calls("thread/resume")).toHaveLength(0);

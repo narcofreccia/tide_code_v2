@@ -100,6 +100,7 @@ export const METHOD_ACCESS: Record<keyof typeof rpcMethods, AccessNeeded> = {
   "agent.thread.send": "full",
   "agent.thread.wait": "full",
   "agent.thread.interrupt": "full",
+  "agent.thread.archive": "full",
   "agent.pending.list": "full",
   "agent.pending.respond": "full",
   "agent.thread.diff": "full",

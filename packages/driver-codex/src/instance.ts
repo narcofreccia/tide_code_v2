@@ -3,7 +3,7 @@ import { CompletionService } from "./complete.ts";
 import { CodexSession } from "./session.ts";
 import { shellQuote } from "./shell.ts";
 import { withInstance } from "./instance-config.ts";
-import { fetchSkills } from "./skills.ts";
+import { CODEX_BUILTIN_COMMANDS, fetchSkills } from "./skills.ts";
 import { AppServer, mergedEnv } from "./app-server.ts";
 import { buildStatus, detectBinary } from "./status.ts";
 import type { CodexConfig } from "./types.ts";
@@ -49,8 +49,7 @@ export class CodexInstance implements ProviderInstance {
   }
 
   /**
-   * R8: skills only — the app-server has `skills/list` but no custom-prompt listing. Runs on a
-   * short-lived app-server rooted at `cwd` (skills are per-cwd).
+   * R8: built-in RPC commands (`/compact`) plus skills from `skills/list` (per-cwd).
    */
   async listCommands({ cwd }: { cwd: string }): Promise<SlashCommandInfo[]> {
     this.#binaryPath ??= await detectBinary(this.#config);
@@ -64,10 +63,12 @@ export class CodexInstance implements ProviderInstance {
         ...(this.#config.spawnImpl ? { spawn: this.#config.spawnImpl } : {}),
         log: () => undefined,
       });
-      return (await fetchSkills(server, cwd)).map((skill) => skill.info);
+      const skills = (await fetchSkills(server, cwd)).map((skill) => skill.info);
+      const seen = new Set(CODEX_BUILTIN_COMMANDS.map((c) => c.name));
+      return [...CODEX_BUILTIN_COMMANDS, ...skills.filter((s) => !seen.has(s.name))];
     } catch (error) {
       this.#env.log(`[codex] skills/list failed: ${error instanceof Error ? error.message : String(error)}`);
-      return [];
+      return [...CODEX_BUILTIN_COMMANDS];
     } finally {
       server?.close();
     }

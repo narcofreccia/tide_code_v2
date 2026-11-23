@@ -38,6 +38,9 @@ export function freshSessionEvents(
 }
 
 const INTERRUPTIBLE: ReadonlySet<TurnStatus> = new Set<TurnStatus>(["requested", "running"]);
+/** Leading slash command (`/compact`, `/goal …`, `/swarm …`); a second slash (`/tmp/a`) is a path, not a command. */
+const LEADING_SLASH_COMMAND = /^\s*\/[^\s/]+(?:\s|$)/;
+export const isLeadingSlashCommand = (text: string): boolean => LEADING_SLASH_COMMAND.test(text);
 
 export function decideTurn(model: ReadModel, command: TurnCommand, ctx: DecideContext): DecideResult {
   switch (command.type) {
@@ -63,8 +66,8 @@ export function decideTurn(model: ReadModel, command: TurnCommand, ctx: DecideCo
         threadId: thread.id,
         status: queued ? "queued" : "requested",
         ...(command.requestId !== undefined ? { requestId: command.requestId } : {}),
-        // a provider switch / fork left context for the harness: this turn carries it
-        ...(thread.pendingHandoffId !== undefined ? { handoffId: thread.pendingHandoffId } : {}),
+        // a provider switch / fork left context for the harness: defer it on slash-command turns so the command opens the prompt verbatim
+        ...(thread.pendingHandoffId !== undefined && !isLeadingSlashCommand(command.text) ? { handoffId: thread.pendingHandoffId } : {}),
         requestedAt: ctx.now,
       };
       const images = command.images ?? [];

@@ -77,7 +77,7 @@ function assertProviderInstances(list: ProviderInstanceConfig[]): void {
 }
 
 export const DEFAULT_SNOOZE_OPTIONS: string[] = ["1h", "tomorrow 09:00"];
-export const DEFAULT_INBOX: InboxSettings = { autoSettleAfterDays: 3, autoSettleOnMerge: true, workingSection: false, snoozeOptions: DEFAULT_SNOOZE_OPTIONS };
+export const DEFAULT_INBOX: InboxSettings = { autoSettleAfterDays: 3, autoSettleOnMerge: true, archiveOnAutoSettle: false, workingSection: false, snoozeOptions: DEFAULT_SNOOZE_OPTIONS };
 export const MAX_SNOOZE_OPTIONS = 8;
 export const MAX_TITLE_INSTRUCTIONS = 500;
 const SNOOZE_OPTION = /^(?:[1-9]\d*[mhd]|(?:mon|tue|wed|thu|fri|sat|sun|tomorrow) (?:[01]\d|2[0-3]):[0-5]\d)$/;
@@ -96,6 +96,7 @@ function loadInbox(raw: unknown): Partial<InboxSettings> {
   const out: Partial<InboxSettings> = {};
   if (typeof r["autoSettleAfterDays"] === "number" && r["autoSettleAfterDays"] >= 0) out.autoSettleAfterDays = r["autoSettleAfterDays"];
   if (typeof r["autoSettleOnMerge"] === "boolean") out.autoSettleOnMerge = r["autoSettleOnMerge"];
+  if (typeof r["archiveOnAutoSettle"] === "boolean") out.archiveOnAutoSettle = r["archiveOnAutoSettle"];
   if (typeof r["workingSection"] === "boolean") out.workingSection = r["workingSection"];
   if (Array.isArray(r["snoozeOptions"]) && r["snoozeOptions"].every((o) => typeof o === "string")) {
     const checked = snoozeOptionsOf(r["snoozeOptions"] as string[]);

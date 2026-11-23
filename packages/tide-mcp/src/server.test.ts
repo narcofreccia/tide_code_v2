@@ -2,7 +2,7 @@ import { describe, expect, it } from "vitest";
 import { Client } from "@modelcontextprotocol/sdk/client/index.js";
 import { InMemoryTransport } from "@modelcontextprotocol/sdk/inMemory.js";
 import type { AgentCommand } from "@tide/contracts";
-import type { AgentBackend, AgentContext, AgentDispatchResult, AgentThreadStatus, PendingRespondInput, SecretRequestInput, SecretRequestResult, ThreadDiffInput, ThreadDiffResult, ThreadListInput, ThreadReadInput, ThreadSendInput, ThreadWaitInput, ThreadWaitResult } from "./backend.ts";
+import type { AgentBackend, AgentContext, AgentDispatchResult, AgentThreadStatus, PendingRespondInput, SecretRequestInput, SecretRequestResult, ThreadArchiveInput, ThreadArchiveResult, ThreadDiffInput, ThreadDiffResult, ThreadListInput, ThreadReadInput, ThreadSendInput, ThreadWaitInput, ThreadWaitResult } from "./backend.ts";
 import { createTideMcpServer } from "./server.ts";
 import { TOOL_DEFINITIONS } from "./tools.ts";
 import { formatWait, THREAD_TOOLS_HINT } from "./threadTools.ts";
@@ -112,6 +112,10 @@ class FakeBackend implements AgentBackend {
   threadInterrupt(threadId: string) {
     return this.#rec("interrupt", threadId, { ok: true });
   }
+  archiveResult: ThreadArchiveResult = { ok: true, archived: true, worktreeRemoved: true };
+  threadArchive(i: ThreadArchiveInput) {
+    return this.#rec("archive", i, this.archiveResult);
+  }
   taskList() {
     return this.#rec("taskList", undefined, { tasks: [{ id: "task-1", projectId: "p1", title: "Nightly lint", prompt: "run lint", schedule: { kind: "interval" as const, everyMs: 3_600_000 }, enabled: true, runs: 2, nextRunAt: 1_700_000_000_000, createdAt: 1, updatedAt: 1 }] });
   }
@@ -167,6 +171,7 @@ describe("tide-mcp server", () => {
       "tide_thread_wait",
       "tide_thread_diff",
       "tide_thread_interrupt",
+      "tide_thread_archive",
       "tide_pending_list",
       "tide_pending_respond",
       "tide_schedule_task",
@@ -222,7 +227,8 @@ describe("tide-mcp server", () => {
     const client = await connect(backend);
     const delegated = await client.callTool({ name: "tide_delegate", arguments: { provider: "codex", prompt: "measure it" } });
     expect(firstText(delegated)).toContain('"threadId":"thread-child"');
-    expect(firstText(delegated)).toContain("tide_delegate_status");
+    expect(firstText(delegated)).toContain("Completion wakes this thread automatically");
+    expect(firstText(delegated)).toContain("do not wait on it or poll tide_delegate_status");
     expect(backend.commands[0]).toMatchObject({ type: "thread.delegate", provider: "codex", prompt: "measure it" });
 
     const status = await client.callTool({ name: "tide_delegate_status", arguments: { threadId: "thread-child" } });
@@ -618,5 +624,22 @@ describe("R16: tide_request_secret", () => {
     const result = await call(backend, { name: "github token", purpose: "push" });
     expect(result.isError).toBe(true);
     expect(backend.threadCalls).toEqual([]);
+  });
+});
+
+describe("tide_thread_archive", () => {
+  it("archives a finished delegate and reports worktree removal", async () => {
+    const backend = new FakeBackend();
+    const client = await connect(backend);
+    const removed = await client.callTool({ name: "tide_thread_archive", arguments: { threadId: "child-1" } });
+    expect(backend.threadCalls).toEqual([["archive", { threadId: "child-1" }]]);
+    expect(firstText(removed)).toBe("Archived. Worktree removed.");
+
+    backend.archiveResult = { ok: true, archived: true, worktreeRemoved: false };
+    const kept = await client.callTool({ name: "tide_thread_archive", arguments: { threadId: "child-2", keepWorktree: true } });
+    expect(backend.threadCalls[1]).toEqual(["archive", { threadId: "child-2", keepWorktree: true }]);
+    expect(firstText(kept)).toBe("Archived.");
+    expect(THREAD_TOOLS_HINT).toContain("tide_thread_archive");
+    await client.close();
   });
 });

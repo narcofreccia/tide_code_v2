@@ -1,5 +1,6 @@
 import { quotaBlock, type CommandOf, type Message, type ReadModel, type Thread, type Turn, type TurnStatus } from "@tide/contracts";
 import { quotaMessage } from "./quotaGate.ts";
+import { isLeadingSlashCommand } from "./turns.ts";
 import { attachmentsOf, badAttachment, fail, isArchived, ok, type DecideContext, type DecideResult } from "./types.ts";
 
 type SteerCommand =
@@ -73,7 +74,7 @@ export function decideSteer(model: ReadModel, command: SteerCommand, ctx: Decide
         id: ctx.newId(),
         threadId: thread.id,
         status: queued ? "queued" : "requested",
-        ...(thread.pendingHandoffId !== undefined ? { handoffId: thread.pendingHandoffId } : {}),
+        ...(thread.pendingHandoffId !== undefined && !isLeadingSlashCommand(message.text) ? { handoffId: thread.pendingHandoffId } : {}),
         requestedAt: ctx.now,
       };
       const userMessage: Message = {

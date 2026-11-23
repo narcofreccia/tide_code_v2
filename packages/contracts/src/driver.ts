@@ -102,6 +102,8 @@ export interface LinkedDir {
   access: "read" | "write";
 }
 
+export type CodexMultiAgentMode = "proactive" | "explicitRequestOnly";
+
 export interface OpenSessionOptions {
   threadId: string;
   cwd: string;
@@ -118,6 +120,10 @@ export interface OpenSessionOptions {
   effort?: string;
   mode: RuntimeMode;
   interaction: InteractionMode;
+  /** true when this thread was spawned as a delegate child (lets drivers tag/archive native subagent state) */
+  isDelegate?: boolean;
+  /** Codex multi-agent delegation policy (top-level threads; delegates stay explicitRequestOnly) */
+  multiAgentMode?: CodexMultiAgentMode;
   mcpServers: McpServerSpec[];
   systemPromptAppend?: string;
   /** W1: secondary repos this thread may reach (never worktrees — always the real path) */
@@ -137,6 +143,7 @@ export interface SessionSettings {
   effort?: string;
   mode: RuntimeMode;
   interaction: InteractionMode;
+  multiAgentMode?: CodexMultiAgentMode;
 }
 /** `applied` = the harness switched in place; `reopen` = the directory must close and reopen (with resume). */
 export type ReconfigureResult = "applied" | "reopen";

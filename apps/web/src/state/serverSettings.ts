@@ -1,5 +1,5 @@
 import { create } from "zustand";
-import type { ProviderInstanceConfig, RuntimeMode, UserSettings, UserSettingsPatch } from "@tide/contracts";
+import type { CodexMultiAgentMode, ProviderInstanceConfig, RuntimeMode, UserSettings, UserSettingsPatch } from "@tide/contracts";
 import { errorText } from "../lib/dispatchOrToast.ts";
 import { deviceLimitOf } from "./deviceAccess.ts";
 import { useEnvironments } from "./envStore.ts";
@@ -15,6 +15,8 @@ export interface ProviderDefault {
   /** empty string means "let the harness choose" */
   model?: string;
   mode?: RuntimeMode;
+  /** Codex only: proactive lets Codex spawn sub-agents without an explicit request */
+  multiAgentMode?: CodexMultiAgentMode;
 }
 
 interface SettingsEntry {
@@ -52,7 +54,7 @@ export function defaultDecisionsSettings(): UserSettings["decisions"] {
 }
 
 export function defaultInboxSettings(): UserSettings["inbox"] {
-  return { autoSettleAfterDays: 3, autoSettleOnMerge: true, workingSection: false };
+  return { autoSettleAfterDays: 3, autoSettleOnMerge: true, archiveOnAutoSettle: false, workingSection: false };
 }
 
 export function defaultGitSettings(): UserSettings["git"] {

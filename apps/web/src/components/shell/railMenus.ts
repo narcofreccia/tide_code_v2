@@ -2,6 +2,8 @@ import { LIMITED_HINT, projectDeviceLimitOf, threadDeviceLimitOf } from "../../s
 import { selectThreadTurns } from "@tide/client";
 import type { Project, ReadModel, Thread } from "@tide/contracts";
 import {
+  archivableFinishedChildren,
+  archiveFinishedChildren,
   canMergeBack,
   copyText,
   mergeBackThread,
@@ -94,6 +96,7 @@ export function threadMenu(
   const hasSession = thread.nativeSessionId !== undefined;
   const empty = isEmptyThread(thread.id);
   const limited = threadDeviceLimitOf(thread.id) !== undefined;
+  const finishedChildren = archivableFinishedChildren(model, thread.id);
   return [
     { label: "Open", onSelect: () => ui.selectThread(thread.id) },
     { label: "Rename…", onSelect: startRename },
@@ -124,6 +127,9 @@ export function threadMenu(
       ...(thread.worktreePath === undefined ? { hint: "no worktree" } : {}),
       onSelect: () => ui.setThreadDialog({ kind: "detach", threadId: thread.id }),
     },
+    ...(finishedChildren.length > 0
+      ? [{ label: `Archive finished subthreads (${finishedChildren.length})`, onSelect: () => archiveFinishedChildren(thread.id) }]
+      : []),
     ...(empty ? [] : [{ label: "Archive…", danger: true, onSelect: () => requestArchive(thread) }]),
     { label: deleteNeedsConfirm(thread.id) ? "Delete…" : "Delete", danger: true, onSelect: () => requestDelete(thread) },
   ];

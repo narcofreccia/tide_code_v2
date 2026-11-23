@@ -20,9 +20,9 @@ const COMMANDS: SlashCommandInfo[] = [
 ];
 
 describe("slash parsing", () => {
-  it("opens only at the start of the text or of a line", () => {
+  it("opens only at the start of the message (line 1)", () => {
     expect(findSlashQuery("/rev", 4)).toEqual({ start: 0, query: "rev" });
-    expect(findSlashQuery("hi\n/re", 6)).toEqual({ start: 3, query: "re" });
+    expect(findSlashQuery("hi\n/re", 6)).toBeUndefined();
     expect(findSlashQuery("see /tmp", 8)).toBeUndefined();
     expect(findSlashQuery("/review now", 11)).toBeUndefined();
   });

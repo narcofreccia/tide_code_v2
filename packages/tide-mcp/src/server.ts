@@ -184,7 +184,7 @@ export async function callTool(
         }
       }
       return text(
-        `${JSON.stringify({ threadId })}${note}\nThe task is running. Poll tide_delegate_status with this threadId until it reports settled, then read lastAssistantText.`,
+        `${JSON.stringify({ threadId })}${note}\nThe task is running. Completion wakes this thread automatically — do not wait on it or poll tide_delegate_status. Continue other independent work, or end your turn if none is left.`,
       );
     }
     case "tide_delegate_status": {

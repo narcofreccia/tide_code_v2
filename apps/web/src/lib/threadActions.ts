@@ -6,11 +6,12 @@ import type {
   LinkAccess,
   MergeStrategy,
   ProviderKind,
+  ReadModel,
   RuntimeMode,
   Thread,
 } from "@tide/contracts";
 import { descendantThreads } from "@tide/client";
-import { newId } from "@tide/contracts";
+import { hasBackgroundChildren, newId } from "@tide/contracts";
 import { call, dispatch, useModel, type DispatchResult } from "../state/model.ts";
 import { plural } from "./format.ts";
 import { dispatchOrToast, errorText } from "./dispatchOrToast.ts";
@@ -80,6 +81,71 @@ export function isEmptyThread(threadId: string): boolean {
 /** Descendants (forks, delegates; archived too) of a thread, from the live model. */
 function descendantsOf(threadId: string): Thread[] {
   return descendantThreads(useModel.getState().model, threadId);
+}
+
+/** True when a child/delegate thread is idle, unpinned and safe to archive in a batch cleanup. */
+export function isFinishedArchivable(model: ReadModel, thread: Thread): boolean {
+  if (thread.archivedAt !== undefined) return false;
+  if (thread.status === "running" || thread.attention !== undefined || thread.pinned === true) return false;
+  if (hasBackgroundChildren(model, thread.id)) return false;
+  return !descendantThreads(model, thread.id).some(
+    (d) => d.archivedAt === undefined && (d.status === "running" || d.attention !== undefined || hasBackgroundChildren(model, d.id)),
+  );
+}
+
+/** All finished, unpinned, non-running descendants of `parentId` that can be archived cleanly. */
+export function archivableFinishedChildren(model: ReadModel, parentId: string): Thread[] {
+  return descendantThreads(model, parentId).filter((t) => isFinishedArchivable(model, t));
+}
+
+/** True when an earlier live thread owns the same worktree path (`inheritWorktreeFrom`). */
+function isInheritedWorktree(model: ReadModel, thread: Thread): boolean {
+  if (thread.worktreePath === undefined) return false;
+  return Object.values(model.threads).some(
+    (other) =>
+      other.id !== thread.id &&
+      other.archivedAt === undefined &&
+      other.worktreePath === thread.worktreePath &&
+      other.createdAt < thread.createdAt,
+  );
+}
+
+/**
+ * Archives every finished descendant of `parentId` and removes their git worktrees.
+ * Threads borrowing another thread's worktree go first so the owner's worktree is no longer
+ * shared when its archive runs. Offers Undo for the whole batch.
+ */
+export function archiveFinishedChildren(parentId: string): void {
+  const model = useModel.getState().model;
+  const targets = archivableFinishedChildren(model, parentId);
+  if (targets.length === 0) {
+    showToast("No finished subthreads to archive");
+    return;
+  }
+  const targetIds = new Set(targets.map((t) => t.id));
+  const selected = useUi.getState().selectedThreadId;
+  if (selected !== null && targetIds.has(selected)) useUi.getState().selectThread(parentId);
+  const inheritors = targets.filter((t) => isInheritedWorktree(model, t));
+  const owners = targets.filter((t) => !isInheritedWorktree(model, t));
+  const run = async (): Promise<void> => {
+    const archivedIds: string[] = [];
+    for (const group of [inheritors, owners]) {
+      if (group.length === 0) continue;
+      const results = await Promise.allSettled(group.map((t) => dispatch({ type: "thread.archive", threadId: t.id })));
+      results.forEach((r, i) => {
+        if (r.status === "fulfilled") archivedIds.push(group[i]!.id);
+      });
+    }
+    if (archivedIds.length === 0) {
+      showToast("Archiving finished subthreads failed");
+      return;
+    }
+    const undo = (): void => {
+      void Promise.allSettled(archivedIds.map((id) => dispatch({ type: "thread.unarchive", threadId: id })));
+    };
+    showToast(`Archived ${plural(archivedIds.length, "finished subthread")}`, { label: "Undo", onClick: undo });
+  };
+  void run();
 }
 
 /**

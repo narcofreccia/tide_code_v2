@@ -21,6 +21,9 @@ export const META: SectionMeta = {
   keywords: [
     "Auto-settle idle threads after",
     "Auto-settle when the PR is merged or the branch merged back",
+    "Archive & remove worktrees on auto-settle",
+    "archive",
+    "worktree",
     "Group running threads under “Working”",
     "Text generation model",
     "titles",
@@ -89,6 +92,17 @@ export function InboxSection() {
               id={id}
               checked={inbox.autoSettleOnMerge}
               onChange={(on) => patchServerSettings({ inbox: { autoSettleOnMerge: on } })}
+            />
+          )}
+        />
+        <SettingRow
+          label="Archive & remove worktrees on auto-settle"
+          help="Moves merged or idle threads straight to Archived and removes their git worktrees (uncommitted changes are snapshotted first; transcripts stay readable)."
+          control={(id) => (
+            <SettingToggle
+              id={id}
+              checked={inbox.archiveOnAutoSettle === true}
+              onChange={(on) => patchServerSettings({ inbox: { archiveOnAutoSettle: on } })}
             />
           )}
         />

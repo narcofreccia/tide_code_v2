@@ -307,6 +307,51 @@ describe("Antigravity & ACP optimizations", () => {
     await session.close();
   });
 
+  it("keeps the turn open when Antigravity resolves the first session/prompt early and continues under the steer prompt", async () => {
+    const child = new FakeChild();
+    const promptIds: Array<number | string | null> = [];
+    child.onClient = (message) => {
+      const id = message.id ?? null;
+      if (message.method === "initialize") {
+        child.send({ id, result: { protocolVersion: 1, agentCapabilities: {}, agentInfo: { name: "Antigravity ACP Server", version: "1.5.14" } } });
+      }
+      if (message.method === "session/new") {
+        child.send({
+          id,
+          result: {
+            sessionId: "agy_steer_cont",
+            modes: { currentModeId: "plan", availableModes: [{ id: "default", name: "Build" }, { id: "plan", name: "Plan" }] },
+          },
+        });
+      }
+      if (message.method === "session/set_mode") child.send({ id, result: {} });
+      if (message.method === "session/prompt") {
+        promptIds.push(id);
+        if (promptIds.length === 2) {
+          // Real agy acp behavior: prompt #1 settles immediately when steer #2 arrives, while
+          // tool calls, the final reply, and plan proposal arrive under prompt #2.
+          child.send({ id: promptIds[0]!, result: { stopReason: "end_turn", usage: { inputTokens: 10, outputTokens: 5 } } });
+          setTimeout(() => {
+            child.send({ method: "session/update", params: { sessionId: "agy_steer_cont", update: { sessionUpdate: "agent_message_chunk", content: { type: "text", text: "Updated plan with Python scripts" } } } });
+            child.send({ id: promptIds[1]!, result: { stopReason: "end_turn", usage: { inputTokens: 20, outputTokens: 15 } } });
+          }, 10);
+        }
+      }
+    };
+    const cwd = realpathSync(mkdtempSync(join(tmpdir(), "tide-agy-steer-cont-")));
+    const instance = createAntigravityInstance({}, env(), { spawn: spawnSeq(child) });
+    const session = await instance.openSession({ threadId: "t1", cwd, mode: "auto", interaction: "plan", mcpServers: [] });
+
+    const turnPromise = collect(session.send({ text: "refine roadmap" }));
+    await new Promise((r) => setTimeout(r, 5));
+    await session.steer!({ text: "also cover python scripts" });
+    const events = await turnPromise;
+    expect(events.some((e) => e.type === "assistant.delta" && e.delta === "Updated plan with Python scripts")).toBe(true);
+    expect(events.some((e) => e.type === "plan.proposed" && e.markdown === "Updated plan with Python scripts")).toBe(true);
+    expect(events.filter((e) => e.type === "settled")).toEqual([{ type: "settled", status: "completed" }]);
+    await session.close();
+  });
+
   it("normalizes invoke_subagent and /swarm tool calls into kind: child rows and tracks active swarm workers", async () => {
     const child = new FakeChild();
     child.onClient = (message) => {

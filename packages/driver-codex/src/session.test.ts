@@ -82,7 +82,20 @@ describe("codex session", () => {
     });
     expect(server.calls("thread/resume")[0]).toMatchObject({ threadId: "thread-existing", approvalPolicy: "never", sandbox: "danger-full-access" });
     expect(server.calls("thread/start")).toHaveLength(0);
-    expect(server.args).toEqual(["app-server", "-c", 'mcp_servers.tide.command="node"', "-c", 'mcp_servers.tide.args=["mcp.js"]', "-c", "mcp_servers.tide.tool_timeout_sec=900.0", "-c", 'mcp_servers.tide.env_vars=["TOKEN"]']);
+    expect(server.args).toEqual([
+      "app-server",
+      "-c", 'mcp_servers.tide.command="node"',
+      "-c", 'mcp_servers.tide.args=["mcp.js"]',
+      "-c", "mcp_servers.tide.tool_timeout_sec=900.0",
+      "-c", 'mcp_servers.tide.disabled_tools=["tide_delegate", "tide_thread_wait"]',
+      "-c", 'mcp_servers.tide.env_vars=["TOKEN"]',
+      "-c", 'mcp_servers.tide-direct.command="node"',
+      "-c", 'mcp_servers.tide-direct.args=["mcp.js"]',
+      "-c", "mcp_servers.tide-direct.tool_timeout_sec=900.0",
+      "-c", 'mcp_servers.tide-direct.enabled_tools=["tide_delegate", "tide_thread_wait"]',
+      "-c", 'mcp_servers.tide-direct.omit_tools_from=["code_mode", "deferred"]',
+      "-c", 'mcp_servers.tide-direct.env_vars=["TOKEN"]',
+    ]);
     expect(server.env["TOKEN"]).toBe("x");
     await session.close();
   });
@@ -463,6 +476,71 @@ describe("codex session", () => {
     expect(server.calls("turn/start")[1]?.["model"]).toBe("gpt-5.6-sol");
     completeTurn(server);
     await second.done;
+    await session.close();
+  });
+
+  it("delivers chunked additionalContext (<4 KB/entry), sets thread config, and restores context after compaction", async () => {
+    const bigSection = "A".repeat(2500);
+    const secondSection = "B".repeat(2500);
+    const { session, server } = await harness({ systemPromptAppend: `${bigSection}\n\n${secondSection}` });
+    const startParams = server.calls("thread/start")[0]!;
+    expect(startParams).not.toHaveProperty("developerInstructions");
+    expect(startParams["config"]).toEqual({
+      "tools.update_plan.enabled": true,
+      mcp_optional_startup_grace_ms: 10_000,
+      "features.concurrent_reasoning_summaries": true,
+    });
+    expect(startParams["multiAgentMode"]).toBe("proactive");
+
+    const { done } = collect(session.send({ text: "orchestrate" }));
+    await tick();
+    const turnParams = server.calls("turn/start")[0]!;
+    expect(turnParams["summary"]).toBe("auto");
+    expect(turnParams["multiAgentMode"]).toBe("proactive");
+    const ctx = turnParams["additionalContext"] as Record<string, { kind: string; value: string }>;
+    expect(Object.keys(ctx)).toEqual(["tide_instructions_01", "tide_instructions_02", "tide_runtime"]);
+    for (const entry of Object.values(ctx)) {
+      expect(entry.kind).toBe("application");
+      expect(Buffer.byteLength(entry.value, "utf8")).toBeLessThanOrEqual(4_000);
+    }
+
+    // Compaction mid-turn must NOT inject items until turn/completed.
+    server.notify("thread/compacted", { threadId: THREAD, turnId: TURN });
+    await tick();
+    expect(server.calls("thread/inject_items")).toHaveLength(0);
+
+    completeTurn(server);
+    await done;
+    await tick();
+    expect(server.calls("thread/inject_items")).toHaveLength(1);
+    expect(server.calls("thread/inject_items")[0]).toMatchObject({ threadId: THREAD });
+    const injected = server.calls("thread/inject_items")[0]?.["items"] as Array<{ role: string; content: Array<{ text: string }> }>;
+    expect(injected.map((i) => i.role)).toEqual(["developer", "developer", "developer"]);
+    expect(injected[0]?.content[0]?.text).toContain("<tide_instructions_01>");
+    await session.close();
+    expect(server.calls("thread/archive")).toHaveLength(0);
+  });
+
+  it("tags delegated Codex children as subagents, pins explicitRequestOnly, and archives them on close", async () => {
+    const { session, server } = await harness({ isDelegate: true, multiAgentMode: "proactive" });
+    expect(server.calls("thread/start")[0]).toMatchObject({ threadSource: "subagent", multiAgentMode: "explicitRequestOnly" });
+    const { done } = collect(session.send({ text: "work" }));
+    await tick();
+    expect(server.calls("turn/start")[0]?.["multiAgentMode"]).toBe("explicitRequestOnly");
+    completeTurn(server);
+    await done;
+    await session.close();
+    expect(server.calls("thread/archive")).toEqual([{ threadId: THREAD }]);
+  });
+
+  it("reconfigures multiAgentMode in place for non-delegate sessions", async () => {
+    const { session, server } = await harness({ multiAgentMode: "proactive" });
+    expect(await session.reconfigure({ mode: "auto", interaction: "default", multiAgentMode: "explicitRequestOnly" })).toBe("applied");
+    const { done } = collect(session.send({ text: "hi" }));
+    await tick();
+    expect(server.calls("turn/start")[0]?.["multiAgentMode"]).toBe("explicitRequestOnly");
+    completeTurn(server);
+    await done;
     await session.close();
   });
 });

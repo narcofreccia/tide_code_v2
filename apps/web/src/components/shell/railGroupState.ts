@@ -61,3 +61,41 @@ export function useSettledMergedOnly(): [boolean, () => void] {
   }, []);
   return [on, toggle];
 }
+
+/** Per-parent fold overrides for nested child/delegate subthreads in the rail. */
+export const RAIL_CHILD_FOLDS_KEY = "tide.rail.childFolds";
+/** Parents with more than this many direct children start folded by default. */
+export const CHILD_FOLD_THRESHOLD = 3;
+
+function readChildFolds(): Folds {
+  try {
+    const raw = window.localStorage.getItem(RAIL_CHILD_FOLDS_KEY);
+    const parsed: unknown = raw === null ? {} : JSON.parse(raw);
+    return parsed !== null && typeof parsed === "object" ? (parsed as Folds) : {};
+  } catch {
+    return {};
+  }
+}
+
+function writeChildFold(threadId: string, collapsed: boolean): void {
+  try {
+    const next = { ...readChildFolds(), [threadId]: collapsed };
+    window.localStorage.setItem(RAIL_CHILD_FOLDS_KEY, JSON.stringify(next));
+  } catch {
+    // storage blocked: the fold still applies for this session
+  }
+}
+
+/** Whether a parent row's nested children are folded; user toggles persist in localStorage. */
+export function useThreadChildFold(threadId: string, defaultCollapsed: boolean): [boolean, () => void] {
+  const [override, setOverride] = useState<boolean | undefined>(() => readChildFolds()[threadId]);
+  const collapsed = override ?? defaultCollapsed;
+  const toggle = useCallback(() => {
+    setOverride((current) => {
+      const next = !(current ?? defaultCollapsed);
+      writeChildFold(threadId, next);
+      return next;
+    });
+  }, [threadId, defaultCollapsed]);
+  return [collapsed, toggle];
+}

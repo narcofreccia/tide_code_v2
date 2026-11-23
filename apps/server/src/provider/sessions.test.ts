@@ -362,4 +362,26 @@ describe("SessionDirectory: R17 fresh sessions and C4 harness-turn gate", () => 
     expect(on.sessions.declaresHarnessTurns("t1")).toBe(true);
     expect(on.sessions.declaresHarnessTurns("nope")).toBeUndefined();
   });
+
+  it("passes Codex multiAgentMode from providerDefaults, reconfigures on change, and marks delegated children", async () => {
+    const registry = new DriverRegistry({ env: { dataDir: ":memory:", log: () => undefined } });
+    const codex = createFakeDriver("codex");
+    codex.control.reconfigureResult = "applied";
+    registry.register(codex.driver);
+    let defaults: Record<string, { multiAgentMode?: "proactive" | "explicitRequestOnly" }> = {};
+    const sessions = new SessionDirectory({ registry, autoReap: false, providerDefaults: () => defaults });
+
+    const top = thread({ id: "t-top", provider: "codex" });
+    await sessions.getOrOpen(top, project);
+    expect(codex.control.opened[0]).toMatchObject({ multiAgentMode: "proactive" });
+    expect(codex.control.opened[0]?.isDelegate).toBeUndefined();
+
+    defaults = { codex: { multiAgentMode: "explicitRequestOnly" } };
+    await sessions.getOrOpen(top, project);
+    expect(codex.control.reconfigures).toEqual([{ threadId: "t-top", settings: { mode: "approval-required", interaction: "default", multiAgentMode: "explicitRequestOnly" } }]);
+
+    const child = thread({ id: "t-child", provider: "codex", delegatedBy: "t-top", role: "delegate" });
+    await sessions.getOrOpen(child, project);
+    expect(codex.control.opened[1]).toMatchObject({ isDelegate: true, multiAgentMode: "explicitRequestOnly" });
+  });
 });

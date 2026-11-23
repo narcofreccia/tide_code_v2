@@ -126,6 +126,8 @@ export class AcpSession implements ProviderSession {
   /** ACP has no system-prompt field: Tide's preamble rides along with the first prompt */
   #preamblePending = false;
   #turnActive = false;
+  /** Number of unresolved `session/prompt` calls (initial `send` + mid-turn `steer`s) on the active turn. */
+  #inflightPrompts = 0;
   #interrupted = false;
   #closed = false;
 
@@ -455,7 +457,9 @@ export class AcpSession implements ProviderSession {
 
   #prompt(input: TurnInput): unknown[] {
     const blocks: unknown[] = [];
-    if (this.#preamblePending) {
+    // Defer `<tide-context>` on a turn-1 leading slash command so the agent sees `/cmd` verbatim.
+    const isSlashCommand = /^\s*\/[^\s/]+(?:\s|$)/.test(input.text);
+    if (this.#preamblePending && !isSlashCommand) {
       this.#preamblePending = false;
       blocks.push({ type: "text", text: `<tide-context>\n${this.#options.systemPromptAppend ?? ""}\n</tide-context>` });
     }
@@ -531,6 +535,7 @@ export class AcpSession implements ProviderSession {
     if (sessionId === undefined) throw new Error(`${this.#ctx.label} session is not started`);
     if (this.#harnessTurn !== undefined) this.#settleHarnessTurn("completed");
     this.#turnActive = true;
+    this.#inflightPrompts = 1;
     this.#interrupted = false;
     this.#normalizer.beginTurn();
     const mailbox = new AsyncQueue<NormalizedEvent>();
@@ -546,22 +551,12 @@ export class AcpSession implements ProviderSession {
     }
     for (const text of this.#pendingNotices.splice(0)) mailbox.push({ type: "activity", activity: { kind: "info", text } });
     const prompt = this.#prompt(input);
-    const finish = (events: NormalizedEvent[]): void => {
-      for (const event of events) mailbox.push(event);
-      mailbox.close();
-    };
     this.#conn
       .request<{ stopReason?: AcpStopReason; usage?: AcpPromptUsage } | null>("session/prompt", { sessionId, prompt })
-      .then(async (result) => {
-        const hasWireUsage = result?.usage !== undefined && typeof result.usage.inputTokens === "number" && typeof result.usage.outputTokens === "number";
-        const fallbackUsage = !hasWireUsage && this.#ctx.transcriptUsage ? await this.#ctx.transcriptUsage.delta(sessionId).catch(() => undefined) : undefined;
-        finish(this.#settle(result, fallbackUsage));
-      })
-      .catch((error: unknown) => {
-        if (isAuthRequired(error)) this.#ctx.onAuthRequired?.(authHint(this.#ctx.label, this.init));
-        const message = error instanceof Error ? error.message : String(error);
-        finish([{ type: "settled", status: this.#interrupted ? "interrupted" : "error", error: message }]);
-      });
+      .then(
+        (result) => this.#onPromptResolved(sessionId, mailbox, result),
+        (error: unknown) => this.#onPromptRejected(mailbox, error, false),
+      );
 
     const self = this;
     async function* stream(): AsyncGenerator<NormalizedEvent, void> {
@@ -569,11 +564,55 @@ export class AcpSession implements ProviderSession {
         for await (const event of mailbox.drain()) yield event;
       } finally {
         self.#turnActive = false;
+        self.#inflightPrompts = 0;
         self.#mailbox = undefined;
         self.#cancelApprovals();
       }
     }
     return stream();
+  }
+
+  /**
+   * Handles a `session/prompt` resolution (either the original `send` or a mid-turn `steer`).
+   * Antigravity can resolve the original `session/prompt` early when a steer arrives and keep
+   * streaming tool calls, plan updates, and the final reply under the steer's `session/prompt`.
+   * Only settle and close the turn mailbox once EVERY in-flight `session/prompt` has finished.
+   */
+  async #onPromptResolved(
+    sessionId: string,
+    mailbox: AsyncQueue<NormalizedEvent>,
+    result: { stopReason?: AcpStopReason; usage?: AcpPromptUsage } | null | undefined,
+  ): Promise<void> {
+    if (this.#mailbox !== mailbox) return;
+    this.#inflightPrompts = Math.max(0, this.#inflightPrompts - 1);
+    if (this.#inflightPrompts > 0) {
+      // Another `session/prompt` (e.g. a steer continuation) is still driving this turn: keep the
+      // mailbox open and only flush wire usage reported by this earlier response.
+      for (const event of this.#turnUsage(result?.usage)) mailbox.push(event);
+      return;
+    }
+    const hasWireUsage = result?.usage !== undefined && typeof result.usage.inputTokens === "number" && typeof result.usage.outputTokens === "number";
+    const fallbackUsage = !hasWireUsage && this.#ctx.transcriptUsage ? await this.#ctx.transcriptUsage.delta(sessionId).catch(() => undefined) : undefined;
+    if (this.#mailbox !== mailbox || this.#inflightPrompts > 0) return;
+    for (const event of this.#settle(result, fallbackUsage)) mailbox.push(event);
+    mailbox.close();
+  }
+
+  /** Handles a `session/prompt` rejection; returns true if the caller (`steer`) should rethrow for fallback. */
+  #onPromptRejected(mailbox: AsyncQueue<NormalizedEvent>, error: unknown, isSteer: boolean): boolean {
+    if (this.#mailbox !== mailbox) return false;
+    this.#inflightPrompts = Math.max(0, this.#inflightPrompts - 1);
+    if (isAuthRequired(error)) this.#ctx.onAuthRequired?.(authHint(this.#ctx.label, this.init));
+    if (isSteer && this.#inflightPrompts > 0) {
+      // The steer was refused while the primary prompt is still running: leave the turn alive
+      // and let `steer()` reject so the reactor falls back to queueing the message.
+      return true;
+    }
+    if (this.#inflightPrompts > 0) return false;
+    const message = error instanceof Error ? error.message : String(error);
+    mailbox.push({ type: "settled", status: this.#interrupted ? "interrupted" : "error", error: message });
+    mailbox.close();
+    return false;
   }
 
   /**
@@ -590,11 +629,19 @@ export class AcpSession implements ProviderSession {
       throw new Error(`conflict: harness turn ${target.turnKey} is no longer running`);
     }
     const prompt = this.#prompt(input);
+    const mailbox = this.#mailbox;
+    const attachedToTurn = this.#turnActive && mailbox !== undefined;
+    if (attachedToTurn) this.#inflightPrompts += 1;
     try {
-      await this.#conn.request("session/prompt", { sessionId, prompt });
+      const result = await this.#conn.request<{ stopReason?: AcpStopReason; usage?: AcpPromptUsage } | null>("session/prompt", { sessionId, prompt });
+      if (attachedToTurn) await this.#onPromptResolved(sessionId, mailbox, result);
     } catch (error) {
       // If the session closed after the steer was already sent, do not falsely trigger steer.fallback.
       if (this.#closed) return;
+      if (attachedToTurn) {
+        const shouldRethrow = this.#onPromptRejected(mailbox, error, true);
+        if (!shouldRethrow) return;
+      }
       throw error;
     }
   }

@@ -29,23 +29,37 @@ describe("findMentionQuery", () => {
 });
 
 describe("applyMention", () => {
-  it("replaces the partial token and returns the caret", () => {
+  it("replaces the partial token and quotes paths with spaces", () => {
     const mention = findMentionQuery("see @sta", 8);
     expect(mention).toBeDefined();
     expect(applyMention("see @sta", mention!, 8, "src/state/ui.ts")).toEqual({
       text: "see @src/state/ui.ts ",
       caret: 21,
     });
+    const spaced = findMentionQuery("see @my", 7);
+    expect(applyMention("see @my", spaced!, 7, "my folder/a.ts")).toEqual({
+      text: 'see @"my folder/a.ts" ',
+      caret: 22,
+    });
   });
 });
 
 describe("expandMentions", () => {
-  it("wraps relative paths in backticks and leaves prose alone", () => {
+  it("wraps relative paths and quoted spaced paths in backticks and leaves prose alone", () => {
     expect(expandMentions("fix @src/a.ts and @docs/b.md now")).toBe("fix `src/a.ts` and `docs/b.md` now");
+    expect(expandMentions('open @"my folder/a.ts" please')).toBe("open `my folder/a.ts` please");
   });
 
-  it("leaves an email untouched", () => {
+  it("leaves emails, scoped npm packages, decorators, and handles untouched", () => {
     expect(expandMentions("mail me@example.com")).toBe("mail me@example.com");
+    expect(expandMentions("check @tide/server and @types/node with @dataclass for @alice")).toBe(
+      "check @tide/server and @types/node with @dataclass for @alice",
+    );
+  });
+
+  it("expands extensionless repo files when knownPaths contains them", () => {
+    const known = new Set(["Makefile", "src/a.ts"]);
+    expect(expandMentions("run @Makefile and check @tide/server", known)).toBe("run `Makefile` and check @tide/server");
   });
 });
 

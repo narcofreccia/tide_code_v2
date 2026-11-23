@@ -27,6 +27,8 @@ export const InboxSettings = Type.Object({
   autoSettleAfterDays: Type.Number(),
   /** settle when the thread's PR is merged or its branch merged back */
   autoSettleOnMerge: Type.Boolean(),
+  /** archive (and remove the worktree) instead of only settling when auto-settle triggers on merge or inactivity */
+  archiveOnAutoSettle: Type.Optional(Type.Boolean()),
   /** rail: hide running threads in a collapsed "Working" group unless pinned */
   workingSection: Type.Boolean(),
   /** R16: snooze menu entries — durations (`2h`, `1d`, `45m`) or a time on a day (`tomorrow 09:00`, `fri 18:00`); ≤ 8 */
@@ -52,9 +54,19 @@ export const GitSettings = Type.Object({
 });
 export type GitSettings = Static<typeof GitSettings>;
 
+export const CodexMultiAgentModeSchema = Type.Union([Type.Literal("proactive"), Type.Literal("explicitRequestOnly")]);
+
 /** User settings that must be visible to every client and to server-created threads (delegates, experts, plan.implement). */
 export const UserSettings = Type.Object({
-  providerDefaults: Type.Record(Type.String(), Type.Object({ model: Type.Optional(Type.String()), mode: Type.Optional(RuntimeMode) })),
+  providerDefaults: Type.Record(
+    Type.String(),
+    Type.Object({
+      model: Type.Optional(Type.String()),
+      mode: Type.Optional(RuntimeMode),
+      /** Codex only: proactive lets Codex fan out sub-agents without being explicitly told to. */
+      multiAgentMode: Type.Optional(CodexMultiAgentModeSchema),
+    }),
+  ),
   worktreeByDefault: Type.Boolean(),
   /**
    * R6: the decision layer. TypeSafe Jev (System One) is the calibrated first filter; when its

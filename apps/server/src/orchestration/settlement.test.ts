@@ -8,7 +8,7 @@ import { EventStore } from "./store.ts";
 
 const DAY = 86_400_000;
 
-async function setup(inbox: { autoSettleAfterDays?: number; autoSettleOnMerge?: boolean } = {}) {
+async function setup(inbox: { autoSettleAfterDays?: number; autoSettleOnMerge?: boolean; archiveOnAutoSettle?: boolean } = {}) {
   const clock = { now: 1_000 };
   const engine = new Engine({ store: new EventStore(await openDatabase(":memory:")), now: () => clock.now });
   const settings = new SettingsStore();
@@ -160,6 +160,28 @@ describe("SettlementReactor merge", () => {
     await engine.drain();
     await engine.drain();
     expect(engine.getModel().threads[b]?.settledAt).toBeUndefined();
+    reactor.stop();
+  });
+
+  it("archives instead of settling when archiveOnAutoSettle is enabled (merge and inactivity)", async () => {
+    const { engine, clock, mk, reactor } = await setup({ autoSettleAfterDays: 2, archiveOnAutoSettle: true });
+    const merged = await mk();
+    const pinned = await mk();
+    await engine.dispatch({ type: "thread.update", threadId: pinned, pinned: true });
+    const idle = await mk();
+    reactor.start();
+    await mergeBack(engine, merged);
+    await mergeBack(engine, pinned);
+    await engine.drain();
+    await engine.drain();
+    expect(engine.getModel().threads[merged]?.archivedAt).toBeDefined();
+    expect(engine.getModel().threads[merged]?.settledAt).toBeUndefined();
+    expect(engine.getModel().threads[pinned]?.archivedAt).toBeUndefined();
+
+    clock.now = 1_000 + 3 * DAY;
+    expect(await reactor.tick()).toEqual([idle]);
+    expect(engine.getModel().threads[idle]?.archivedAt).toBeDefined();
+    expect(engine.getModel().threads[pinned]?.archivedAt).toBeUndefined();
     reactor.stop();
   });
 });

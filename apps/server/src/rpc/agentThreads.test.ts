@@ -211,3 +211,73 @@ describe("agent thread tools: pending questions", () => {
     await app.reactor.drain();
   });
 });
+
+describe("agent thread tools: archive", () => {
+  it("archives a finished delegate, respects keepWorktree, and refuses self, unrelated or running threads", async () => {
+    const unrelated = await thread("Unrelated");
+    expect((await agent.expectError("agent.thread.archive", { threadId: caller })).code).toBe("forbidden");
+    expect((await agent.expectError("agent.thread.archive", { threadId: unrelated })).code).toBe("forbidden");
+
+    control.script(emit({ type: "settled", status: "completed" }));
+    const delegated = await app.engine.dispatch({ type: "thread.delegate", fromThreadId: caller, provider: "claude", prompt: "done" });
+    const childId = delegated.events.find((r) => r.event.type === "thread.created")?.event;
+    if (childId?.type !== "thread.created") throw new Error("expected child");
+    await app.reactor.drain();
+    await app.engine.dispatch({ type: "worktree.attach", threadId: childId.thread.id, worktreePath: "/wt/child-1", branch: "tide/child-1", baseBranch: "main" });
+
+    const archived = await agent.call<{ ok: boolean; archived: boolean; worktreeRemoved: boolean }>("agent.thread.archive", { threadId: childId.thread.id });
+    expect(archived).toEqual({ ok: true, archived: true, worktreeRemoved: true });
+    expect(app.engine.getModel().threads[childId.thread.id]?.archivedAt).toBeDefined();
+    // idempotent on an already archived delegate
+    expect(await agent.call("agent.thread.archive", { threadId: childId.thread.id })).toEqual({ ok: true, archived: true, worktreeRemoved: false });
+
+    // keepWorktree=true preserves the worktree and reports worktreeRemoved: false
+    control.script(emit({ type: "settled", status: "completed" }));
+    const delegated2 = await app.engine.dispatch({ type: "thread.delegate", fromThreadId: caller, provider: "claude", prompt: "keep" });
+    const child2 = delegated2.events.find((r) => r.event.type === "thread.created")?.event;
+    if (child2?.type !== "thread.created") throw new Error("expected child2");
+    await app.reactor.drain();
+    await app.engine.dispatch({ type: "worktree.attach", threadId: child2.thread.id, worktreePath: "/wt/child-2", branch: "tide/child-2", baseBranch: "main" });
+    expect(await agent.call("agent.thread.archive", { threadId: child2.thread.id, keepWorktree: true })).toEqual({ ok: true, archived: true, worktreeRemoved: false });
+
+    // running delegate is refused with busy
+    const busy = await app.engine.dispatch({ type: "thread.create", projectId, parentThreadId: caller, provider: "claude", title: "Busy child" });
+    const busyEv = busy.events[0]?.event;
+    if (busyEv?.type !== "thread.created") throw new Error("expected busy child");
+    control.scriptFor(busyEv.thread.id, emit({ type: "session", nativeSessionId: "busy-1" }), awaitInterrupt(), emit({ type: "settled", status: "completed" }));
+    const running = waitFor((e) => e.type === "turn.started" && e.threadId === busyEv.thread.id);
+    await app.engine.dispatch({ type: "turn.request", threadId: busyEv.thread.id, text: "run" });
+    await running;
+    expect((await agent.expectError("agent.thread.archive", { threadId: busyEv.thread.id })).code).toBe("busy");
+    await app.engine.dispatch({ type: "turn.interrupt", threadId: busyEv.thread.id });
+    await app.reactor.drain();
+  });
+
+  it("lists open delegates when an unknown threadId is requested", async () => {
+    control.script(emit({ type: "settled", status: "completed" }));
+    const delegated = await app.engine.dispatch({ type: "thread.delegate", fromThreadId: caller, provider: "claude", title: "Audit auth", prompt: "audit" });
+    const childEv = delegated.events.find((r) => r.event.type === "thread.created")?.event;
+    if (childEv?.type !== "thread.created") throw new Error("expected child");
+    await app.reactor.drain();
+
+    const statusErr = await agent.expectError("agent.threadStatus", { threadId: "wrong-id" });
+    expect(statusErr.code).toBe("not-found");
+    expect(statusErr.message).toContain(childEv.thread.id);
+    expect(statusErr.message).toContain("Audit auth");
+
+    const readErr = await agent.expectError("agent.thread.read", { threadId: "wrong-id" });
+    expect(readErr.code).toBe("not-found");
+    expect(readErr.message).toContain(childEv.thread.id);
+
+    // An agent with no open delegates of its own gets a clear empty hint.
+    const solo = await thread("Solo");
+    const soloClient = await WsTestClient.open(`${app.server?.url ?? ""}?agentToken=${app.agentTokens.getOrCreate(solo)}`);
+    try {
+      const emptyErr = await soloClient.expectError("agent.threadStatus", { threadId: "missing-1" });
+      expect(emptyErr.code).toBe("not-found");
+      expect(emptyErr.message).toContain("no open delegates");
+    } finally {
+      soloClient.close();
+    }
+  });
+});

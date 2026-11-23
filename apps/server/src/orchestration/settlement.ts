@@ -95,14 +95,33 @@ export class SettlementReactor {
   }
 
   async #settle(threadId: string, reason: SettleReason): Promise<boolean> {
+    const archive = this.#settings.get().inbox.archiveOnAutoSettle === true;
     try {
+      if (archive) {
+        const model = this.#engine.getModel();
+        const thread = model.threads[threadId];
+        if (!thread || thread.archivedAt !== undefined) return false;
+        const blocked =
+          thread.status === "running" ||
+          hasBackgroundChildren(model, thread.id) ||
+          thread.attention !== undefined ||
+          thread.pinned === true ||
+          thread.autoSettle === false ||
+          descendantsOf(model, thread.id).some((d) => d.status === "running");
+        if (blocked) {
+          this.#log("[settlement] archive refused", { threadId, reason });
+          return false;
+        }
+        await this.#engine.dispatch({ type: "thread.archive", threadId });
+        return true;
+      }
       await this.#engine.dispatch({ type: "thread.settle", threadId, reason });
       return true;
     } catch (err) {
-      if (err instanceof CommandError && (err.code === "conflict" || err.code === "not-found")) {
-        this.#log("[settlement] settle refused", { threadId, reason, code: err.code });
+      if (err instanceof CommandError && (err.code === "busy" || err.code === "conflict" || err.code === "not-found")) {
+        this.#log(archive ? "[settlement] archive refused" : "[settlement] settle refused", { threadId, reason, code: err.code });
       } else {
-        this.#log("[settlement] settle failed", { threadId, reason, err });
+        this.#log(archive ? "[settlement] archive failed" : "[settlement] settle failed", { threadId, reason, err });
       }
       return false;
     }

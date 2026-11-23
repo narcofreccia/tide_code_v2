@@ -1,4 +1,4 @@
-import { hasBackgroundChildren, type DriverCaps, type HarnessTurnHandle, type McpServerSpec, type NormalizedEvent, type Project, type ProviderInstance, type ProviderKind, type ProviderSession, type ReadModel, type SessionSettings, type Thread } from "@tide/contracts";
+import { hasBackgroundChildren, type CodexMultiAgentMode, type DriverCaps, type HarnessTurnHandle, type McpServerSpec, type NormalizedEvent, type Project, type ProviderInstance, type ProviderKind, type ProviderSession, type ReadModel, type SessionSettings, type Thread, type UserSettings } from "@tide/contracts";
 import { THREAD_TOOLS_HINT } from "@tide/tide-mcp";
 import { composeSystemPromptAppend, linkedRepoPreamble, resolveLinkedDirs } from "./links.ts";
 import type { DriverRegistry } from "./registry.ts";
@@ -24,17 +24,29 @@ export function instanceIdOf(thread: Pick<Thread, "provider" | "providerId">): s
   return thread.providerId ?? thread.provider;
 }
 
-export function settingsOf(thread: Thread): SessionSettings {
+export function codexMultiAgentModeOf(
+  thread: Pick<Thread, "provider" | "providerId" | "delegatedBy" | "role">,
+  defaults?: UserSettings["providerDefaults"],
+): CodexMultiAgentMode | undefined {
+  if (thread.provider !== "codex") return undefined;
+  if (thread.delegatedBy !== undefined || thread.role === "delegate") return "explicitRequestOnly";
+  const id = instanceIdOf(thread);
+  return defaults?.[id]?.multiAgentMode ?? defaults?.codex?.multiAgentMode ?? "proactive";
+}
+
+export function settingsOf(thread: Thread, defaults?: UserSettings["providerDefaults"]): SessionSettings {
+  const multiAgentMode = codexMultiAgentModeOf(thread, defaults);
   return {
     ...(thread.model !== undefined ? { model: thread.model } : {}),
     ...(thread.effort !== undefined ? { effort: thread.effort } : {}),
     mode: thread.mode,
     interaction: thread.interaction,
+    ...(multiAgentMode !== undefined ? { multiAgentMode } : {}),
   };
 }
 
 function sameSettings(a: SessionSettings, b: SessionSettings): boolean {
-  return a.model === b.model && a.effort === b.effort && a.mode === b.mode && a.interaction === b.interaction;
+  return a.model === b.model && a.effort === b.effort && a.mode === b.mode && a.interaction === b.interaction && a.multiAgentMode === b.multiAgentMode;
 }
 
 /** How a session is opened when the directory has none for the thread. */
@@ -59,6 +71,8 @@ export interface SessionDirectoryOptions {
   mcp?: { serversFor(threadId: string): McpServerSpec[]; revoke(threadId: string): void };
   /** one line naming the harnesses tide_delegate can target right now and their default models; re-read per open */
   harnessHint?: () => string | undefined;
+  /** user provider defaults (e.g. Codex multiAgentMode), re-read per open and reconfigure */
+  providerDefaults?: () => UserSettings["providerDefaults"];
   /** false in tests: reapIdle() is then driven by hand against a manual clock */
   autoReap?: boolean;
   /** the live read model: who owns a native session id, and which threads have a turn in flight */
@@ -147,6 +161,7 @@ export class SessionDirectory {
   #mcpServers: McpServerSpec[];
   #mcp: { serversFor(threadId: string): McpServerSpec[]; revoke(threadId: string): void } | undefined;
   #harnessHint: (() => string | undefined) | undefined;
+  #providerDefaults: (() => UserSettings["providerDefaults"]) | undefined;
   #log: (msg: string, data?: unknown) => void;
   #model: (() => ReadModel) | undefined;
   #onHarnessTurn: ((threadId: string, turn: HarnessTurn) => void) | undefined;
@@ -165,6 +180,7 @@ export class SessionDirectory {
     this.#mcpServers = options.mcpServers ?? [];
     this.#mcp = options.mcp;
     this.#harnessHint = options.harnessHint;
+    this.#providerDefaults = options.providerDefaults;
     this.#log = options.log ?? (() => undefined);
     this.#model = options.model;
     this.#onHarnessTurn = options.onHarnessTurn;
@@ -222,7 +238,7 @@ export class SessionDirectory {
     const existing = this.#entries.get(thread.id);
     if (existing) {
       if (existing.providerId === instanceIdOf(thread) && existing.cwd === cwd) {
-        const wanted = settingsOf(thread);
+        const wanted = settingsOf(thread, this.#providerDefaults?.());
         if (sameSettings(existing.settings, wanted)) {
           existing.lastUsedAt = this.#now();
           return existing.session;
@@ -258,6 +274,9 @@ export class SessionDirectory {
     const harnesses = hasTideTools ? this.#harnessHint?.() : undefined;
     const systemPromptAppend = composeSystemPromptAppend(linkedRepoPreamble(project, linkedDirs), tideTools, harnesses);
     const resume = hints.forkFrom !== undefined || hints.fresh === true ? undefined : resumableSessionId(thread, this.#model?.());
+    const defaults = this.#providerDefaults?.();
+    const isDelegate = thread.delegatedBy !== undefined || thread.role === "delegate";
+    const multiAgentMode = codexMultiAgentModeOf(thread, defaults);
     const session = await instance.openSession({
       threadId: thread.id,
       cwd,
@@ -267,6 +286,8 @@ export class SessionDirectory {
       ...(thread.effort !== undefined ? { effort: thread.effort } : {}),
       mode: thread.mode,
       interaction: thread.interaction,
+      ...(isDelegate ? { isDelegate: true } : {}),
+      ...(multiAgentMode !== undefined ? { multiAgentMode } : {}),
       mcpServers: [...this.#mcpServers, ...(this.#mcp?.serversFor(thread.id) ?? [])],
       ...(linkedDirs.length > 0 ? { linkedDirs } : {}),
       ...(systemPromptAppend !== undefined ? { systemPromptAppend } : {}),
@@ -301,7 +322,7 @@ export class SessionDirectory {
         }
       });
     }
-    this.#entries.set(thread.id, { threadId: thread.id, providerId, instance, cwd, session, settings: settingsOf(thread), lastUsedAt: this.#now() });
+    this.#entries.set(thread.id, { threadId: thread.id, providerId, instance, cwd, session, settings: settingsOf(thread, defaults), lastUsedAt: this.#now() });
     const loss = resume !== undefined ? resumeLossOf(session, this.#registry.cachedCaps(providerId), this.#registry.labelOf(providerId) ?? thread.provider) : undefined;
     if (loss !== undefined) {
       this.#log(`[provider] ${thread.id}: resume of ${resume} did not hold (${loss.reason}); a new native session started`);

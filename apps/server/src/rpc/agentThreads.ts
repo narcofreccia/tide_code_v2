@@ -1,5 +1,6 @@
-import type { Activity, AgentThreadSummary, AgentTimelineItem, Command, ReadModel, RpcOutput, Thread, TimelineEntry } from "@tide/contracts";
+import { hasBackgroundChildren, type Activity, type AgentThreadSummary, type AgentTimelineItem, type Command, type ReadModel, type RpcOutput, type Thread, type TimelineEntry } from "@tide/contracts";
 import { clampMode } from "../orchestration/decider/agent.ts";
+import { descendantsOf } from "../orchestration/decider/descendants.ts";
 import { CommandError, type Engine } from "../orchestration/engine.ts";
 import { affectsQuiet, agentStatus, isQuiescent } from "../orchestration/background.ts";
 import { lastAssistantText, type DelegateWaits } from "../orchestration/delegation.ts";
@@ -50,9 +51,22 @@ export function canReach(caller: Thread, target: Thread): boolean {
   return target.projectId === caller.projectId || target.delegatedBy === caller.id;
 }
 
+const MAX_OPEN_DELEGATES_IN_ERROR = 10;
+
+/** Lists the caller's open delegates on a `not-found` thread id so agents self-correct in one call. */
+export function notFoundThreadMessage(model: ReadModel, caller: Thread, missingId: string): string {
+  const open = Object.values(model.threads)
+    .filter((t) => t.delegatedBy === caller.id && t.archivedAt === undefined)
+    .sort((a, b) => b.updatedAt - a.updatedAt);
+  if (open.length === 0) return `unknown thread ${missingId}. You have no open delegates; call tide_thread_list to find valid ids.`;
+  const shown = open.slice(0, MAX_OPEN_DELEGATES_IN_ERROR).map((t) => `${t.id} ("${t.title}", ${agentStatus(model, t)})`);
+  const more = open.length > shown.length ? ` (+${open.length - shown.length} more)` : "";
+  return `unknown thread ${missingId}. Your open delegates: ${shown.join(", ")}${more}`;
+}
+
 export function reachable(model: ReadModel, caller: Thread, threadId: string): Thread {
   const target = model.threads[threadId];
-  if (!target) throw new RpcException("not-found", `unknown thread ${threadId}`);
+  if (!target) throw new RpcException("not-found", notFoundThreadMessage(model, caller, threadId));
   if (!canReach(caller, target)) throw new RpcException("forbidden", `thread ${target.id} is outside the project of ${caller.id}`);
   return target;
 }
@@ -310,6 +324,40 @@ export function registerAgentThreadHandlers(router: RpcRouter, deps: AgentThread
     if (target.status !== "running") return { ok: false };
     await dispatch(engine, { type: "turn.interrupt", threadId: target.id });
     return { ok: true };
+  });
+
+  router.register("agent.thread.archive", async (input, ctx) => {
+    const model = engine.getModel();
+    const caller = callerThread(model, ctx);
+    const target = reachable(model, caller, input.threadId);
+    if (target.id === caller.id) throw new RpcException("forbidden", "a thread cannot archive itself");
+    if (!descendantsOf(model, caller.id).some((d) => d.id === target.id)) {
+      throw new RpcException("forbidden", `thread ${target.id} is not a child or delegate of ${caller.id}`);
+    }
+    requireNoBroader(caller, target);
+    if (target.archivedAt !== undefined) return { ok: true, archived: true, worktreeRemoved: false };
+    if (target.status === "running" || hasBackgroundChildren(model, target.id)) {
+      throw new RpcException("busy", `thread ${target.id} is still running`);
+    }
+    if (descendantsOf(model, target.id).some((d) => d.status === "running")) {
+      throw new RpcException("busy", `thread ${target.id} still has a running child thread`);
+    }
+    if (target.attention !== undefined) {
+      throw new RpcException("conflict", `thread ${target.id} is waiting for attention (${target.attention})`);
+    }
+    const keepWorktree = input.keepWorktree === true;
+    const hadWorktree = target.worktreePath !== undefined;
+    const shared =
+      hadWorktree &&
+      Object.values(model.threads).some(
+        (t) => t.id !== target.id && t.archivedAt === undefined && t.worktreePath === target.worktreePath,
+      );
+    await dispatch(engine, {
+      type: "thread.archive",
+      threadId: target.id,
+      ...(keepWorktree ? { keepWorktree: true } : {}),
+    });
+    return { ok: true, archived: true, worktreeRemoved: hadWorktree && !keepWorktree && !shared };
   });
 
   router.register("agent.pending.list", async (input, ctx) => {

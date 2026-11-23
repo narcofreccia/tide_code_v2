@@ -4,6 +4,7 @@ import { agentStatus, isQuiescent } from "../orchestration/background.ts";
 import { lastAssistantText } from "../orchestration/delegation.ts";
 import { readImagePaths } from "../workspace/attachments.ts";
 import { resolveCommandModel, toAgentHarness, type AgentRegistryView } from "./agentModel.ts";
+import { notFoundThreadMessage } from "./agentThreads.ts";
 import { RpcException, type RpcCallContext, type RpcRouter } from "./router.ts";
 import { threadCwdResolver } from "./threadCwd.ts";
 
@@ -149,7 +150,7 @@ export function registerAgentHandlers(router: RpcRouter, deps: AgentHandlerDeps)
     const model = deps.engine.getModel();
     const caller = callerOf(model, ctx);
     const target = model.threads[input.threadId];
-    if (!target) throw new RpcException("not-found", `unknown thread ${input.threadId}`);
+    if (!target) throw new RpcException("not-found", notFoundThreadMessage(model, caller.thread, input.threadId));
     const sameSession =
       caller.thread.expertsSessionId !== undefined && target.expertsSessionId === caller.thread.expertsSessionId;
     if (target.delegatedBy !== caller.thread.id && !sameSession) {

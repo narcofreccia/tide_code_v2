@@ -103,9 +103,35 @@ describe("codex skills", () => {
 
     const instance = await codexDriver.create({ binaryPath: process.execPath, spawnImpl: spawn }, env);
     const before = servers.length;
-    expect(await instance.listCommands!({ cwd: "/tmp/other" })).toEqual([{ name: "deploy", description: "Deploy the app", source: "skill" }]);
+    expect(await instance.listCommands!({ cwd: "/tmp/other" })).toEqual([
+      { name: "compact", description: "Compact the conversation context now", source: "builtin" },
+      { name: "deploy", description: "Deploy the app", source: "skill" },
+    ]);
     expect(servers.length).toBe(before + 1);
     expect(servers.at(-1)!.calls("skills/list")).toEqual([{ cwds: ["/tmp/other"] }]);
+  });
+
+  it("session: routes /compact to thread/compact/start and restores additionalContext after compaction", async () => {
+    const { spawn, last } = fakeSpawn();
+    const options: OpenSessionOptions = {
+      threadId: "t",
+      cwd: "/tmp/repo",
+      mode: "approval-required",
+      interaction: "default",
+      mcpServers: [],
+      systemPromptAppend: "## Tide orchestration\n- Use tide_delegate.",
+    };
+    const session = await CodexSession.open({ spawnImpl: spawn, tomlReader: () => undefined }, env, options, "/usr/bin/codex");
+    const server = last();
+    server.autoReply = "ok";
+    const events: NormalizedEvent[] = [];
+    for await (const event of session.send({ text: "/compact " })) events.push(event);
+    expect(server.calls("thread/compact/start")).toEqual([{ threadId: "thread-1" }]);
+    expect(server.calls("turn/start")).toHaveLength(0);
+    expect(events.some((e) => e.type === "activity" && e.activity.kind === "info" && e.activity.text === "Context compacted")).toBe(true);
+    await new Promise((r) => setImmediate(r));
+    expect(server.calls("thread/inject_items")).toHaveLength(1);
+    await session.close();
   });
 
   it("instance home becomes CODEX_HOME and instance.env wins over config.env", async () => {

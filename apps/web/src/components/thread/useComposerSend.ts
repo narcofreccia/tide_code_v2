@@ -9,6 +9,7 @@ import { expandDelegateMentions, expandMentions, expandThreadMentions } from "..
 import { sendTurn, turnRequestLanded } from "../../lib/threadActions.ts";
 import { steerTurn } from "../../lib/turnActions.ts";
 import { disarmFreshSession, isFreshSessionArmed } from "../../state/freshSession.ts";
+import { useFiles } from "../../state/files.ts";
 import { useModel } from "../../state/model.ts";
 import { offlineReason, useThreadEnvStatus } from "../../state/threadEnv.ts";
 import { useProvidersStore } from "../../state/providers.ts";
@@ -40,9 +41,9 @@ const delegateLabelOf = (id: string): { label: string; kind: ProviderKind } | un
 };
 
 /** The prompt as the harness gets it: `@path` backticked, `@thread:<id>` expanded to context lines. */
-export function promptOf(text: string, hasImages: boolean, hasFiles: boolean): string {
+export function promptOf(text: string, hasImages: boolean, hasFiles: boolean, knownPaths?: ReadonlySet<string>): string {
   const titleOf = (id: string): string | undefined => useModel.getState().model.threads[id]?.title;
-  const threadsExpanded = expandThreadMentions(expandMentions(text.trim()), titleOf);
+  const threadsExpanded = expandThreadMentions(expandMentions(text.trim(), knownPaths), titleOf);
   const prompt = expandDelegateMentions(threadsExpanded, delegateLabelOf);
   if (prompt !== "") return prompt;
   // the turn needs some text; the server lists file paths under it
@@ -87,7 +88,9 @@ export function useComposerSend({ thread, text, images, files, followUp, onSent 
     const refused = block !== undefined && !(block.kind === "quota" && steer);
     if ((body.trim() === "" && images.length === 0 && files.length === 0) || busy || offline !== undefined || refused) return;
     const imageInputs = images.map((image) => ({ mediaType: image.mediaType, data: image.data }));
-    const prompt = promptOf(body, images.length > 0, files.length > 0);
+    const indexed = useFiles.getState().indexes[thread.id]?.data?.paths;
+    const knownPaths = indexed && indexed.length > 0 ? new Set(indexed) : undefined;
+    const prompt = promptOf(body, images.length > 0, files.length > 0, knownPaths);
     const fileKey = files.map((f) => f.id).join(",");
     if (pending.current?.text !== prompt || pending.current.fileKey !== fileKey) {
       pending.current = { text: prompt, fileKey, requestId: newId() };

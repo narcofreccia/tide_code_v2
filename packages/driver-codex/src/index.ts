@@ -2,8 +2,10 @@ import type { DriverEnv, ProviderDriver, ProviderInstance } from "@tide/contract
 import { CodexInstance } from "./instance.ts";
 import type { CodexConfig } from "./types.ts";
 
-export { AppServer, INITIALIZE_TIMEOUT_MS, KILL_GRACE_MS, mcpEnvAndArgs, mergedEnv } from "./app-server.ts";
+export { AppServer, CODEX_THREAD_CONFIG, INITIALIZE_TIMEOUT_MS, KILL_GRACE_MS, TIDE_DIRECT_MCP_SERVER, TIDE_DIRECT_ONLY_TOOLS, mcpEnvAndArgs, mergedEnv } from "./app-server.ts";
 export { ApprovalBroker, toCodexAnswers } from "./approvals.ts";
+export { buildCodexAdditionalContext, CODEX_ADDITIONAL_CONTEXT_MAX_BYTES, splitForCodexContext, toInjectItems } from "./instructions.ts";
+export type { AdditionalContextEntry, AdditionalContextMap, CodexRuntimeInfo } from "./instructions.ts";
 export { CodexInstance } from "./instance.ts";
 export { JsonRpcConnection, JsonRpcError } from "./jsonrpc.ts";
 export { collaborationModeFor, policyFor, writableRoots } from "./modes.ts";

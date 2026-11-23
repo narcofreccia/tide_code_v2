@@ -32,28 +32,18 @@ export function imagePathsOf(args: Record<string, unknown>): string[] | undefine
 
 /** Appended to the system prompt the server injects (the server picks this up). */
 export const THREAD_TOOLS_HINT = [
-  "Tide thread tools: you can see and drive other threads in this project.",
-  "Your harness's built-in sub-agent tool only runs your own harness's models. When the user asks for sub-agents,",
-  "workers or reviewers on another harness or another model family (Codex, OpenCode, Pi, Antigravity, Gemini, GLM, a cheaper or free model),",
-  "do not say it is impossible: call tide_delegate with that `provider` (and `model` when they name one), one call per worker,",
-  "and collect the results with tide_thread_wait or the finished-delegate messages.",
-  "tide_thread_list finds threads; tide_thread_read shows their messages or activity (page with nextPosition);",
-  "tide_thread_send gives one a new instruction (auto/queue/steer); tide_thread_wait blocks until the thread is done:",
-  "its turn settled and any background sub-agents it launched reported back (a timeout never cancels it); tide_thread_interrupt stops a running turn; tide_pending_list/tide_pending_respond",
-  "answer a thread's pending questions. You cannot approve another thread's tool calls, and you can only act on",
-  "threads whose privileges are no broader than yours. Pass clientRequestId to make a send or delegate idempotent.",
-  "tide_delegate with completion=wait runs a child and returns its result in one call;",
-  "pass inheritWorktreeFrom with another thread's id to run the child in that thread's checkout (a reviewer or tester on the implementer's branch).",
-  "tide_thread_diff shows what a thread changed (per-file +/- counts and patches) — read it before reviewing another thread's work.",
-  "A delegate you did not wait on reports back by itself: when it finishes, background sub-agents included (or hits its usage limit), you get a",
-  "message \"Delegate ... finished\" with its last reply, several at once batched into one; when it asks a question you",
-  "get \"Delegate ... asks\" with the threadId and requestId to answer via tide_pending_respond (or ask the user).",
-  "tide_schedule_task (with tide_update_scheduled_task, tide_delete_scheduled_task, tide_run_scheduled_task_now) sets up an automation:",
-  "a prompt Tide sends on an interval or at fixed times, into a thread or as a new thread each run, within your project only.",
-  "When the user's message carries a \"Delegate to:\" line naming a provider, providerId and optional model, call tide_delegate with exactly those ids for that part of the work (completion \"wait\" when the user needs the result in this reply).",
-  "Need an API key or token? Call tide_request_secret — never ask for secrets in chat.",
-  "Images the user attached are saved on disk, with their paths listed under the message: for your own harness's sub-agent put the path in its prompt (it shares your checkout); for another thread pass the paths in `images` to tide_delegate or tide_thread_send (a delegate has its own checkout, so a bare path in the prompt does not reach it).",
-].join(" ");
+  "## Tide orchestration",
+  "",
+  "Ordinary coding tasks need no Tide tools.",
+  "",
+  "- Sub-agents vs delegates: use your harness's native sub-agent tool (e.g. Claude `Agent`, Codex `spawn_agent`) for same-provider work with default settings. Use `tide_delegate` for another harness/model (Claude, Codex, OpenCode, Pi, Antigravity, Gemini, GLM, a cheaper or free model), custom model/mode settings, or a separate checkout (`useWorktree: true`). Never say cross-harness delegation is impossible, and never create a child's worktree in the shell or ask the child to set up its own checkout.",
+  "- Async delegates (no polling): `tide_delegate` is async by default and reports back automatically — when done (background sub-agents included, or on usage limit) you receive \"Delegate ... finished\"; when a child asks a question you receive \"Delegate ... asks\" to answer via `tide_pending_respond` (or ask the user). Never poll `tide_delegate_status`, sleep, or watch files for a running delegate: continue other independent work, or end your turn when none is left. Use `completion: \"wait\"` or `tide_thread_wait` only when you need the result in this turn (a timeout never cancels the child).",
+  "- As a sub-agent or delegated child, do the work yourself. Start no sub-agents or delegates unless your task explicitly asks for them.",
+  "- Reviews & cleanup: fix small review findings yourself instead of spawning another delegate. Pass `inheritWorktreeFrom` to run a reviewer or tester in an implementer's checkout, and read `tide_thread_diff` before reviewing. When a delegate you spawned is finished and merged or no longer needed, call `tide_thread_archive` to archive it and clean up its worktree (transcript stays readable in Archived).",
+  "- Thread & automation tools: `tide_thread_list` / `tide_thread_read` inspect threads (`nextPosition` pages); `tide_thread_send` sends follow-ups (`auto`/`queue`/`steer`); `tide_thread_interrupt` stops a running turn; `tide_pending_list` / `tide_pending_respond` answer pending questions (you cannot approve another thread's tool calls, and you can only act on threads whose privileges are no broader than yours). `tide_schedule_task` (with update/list/delete/run-now) manages project automations. Pass `clientRequestId` for idempotent sends/delegations.",
+  "- Directives, secrets & attachments: when the user's message carries a \"Delegate to:\" line naming a provider, providerId and optional model, call `tide_delegate` with those exact ids (`completion: \"wait\"` when needed in this reply). Need an API key or token? Call tide_request_secret — never ask for secrets in chat. For user-attached images listed under the message, put paths in the prompt for same-harness sub-agents, or pass the paths in `images` to tide_delegate or tide_thread_send (delegates have separate checkouts).",
+  "- Tide MCP tools may load late. Try the tool name once before reporting it absent.",
+].join("\n");
 
 export const THREAD_TOOL_DEFINITIONS: ToolDef[] = [
   {
@@ -137,6 +127,19 @@ export const THREAD_TOOL_DEFINITIONS: ToolDef[] = [
     name: "tide_thread_interrupt",
     description: "Interrupt a thread's running turn. The thread stays usable; send it a new message afterwards.",
     inputSchema: { type: "object", properties: { threadId: str("Thread to interrupt.") }, required: ["threadId"] },
+  },
+  {
+    name: "tide_thread_archive",
+    description:
+      "Archive a finished child or delegate thread you spawned so it leaves the active inbox and its git worktree is cleaned up (uncommitted changes are snapshotted; transcript stays readable in Archived). Refused while running, waiting on attention, or for threads that are not your descendants.",
+    inputSchema: {
+      type: "object",
+      properties: {
+        threadId: str("Child or delegate thread to archive."),
+        keepWorktree: { type: "boolean", description: "Keep the git worktree on disk instead of removing it. Default false." },
+      },
+      required: ["threadId"],
+    },
   },
   {
     name: "tide_pending_list",
@@ -293,6 +296,13 @@ export async function callThreadTool(backend: AgentBackend, name: string, args: 
     case "tide_thread_interrupt": {
       const r = await backend.threadInterrupt(reqStr(args, "threadId"));
       return ok(r.ok ? "Interrupted." : "Nothing to interrupt.");
+    }
+    case "tide_thread_archive": {
+      const r = await backend.threadArchive({
+        threadId: reqStr(args, "threadId"),
+        ...(args["keepWorktree"] === true ? { keepWorktree: true } : {}),
+      });
+      return ok(r.worktreeRemoved ? "Archived. Worktree removed." : "Archived.");
     }
     case "tide_pending_list": {
       const { questions } = await backend.pendingList(reqStr(args, "threadId"));

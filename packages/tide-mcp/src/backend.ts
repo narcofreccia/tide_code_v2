@@ -16,6 +16,8 @@ export type PendingListResult = RpcOutput<"agent.pending.list">;
 export type PendingRespondInput = RpcInput<"agent.pending.respond">;
 export type ThreadDiffInput = RpcInput<"agent.thread.diff">;
 export type ThreadDiffResult = RpcOutput<"agent.thread.diff">;
+export type ThreadArchiveInput = RpcInput<"agent.thread.archive">;
+export type ThreadArchiveResult = RpcOutput<"agent.thread.archive">;
 export type SecretRequestInput = RpcInput<"agent.secret.request">;
 export type SecretRequestResult = RpcOutput<"agent.secret.request">;
 export type HarnessesResult = RpcOutput<"agent.harnesses">;
@@ -32,6 +34,7 @@ export interface AgentBackend {
   /** `signal`: the MCP tool call was abandoned; the server ends the wait and the parent gets the normal wake-up */
   threadWait(input: ThreadWaitInput, signal?: AbortSignal): Promise<ThreadWaitResult>;
   threadInterrupt(threadId: string): Promise<{ ok: boolean }>;
+  threadArchive(input: ThreadArchiveInput): Promise<ThreadArchiveResult>;
   threadDiff(input: ThreadDiffInput): Promise<ThreadDiffResult>;
   pendingList(threadId: string): Promise<PendingListResult>;
   taskList(): Promise<{ tasks: ScheduledTask[] }>;
@@ -116,6 +119,11 @@ export class TideAgentBackend implements AgentBackend {
   async threadInterrupt(threadId: string): Promise<{ ok: boolean }> {
     await this.#connect();
     return this.#connection.call("agent.thread.interrupt", { threadId });
+  }
+
+  async threadArchive(input: ThreadArchiveInput): Promise<ThreadArchiveResult> {
+    await this.#connect();
+    return this.#connection.call("agent.thread.archive", input);
   }
 
   async threadDiff(input: ThreadDiffInput): Promise<ThreadDiffResult> {

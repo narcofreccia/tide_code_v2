@@ -4,13 +4,22 @@ import type { SkillMetadata } from "./generated/v2/SkillMetadata.ts";
 import type { SkillsListResponse } from "./generated/v2/SkillsListResponse.ts";
 
 /**
- * Codex slash surface = skills only. The 0.162 app-server bindings expose `skills/list` and
- * no custom-prompt (`~/.codex/prompts`) listing, so nothing else can be offered honestly.
+ * Codex built-in commands Tide maps onto dedicated app-server RPCs (`thread/compact/start`),
+ * plus skills discovered via `skills/list`.
  */
+export const CODEX_BUILTIN_COMMANDS: readonly SlashCommandInfo[] = [
+  { name: "compact", description: "Compact the conversation context now", source: "builtin" },
+];
+
 export interface CodexSkill {
   name: string;
   path: string;
   info: SlashCommandInfo;
+}
+
+/** True for bare `/compact` (with optional whitespace), routed to `thread/compact/start`. */
+export function isCompactCommand(text: string): boolean {
+  return /^\/compact\s*$/i.test(text.trimStart());
 }
 
 export function toSkills(response: SkillsListResponse | undefined): CodexSkill[] {

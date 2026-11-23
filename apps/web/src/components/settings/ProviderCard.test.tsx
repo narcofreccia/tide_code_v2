@@ -33,5 +33,13 @@ describe("ProviderCard install steps", () => {
   it("shows no install step for an installed harness", () => {
     render(<ProviderCard status={PROVIDER_FIXTURE[0]!} />);
     expect(screen.queryByLabelText("Install Claude Code")).toBeNull();
+    expect(screen.queryByLabelText("Claude Code sub-agent mode")).toBeNull();
+  });
+
+  it("shows the sub-agent mode selector only on Codex cards, defaulting to Proactive", () => {
+    const codex = PROVIDER_FIXTURE.find((p) => p.kind === "codex")!;
+    render(<ProviderCard status={codex} />);
+    const select = screen.getByLabelText("Codex sub-agent mode");
+    expect(select.textContent).toContain("Proactive");
   });
 });

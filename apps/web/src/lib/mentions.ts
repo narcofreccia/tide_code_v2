@@ -33,21 +33,51 @@ export interface Insertion {
   caret: number;
 }
 
-/** Replaces the in-progress mention with `@path ` and returns the new caret. */
+/** Replaces the in-progress mention with `@path ` (quoted when `path` contains whitespace) and returns the new caret. */
 export function applyMention(text: string, mention: MentionQuery, caret: number, path: string): Insertion {
-  const next = `${text.slice(0, mention.start)}@${path} ${text.slice(caret)}`;
-  return { text: next, caret: mention.start + path.length + 2 };
+  const formatted = /\s/.test(path) && !path.startsWith(THREAD_PREFIX) && !path.startsWith(DELEGATE_PREFIX) ? `"${path}"` : path;
+  const next = `${text.slice(0, mention.start)}@${formatted} ${text.slice(caret)}`;
+  return { text: next, caret: mention.start + formatted.length + 2 };
 }
 
+const QUOTED_MENTION = /(^|\s)@"([^"\n]+)"/g;
 const MENTION = /(^|\s)@([^\s`"']+)/g;
 export const THREAD_PREFIX = "thread:";
 export const DELEGATE_PREFIX = "delegate:";
 
-/** `@src/foo.ts` → `` `src/foo.ts` `` just before the turn is dispatched; `@thread:<id>` is left alone. */
-export function expandMentions(text: string): string {
-  return text.replace(MENTION, (whole: string, lead: string, path: string) =>
-    path.startsWith(THREAD_PREFIX) || path.startsWith(DELEGATE_PREFIX) ? whole : `${lead}\`${path}\``,
-  );
+/**
+ * Fallback heuristic when no workspace file index is available: looks like a relative file path
+ * (e.g. `src/a.ts`, `./Makefile`, `package.json`), never a bare decorator/handle (`@dataclass`,
+ * `@alice`) or a 2-segment scoped package (`@tide/server`, `@types/node`).
+ */
+function looksLikeFilePath(token: string): boolean {
+  if (token.startsWith("./") || token.startsWith("../")) return true;
+  const slash = token.indexOf("/");
+  if (slash >= 0) {
+    const last = token.slice(token.lastIndexOf("/") + 1);
+    // Scoped packages (`@scope/pkg`) have one slash and no extension; deeper paths or files with a dot are file paths.
+    if (token.indexOf("/", slash + 1) >= 0) return true;
+    return last.includes(".") && last !== "." && last !== "..";
+  }
+  // Single segment: must contain a dot (e.g. `package.json`, `README.md`, `.env.example`), not `@dataclass` or `@alice`.
+  return token.length > 1 && token.includes(".") && !token.endsWith(".");
+}
+
+/**
+ * `@src/foo.ts` / `@"my folder/a.ts"` → `` `src/foo.ts` `` just before the turn is dispatched;
+ * `@thread:<id>`, `@delegate:…`, scoped packages (`@tide/server`), decorators (`@dataclass`),
+ * and handles (`@alice`) are left untouched. When `knownPaths` is provided, any indexed repo path
+ * (including extensionless files like `@Makefile`) is also expanded.
+ */
+export function expandMentions(text: string, knownPaths?: ReadonlySet<string>): string {
+  const withQuoted = text.replace(QUOTED_MENTION, (_whole: string, lead: string, path: string) => `${lead}\`${path}\``);
+  return withQuoted.replace(MENTION, (whole: string, lead: string, path: string) => {
+    if (path.startsWith(THREAD_PREFIX) || path.startsWith(DELEGATE_PREFIX)) return whole;
+    if (knownPaths !== undefined && knownPaths.size > 0) {
+      return knownPaths.has(path) ? `${lead}\`${path}\`` : whole;
+    }
+    return looksLikeFilePath(path) ? `${lead}\`${path}\`` : whole;
+  });
 }
 
 // ---- R11: @thread:<id> context mentions ----

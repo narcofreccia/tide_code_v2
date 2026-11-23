@@ -1,7 +1,7 @@
 import { memo, useEffect, useMemo, useRef, useState } from "react";
 import { THREAD_DRAG_TYPE } from "../../lib/mentions.ts";
 import type { Thread } from "@tide/contracts";
-import { canMergeBack, mergeBackThread, settleThread, unsettleThread, updateThread } from "../../lib/threadActions.ts";
+import { archivableFinishedChildren, archiveFinishedChildren, canMergeBack, mergeBackThread, settleThread, unsettleThread, updateThread } from "../../lib/threadActions.ts";
 import { isThreadMerged } from "@tide/client";
 import type { SearchHit } from "@tide/contracts";
 import { relativeTime, relativeUntil } from "../../lib/relativeTime.ts";
@@ -30,6 +30,7 @@ import { snoozeItems, threadMenu } from "./railMenus.ts";
 import { liveLabelFor, liveLabelKey, parseLiveLabelKey } from "../../lib/liveLabel.ts";
 import { RailLiveLine, recedes } from "./RailLiveLine.tsx";
 import { NO_NODES, childNodesIn, parentOf, type RailNode } from "./railTree.ts";
+import { CHILD_FOLD_THRESHOLD, useThreadChildFold } from "./railGroupState.ts";
 import { RailHoverCard } from "./RailHoverCard.tsx";
 import styles from "./RailThreadRow.module.css";
 
@@ -49,6 +50,18 @@ export function truncateRole(role: string): string {
 }
 
 export { parentOf };
+
+function hasActiveOrSelectedSubtree(node: RailNode, selectedId: string | null): boolean {
+  const t = node.thread;
+  if (t.id === selectedId || t.status === "running" || t.attention !== undefined) return true;
+  return node.children.some((c) => hasActiveOrSelectedSubtree(c, selectedId));
+}
+
+function countSubtreeNodes(nodes: readonly RailNode[]): number {
+  let total = 0;
+  for (const node of nodes) total += 1 + countSubtreeNodes(node.children);
+  return total;
+}
 
 /** The muted tag a settled row carries: why it left the inbox. */
 export const SETTLE_TAGS: Record<NonNullable<Thread["settleReason"]>, string> = {
@@ -164,6 +177,15 @@ export const RailThreadRow = memo(function RailThreadRowView({ thread, childNode
   const hasTags =
     hit !== undefined || (settled && thread.settleReason !== undefined) || thread.pr !== undefined || merged ||
     judge !== undefined || thread.delegateRole !== undefined || snoozedUntil !== undefined || parentTitle !== undefined;
+
+  const [childrenCollapsed, toggleChildrenCollapsed] = useThreadChildFold(thread.id, children.length > CHILD_FOLD_THRESHOLD);
+  const visibleChildren = childrenCollapsed ? children.filter((c) => hasActiveOrSelectedSubtree(c, selectedId)) : children;
+  const hiddenCount = childrenCollapsed ? countSubtreeNodes(children.filter((c) => !hasActiveOrSelectedSubtree(c, selectedId))) : 0;
+  const totalChildCount = countSubtreeNodes(children);
+  const finishedArchivableCount = useModel((s) =>
+    children.length === 0 ? 0 : archivableFinishedChildren(s.model, thread.id).length,
+  );
+  const showChildBar = hiddenCount > 0 || (!childrenCollapsed && children.length > CHILD_FOLD_THRESHOLD);
 
   const openMenu = (at: MenuPosition): void =>
     setMenu({ at, label: "Thread actions", items: threadMenu(useModel.getState().model, thread, () => setRenaming(true)) });
@@ -337,12 +359,39 @@ export const RailThreadRow = memo(function RailThreadRowView({ thread, childNode
       {menu ? (
         <ContextMenu position={menu.at} items={menu.items} onClose={() => setMenu(undefined)} label={menu.label} />
       ) : null}
-      {children.length > 0 ? (
+      {visibleChildren.length > 0 ? (
         <ul className={styles.children}>
-          {children.map((c) => (
+          {visibleChildren.map((c) => (
             <RailThreadRow key={c.thread.id} thread={c.thread} childNodes={c.children} showProject={showProject || c.thread.projectId !== thread.projectId} now={now} nested />
           ))}
         </ul>
+      ) : null}
+      {showChildBar ? (
+        <div className={styles.childBar}>
+          <button
+            type="button"
+            className={styles.childToggle}
+            aria-expanded={!childrenCollapsed}
+            onClick={toggleChildrenCollapsed}
+          >
+            <span className={styles.childCaret} aria-hidden="true">{childrenCollapsed ? "▸" : "▾"}</span>
+            <span>
+              {childrenCollapsed
+                ? `${hiddenCount} ${hiddenCount === 1 ? "subthread" : "subthreads"}`
+                : `Hide ${totalChildCount} ${totalChildCount === 1 ? "subthread" : "subthreads"}`}
+            </span>
+          </button>
+          {finishedArchivableCount > 0 ? (
+            <button
+              type="button"
+              className={styles.childArchive}
+              title={`Archive ${finishedArchivableCount} finished ${finishedArchivableCount === 1 ? "subthread" : "subthreads"} and remove their worktrees`}
+              onClick={() => archiveFinishedChildren(thread.id)}
+            >
+              Archive done
+            </button>
+          ) : null}
+        </div>
       ) : null}
     </li>
   );

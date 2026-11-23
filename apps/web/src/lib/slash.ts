@@ -1,9 +1,9 @@
 import type { SlashCommandInfo } from "@tide/contracts";
 
 /**
- * `/command` in the composer. A command is only a command at the start of the
- * text or of a line — `a/b` and `see /tmp` are prose — and the harness runs it:
- * Tide inserts the name and sends the text as typed.
+ * `/command` in the composer. Harnesses only execute commands at the start of the
+ * message — `a/b`, `see /tmp`, and line-2 `/cmd` are prose — and Tide inserts the
+ * name and sends the text as typed.
  */
 export interface SlashQuery {
   /** index of the `/` */
@@ -12,13 +12,12 @@ export interface SlashQuery {
   query: string;
 }
 
-/** The `/…` token the caret sits in, when it opens the text or a line. */
+/** The `/…` token the caret sits in, only when it opens the message (line 1). */
 export function findSlashQuery(text: string, caret: number): SlashQuery | undefined {
-  const lineStart = text.lastIndexOf("\n", caret - 1) + 1;
-  if (text[lineStart] !== "/") return undefined;
-  const query = text.slice(lineStart + 1, caret);
+  if (text[0] !== "/" || caret < 1) return undefined;
+  const query = text.slice(1, caret);
   if (/\s/.test(query)) return undefined;
-  return { start: lineStart, query };
+  return { start: 0, query };
 }
 
 /** `review` and `/review` name the same command. */

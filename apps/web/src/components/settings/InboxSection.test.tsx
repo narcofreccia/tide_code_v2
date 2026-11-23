@@ -52,6 +52,8 @@ describe("Settings › Inbox", () => {
 
     fireEvent.click(screen.getByLabelText(/Auto-settle when the PR is merged/));
     expect(rpc).toHaveBeenCalledWith("settings.set", { patch: { inbox: { autoSettleOnMerge: false } } });
+    fireEvent.click(screen.getByLabelText(/Archive & remove worktrees on auto-settle/));
+    expect(rpc).toHaveBeenCalledWith("settings.set", { patch: { inbox: { archiveOnAutoSettle: true } } });
     fireEvent.click(screen.getByLabelText(/Group running threads under/));
     expect(rpc).toHaveBeenCalledWith("settings.set", { patch: { inbox: { workingSection: true } } });
   });

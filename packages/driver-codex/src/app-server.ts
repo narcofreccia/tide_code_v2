@@ -17,6 +17,26 @@ export const INITIALIZE_TIMEOUT_MS = 45_000;
  * after 3s" with 3), and rejects a non-number ("expected f64").
  */
 export const TIDE_MCP_TOOL_TIMEOUT_SEC = 900;
+/**
+ * Secondary direct-only Codex registration for Tide's blocking / delegation tools.
+ * Codex Code Mode yields a script after ~30 s, causing models to poll blocking waits
+ * (`tide_delegate` with completion:"wait", `tide_thread_wait`) in a loop; omitting them
+ * from `code_mode` and `deferred` makes both plain top-level tool calls.
+ */
+export const TIDE_DIRECT_MCP_SERVER = "tide-direct";
+export const TIDE_DIRECT_ONLY_TOOLS = ["tide_delegate", "tide_thread_wait"] as const;
+/**
+ * Per-thread Codex config overrides applied on `thread/start`, `thread/resume`, and `thread/fork`:
+ * - `mcp_optional_startup_grace_ms`: Codex's 1 s default drops cold Node stdio MCP servers
+ *   (like `tide-mcp`) from the first turn; 10 s gives them time to complete handshake.
+ * - `tools.update_plan.enabled`: keeps Codex's native checklist tool available.
+ * - `features.concurrent_reasoning_summaries`: tool calls don't block waiting on reasoning summaries.
+ */
+export const CODEX_THREAD_CONFIG = {
+  "tools.update_plan.enabled": true,
+  mcp_optional_startup_grace_ms: 10_000,
+  "features.concurrent_reasoning_summaries": true,
+} as const;
 /** How long a SIGTERM'd app-server has to exit before it is SIGKILLed. */
 export const KILL_GRACE_MS = 5_000;
 
@@ -58,26 +78,58 @@ export interface AppServerOptions {
  * line. Two servers wanting different values for the same variable cannot both be forwarded;
  * the loser falls back to the visible inline form and says so in the log.
  */
+function appendMcpServerArgs(
+  args: string[],
+  env: Record<string, string>,
+  key: string,
+  server: McpServerSpec,
+  extra: { disabledTools?: readonly string[]; enabledTools?: readonly string[]; omitToolsFrom?: readonly string[] } = {},
+  log?: (message: string) => void,
+): void {
+  args.push("-c", `${key}.command=${JSON.stringify(server.command)}`);
+  if (server.args && server.args.length > 0) args.push("-c", `${key}.args=[${server.args.map((a) => JSON.stringify(a)).join(", ")}]`);
+  args.push("-c", `${key}.tool_timeout_sec=${TIDE_MCP_TOOL_TIMEOUT_SEC.toFixed(1)}`);
+  if (extra.disabledTools && extra.disabledTools.length > 0) {
+    args.push("-c", `${key}.disabled_tools=[${extra.disabledTools.map((t) => JSON.stringify(t)).join(", ")}]`);
+  }
+  if (extra.enabledTools && extra.enabledTools.length > 0) {
+    args.push("-c", `${key}.enabled_tools=[${extra.enabledTools.map((t) => JSON.stringify(t)).join(", ")}]`);
+  }
+  if (extra.omitToolsFrom && extra.omitToolsFrom.length > 0) {
+    args.push("-c", `${key}.omit_tools_from=[${extra.omitToolsFrom.map((s) => JSON.stringify(s)).join(", ")}]`);
+  }
+
+  const forwarded: string[] = [];
+  for (const [name, value] of Object.entries(server.env ?? {})) {
+    if (env[name] === undefined || env[name] === value) {
+      env[name] = value;
+      forwarded.push(name);
+      continue;
+    }
+    log?.(`[codex] ${name} is already forwarded with a different value; passing it to ${server.name} on the command line instead`);
+    args.push("-c", `${key}.env.${name}=${JSON.stringify(value)}`);
+  }
+  if (forwarded.length > 0) args.push("-c", `${key}.env_vars=[${forwarded.map((name) => JSON.stringify(name)).join(", ")}]`);
+}
+
 export function mcpEnvAndArgs(servers: McpServerSpec[], log?: (message: string) => void): { args: string[]; env: Record<string, string> } {
   const args: string[] = [];
   const env: Record<string, string> = {};
   for (const server of servers) {
     const key = `mcp_servers.${server.name}`;
-    args.push("-c", `${key}.command=${JSON.stringify(server.command)}`);
-    if (server.args && server.args.length > 0) args.push("-c", `${key}.args=[${server.args.map((a) => JSON.stringify(a)).join(", ")}]`);
-    args.push("-c", `${key}.tool_timeout_sec=${TIDE_MCP_TOOL_TIMEOUT_SEC.toFixed(1)}`);
-
-    const forwarded: string[] = [];
-    for (const [name, value] of Object.entries(server.env ?? {})) {
-      if (env[name] === undefined || env[name] === value) {
-        env[name] = value;
-        forwarded.push(name);
-        continue;
-      }
-      log?.(`[codex] ${name} is already forwarded with a different value; passing it to ${server.name} on the command line instead`);
-      args.push("-c", `${key}.env.${name}=${JSON.stringify(value)}`);
+    if (server.name === "tide") {
+      appendMcpServerArgs(args, env, key, server, { disabledTools: TIDE_DIRECT_ONLY_TOOLS }, log);
+      appendMcpServerArgs(
+        args,
+        env,
+        `mcp_servers.${TIDE_DIRECT_MCP_SERVER}`,
+        server,
+        { enabledTools: TIDE_DIRECT_ONLY_TOOLS, omitToolsFrom: ["code_mode", "deferred"] },
+        log,
+      );
+    } else {
+      appendMcpServerArgs(args, env, key, server, {}, log);
     }
-    if (forwarded.length > 0) args.push("-c", `${key}.env_vars=[${forwarded.map((name) => JSON.stringify(name)).join(", ")}]`);
   }
   return { args, env };
 }

@@ -1,4 +1,4 @@
-import type { ProviderInstanceConfig, ProviderStatusDto } from "@tide/contracts";
+import type { CodexMultiAgentMode, ProviderInstanceConfig, ProviderStatusDto } from "@tide/contracts";
 import { PROVIDER_LABELS, runtimeModeOptions } from "../../lib/vocab.ts";
 import { installOf, resolveLoginCommand, runOrCopy } from "../../lib/providerLogin.ts";
 import { modelChoiceValue, modelChoices } from "../../state/providers.ts";
@@ -13,6 +13,11 @@ import providers from "./providers/Providers.module.css";
 import styles from "./ProviderCard.module.css";
 import { plural } from "../../lib/format.ts";
 import { SetupStep } from "./ProviderCardSetup.tsx";
+
+const CODEX_MULTI_AGENT_OPTIONS: SelectOption<CodexMultiAgentMode>[] = [
+  { value: "proactive", label: "Proactive" },
+  { value: "explicitRequestOnly", label: "Explicit request only" },
+];
 
 const CAPS: { key: keyof ProviderStatusDto["caps"]; label: string }[] = [
   { key: "planMode", label: "plan mode" },
@@ -194,6 +199,19 @@ export function ProviderCard({
             size="md"
           />
         </div>
+        {kind === "codex" ? (
+          <div className={styles.field}>
+            <span className={styles.fieldLabel}>sub-agent mode</span>
+            <Select
+              label={`${name} sub-agent mode`}
+              value={defaults.multiAgentMode ?? "proactive"}
+              options={CODEX_MULTI_AGENT_OPTIONS}
+              onSelect={(multiAgentMode) => void setProviderDefault(id, { multiAgentMode })}
+              variant="field"
+              size="md"
+            />
+          </div>
+        ) : null}
       </div>
     </article>
   );

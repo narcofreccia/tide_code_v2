@@ -1,5 +1,6 @@
 import type {
   ApprovalDecision,
+  CodexMultiAgentMode,
   DriverEnv,
   HarnessTurnHandle,
   NormalizedEvent,
@@ -10,10 +11,11 @@ import type {
   SteerTarget,
   TurnInput,
 } from "@tide/contracts";
-import { AppServer, mergedEnv } from "./app-server.ts";
+import { AppServer, CODEX_THREAD_CONFIG, mergedEnv } from "./app-server.ts";
 import { readUserSandboxConfig, type UserSandboxConfig } from "./config-toml.ts";
 import { ApprovalBroker } from "./approvals.ts";
 import { AsyncQueue, deferred, type Deferred } from "./async-queue.ts";
+import { buildCodexAdditionalContext, toInjectItems, type AdditionalContextMap } from "./instructions.ts";
 import type { RequestId } from "./jsonrpc.ts";
 import { resumeRefusal } from "./resume-refused.ts";
 import { collaborationModeFor, policyFor, writableRoots } from "./modes.ts";
@@ -23,7 +25,7 @@ import { CodexHarnessTurn, CONTINUED_REASON, isIdleActivity, pendingRequest, req
 import { TurnLedger } from "./turn-ledger.ts";
 import { withInstance } from "./instance-config.ts";
 import { rateLimitsFromSnapshot } from "./rate-limits.ts";
-import { fetchSkills, matchSkill, type CodexSkill } from "./skills.ts";
+import { fetchSkills, isCompactCommand, matchSkill, type CodexSkill } from "./skills.ts";
 import type { CodexConfig } from "./types.ts";
 import type { ThreadForkResponse } from "./generated/v2/ThreadForkResponse.ts";
 import type { ThreadResumeResponse } from "./generated/v2/ThreadResumeResponse.ts";
@@ -45,6 +47,14 @@ interface TargetTurn {
 
 /** Fallback with no listeners wired: cap on sub-agent rows held between turns; requests are always held. */
 const MAX_HELD_EVENTS = 500;
+/** Best-effort timeout for archiving a finished delegated Codex thread before process teardown. */
+const ARCHIVE_ON_CLOSE_TIMEOUT_MS = 2_000;
+
+function effectiveMultiAgentMode(options: Pick<OpenSessionOptions, "isDelegate" | "multiAgentMode">): CodexMultiAgentMode {
+  // Delegated children stay focused on their own task instead of recursively spawning sub-agents.
+  if (options.isDelegate === true) return "explicitRequestOnly";
+  return options.multiAgentMode ?? "proactive";
+}
 
 /**
  * One long-lived `codex app-server` child per Tide thread, killed on `close()`.
@@ -76,6 +86,12 @@ export class CodexSession implements ProviderSession {
   #announced = false;
   /** R8: reasoning effort for the next turns; undefined = the model's default */
   #effort: string | undefined;
+  /** Codex multi-agent delegation policy for this session */
+  #multiAgentMode: CodexMultiAgentMode;
+  #isDelegate: boolean;
+  /** latest `additionalContext` sent on `turn/start`, restored via `thread/inject_items` after compaction */
+  #lastAdditionalContext: AdditionalContextMap | undefined;
+  #needsContextRestore = false;
   /** R8: this cwd's skills, fetched lazily the first time a turn starts with `/` */
   #skills: Promise<CodexSkill[]> | undefined;
   /** the user's own sandbox/approval stance from config.toml, resolved once per session; modes only narrow it */
@@ -108,6 +124,8 @@ export class CodexSession implements ProviderSession {
     this.#initialModel = model;
     this.#model = model;
     this.#effort = options.effort;
+    this.#isDelegate = options.isDelegate === true;
+    this.#multiAgentMode = effectiveMultiAgentMode(options);
     this.#userConfig = userConfig;
     this.#normalizer = new CodexNormalizer({
       threadId,
@@ -153,6 +171,7 @@ export class CodexSession implements ProviderSession {
       server.close();
       throw new Error("invalid-params: resume and forkFrom are mutually exclusive");
     }
+    const multiAgentMode = effectiveMultiAgentMode(options);
     let started: ThreadStartResponse | ThreadResumeResponse | ThreadForkResponse;
     try {
       started =
@@ -162,9 +181,10 @@ export class CodexSession implements ProviderSession {
               cwd: options.cwd,
               approvalPolicy: policy.approvalPolicy,
               sandbox: policy.sandbox,
+              config: CODEX_THREAD_CONFIG,
+              multiAgentMode,
               excludeTurns: true,
               ...(options.model ?? config.defaultModel ? { model: options.model ?? config.defaultModel } : {}),
-              ...(options.systemPromptAppend ? { developerInstructions: options.systemPromptAppend } : {}),
             })
           : options.resume !== undefined
           ? await server.request<ThreadResumeResponse>("thread/resume", {
@@ -172,15 +192,18 @@ export class CodexSession implements ProviderSession {
               cwd: options.cwd,
               approvalPolicy: policy.approvalPolicy,
               sandbox: policy.sandbox,
+              config: CODEX_THREAD_CONFIG,
+              multiAgentMode,
               ...(options.model ?? config.defaultModel ? { model: options.model ?? config.defaultModel } : {}),
-              ...(options.systemPromptAppend ? { developerInstructions: options.systemPromptAppend } : {}),
             })
           : await server.request<ThreadStartResponse>("thread/start", {
               cwd: options.cwd,
               approvalPolicy: policy.approvalPolicy,
               sandbox: policy.sandbox,
+              config: CODEX_THREAD_CONFIG,
+              multiAgentMode,
+              ...(options.isDelegate === true ? { threadSource: "subagent" } : {}),
               ...(options.model ?? config.defaultModel ? { model: options.model ?? config.defaultModel } : {}),
-              ...(options.systemPromptAppend ? { developerInstructions: options.systemPromptAppend } : {}),
             });
     } catch (error) {
       server.close(); // no session will own this child
@@ -322,10 +345,17 @@ export class CodexSession implements ProviderSession {
   }
 
   #notification(method: string, params: unknown): void {
+    const payload = (typeof params === "object" && params !== null ? params : {}) as Record<string, unknown>;
+    const threadId = typeof payload["threadId"] === "string" ? payload["threadId"] : undefined;
+    const isMainThread = threadId === undefined || this.nativeSessionId === undefined || threadId === this.nativeSessionId;
     if (method === "serverRequest/resolved") {
       // Codex dropped a request nobody answered (its turn ended): close the card
-      const requestId = (params as { requestId?: unknown } | null)?.requestId;
+      const requestId = payload["requestId"];
       if (typeof requestId === "string" || typeof requestId === "number") this.#broker.withdraw(String(requestId));
+    }
+    if (method === "thread/compacted" && isMainThread) {
+      // Compaction drops client developer messages; restore after turn/completed (injecting mid-turn re-samples).
+      this.#needsContextRestore = true;
     }
     const before = this.#normalizer.turnId;
     for (const event of this.#normalizer.next(method, params)) {
@@ -337,8 +367,24 @@ export class CodexSession implements ProviderSession {
         this.#mailbox = undefined;
       }
     }
+    if (method === "turn/completed" && isMainThread && this.#needsContextRestore) {
+      this.#needsContextRestore = false;
+      void this.#restoreAdditionalContext();
+    }
     const after = this.#normalizer.turnId;
     if (before === undefined && after !== undefined && this.#mailbox === undefined && !this.#closed) this.#parentTurnStarted(after);
+  }
+
+  /** Re-injects Tide's `additionalContext` after context compaction so the model keeps orchestration rules. */
+  async #restoreAdditionalContext(): Promise<void> {
+    const threadId = this.nativeSessionId;
+    const context = this.#lastAdditionalContext;
+    if (this.#closed || this.#server.exited || threadId === undefined || context === undefined) return;
+    try {
+      await this.#server.request("thread/inject_items", { threadId, items: toInjectItems(context) });
+    } catch (error) {
+      this.#env.log(`[codex] failed to restore additionalContext after compaction: ${error instanceof Error ? error.message : String(error)}`);
+    }
   }
 
   #request(method: string, params: unknown, id: RequestId): void {
@@ -403,15 +449,32 @@ export class CodexSession implements ProviderSession {
   async #startTurn(input: TurnInput, mailbox: AsyncQueue<NormalizedEvent>, turnStart: Deferred<string | undefined>): Promise<void> {
     const policy = policyFor(this.#options.mode, writableRoots(this.#options), false, this.#userConfig);
     try {
+      if (isCompactCommand(input.text) && (input.images?.length ?? 0) === 0 && this.nativeSessionId !== undefined) {
+        this.#lastAdditionalContext ??= buildCodexAdditionalContext(this.#options.systemPromptAppend, {
+          model: this.#model,
+          effort: this.#effort,
+        });
+        await this.#server.request("thread/compact/start", { threadId: this.nativeSessionId });
+        turnStart.resolve(undefined);
+        return;
+      }
       const skills = input.text.trimStart().startsWith("/") ? await this.#loadSkills() : [];
+      const additionalContext = buildCodexAdditionalContext(this.#options.systemPromptAppend, {
+        model: this.#model,
+        effort: this.#effort,
+      });
+      this.#lastAdditionalContext = additionalContext;
       const response = await this.#server.request<TurnStartResponse>("turn/start", {
         threadId: this.nativeSessionId,
         input: turnInput(input, skills),
+        ...(additionalContext !== undefined ? { additionalContext } : {}),
         ...(this.#effort !== undefined ? { effort: this.#effort } : {}),
+        summary: "auto",
         cwd: this.#options.cwd,
         approvalPolicy: policy.approvalPolicy,
         sandboxPolicy: policy.sandboxPolicy,
         ...(this.#model !== "" ? { model: this.#model } : {}),
+        multiAgentMode: this.#multiAgentMode,
         // ALWAYS sent, pinned model or not: `collaborationMode` is the only thing that puts
         // Codex in plan mode, and gating it on a pinned model silently dropped plan mode for
         // every thread on the default model. `settings.model` is the thread's resolved model
@@ -460,9 +523,16 @@ export class CodexSession implements ProviderSession {
    * turn carries them.
    */
   async reconfigure(settings: SessionSettings): Promise<ReconfigureResult> {
-    this.#options = { ...this.#options, mode: settings.mode, interaction: settings.interaction, ...(settings.model !== undefined ? { model: settings.model } : {}) };
+    this.#options = {
+      ...this.#options,
+      mode: settings.mode,
+      interaction: settings.interaction,
+      ...(settings.model !== undefined ? { model: settings.model } : {}),
+      ...(settings.multiAgentMode !== undefined ? { multiAgentMode: settings.multiAgentMode } : {}),
+    };
     this.#model = settings.model !== undefined && settings.model !== "" ? settings.model : this.#initialModel;
     this.#effort = settings.effort;
+    if (!this.#isDelegate && settings.multiAgentMode !== undefined) this.#multiAgentMode = settings.multiAgentMode;
     return "applied";
   }
 
@@ -613,9 +683,27 @@ export class CodexSession implements ProviderSession {
   async close(): Promise<void> {
     if (this.#closed) return;
     this.#closed = true;
+    const shouldArchive = this.#isDelegate && !this.#turnActive && this.nativeSessionId !== undefined && !this.#server.exited;
     this.#broker.cancelAll();
     this.#mailbox?.close();
     if (this.#harness) this.#endHarness(this.#harness, { type: "settled", status: "interrupted", error: "codex session closed" });
+    if (shouldArchive && this.nativeSessionId !== undefined) {
+      // Hide finished delegated children from Codex's Recents list; `thread/resume` restores them if reopened.
+      let timer: ReturnType<typeof setTimeout> | undefined;
+      try {
+        await Promise.race([
+          this.#server.request("thread/archive", { threadId: this.nativeSessionId }),
+          new Promise<void>((resolve) => {
+            timer = setTimeout(resolve, ARCHIVE_ON_CLOSE_TIMEOUT_MS);
+            timer.unref?.();
+          }),
+        ]);
+      } catch (error) {
+        this.#env.log(`[codex] archive delegated thread on close failed: ${error instanceof Error ? error.message : String(error)}`);
+      } finally {
+        if (timer !== undefined) clearTimeout(timer);
+      }
+    }
     this.#server.close();
   }
 }

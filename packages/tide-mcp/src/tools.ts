@@ -56,7 +56,8 @@ export const BASE_TOOL_DEFINITIONS: ToolDefinition[] = [
   },
   {
     name: "tide_delegate",
-    description: "Delegate a task to another harness (claude, codex, opencode, pi, antigravity, acp) in this repo or linked repositories.",
+    description:
+      "Delegate a task to another harness (claude, codex, opencode, pi, antigravity, acp) in this repo or linked repositories. Async by default (wakes on finish); child sees only prompt.",
     inputSchema: {
       type: "object",
       properties: {
@@ -80,7 +81,8 @@ export const BASE_TOOL_DEFINITIONS: ToolDefinition[] = [
   },
   {
     name: "tide_delegate_status",
-    description: "Check a thread you delegated: whether it has settled, and its last assistant message. `settled` stays false while sub-agents it launched in the background still work (status reads \"working (N background sub-agents)\"). Poll this until `settled` is true.",
+    description:
+      "Inspect a delegated thread's status and last assistant message. Do not poll this on a running delegate — completion wakes you automatically. Use it after a wake or only when explicitly asked to inspect a thread. `settled` stays false while background sub-agents still work (status reads \"working (N background sub-agents)\").",
     inputSchema: {
       type: "object",
       properties: { threadId: str("The threadId returned by tide_delegate.") },
