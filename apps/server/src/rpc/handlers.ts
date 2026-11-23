@@ -1,7 +1,7 @@
 import { PROTOCOL_VERSION } from "../version.ts";
-import { mkdir, readdir, realpath, stat } from "node:fs/promises";
+import { mkdir, readdir, realpath, rm, stat } from "node:fs/promises";
 import { isAbsolute, join } from "node:path";
-import { Git } from "../vcs/git.ts";
+import { Git, GitError } from "../vcs/git.ts";
 import { isInternalCommand, type ClientCommand, type DeviceAccess, type EventRecord, type RpcOutput } from "@tide/contracts";
 import { CommandError, type Engine } from "../orchestration/engine.ts";
 import type { EventStore } from "../orchestration/store.ts";
@@ -48,12 +48,15 @@ export interface HandlerDeps {
 
 const PROJECT_NAME = /^[A-Za-z0-9][A-Za-z0-9._-]{0,127}$/;
 const INIT_IDENTITY = ["-c", "user.name=Tide", "-c", "user.email=tide@localhost"];
+/** an empty commit on a new repo takes milliseconds; anything slower is git waiting for input */
+export const INIT_COMMIT_TIMEOUT_MS = 30_000;
 
 /**
  * A project from nothing. The folder must be new or empty: Tide never adopts a folder with
  * files in it (an initial commit that silently swallowed node_modules/ or a .env would be
  * worse than asking the user to `git init` by hand). The empty first commit is what lets the
- * first thread branch a worktree off `main`.
+ * first thread branch a worktree off `main`. When git fails, what this call added is
+ * removed again (so the same name can be retried) and git's reason reaches the user.
  */
 async function initProject(parentPath: string, name: string, git: (cwd: string) => Git): Promise<string> {
   if (!isAbsolute(parentPath)) throw new RpcException("invalid-params", `parent path ${parentPath} must be absolute`);
@@ -68,6 +71,7 @@ async function initProject(parentPath: string, name: string, git: (cwd: string) 
   }
   if (!(await stat(parent)).isDirectory()) throw new RpcException("invalid-params", `${parentPath} is not a directory`);
   const root = join(parent, name);
+  let created = false;
   try {
     const existing = await stat(root);
     if (!existing.isDirectory()) throw new RpcException("conflict", `${root} exists and is not a directory`);
@@ -76,12 +80,33 @@ async function initProject(parentPath: string, name: string, git: (cwd: string) 
     if (err instanceof RpcException) throw err;
     if ((err as NodeJS.ErrnoException).code !== "ENOENT") throw err;
     await mkdir(root, { recursive: false });
+    created = true;
   }
   const repo = git(root);
-  await repo.run(["init", "-q", "-b", "main"]);
-  // identity only for this one commit: the user's global git config stays authoritative for everything after
-  await repo.run([...INIT_IDENTITY, "commit", "-q", "--allow-empty", "-m", "Initial commit"]);
+  try {
+    await repo.run(["init", "-q", "-b", "main"]);
+    // identity only for this one commit: the user's global git config stays authoritative for everything after
+    await repo.withTimeout(INIT_COMMIT_TIMEOUT_MS).run([...INIT_IDENTITY, "commit", "-q", "--allow-empty", "-m", "Initial commit"]);
+  } catch (err) {
+    await undoInit(root, created);
+    if (err instanceof GitError) {
+      const reason = err.stderr.trim().split("\n")[0] ?? "";
+      throw new RpcException("internal", `could not set up a git repository in ${root}: ${reason !== "" ? reason : `exit code ${err.exitCode}`}`);
+    }
+    throw err;
+  }
   return root;
+}
+
+/**
+ * After a failed init, takes away what `initProject` added so the same name can be retried: the
+ * folder when this call made it, otherwise only the `.git` inside the (checked empty) folder. Does
+ * nothing when anything besides that `.git` is there.
+ */
+async function undoInit(root: string, created: boolean): Promise<void> {
+  const entries = await readdir(root).catch(() => undefined);
+  if (entries === undefined || entries.some((entry) => entry !== ".git")) return;
+  await rm(created ? root : join(root, ".git"), { recursive: true, force: true }).catch(() => undefined);
 }
 
 /**

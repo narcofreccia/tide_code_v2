@@ -1,5 +1,6 @@
 import { afterEach, describe, expect, it } from "vitest";
 import { cleanup, fireEvent, render, screen, waitFor, within } from "@testing-library/react";
+import { RpcCallError } from "@tide/client";
 import { AddProjectForm } from "./AddProjectForm.tsx";
 import { FolderPicker } from "./FolderPicker.tsx";
 import { attachFakeStore, mockRpc, modelWith, resetUi } from "../../testHarness.ts";
@@ -175,6 +176,24 @@ describe("New project", () => {
     fireEvent.change(screen.getByLabelText("Folder name"), { target: { value: "my-app" } });
     fireEvent.click(screen.getByText("Create project"));
     await waitFor(() => expect(calls).toEqual([{ parentPath: HOME, name: "my-app" }]));
+  });
+
+  it("shows the server's reason when project.init fails", async () => {
+    attachFakeStore(modelWith({}));
+    const reason = `could not set up a git repository in ${HOME}/my-app: timed out after 30 s (git was probably waiting for input: a passphrase, a credential or an editor)`;
+    mockRpc({
+      "project.init": () => {
+        throw new RpcCallError({ code: "internal", message: reason });
+      },
+    });
+    let done = false;
+    render(<AddProjectForm onDone={() => (done = true)} />);
+    fireEvent.click(screen.getByLabelText("New project"));
+    fireEvent.change(screen.getByLabelText("Parent folder"), { target: { value: HOME } });
+    fireEvent.change(screen.getByLabelText("Folder name"), { target: { value: "my-app" } });
+    fireEvent.click(screen.getByText("Create project"));
+    expect(await screen.findByText(reason)).toBeDefined();
+    expect(done).toBe(false);
   });
 });
 

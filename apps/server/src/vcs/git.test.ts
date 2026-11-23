@@ -270,8 +270,12 @@ describe("Git — history", () => {
 });
 
 describe("gitArgv", () => {
+  const noSign = ["-c", "commit.gpgSign=false", "-c", "tag.gpgSign=false", "-c", "push.gpgSign=false"];
+  it("never signs, on every platform", () => {
+    for (const platform of ["darwin", "linux", "win32"] as const) expect(gitArgv(["commit", "-m", "x"], platform).slice(0, 6)).toEqual(noSign);
+  });
   it("lifts the path-length limit on Windows only", () => {
-    expect(gitArgv(["status", "--porcelain"], "win32")).toEqual(["-c", "core.longpaths=true", "--no-pager", "status", "--porcelain"]);
-    for (const platform of ["darwin", "linux"] as const) expect(gitArgv(["status", "--porcelain"], platform)).toEqual(["--no-pager", "status", "--porcelain"]);
+    expect(gitArgv(["status", "--porcelain"], "win32")).toEqual([...noSign, "-c", "core.longpaths=true", "--no-pager", "status", "--porcelain"]);
+    for (const platform of ["darwin", "linux"] as const) expect(gitArgv(["status", "--porcelain"], platform)).toEqual([...noSign, "--no-pager", "status", "--porcelain"]);
   });
 });

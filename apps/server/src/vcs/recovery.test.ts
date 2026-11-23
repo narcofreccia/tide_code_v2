@@ -159,8 +159,8 @@ describe("vcs boot recovery — merges", () => {
     // the dead process got as far as moving main (commit pending work, merge --no-ff into main)
     const wt = w.repo.git.at(thread.worktreePath as string);
     await wt.run(["add", "-A"]);
-    await wt.run(["-c", "commit.gpgsign=false", "commit", "-q", "-m", "work"]);
-    await w.repo.git.run(["-c", "commit.gpgsign=false", "merge", "--no-ff", "--no-edit", thread.branch as string]);
+    await wt.run(["commit", "-q", "-m", "work"]);
+    await w.repo.git.run(["merge", "--no-ff", "--no-edit", thread.branch as string]);
     const main = await w.repo.git.revParse("refs/heads/main");
     await w.boot();
     await w.settle();
@@ -176,11 +176,11 @@ describe("vcs boot recovery — merge detection limits", () => {
     const thread = await crashedMerge(w, strategy);
     const wt = w.repo.git.at(thread.worktreePath as string);
     await wt.run(["add", "-A"]);
-    await wt.run(["-c", "commit.gpgsign=false", "commit", "-q", "-m", "work"]);
+    await wt.run(["commit", "-q", "-m", "work"]);
     // main moved on, then got the branch's commit replayed on top (what a rebase merge-back does)
     await w.repo.write("other.txt", "other\n");
     await w.repo.commit("other");
-    await w.repo.git.run(["-c", "commit.gpgsign=false", "cherry-pick", thread.branch as string]);
+    await w.repo.git.run(["cherry-pick", thread.branch as string]);
     return { w, thread };
   }
 
@@ -349,7 +349,7 @@ describe("vcs boot recovery — R19 L3 squash that landed before the crash", () 
     const thread = await crashedMerge(w, "squash");
     const wt = w.repo.git.at(thread.worktreePath as string);
     await wt.run(["add", "-A"]);
-    await wt.run(["-c", "commit.gpgsign=false", "commit", "-q", "-m", "tide: Add feature"]);
+    await wt.run(["commit", "-q", "-m", "tide: Add feature"]);
     const recorded = (await w.repo.git.revParse("refs/heads/main")) as string;
     w.store.setMeta("vcs.inflight", JSON.stringify({ "9999": { threadId: thread.id, kind: "merge", baseSha: recorded } }));
     return { w, thread, recorded };
@@ -357,7 +357,7 @@ describe("vcs boot recovery — R19 L3 squash that landed before the crash", () 
   /** What MergeBack's squash does, run in the main checkout (clean, on main): the base moves to the squash commit. */
   async function squashOntoMain(w: World, thread: Thread): Promise<string> {
     await w.repo.git.run(["merge", "--squash", thread.branch as string]);
-    await w.repo.git.run(["-c", "commit.gpgsign=false", "commit", "-q", "-m", "Add feature"]);
+    await w.repo.git.run(["commit", "-q", "-m", "Add feature"]);
     return (await w.repo.git.revParse("refs/heads/main")) as string;
   }
 

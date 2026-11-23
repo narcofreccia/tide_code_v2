@@ -1,4 +1,5 @@
-import { mkdir, mkdtemp, realpath, writeFile } from "node:fs/promises";
+import { execFileSync } from "node:child_process";
+import { chmod, mkdir, mkdtemp, readdir, realpath, rm, writeFile } from "node:fs/promises";
 import { tmpdir } from "node:os";
 import { join } from "node:path";
 import { afterEach, describe, expect, it } from "vitest";
@@ -17,7 +18,7 @@ afterEach(async () => {
   while (cleanups.length > 0) await cleanups.pop()?.();
 });
 
-async function setup() {
+async function setup(gitEnv: NodeJS.ProcessEnv = GIT_TEST_ENV) {
   const store: EventStore = await openEventStore(":memory:");
   cleanups.push(async () => store.close());
   const engine = new Engine({ store });
@@ -29,7 +30,7 @@ async function setup() {
     environmentId: "env",
     version: "test",
     startedAt: 0,
-    git: (cwd) => new Git(cwd, { env: GIT_TEST_ENV }),
+    git: (cwd) => new Git(cwd, { env: gitEnv }),
   });
   const frames: RpcFrame[] = [];
   const connection = router.connection("c1", (frame) => frames.push(frame));
@@ -44,6 +45,7 @@ async function setup() {
   };
   // macOS tmpdir is a symlink; the handler records real paths
   const parent = await realpath(await mkdtemp(join(tmpdir(), "tide-init-")));
+  cleanups.push(() => rm(parent, { recursive: true, force: true }));
   return { call, engine, parent };
 }
 
@@ -74,5 +76,56 @@ describe("project.init", () => {
     expect((await call("project.init", { parentPath: parent, name: "full" })).error?.code).toBe("conflict");
     expect((await call("project.init", { parentPath: parent, name: "../oops" })).error?.code).toBe("invalid-params");
     expect((await call("project.init", { parentPath: join(parent, "nope"), name: "x" })).error?.code).toBe("not-found");
+  });
+
+  it("regression: a global config that signs commits with an ssh key does not break (or hang) the first commit", async () => {
+    // the Windows report: commit.gpgsign + gpg.format=ssh + a passphrase key made the init commit wait for a
+    // passphrase until the 120 s timeout. A key file that does not exist makes an unguarded commit fail fast instead.
+    const home = await realpath(await mkdtemp(join(tmpdir(), "tide-signcfg-")));
+    cleanups.push(() => rm(home, { recursive: true, force: true }));
+    const config = join(home, "gitconfig");
+    await writeFile(config, `[commit]\n\tgpgsign = true\n[gpg]\n\tformat = ssh\n[user]\n\tsigningkey = ${join(home, "id_ed25519.pub")}\n`);
+    const { call, parent } = await setup({ ...GIT_TEST_ENV, GIT_CONFIG_GLOBAL: config });
+    const res = await call<{ rootPath: string }>("project.init", { parentPath: parent, name: "signed" });
+    expect(res.error).toBeUndefined();
+    const git = new Git(join(parent, "signed"), { env: GIT_TEST_ENV });
+    expect(await git.run(["log", "--format=%s %G?"])).toBe("Initial commit N\n");
+  });
+
+  describe("when git fails", () => {
+    /** a `git` that runs the real one except for `commit`, which fails like a signing helper would */
+    async function failingCommitEnv(onCommit = ""): Promise<NodeJS.ProcessEnv> {
+      const realGit = execFileSync("/bin/sh", ["-c", "command -v git"], { encoding: "utf8" }).trim();
+      const bin = await mkdtemp(join(tmpdir(), "tide-gitstub-"));
+      cleanups.push(() => rm(bin, { recursive: true, force: true }));
+      const script = `#!/bin/sh\nfor a in "$@"; do [ "$a" = commit ] && { ${onCommit} echo "error: Couldn't load public key: passphrase required" >&2; echo "fatal: failed to write commit object" >&2; exit 128; }; done\nexec "${realGit}" "$@"\n`;
+      await writeFile(join(bin, "git"), script);
+      await chmod(join(bin, "git"), 0o755);
+      return { ...GIT_TEST_ENV, PATH: `${bin}:${process.env["PATH"] ?? ""}` };
+    }
+    const posixOnly = process.platform === "win32" ? it.skip : it;
+
+    posixOnly("reports git's reason instead of 'internal error' and removes the folder it created, so the name can be retried", async () => {
+      const { call, engine, parent } = await setup(await failingCommitEnv());
+      const res = await call("project.init", { parentPath: parent, name: "retry-me" });
+      expect(res.error).toEqual({ code: "internal", message: `could not set up a git repository in ${join(parent, "retry-me")}: error: Couldn't load public key: passphrase required` });
+      expect(await readdir(parent)).toEqual([]);
+      expect(Object.keys(engine.getModel().projects)).toEqual([]);
+    });
+
+    posixOnly("in a folder that already existed, takes away only the .git it made and keeps the folder", async () => {
+      const { call, parent } = await setup(await failingCommitEnv());
+      await mkdir(join(parent, "existing"));
+      expect((await call("project.init", { parentPath: parent, name: "existing" })).error?.code).toBe("internal");
+      expect(await readdir(parent)).toEqual(["existing"]);
+      expect(await readdir(join(parent, "existing"))).toEqual([]);
+    });
+
+    posixOnly("leaves a folder alone once anything besides its .git is in it", async () => {
+      // something (a hook, the user) wrote a file while init ran: nothing is removed
+      const { call, parent } = await setup(await failingCommitEnv("echo x > stray.txt;"));
+      expect((await call("project.init", { parentPath: parent, name: "busy" })).error?.code).toBe("internal");
+      expect((await readdir(join(parent, "busy"))).sort()).toEqual([".git", "stray.txt"]);
+    });
   });
 });

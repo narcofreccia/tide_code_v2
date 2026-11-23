@@ -46,14 +46,15 @@ export type FetchResult = { ok: true; found: boolean } | { ok: false; error: str
 
 /**
  * Updates `refs/remotes/origin/<base>` (explicit refspec: works without a tracking config).
- * A timeout kills git and comes back as a failed run (`tryRun` never throws), usually with an
- * empty stderr, so it reads as `ok: false` like any other unreachable origin.
+ * A timeout kills git and comes back as a failed run (`tryRun` never throws, `timedOut` set), so it
+ * reads as `ok: false` like any other unreachable origin.
  */
 export async function fetchBase(git: Git, base: string, timeoutMs = NETWORK_TIMEOUT_MS): Promise<FetchResult> {
   const r = await git.withTimeout(timeoutMs).tryRun(["fetch", "--quiet", "--no-tags", "origin", `+refs/heads/${base}:refs/remotes/origin/${base}`]);
   if (r.code === 0) return { ok: true, found: true };
   if (/couldn't find remote ref/i.test(r.stderr)) return { ok: true, found: false };
-  return { ok: false, error: firstLine(r.stderr, `no answer from origin within ${timeoutMs >= 1000 ? `${Math.round(timeoutMs / 1000)} s` : `${timeoutMs} ms`}`) };
+  const noAnswer = `no answer from origin within ${timeoutMs >= 1000 ? `${Math.round(timeoutMs / 1000)} s` : `${timeoutMs} ms`}`;
+  return { ok: false, error: r.timedOut === true ? noAnswer : firstLine(r.stderr, noAnswer) };
 }
 
 /** `<base>` against `origin/<base>` as last fetched; undefined when either side is missing. */

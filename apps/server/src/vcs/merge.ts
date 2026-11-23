@@ -30,7 +30,6 @@ export interface MergeBackOptions {
 
 /** Used only when the repo has no identity of its own, so a merge commit can always be written. */
 const FALLBACK_IDENTITY = ["-c", "user.name=Tide", "-c", "user.email=tide@localhost"];
-const NO_SIGN = ["-c", "commit.gpgsign=false"];
 
 const realDelay = (ms: number): Promise<void> =>
   new Promise((resolve) => {
@@ -96,7 +95,7 @@ export class MergeBack {
     const wt = this.#git(thread.worktreePath);
     if (!(await wt.isRepo()) || (await wt.status()).dirty === 0) return;
     await wt.run(["add", "-A"]);
-    await wt.run([...(await this.#identity(wt)), ...NO_SIGN, "commit", "-q", "-m", `tide: ${thread.title}`]);
+    await wt.run([...(await this.#identity(wt)), "commit", "-q", "-m", `tide: ${thread.title}`]);
   }
 
   async #identity(git: Git): Promise<string[]> {
@@ -142,7 +141,7 @@ export class MergeBack {
     strategy: MergeStrategy,
     names: { base: string; head: string; headSha: string; title: string },
   ): Promise<MergeResult> {
-    const id = [...(await this.#identity(work)), ...NO_SIGN];
+    const id = await this.#identity(work);
     if (strategy === "merge") {
       const r = await work.tryRun([...id, "merge", "--no-ff", "--no-edit", "-m", `Merge ${names.head} into ${names.base}`, names.headSha]);
       if (r.code !== 0) return this.#failed(work, r.stderr || r.stdout, ["merge", "--abort"]);

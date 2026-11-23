@@ -38,7 +38,7 @@ async function withOrigin(h: Harness): Promise<Remote> {
 async function bCommitsToMain(r: Remote, file: string): Promise<string> {
   await writeFile(join(r.bDir, file), "from b\n", "utf8");
   await r.b.run(["add", "-A"]);
-  await r.b.run(["-c", "commit.gpgsign=false", "commit", "-q", "-m", `b: ${file}`]);
+  await r.b.run(["commit", "-q", "-m", `b: ${file}`]);
   await r.b.run(["push", "-q", "origin", "main"]);
   return (await r.b.revParse("HEAD")) ?? "";
 }
@@ -57,7 +57,7 @@ async function committedTurn(h: Harness, threadId: string, file: string): Promis
       await writeFile(join(options.cwd, file), `${file}\n`, "utf8");
       const wt = new Git(options.cwd, { env: GIT_TEST_ENV });
       await wt.run(["add", "-A"]);
-      await wt.run(["-c", "commit.gpgsign=false", "commit", "-q", "-m", file]);
+      await wt.run(["commit", "-q", "-m", file]);
     }),
     emit({ type: "settled", status: "completed" }),
   );

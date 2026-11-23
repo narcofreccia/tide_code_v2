@@ -17,12 +17,35 @@ const DEFAULT_TIMEOUT_MS = 120_000;
 const TIDE_IDENTITY = ["-c", "user.name=Tide", "-c", "user.email=tide@localhost"];
 
 /**
- * The argv every `git` process gets. On Windows, `core.longpaths` lifts Git for Windows' 260-char
- * path limit (deep folders under `%USERPROFILE%\.tide\worktrees\…` fail with "Filename too long");
- * elsewhere the argv is exactly `--no-pager …args`.
+ * Config every `git` process gets. Tide's own git never signs: a signing setup (gpg or ssh
+ * `gpg.format`) with a passphrase would wait for input nobody can give a server process, until the
+ * timeout kills it. `commit.gpgSign` covers commit, merge, rebase, cherry-pick, revert and am;
+ * `commit-tree` (checkpoints) ignores it and is never asked to sign. `tag.gpgSign` and
+ * `push.gpgSign` cover tags and signed pushes the same way.
+ */
+const NO_SIGN = ["-c", "commit.gpgSign=false", "-c", "tag.gpgSign=false", "-c", "push.gpgSign=false"];
+
+/**
+ * The argv every `git` process gets: `NO_SIGN`, then on Windows `core.longpaths`, which lifts Git
+ * for Windows' 260-char path limit (deep folders under `%USERPROFILE%\.tide\worktrees\…` fail
+ * with "Filename too long"), then `--no-pager …args`.
  */
 export function gitArgv(args: readonly string[], platform: NodeJS.Platform = process.platform): string[] {
-  return platform === "win32" ? ["-c", "core.longpaths=true", "--no-pager", ...args] : ["--no-pager", ...args];
+  return [...NO_SIGN, ...(platform === "win32" ? ["-c", "core.longpaths=true"] : []), "--no-pager", ...args];
+}
+
+/**
+ * The environment every `git` process gets: no terminal prompt for credentials, and `:` as the
+ * editor (git's built-in no-op), so a commit, merge or rebase can never open one and wait.
+ */
+export function gitEnv(base: NodeJS.ProcessEnv, extra?: NodeJS.ProcessEnv): NodeJS.ProcessEnv {
+  return { ...base, ...extra, GIT_TERMINAL_PROMPT: "0", GIT_EDITOR: ":" };
+}
+
+/** What a killed-by-timeout git run says instead of an empty stderr. */
+export function timeoutText(timeoutMs: number): string {
+  const span = timeoutMs >= 1000 ? `${Math.round(timeoutMs / 1000)} s` : `${timeoutMs} ms`;
+  return `timed out after ${span} (git was probably waiting for input: a passphrase, a credential or an editor)`;
 }
 
 export class GitError extends Error {
@@ -42,6 +65,8 @@ export interface GitRun {
   code: number;
   stdout: string;
   stderr: string;
+  /** git was killed by the timeout; `stderr` then starts with `timeoutText` */
+  timedOut?: true;
 }
 
 export interface WorktreeEntry {
@@ -93,25 +118,9 @@ export class Git {
     return new Git(this.cwd, { env: this.#env, timeoutMs });
   }
 
-  /** Runs git and never throws; inspect `code`. */
+  /** Runs git and never throws; inspect `code` (and `timedOut`). */
   tryRun(args: string[], env?: NodeJS.ProcessEnv): Promise<GitRun> {
-    return new Promise((resolve) => {
-      execFile(
-        "git",
-        gitArgv(args),
-        {
-          cwd: this.cwd,
-          env: { ...this.#env, ...env, GIT_TERMINAL_PROMPT: "0" },
-          maxBuffer: MAX_BUFFER,
-          timeout: this.#timeoutMs,
-          encoding: "utf8",
-        },
-        (err, stdout, stderr) => {
-          const code = err === null ? 0 : typeof (err as { code?: unknown }).code === "number" ? (err as { code: number }).code : 1;
-          resolve({ code, stdout: stdout ?? "", stderr: stderr ?? (err === null ? "" : String(err.message)) });
-        },
-      );
-    });
+    return this.#exec(args, { encoding: "utf8", ...(env !== undefined ? { env } : {}) }).then((r) => ({ ...r, stdout: r.stdout as string }));
   }
 
   /** Runs git and throws GitError on a non-zero exit. Returns stdout. */
@@ -123,39 +132,48 @@ export class Git {
 
   /** Runs git with `input` written to stdin; never throws. Used by `check-ignore --stdin`. */
   tryRunWithInput(args: string[], input: string): Promise<GitRun> {
+    return this.#exec(args, { encoding: "utf8", input }).then((r) => ({ ...r, stdout: r.stdout as string }));
+  }
+
+  /** Raw bytes, for content that may be binary. */
+  runBuffer(args: string[]): Promise<{ code: number; stdout: Buffer; stderr: string; timedOut?: true }> {
+    return this.#exec(args, { encoding: "buffer" }).then((r) => ({ ...r, stdout: r.stdout as Buffer }));
+  }
+
+  /**
+   * The one place a git process starts. Its stdin is always ended (after `input`, if any), so a
+   * hook or helper that reads it sees end-of-input instead of waiting for a human who is not there.
+   */
+  #exec(
+    args: string[],
+    options: { encoding: "utf8" | "buffer"; env?: NodeJS.ProcessEnv; input?: string },
+  ): Promise<{ code: number; stdout: string | Buffer; stderr: string; timedOut?: true }> {
+    const timeoutMs = this.#timeoutMs;
     return new Promise((resolve) => {
       const child = execFile(
         "git",
         gitArgv(args),
-        {
-          cwd: this.cwd,
-          env: { ...this.#env, GIT_TERMINAL_PROMPT: "0" },
-          maxBuffer: MAX_BUFFER,
-          timeout: this.#timeoutMs,
-          encoding: "utf8",
-        },
+        { cwd: this.cwd, env: gitEnv(this.#env, options.env), maxBuffer: MAX_BUFFER, timeout: timeoutMs, encoding: options.encoding },
         (err, stdout, stderr) => {
-          const code = err === null ? 0 : typeof (err as { code?: unknown }).code === "number" ? (err as { code: number }).code : 1;
-          resolve({ code, stdout: stdout ?? "", stderr: stderr ?? (err === null ? "" : String(err.message)) });
+          const empty = options.encoding === "buffer" ? Buffer.alloc(0) : "";
+          const errText = stderr === undefined || stderr === null ? "" : typeof stderr === "string" ? stderr : stderr.toString("utf8");
+          if (err === null) {
+            resolve({ code: 0, stdout: stdout ?? empty, stderr: errText });
+            return;
+          }
+          const failure = err as NodeJS.ErrnoException & { killed?: boolean; signal?: NodeJS.Signals | null };
+          const code = typeof failure.code === "number" ? failure.code : 1;
+          // execFile's timeout kills the child (SIGTERM) and leaves `code` null; a maxBuffer overflow also kills but sets a string code
+          if (failure.killed === true && typeof failure.code !== "string" && failure.signal != null) {
+            const note = timeoutText(timeoutMs);
+            resolve({ code, stdout: stdout ?? empty, stderr: errText.trim() === "" ? note : `${note}\n${errText}`, timedOut: true });
+            return;
+          }
+          resolve({ code, stdout: stdout ?? empty, stderr: errText });
         },
       );
       child.stdin?.on("error", () => undefined);
-      child.stdin?.end(input);
-    });
-  }
-
-  /** Raw bytes, for content that may be binary. */
-  runBuffer(args: string[]): Promise<{ code: number; stdout: Buffer; stderr: string }> {
-    return new Promise((resolve) => {
-      execFile(
-        "git",
-        gitArgv(args),
-        { cwd: this.cwd, env: { ...this.#env, GIT_TERMINAL_PROMPT: "0" }, maxBuffer: MAX_BUFFER, timeout: this.#timeoutMs, encoding: "buffer" },
-        (err, stdout, stderr) => {
-          const code = err === null ? 0 : typeof (err as { code?: unknown }).code === "number" ? (err as { code: number }).code : 1;
-          resolve({ code, stdout: stdout ?? Buffer.alloc(0), stderr: (stderr ?? Buffer.alloc(0)).toString("utf8") });
-        },
-      );
+      child.stdin?.end(options.input);
     });
   }
 
@@ -355,7 +373,7 @@ export class Git {
     await this.run(["add", "-A"]);
     const staged = await this.tryRun(["diff", "--cached", "--quiet"]);
     if (staged.code === 0) return undefined;
-    await this.run(["-c", "commit.gpgsign=false", "commit", "-m", message]);
+    await this.run(["commit", "-m", message]);
     return this.revParse("HEAD");
   }
 

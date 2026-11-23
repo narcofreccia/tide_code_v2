@@ -42,7 +42,7 @@ async function cloneOf(origin: string): Promise<TempRepo> {
     },
     async commit(message) {
       await git.run(["add", "-A"]);
-      await git.run(["-c", "commit.gpgsign=false", "commit", "-q", "-m", message]);
+      await git.run(["commit", "-q", "-m", message]);
       return (await git.revParse("HEAD")) ?? "";
     },
     async cleanup() {
