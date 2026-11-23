@@ -12,6 +12,7 @@ mod shell_config;
 mod splash;
 mod updater;
 mod webview_profile;
+mod window_controls;
 
 use server_supervisor::Supervisor;
 use std::sync::atomic::{AtomicBool, Ordering};
@@ -47,12 +48,20 @@ pub fn run() {
         .plugin(tauri_plugin_dialog::init())
         .plugin(tauri_plugin_notification::init())
         .plugin(tauri_plugin_updater::Builder::new().build())
-        .plugin(tauri_plugin_window_state::Builder::default().build())
+        .plugin(window_state_plugin())
         .register_uri_scheme_protocol(LOADING_SCHEME, splash::handle)
         .invoke_handler(tauri::generate_handler![server_endpoint])
         .setup(|app| {
             if let Some(win) = app.get_webview_window("main") {
                 splash_theme::apply_to_window(&win, launcher::tide_home().ok().as_deref());
+                // Windows: one bar. The web app's top bar is the title bar and draws the window
+                // buttons (`window_controls`). tao keeps WS_CAPTION/WS_SIZEBOX and the undecorated
+                // shadow on a frameless window, so edges still resize and Snap still works. Set
+                // here, after the window-state plugin's restore (it runs when the window is built).
+                #[cfg(windows)]
+                if let Err(err) = win.set_decorations(false) {
+                    eprintln!("[tide-shell] frameless window: {err}");
+                }
             }
             // Windows/Linux get no app menu (Tauri would draw it inside the window); the web
             // app's Settings offers the same actions there.
@@ -88,6 +97,18 @@ pub fn run() {
         }
         _ => {}
     });
+}
+
+/// Remembers size, position and maximised state. On Windows it leaves the decorations flag
+/// alone: the window is made frameless in `setup`, and saving that would leave an older
+/// (decorated) build without any title bar after a downgrade.
+fn window_state_plugin<R: tauri::Runtime>() -> tauri::plugin::TauriPlugin<R> {
+    let builder = tauri_plugin_window_state::Builder::default();
+    #[cfg(windows)]
+    let builder = builder.with_state_flags(
+        tauri_plugin_window_state::StateFlags::all() - tauri_plugin_window_state::StateFlags::DECORATIONS,
+    );
+    builder.build()
 }
 
 static CLOSING: AtomicBool = AtomicBool::new(false);

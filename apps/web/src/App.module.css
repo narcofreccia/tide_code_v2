@@ -5,7 +5,8 @@
 }
 .topRow {
   display: grid;
-  grid-template-columns: minmax(0, 1fr) auto;
+  /* top bar · focus switch · window buttons (Windows only, else an empty track) */
+  grid-template-columns: minmax(0, 1fr) auto auto;
   align-items: center;
   border-bottom: 1px solid var(--border);
   background: var(--surface);

@@ -8,6 +8,7 @@ import { ConnectionDot } from "../ui/ConnectionDot.tsx";
 import { Icon } from "../ui/Icon.tsx";
 import { useViewport } from "../../lib/useViewport.ts";
 import { PhoneTopBar } from "../mobile/PhoneTopBar.tsx";
+import { desktopPlatform } from "../../lib/windowChrome.ts";
 import { EnvTag } from "../fleet/FleetBits.tsx";
 import { useMultiEnv } from "../fleet/envView.ts";
 import { Logo } from "./Logo.tsx";
@@ -29,6 +30,8 @@ export function TopBar() {
 
   if (phone) return <PhoneTopBar />;
   const envId = heading.kind === "thread" ? envOfThread(heading.thread.id) : primaryId;
+  // Windows has no native title bar (frameless window): the title text drags the window too
+  const titleDrag = desktopPlatform() === "win" ? "deep" : undefined;
 
   return (
     // Tauri v2 drags from this attribute (not `-webkit-app-region`), and only when
@@ -48,16 +51,18 @@ export function TopBar() {
       </Button>
 
       {heading.kind === "thread" ? (
-        <nav className={styles.crumb} aria-label="Breadcrumb">
+        <nav className={styles.crumb} aria-label="Breadcrumb" data-tauri-drag-region={titleDrag}>
           <span className={styles.crumbProject}>{heading.projectTitle}</span>
           <span aria-hidden="true">›</span>
           <span className={styles.crumbThread}>{heading.thread.title}</span>
         </nav>
       ) : (
-        <span className={styles.heading}>{heading.label}</span>
+        <span className={styles.heading} data-tauri-drag-region={titleDrag}>
+          {heading.label}
+        </span>
       )}
 
-      <div className={styles.end}>
+      <div className={styles.end} data-tauri-drag-region={titleDrag}>
         {multiEnv ? <EnvTag envId={envId} /> : null}
         <ConnectionDot status={status} />
         <ThemeToggle />

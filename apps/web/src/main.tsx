@@ -9,8 +9,10 @@ import { applyDesktopFlag, startClient } from "./lib/bootstrap.ts";
 import "./state/settings.ts";
 import "./styles/global.css";
 import { registerServiceWorker } from "./lib/registerSw.ts";
+import { applyScrollbarFlag } from "./lib/windowChrome.ts";
 
 applyDesktopFlag();
+applyScrollbarFlag();
 startClient();
 if (import.meta.env.PROD) void registerServiceWorker();
 

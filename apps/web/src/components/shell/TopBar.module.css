@@ -10,7 +10,8 @@
 /*
  * macOS traffic lights sit at x≈12 with 20px spacing; the bar is the native 28px and trafficLightPosition.y=12 centres the buttons in it (measured from a screenshot), so the third light ends
  * around x=72; 78px keeps a hairline of breathing room at the default
- * `trafficLightPosition`. Windows/Linux keep their native decorations.
+ * `trafficLightPosition`. Linux keeps its native decorations; Windows is frameless and
+ * draws its own buttons at the right of the top row (`WindowControls`).
  */
 :root[data-desktop="mac"] .bar { padding-left: 78px; }
 

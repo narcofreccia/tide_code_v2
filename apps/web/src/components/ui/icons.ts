@@ -61,6 +61,9 @@ export const ICONS = {
   sidebar: "M4 5h16v14H4zM9.5 5v14",
   eye: `M2.5 12S6 5.5 12 5.5 21.5 12 21.5 12 18 18.5 12 18.5 2.5 12 2.5 12z${circle(12, 12, 3)}`,
   ban: `${circle(12, 12, 8.5)}M6 6l12 12`,
+  /* Windows window buttons (frameless window): one maximise glyph for both states */
+  windowMinimize: "M6.5 12h11",
+  windowMaximize: "M6.5 6.5h11v11h-11z",
 } as const satisfies Record<string, string>;
 
 export type IconName = keyof typeof ICONS;

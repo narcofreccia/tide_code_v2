@@ -2,6 +2,7 @@ import { copyToClipboard, reportCopyFailure } from "../../lib/clipboard.ts";
 import { Component, useState, type ErrorInfo, type ReactNode } from "react";
 import { Button } from "../ui/Button.tsx";
 import { Card } from "../ui/Card.tsx";
+import { WindowStrip } from "./WindowControls.tsx";
 import styles from "./BootScreen.module.css";
 
 /** The page URL with credentials stripped: a report must be safe to paste anywhere. */
@@ -69,13 +70,16 @@ export class ErrorBoundary extends Component<{ children: ReactNode }, State> {
     const { error } = this.state;
     if (error === undefined) return this.props.children;
     return (
-      <div className={styles.screen} role="alert">
-        <Card header="Tide hit an error">
-          <p className={styles.message}>{error.message}</p>
-          <p className={styles.hint}>Your threads are safe: they live on the server. Reload to pick up where you left off.</p>
-          <BootActions retryLabel="Reload" report={() => buildReport("render error", error.stack ?? error.message)} />
-        </Card>
-      </div>
+      <>
+        <WindowStrip />
+        <div className={styles.screen} role="alert">
+          <Card header="Tide hit an error">
+            <p className={styles.message}>{error.message}</p>
+            <p className={styles.hint}>Your threads are safe: they live on the server. Reload to pick up where you left off.</p>
+            <BootActions retryLabel="Reload" report={() => buildReport("render error", error.stack ?? error.message)} />
+          </Card>
+        </div>
+      </>
     );
   }
 }

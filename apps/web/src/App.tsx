@@ -3,6 +3,7 @@ import { StatusBar } from "./components/shell/StatusBar.tsx";
 import { SplitPane } from "./components/shell/SplitPane.tsx";
 import { TopBar } from "./components/shell/TopBar.tsx";
 import { FocusModeSwitch } from "./components/shell/FocusModeSwitch.tsx";
+import { WindowControls } from "./components/shell/WindowControls.tsx";
 import { MergeConfirmHost } from "./components/shell/MergeConfirmHost.tsx";
 import { AddProjectDialogHost } from "./components/shell/AddProjectDialog.tsx";
 import { MissionControl } from "./components/mission/MissionControl.tsx";
@@ -104,6 +105,7 @@ export function App() {
             <FocusModeSwitch />
           </div>
         )}
+        {phone ? null : <WindowControls />}
       </div>
       <main className={styles.body}>
         {phone ? null : <Rail />}

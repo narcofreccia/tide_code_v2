@@ -9,6 +9,8 @@
   background: var(--bg);
   color: var(--text);
 }
+/* Windows (frameless): leave the top row visible, it holds the window buttons and the drag area */
+:root[data-desktop="win"] .screen { top: 28px; }
 .screen > section { width: min(460px, 100%); }
 .message { margin: 0 0 var(--sp-2); font-family: var(--font-mono); overflow-wrap: anywhere; }
 .hint { margin: 0 0 var(--sp-2); color: var(--muted); font-size: var(--fs-sm); }

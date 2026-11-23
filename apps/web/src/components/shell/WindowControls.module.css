@@ -1,0 +1,41 @@
+/*
+ * Windows caption buttons: 46px hit areas of the bar's full height (the native metric),
+ * close rightmost and red on hover. Glyphs follow the app's icon set, not Segoe.
+ */
+.controls {
+  display: flex;
+  align-self: stretch;
+  height: 100%;
+}
+.controls > .control {
+  justify-content: center;
+  width: 46px;
+  height: 100%;
+  padding: 0;
+  border: 0;
+  border-radius: 0;
+  color: var(--muted);
+}
+.controls > .control:hover:not(:disabled) {
+  /* the neutral step above the bar's surface that reads in both themes (native: ~10% grey) */
+  background: var(--border);
+  color: var(--text);
+}
+.controls > .control:active:not(:disabled) { background: var(--border-strong); }
+.controls > .close:hover:not(:disabled),
+.controls > .close:active:not(:disabled) {
+  background: var(--danger);
+  color: var(--on-accent);
+}
+/* the focus halo would be clipped at the window edge: draw it inside */
+.controls > .control:focus-visible { box-shadow: inset 0 0 0 2px var(--accent); }
+
+/* full-screen error pages: a draggable top strip holding the buttons */
+.strip {
+  position: fixed;
+  inset: 0 0 auto 0;
+  z-index: 101;
+  display: flex;
+  justify-content: flex-end;
+  height: 28px;
+}

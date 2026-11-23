@@ -85,5 +85,18 @@ describe("TopBar", () => {
     expect(bar.hasAttribute("data-tauri-drag-region")).toBe(true);
     expect(bar.className).toMatch(/bar/);
     expect(document.documentElement.matches('[data-desktop="mac"]')).toBe(true);
+    // the title text drags only on Windows, where there is no native title bar
+    expect(screen.getByText("Mission Control").hasAttribute("data-tauri-drag-region")).toBe(false);
+  });
+
+  it("on Windows the title and the right cluster drag too, the buttons stay clickable", () => {
+    document.documentElement.dataset.desktop = "win";
+    attachFakeStore(modelWith({}));
+    render(<TopBar />);
+    expect(screen.getByText("Mission Control").getAttribute("data-tauri-drag-region")).toBe("deep");
+    const palette = screen.getByRole("button", { name: "Command palette" });
+    expect(palette.hasAttribute("data-tauri-drag-region")).toBe(false);
+    // the window buttons live beside the bar (App's top row), not inside it
+    expect(screen.queryByRole("button", { name: "Close" })).toBeNull();
   });
 });

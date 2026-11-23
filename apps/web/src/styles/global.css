@@ -13,6 +13,19 @@ body,
   height: 100%;
 }
 
+/*
+ * Desktop layout: the shell fills the viewport and every pane scrolls itself, so the document
+ * never scrolls. A stray overflow (an absolutely placed panel past the edge) would otherwise
+ * put a page scrollbar beside the panes' and, where scrollbars take space, narrow the layout.
+ * The phone layout keeps document scrolling for the on-screen keyboard.
+ */
+@media (min-width: 721px) {
+  html,
+  body {
+    overflow: hidden;
+  }
+}
+
 body {
   margin: 0;
   background: var(--bg);
@@ -79,4 +92,36 @@ button {
 }
 .scrollX::-webkit-scrollbar {
   display: none;
+}
+
+/*
+ * Scrollbars that take layout space (Windows, Linux; `data-scrollbars="classic"` from
+ * lib/windowChrome.ts) become thin and token-coloured, with no arrow buttons. Overlay
+ * scrollbars (macOS, phones) are left to the system. Chromium (WebView2) ignores
+ * ::-webkit-scrollbar on an element whose scrollbar-width or scrollbar-color is not `auto`, and
+ * with the standard properties it keeps the arrow buttons on Windows, so it gets the
+ * pseudo-elements; the standard properties go only to engines without them (Firefox).
+ * Zero specificity: `.scrollX` and other hidden-scrollbar strips still win.
+ */
+:where(:root[data-scrollbars="classic"]) ::-webkit-scrollbar {
+  width: 10px;
+  height: 10px;
+}
+:where(:root[data-scrollbars="classic"]) ::-webkit-scrollbar-track,
+:where(:root[data-scrollbars="classic"]) ::-webkit-scrollbar-corner {
+  background: transparent;
+}
+:where(:root[data-scrollbars="classic"]) ::-webkit-scrollbar-thumb {
+  border: 2px solid transparent;
+  border-radius: 9999px;
+  background: var(--border-strong) padding-box;
+}
+:where(:root[data-scrollbars="classic"]) ::-webkit-scrollbar-thumb:hover {
+  background-color: var(--muted);
+}
+@supports not selector(::-webkit-scrollbar) {
+  :where(:root[data-scrollbars="classic"]) * {
+    scrollbar-width: thin;
+    scrollbar-color: var(--border-strong) transparent;
+  }
 }

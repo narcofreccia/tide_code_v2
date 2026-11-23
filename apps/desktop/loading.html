@@ -1,5 +1,5 @@
 <!doctype html>
-<html lang="en" data-theme="__TIDE_THEME__">
+<html lang="en" data-theme="__TIDE_THEME__" data-platform="__TIDE_PLATFORM__">
   <head>
     <meta charset="utf-8" />
     <title>Tide Code</title>
@@ -14,11 +14,12 @@
         --border: #262b33;
         --accent: #5b9dff;
         --danger: #ef6a6a;
+        --hover: #1b2028;
       }
       /* The app's own theme choice wins (the shell stamps data-theme); without one, the OS decides. */
-      :root[data-theme="light"] { color-scheme: light; --bg: #f6f7f9; --text: #131722; --label: #6a7285; --border: #dfe2e8; --accent: #2f6fe0; --danger: #c93b3b; }
+      :root[data-theme="light"] { color-scheme: light; --bg: #f6f7f9; --text: #131722; --label: #6a7285; --border: #dfe2e8; --accent: #2f6fe0; --danger: #c93b3b; --hover: #e4e7ec; }
       @media (prefers-color-scheme: light) {
-        :root:not([data-theme="dark"]) { color-scheme: light; --bg: #f6f7f9; --text: #131722; --label: #6a7285; --border: #dfe2e8; --accent: #2f6fe0; --danger: #c93b3b; }
+        :root:not([data-theme="dark"]) { color-scheme: light; --bg: #f6f7f9; --text: #131722; --label: #6a7285; --border: #dfe2e8; --accent: #2f6fe0; --danger: #c93b3b; --hover: #e4e7ec; }
       }
       html, body { height: 100%; margin: 0; }
       body {
@@ -31,6 +32,13 @@
       }
       /* Overlay titlebar: Tauri drags from data-tauri-drag-region on a real element. */
       .drag { position: fixed; inset: 0 0 auto 0; height: 28px; z-index: 10; }
+      /* Windows: the window is frameless (lib.rs), so the splash draws its own buttons. */
+      .wc { position: fixed; top: 0; right: 0; z-index: 11; display: none; height: 28px; }
+      :root[data-platform="windows"] .wc { display: flex; }
+      .wc button { display: flex; align-items: center; justify-content: center; width: 46px; height: 28px; padding: 0; border: 0; border-radius: 0; color: var(--label); }
+      .wc button:hover { background: var(--hover); color: var(--text); }
+      .wc button.close:hover { background: var(--danger); color: #fff; }
+      .wc svg { width: 16px; height: 16px; fill: none; stroke: currentColor; stroke-width: 1.75; stroke-linecap: round; stroke-linejoin: round; }
       .logo { display: flex; align-items: center; gap: 12px; height: 56px; }
       .mark { height: 56px; width: auto; display: block; }
       .word { font-size: 40px; font-weight: 700; letter-spacing: -0.01em; line-height: 1; }
@@ -66,6 +74,11 @@
   </head>
   <body data-state="starting">
     <div data-tauri-drag-region class="drag"></div>
+    <div class="wc">
+      <button type="button" data-window="minimize" aria-label="Minimize" title="Minimize"><svg viewBox="0 0 24 24" aria-hidden="true"><path d="M6 12h12"/></svg></button>
+      <button type="button" data-window="toggle-maximize" aria-label="Maximize or restore" title="Maximize / Restore"><svg viewBox="0 0 24 24" aria-hidden="true"><path d="M6.5 6.5h11v11h-11z"/></svg></button>
+      <button type="button" class="close" data-window="close" aria-label="Close" title="Close"><svg viewBox="0 0 24 24" aria-hidden="true"><path d="M6 6l12 12M18 6 6 18"/></svg></button>
+    </div>
     <div class="logo" role="img" aria-label="Tide Code">
       <svg class="mark" viewBox="-2 -2 198.5 200.25" aria-hidden="true">
         <defs><linearGradient id="g1" x1="6.77" y1="149.29" x2="197.57" y2="52.07" gradientUnits="userSpaceOnUse"><stop offset="0" stop-color="#50e3c2"/><stop offset=".44" stop-color="#4ecdca"/><stop offset=".99" stop-color="#4a90e2"/></linearGradient>
@@ -155,6 +168,11 @@
         window.__tideStatus("starting");
         fetch("local").catch(function () {});
       };
+
+      // Windows window buttons: the shell's /window/* routes on this page's own origin.
+      Array.prototype.forEach.call(document.querySelectorAll("[data-window]"), function (b) {
+        b.onclick = function () { fetch("window/" + b.dataset.window, { method: "POST" }).catch(function () {}); };
+      });
 
       // Pairing runs here: the server's CORS is open, and the shell only stores {url, token}.
       var form = document.getElementById("connect");

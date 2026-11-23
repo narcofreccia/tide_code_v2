@@ -11,6 +11,7 @@ use crate::launcher::tide_home;
 use crate::server_supervisor::{Supervisor, LOADING_HTML};
 use crate::shell_config::{self, Mode, Remote, ShellConfig};
 use crate::splash_theme;
+use crate::window_controls;
 
 pub fn handle<R: Runtime>(ctx: UriSchemeContext<'_, R>, req: Request<Vec<u8>>) -> Response<Vec<u8>> {
     let app = ctx.app_handle();
@@ -45,6 +46,14 @@ pub fn handle<R: Runtime>(ctx: UriSchemeContext<'_, R>, req: Request<Vec<u8>>) -
         }
         // the splash paired with another machine itself and hands over `{url, token, clientId?}`
         "/remote" => outcome(sup.as_deref(), save_remote(req.body())),
+        // the window buttons of the frameless Windows window (web app top bar and this splash)
+        path if path.starts_with("/window/") => match window_controls::route(req.method().as_str(), path) {
+            Ok(action) => {
+                window_controls::perform(app, action);
+                (200, "text/plain", Vec::new())
+            }
+            Err(status) => (status, "text/plain", Vec::new()),
+        },
         _ => {
             // Whoever navigated here (the shell, or the web app by itself), the window has left
             // the web app, so the next `open_web_app` must navigate. Only the page itself counts:
@@ -54,11 +63,20 @@ pub fn handle<R: Runtime>(ctx: UriSchemeContext<'_, R>, req: Request<Vec<u8>>) -
             }
             let version = app.package_info().version.to_string();
             let theme = splash_theme::resolve(tide_home().ok().as_deref(), req.uri().query());
-            let html = LOADING_HTML.replace("__TIDE_VERSION__", &version).replace("__TIDE_THEME__", theme);
+            let html = render_splash(&version, theme);
             (200, "text/html; charset=utf-8", html.into_bytes())
         }
     };
     Response::builder().status(status).header("Content-Type", mime).body(body).expect("static response")
+}
+
+/// The splash with its placeholders filled: version, theme, and the OS (`windows` draws its own
+/// window buttons, the window being frameless there).
+fn render_splash(version: &str, theme: &str) -> String {
+    LOADING_HTML
+        .replace("__TIDE_VERSION__", version)
+        .replace("__TIDE_THEME__", theme)
+        .replace("__TIDE_PLATFORM__", std::env::consts::OS)
 }
 
 /// `/local` with the shell already running its own healthy server: no restart, just reopen.
@@ -139,5 +157,12 @@ mod tests {
         assert!(!keep_running_local(Mode::Local, false));
         assert!(!keep_running_local(Mode::Attach, true));
         assert!(!keep_running_local(Mode::Remote, false));
+    }
+
+    #[test]
+    fn the_splash_is_told_its_platform() {
+        let html = render_splash("1.2.3", "dark");
+        assert!(html.contains(&format!("data-platform=\"{}\"", std::env::consts::OS)));
+        assert!(!html.contains("__TIDE_"));
     }
 }
