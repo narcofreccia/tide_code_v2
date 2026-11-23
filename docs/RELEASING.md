@@ -133,7 +133,10 @@ Tauri cannot cross-compile, so these build on GitHub-hosted runners:
 - `.github/workflows/release-windows.yml` — `windows-latest`: node 22, pnpm 10, bun,
   Rust stable → sidecar (`--target windows-x64`) → web build → `tauri build --bundles nsis`
   → **smoke test** (silent `/S` NSIS install, run the installed `tide-server.exe --dev
-  --port 3799`, `curl /health`) → `scripts/release/publish_windows.sh` (installer, then the
+  --port 3799`, `curl /health`) → **UI smoke** (`scripts/desktop-ui-smoke.mjs`: launches the
+  installed app twice with WebView2 remote debugging and fails unless the window gets past
+  the splash and renders the web client; report uploaded as the `desktop-ui-smoke-report`
+  artifact; `skip_ui_smoke` input bypasses it) → `scripts/release/publish_windows.sh` (installer, then the
   headless `server/x86_64-pc-windows-msvc/tide-server.tar.gz` + `.sha256` and its
   `server[...]` manifest key, in one merge).
 - `.github/workflows/release-linux.yml` — `ubuntu-latest` with
@@ -146,6 +149,18 @@ Tauri cannot cross-compile, so these build on GitHub-hosted runners:
 Trigger: **Actions → release-windows → Run workflow** (or `gh workflow run
 release-windows.yml`), after the mac release of the same version. The optional `version`
 input fails the job if `package.json` disagrees.
+
+`.github/workflows/desktop-ui-smoke.yml` runs the same UI smoke against an installer that is
+already published (default: the live `windows/tide-setup.exe`), without building or
+publishing anything: `gh workflow run desktop-ui-smoke.yml -f windows=true`. Use it to see
+what an installed build does on a clean Windows machine; on your own PC,
+`node scripts/desktop-ui-smoke.mjs --install-dir "%LOCALAPPDATA%\Tide Code"` writes the same
+report.
+
+Inside the shell the web client's origin is `http://tauri.localhost` on Windows and
+`tauri://localhost` elsewhere. The PWA service worker is never registered on either
+(`apps/web/src/lib/registerSw.ts`): the shell ships its own assets and there is no server
+behind that origin.
 
 Windows binaries are **not Authenticode-signed** (no cert; same as the other house apps),
 so SmartScreen warns on first run. The minisign updater signature is what the auto-updater

@@ -22,6 +22,11 @@ on:
         description: "Expected version (optional) — the job fails if package.json differs"
         required: false
         type: string
+      skip_ui_smoke:
+        description: "Publish even if the installed app's window is not checked (only when the UI smoke itself is broken)"
+        required: false
+        type: boolean
+        default: false
 
 env:
   R2_ENDPOINT: https://d76960bd74940e6213de6aa16f3e04fd.r2.cloudflarestorage.com
@@ -138,6 +143,30 @@ jobs:
           tail -20 "$RUNNER_TEMP/tide-smoke/server.log" || true
           [ "$ok" = 1 ] || { echo "sidecar never answered /health"; exit 1; }
           echo "smoke test OK"
+
+      # UI smoke: the sidecar answering /health says nothing about the window. On 2026-11-23 a
+      # build shipped that showed the splash and then a black window, so before publishing the
+      # installed app must render the web client on a first and a second launch
+      # (scripts/desktop-ui-smoke.mjs, over WebView2 remote debugging). The report is uploaded
+      # either way.
+      - name: UI smoke the installed app
+        if: ${{ !inputs.skip_ui_smoke }}
+        timeout-minutes: 10
+        run: |
+          set -euo pipefail
+          localappdata="$(cygpath -u "$LOCALAPPDATA")"
+          server="$(find "$localappdata/Tide Code" "$localappdata/Programs/Tide Code" "/c/Program Files/Tide Code" -name 'tide-server*.exe' 2>/dev/null | head -1 || true)"
+          [ -n "$server" ] || { echo "installed tide-server.exe not found"; exit 1; }
+          node scripts/desktop-ui-smoke.mjs --install-dir "$(cygpath -m "$(dirname "$server")")" --out "$(cygpath -m "$RUNNER_TEMP/ui-smoke")"
+
+      - name: Upload the UI smoke report
+        if: ${{ always() && !inputs.skip_ui_smoke }}
+        uses: actions/upload-artifact@v4
+        with:
+          name: desktop-ui-smoke-report
+          path: ${{ runner.temp }}/ui-smoke
+          retention-days: 7
+          if-no-files-found: ignore
 
       - name: Publish to R2 (fixed name, merge windows-x86_64 key, verify updater)
         env:
