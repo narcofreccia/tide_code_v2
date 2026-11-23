@@ -12,6 +12,7 @@ import { hostname } from "node:os";
 import { SettingsError, type SettingsStore } from "../settings.ts";
 import { JudgeLedger } from "../decisions/ledger.ts";
 import { detectRepoIdentity } from "../vcs/repoIdentity.ts";
+import { normalizeRootPath, windowsFolderNameProblem } from "../hostPath.ts";
 import { RpcException, type RpcRouter } from "./router.ts";
 import { regenerateTitle } from "./titles.ts";
 import { registerProjectEnsure } from "./projectEnsure.ts";
@@ -57,6 +58,8 @@ const INIT_IDENTITY = ["-c", "user.name=Tide", "-c", "user.email=tide@localhost"
 async function initProject(parentPath: string, name: string, git: (cwd: string) => Git): Promise<string> {
   if (!isAbsolute(parentPath)) throw new RpcException("invalid-params", `parent path ${parentPath} must be absolute`);
   if (!PROJECT_NAME.test(name)) throw new RpcException("invalid-params", `project name ${JSON.stringify(name)} must be a plain folder name (letters, digits, . _ -)`);
+  const windowsProblem = windowsFolderNameProblem(name);
+  if (windowsProblem !== undefined) throw new RpcException("invalid-params", `project name ${windowsProblem}`);
   let parent: string;
   try {
     parent = await realpath(parentPath);
@@ -112,7 +115,7 @@ export function registerHandlers(router: RpcRouter, deps: HandlerDeps): void {
       version: deps.version,
       protocol: PROTOCOL_VERSION,
       startedAt: deps.startedAt,
-      ...(deps.tideHome !== undefined ? { tideHome: deps.tideHome, worktreeRoot: `${deps.tideHome}/worktrees` } : {}),
+      ...(deps.tideHome !== undefined ? { tideHome: deps.tideHome, worktreeRoot: join(deps.tideHome, "worktrees") } : {}),
       ...(deps.tools !== undefined ? { tools: { ...deps.tools, ...(ghAuth !== undefined ? { ghAuth } : {}) } } : {}),
       ...(remote !== undefined ? { remote } : {}),
       // R19: a device learns its own level; the owner gets none (never restricted)
@@ -157,6 +160,8 @@ export function registerHandlers(router: RpcRouter, deps: HandlerDeps): void {
       throw new RpcException("forbidden", `${type} is a server-internal command`);
     }
     let command: ClientCommand = input.command;
+    // Windows: one spelling per root, so the decider's duplicate check sees `c:/x/` and `C:\x` as one
+    if (command.type === "project.create") command = { ...command, rootPath: normalizeRootPath(command.rootPath) };
     if (command.type === "project.create" && command.repo === undefined) {
       const repo = await detectRepoIdentity(command.rootPath, (deps.git ?? ((cwd) => new Git(cwd)))(command.rootPath)).catch(() => undefined);
       if (repo !== undefined) command = { ...command, repo };

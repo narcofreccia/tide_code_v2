@@ -7,7 +7,7 @@ import type { CheckpointService } from "../vcs/checkpoints.ts";
 import { EMPTY_TREE, Git, GitError, WORKTREE } from "../vcs/git.ts";
 import { Gh, type GhLike } from "../vcs/gh.ts";
 import { baseAheadBehind, fastForwardBase, fetchBase, hasOrigin } from "../vcs/remoteSync.ts";
-import { safeRelativePath } from "../workspace/paths.ts";
+import { safeRelativePath, toPosixRel } from "../workspace/paths.ts";
 import { RpcException, type RpcRouter } from "./router.ts";
 
 export interface VcsHandlerDeps {
@@ -276,7 +276,8 @@ export function registerVcsHandlers(router: RpcRouter, deps: VcsHandlerDeps): vo
     if (!isAbsolute(input)) return undefined;
     for (const link of ctx.links) {
       const rel = relative(link.path, resolve(input));
-      if (rel !== "" && !rel.startsWith("..") && !isAbsolute(rel)) return { root: link.path, rel };
+      // git names tree paths with `/` (`git show HEAD:src\a.ts` finds nothing on Windows)
+      if (rel !== "" && !rel.startsWith("..") && !isAbsolute(rel)) return { root: link.path, rel: toPosixRel(rel) };
     }
     return undefined;
   };

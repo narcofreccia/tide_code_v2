@@ -1,5 +1,4 @@
 import { homedir } from "node:os";
-import { join } from "node:path";
 import { CommandError, type Engine } from "../orchestration/engine.ts";
 import type { EventStore } from "../orchestration/store.ts";
 import type { SettingsStore } from "../settings.ts";
@@ -10,6 +9,7 @@ import { exclusionFrom } from "../usage/ingest/dedupe.ts";
 import { planRepair, REPAIR_REASON, repairTotals, scanRepairEvents } from "../usage/repair.ts";
 import { summarize } from "../usage/summary.ts";
 import { DAY_MS } from "../usage/types.ts";
+import { expandHome } from "../hostPath.ts";
 import { RpcException, type RpcRouter } from "./router.ts";
 
 export interface UsageHandlerDeps {
@@ -113,6 +113,3 @@ export function registerUsageHandlers(router: RpcRouter, deps: UsageHandlerDeps)
   });
 }
 
-function expandHome(path: string, home: string): string {
-  return path === "~" ? home : path.startsWith("~/") ? join(home, path.slice(2)) : path;
-}

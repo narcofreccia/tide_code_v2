@@ -23,10 +23,15 @@ const defaultExec: ExecFileFn = (file, args, options, callback) => {
   execFile(file, args, { ...options, encoding: "utf8" }, (error, stdout, stderr) => callback(error, String(stdout), String(stderr)));
 };
 
-/** The OS opener for a URL: `open` (macOS), `xdg-open` (linux), `cmd /c start` (windows). */
+/**
+ * The OS opener for a URL: `open` (macOS), `xdg-open` (linux), the shell's URL handler (windows).
+ * Windows never goes through `cmd /c start`: cmd reads `&`, `|` and `%VAR%` in the URL itself, so a
+ * query string like `?a=1&b=2` was cut short and the text after `&` ran as a command. The URL is
+ * re-serialised so spaces and quotes are percent-encoded and reach the handler as one argument.
+ */
 export function openerCommand(platform: NodeJS.Platform, url: string): [string, string[]] {
   if (platform === "darwin") return ["open", [url]];
-  if (platform === "win32") return ["cmd", ["/c", "start", "", url]];
+  if (platform === "win32") return ["rundll32", ["url.dll,FileProtocolHandler", new URL(url).href]];
   return ["xdg-open", [url]];
 }
 

@@ -3,7 +3,7 @@ import { tmpdir } from "node:os";
 import { join } from "node:path";
 import { describe, expect, it } from "vitest";
 import { emptyReadModel } from "@tide/contracts";
-import { browseDirectories } from "./browse.ts";
+import { browseDirectories, isListedByDefault } from "./browse.ts";
 
 async function fixture(): Promise<string> {
   const root = await mkdtemp(join(tmpdir(), "tide-browse-"));
@@ -32,5 +32,17 @@ describe("browseDirectories", () => {
     expect(res.recent).toEqual([join(root, "repo")]);
     await expect(browseDirectories(model, { path: "relative" }, root)).rejects.toMatchObject({ code: "invalid-params" });
     await expect(browseDirectories(model, { path: join(root, "nope") }, root)).rejects.toMatchObject({ code: "not-found" });
+  });
+});
+
+describe("isListedByDefault", () => {
+  it("hides dot-folders everywhere and Windows system folders only on Windows", () => {
+    expect(isListedByDefault(".config", "darwin")).toBe(false);
+    expect(isListedByDefault("$Recycle.Bin", "darwin")).toBe(true);
+    expect(isListedByDefault("Recovery", "linux")).toBe(true);
+    for (const name of ["$Recycle.Bin", "$WinREAgent", "System Volume Information", "Config.Msi", "Recovery", ".git"]) {
+      expect(isListedByDefault(name, "win32")).toBe(false);
+    }
+    for (const name of ["Users", "Program Files", "dev", "Desktop"]) expect(isListedByDefault(name, "win32")).toBe(true);
   });
 });

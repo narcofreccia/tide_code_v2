@@ -4,7 +4,7 @@ import { join } from "node:path";
 import { afterEach, describe, expect, it } from "vitest";
 import { Git } from "../vcs/git.ts";
 import { createTempRepo, GIT_TEST_ENV, type TempRepo } from "../vcs/testing/tempRepo.ts";
-import { globToRegExp, hasRipgrep, isCaseSensitive, search, type SearchResult } from "./search.ts";
+import { globToRegExp, hasRipgrep, isCaseSensitive, rgMatchPath, search, type SearchResult } from "./search.ts";
 
 const gitFactory = (cwd: string): Git => new Git(cwd, { env: GIT_TEST_ENV });
 
@@ -155,5 +155,16 @@ describe("search (ripgrep parser)", () => {
     // the binary hit (no `lines`) is dropped; the column is a character offset, not bytes
     expect(result.matches).toEqual([{ path: "src/a.ts", line: 7, column: 10, text: "  const \u00e9needle = 1;" }]);
     expect(result.truncated).toBe(false);
+  });
+});
+
+describe("rgMatchPath", () => {
+  it("turns ripgrep's Windows paths into /-separated cwd-relative paths", () => {
+    expect(rgMatchPath(".\\src\\ui\\a.ts", "win32")).toBe("src/ui/a.ts");
+    expect(rgMatchPath("src\\a.ts", "win32")).toBe("src/a.ts");
+  });
+  it("leaves POSIX paths alone, backslashes included", () => {
+    expect(rgMatchPath("./src/a.ts", "darwin")).toBe("src/a.ts");
+    expect(rgMatchPath("src/odd\\name.ts", "linux")).toBe("src/odd\\name.ts");
   });
 });

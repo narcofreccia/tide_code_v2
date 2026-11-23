@@ -1,11 +1,11 @@
 import { homedir } from "node:os";
-import { join } from "node:path";
 import { ACP_PROFILES } from "@tide/driver-acp";
 import type { DriverEnv, ProviderDriver, ProviderInstanceConfig, ProviderKind } from "@tide/contracts";
 import type { ProviderConfigs } from "../config.ts";
 import { platformKey, resolveLaunch, type AcpLaunch, type AcpRegistry } from "./acpRegistry.ts";
 import { ANTIGRAVITY_ONE_ACCOUNT } from "../settings.ts";
 import type { InstanceFactory, InstanceSpec } from "./registry.ts";
+import { expandHome } from "../hostPath.ts";
 
 type AnyDriver = ProviderDriver<Record<string, unknown>>;
 
@@ -18,9 +18,6 @@ export interface FactoryDeps {
   platform?: string;
 }
 
-function expandHome(path: string): string {
-  return path === "~" ? homedir() : path.startsWith("~/") ? join(homedir(), path.slice(2)) : path;
-}
 
 /** Where each harness reads its account from: one directory per instance is one account. */
 function homeEnv(kind: ProviderKind, home: string): Record<string, string> {
@@ -46,7 +43,7 @@ function envOf(value: unknown): Record<string, string> {
  */
 export function createInstanceFactory(deps: FactoryDeps): InstanceFactory {
   return (config: ProviderInstanceConfig, env: DriverEnv): InstanceSpec => {
-    const home = config.home !== undefined ? expandHome(config.home) : undefined;
+    const home = config.home !== undefined ? expandHome(config.home, homedir()) : undefined;
     if (config.kind === "acp") return acpSpec(config, env, home, deps);
     if (config.kind === "antigravity") throw new Error(ANTIGRAVITY_ONE_ACCOUNT);
     const driver = deps.drivers[config.kind];

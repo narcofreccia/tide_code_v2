@@ -1,8 +1,8 @@
 import { mkdir, mkdtemp, rm, symlink, writeFile } from "node:fs/promises";
 import { tmpdir } from "node:os";
-import { join } from "node:path";
+import { join, posix, win32 } from "node:path";
 import { afterEach, describe, expect, it } from "vitest";
-import { resolveInside, safeRelativePath } from "./paths.ts";
+import { resolveInside, safeRelativePath, toPosixRel } from "./paths.ts";
 
 const dirs: string[] = [];
 afterEach(async () => {
@@ -33,6 +33,25 @@ describe("safeRelativePath", () => {
 
   it("throws an invalid-params RpcException", () => {
     expect(() => safeRelativePath("/repo", "..")).toThrowError(expect.objectContaining({ code: "invalid-params" }));
+  });
+
+  // Windows semantics through node:path's win32 flavour: nothing here runs on Windows itself
+  it("returns /-separated paths and holds containment with win32 paths", () => {
+    expect(safeRelativePath("C:\\repo", "src/a.ts", {}, win32)).toBe("src/a.ts");
+    expect(safeRelativePath("C:\\repo", "src\\ui\\a.ts", {}, win32)).toBe("src/ui/a.ts");
+    expect(safeRelativePath("C:\\repo", "c:\\REPO\\src\\a.ts", {}, win32)).toBe("src/a.ts");
+    expect(safeRelativePath("C:\\repo", ".git\\config", {}, win32)).toBe(".git/config");
+    expect(safeRelativePath("C:\\repo", "", { allowRoot: true }, win32)).toBe("");
+    for (const escape of ["..\\secrets", "src\\..\\..\\x", "D:\\x", "C:\\other\\x", "\\\\srv\\share\\x", "/x"]) {
+      expect(() => safeRelativePath("C:\\repo", escape, {}, win32)).toThrow(/escapes/);
+    }
+  });
+});
+
+describe("toPosixRel", () => {
+  it("converts win32 separators and leaves posix paths alone", () => {
+    expect(toPosixRel("src\\ui\\a.ts", win32)).toBe("src/ui/a.ts");
+    expect(toPosixRel("src/a\\b.ts", posix)).toBe("src/a\\b.ts");
   });
 });
 

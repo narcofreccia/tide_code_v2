@@ -18,7 +18,14 @@ describe("workspace.openExternal", () => {
     expect(await open("vscode://file/Users/me/repo")).toEqual({ ok: true });
     expect(calls).toEqual([["open", ["vscode://file/Users/me/repo"], 5000]]);
     expect(openerCommand("linux", "https://x.dev")).toEqual(["xdg-open", ["https://x.dev"]]);
-    expect(openerCommand("win32", "cursor://file/C:/r")).toEqual(["cmd", ["/c", "start", "", "cursor://file/C:/r"]]);
+    expect(openerCommand("win32", "cursor://file/C:/r")).toEqual(["rundll32", ["url.dll,FileProtocolHandler", "cursor://file/C:/r"]]);
+  });
+
+  it("never hands a Windows URL to cmd, whose parser would run what follows an `&`", () => {
+    const [file, args] = openerCommand("win32", "https://x.dev/?a=1&calc|x \"q\"");
+    expect(file).toBe("rundll32");
+    expect(args).toEqual(["url.dll,FileProtocolHandler", "https://x.dev/?a=1&calc|x%20%22q%22"]);
+    expect(openerCommand("win32", "vscode://file/C:/Users/me/My Repo/a.ts:3")[1][1]).toBe("vscode://file/C:/Users/me/My%20Repo/a.ts:3");
   });
 
   it("refuses schemes outside vscode/cursor/http/https", () => {

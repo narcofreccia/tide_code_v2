@@ -79,6 +79,16 @@ interface RgMatch {
   };
 }
 
+/**
+ * The cwd-relative `/`-separated path of a ripgrep hit. rg prints `.\src\a.ts` on Windows; the
+ * client and the node fallback use `src/a.ts`. A backslash is a legal file-name byte on POSIX, so
+ * only Windows output is rewritten.
+ */
+export function rgMatchPath(raw: string, platform: NodeJS.Platform = process.platform): string {
+  const path = raw.replace(/^\.[\\/]/, "");
+  return platform === "win32" ? path.replaceAll("\\", "/") : path;
+}
+
 function ripgrepArgs(options: SearchOptions, limit: number): string[] {
   const args = ["--json", "--max-count", String(limit)];
   if (options.glob !== undefined && options.glob !== "") args.push("--glob", options.glob);
@@ -118,7 +128,7 @@ function searchWithRipgrep(cwd: string, options: SearchOptions, limit: number): 
       if (path === undefined || text === undefined || lineNumber === undefined) return; // binary hit
       const start = data?.submatches?.[0]?.start ?? 0;
       const column = Buffer.from(text, "utf8").subarray(0, start).toString("utf8").length + 1;
-      matches.push({ path: path.replace(/^\.[\\/]/, ""), line: lineNumber, column, text: clip(text) });
+      matches.push({ path: rgMatchPath(path), line: lineNumber, column, text: clip(text) });
       if (matches.length >= limit) {
         truncated = true;
         child.kill("SIGTERM");

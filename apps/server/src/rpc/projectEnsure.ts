@@ -7,6 +7,7 @@ import { CommandError, type Engine } from "../orchestration/engine.ts";
 import type { SettingsStore } from "../settings.ts";
 import { Git } from "../vcs/git.ts";
 import { detectRepoIdentity } from "../vcs/repoIdentity.ts";
+import { expandHome } from "../hostPath.ts";
 import { RpcException, type RpcRouter } from "./router.ts";
 
 const CLONE_TIMEOUT_MS = 600_000;
@@ -153,7 +154,7 @@ export function registerProjectEnsure(router: RpcRouter, deps: ProjectEnsureDeps
     const home = deps.homeDir?.() ?? homedir();
     const configured = input.parentDir ?? deps.settings?.get().environment.projectsDir;
     // a setting typed as `~/code` means this machine's home
-    const dir = configured === undefined ? join(home, "tide-projects") : configured === "~" ? home : configured.startsWith("~/") ? join(home, configured.slice(2)) : configured;
+    const dir = configured === undefined ? join(home, "tide-projects") : expandHome(configured, home);
     if (!isAbsolute(dir)) throw new RpcException("invalid-params", `projects folder ${dir} must be absolute`);
     const names = folderCandidates(key);
     const timeoutMs = deps.cloneTimeoutMs ?? CLONE_TIMEOUT_MS;

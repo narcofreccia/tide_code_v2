@@ -1,6 +1,19 @@
 import { realpath } from "node:fs/promises";
+import * as nodePath from "node:path";
 import { basename, dirname, isAbsolute, join, relative, resolve } from "node:path";
 import { RpcException } from "../rpc/router.ts";
+
+/** The `node:path` flavour a pure helper uses; tests pass `win32` to exercise Windows semantics on any host. */
+export type PathModule = Pick<typeof nodePath, "relative" | "resolve" | "isAbsolute" | "sep">;
+
+/**
+ * A relative path with `/` separators, the form git prints and the client uses. On Windows
+ * `path.relative` returns `src\a.ts`, which git refuses in `<rev>:<path>`, never equals a path from
+ * `git status`, and slips past `/`-based checks such as `isGitInternal`. A no-op on POSIX.
+ */
+export function toPosixRel(rel: string, path: PathModule = nodePath): string {
+  return path.sep === "/" ? rel : rel.split(path.sep).join("/");
+}
 
 export interface InsideOptions {
   /** allow the cwd itself (used by `fs.list` with no path) */
@@ -10,7 +23,7 @@ export interface InsideOptions {
 export interface ResolvedPath {
   /** lexically resolved absolute path (what fs calls should use) */
   abs: string;
-  /** cwd-relative path, POSIX-ish separators as produced by node:path */
+  /** cwd-relative path with `/` separators on every platform */
   rel: string;
 }
 
@@ -20,14 +33,14 @@ const escapes = (input: string): never => {
 
 /**
  * Lexical containment check: rejects `..` escapes and absolute paths outside `cwd`.
- * Returns the cwd-relative path. This is the single implementation shared by the vcs
- * handlers (as `safeRelativePath`) and the workspace services.
+ * Returns the cwd-relative path with `/` separators. This is the single implementation shared
+ * by the vcs handlers (as `safeRelativePath`) and the workspace services.
  */
-export function safeRelativePath(cwd: string, input: string, options: InsideOptions = {}): string {
-  const rel = relative(cwd, resolve(cwd, input));
-  if (rel.startsWith("..") || isAbsolute(rel)) escapes(input);
+export function safeRelativePath(cwd: string, input: string, options: InsideOptions = {}, path: PathModule = nodePath): string {
+  const rel = path.relative(cwd, path.resolve(cwd, input));
+  if (rel.startsWith("..") || path.isAbsolute(rel)) escapes(input);
   if (rel === "" && options.allowRoot !== true) escapes(input);
-  return rel;
+  return toPosixRel(rel, path);
 }
 
 /** realpath of the deepest existing ancestor of `p`, with the missing tail re-appended. */
