@@ -2,7 +2,7 @@ import { existsSync } from "node:fs";
 import { readdir } from "node:fs/promises";
 import { join } from "node:path";
 import { afterEach, describe, expect, it } from "vitest";
-import { WORKTREE } from "./git.ts";
+import { gitArgv, WORKTREE } from "./git.ts";
 import { createTempRepo, type TempRepo } from "./testing/tempRepo.ts";
 
 const repos: TempRepo[] = [];
@@ -266,5 +266,12 @@ describe("Git — history", () => {
     expect(await r.git.firstParent(merge?.sha ?? "")).toBe(mainTip);
     const files = await r.git.diff(mainTip, merge?.sha ?? "");
     expect(files.map((f) => f.path)).toEqual(["side.txt"]);
+  });
+});
+
+describe("gitArgv", () => {
+  it("lifts the path-length limit on Windows only", () => {
+    expect(gitArgv(["status", "--porcelain"], "win32")).toEqual(["-c", "core.longpaths=true", "--no-pager", "status", "--porcelain"]);
+    for (const platform of ["darwin", "linux"] as const) expect(gitArgv(["status", "--porcelain"], platform)).toEqual(["--no-pager", "status", "--porcelain"]);
   });
 });

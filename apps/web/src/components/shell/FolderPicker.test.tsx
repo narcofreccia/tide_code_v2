@@ -82,6 +82,13 @@ describe("FolderPicker", () => {
     await waitFor(() => expect(calls[1]).toEqual({ path: HOME, showHidden: true }));
   });
 
+  it("renders no drive row when the server sends no roots (POSIX)", async () => {
+    mockBrowse();
+    render(<FolderPicker onPick={() => undefined} onClose={() => undefined} />);
+    await screen.findAllByRole("option");
+    expect(screen.queryByRole("navigation", { name: "Drives" })).toBeNull();
+  });
+
   it("offers the recent roots", async () => {
     const calls = mockBrowse();
     render(<FolderPicker onPick={() => undefined} onClose={() => undefined} />);
@@ -172,7 +179,7 @@ describe("New project", () => {
 });
 
 /** A Windows host: `fs.browse` answers with drive paths, as `node:path` on win32 does. */
-function mockWindowsBrowse(extra: Record<string, (params: never) => unknown> = {}) {
+function mockWindowsBrowse(extra: Record<string, (params: never) => unknown> = {}, roots?: string[]) {
   const calls: BrowseParams[] = [];
   const winListing = (path: string, dirs: string[], parent?: string) => ({
     path,
@@ -181,9 +188,11 @@ function mockWindowsBrowse(extra: Record<string, (params: never) => unknown> = {
     isGitRepo: false,
     dirs: dirs.map((name) => ({ name, path: `${path.replace(/\\$/, "")}\\${name}`, isGitRepo: false })),
     recent: [],
+    ...(roots === undefined ? {} : { roots }),
   });
   const table: Record<string, ReturnType<typeof winListing>> = {
     "C:\\": winListing("C:\\", ["Users"]),
+    "D:\\": winListing("D:\\", ["work"]),
     "C:\\Users": winListing("C:\\Users", ["andre"], "C:\\"),
     "C:\\Users\\andre": winListing("C:\\Users\\andre", ["Desktop"], "C:\\Users"),
     "C:\\Users\\andre\\Desktop": winListing("C:\\Users\\andre\\Desktop", [], "C:\\Users\\andre"),
@@ -222,6 +231,27 @@ describe("FolderPicker on a Windows server", () => {
     render(<FolderPicker onPick={() => undefined} onClose={() => undefined} />);
     fireEvent.click(await screen.findByRole("option", { name: /\.\./ }));
     await waitFor(() => expect(calls[1]?.path).toBe("C:\\Users"));
+  });
+
+  it("offers the server's drives, marks the current one and browses another", async () => {
+    const calls = mockWindowsBrowse({}, ["C:\\", "D:\\"]);
+    render(<FolderPicker onPick={() => undefined} onClose={() => undefined} />);
+    await screen.findByRole("option", { name: /Desktop/ });
+    const drives = within(screen.getByRole("navigation", { name: "Drives" })).getAllByRole("button");
+    expect(drives.map((d) => d.textContent)).toEqual(["C:", "D:"]);
+    expect(drives.map((d) => d.getAttribute("aria-current"))).toEqual(["true", null]);
+    fireEvent.click(drives[1]!);
+    await waitFor(() => expect(calls[1]?.path).toBe("D:\\"));
+    await screen.findByRole("option", { name: /work/ });
+    const after = within(screen.getByRole("navigation", { name: "Drives" })).getAllByRole("button");
+    expect(after.map((d) => d.getAttribute("aria-current"))).toEqual([null, "true"]);
+  });
+
+  it("renders no drive row for a single root", async () => {
+    mockWindowsBrowse({}, ["C:\\"]);
+    render(<FolderPicker onPick={() => undefined} onClose={() => undefined} />);
+    await screen.findByRole("option", { name: /Desktop/ });
+    expect(screen.queryByRole("navigation", { name: "Drives" })).toBeNull();
   });
 });
 

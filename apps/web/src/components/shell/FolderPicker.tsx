@@ -2,13 +2,18 @@ import { useCallback, useEffect, useRef, useState } from "react";
 import type { RpcOutput } from "@tide/contracts";
 import { call } from "../../state/model.ts";
 import { envOpt } from "../fleet/envView.ts";
-import { breadcrumbs } from "../../lib/paths.ts";
+import { breadcrumbs, relativeTo, samePath } from "../../lib/paths.ts";
 import { Button } from "../ui/Button.tsx";
 import { Checkbox } from "../ui/Choice.tsx";
 import { Dialog } from "../ui/Dialog.tsx";
 import styles from "./FolderPicker.module.css";
 
 type Listing = RpcOutput<"fs.browse">;
+
+/** The folder lives on `root` (a drive such as `D:\`). */
+function isOnRoot(path: string, root: string): boolean {
+  return samePath(path, root) || relativeTo(path, root) !== undefined;
+}
 
 /**
  * Directory browser for "Add a repository". Typing an absolute path into the
@@ -58,6 +63,8 @@ export function FolderPicker({
   }, []);
 
   const dirs = listing?.dirs ?? [];
+  // only hosts with several roots (Windows drives) send them; one root needs no switcher
+  const roots = listing?.roots !== undefined && listing.roots.length > 1 ? listing.roots : [];
 
   const onKeyDown = (e: React.KeyboardEvent): void => {
     if (e.key === "ArrowDown" || e.key === "ArrowUp") {
@@ -75,6 +82,25 @@ export function FolderPicker({
 
   return (
     <Dialog title={purpose === "parent" ? "Choose where to create the project" : "Choose a repository folder"} onCancel={onClose}>
+      {listing && roots.length > 0 ? (
+        <nav className={styles.roots} aria-label="Drives">
+          {roots.map((root) => {
+            const current = isOnRoot(listing.path, root);
+            return (
+              <Button
+                key={root}
+                variant="quiet"
+                className={`${styles.root} ${current ? styles.rootCurrent : ""}`}
+                aria-current={current ? "true" : undefined}
+                onClick={() => browse(root, showHidden)}
+              >
+                {root.replace(/[\\/]+$/, "")}
+              </Button>
+            );
+          })}
+        </nav>
+      ) : null}
+
       <nav className={styles.crumbs} aria-label="Path">
         {(listing ? breadcrumbs(listing.path) : []).map((crumb) => (
           <Button

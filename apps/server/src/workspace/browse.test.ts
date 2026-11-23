@@ -3,7 +3,7 @@ import { tmpdir } from "node:os";
 import { join } from "node:path";
 import { describe, expect, it } from "vitest";
 import { emptyReadModel } from "@tide/contracts";
-import { browseDirectories, isListedByDefault } from "./browse.ts";
+import { browseDirectories, isListedByDefault, listRoots } from "./browse.ts";
 
 async function fixture(): Promise<string> {
   const root = await mkdtemp(join(tmpdir(), "tide-browse-"));
@@ -44,5 +44,32 @@ describe("isListedByDefault", () => {
       expect(isListedByDefault(name, "win32")).toBe(false);
     }
     for (const name of ["Users", "Program Files", "dev", "Desktop"]) expect(isListedByDefault(name, "win32")).toBe(true);
+  });
+});
+
+describe("listRoots", () => {
+  const present = (letters: string) => async (root: string) => letters.includes(root[0] ?? "");
+
+  it("lists the Windows drives that exist, the current one always included", async () => {
+    expect(await listRoots("C:\\Users\\me", { platform: "win32", probe: present("CD") })).toEqual(["C:\\", "D:\\"]);
+    // a drive the probe misses (or a lower-case spelling) still lists the one being browsed
+    expect(await listRoots("e:\\work", { platform: "win32", probe: present("C") })).toEqual(["C:\\", "E:\\"]);
+  });
+
+  it("treats a probe that never answers as absent, within the per-probe budget", async () => {
+    const probe = (root: string) => (root === "Z:\\" ? new Promise<boolean>(() => undefined) : present("C")(root));
+    const started = Date.now();
+    expect(await listRoots("C:\\", { platform: "win32", probe, timeoutMs: 20 })).toEqual(["C:\\"]);
+    expect(Date.now() - started).toBeLessThan(1_000);
+  });
+
+  it("is absent on POSIX, and browse leaves the field out", async () => {
+    let probed = false;
+    const probe = async () => (probed = true);
+    expect(await listRoots("/home/me", { platform: "darwin", probe })).toBeUndefined();
+    const root = await fixture();
+    const res = await browseDirectories(emptyReadModel(), { path: root }, root, { platform: "linux", probe });
+    expect("roots" in res).toBe(false);
+    expect(probed).toBe(false);
   });
 });

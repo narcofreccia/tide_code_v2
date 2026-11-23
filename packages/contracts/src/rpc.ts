@@ -593,6 +593,8 @@ export const rpcMethods = {
       dirs: Type.Array(Type.Object({ name: Type.String(), path: Type.String(), isGitRepo: Type.Boolean() })),
       /** recently used project roots (from existing projects), newest first */
       recent: Type.Array(Type.String()),
+      /** every filesystem root of a host that has several (Windows drives: `C:\\`, `D:\\`); absent elsewhere */
+      roots: Type.Optional(Type.Array(Type.String())),
     }),
   ),
   // pty

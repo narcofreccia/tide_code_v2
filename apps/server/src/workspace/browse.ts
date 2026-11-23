@@ -1,6 +1,6 @@
 import { readdir, stat } from "node:fs/promises";
 import { homedir } from "node:os";
-import { dirname, isAbsolute, join, resolve } from "node:path";
+import { dirname, isAbsolute, join, resolve, win32 } from "node:path";
 import type { ReadModel } from "@tide/contracts";
 import { RpcException } from "../rpc/router.ts";
 
@@ -11,6 +11,55 @@ export interface BrowseResult {
   isGitRepo: boolean;
   dirs: { name: string; path: string; isGitRepo: boolean }[];
   recent: string[];
+  /** every drive root on a host that has several (Windows); absent elsewhere */
+  roots?: string[];
+}
+
+/** How the picker finds the host's filesystem roots; injectable so tests can play Windows. */
+export interface RootsHost {
+  platform?: NodeJS.Platform;
+  /** resolves true when `root` exists; may never settle (a disconnected network drive) */
+  probe?: (root: string) => Promise<boolean>;
+  /** per-probe budget; a probe that has not answered by then counts as absent */
+  timeoutMs?: number;
+}
+
+const ROOT_PROBE_TIMEOUT_MS = 400;
+const DRIVE_LETTERS = "ABCDEFGHIJKLMNOPQRSTUVWXYZ";
+
+function withTimeout(probe: Promise<boolean>, timeoutMs: number): Promise<boolean> {
+  return new Promise((resolveProbe) => {
+    const timer = setTimeout(() => resolveProbe(false), timeoutMs);
+    timer.unref?.();
+    probe.then(
+      (ok) => {
+        clearTimeout(timer);
+        resolveProbe(ok);
+      },
+      () => {
+        clearTimeout(timer);
+        resolveProbe(false);
+      },
+    );
+  });
+}
+
+/**
+ * The drive roots (`C:\`, `D:\`, …) of a Windows host, probed concurrently, each bounded by
+ * `timeoutMs`, so the whole call answers within about one budget even when a mapped network
+ * drive or an empty card reader never does. The drive of `current` is always listed. Undefined
+ * on other platforms, where `/` is the only root.
+ */
+export async function listRoots(current: string, host: RootsHost = {}): Promise<string[] | undefined> {
+  if ((host.platform ?? process.platform) !== "win32") return undefined;
+  const probe = host.probe ?? isDir;
+  const timeoutMs = host.timeoutMs ?? ROOT_PROBE_TIMEOUT_MS;
+  const candidates = [...DRIVE_LETTERS].map((letter) => `${letter}:\\`);
+  const present = await Promise.all(candidates.map((root) => withTimeout(probe(root), timeoutMs)));
+  const roots = candidates.filter((_, i) => present[i]);
+  const own = win32.parse(current).root.replace(/^[a-z]:/, (d) => d.toUpperCase());
+  if (own !== "" && !roots.some((r) => r.toLowerCase() === own.toLowerCase())) roots.push(own);
+  return roots.sort((a, b) => a.localeCompare(b));
 }
 
 async function isDir(path: string): Promise<boolean> {
@@ -54,12 +103,14 @@ export async function browseDirectories(
   model: ReadModel,
   input: { path?: string; showHidden?: boolean },
   home: string = homedir(),
+  host: RootsHost = {},
 ): Promise<BrowseResult> {
   const requested = input.path && input.path.trim() !== "" ? input.path : home;
   if (!isAbsolute(requested)) throw new RpcException("invalid-params", "path must be absolute");
   const path = resolve(requested);
   if (!(await isDir(path))) throw new RpcException("not-found", `no such directory: ${path}`);
 
+  const rootsProbe = listRoots(path, host); // concurrent with the listing below
   const entries = await readdir(path, { withFileTypes: true }).catch(() => []);
   const dirs = await Promise.all(
     entries
@@ -78,6 +129,7 @@ export async function browseDirectories(
     .slice(0, 8);
 
   const parent = dirname(path);
+  const roots = await rootsProbe;
   return {
     path,
     ...(parent !== path ? { parent } : {}),
@@ -85,5 +137,6 @@ export async function browseDirectories(
     isGitRepo: await isGitRepo(path),
     dirs,
     recent,
+    ...(roots !== undefined ? { roots } : {}),
   };
 }

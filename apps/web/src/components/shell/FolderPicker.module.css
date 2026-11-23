@@ -1,4 +1,7 @@
 .crumbs { display: flex; flex-wrap: wrap; align-items: center; gap: 2px; }
+.roots { display: flex; flex-wrap: wrap; align-items: center; gap: 2px; }
+.root { padding: 0 6px; font-family: var(--font-mono); font-size: var(--fs-xs); }
+.rootCurrent { color: var(--text); background: var(--accent-soft); }
 .crumb { padding: 0 4px; font-family: var(--font-mono); font-size: var(--fs-xs); }
 
 .list {

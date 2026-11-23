@@ -16,6 +16,15 @@ const DEFAULT_TIMEOUT_MS = 120_000;
 /** Identity for Tide's own plumbing commits (checkpoints); never used for user commits. */
 const TIDE_IDENTITY = ["-c", "user.name=Tide", "-c", "user.email=tide@localhost"];
 
+/**
+ * The argv every `git` process gets. On Windows, `core.longpaths` lifts Git for Windows' 260-char
+ * path limit (deep folders under `%USERPROFILE%\.tide\worktrees\…` fail with "Filename too long");
+ * elsewhere the argv is exactly `--no-pager …args`.
+ */
+export function gitArgv(args: readonly string[], platform: NodeJS.Platform = process.platform): string[] {
+  return platform === "win32" ? ["-c", "core.longpaths=true", "--no-pager", ...args] : ["--no-pager", ...args];
+}
+
 export class GitError extends Error {
   readonly args: string[];
   readonly exitCode: number;
@@ -89,7 +98,7 @@ export class Git {
     return new Promise((resolve) => {
       execFile(
         "git",
-        ["--no-pager", ...args],
+        gitArgv(args),
         {
           cwd: this.cwd,
           env: { ...this.#env, ...env, GIT_TERMINAL_PROMPT: "0" },
@@ -117,7 +126,7 @@ export class Git {
     return new Promise((resolve) => {
       const child = execFile(
         "git",
-        ["--no-pager", ...args],
+        gitArgv(args),
         {
           cwd: this.cwd,
           env: { ...this.#env, GIT_TERMINAL_PROMPT: "0" },
@@ -140,7 +149,7 @@ export class Git {
     return new Promise((resolve) => {
       execFile(
         "git",
-        ["--no-pager", ...args],
+        gitArgv(args),
         { cwd: this.cwd, env: { ...this.#env, GIT_TERMINAL_PROMPT: "0" }, maxBuffer: MAX_BUFFER, timeout: this.#timeoutMs, encoding: "buffer" },
         (err, stdout, stderr) => {
           const code = err === null ? 0 : typeof (err as { code?: unknown }).code === "number" ? (err as { code: number }).code : 1;
