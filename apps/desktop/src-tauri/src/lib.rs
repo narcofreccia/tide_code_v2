@@ -11,6 +11,7 @@ mod server_supervisor;
 mod shell_config;
 mod splash;
 mod updater;
+mod webview_profile;
 
 use server_supervisor::Supervisor;
 use std::sync::atomic::{AtomicBool, Ordering};
@@ -22,6 +23,16 @@ use tauri::{Manager, RunEvent, WindowEvent};
 const LOADING_SCHEME: &str = "tide-shell";
 
 pub fn run() {
+    let context = tauri::generate_context!();
+    // Before the builder: windows from tauri.conf.json start WebView2 during build/setup.
+    #[cfg(windows)]
+    if let Some(local) = std::env::var_os("LOCALAPPDATA") {
+        let root = std::path::Path::new(&local).join(&context.config().identifier);
+        if let Err(err) = webview_profile::purge_service_workers(&root) {
+            eprintln!("[tide-shell] service worker purge: {err}");
+        }
+    }
+
     let app = tauri::Builder::default()
         // Must be first: a second launch just brings the existing window forward.
         .plugin(tauri_plugin_single_instance::init(|app, _args, _cwd| {
@@ -52,7 +63,7 @@ pub fn run() {
             app.manage(Supervisor::start(app.handle().clone()));
             Ok(())
         })
-        .build(tauri::generate_context!())
+        .build(context)
         .expect("failed to build the Tide shell");
 
     app.run(|handle, event| match event {
