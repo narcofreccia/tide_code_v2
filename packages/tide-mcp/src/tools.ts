@@ -64,7 +64,7 @@ export const BASE_TOOL_DEFINITIONS: ToolDefinition[] = [
         provider: { type: "string", enum: ["claude", "codex", "opencode", "pi", "antigravity", "acp"] },
         providerId: str("Instance id (e.g. codex:work)."),
         prompt: str("Task prompt."),
-        model: str("Model id from tide_harnesses."),
+        model: str("Optional model id for that harness, exactly as tide_harnesses lists it."),
         mode: { type: "string", enum: ["approval-required", "auto-accept-edits", "auto", "full-access"], description: "Omit to inherit yours." },
         title: { type: "string" },
         useWorktree: { type: "boolean" },
