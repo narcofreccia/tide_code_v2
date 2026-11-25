@@ -18,10 +18,44 @@ describe("ProjectChips", () => {
   it("is hidden with exactly one project", () => {
     attachFakeStore(modelWith({ projects: { p1: project("p1", "Tide") }, threads: { t1: makeThread("t1") } }));
     render(<Rail />);
+    expect(screen.queryByRole("combobox", { name: "Projects" })).toBeNull();
     expect(screen.queryByRole("list", { name: "Projects" })).toBeNull();
   });
 
-  it("lists All then each live project with its inbox count and running / needs dots", () => {
+  it("renders a Select dropdown by default, and brings the picked project's latest thread into view", async () => {
+    const fake = attachFakeStore(
+      modelWith({
+        projects: { p1: project("p1", "Tide"), p2: project("p2", "Atlas") },
+        threads: {
+          t1: makeThread("t1", { projectId: "p1", title: "Tide work", updatedAt: 10 }),
+          t2: makeThread("t2", { projectId: "p2", title: "Atlas work", updatedAt: 30 }),
+        },
+      }),
+    );
+    useUi.getState().selectThread("t1");
+    render(<Rail />);
+
+    expect(screen.queryByRole("list", { name: "Projects" })).toBeNull();
+    expect(screen.getByRole("combobox", { name: "Projects" }).textContent).toContain("All projects");
+
+    chooseOption("Projects", /^Atlas/);
+    expect(useUi.getState().selectedProjectId).toBe("p2");
+    expect(useUi.getState().selectedThreadId).toBe("t2");
+    expect(screen.queryByText("Tide work")).toBeNull();
+    expect(screen.getByText("Atlas work")).toBeDefined();
+
+    // Project actions button remains accessible in select mode
+    fireEvent.click(screen.getByRole("button", { name: "Actions for Atlas" }));
+    await act(async () => fireEvent.click(screen.getByRole("menuitem", { name: "Pin" })));
+    expect(fake.dispatch).toHaveBeenCalledWith(expect.objectContaining({ type: "project.update", projectId: "p2", pinned: true }));
+
+    chooseOption("Projects", /^All projects/);
+    expect(useUi.getState().selectedProjectId).toBeNull();
+    expect(screen.getByText("Tide work")).toBeDefined();
+  });
+
+  it("lists All then each live project with its inbox count and running / needs dots in chips mode", () => {
+    useSettings.getState().setProjectSelector("chips");
     attachFakeStore(
       modelWith({
         projects: { p1: project("p1", "Tide"), p2: project("p2", "Atlas"), p3: { ...project("p3", "Gone"), archivedAt: 3 } },
@@ -46,6 +80,7 @@ describe("ProjectChips", () => {
   });
 
   it("a click scopes the rail to the project; All clears it", () => {
+    useSettings.getState().setProjectSelector("chips");
     attachFakeStore(
       modelWith({
         projects: { p1: project("p1", "Tide"), p2: project("p2", "Atlas") },
@@ -64,6 +99,7 @@ describe("ProjectChips", () => {
   });
 
   it("cmd-click toggles a project into the filter; a plain click is exclusive", () => {
+    useSettings.getState().setProjectSelector("chips");
     attachFakeStore(
       modelWith({
         projects: { p1: project("p1", "Tide"), p2: project("p2", "Atlas"), p3: project("p3", "Zed") },
@@ -87,6 +123,7 @@ describe("ProjectChips", () => {
   });
 
   it("lists pinned projects first with a pin, and the menu pins / unpins", async () => {
+    useSettings.getState().setProjectSelector("chips");
     const fake = attachFakeStore(
       modelWith({
         projects: { p1: project("p1", "Atlas"), p2: { ...project("p2", "Zed"), pinned: true } },
@@ -104,6 +141,7 @@ describe("ProjectChips", () => {
   });
 
   it("shows one chip per repo, named by the project: clones on two machines scope together, counts sum", () => {
+    useSettings.getState().setProjectSelector("chips");
     const repo = { remoteUrl: "github.com/acme/web", cloneUrl: "https://github.com/acme/web.git", defaultBranch: "main", detectedAt: 1 };
     attachFakeStore(
       modelWith({
@@ -135,6 +173,7 @@ describe("ProjectChips", () => {
   });
 
   it("brings the clicked project's latest active thread into view, and clears a stale thread when the project has none", () => {
+    useSettings.getState().setProjectSelector("chips");
     attachFakeStore(
       modelWith({
         projects: { p1: project("p1", "Tide"), p2: project("p2", "Atlas"), p3: project("p3", "Empty") },
@@ -159,38 +198,5 @@ describe("ProjectChips", () => {
     fireEvent.click(screen.getByText("Empty"));
     expect(useUi.getState().selectedProjectId).toBe("p3");
     expect(useUi.getState().selectedThreadId).toBeNull();
-  });
-
-  it("renders a Select dropdown when projectSelector setting is 'select', and still brings the latest thread into view", async () => {
-    useSettings.getState().setProjectSelector("select");
-    const fake = attachFakeStore(
-      modelWith({
-        projects: { p1: project("p1", "Tide"), p2: project("p2", "Atlas") },
-        threads: {
-          t1: makeThread("t1", { projectId: "p1", title: "Tide work", updatedAt: 10 }),
-          t2: makeThread("t2", { projectId: "p2", title: "Atlas work", updatedAt: 30 }),
-        },
-      }),
-    );
-    useUi.getState().selectThread("t1");
-    render(<Rail />);
-
-    expect(screen.queryByRole("list", { name: "Projects" })).toBeNull();
-    expect(screen.getByRole("combobox", { name: "Projects" }).textContent).toContain("All projects");
-
-    chooseOption("Projects", /^Atlas/);
-    expect(useUi.getState().selectedProjectId).toBe("p2");
-    expect(useUi.getState().selectedThreadId).toBe("t2");
-    expect(screen.queryByText("Tide work")).toBeNull();
-    expect(screen.getByText("Atlas work")).toBeDefined();
-
-    // Project actions button remains accessible in select mode
-    fireEvent.click(screen.getByRole("button", { name: "Actions for Atlas" }));
-    await act(async () => fireEvent.click(screen.getByRole("menuitem", { name: "Pin" })));
-    expect(fake.dispatch).toHaveBeenCalledWith(expect.objectContaining({ type: "project.update", projectId: "p2", pinned: true }));
-
-    chooseOption("Projects", /^All projects/);
-    expect(useUi.getState().selectedProjectId).toBeNull();
-    expect(screen.getByText("Tide work")).toBeDefined();
   });
 });

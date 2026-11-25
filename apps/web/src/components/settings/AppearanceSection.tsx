@@ -236,7 +236,7 @@ export function AppearanceSection() {
         />
         <SettingRow
           label="Project selector"
-          help="Show projects in the rail as wrap-around chips or a dropdown select."
+          help="Show projects in the rail as a dropdown select or wrap-around chips."
           control={
             <SettingSelect
               label="Project selector"

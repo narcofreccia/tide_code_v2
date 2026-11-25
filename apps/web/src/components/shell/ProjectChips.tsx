@@ -188,8 +188,8 @@ function ProjectSelect({ groups, scope }: { groups: readonly RepoGroup[]; scope:
 }
 
 /**
- * The rail's scope: `All` then one chip per repository (pinned first; click filters to it and every clone of it on other machines, ⌘-click adds or removes the whole
- * repo), named by the project's title, or a compact dropdown Select when configured in Settings › Appearance.
+ * The rail's scope: a compact dropdown Select (default), or wrap-around chips when configured in Settings › Appearance
+ * (`All` then one chip per repository, pinned first; click filters to it and every clone of it on other machines, ⌘-click adds or removes the whole repo).
  * With a single repository there is nothing to filter, so the row is not drawn.
  */
 export function ProjectChips({ projects }: { projects: readonly Project[] }) {

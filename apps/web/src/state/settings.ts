@@ -10,7 +10,7 @@ export type ProjectSelectorStyle = "chips" | "select";
 
 export const THEMES: Theme[] = ["system", "dark", "light"];
 export const DENSITIES: Density[] = ["comfortable", "compact"];
-export const PROJECT_SELECTOR_STYLES: ProjectSelectorStyle[] = ["chips", "select"];
+export const PROJECT_SELECTOR_STYLES: ProjectSelectorStyle[] = ["select", "chips"];
 
 interface SettingsState {
   theme: Theme;
@@ -20,7 +20,7 @@ interface SettingsState {
   fonts: FontSettings;
   /** the rail's grouping: by status (default) or one folder per project */
   railGroupBy: RailGroupBy;
-  /** how projects are picked in the rail: wrap-around chips (default) or a dropdown select */
+  /** how projects are picked in the rail: a dropdown select (default) or wrap-around chips */
   projectSelector: ProjectSelectorStyle;
   setRailGroupBy: (by: RailGroupBy) => void;
   setProjectSelector: (style: ProjectSelectorStyle) => void;
@@ -43,7 +43,7 @@ export const useSettings = create<SettingsState>()(
       density: "comfortable",
       fonts: DEFAULT_FONTS,
       railGroupBy: "status",
-      projectSelector: "chips",
+      projectSelector: "select",
       setRailGroupBy: (railGroupBy) => set({ railGroupBy }),
       setProjectSelector: (projectSelector) => set({ projectSelector }),
       setTheme: (theme) => set({ theme }),
@@ -114,6 +114,6 @@ useSettings.subscribe(sync);
 
 export function resetSettings(): void {
   const { customTheme: _drop, ...rest } = useSettings.getState();
-  useSettings.setState({ ...rest, theme: "dark", density: "comfortable", fonts: DEFAULT_FONTS, railGroupBy: "status", projectSelector: "chips" }, true);
+  useSettings.setState({ ...rest, theme: "dark", density: "comfortable", fonts: DEFAULT_FONTS, railGroupBy: "status", projectSelector: "select" }, true);
   resetServerSettings();
 }

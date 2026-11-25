@@ -54,14 +54,14 @@ describe("Settings › Appearance › rail grouping", () => {
     expect(useSettings.getState().railGroupBy).toBe("status");
   });
 
-  it("switches the rail project selector between chips and select", () => {
+  it("switches the rail project selector between select (default) and chips", () => {
     resetSettings();
     render(<AppearanceSection />);
-    expect(useSettings.getState().projectSelector).toBe("chips");
-    chooseOption("Project selector", "Select");
     expect(useSettings.getState().projectSelector).toBe("select");
     chooseOption("Project selector", "Chips");
     expect(useSettings.getState().projectSelector).toBe("chips");
+    chooseOption("Project selector", "Select");
+    expect(useSettings.getState().projectSelector).toBe("select");
   });
 });
 

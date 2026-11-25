@@ -6,11 +6,13 @@ import { ProjectDialogHost } from "./ProjectDialogs.tsx";
 import { ToastHost } from "../ui/Toast.tsx";
 import { attachFakeStore, makeThread, makeTurn, modelWith, resetUi } from "../../testHarness.ts";
 import { useUi } from "../../state/ui.ts";
+import { resetSettings, useSettings } from "../../state/settings.ts";
 import { defaultUserSettings, useServerSettings } from "../../state/serverSettings.ts";
 
 afterEach(() => {
   cleanup();
   resetUi();
+  resetSettings();
   vi.useRealTimers();
   useServerSettings.setState({ settings: defaultUserSettings() });
 });
@@ -204,8 +206,9 @@ describe("rail groups", () => {
 
 const atlas = { id: "p2", title: "Atlas", rootPath: "/src/atlas", createdAt: 1, updatedAt: 1 };
 
-/** the chip row only exists with more than one project */
+/** the chip row only exists with more than one project (in chips mode) */
 function mountProjects() {
+  useSettings.getState().setProjectSelector("chips");
   const fake = attachFakeStore(modelWith({ projects: { p1: project, p2: atlas } }));
   render(
     <>
