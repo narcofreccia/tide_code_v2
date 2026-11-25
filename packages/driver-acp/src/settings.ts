@@ -44,6 +44,8 @@ export class AcpSettings {
   #legacyModels: AcpLegacyModels | undefined;
   /** the mode the agent started in: "default interaction, no special runtime mode" */
   #baseMode: string | undefined;
+  /** the model the agent started on before this session's explicit override was applied */
+  #baseModel: string | undefined;
   #currentMode: string | undefined;
   #defaultModel: string | undefined;
   #keepAgentMode: boolean;
@@ -60,6 +62,7 @@ export class AcpSettings {
     this.#defaultModel = options.defaultModel;
     this.ingest(knobs);
     this.#baseMode = this.#currentMode;
+    this.#baseModel = this.models?.current;
   }
 
   ingest(knobs: SessionKnobs): void {
@@ -97,7 +100,7 @@ export class AcpSettings {
   }
 
   get modelList(): ModelInfo[] {
-    return this.models?.models ?? [];
+    return modelSelector(this.#configOptions, this.#legacyModels, this.#defaultModel ?? this.#baseModel)?.models ?? [];
   }
 
   async #setConfig(configId: string, value: string): Promise<void> {

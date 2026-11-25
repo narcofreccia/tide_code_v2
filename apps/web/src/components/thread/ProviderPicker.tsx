@@ -11,6 +11,7 @@ import {
   unavailableReason,
   useProviderRoster,
   useProviders,
+  validModelFor,
 } from "../../state/providers.ts";
 import { providerDefault, worktreeByDefault } from "../../state/serverSettings.ts";
 import { BUNDLED_PROVIDERS, PROVIDER_LABELS, kindOfId } from "../../lib/vocab.ts";
@@ -46,7 +47,8 @@ export function draftForProvider(
   const provider = status?.kind ?? kindOfId(id) ?? "claude";
   const providerId = status?.id || id;
   const saved = providerDefault(providerId);
-  const chosen = model || saved.model || defaultModelOf(providers, providerId) || "";
+  const models = status?.models ?? [];
+  const chosen = validModelFor(models, model) ?? validModelFor(models, saved.model) ?? defaultModelOf(providers, providerId) ?? "";
   return { provider, providerId, model: chosen, effort: "", ...(saved.mode === undefined ? {} : { mode: saved.mode }) };
 }
 

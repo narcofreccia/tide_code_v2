@@ -125,6 +125,18 @@ describe("Antigravity profile", () => {
     expect(session.nativeSessionId).toBe("agy_1");
   });
 
+  it("opening a session on a non-default model does not overwrite the harness's reported default model", async () => {
+    const cwd = realpathSync(mkdtempSync(join(tmpdir(), "tide-agy-")));
+    const sessionAgent = new FixtureAgent(loadFixture(TURN, cwd));
+    const probeAgent = new FixtureAgent(loadFixture(TURN, cwd));
+    let call = 0;
+    const spawn: typeof sessionAgent.spawn = (...args) => (call++ === 0 ? sessionAgent.spawn(...args) : probeAgent.spawn(...args));
+    const instance = createAcpInstance(AGY, { dataDir: cwd, log: () => undefined }, { spawn });
+    await instance.openSession({ threadId: "t1", cwd, mode: "approval-required", interaction: "default", mcpServers: [], model: "agy-flash" });
+    const status = await instance.status();
+    expect(status.models.find((m) => m.default)?.id).toBe("agy-pro");
+  });
+
   it("resume uses session/resume with the system prompt, and mutes nothing it did not replay", async () => {
     const { agent, session } = await open(RESUME, AGY, { resume: "agy_old" });
     expect(sent(agent, "session/resume")[0]?.params).toMatchObject({ sessionId: "agy_old", _meta: { antigravity: { systemPrompt: { append: "Be terse." } } } });

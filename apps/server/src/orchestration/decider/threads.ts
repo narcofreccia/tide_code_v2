@@ -75,7 +75,7 @@ export function decideThread(model: ReadModel, command: ThreadCommand, ctx: Deci
         title: command.title ?? DEFAULT_THREAD_TITLE,
         provider: command.provider,
         ...(providerId !== undefined ? { providerId } : {}),
-        ...(command.model !== undefined ? { model: command.model } : {}),
+        ...(command.model !== undefined && command.model !== "" ? { model: command.model } : {}),
         ...(command.effort !== undefined && command.effort !== "" ? { effort: command.effort } : {}),
         mode: command.mode ?? parent?.mode ?? "approval-required",
         interaction: command.interaction ?? "default",
@@ -307,7 +307,7 @@ function decideUpdate(model: ReadModel, command: CommandOf<"thread.update">, ctx
   }
   const patch: ThreadPatch = {
     ...(command.title !== undefined ? { title: command.title } : {}),
-    ...(command.model !== undefined ? { model: command.model } : {}),
+    ...(command.model !== undefined && command.model !== "" ? { model: command.model } : {}),
     ...(command.effort !== undefined && command.effort !== "" ? { effort: command.effort } : {}),
     ...(command.mode !== undefined ? { mode: command.mode } : {}),
     ...(command.interaction !== undefined ? { interaction: command.interaction } : {}),
@@ -315,9 +315,17 @@ function decideUpdate(model: ReadModel, command: CommandOf<"thread.update">, ctx
     ...(command.autoAllowRoutine !== undefined ? { autoAllowRoutine: command.autoAllowRoutine } : {}),
     ...(command.autoSettle !== undefined ? { autoSettle: command.autoSettle } : {}),
   };
+  const clearModel = command.model === "" && thread.model !== undefined;
   const clearEffort = command.effort === "" && thread.effort !== undefined;
   if (toKey === fromKey) {
-    return ok({ type: "thread.updated", threadId: thread.id, patch, ...(clearEffort ? { clearEffort: true } : {}), updatedAt: ctx.now });
+    return ok({
+      type: "thread.updated",
+      threadId: thread.id,
+      patch,
+      ...(clearModel ? { clearModel: true } : {}),
+      ...(clearEffort ? { clearEffort: true } : {}),
+      updatedAt: ctx.now,
+    });
   }
   if (thread.status === "running") return fail("busy", `thread ${thread.id} is running; switch provider once it settles`);
   if (thread.rollback?.status === "rolling") return fail("busy", `thread ${thread.id} is rolling back`);
@@ -336,7 +344,7 @@ function decideUpdate(model: ReadModel, command: CommandOf<"thread.update">, ctx
     patch,
     ...(known !== undefined ? { nativeSessionId: known.nativeSessionId } : { clearNativeSession: true }),
     // a model id belongs to one harness: without a new one the target runs on its default
-    ...(command.model === undefined && thread.model !== undefined ? { clearModel: true } : {}),
+    ...((command.model === undefined || command.model === "") && thread.model !== undefined ? { clearModel: true } : {}),
     // so does an effort level (it is one of the old model's)
     ...(clearEffort || (command.effort === undefined && thread.effort !== undefined) ? { clearEffort: true } : {}),
     updatedAt: ctx.now,

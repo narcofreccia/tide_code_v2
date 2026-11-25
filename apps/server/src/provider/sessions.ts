@@ -37,8 +37,8 @@ export function codexMultiAgentModeOf(
 export function settingsOf(thread: Thread, defaults?: UserSettings["providerDefaults"]): SessionSettings {
   const multiAgentMode = codexMultiAgentModeOf(thread, defaults);
   return {
-    ...(thread.model !== undefined ? { model: thread.model } : {}),
-    ...(thread.effort !== undefined ? { effort: thread.effort } : {}),
+    ...(thread.model !== undefined && thread.model !== "" ? { model: thread.model } : {}),
+    ...(thread.effort !== undefined && thread.effort !== "" ? { effort: thread.effort } : {}),
     mode: thread.mode,
     interaction: thread.interaction,
     ...(multiAgentMode !== undefined ? { multiAgentMode } : {}),
@@ -282,8 +282,8 @@ export class SessionDirectory {
       cwd,
       ...(resume !== undefined ? { resume } : {}),
       ...(hints.forkFrom !== undefined ? { forkFrom: hints.forkFrom } : {}),
-      ...(thread.model !== undefined ? { model: thread.model } : {}),
-      ...(thread.effort !== undefined ? { effort: thread.effort } : {}),
+      ...(thread.model !== undefined && thread.model !== "" ? { model: thread.model } : {}),
+      ...(thread.effort !== undefined && thread.effort !== "" ? { effort: thread.effort } : {}),
       mode: thread.mode,
       interaction: thread.interaction,
       ...(isDelegate ? { isDelegate: true } : {}),

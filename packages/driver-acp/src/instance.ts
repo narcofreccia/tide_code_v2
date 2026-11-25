@@ -122,11 +122,18 @@ export class AcpInstance implements ProviderInstance {
     }
     const settings = session.settings;
     if (settings) {
-      // a session opened, so the agent is logged in; refresh what status() reports
+      // a session opened, so the agent is logged in; refresh what status() reports.
+      // A resumed session starts on whatever model that old thread used, not the agent's default.
       const { authHint: _cleared, ...rest } = this.#facts;
+      const priorDefault = options.resume !== undefined ? this.#facts.models?.find((m) => m.default === true)?.id : undefined;
+      const rawModels = settings.modelList.length > 0 ? settings.modelList : (this.#facts.models ?? []);
+      const models =
+        priorDefault !== undefined && rawModels.some((m) => m.id === priorDefault)
+          ? rawModels.map((m) => ({ ...m, default: m.id === priorDefault }))
+          : rawModels;
       this.#facts = {
         ...rest,
-        models: settings.modelList.length > 0 ? settings.modelList : (this.#facts.models ?? []),
+        models,
         planMode: settings.planSupported,
         effort: settings.efforts !== undefined,
       };

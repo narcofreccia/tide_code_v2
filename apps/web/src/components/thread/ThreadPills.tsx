@@ -11,13 +11,15 @@ import {
 } from "../../lib/vocab.ts";
 import { updateThread, type ThreadPatch } from "../../lib/threadActions.ts";
 import {
-  defaultModelOf,
   effortsOf,
   modelChoiceValue,
   modelChoices,
   providerStatus,
   useProviders,
+  validModelFor,
 } from "../../state/providers.ts";
+import { envOfThread } from "../../state/environments.ts";
+import { providerDefault } from "../../state/serverSettings.ts";
 import { EffortSelect } from "./EffortSelect.tsx";
 import { instanceOptions } from "./ProviderPicker.tsx";
 import { showToast } from "../../state/toast.ts";
@@ -83,13 +85,21 @@ export const ThreadPills = memo(function ThreadPills({ thread }: { thread: Threa
   const limit = useThreadDeviceLimit(thread.id);
 
   const id = providerIdOf(thread);
+  const envId = envOfThread(thread.id);
   const listed = instanceOptions(providers, false, "all");
   // an instance removed from Settings still shows as the thread's current agent
   const providerOptions: SelectOption<string>[] = listed.some((o) => o.value === id)
     ? listed
     : [...listed, { value: id, label: `${instanceLabel(providers, id)} · not configured`, disabled: true }];
-  const models = providerStatus(providers, id)?.models ?? [];
-  const modelOptions: SelectOption<string>[] = modelChoices(models, id, providers);
+  const currentStatus = providerStatus(providers, id, envId) ?? providerStatus(providers, id);
+  const models = currentStatus?.models ?? [];
+  const listedModels: SelectOption<string>[] = modelChoices(models, id, providers);
+  const selectedModel = modelChoiceValue(models, thread.model);
+  // a model stored on the thread that this harness does not list stays visible instead of showing "Select…"
+  const modelOptions: SelectOption<string>[] =
+    selectedModel !== "" && models.length > 0 && !listedModels.some((o) => o.value === selectedModel)
+      ? [...listedModels, { value: selectedModel, label: `${selectedModel} · not listed`, disabled: true }]
+      : listedModels;
   const efforts = effortsOf(models, thread.model);
   // R19: Full access is refused for a device with limited access on the thread's machine
   // captions per harness where `auto` means something else (vocab.ts RUNTIME_MODE_KIND_HINTS)
@@ -117,9 +127,10 @@ export const ThreadPills = memo(function ThreadPills({ thread }: { thread: Threa
           options={providerOptions}
           disabled={running}
           onSelect={(next) => {
-            const status = providerStatus(providers, next);
+            const status = providerStatus(providers, next, envId) ?? providerStatus(providers, next);
             if (status === undefined) return;
-            const model = defaultModelOf(providers, next);
+            const saved = validModelFor(status.models, providerDefault(next).model);
+            const model = saved ?? status.models.find((m) => m.default)?.id;
             apply({ provider: status.kind, providerId: next, ...(model === undefined ? {} : { model }) });
           }}
         />
@@ -128,7 +139,7 @@ export const ThreadPills = memo(function ThreadPills({ thread }: { thread: Threa
         <Select
           label="Model"
           className={styles.control}
-          value={modelChoiceValue(models, thread.model)}
+          value={selectedModel}
           options={modelOptions}
           onSelect={(model) => {
             // effort ids are per model: keep the level only when the new model has it too
@@ -161,7 +172,7 @@ export const ThreadPills = memo(function ThreadPills({ thread }: { thread: Threa
         <InteractionToggle
           value={thread.interaction}
           onChange={(interaction) => applyNextTurn({ interaction })}
-          planMode={providerStatus(providers, id)?.caps.planMode !== false}
+          planMode={currentStatus?.caps.planMode !== false}
           harness={instanceLabel(providers, id)}
         />
       </Slot>

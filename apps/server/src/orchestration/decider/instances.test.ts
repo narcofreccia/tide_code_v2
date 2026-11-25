@@ -89,6 +89,15 @@ describe("decide: provider instances (R8)", () => {
     expect(cleared.model.threads[h.threadId]?.effort).toBeUndefined();
   });
 
+  it('clears model when updated to "" instead of storing an empty string', () => {
+    const h = withHistory();
+    const set = run(h.model, { type: "thread.update", threadId: h.threadId, model: "opus" });
+    expect(set.model.threads[h.threadId]?.model).toBe("opus");
+    const cleared = run(set.model, { type: "thread.update", threadId: h.threadId, model: "" });
+    expect(eventOf(cleared.events, "thread.updated")).toMatchObject({ clearModel: true, patch: {} });
+    expect(cleared.model.threads[h.threadId]?.model).toBeUndefined();
+  });
+
   it("treats antigravity as a bundled default instance and accepts it as a delegate target", () => {
     expect(resolveInstance(ctx, "antigravity")).toEqual({ kind: "antigravity" });
     withInstances(() => {

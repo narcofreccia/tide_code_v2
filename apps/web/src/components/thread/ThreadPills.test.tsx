@@ -4,11 +4,13 @@ import { ThreadPills } from "./ThreadPills.tsx";
 import { attachFakeStore, chooseOption, makeThread, modelWith, optionLabels, resetUi } from "../../testHarness.ts";
 import { PROVIDER_FIXTURE } from "../settings/fixtures.ts";
 import { setProvidersForTest } from "../../state/providers.ts";
+import { resetServerSettings, useServerSettings } from "../../state/serverSettings.ts";
 import { useToasts } from "../../state/toast.ts";
 
 afterEach(() => {
   cleanup();
   resetUi();
+  resetServerSettings();
 });
 
 function mount(patch: Parameters<typeof makeThread>[1] = {}) {
@@ -107,6 +109,56 @@ describe("ThreadPills", () => {
     expect(screen.getByRole("radio", { name: "Build" }).getAttribute("aria-checked")).toBe("true");
     fireEvent.click(screen.getByRole("radio", { name: "Plan" }));
     expect(fake.dispatch).toHaveBeenCalledWith({ type: "thread.update", threadId: "t1", interaction: "plan" });
+  });
+
+  it("shows an unlisted stored model explicitly instead of blank Select…", () => {
+    mount({ model: "gpt-6-foreign" });
+    expect(screen.getByRole("combobox", { name: "Model" }).textContent).toContain("gpt-6-foreign · not listed");
+  });
+
+  it("uses a valid Settings default model when switching provider, ignoring stale foreign models", () => {
+    const roster = [
+      PROVIDER_FIXTURE[0]!,
+      {
+        ...PROVIDER_FIXTURE[1]!,
+        installed: true,
+        loggedIn: true,
+        models: [
+          { id: "gpt-5-codex", label: "GPT-5 Codex", default: true },
+          { id: "gpt-5-mini", label: "GPT-5 Mini" },
+        ],
+      },
+    ];
+    useServerSettings.setState((s) => ({
+      ...s,
+      settings: { ...s.settings, providerDefaults: { codex: { model: "gpt-5-mini" } } },
+    }));
+    setProvidersForTest(roster);
+    const fake = attachFakeStore(modelWith({}));
+    const { rerender } = render(<ThreadPills thread={makeThread("t1", { model: "opus-4-6" })} />);
+    chooseOption("Provider", "Codex");
+    expect(fake.dispatch).toHaveBeenLastCalledWith({
+      type: "thread.update",
+      threadId: "t1",
+      provider: "codex",
+      providerId: "codex",
+      model: "gpt-5-mini",
+    });
+
+    // A stale/foreign model saved in Settings for codex is ignored in favour of codex's own default
+    useServerSettings.setState((s) => ({
+      ...s,
+      settings: { ...s.settings, providerDefaults: { codex: { model: "opus-4-6" } } },
+    }));
+    rerender(<ThreadPills thread={makeThread("t1", { model: "opus-4-6" })} />);
+    chooseOption("Provider", "Codex");
+    expect(fake.dispatch).toHaveBeenLastCalledWith({
+      type: "thread.update",
+      threadId: "t1",
+      provider: "codex",
+      providerId: "codex",
+      model: "gpt-5-codex",
+    });
   });
 });
 

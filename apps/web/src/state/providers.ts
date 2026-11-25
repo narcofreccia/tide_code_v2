@@ -202,6 +202,16 @@ export function defaultModelOf(providers: readonly ProviderStatusDto[], id: stri
   return providerStatus(providers, id)?.models.find((m) => m.default)?.id;
 }
 
+/**
+ * Returns `model` when it is usable on a harness with `models` (listed by it, or the harness
+ * reported no list yet); undefined when it is empty or belongs to another harness.
+ */
+export function validModelFor(models: readonly ProviderStatusDto["models"][number][], model: string | undefined): string | undefined {
+  if (model === undefined || model === "") return undefined;
+  if (models.length === 0 || models.some((m) => m.id === model)) return model;
+  return undefined;
+}
+
 /** Reads the cached roster without triggering a fetch (labels on rows that must not probe). */
 export function useProvidersSnapshot(): ProviderStatusDto[] {
   return useProvidersStore((s) => s.providers);
