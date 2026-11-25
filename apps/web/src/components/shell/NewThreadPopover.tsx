@@ -152,10 +152,13 @@ function ThreadFields({
   const picked = preferredProviderId(providers, source === undefined ? undefined : providerIdOf(source));
   const [draft, patch] = useThreadDraft(
     picked,
-    parent === undefined && last !== undefined && providerIdOf(last) === picked ? (last.model ?? "") : "",
-    parent === undefined ? last?.mode : undefined,
+    source !== undefined && providerIdOf(source) === picked ? (source.model ?? "") : "",
+    source?.mode,
   );
-  useRepickOnRoster(picked, draft.providerId, (id) => patch(draftForProvider(id, providers)));
+  useRepickOnRoster(picked, draft.providerId, (id) => {
+    const next = draftForProvider(id, providers);
+    patch(parent === undefined ? next : { ...next, mode: parent.mode });
+  });
   const [title, setTitle] = useState("");
   const [interaction, setInteraction] = useState<InteractionMode>("default");
   const [busy, setBusy] = useState<string | undefined>(undefined);

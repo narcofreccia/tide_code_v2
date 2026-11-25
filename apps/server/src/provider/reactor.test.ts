@@ -538,4 +538,26 @@ describe("ProviderReactor: R17 fresh session and C4", () => {
     expect(dismissed).toBe(true);
     expect(Object.keys(h.engine.getModel().turns)).toHaveLength(turnsBefore);
   });
+
+  it("applies permission mode changes immediately mid-turn and auto-accepts pending approvals on full-access", async () => {
+    const h = await harness();
+    h.control.reconfigureResult = "applied";
+    h.control.script(
+      emit({ type: "activity", activity: { kind: "approval", requestId: "req-1", toolName: "Bash", input: { command: "ls" }, status: "pending" } }),
+      awaitApproval("req-1"),
+      emit({ type: "settled", status: "completed" }),
+    );
+    const pending = waitFor(h.engine, (e) => e.type === "activity.upserted" && e.activity.kind === "approval" && e.activity.status === "pending");
+    await h.engine.dispatch({ type: "turn.request", threadId: h.threadId, text: "do work" });
+    await pending;
+
+    const settled = waitFor(h.engine, (e) => e.type === "turn.settled");
+    await h.engine.dispatch({ type: "thread.update", threadId: h.threadId, mode: "full-access" });
+    await settled;
+    await h.reactor.drain();
+
+    expect(h.control.reconfigures).toEqual([{ threadId: h.threadId, settings: { mode: "full-access", interaction: "default" } }]);
+    expect(h.control.approvals).toEqual([{ requestId: "req-1", decision: "accept" }]);
+    expect(h.control.closed).toEqual([]);
+  });
 });

@@ -2,7 +2,7 @@ import { afterEach, describe, expect, it } from "vitest";
 import { cleanup, fireEvent, render, screen } from "@testing-library/react";
 import { AppearanceSection } from "./AppearanceSection.tsx";
 import { chooseOption, resetUi } from "../../testHarness.ts";
-import { useSettings } from "../../state/settings.ts";
+import { resetSettings, useSettings } from "../../state/settings.ts";
 import { preferredTheme } from "../workbench/monaco/themes.ts";
 
 afterEach(() => {
@@ -52,6 +52,16 @@ describe("Settings › Appearance › rail grouping", () => {
     expect(useSettings.getState().railGroupBy).toBe("project");
     fireEvent.click(toggle);
     expect(useSettings.getState().railGroupBy).toBe("status");
+  });
+
+  it("switches the rail project selector between chips and select", () => {
+    resetSettings();
+    render(<AppearanceSection />);
+    expect(useSettings.getState().projectSelector).toBe("chips");
+    chooseOption("Project selector", "Select");
+    expect(useSettings.getState().projectSelector).toBe("select");
+    chooseOption("Project selector", "Chips");
+    expect(useSettings.getState().projectSelector).toBe("chips");
   });
 });
 

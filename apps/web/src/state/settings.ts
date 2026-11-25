@@ -6,9 +6,11 @@ import { DEFAULT_FONTS, applyCustomTheme, applyFonts, type CustomTheme, type Fon
 export type Theme = "system" | "dark" | "light";
 export type Density = "comfortable" | "compact";
 export type RailGroupBy = "status" | "project";
+export type ProjectSelectorStyle = "chips" | "select";
 
 export const THEMES: Theme[] = ["system", "dark", "light"];
 export const DENSITIES: Density[] = ["comfortable", "compact"];
+export const PROJECT_SELECTOR_STYLES: ProjectSelectorStyle[] = ["chips", "select"];
 
 interface SettingsState {
   theme: Theme;
@@ -18,7 +20,10 @@ interface SettingsState {
   fonts: FontSettings;
   /** the rail's grouping: by status (default) or one folder per project */
   railGroupBy: RailGroupBy;
+  /** how projects are picked in the rail: wrap-around chips (default) or a dropdown select */
+  projectSelector: ProjectSelectorStyle;
   setRailGroupBy: (by: RailGroupBy) => void;
+  setProjectSelector: (style: ProjectSelectorStyle) => void;
   setTheme: (theme: Theme) => void;
   setDensity: (density: Density) => void;
   setCustomTheme: (theme: CustomTheme | undefined) => void;
@@ -38,7 +43,9 @@ export const useSettings = create<SettingsState>()(
       density: "comfortable",
       fonts: DEFAULT_FONTS,
       railGroupBy: "status",
+      projectSelector: "chips",
       setRailGroupBy: (railGroupBy) => set({ railGroupBy }),
+      setProjectSelector: (projectSelector) => set({ projectSelector }),
       setTheme: (theme) => set({ theme }),
       setDensity: (density) => set({ density }),
       setCustomTheme: (customTheme) =>
@@ -60,6 +67,7 @@ export const useSettings = create<SettingsState>()(
         density: s.density,
         fonts: s.fonts,
         railGroupBy: s.railGroupBy,
+        projectSelector: s.projectSelector,
         ...(s.customTheme ? { customTheme: s.customTheme } : {}),
       }), },
   ),
@@ -106,6 +114,6 @@ useSettings.subscribe(sync);
 
 export function resetSettings(): void {
   const { customTheme: _drop, ...rest } = useSettings.getState();
-  useSettings.setState({ ...rest, theme: "dark", density: "comfortable", fonts: DEFAULT_FONTS, railGroupBy: "status" }, true);
+  useSettings.setState({ ...rest, theme: "dark", density: "comfortable", fonts: DEFAULT_FONTS, railGroupBy: "status", projectSelector: "chips" }, true);
   resetServerSettings();
 }

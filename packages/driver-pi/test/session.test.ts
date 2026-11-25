@@ -219,6 +219,32 @@ describe("PiSession", () => {
     expect(prompt?.["images"]).toEqual([{ type: "image", data: "AAA", mimeType: "image/png" }]);
     await session.close();
   });
+
+  it("auto-confirms incoming tide-bridge tool asks immediately when permissions are loosened mid-turn", async () => {
+    const { session, pi } = await open((command, self) => {
+      if (command["type"] === "prompt") self.emitLine({ type: "response", id: command["id"], command: "prompt", success: true });
+    });
+    const events: NormalizedEvent[] = [];
+    const done = (async () => {
+      for await (const event of session.send({ text: "run bash" })) events.push(event);
+    })();
+    await new Promise((r) => setImmediate(r));
+    // Mid-turn reconfigure updates live mode for loosening while returning "reopen" so /tide-config runs when idle
+    expect(await session.reconfigure?.({ mode: "full-access", interaction: "default" })).toBe("reopen");
+    pi().emitLine({
+      type: "extension_ui_request",
+      id: "ui-live",
+      method: "confirm",
+      title: "Allow bash?",
+      message: 'TIDE_META:{"requestId":"r1","toolName":"bash","toolCallId":"tc1","input":{"command":"ls"}}\nRun: ls',
+    });
+    await new Promise((r) => setImmediate(r));
+    expect(pi().sent.find((m) => m["type"] === "extension_ui_response" && m["id"] === "ui-live")).toMatchObject({ confirmed: true });
+    expect(events.some((e) => e.type === "activity" && e.activity.kind === "approval")).toBe(false);
+    pi().emitLine({ type: "agent_settled" });
+    await done;
+    await session.close();
+  });
 });
 
 describe("buildSpawn", () => {

@@ -370,7 +370,9 @@ export class ClaudeSession implements ProviderSession {
       // well as writes, and a read-only link that is not listed could not even be read.
       // Edits under a read-only link are denied in `canUseTool` instead — see links.ts.
       ...(options.linkedDirs && options.linkedDirs.length > 0 ? { additionalDirectories: options.linkedDirs.map((dir) => dir.path) } : {}),
-      ...(this.#permissionMode === "bypassPermissions" ? { allowDangerouslySkipPermissions: true } : {}),
+      // Always opt in so a live mid-turn switch to `full-access` (`setPermissionMode("bypassPermissions")`)
+      // works without reopening; inert while `permissionMode` is anything else.
+      allowDangerouslySkipPermissions: true,
       // ALWAYS set, append or not: the SDK reads an omitted `systemPrompt` as an *empty custom*
       // prompt, which would silently strip the Claude Code system prompt — the definition of
       // crippling the harness (CLAUDE.md §1a). The preset is the only non-crippling value.

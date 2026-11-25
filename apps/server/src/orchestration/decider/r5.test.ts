@@ -294,6 +294,13 @@ describe("settings defaults in the decider", () => {
     expect(inherited).toMatchObject({ model: "gpt-5", mode: "full-access" });
     const narrowed = eventOf(runWith(fullParent, { type: "thread.delegate", fromThreadId: f.threadId, provider: "codex", prompt: "go", mode: "auto-accept-edits" }, strictDefaults).events, "thread.created").thread;
     expect(narrowed).toMatchObject({ model: "gpt-5", mode: "auto-accept-edits" });
+
+    // A manual child thread created without an explicit mode also inherits its parent's mode.
+    const projectId = fullParent.threads[f.threadId]?.projectId ?? "";
+    const child = eventOf(run(fullParent, { type: "thread.create", projectId, parentThreadId: f.threadId, provider: "claude" }).events, "thread.created").thread;
+    expect(child.mode).toBe("full-access");
+    const explicitChild = eventOf(run(fullParent, { type: "thread.create", projectId, parentThreadId: f.threadId, provider: "claude", mode: "auto" }).events, "thread.created").thread;
+    expect(explicitChild.mode).toBe("auto");
   });
 
   it("plan.implement and experts threads take the provider default model", () => {

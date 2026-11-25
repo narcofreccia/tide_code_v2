@@ -7,6 +7,7 @@ import {
   type InternalCommand,
   type NormalizedEvent,
   type ProviderSession,
+  type RuntimeMode,
   type SlashCommandInfo,
   type TurnInput,
 } from "@tide/contracts";
@@ -266,6 +267,9 @@ export class ProviderReactor {
       case "turn.released":
         this.#release(event.threadId, event.turnId);
         return;
+      case "thread.updated":
+        if (event.patch.mode !== undefined) this.#track(this.#applyModeChange(event.threadId, event.patch.mode));
+        return;
       default:
         return;
     }
@@ -457,8 +461,30 @@ export class ProviderReactor {
     );
   }
 
-  /** A user-level command the reactor issues on the user's behalf (re-aiming a steer). */
-  async #dispatchClient(command: Extract<Command, { type: "turn.promote" | "thread.resume" }>): Promise<void> {
+  /**
+   * Applies a runtime-mode change immediately to a live session (including mid-turn). When
+   * switching to `full-access`, any already-pending tool approval cards on the thread are also
+   * accepted right away so a blocked turn resumes without an extra click (questions stay untouched).
+   */
+  async #applyModeChange(threadId: string, mode: RuntimeMode): Promise<void> {
+    const thread = this.#engine.getModel().threads[threadId];
+    if (!thread || thread.mode !== mode) return;
+    await this.#sessions.syncMode(thread);
+    if (mode !== "full-access") return;
+    const model = this.#engine.getModel();
+    const pending: string[] = [];
+    for (const entry of model.threadTimeline[threadId] ?? []) {
+      if (entry.kind !== "activity") continue;
+      const activity = model.activities[entry.id];
+      if (activity?.kind === "approval" && activity.status === "pending") pending.push(activity.requestId);
+    }
+    for (const requestId of pending) {
+      await this.#dispatchClient({ type: "approval.respond", threadId, requestId, decision: "accept" });
+    }
+  }
+
+  /** A user-level command the reactor issues on the user's behalf (re-aiming a steer, live full-access approval). */
+  async #dispatchClient(command: Extract<Command, { type: "turn.promote" | "thread.resume" | "approval.respond" }>): Promise<void> {
     try {
       await this.#engine.dispatch(command);
     } catch (err) {

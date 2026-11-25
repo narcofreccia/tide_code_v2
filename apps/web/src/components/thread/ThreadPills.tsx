@@ -98,8 +98,9 @@ export const ThreadPills = memo(function ThreadPills({ thread }: { thread: Threa
   const apply = (patch: ThreadPatch): void => updateThread(thread.id, patch);
 
   /**
-   * Model / mode / interaction can be changed mid-turn: the harness picks them
+   * Model / effort / interaction can be changed mid-turn: the harness picks them
    * up on the next turn, so say so once instead of silently disabling the pill.
+   * Permissions take effect immediately via live reconfigure.
    */
   const applyNextTurn = (patch: ThreadPatch): void => {
     apply(patch);
@@ -153,7 +154,7 @@ export const ThreadPills = memo(function ThreadPills({ thread }: { thread: Threa
           className={styles.control}
           value={thread.mode}
           options={modeOptions}
-          onSelect={(mode) => applyNextTurn({ mode })}
+          onSelect={(mode) => apply({ mode })}
         />
       </Slot>
       <Slot caption="Mode" hint={INTERACTION_HINTS[thread.interaction]}>

@@ -49,7 +49,8 @@ export function decideThread(model: ReadModel, command: ThreadCommand, ctx: Deci
       const project = model.projects[command.projectId];
       if (!project) return fail("not-found", `unknown project ${command.projectId}`);
       if (isArchived(project)) return fail("conflict", `project ${project.id} is archived`);
-      if (command.parentThreadId !== undefined && !model.threads[command.parentThreadId]) {
+      const parent = command.parentThreadId !== undefined ? model.threads[command.parentThreadId] : undefined;
+      if (command.parentThreadId !== undefined && !parent) {
         return fail("not-found", `unknown parent thread ${command.parentThreadId}`);
       }
       const resolved = resolveLinks(project, command.links);
@@ -76,7 +77,7 @@ export function decideThread(model: ReadModel, command: ThreadCommand, ctx: Deci
         ...(providerId !== undefined ? { providerId } : {}),
         ...(command.model !== undefined ? { model: command.model } : {}),
         ...(command.effort !== undefined && command.effort !== "" ? { effort: command.effort } : {}),
-        mode: command.mode ?? "approval-required",
+        mode: command.mode ?? parent?.mode ?? "approval-required",
         interaction: command.interaction ?? "default",
         status: "idle",
         ...(resolved.links.length > 0 || command.links !== undefined ? { links: resolved.links } : {}),

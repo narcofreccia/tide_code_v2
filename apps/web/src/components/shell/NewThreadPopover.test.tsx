@@ -133,6 +133,19 @@ describe("new thread form", () => {
     expect(command).toMatchObject({ type: "thread.create", parentThreadId: "t1", provider: "codex", useWorktree: false });
   });
 
+  it("child thread inherits parent permission mode even when provider default is narrower", async () => {
+    useServerSettings.setState((s) => ({
+      settings: { ...s.settings, providerDefaults: { codex: { mode: "approval-required" } } },
+    }));
+    const fake = open("t1", {
+      t1: makeThread("t1", { title: "Orchestrator", provider: "codex", mode: "full-access" }),
+    });
+    expect(screen.getByRole("combobox", { name: "Thread permissions" }).textContent).toContain("Full access");
+    fireEvent.click(screen.getByText("Create child thread"));
+    const command = await created(fake);
+    expect(command).toMatchObject({ type: "thread.create", parentThreadId: "t1", mode: "full-access" });
+  });
+
   it("createChild opens the form instead of creating silently", () => {
     const fake = attachFakeStore(modelWith({ projects: { p1: project }, threads: { t1: makeThread("t1") } }));
     createChild({ id: "t1", projectId: "p1" });

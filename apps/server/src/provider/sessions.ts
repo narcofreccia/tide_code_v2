@@ -341,6 +341,24 @@ export class SessionDirectory {
     return loss;
   }
 
+  /**
+   * Applies a thread's runtime mode change immediately to a live session (including mid-turn).
+   * Never closes/reopens the session: if the driver answers `reopen`, `entry.settings.mode` stays
+   * stale so the next turn's `getOrOpen` applies or reopens cleanly once idle.
+   */
+  async syncMode(thread: Thread): Promise<void> {
+    const existing = this.#entries.get(thread.id);
+    if (!existing || existing.providerId !== instanceIdOf(thread)) return;
+    if (existing.settings.mode === thread.mode) return;
+    if (!existing.session.reconfigure) return;
+    const next: SessionSettings = { ...existing.settings, mode: thread.mode };
+    const result = await this.#reconfigure(existing, next);
+    if (result === "applied") {
+      existing.settings = next;
+      existing.lastUsedAt = this.#now();
+    }
+  }
+
   async #reconfigure(entry: Entry, wanted: SessionSettings): Promise<"applied" | "reopen"> {
     try {
       return await entry.session.reconfigure!(wanted);

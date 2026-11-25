@@ -57,12 +57,15 @@ describe("ThreadPills", () => {
     expect(toasts()).toEqual([]);
   });
 
-  it("says a mid-turn change applies from the next turn", () => {
+  it("applies mid-turn permission changes immediately and tells the user model/mode changes apply next turn", () => {
     const fake = mount({ status: "running" });
     chooseOption("Permissions", /^Auto-edit/);
     expect(fake.dispatch).toHaveBeenCalledWith(
-      expect.objectContaining({ type: "thread.update", threadId: "t1" }),
+      expect.objectContaining({ type: "thread.update", threadId: "t1", mode: "auto-accept-edits" }),
     );
+    expect(toasts()).toEqual([]);
+
+    chooseOption("Model", "Opus 4.6");
     expect(toasts()).toEqual(["Applies from the next turn"]);
   });
 

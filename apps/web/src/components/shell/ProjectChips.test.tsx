@@ -1,12 +1,14 @@
 import { afterEach, describe, expect, it } from "vitest";
 import { act, cleanup, fireEvent, render, screen, within } from "@testing-library/react";
 import { Rail } from "./Rail.tsx";
-import { attachFakeStore, makeThread, modelWith, resetUi } from "../../testHarness.ts";
+import { attachFakeStore, chooseOption, makeThread, modelWith, resetUi } from "../../testHarness.ts";
+import { resetSettings, useSettings } from "../../state/settings.ts";
 import { useUi } from "../../state/ui.ts";
 
 afterEach(() => {
   cleanup();
   resetUi();
+  resetSettings();
   useUi.setState({ projectFilter: [] });
 });
 
@@ -130,5 +132,65 @@ describe("ProjectChips", () => {
     fireEvent.click(chips.getByText("Atlas"));
     fireEvent.click(chips.getByText("web"), { metaKey: true });
     expect(useUi.getState().projectFilter).toEqual(["p3", "p1", "p2"]);
+  });
+
+  it("brings the clicked project's latest active thread into view, and clears a stale thread when the project has none", () => {
+    attachFakeStore(
+      modelWith({
+        projects: { p1: project("p1", "Tide"), p2: project("p2", "Atlas"), p3: project("p3", "Empty") },
+        threads: {
+          t1: makeThread("t1", { projectId: "p1", title: "Tide old", updatedAt: 10 }),
+          t2: makeThread("t2", { projectId: "p2", title: "Atlas older", updatedAt: 20 }),
+          t3: makeThread("t3", { projectId: "p2", title: "Atlas latest", updatedAt: 50 }),
+          t4: makeThread("t4", { projectId: "p2", title: "Atlas settled", updatedAt: 100, settledAt: 100 }),
+          t5: makeThread("t5", { projectId: "p2", title: "Atlas delegate", parentThreadId: "t3", delegatedBy: "t3", role: "delegate", updatedAt: 90 }),
+        },
+      }),
+    );
+    useUi.getState().selectThread("t1");
+    render(<Rail />);
+
+    // Clicking Atlas switches the active chat to Atlas's latest active root thread (t3), not settled (t4) or nested delegate (t5)
+    fireEvent.click(screen.getByText("Atlas"));
+    expect(useUi.getState().selectedThreadId).toBe("t3");
+    expect(useUi.getState().view).toBe("thread");
+
+    // Clicking Empty (no threads) clears the stale thread from Atlas so the user isn't left looking at the wrong project
+    fireEvent.click(screen.getByText("Empty"));
+    expect(useUi.getState().selectedProjectId).toBe("p3");
+    expect(useUi.getState().selectedThreadId).toBeNull();
+  });
+
+  it("renders a Select dropdown when projectSelector setting is 'select', and still brings the latest thread into view", async () => {
+    useSettings.getState().setProjectSelector("select");
+    const fake = attachFakeStore(
+      modelWith({
+        projects: { p1: project("p1", "Tide"), p2: project("p2", "Atlas") },
+        threads: {
+          t1: makeThread("t1", { projectId: "p1", title: "Tide work", updatedAt: 10 }),
+          t2: makeThread("t2", { projectId: "p2", title: "Atlas work", updatedAt: 30 }),
+        },
+      }),
+    );
+    useUi.getState().selectThread("t1");
+    render(<Rail />);
+
+    expect(screen.queryByRole("list", { name: "Projects" })).toBeNull();
+    expect(screen.getByRole("combobox", { name: "Projects" }).textContent).toContain("All projects");
+
+    chooseOption("Projects", /^Atlas/);
+    expect(useUi.getState().selectedProjectId).toBe("p2");
+    expect(useUi.getState().selectedThreadId).toBe("t2");
+    expect(screen.queryByText("Tide work")).toBeNull();
+    expect(screen.getByText("Atlas work")).toBeDefined();
+
+    // Project actions button remains accessible in select mode
+    fireEvent.click(screen.getByRole("button", { name: "Actions for Atlas" }));
+    await act(async () => fireEvent.click(screen.getByRole("menuitem", { name: "Pin" })));
+    expect(fake.dispatch).toHaveBeenCalledWith(expect.objectContaining({ type: "project.update", projectId: "p2", pinned: true }));
+
+    chooseOption("Projects", /^All projects/);
+    expect(useUi.getState().selectedProjectId).toBeNull();
+    expect(screen.getByText("Tide work")).toBeDefined();
   });
 });

@@ -79,6 +79,38 @@ describe("Antigravity profile", () => {
     expect(sent(agent, "session/set_config_option")).toEqual([]);
   });
 
+  it("applies a mode-only reconfigure immediately mid-turn so incoming permissions use the new mode", async () => {
+    const { agent, session } = await open("synthetic/init-config", AGY, { mode: "approval-required" });
+    const events: NormalizedEvent[] = [];
+    const done = (async () => {
+      for await (const event of session.send({ text: "run cmd" })) events.push(event);
+    })();
+    await new Promise((r) => setImmediate(r));
+    const promptId = sent(agent, "session/prompt")[0]?.id;
+    if (promptId === undefined) throw new Error("expected session/prompt id");
+    expect(await session.reconfigure?.({ mode: "full-access", interaction: "default" })).toBe("applied");
+
+    agent.child.send({
+      id: "perm-live",
+      method: "session/request_permission",
+      params: {
+        sessionId: "sess_1",
+        toolCall: { toolCallId: "tc-1", title: "Run shell", kind: "execute" },
+        options: [
+          { optionId: "once", name: "Allow once", kind: "allow_once" },
+          { optionId: "always", name: "Always", kind: "allow_always" },
+        ],
+      },
+    });
+    await new Promise((r) => setImmediate(r));
+    expect(agent.child.received.find((m) => m.id === "perm-live")?.result).toEqual({
+      outcome: { outcome: "selected", optionId: "always" },
+    });
+    expect(events.some((e) => e.type === "activity" && e.activity.kind === "approval")).toBe(false);
+    agent.child.send({ id: promptId, result: { stopReason: "end_turn" } });
+    await done;
+  });
+
   it("still selects the agent's plan mode for plan interaction", async () => {
     const { agent } = await open(TURN, AGY, { mode: "full-access", interaction: "plan" });
     expect(sent(agent, "session/set_mode")[0]?.params).toEqual({ sessionId: "agy_1", modeId: "plan" });

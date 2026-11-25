@@ -384,4 +384,19 @@ describe("SessionDirectory: R17 fresh sessions and C4 harness-turn gate", () => 
     await sessions.getOrOpen(child, project);
     expect(codex.control.opened[1]).toMatchObject({ isDelegate: true, multiAgentMode: "explicitRequestOnly" });
   });
+
+  it("syncMode applies a mode change immediately to a live session without reopening on 'reopen'", async () => {
+    const { sessions, claude } = setup();
+    claude.reconfigureResult = "applied";
+    await sessions.getOrOpen(thread({ mode: "approval-required", model: "sonnet" }), project);
+    await sessions.syncMode(thread({ mode: "full-access", model: "opus" }));
+    // Only mode changes live; model stays untouched until the next turn
+    expect(claude.reconfigures).toEqual([{ threadId: "t1", settings: { mode: "full-access", interaction: "default", model: "sonnet" } }]);
+    expect(claude.closed).toEqual([]);
+
+    // When the driver answers 'reopen' (e.g. mid-turn on a harness that can't switch live), syncMode does not kill the session
+    claude.reconfigureResult = "reopen";
+    await sessions.syncMode(thread({ mode: "auto", model: "sonnet" }));
+    expect(claude.closed).toEqual([]);
+  });
 });

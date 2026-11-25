@@ -1,5 +1,5 @@
-import type { ApprovalDecision } from "@tide/contracts";
-import { PLAN_PREFIX, USAGE_PREFIX, approvalDescription, parseApprovalMeta, parsePrefixedJson } from "@tide/pi-extensions/protocol";
+import type { ApprovalDecision, RuntimeMode } from "@tide/contracts";
+import { PLAN_PREFIX, USAGE_PREFIX, approvalDescription, classifyTool, needsApproval, parseApprovalMeta, parsePrefixedJson } from "@tide/pi-extensions/protocol";
 import { deferred, type Deferred } from "./async-queue.ts";
 import { isDiffTool, previewDiff } from "./edit-preview.ts";
 import { displayToolName } from "./tool-names.ts";
@@ -58,14 +58,16 @@ export class PiApprovalBroker {
   #emit: Emit;
   #respond: (id: string, body: Record<string, unknown>) => void;
   #cwd: string;
+  #liveMode: (() => RuntimeMode) | undefined;
   #pending = new Map<string, Deferred<ApprovalDecision>>();
   #sessionAllow = new Set<string>();
   #dialogs = new Map<string, PiUiRequest>();
 
-  constructor(emit: Emit, respond: (id: string, body: Record<string, unknown>) => void, cwd: string) {
+  constructor(emit: Emit, respond: (id: string, body: Record<string, unknown>) => void, cwd: string, liveMode?: () => RuntimeMode) {
     this.#emit = emit;
     this.#respond = respond;
     this.#cwd = cwd;
+    this.#liveMode = liveMode;
   }
 
   /** Routes one `extension_ui_request` (docs/rpc-extension-ui.md § Requests from Pi). */
@@ -120,6 +122,12 @@ export class PiApprovalBroker {
     const toolName = meta?.toolName ?? request.title ?? "pi";
     const shownName = meta ? displayToolName(meta.toolName) : toolName;
     if (this.#sessionAllow.has(toolName)) {
+      this.#respond(request.id, { confirmed: true });
+      return;
+    }
+    // Mid-turn permission loosening: auto-confirm tide-bridge tool asks that no longer need approval
+    // under the live mode (never user-extension confirms, which carry no `meta`).
+    if (meta && this.#liveMode !== undefined && !needsApproval(this.#liveMode(), classifyTool(meta.toolName))) {
       this.#respond(request.id, { confirmed: true });
       return;
     }

@@ -543,4 +543,18 @@ describe("codex session", () => {
     await done;
     await session.close();
   });
+
+  it("auto-approves incoming approval requests immediately when permissions are loosened mid-turn", async () => {
+    const { session, server } = await harness({ mode: "approval-required" });
+    const { events, done } = collect(session.send({ text: "run it" }));
+    await tick();
+    expect(await session.reconfigure({ mode: "full-access", interaction: "default" })).toBe("applied");
+    server.serverRequest("live-1", "item/commandExecution/requestApproval", { threadId: THREAD, turnId: TURN, itemId: "i1", startedAtMs: 1, command: "ls", cwd: "/tmp/repo" });
+    await tick();
+    expect(server.replyTo("live-1")?.result).toEqual({ decision: "accept" });
+    expect(events.some((e) => e.type === "activity" && e.activity.kind === "approval")).toBe(false);
+    completeTurn(server);
+    await done;
+    await session.close();
+  });
 });

@@ -79,6 +79,8 @@ export class PiSession implements ProviderSession {
   #announcedSession = false;
   #effort: string | undefined;
   #mode: OpenSessionOptions["mode"];
+  /** live mode updated even mid-turn so loosening takes effect immediately on incoming confirms */
+  #liveMode: OpenSessionOptions["mode"];
   #interaction: OpenSessionOptions["interaction"];
   /** tide-bridge's `/tide-config` is loaded, so mode / plan mode can change in place */
   #liveConfig = false;
@@ -90,6 +92,7 @@ export class PiSession implements ProviderSession {
     this.#options = options;
     this.#effort = options.effort;
     this.#mode = options.mode;
+    this.#liveMode = options.mode;
     this.#interaction = options.interaction;
     this.#normalizer = new PiNormalizer({
       onUnknown: (type) => {
@@ -109,6 +112,7 @@ export class PiSession implements ProviderSession {
       (event) => this.#emit(event),
       (id, body) => this.#rpc.notify({ type: "extension_ui_response", id, ...body }),
       options.cwd,
+      () => this.#liveMode,
     );
   }
 
@@ -259,7 +263,13 @@ export class PiSession implements ProviderSession {
    * `--session <file>`, which loses no history.
    */
   async reconfigure(settings: SessionSettings): Promise<ReconfigureResult> {
-    if (this.#closed || this.#turnActive) return "reopen";
+    if (this.#closed) return "reopen";
+    if (this.#turnActive) {
+      // Mid-turn: update live mode so loosening auto-confirms incoming tide-bridge asks immediately,
+      // then return "reopen" so `/tide-config` still runs cleanly once idle before the next turn.
+      if (settings.mode !== this.#liveMode) this.#liveMode = settings.mode;
+      return "reopen";
+    }
     try {
       const modelChanged = settings.model !== undefined && settings.model !== this.#model;
       if (settings.model !== undefined && settings.model !== this.#model) {
@@ -287,6 +297,7 @@ export class PiSession implements ProviderSession {
         const response = await this.#rpc.request({ type: "prompt", message: formatConfigCommand({ mode: settings.mode, plan: settings.interaction === "plan" }) });
         if (!response.success || promptDisposition(response) !== "handled") return "reopen";
         this.#mode = settings.mode;
+        this.#liveMode = settings.mode;
         this.#interaction = settings.interaction;
       }
       return "applied";

@@ -1,5 +1,5 @@
 import { useRef, useState } from "react";
-import { DENSITIES, THEMES, useSettings, type Density, type Theme } from "../../state/settings.ts";
+import { DENSITIES, PROJECT_SELECTOR_STYLES, THEMES, useSettings, type Density, type ProjectSelectorStyle, type Theme } from "../../state/settings.ts";
 import { FONT_SIZES, readBaseTokens, type FontSize } from "../../lib/theme.ts";
 import { importVscodeTheme, type ImportedTheme } from "../../lib/vscodeTheme.ts";
 import { Button } from "../ui/Button.tsx";
@@ -15,6 +15,7 @@ import styles from "./AppearanceSection.module.css";
 
 const THEME_LABELS: Record<Theme, string> = { system: "System", dark: "Dark", light: "Light" };
 const DENSITY_LABELS: Record<Density, string> = { comfortable: "Comfortable", compact: "Compact" };
+const PROJECT_SELECTOR_LABELS: Record<ProjectSelectorStyle, string> = { chips: "Chips", select: "Select" };
 
 const SWATCH_TOKENS = ["--bg", "--surface", "--surface-raised", "--border-strong", "--text", "--accent", "--ok", "--warn", "--danger"];
 const CUSTOM = "__custom";
@@ -37,7 +38,7 @@ const MONO_STACKS: Array<{ value: string; label: string }> = [
 export const META: SectionMeta = {
   title: "Appearance",
   blurb: "Colours and fonts apply to this device only.",
-  keywords: ["Theme", "Density", "VS Code colour theme", "UI font", "Mono font", "Base size", "dark", "light", "Group rail by project"],
+  keywords: ["Theme", "Density", "VS Code colour theme", "UI font", "Mono font", "Base size", "dark", "light", "Group rail by project", "Project selector", "chips", "select", "dropdown"],
 };
 
 /** A family picker: a short list of safe stacks plus a free-text "Custom…". */
@@ -192,6 +193,8 @@ export function AppearanceSection() {
   const setFonts = useSettings((s) => s.setFonts);
   const railGroupBy = useSettings((s) => s.railGroupBy);
   const setRailGroupBy = useSettings((s) => s.setRailGroupBy);
+  const projectSelector = useSettings((s) => s.projectSelector);
+  const setProjectSelector = useSettings((s) => s.setProjectSelector);
 
   return (
     <SettingsPage title={META.title} blurb={META.blurb}>
@@ -228,6 +231,18 @@ export function AppearanceSection() {
               label="Group rail by project"
               checked={railGroupBy === "project"}
               onChange={(on) => setRailGroupBy(on ? "project" : "status")}
+            />
+          }
+        />
+        <SettingRow
+          label="Project selector"
+          help="Show projects in the rail as wrap-around chips or a dropdown select."
+          control={
+            <SettingSelect
+              label="Project selector"
+              value={projectSelector}
+              options={PROJECT_SELECTOR_STYLES.map((value) => ({ value, label: PROJECT_SELECTOR_LABELS[value] }))}
+              onSelect={setProjectSelector}
             />
           }
         />

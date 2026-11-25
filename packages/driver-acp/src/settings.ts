@@ -143,6 +143,19 @@ export class AcpSettings {
     this.modeChanged(modeId);
   }
 
+  /** Best-effort live mode switch (used when runtime mode changes mid-turn). */
+  async applyMode(mode: RuntimeMode, interaction: InteractionMode): Promise<boolean> {
+    const modeId = targetModeId(this.modeSelector, this.#baseMode, this.#keepAgentMode ? "approval-required" : mode, interaction);
+    if (modeId === undefined) return true;
+    try {
+      await this.#setMode(modeId);
+      return true;
+    } catch (error) {
+      this.#log(`set mode ${modeId} failed: ${error instanceof Error ? error.message : String(error)}`);
+      return false;
+    }
+  }
+
   /**
    * Moves the agent towards `wanted`. Every knob is independent and best-effort: a failure is
    * logged and reported (false), never thrown, so a picky agent cannot block a session. A model

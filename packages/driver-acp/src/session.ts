@@ -120,6 +120,8 @@ export class AcpSession implements ProviderSession {
   #answering = new Set<Promise<unknown>>();
   #mode: OpenSessionOptions["mode"];
   #interaction: OpenSessionOptions["interaction"];
+  #model: string | undefined;
+  #effort: string | undefined;
   #pendingCommands: SlashCommandInfo[] | undefined;
   #pendingNotices: string[] = [];
   #announced = false;
@@ -136,6 +138,8 @@ export class AcpSession implements ProviderSession {
     this.#options = options;
     this.#mode = options.mode;
     this.#interaction = options.interaction;
+    this.#model = options.model;
+    this.#effort = options.effort;
     this.#fs = new FsPolicy(options.cwd, options.linkedDirs);
     this.#normalizer = new AcpNormalizer({
       onCommands: (commands) => {
@@ -667,9 +671,21 @@ export class AcpSession implements ProviderSession {
   }
 
   async reconfigure(settings: SessionSettings): Promise<ReconfigureResult> {
-    if (this.#closed || this.#inTurn || !this.settings) return "reopen";
+    if (this.#closed || !this.settings) return "reopen";
+    if (this.#inTurn) {
+      // Mid-turn: a runtime-mode change applies immediately to every incoming permission request
+      // (and to the agent mode when not `keepAgentMode`); model/effort/interaction still wait for idle.
+      if (settings.model !== this.#model || settings.effort !== this.#effort || settings.interaction !== this.#interaction) {
+        return "reopen";
+      }
+      this.#mode = settings.mode;
+      const ok = await this.settings.applyMode(settings.mode, settings.interaction);
+      return ok ? "applied" : "reopen";
+    }
     this.#mode = settings.mode;
     this.#interaction = settings.interaction;
+    this.#model = settings.model;
+    this.#effort = settings.effort;
     const ok = await this.settings.apply({ model: settings.model, effort: settings.effort, mode: settings.mode, interaction: settings.interaction });
     return ok ? "applied" : "reopen";
   }

@@ -389,6 +389,7 @@ export class CodexSession implements ProviderSession {
 
   #request(method: string, params: unknown, id: RequestId): void {
     const payload = (typeof params === "object" && params !== null ? params : {}) as Record<string, unknown>;
+    if (this.#autoApprove(method, payload, id)) return;
     const threadId = typeof payload["threadId"] === "string" ? payload["threadId"] : undefined;
     // A card nests under its sub-agent's row only when that row belongs to the turn now running:
     // the server files a nested card under the row's turn, and a settled turn refuses a pending card.
@@ -406,6 +407,28 @@ export class CodexSession implements ProviderSession {
       this.#env.log(`[codex] declining unmodelled server request ${method}`);
       this.#broker.decline(id, method, params);
     }
+  }
+
+  /**
+   * When permissions were loosened mid-turn (`reconfigure`), Codex's running turn still carries
+   * its original `approvalPolicy`. Honour the live mode immediately for incoming approval asks
+   * (still respecting the user's `config.toml` ceiling).
+   */
+  #autoApprove(method: string, payload: Record<string, unknown>, id: RequestId): boolean {
+    const policy = policyFor(this.#options.mode, writableRoots(this.#options), false, this.#userConfig);
+    if (method === "item/commandExecution/requestApproval" || method === "item/fileChange/requestApproval") {
+      const auto =
+        policy.approvalPolicy === "never" ||
+        (method === "item/fileChange/requestApproval" && this.#options.mode === "auto-accept-edits" && policy.approvalPolicy !== "untrusted");
+      if (!auto) return false;
+      this.#server.respond(id, { decision: "accept" });
+      return true;
+    }
+    if (method === "item/permissions/requestApproval" && policy.approvalPolicy === "never") {
+      this.#server.respond(id, { permissions: payload["permissions"] ?? {}, scope: "turn" });
+      return true;
+    }
+    return false;
   }
 
   send(input: TurnInput): AsyncIterable<NormalizedEvent> {
