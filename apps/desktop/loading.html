@@ -113,7 +113,7 @@
       var STAGES = { connecting: { cap: 0.72, tau: 3000 }, starting: { cap: 0.72, tau: 6000 }, restarting: { cap: 0.72, tau: 6000 }, ready: { cap: 1, tau: 1 } };
       var fill = document.getElementById("fill");
       var bar = fill.parentNode;
-      var progress = 0.04, floor = 0.04, since = performance.now(), state = "starting";
+      var progress = 0.04, floor = 0.04, since = performance.now(), state = "starting", manualProgress = false;
       if (document.getElementById("version").textContent.indexOf("__") >= 0) document.getElementById("version").remove();
 
       function setProgress(p) {
@@ -131,6 +131,7 @@
         bar.setAttribute("aria-label", text);
       }
       setInterval(function () {
+        if (manualProgress) return;
         var s = STAGES[state];
         if (!s) return;
         setProgress(floor + (s.cap - floor) * (1 - Math.exp(-(performance.now() - since) / s.tau)));
@@ -138,23 +139,29 @@
 
       var LABELS = { connecting: "Connecting…", starting: "Starting the local server…", restarting: "Restarting the local server…", ready: "Ready", closing: "Closing Tide…" };
       window.__tideStatus = function (next, message) {
-        if (next !== state) { state = next; since = performance.now(); floor = progress; }
+        if (next !== state) { state = next; since = performance.now(); floor = progress; manualProgress = false; }
         document.body.dataset.state = next;
         var pct = /(\d+)%/.exec(message || "");
         if (next === "closing" || (next === "updating" && !pct)) {
+          manualProgress = true;
           fill.classList.add("indeterminate");
           fill.style.transform = "";
           bar.removeAttribute("aria-valuenow");
-        } else if (next === "updating") {
+        } else if (next === "updating" || (next === "starting" && pct)) {
+          manualProgress = true;
           setProgress(Number(pct[1]) / 100);
-        } else if (next === "failed" || next === "in-use") {
+          floor = progress;
+          since = performance.now();
+        } else if (next === "failed" || next === "in-use" || next === "ready") {
+          manualProgress = true;
           setProgress(1);
         }
-        setText(next === "starting" || next === "ready" || next === "closing" ? LABELS[next] : (message || LABELS[next] || next));
+        setText(next === "ready" || next === "closing" ? LABELS[next] : (message || LABELS[next] || next));
       };
       // Retry is a plain fetch: the shell's scheme handler forwards it to the supervisor.
       document.getElementById("retry").onclick = function () {
         progress = 0.04;
+        manualProgress = false;
         window.__tideStatus("starting");
         fetch("retry").catch(function () {});
       };

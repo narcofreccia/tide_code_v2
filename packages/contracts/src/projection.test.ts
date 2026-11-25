@@ -1,5 +1,5 @@
 import { describe, it, expect } from "vitest";
-import { emptyReadModel, replay, applyRecord, type EventRecord } from "./index.ts";
+import { emptyReadModel, replay, applyRecord, applyRecordInPlace, createReplayState, type EventRecord } from "./index.ts";
 
 const rec = (seq: number, event: EventRecord["event"]): EventRecord => ({ seq, ts: seq, event });
 
@@ -486,5 +486,46 @@ describe("projection — R17 late native session id", () => {
     expect(m.threads["t1"]?.nativeSessionId).toBe("late-1");
     expect(m.threads["t1"]?.providerSessions).toEqual({ claude: { nativeSessionId: "late-1" } });
     expect(m.turns["u1"]?.model).toBe("haiku");
+  });
+});
+
+describe("projection — in-place boot replay parity & purity", () => {
+  it("applyRecordInPlace produces the exact same model as pure replay across queued turns, deltas, approvals, and usage", () => {
+    const records: EventRecord[] = [
+      rec(1, { type: "project.created", project: { id: "p1", title: "T", rootPath: "/x", createdAt: 1, updatedAt: 1 } }),
+      rec(2, { type: "thread.created", thread: { id: "t1", projectId: "p1", title: "Main", provider: "claude", mode: "auto", interaction: "default", status: "idle", createdAt: 2, updatedAt: 2 } }),
+      rec(3, { type: "turn.requested", turn: { id: "u1", threadId: "t1", status: "requested", requestedAt: 3 }, userMessage: { id: "m1", threadId: "t1", turnId: "u1", role: "user", text: "one", createdAt: 3 } }),
+      rec(4, { type: "turn.requested", turn: { id: "u2", threadId: "t1", status: "queued", requestedAt: 4 }, userMessage: { id: "m2", threadId: "t1", turnId: "u2", role: "user", text: "two", createdAt: 4 } }),
+      rec(5, { type: "assistant.delta", turnId: "u1", threadId: "t1", messageId: "a1", delta: "hel", at: 5 }),
+      rec(6, { type: "assistant.delta", turnId: "u1", threadId: "t1", messageId: "a1", delta: "lo", at: 6 }),
+      rec(7, { type: "assistant.reasoning-delta", turnId: "u1", threadId: "t1", messageId: "a1", delta: "think", at: 7 }),
+      rec(8, { type: "activity.upserted", activity: { id: "act1", threadId: "t1", turnId: "u1", kind: "tool", toolUseId: "tu1", toolName: "Read", input: {}, status: "running", createdAt: 8, updatedAt: 8 } }),
+      rec(9, { type: "activity.upserted", activity: { id: "ap1", threadId: "t1", turnId: "u1", kind: "approval", requestId: "r1", toolName: "Bash", input: {}, status: "pending", createdAt: 9, updatedAt: 9 } }),
+      rec(10, { type: "usage.reported", threadId: "t1", turnId: "u1", providerId: "claude", usage: { inputTokens: 10, outputTokens: 5, costUsd: 0.01 }, rateLimit: { window: "session", remainingPct: 80, status: "ok", at: 10 }, at: 10 }),
+      rec(11, { type: "turn.settled", turnId: "u1", threadId: "t1", status: "completed", settledAt: 11 }),
+      rec(12, { type: "turn.started", turnId: "u2", threadId: "t1", provider: "claude", startedAt: 12 }),
+      rec(13, { type: "turn.settled", turnId: "u2", threadId: "t1", status: "completed", settledAt: 13 }),
+    ];
+    const pure = replay(emptyReadModel(), records);
+    let fast = emptyReadModel();
+    const state = createReplayState(fast);
+    for (const r of records) fast = applyRecordInPlace(fast, r, state);
+    expect(fast).toEqual(pure);
+    expect(state.queuedTurns.size).toBe(0);
+  });
+
+  it("applyRecord stays pure and never mutates frozen input maps", () => {
+    const base = replay(emptyReadModel(), [
+      rec(1, { type: "project.created", project: { id: "p1", title: "T", rootPath: "/x", createdAt: 1, updatedAt: 1 } }),
+      rec(2, { type: "thread.created", thread: { id: "t1", projectId: "p1", title: "Main", provider: "claude", mode: "auto", interaction: "default", status: "idle", createdAt: 2, updatedAt: 2 } }),
+      rec(3, { type: "assistant.delta", turnId: "u1", threadId: "t1", messageId: "a1", delta: "hi", at: 3 }),
+    ]);
+    Object.freeze(base);
+    Object.freeze(base.messages);
+    Object.freeze(base.messages["a1"]);
+    Object.freeze(base.threads);
+    const next = applyRecord(base, rec(4, { type: "assistant.delta", turnId: "u1", threadId: "t1", messageId: "a1", delta: "!", at: 4 }));
+    expect(base.messages["a1"]?.text).toBe("hi");
+    expect(next.messages["a1"]?.text).toBe("hi!");
   });
 });

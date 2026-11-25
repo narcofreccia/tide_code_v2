@@ -1,6 +1,6 @@
 import type { ImageInput } from "@tide/contracts";
 import type { ServerConfig } from "./config.ts";
-import { IS_BUILD, VERSION } from "./version.ts";
+import { IS_BUILD } from "./version.ts";
 import type { Transport } from "./decisions/client.ts";
 import type { Judge } from "./decisions/judge.ts";
 import type { JudgeLedger } from "./decisions/ledger.ts";
@@ -16,6 +16,7 @@ import { delegateTargetsHint, userDefaultModel } from "./provider/delegateTarget
 import { AgentTokenStore } from "./rpc/agentTickets.ts";
 import type { DecideDefaults } from "./orchestration/decider/index.ts";
 import { Engine } from "./orchestration/engine.ts";
+import { SNAPSHOT_TAG_VALUE } from "./orchestration/snapshots.ts";
 import { DelegateWaits, DelegationReactor, type CancelTimer, type ListedModelsOf } from "./orchestration/delegation.ts";
 import { LimitsWorker } from "./orchestration/limits.ts";
 import { harnessLogSpend, QuotaWorker } from "./quota/worker.ts";
@@ -139,11 +140,24 @@ export async function createApp(options: AppOptions): Promise<App> {
   // One settings store for the engine (decider defaults), the RPC server and the decisions client.
   const settings = options.settings ?? new SettingsStore({ ...(config.settingsPath === undefined ? {} : { path: config.settingsPath }), log });
   // read per command, after `registry` below exists
-  // a snapshot is trusted only by the build that wrote it; source runs always replay (the projector changes without a version change)
-  const engine = new Engine({ store, defaults: () => deciderDefaults(settings, registry), log: (msg) => log(msg), snapshotTag: IS_BUILD ? VERSION : null });
-  // a new build replays the whole log once; keep the result now, not only at a clean shutdown,
-  // so a slow first boot (or one the shell gives up on) is not paid again on the next start
+  // a snapshot is trusted whenever MODEL_SCHEMA, ReadModel shape and projector sources match
+  // (not raw VERSION, so unrelated updates boot straight from the snapshot); source runs always replay
+  let bootReported = false;
+  const reportBoot = (msg: string): void => {
+    bootReported = true;
+    log(`[tide-boot] ${msg}`);
+  };
+  const engine = new Engine({
+    store,
+    defaults: () => deciderDefaults(settings, registry),
+    log: (msg) => log(msg),
+    onBootProgress: reportBoot,
+    snapshotTag: IS_BUILD ? SNAPSHOT_TAG_VALUE : null,
+  });
+  // a schema/projector change replays the whole log once; keep the result now, not only at a clean
+  // shutdown, so a slow first boot (or one the shell gives up on) is not paid again on the next start
   if (engine.snapshotStale) {
+    if (bootReported) reportBoot("Saving snapshot for fast future starts… 95%");
     try {
       const snap = engine.snapshot();
       if (snap !== undefined) log(`[app] snapshot at seq ${snap.seq} after a full replay (${Math.round(snap.bytes / 1024)} KiB, ${Math.round(snap.ms)} ms)`);
@@ -151,6 +165,7 @@ export async function createApp(options: AppOptions): Promise<App> {
       log("[app] snapshot after replay failed", err);
     }
   }
+  if (bootReported) reportBoot("Starting local services… 98%");
   const registry = new DriverRegistry({ env: { dataDir: config.dataDir, log } });
   if (options.registerDrivers) await options.registerDrivers(registry);
   else await registerBundledDrivers(registry, config.providers, log);

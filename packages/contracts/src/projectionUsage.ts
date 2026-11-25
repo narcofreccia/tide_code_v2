@@ -2,9 +2,26 @@ import type { Project, Quota, QuotaState, ReadModel, Thread, TurnUsage } from ".
 import type { EventOf } from "./events.ts";
 
 // Usage, limit-gauge and quota cases of the projector (R20). Same rules as projection.ts:
-// pure, never mutates its input.
+// pure when `mut` is false (default), in-place on top-level maps when `mut` is true during boot replay.
 
 export type UsageEvent = EventOf<"usage.reported" | "usage.corrected" | "quota.changed" | "quota.lifted" | "quota.metered" | "turn.released">;
+
+export interface UsageReplayState {
+  queuedTurns: Set<string>;
+}
+
+function put<T>(map: Record<string, T>, key: string, value: T, mut: boolean): Record<string, T> {
+  if (mut) {
+    map[key] = value;
+    return map;
+  }
+  return { ...map, [key]: value };
+}
+
+function patchModel(model: ReadModel, patch: Partial<ReadModel>, mut: boolean): ReadModel {
+  if (mut) return Object.assign(model, patch);
+  return { ...model, ...patch };
+}
 
 export function addUsage(prev: TurnUsage | undefined, delta: TurnUsage): TurnUsage {
   if (!prev) return delta;
@@ -20,7 +37,14 @@ export function addUsage(prev: TurnUsage | undefined, delta: TurnUsage): TurnUsa
 }
 
 /** Sets or clears `quota` / `quotaState` on the project or thread a quota event names. */
-function withQuota(model: ReadModel, scope: "project" | "thread", id: string, change: (entity: { quota?: Quota; quotaState?: QuotaState }) => { quota?: Quota; quotaState?: QuotaState } | undefined, projectAt?: number): ReadModel {
+function withQuota(
+  model: ReadModel,
+  scope: "project" | "thread",
+  id: string,
+  change: (entity: { quota?: Quota; quotaState?: QuotaState }) => { quota?: Quota; quotaState?: QuotaState } | undefined,
+  mut: boolean,
+  projectAt?: number,
+): ReadModel {
   const rebuild = <T extends Project | Thread>(entity: T): T | undefined => {
     const changed = change(entity);
     if (changed === undefined) return undefined;
@@ -35,24 +59,34 @@ function withQuota(model: ReadModel, scope: "project" | "thread", id: string, ch
     const project = model.projects[id];
     const next = project ? rebuild(project) : undefined;
     if (!next) return model;
-    return { ...model, projects: { ...model.projects, [id]: projectAt !== undefined ? { ...next, updatedAt: projectAt } : next } };
+    const finalProject = projectAt !== undefined ? { ...next, updatedAt: projectAt } : next;
+    return patchModel(model, { projects: put(model.projects, id, finalProject, mut) }, mut);
   }
   const thread = model.threads[id];
   const next = thread ? rebuild(thread) : undefined;
-  return next ? { ...model, threads: { ...model.threads, [id]: next } } : model;
+  return next ? patchModel(model, { threads: put(model.threads, id, next, mut) }, mut) : model;
 }
 
-export function applyUsageEvent(model: ReadModel, event: UsageEvent): ReadModel {
+export function applyUsageEvent(model: ReadModel, event: UsageEvent, mut = false, state?: UsageReplayState): ReadModel {
   switch (event.type) {
     case "usage.reported": {
       // every report is a delta: a turn's usage is the sum of its reports, a thread's cost the sum of its turns'
       const turn = model.turns[event.turnId];
       let next: ReadModel = model;
-      if (turn && event.usage) next = { ...next, turns: { ...next.turns, [turn.id]: { ...turn, usage: addUsage(turn.usage, event.usage) } } };
+      if (turn && event.usage) {
+        next = patchModel(next, { turns: put(next.turns, turn.id, { ...turn, usage: addUsage(turn.usage, event.usage) }, mut) }, mut);
+      }
       // a report that names its window is also the instance's gauge for that window (the limit is per account, not per thread)
       if (event.rateLimit?.window !== undefined && event.providerId !== undefined) {
-        const limits = next.limits ?? {};
-        next = { ...next, limits: { ...limits, [event.providerId]: { ...limits[event.providerId], [event.rateLimit.window]: event.rateLimit } } };
+        if (mut) {
+          next.limits ??= {};
+          const byWindow = next.limits[event.providerId] ?? {};
+          byWindow[event.rateLimit.window] = event.rateLimit;
+          next.limits[event.providerId] = byWindow;
+        } else {
+          const limits = next.limits ?? {};
+          next = { ...next, limits: { ...limits, [event.providerId]: { ...limits[event.providerId], [event.rateLimit.window]: event.rateLimit } } };
+        }
       }
       const t = next.threads[event.threadId];
       if (!t) return next;
@@ -60,34 +94,48 @@ export function applyUsageEvent(model: ReadModel, event: UsageEvent): ReadModel 
       if (event.contextUsage) patch.contextUsage = event.contextUsage;
       if (event.rateLimit) patch.rateLimit = event.rateLimit;
       if (event.usage?.costUsd !== undefined) patch.totalCostUsd = (t.totalCostUsd ?? 0) + event.usage.costUsd;
-      return { ...next, threads: { ...next.threads, [t.id]: { ...t, ...patch } } };
+      return patchModel(next, { threads: put(next.threads, t.id, { ...t, ...patch }, mut) }, mut);
     }
     case "usage.corrected": {
       const turn = model.turns[event.turnId];
       if (!turn) return model;
-      let next: ReadModel = { ...model, turns: { ...model.turns, [turn.id]: { ...turn, usage: addUsage(turn.usage, event.usage), usageCorrected: true } } };
+      let next: ReadModel = patchModel(
+        model,
+        { turns: put(model.turns, turn.id, { ...turn, usage: addUsage(turn.usage, event.usage), usageCorrected: true }, mut) },
+        mut,
+      );
       const t = next.threads[event.threadId];
       // a float sum of deltas can land a hair under zero
-      if (t && event.usage.costUsd !== undefined) next = { ...next, threads: { ...next.threads, [t.id]: { ...t, totalCostUsd: Math.max(0, (t.totalCostUsd ?? 0) + event.usage.costUsd) } } };
+      if (t && event.usage.costUsd !== undefined) {
+        next = patchModel(next, { threads: put(next.threads, t.id, { ...t, totalCostUsd: Math.max(0, (t.totalCostUsd ?? 0) + event.usage.costUsd) }, mut) }, mut);
+      }
       return next;
     }
     case "quota.changed":
       // the measured state belonged to the old cap: unknown until the worker meters again, so nothing is held meanwhile
-      return withQuota(model, event.scope, event.id, () => (event.quota !== undefined ? { quota: event.quota } : {}), event.at);
+      return withQuota(model, event.scope, event.id, () => (event.quota !== undefined ? { quota: event.quota } : {}), mut, event.at);
     case "quota.lifted":
-      return withQuota(model, event.scope, event.id, (e) => (e.quota !== undefined && e.quotaState !== undefined ? { quota: e.quota, quotaState: { ...e.quotaState, liftedUntil: event.until } } : undefined));
+      return withQuota(model, event.scope, event.id, (e) => (e.quota !== undefined && e.quotaState !== undefined ? { quota: e.quota, quotaState: { ...e.quotaState, liftedUntil: event.until } } : undefined), mut);
     case "quota.metered":
       // a measurement for a cap that was removed in the meantime is dropped
-      return withQuota(model, event.scope, event.id, (e) => (e.quota !== undefined ? { quota: e.quota, quotaState: event.state } : undefined));
+      return withQuota(model, event.scope, event.id, (e) => (e.quota !== undefined ? { quota: e.quota, quotaState: event.state } : undefined), mut);
     case "turn.released": {
       const turn = model.turns[event.turnId];
       const t = model.threads[event.threadId];
       if (!turn || !t || turn.threadId !== t.id || turn.status !== "queued" || t.status === "running") return model;
+      state?.queuedTurns.delete(turn.id);
       const next: Thread = { ...t, latestTurnId: turn.id, status: "running", updatedAt: event.at };
       // like any new turn, it reopens a settled thread
       delete next.settledAt;
       delete next.settleReason;
-      return { ...model, turns: { ...model.turns, [turn.id]: { ...turn, status: "requested" } }, threads: { ...model.threads, [t.id]: next } };
+      return patchModel(
+        model,
+        {
+          turns: put(model.turns, turn.id, { ...turn, status: "requested" }, mut),
+          threads: put(model.threads, t.id, next, mut),
+        },
+        mut,
+      );
     }
   }
 }

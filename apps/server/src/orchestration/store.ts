@@ -123,6 +123,8 @@ export class EventStore {
   #db: Database;
   #insert: SqlStatement;
   #readFrom: SqlStatement;
+  #readBatch: SqlStatement;
+  #countFrom: SqlStatement;
   #readAll: SqlStatement;
   #last: SqlStatement;
   #getMeta: SqlStatement;
@@ -146,6 +148,8 @@ export class EventStore {
       "INSERT INTO events (ts, type, aggregate_id, payload) VALUES (?, ?, ?, ?) RETURNING seq",
     );
     this.#readFrom = db.prepare("SELECT seq, ts, payload FROM events WHERE seq >= ? ORDER BY seq ASC");
+    this.#readBatch = db.prepare("SELECT seq, ts, payload FROM events WHERE seq >= ? ORDER BY seq ASC LIMIT ?");
+    this.#countFrom = db.prepare("SELECT COUNT(*) AS n FROM events WHERE seq >= ?");
     this.#readAll = db.prepare("SELECT seq, ts, payload FROM events ORDER BY seq ASC");
     this.#last = db.prepare("SELECT COALESCE(MAX(seq), 0) AS seq FROM events");
     this.#getMeta = db.prepare("SELECT value FROM meta WHERE key = ?");
@@ -187,6 +191,16 @@ export class EventStore {
 
   readFrom(seq: number): EventRecord[] {
     return this.#readFrom.all(seq).map(toRecord);
+  }
+
+  /** Number of events at or after `seq` (uses the primary key range scan; cheap for progress reporting). */
+  countFrom(seq: number): number {
+    return Number(this.#countFrom.get(seq)?.["n"] ?? 0);
+  }
+
+  /** Reads at most `limit` events starting at `seq`, so boot replay never holds the whole log in memory at once. */
+  readBatch(seq: number, limit: number): EventRecord[] {
+    return this.#readBatch.all(seq, limit).map(toRecord);
   }
 
   readAll(): EventRecord[] {

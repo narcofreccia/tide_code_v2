@@ -3,9 +3,10 @@ import {
   Command as CommandSchema,
   DomainEvent as DomainEventSchema,
   applyRecord,
+  applyRecordInPlace,
+  createReplayState,
   emptyReadModel,
   newId as defaultNewId,
-  replay,
   type Command,
   type EventRecord,
   type ReadModel,
@@ -36,6 +37,19 @@ const SNAPSHOT_TAG = "snapshot_tag";
 
 /** Events appended between two automatic snapshots. */
 export const DEFAULT_SNAPSHOT_EVERY = 5_000;
+
+/** Rows read per SQLite query during boot replay, keeping peak memory bounded. */
+const REPLAY_BATCH_SIZE = 1_000;
+/** Only emit user-facing replay progress once there are at least this many events to replay. */
+const REPLAY_PROGRESS_MIN = 1_000;
+/** Minimum interval between progress lines during replay. */
+const REPLAY_PROGRESS_INTERVAL_MS = 200;
+
+function formatEventCount(n: number): string {
+  if (n >= 100_000) return `${Math.round(n / 1_000)}k`;
+  if (n >= 10_000) return `${(n / 1_000).toFixed(1).replace(/\.0$/, "")}k`;
+  return n.toLocaleString("en-US");
+}
 
 const SETTLED_STATUSES: ReadonlySet<string> = new Set(["completed", "interrupted", "error"]);
 
@@ -68,6 +82,8 @@ export interface EngineOptions {
   snapshotTag?: string | null;
   /** compact settled turns' text deltas after each settle (default on; `compact()` works either way) */
   compaction?: boolean;
+  /** user-facing startup status lines (e.g. replay progress for the desktop splash screen) */
+  onBootProgress?: (message: string) => void;
   log?: (msg: string) => void;
 }
 
@@ -99,6 +115,7 @@ export class Engine {
   /** tail of the serial processing chain; also the drain() handle */
   #queue: Promise<unknown> = Promise.resolve();
   #log: (msg: string) => void;
+  #onBootProgress: ((message: string) => void) | undefined;
   #snapshotEvery: number;
   #snapshotTag: string | null | undefined;
   /** events appended since the newest snapshot */
@@ -117,6 +134,7 @@ export class Engine {
     this.#defaults = options.defaults ?? (() => ({}));
     this.#handoffCap = "handoffCap" in options ? options.handoffCap : handoffCapFromEnv();
     this.#log = options.log ?? ((msg) => console.log(msg));
+    this.#onBootProgress = options.onBootProgress;
     this.#snapshotEvery = options.snapshotEvery ?? DEFAULT_SNAPSHOT_EVERY;
     this.#snapshotTag = options.snapshotTag;
     this.#model = this.#boot();
@@ -135,23 +153,56 @@ export class Engine {
     const tag = this.#snapshotTag;
     const usable = tag === undefined || (tag !== null && this.#store.getMeta(SNAPSHOT_TAG) === tag);
     const snapshot = usable ? this.#store.snapshots.load(lastSeq, (msg) => console.warn(msg)) : undefined;
-    const tail = this.#store.readFrom((snapshot?.seq ?? 0) + 1);
-    const unknown = new Map<string, number>();
-    for (const record of tail) {
-      if (!KNOWN_EVENT_TYPES.has(record.event.type)) unknown.set(record.event.type, (unknown.get(record.event.type) ?? 0) + 1);
-    }
-    if (unknown.size > 0) {
-      const total = [...unknown.values()].reduce((a, b) => a + b, 0);
-      console.warn(`[engine] ${total} events of types this server does not know were skipped (${[...unknown.entries()].map(([t, n]) => `${t}×${n}`).join(", ")}); a newer Tide wrote them`);
-    }
-    const model = replay(snapshot?.model ?? emptyReadModel(), tail);
-    this.#sinceSnapshot = tail.length;
+    const fromSeq = (snapshot?.seq ?? 0) + 1;
+    const total = this.#store.countFrom(fromSeq);
     this.#snapshotStale = typeof tag === "string" && snapshot === undefined;
+
+    const progress = this.#onBootProgress;
+    const showProgress = progress !== undefined && total >= REPLAY_PROGRESS_MIN;
+    const label = snapshot !== undefined ? "Loading recent history" : this.#snapshotStale ? "Updating local history" : "Rebuilding history";
+    const totalLabel = formatEventCount(total);
+    let lastReportAt = started;
+    if (showProgress) progress(`${label}… 5% (0 / ${totalLabel} events)`);
+
+    // `snapshot.model` came fresh from JSON.parse and `emptyReadModel()` is brand new, so
+    // mutating top-level maps in place during boot replay is safe and avoids O(N²) clones.
+    let model = snapshot?.model ?? emptyReadModel();
+    const replayState = createReplayState(model);
+    const unknown = new Map<string, number>();
+    let replayed = 0;
+    let cursor = fromSeq;
+    while (true) {
+      const batch = this.#store.readBatch(cursor, REPLAY_BATCH_SIZE);
+      if (batch.length === 0) break;
+      for (const record of batch) {
+        if (!KNOWN_EVENT_TYPES.has(record.event.type)) {
+          unknown.set(record.event.type, (unknown.get(record.event.type) ?? 0) + 1);
+        }
+        model = applyRecordInPlace(model, record, replayState);
+      }
+      replayed += batch.length;
+      cursor = (batch[batch.length - 1]?.seq ?? cursor) + 1;
+      if (showProgress && total > 0) {
+        const now = performance.now();
+        if (replayed >= total || now - lastReportAt >= REPLAY_PROGRESS_INTERVAL_MS) {
+          lastReportAt = now;
+          const pct = Math.min(90, 5 + Math.round((replayed / total) * 85));
+          progress(`${label}… ${pct}% (${formatEventCount(replayed)} / ${totalLabel} events)`);
+        }
+      }
+      if (batch.length < REPLAY_BATCH_SIZE) break;
+    }
+
+    if (unknown.size > 0) {
+      const totalUnknown = [...unknown.values()].reduce((a, b) => a + b, 0);
+      console.warn(`[engine] ${totalUnknown} events of types this server does not know were skipped (${[...unknown.entries()].map(([t, n]) => `${t}×${n}`).join(", ")}); a newer Tide wrote them`);
+    }
+    this.#sinceSnapshot = replayed;
     const ms = Math.round(performance.now() - started);
     this.#log(
       snapshot !== undefined
-        ? `[engine] replayed ${tail.length} events from snapshot at seq ${snapshot.seq} (${ms} ms)`
-        : `[engine] replayed ${tail.length} events from the start, no snapshot (${ms} ms)`,
+        ? `[engine] replayed ${replayed} events from snapshot at seq ${snapshot.seq} (${ms} ms)`
+        : `[engine] replayed ${replayed} events from the start, no snapshot (${ms} ms)`,
     );
     return model;
   }

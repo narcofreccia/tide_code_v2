@@ -1,7 +1,9 @@
 import { createHash } from "node:crypto";
+import { readFileSync } from "node:fs";
+import { resolve } from "node:path";
 import { describe, expect, it } from "vitest";
 import { ReadModel } from "@tide/contracts";
-import { MODEL_SCHEMA, MODEL_SCHEMA_HASH } from "./snapshots.ts";
+import { MODEL_SCHEMA, MODEL_SCHEMA_HASH, PROJECTOR_HASH, SNAPSHOT_TAG_VALUE } from "./snapshots.ts";
 
 /** Annotations that do not change what a stored model looks like; wording edits must not fail the test. */
 const ANNOTATIONS = new Set(["description", "title", "$comment", "examples"]);
@@ -31,6 +33,22 @@ function readModelSchemaHash(): string {
   return createHash("sha256").update(JSON.stringify(canonical(ReadModel))).digest("hex");
 }
 
+const PROJECTOR_FILES = [
+  "packages/contracts/src/projection.ts",
+  "packages/contracts/src/projectionUsage.ts",
+] as const;
+
+function projectorSourceHash(): string {
+  const root = resolve(import.meta.dirname, "../../../..");
+  const hash = createHash("sha256");
+  for (const rel of PROJECTOR_FILES) {
+    hash.update(`${rel}\0`);
+    hash.update(readFileSync(resolve(root, rel), "utf8").replace(/\r\n/g, "\n"));
+    hash.update("\0");
+  }
+  return hash.digest("hex");
+}
+
 describe("MODEL_SCHEMA", () => {
   it("is bumped whenever the ReadModel schema changes shape", () => {
     const actual = readModelSchemaHash();
@@ -39,9 +57,20 @@ describe("MODEL_SCHEMA", () => {
       `The ReadModel TypeBox schema in @tide/contracts (packages/contracts/src/domain.ts) changed shape, so snapshots written by older builds no longer match it.\n` +
         `In apps/server/src/orchestration/snapshots.ts:\n` +
         `  1. bump MODEL_SCHEMA from ${MODEL_SCHEMA} to ${MODEL_SCHEMA + 1}\n` +
-        `  2. set MODEL_SCHEMA_HASH = "${actual}"\n` +
-        `(A projector change that keeps the shape needs the bump too, without this test noticing.)`,
+        `  2. set MODEL_SCHEMA_HASH = "${actual}"`,
     ).toBe(MODEL_SCHEMA_HASH);
+  });
+
+  it("tracks projector source changes in PROJECTOR_HASH so snapshots rebuild only when projection changes", () => {
+    const actual = projectorSourceHash();
+    expect(
+      actual,
+      `The projector in @tide/contracts (${PROJECTOR_FILES.join(", ")}) changed, so snapshots written by older builds may differ.\n` +
+        `In apps/server/src/orchestration/snapshots.ts:\n` +
+        `  1. bump MODEL_SCHEMA from ${MODEL_SCHEMA} to ${MODEL_SCHEMA + 1} (if projected state can differ)\n` +
+        `  2. set PROJECTOR_HASH = "${actual}"`,
+    ).toBe(PROJECTOR_HASH);
+    expect(SNAPSHOT_TAG_VALUE).toBe(`s${MODEL_SCHEMA}:${MODEL_SCHEMA_HASH.slice(0, 12)}:${PROJECTOR_HASH.slice(0, 12)}`);
   });
 
   it("ignores annotations and key order, but not names", () => {

@@ -14,6 +14,17 @@ export const MODEL_SCHEMA = 5;
  * value: bump MODEL_SCHEMA and paste it here.
  */
 export const MODEL_SCHEMA_HASH = "45e314c4cb469a22fb206e481709faf5eece196eb23c5d3435b49b24378848dd";
+/**
+ * sha256 of the projector sources (`packages/contracts/src/projection*.ts`) that MODEL_SCHEMA
+ * describes. `snapshotSchema.test.ts` fails when projector logic changes and prints the new value.
+ */
+export const PROJECTOR_HASH = "6f6c7feb9a0c3eb9ddf78dc1b026b5f7fb22feddc8c254a82ee4d7d127f418e9";
+/**
+ * Tag stored with snapshots in production builds: changes whenever MODEL_SCHEMA, the ReadModel
+ * shape, or projector logic changes — NOT on unrelated app version bumps — so routine releases
+ * boot straight from the existing snapshot.
+ */
+export const SNAPSHOT_TAG_VALUE = `s${MODEL_SCHEMA}:${MODEL_SCHEMA_HASH.slice(0, 12)}:${PROJECTOR_HASH.slice(0, 12)}`;
 
 /** How many snapshots are kept; an older one is the fallback when the newest does not parse. */
 const KEEP = 2;

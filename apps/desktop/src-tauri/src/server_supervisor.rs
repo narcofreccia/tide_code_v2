@@ -11,6 +11,7 @@ use std::io::{Read, Write};
 use std::net::TcpStream;
 use std::path::Path;
 use std::process::Child;
+use std::sync::atomic::{AtomicBool, Ordering};
 use std::sync::{Arc, Mutex};
 use std::time::{Duration, Instant};
 
@@ -418,7 +419,25 @@ fn boot(app: &AppHandle, inner: &Shared, port: &mut Option<u16>) -> Result<Insta
         }
     }
 
-    let child = process::spawn(&mut cmd, &sink, tauri::is_dev())
+    let booting = Arc::new(AtomicBool::new(true));
+    let saw_progress = Arc::new(AtomicBool::new(false));
+    let boot_hook: process::LineHook = {
+        let app = app.clone();
+        let inner = Arc::clone(inner);
+        let booting = Arc::clone(&booting);
+        let saw_progress = Arc::clone(&saw_progress);
+        Arc::new(move |line: &str| {
+            if !booting.load(Ordering::Relaxed) {
+                return;
+            }
+            if let Some(msg) = line.strip_prefix("[tide-boot] ") {
+                saw_progress.store(true, Ordering::Relaxed);
+                set_status(&app, &inner, "starting", Some(msg.to_string()));
+            }
+        })
+    };
+
+    let child = process::spawn(&mut cmd, &sink, tauri::is_dev(), Some(boot_hook))
         .map_err(|e| format!("cannot start {}: {e}", launcher.describe()))?;
     let started_at = Instant::now();
     inner.lock().map_err(|_| "supervisor poisoned")?.child = Some(child);
@@ -426,14 +445,21 @@ fn boot(app: &AppHandle, inner: &Shared, port: &mut Option<u16>) -> Result<Insta
     let deadline = Instant::now() + HEALTH_TIMEOUT;
     let mut told_slow = false;
     while Instant::now() < deadline {
-        if !told_slow && started_at.elapsed() >= HEALTH_SLOW {
+        if !told_slow && !saw_progress.load(Ordering::Relaxed) && started_at.elapsed() >= HEALTH_SLOW {
             told_slow = true;
-            set_status(app, inner, "starting", Some("loading your history — the first start after an update can take a minute".into()));
+            set_status(
+                app,
+                inner,
+                "starting",
+                Some("Loading your history — the first start after an update can take a moment…".into()),
+            );
         }
         if exited(inner) {
+            booting.store(false, Ordering::Relaxed);
             return Err(format!("{} exited before becoming healthy (port {port_no})", launcher.describe()));
         }
         if health_ok(port_no) {
+            booting.store(false, Ordering::Relaxed);
             let (token, environment_id) = read_identity(&home)?;
             let endpoint = Endpoint { url: format!("ws://127.0.0.1:{port_no}/ws"), token, environment_id, query: String::new() };
             go_live(app, inner, endpoint, "connected to");
@@ -441,6 +467,7 @@ fn boot(app: &AppHandle, inner: &Shared, port: &mut Option<u16>) -> Result<Insta
         }
         std::thread::sleep(HEALTH_INTERVAL);
     }
+    booting.store(false, Ordering::Relaxed);
     take_and_stop(inner);
     Err(format!("{} did not answer /health within {}s", launcher.describe(), HEALTH_TIMEOUT.as_secs()))
 }

@@ -166,4 +166,28 @@ describe("snapshot tag (R18)", () => {
     expect(lines.at(-1)).toContain("from snapshot");
     expect(next.snapshotStale).toBe(false);
   });
+
+  it("reports live replay progress in batches when replaying 1,000+ events and matches pure replay", async () => {
+    const store = await memoryStore();
+    const engine = new Engine({ store, snapshotEvery: 0, compaction: false, log: () => undefined });
+    const proj = await engine.dispatch({ type: "project.create", title: "Big", rootPath: "/tmp/big" });
+    const projectId = proj.events[0]?.event.type === "project.created" ? proj.events[0].event.project.id : "";
+    const created = await engine.dispatch({ type: "thread.create", projectId, provider: "claude" });
+    const threadId = created.events[0]?.event.type === "thread.created" ? created.events[0].event.thread.id : "";
+    // Seed 1,100 events directly into the store across batch boundary (REPLAY_BATCH_SIZE = 1,000)
+    const turn = await engine.dispatch({ type: "turn.request", threadId, text: "go" });
+    const turnId = turn.events[0]?.event.type === "turn.requested" ? turn.events[0].event.turn.id : "";
+    const batch = [];
+    for (let i = 0; i < 1_050; i++) {
+      batch.push({ type: "assistant.delta" as const, threadId, turnId, messageId: "m-big", delta: "a", at: i });
+    }
+    store.append(batch, 100);
+    const progress: string[] = [];
+    const rebooted = new Engine({ store, snapshotTag: "s5:test", snapshotEvery: 0, log: () => undefined, onBootProgress: (m) => progress.push(m) });
+    expect(progress.length).toBeGreaterThanOrEqual(2);
+    expect(progress[0]).toMatch(/^Updating local history… \d+%/);
+    expect(progress.at(-1)).toMatch(/90%/);
+    const pure = replay(emptyReadModel(), store.readAll());
+    expect(rebooted.getModel()).toEqual(pure);
+  });
 });

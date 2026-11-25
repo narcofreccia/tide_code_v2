@@ -10,6 +10,9 @@ use std::time::{Duration, Instant};
 const LOG_MAX: u64 = 5 * 1024 * 1024;
 const LOG_KEEP: u32 = 2;
 const STOP_GRACE: Duration = Duration::from_secs(5);
+const LINE_HOOK_MAX: usize = 4096;
+
+pub type LineHook = Arc<dyn Fn(&str) + Send + Sync>;
 
 /// `TIDE_HOME/logs/server.log`, rotated to `.1` / `.2` once it passes 5 MB.
 pub struct LogSink {
@@ -59,9 +62,22 @@ impl LogSink {
     }
 }
 
-fn pump(mut reader: impl Read + Send + 'static, sink: SharedSink, echo: bool) {
+fn emit_lines(pending: &mut Vec<u8>, chunk: &[u8], mut hook: impl FnMut(&str)) {
+    for &b in chunk {
+        if b == b'\n' {
+            let line = String::from_utf8_lossy(pending);
+            hook(line.trim_end_matches('\r'));
+            pending.clear();
+        } else if pending.len() < LINE_HOOK_MAX {
+            pending.push(b);
+        }
+    }
+}
+
+fn pump(mut reader: impl Read + Send + 'static, sink: SharedSink, echo: bool, on_line: Option<LineHook>) {
     std::thread::spawn(move || {
         let mut buf = [0u8; 8192];
+        let mut pending = Vec::new();
         while let Ok(n) = reader.read(&mut buf) {
             if n == 0 {
                 break;
@@ -72,13 +88,28 @@ fn pump(mut reader: impl Read + Send + 'static, sink: SharedSink, echo: bool) {
             if let Ok(mut s) = sink.lock() {
                 s.write(&buf[..n]);
             }
+            if let Some(ref hook) = on_line {
+                emit_lines(&mut pending, &buf[..n], |l| hook(l));
+            }
+        }
+        if let Some(ref hook) = on_line {
+            if !pending.is_empty() {
+                let line = String::from_utf8_lossy(&pending);
+                hook(line.trim_end_matches('\r'));
+            }
         }
     });
 }
 
 /// Spawns the server in its own process group with output going to the log (and the
-/// console when `echo`).
-pub fn spawn(cmd: &mut Command, sink: &SharedSink, echo: bool) -> std::io::Result<Child> {
+/// console when `echo`). When `on_line` is set, each complete stderr line is also passed
+/// to it (used during startup to forward `[tide-boot]` progress to the splash screen).
+pub fn spawn(
+    cmd: &mut Command,
+    sink: &SharedSink,
+    echo: bool,
+    on_line: Option<LineHook>,
+) -> std::io::Result<Child> {
     cmd.stdin(Stdio::null()).stdout(Stdio::piped()).stderr(Stdio::piped());
     #[cfg(unix)]
     {
@@ -92,10 +123,10 @@ pub fn spawn(cmd: &mut Command, sink: &SharedSink, echo: bool) -> std::io::Resul
     }
     let mut child = cmd.spawn()?;
     if let Some(out) = child.stdout.take() {
-        pump(out, Arc::clone(sink), echo);
+        pump(out, Arc::clone(sink), echo, None);
     }
     if let Some(err) = child.stderr.take() {
-        pump(err, Arc::clone(sink), echo);
+        pump(err, Arc::clone(sink), echo, on_line);
     }
     #[cfg(unix)]
     signals::arm(child.id());
@@ -174,5 +205,21 @@ mod signals {
 
     pub fn disarm() {
         CHILD_PID.store(0, Ordering::SeqCst);
+    }
+}
+
+#[cfg(test)]
+mod tests {
+    use super::emit_lines;
+
+    #[test]
+    fn splits_lines_across_chunks_and_crlf() {
+        let mut pending = Vec::new();
+        let mut seen = Vec::new();
+        emit_lines(&mut pending, b"[tide-boot] Rebuilding", |l| seen.push(l.to_string()));
+        assert!(seen.is_empty());
+        emit_lines(&mut pending, b" history 40%\r\nsecond line\npart", |l| seen.push(l.to_string()));
+        assert_eq!(seen, vec!["[tide-boot] Rebuilding history 40%", "second line"]);
+        assert_eq!(pending, b"part");
     }
 }

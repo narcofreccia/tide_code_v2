@@ -1,23 +1,74 @@
 import type { Activity, AttentionKind, ExpertsSession, Handoff, Message, Project, ReadModel, Thread, TimelineEntry, Turn } from "./domain.ts";
 import type { DomainEvent, EventRecord } from "./events.ts";
-import { applyUsageEvent } from "./projectionUsage.ts";
+import { applyUsageEvent, type UsageReplayState } from "./projectionUsage.ts";
 
-// Pure projector shared by server and clients. Returns a new model; never
-// mutates input. Unknown event types are ignored so old clients survive.
+// Pure projector shared by server and clients. `applyEvent` / `applyRecord` / `replay`
+// return a new model and never mutate input. `applyRecordInPlace` reuses the same logic
+// with `mut = true` on top-level maps and per-thread arrays so boot replay stays O(N).
+// Unknown event types are ignored so old clients survive.
 
-function withThread(model: ReadModel, id: string, patch: Partial<Thread>): ReadModel {
+export interface ReplayState extends UsageReplayState {
+  /** Turn IDs currently in `status === "queued"`, so `turn.settled` stays O(1) when nothing is queued. */
+  queuedTurns: Set<string>;
+}
+
+/** Tracks auxiliary indexes for O(1) in-place boot replay on a freshly parsed or empty model. */
+export function createReplayState(model?: ReadModel): ReplayState {
+  const queuedTurns = new Set<string>();
+  if (model) {
+    for (const id in model.turns) {
+      if (model.turns[id]?.status === "queued") queuedTurns.add(id);
+    }
+  }
+  return { queuedTurns };
+}
+
+function put<T>(map: Record<string, T>, key: string, value: T, mut: boolean): Record<string, T> {
+  if (mut) {
+    map[key] = value;
+    return map;
+  }
+  return { ...map, [key]: value };
+}
+
+function del<T>(map: Record<string, T>, key: string, mut: boolean): Record<string, T> {
+  if (mut) {
+    delete map[key];
+    return map;
+  }
+  const next = { ...map };
+  delete next[key];
+  return next;
+}
+
+function push<T>(list: T[] | undefined, item: T, mut: boolean): T[] {
+  if (mut && list !== undefined) {
+    list.push(item);
+    return list;
+  }
+  return list ? [...list, item] : [item];
+}
+
+function patchModel(model: ReadModel, patch: Partial<ReadModel>, mut: boolean): ReadModel {
+  if (mut) return Object.assign(model, patch);
+  return { ...model, ...patch };
+}
+
+function withThread(model: ReadModel, id: string, patch: Partial<Thread>, mut: boolean): ReadModel {
   const t = model.threads[id];
   if (!t) return model;
-  return { ...model, threads: { ...model.threads, [id]: { ...t, ...patch } } };
+  return patchModel(model, { threads: put(model.threads, id, { ...t, ...patch }, mut) }, mut);
 }
 
-function withExperts(model: ReadModel, session: ExpertsSession): ReadModel {
-  return { ...model, expertsSessions: { ...model.expertsSessions, [session.id]: session } };
+function withExperts(model: ReadModel, session: ExpertsSession, mut: boolean): ReadModel {
+  return patchModel(model, { expertsSessions: put(model.expertsSessions, session.id, session, mut) }, mut);
 }
 
-function appendTimeline(model: ReadModel, threadId: string, entry: TimelineEntry): ReadModel {
-  const list = model.threadTimeline[threadId] ?? [];
-  return { ...model, threadTimeline: { ...model.threadTimeline, [threadId]: [...list, entry] } };
+function appendTimeline(model: ReadModel, threadId: string, entry: TimelineEntry, mut: boolean): ReadModel {
+  const existing = model.threadTimeline[threadId];
+  const next = push(existing, entry, mut);
+  if (mut && existing === next) return model;
+  return patchModel(model, { threadTimeline: put(model.threadTimeline, threadId, next, mut) }, mut);
 }
 
 /** Attention = first pending approval/question, else a proposed plan, else none. */
@@ -39,7 +90,7 @@ function deriveAttention(model: ReadModel, threadId: string): AttentionKind | un
   return undefined;
 }
 
-function refreshAttention(model: ReadModel, threadId: string, at: number): ReadModel {
+function refreshAttention(model: ReadModel, threadId: string, at: number, mut: boolean): ReadModel {
   const t = model.threads[threadId];
   if (!t) return model;
   const attention = deriveAttention(model, threadId);
@@ -51,76 +102,91 @@ function refreshAttention(model: ReadModel, threadId: string, at: number): ReadM
     delete next.settledAt; // and brings a settled thread back
     delete next.settleReason;
   } else delete next.attention;
-  return { ...model, threads: { ...model.threads, [threadId]: next } };
+  return patchModel(model, { threads: put(model.threads, threadId, next, mut) }, mut);
 }
 
 /** Adds a user message to a thread's lists and timeline. */
-function addUserMessage(model: ReadModel, message: Message): ReadModel {
-  const list = model.threadMessages[message.threadId] ?? [];
-  const next: ReadModel = {
-    ...model,
-    messages: { ...model.messages, [message.id]: message },
-    threadMessages: { ...model.threadMessages, [message.threadId]: [...list, message.id] },
-  };
-  return appendTimeline(next, message.threadId, { kind: "message", id: message.id });
+function addUserMessage(model: ReadModel, message: Message, mut: boolean): ReadModel {
+  const existing = model.threadMessages[message.threadId];
+  const list = push(existing, message.id, mut);
+  const next = patchModel(
+    model,
+    {
+      messages: put(model.messages, message.id, message, mut),
+      ...(mut && existing === list ? {} : { threadMessages: put(model.threadMessages, message.threadId, list, mut) }),
+    },
+    mut,
+  );
+  return appendTimeline(next, message.threadId, { kind: "message", id: message.id }, mut);
 }
 
-function dropMessage(model: ReadModel, threadId: string, messageId: string): ReadModel {
-  const messages = { ...model.messages };
-  delete messages[messageId];
-  return {
-    ...model,
-    messages,
-    threadMessages: { ...model.threadMessages, [threadId]: (model.threadMessages[threadId] ?? []).filter((id) => id !== messageId) },
-    threadTimeline: { ...model.threadTimeline, [threadId]: (model.threadTimeline[threadId] ?? []).filter((e) => !(e.kind === "message" && e.id === messageId)) },
-  };
+function dropMessage(model: ReadModel, threadId: string, messageId: string, mut: boolean): ReadModel {
+  return patchModel(
+    model,
+    {
+      messages: del(model.messages, messageId, mut),
+      threadMessages: put(model.threadMessages, threadId, (model.threadMessages[threadId] ?? []).filter((id) => id !== messageId), mut),
+      threadTimeline: put(model.threadTimeline, threadId, (model.threadTimeline[threadId] ?? []).filter((e) => !(e.kind === "message" && e.id === messageId)), mut),
+    },
+    mut,
+  );
 }
 
 /** Everything keyed by or belonging to the thread leaves the model; other threads keep their lineage fields. */
-function dropThread(model: ReadModel, threadId: string): ReadModel {
+function dropThread(model: ReadModel, threadId: string, mut: boolean, state?: ReplayState): ReadModel {
   if (!model.threads[threadId]) return model;
-  const without = <T extends { threadId?: string }>(record: Record<string, T>): Record<string, T> =>
-    Object.fromEntries(Object.entries(record).filter(([, v]) => v.threadId !== threadId));
-  const threads = { ...model.threads };
-  delete threads[threadId];
-  const threadMessages = { ...model.threadMessages };
-  delete threadMessages[threadId];
-  const threadTimeline = { ...model.threadTimeline };
-  delete threadTimeline[threadId];
-  return {
-    ...model,
-    threads,
-    turns: without(model.turns),
-    messages: without(model.messages),
-    activities: without(model.activities),
-    plans: without(model.plans),
-    handoffs: without(model.handoffs),
-    threadMessages,
-    threadTimeline,
+  if (state) {
+    for (const id of state.queuedTurns) {
+      if (model.turns[id]?.threadId === threadId) state.queuedTurns.delete(id);
+    }
+  }
+  const without = <T extends { threadId?: string }>(record: Record<string, T>): Record<string, T> => {
+    if (mut) {
+      for (const k in record) {
+        if (record[k]?.threadId === threadId) delete record[k];
+      }
+      return record;
+    }
+    return Object.fromEntries(Object.entries(record).filter(([, v]) => v.threadId !== threadId));
   };
+  return patchModel(
+    model,
+    {
+      threads: del(model.threads, threadId, mut),
+      turns: without(model.turns),
+      messages: without(model.messages),
+      activities: without(model.activities),
+      plans: without(model.plans),
+      handoffs: without(model.handoffs),
+      threadMessages: del(model.threadMessages, threadId, mut),
+      threadTimeline: del(model.threadTimeline, threadId, mut),
+    },
+    mut,
+  );
 }
 
 /** `turn.requested` and the steer fallback share this: a queued turn waits, a live one takes the thread. */
-function requestTurn(model: ReadModel, turn: Turn, userMessage: Message): ReadModel {
-  let next: ReadModel = addUserMessage({ ...model, turns: { ...model.turns, [turn.id]: turn } }, userMessage);
+function requestTurn(model: ReadModel, turn: Turn, userMessage: Message, mut: boolean, state?: ReplayState): ReadModel {
+  if (turn.status === "queued") state?.queuedTurns.add(turn.id);
+  let next = addUserMessage(patchModel(model, { turns: put(model.turns, turn.id, turn, mut) }, mut), userMessage, mut);
   const thread = next.threads[turn.threadId];
   // the handoff this turn carries is no longer pending on the thread
   if (thread && turn.handoffId !== undefined && thread.pendingHandoffId === turn.handoffId) {
     const t: Thread = { ...thread };
     delete t.pendingHandoffId;
-    next = { ...next, threads: { ...next.threads, [t.id]: t } };
+    next = patchModel(next, { threads: put(next.threads, t.id, t, mut) }, mut);
   }
   // a queued turn waits its turn: the running one keeps latestTurnId until it settles
-  if (turn.status === "queued") return withThread(next, turn.threadId, { updatedAt: turn.requestedAt });
+  if (turn.status === "queued") return withThread(next, turn.threadId, { updatedAt: turn.requestedAt }, mut);
   // a new turn reopens a settled thread: there is something to look at again
   const started = next.threads[turn.threadId];
   if (started?.settledAt !== undefined) {
     const t: Thread = { ...started };
     delete t.settledAt;
     delete t.settleReason;
-    next = { ...next, threads: { ...next.threads, [t.id]: t } };
+    next = patchModel(next, { threads: put(next.threads, t.id, t, mut) }, mut);
   }
-  return withThread(next, turn.threadId, { latestTurnId: turn.id, status: "running", updatedAt: turn.requestedAt });
+  return withThread(next, turn.threadId, { latestTurnId: turn.id, status: "running", updatedAt: turn.requestedAt }, mut);
 }
 
 /** Latest *pending* activity with this requestId: ids repeat across harness processes, so a resolved one never matches. */
@@ -135,17 +201,43 @@ function findPendingByRequest<K extends "approval" | "user-input">(model: ReadMo
   return undefined;
 }
 
-function upsertActivity(model: ReadModel, activity: Activity): ReadModel {
-  const exists = activity.id in model.activities;
-  let next: ReadModel = { ...model, activities: { ...model.activities, [activity.id]: activity } };
-  if (!exists) next = appendTimeline(next, activity.threadId, { kind: "activity", id: activity.id });
-  return refreshAttention(next, activity.threadId, activity.updatedAt);
+function upsertActivity(model: ReadModel, activity: Activity, mut: boolean): ReadModel {
+  const prev = model.activities[activity.id];
+  const exists = prev !== undefined;
+  let next = patchModel(model, { activities: put(model.activities, activity.id, activity, mut) }, mut);
+  if (!exists) next = appendTimeline(next, activity.threadId, { kind: "activity", id: activity.id }, mut);
+  // Non-attention activities (tool/info/child) cannot change deriveAttention unless replacing an approval/question
+  if (activity.kind !== "approval" && activity.kind !== "user-input" && prev?.kind !== "approval" && prev?.kind !== "user-input") {
+    return next;
+  }
+  return refreshAttention(next, activity.threadId, activity.updatedAt, mut);
 }
 
-export function applyEvent(model: ReadModel, event: DomainEvent): ReadModel {
+function oldestQueuedTurn(turns: Record<string, Turn>, threadId: string, state?: ReplayState): Turn | undefined {
+  let best: Turn | undefined;
+  if (state !== undefined) {
+    if (state.queuedTurns.size === 0) return undefined;
+    for (const id of state.queuedTurns) {
+      const x = turns[id];
+      if (x !== undefined && x.threadId === threadId && x.status === "queued" && (best === undefined || x.requestedAt < best.requestedAt)) {
+        best = x;
+      }
+    }
+    return best;
+  }
+  for (const id in turns) {
+    const x = turns[id];
+    if (x !== undefined && x.threadId === threadId && x.status === "queued" && (best === undefined || x.requestedAt < best.requestedAt)) {
+      best = x;
+    }
+  }
+  return best;
+}
+
+function projectEvent(model: ReadModel, event: DomainEvent, mut: boolean, state?: ReplayState): ReadModel {
   switch (event.type) {
     case "project.created":
-      return { ...model, projects: { ...model.projects, [event.project.id]: event.project } };
+      return patchModel(model, { projects: put(model.projects, event.project.id, event.project, mut) }, mut);
     case "project.updated": {
       const p = model.projects[event.projectId];
       if (!p) return model;
@@ -161,37 +253,40 @@ export function applyEvent(model: ReadModel, event: DomainEvent): ReadModel {
       if (event.clearIcon) delete next.icon;
       if (event.clearTitleInstructions) delete next.titleInstructions;
       if (event.clearRepo) delete next.repo;
-      return { ...model, projects: { ...model.projects, [p.id]: next } };
+      return patchModel(model, { projects: put(model.projects, p.id, next, mut) }, mut);
     }
     case "project.link.added":
     case "project.link.updated": {
       const p = model.projects[event.projectId];
       if (!p) return model;
       const links = (p.links ?? []).filter((l) => l.id !== event.link.id).concat(event.link);
-      return { ...model, projects: { ...model.projects, [p.id]: { ...p, links, updatedAt: event.updatedAt } } };
+      return patchModel(model, { projects: put(model.projects, p.id, { ...p, links, updatedAt: event.updatedAt }, mut) }, mut);
     }
     case "project.link.removed": {
       const p = model.projects[event.projectId];
       if (!p) return model;
-      return { ...model, projects: { ...model.projects, [p.id]: { ...p, links: (p.links ?? []).filter((l) => l.id !== event.linkId), updatedAt: event.updatedAt } } };
+      return patchModel(model, { projects: put(model.projects, p.id, { ...p, links: (p.links ?? []).filter((l) => l.id !== event.linkId), updatedAt: event.updatedAt }, mut) }, mut);
     }
     case "project.runStack.changed": {
       const p = model.projects[event.projectId];
       if (!p) return model;
-      return { ...model, projects: { ...model.projects, [p.id]: { ...p, runStack: event.runStack, updatedAt: event.updatedAt } } };
+      return patchModel(model, { projects: put(model.projects, p.id, { ...p, runStack: event.runStack, updatedAt: event.updatedAt }, mut) }, mut);
     }
     case "project.archived": {
       const p = model.projects[event.projectId];
       if (!p) return model;
-      return { ...model, projects: { ...model.projects, [p.id]: { ...p, archivedAt: event.archivedAt, updatedAt: event.archivedAt } } };
+      return patchModel(model, { projects: put(model.projects, p.id, { ...p, archivedAt: event.archivedAt, updatedAt: event.archivedAt }, mut) }, mut);
     }
     case "thread.created":
-      return {
-        ...model,
-        threads: { ...model.threads, [event.thread.id]: event.thread },
-        threadMessages: { ...model.threadMessages, [event.thread.id]: [] },
-        threadTimeline: { ...model.threadTimeline, [event.thread.id]: [] },
-      };
+      return patchModel(
+        model,
+        {
+          threads: put(model.threads, event.thread.id, event.thread, mut),
+          threadMessages: put(model.threadMessages, event.thread.id, [], mut),
+          threadTimeline: put(model.threadTimeline, event.thread.id, [], mut),
+        },
+        mut,
+      );
     case "thread.updated": {
       const t = model.threads[event.threadId];
       if (!t) return model;
@@ -207,74 +302,103 @@ export function applyEvent(model: ReadModel, event: DomainEvent): ReadModel {
         delete next.rateLimit;
         delete next.contextUsage;
       }
-      return { ...model, threads: { ...model.threads, [t.id]: next } };
+      return patchModel(model, { threads: put(model.threads, t.id, next, mut) }, mut);
     }
     case "thread.archived":
-      return withThread(model, event.threadId, { archivedAt: event.archivedAt, updatedAt: event.archivedAt });
+      return withThread(model, event.threadId, { archivedAt: event.archivedAt, updatedAt: event.archivedAt }, mut);
     case "thread.unarchived": {
       const t = model.threads[event.threadId];
       if (!t) return model;
       const next: Thread = { ...t, updatedAt: event.at };
       delete next.archivedAt;
-      return { ...model, threads: { ...model.threads, [t.id]: next } };
+      return patchModel(model, { threads: put(model.threads, t.id, next, mut) }, mut);
     }
     case "thread.deleted":
-      return dropThread(model, event.threadId);
+      return dropThread(model, event.threadId, mut, state);
     case "project.unarchived": {
       const p = model.projects[event.projectId];
       if (!p) return model;
       const next = { ...p, updatedAt: event.at };
       delete next.archivedAt;
-      return { ...model, projects: { ...model.projects, [p.id]: next } };
+      return patchModel(model, { projects: put(model.projects, p.id, next, mut) }, mut);
     }
     case "turn.requested":
-      return requestTurn(model, event.turn, event.userMessage);
+      return requestTurn(model, event.turn, event.userMessage, mut, state);
     case "turn.dequeued": {
       const turn = model.turns[event.turnId];
       if (!turn) return model;
-      const turns = { ...model.turns };
-      delete turns[turn.id];
-      const messages = { ...model.messages };
-      const dropped = new Set((model.threadMessages[event.threadId] ?? []).filter((id) => messages[id]?.turnId === turn.id));
-      for (const id of dropped) delete messages[id];
+      state?.queuedTurns.delete(turn.id);
+      const turns = del(model.turns, turn.id, mut);
+      const dropped = new Set((model.threadMessages[event.threadId] ?? []).filter((id) => model.messages[id]?.turnId === turn.id));
+      let messages = model.messages;
+      if (mut) {
+        for (const id of dropped) delete messages[id];
+      } else {
+        messages = { ...model.messages };
+        for (const id of dropped) delete messages[id];
+      }
       return withThread(
-        {
-          ...model,
-          turns,
-          messages,
-          threadMessages: { ...model.threadMessages, [event.threadId]: (model.threadMessages[event.threadId] ?? []).filter((id) => !dropped.has(id)) },
-          threadTimeline: { ...model.threadTimeline, [event.threadId]: (model.threadTimeline[event.threadId] ?? []).filter((e) => !(e.kind === "message" && dropped.has(e.id))) },
-        },
+        patchModel(
+          model,
+          {
+            turns,
+            messages,
+            threadMessages: put(model.threadMessages, event.threadId, (model.threadMessages[event.threadId] ?? []).filter((id) => !dropped.has(id)), mut),
+            threadTimeline: put(model.threadTimeline, event.threadId, (model.threadTimeline[event.threadId] ?? []).filter((e) => !(e.kind === "message" && dropped.has(e.id))), mut),
+          },
+          mut,
+        ),
         event.threadId,
         { updatedAt: event.at },
+        mut,
       );
     }
     case "turn.started": {
       const turn = model.turns[event.turnId];
       if (!turn) return model;
-      const next: ReadModel = {
-        ...model,
-        turns: { ...model.turns, [turn.id]: { ...turn, status: "running", startedAt: event.startedAt, provider: event.provider, ...(event.providerId !== undefined ? { providerId: event.providerId } : {}), ...(event.model !== undefined ? { model: event.model } : {}) } },
-      };
+      state?.queuedTurns.delete(turn.id);
+      const next = patchModel(
+        model,
+        {
+          turns: put(
+            model.turns,
+            turn.id,
+            {
+              ...turn,
+              status: "running",
+              startedAt: event.startedAt,
+              provider: event.provider,
+              ...(event.providerId !== undefined ? { providerId: event.providerId } : {}),
+              ...(event.model !== undefined ? { model: event.model } : {}),
+            },
+            mut,
+          ),
+        },
+        mut,
+      );
       if (event.nativeSessionId === undefined) return next;
       const t = next.threads[event.threadId];
       const sessionKey = event.providerId ?? event.provider;
       const sessions = { ...(t?.providerSessions ?? {}), [sessionKey]: { ...(t?.providerSessions?.[sessionKey] ?? {}), nativeSessionId: event.nativeSessionId } };
-      return withThread(next, event.threadId, { nativeSessionId: event.nativeSessionId, providerSessions: sessions, updatedAt: event.startedAt });
+      return withThread(next, event.threadId, { nativeSessionId: event.nativeSessionId, providerSessions: sessions, updatedAt: event.startedAt }, mut);
     }
     case "turn.session-identified": {
       const turn = model.turns[event.turnId];
       if (!turn) return model;
-      const next: ReadModel = { ...model, turns: { ...model.turns, [turn.id]: { ...turn, ...(event.model !== undefined ? { model: event.model } : {}) } } };
+      const next = patchModel(
+        model,
+        { turns: put(model.turns, turn.id, { ...turn, ...(event.model !== undefined ? { model: event.model } : {}) }, mut) },
+        mut,
+      );
       const t = next.threads[event.threadId];
       const sessionKey = event.providerId ?? event.provider;
       const sessions = { ...(t?.providerSessions ?? {}), [sessionKey]: { ...(t?.providerSessions?.[sessionKey] ?? {}), nativeSessionId: event.nativeSessionId } };
-      return withThread(next, event.threadId, { nativeSessionId: event.nativeSessionId, providerSessions: sessions, updatedAt: event.at });
+      return withThread(next, event.threadId, { nativeSessionId: event.nativeSessionId, providerSessions: sessions, updatedAt: event.at }, mut);
     }
     case "turn.interrupt-requested":
-      return withThread(model, event.threadId, { interrupting: true, updatedAt: event.at });
+      return withThread(model, event.threadId, { interrupting: true, updatedAt: event.at }, mut);
     case "branch.pushed":
-      return withThread(model, event.threadId, { remoteBranch: event.remoteBranch, pushedSha: event.sha, updatedAt: event.at });
+      return withThread(model, event.threadId, { remoteBranch: event.remoteBranch, pushedSha: event.sha, updatedAt: event.at }, mut);
     case "session.boundary": {
       const t = model.threads[event.threadId];
       if (!t) return model;
@@ -284,8 +408,10 @@ export function applyEvent(model: ReadModel, event: DomainEvent): ReadModel {
       const patched: Thread = { ...t, providerSessions: sessions, sessionBoundaryTurnId: event.turnId, updatedAt: event.at };
       delete patched.nativeSessionId;
       const turn = model.turns[event.turnId];
-      const next: ReadModel = turn ? { ...model, turns: { ...model.turns, [turn.id]: { ...turn, freshSession: true } } } : model;
-      return appendTimeline({ ...next, threads: { ...next.threads, [t.id]: patched } }, t.id, { kind: "boundary", id: event.turnId });
+      const next = turn
+        ? patchModel(model, { turns: put(model.turns, turn.id, { ...turn, freshSession: true }, mut), threads: put(model.threads, t.id, patched, mut) }, mut)
+        : patchModel(model, { threads: put(model.threads, t.id, patched, mut) }, mut);
+      return appendTimeline(next, t.id, { kind: "boundary", id: event.turnId }, mut);
     }
     case "publish.requested":
     case "worktree.detach-requested":
@@ -295,15 +421,20 @@ export function applyEvent(model: ReadModel, event: DomainEvent): ReadModel {
       if (!t) return model;
       const next: Thread = { ...t, updatedAt: event.at };
       delete next.worktreePath;
-      return { ...model, threads: { ...model.threads, [t.id]: next } };
+      return patchModel(model, { threads: put(model.threads, t.id, next, mut) }, mut);
     }
     case "worktree.attached":
-      return withThread(model, event.threadId, {
-        worktreePath: event.worktreePath,
-        branch: event.branch,
-        ...(event.baseBranch !== undefined ? { baseBranch: event.baseBranch } : {}),
-        updatedAt: event.at,
-      });
+      return withThread(
+        model,
+        event.threadId,
+        {
+          worktreePath: event.worktreePath,
+          branch: event.branch,
+          ...(event.baseBranch !== undefined ? { baseBranch: event.baseBranch } : {}),
+          updatedAt: event.at,
+        },
+        mut,
+      );
     case "checkpoint.recorded": {
       const turn = model.turns[event.turnId];
       if (!turn) return model;
@@ -311,7 +442,7 @@ export function applyEvent(model: ReadModel, event: DomainEvent): ReadModel {
         event.phase === "before"
           ? { ...(turn.checkpoint ?? {}), before: event.ref }
           : { before: turn.checkpoint?.before ?? event.ref, after: event.ref, ...(event.stats !== undefined ? { stats: event.stats } : {}) };
-      return { ...model, turns: { ...model.turns, [turn.id]: { ...turn, checkpoint } } };
+      return patchModel(model, { turns: put(model.turns, turn.id, { ...turn, checkpoint }, mut) }, mut);
     }
     case "pr.updated": {
       const t = model.threads[event.threadId];
@@ -319,96 +450,111 @@ export function applyEvent(model: ReadModel, event: DomainEvent): ReadModel {
       // R10: the forge's merge time when it reports one, else the poll time
       if (event.pr.state === "merged" && t?.mergedAt === undefined) patch.mergedAt = event.pr.mergedAt ?? event.pr.updatedAt;
       if (t?.prWatch) patch.prWatch = { ...t.prWatch, lastCheckedAt: event.pr.updatedAt };
-      return withThread(model, event.threadId, patch);
+      return withThread(model, event.threadId, patch, mut);
     }
     case "merge.requested":
-      return withThread(model, event.threadId, { merge: { status: "merging", strategy: event.strategy, at: event.at }, updatedAt: event.at });
+      return withThread(model, event.threadId, { merge: { status: "merging", strategy: event.strategy, at: event.at }, updatedAt: event.at }, mut);
     case "merge.completed":
-      return withThread(model, event.threadId, {
-        merge: { status: "merged", strategy: event.strategy, at: event.at, ...(event.sha !== undefined ? { sha: event.sha } : {}) },
-        mergedAt: event.at,
-        updatedAt: event.at,
-      });
+      return withThread(
+        model,
+        event.threadId,
+        {
+          merge: { status: "merged", strategy: event.strategy, at: event.at, ...(event.sha !== undefined ? { sha: event.sha } : {}) },
+          mergedAt: event.at,
+          updatedAt: event.at,
+        },
+        mut,
+      );
     case "merge.conflicted":
-      return withThread(model, event.threadId, { merge: { status: "conflicted", strategy: event.strategy, files: event.files, at: event.at }, updatedAt: event.at });
+      return withThread(model, event.threadId, { merge: { status: "conflicted", strategy: event.strategy, files: event.files, at: event.at }, updatedAt: event.at }, mut);
     case "merge.failed":
-      return withThread(model, event.threadId, { merge: { status: "error", strategy: event.strategy, error: event.error, at: event.at }, updatedAt: event.at });
+      return withThread(model, event.threadId, { merge: { status: "error", strategy: event.strategy, error: event.error, at: event.at }, updatedAt: event.at }, mut);
     case "thread.triaged":
-      return withThread(model, event.threadId, { triage: event.triage, updatedAt: event.triage.at });
+      return withThread(model, event.threadId, { triage: event.triage, updatedAt: event.triage.at }, mut);
     case "experts.created":
-      return { ...model, expertsSessions: { ...model.expertsSessions, [event.session.id]: event.session } };
+      return patchModel(model, { expertsSessions: put(model.expertsSessions, event.session.id, event.session, mut) }, mut);
     case "experts.threads-bound": {
       const x = model.expertsSessions[event.sessionId];
       if (!x) return model;
       const byKey = new Map(event.bindings.map((b) => [b.key, b.threadId]));
       const experts = x.experts.map((e) => (byKey.has(e.key) ? { ...e, threadId: byKey.get(e.key) as string } : e));
-      return withExperts(model, { ...x, experts, lead: { ...x.lead, threadId: event.leadThreadId }, updatedAt: event.at });
+      return withExperts(model, { ...x, experts, lead: { ...x.lead, threadId: event.leadThreadId }, updatedAt: event.at }, mut);
     }
     case "experts.phase-changed": {
       const x = model.expertsSessions[event.sessionId];
-      return x ? withExperts(model, { ...x, phase: event.phase, updatedAt: event.at }) : model;
+      return x ? withExperts(model, { ...x, phase: event.phase, updatedAt: event.at }, mut) : model;
     }
     case "experts.expert-status-changed": {
       const x = model.expertsSessions[event.sessionId];
       if (!x) return model;
-      return withExperts(model, { ...x, experts: x.experts.map((e) => (e.key === event.key ? { ...e, status: event.status } : e)), updatedAt: event.at });
+      return withExperts(model, { ...x, experts: x.experts.map((e) => (e.key === event.key ? { ...e, status: event.status } : e)), updatedAt: event.at }, mut);
     }
     case "experts.finding-posted": {
       const x = model.expertsSessions[event.finding.sessionId];
-      const next: ReadModel = { ...model, expertsFindings: { ...model.expertsFindings, [event.finding.id]: event.finding } };
-      return x ? withExperts(next, { ...x, findingIds: [...x.findingIds, event.finding.id], updatedAt: event.finding.createdAt }) : next;
+      const next = patchModel(model, { expertsFindings: put(model.expertsFindings, event.finding.id, event.finding, mut) }, mut);
+      return x ? withExperts(next, { ...x, findingIds: [...x.findingIds, event.finding.id], updatedAt: event.finding.createdAt }, mut) : next;
     }
     case "experts.message-posted": {
       const x = model.expertsSessions[event.message.sessionId];
-      const next: ReadModel = { ...model, expertsMessages: { ...model.expertsMessages, [event.message.id]: event.message } };
-      return x ? withExperts(next, { ...x, messageIds: [...x.messageIds, event.message.id], updatedAt: event.message.createdAt }) : next;
+      const next = patchModel(model, { expertsMessages: put(model.expertsMessages, event.message.id, event.message, mut) }, mut);
+      return x ? withExperts(next, { ...x, messageIds: [...x.messageIds, event.message.id], updatedAt: event.message.createdAt }, mut) : next;
     }
     case "experts.synthesis-set": {
       const x = model.expertsSessions[event.sessionId];
       if (!x) return model;
-      return withExperts(model, { ...x, phase: "ready", synthesis: { markdown: event.markdown, at: event.at, ...(event.planId !== undefined ? { planId: event.planId } : {}) }, updatedAt: event.at });
+      return withExperts(model, { ...x, phase: "ready", synthesis: { markdown: event.markdown, at: event.at, ...(event.planId !== undefined ? { planId: event.planId } : {}) }, updatedAt: event.at }, mut);
     }
     case "experts.archived": {
       const x = model.expertsSessions[event.sessionId];
-      return x ? withExperts(model, { ...x, phase: "archived", updatedAt: event.at }) : model;
+      return x ? withExperts(model, { ...x, phase: "archived", updatedAt: event.at }, mut) : model;
     }
     case "assistant.delta": {
       const existing = model.messages[event.messageId];
+      if (mut && existing) {
+        existing.text += event.delta;
+        return model;
+      }
       const msg = existing
         ? { ...existing, text: existing.text + event.delta }
         : { id: event.messageId, threadId: event.threadId, turnId: event.turnId, role: "assistant" as const, text: event.delta, createdAt: event.at, streaming: true };
-      let next: ReadModel = { ...model, messages: { ...model.messages, [msg.id]: msg } };
+      let next = patchModel(model, { messages: put(model.messages, msg.id, msg, mut) }, mut);
       if (!existing) {
-        const list = model.threadMessages[event.threadId] ?? [];
-        next = { ...next, threadMessages: { ...next.threadMessages, [event.threadId]: [...list, msg.id] } };
-        next = appendTimeline(next, event.threadId, { kind: "message", id: msg.id });
+        const list = model.threadMessages[event.threadId];
+        const nextList = push(list, msg.id, mut);
+        if (!mut || list !== nextList) next = patchModel(next, { threadMessages: put(next.threadMessages, event.threadId, nextList, mut) }, mut);
+        next = appendTimeline(next, event.threadId, { kind: "message", id: msg.id }, mut);
       }
       return next;
     }
     case "assistant.reasoning-delta": {
       const existing = model.messages[event.messageId];
+      if (mut && existing) {
+        existing.reasoning = (existing.reasoning ?? "") + event.delta;
+        return model;
+      }
       const msg = existing
         ? { ...existing, reasoning: (existing.reasoning ?? "") + event.delta }
         : { id: event.messageId, threadId: event.threadId, turnId: event.turnId, role: "assistant" as const, text: "", reasoning: event.delta, createdAt: event.at, streaming: true };
-      let next: ReadModel = { ...model, messages: { ...model.messages, [msg.id]: msg } };
+      let next = patchModel(model, { messages: put(model.messages, msg.id, msg, mut) }, mut);
       if (!existing) {
-        const list = model.threadMessages[event.threadId] ?? [];
-        next = { ...next, threadMessages: { ...next.threadMessages, [event.threadId]: [...list, msg.id] } };
-        next = appendTimeline(next, event.threadId, { kind: "message", id: msg.id });
+        const list = model.threadMessages[event.threadId];
+        const nextList = push(list, msg.id, mut);
+        if (!mut || list !== nextList) next = patchModel(next, { threadMessages: put(next.threadMessages, event.threadId, nextList, mut) }, mut);
+        next = appendTimeline(next, event.threadId, { kind: "message", id: msg.id }, mut);
       }
       return next;
     }
     case "activity.upserted":
-      return upsertActivity(model, event.activity);
+      return upsertActivity(model, event.activity, mut);
     case "approval.responded": {
       const a = event.activityId !== undefined ? model.activities[event.activityId] : findPendingByRequest(model, "approval", event.threadId, event.requestId);
       if (!a || a.kind !== "approval") return model;
-      return upsertActivity(model, { ...a, status: "resolved", decision: event.decision, updatedAt: event.at });
+      return upsertActivity(model, { ...a, status: "resolved", decision: event.decision, updatedAt: event.at }, mut);
     }
     case "user-input.responded": {
       const a = event.activityId !== undefined ? model.activities[event.activityId] : findPendingByRequest(model, "user-input", event.threadId, event.requestId);
       if (!a || a.kind !== "user-input") return model;
-      return upsertActivity(model, { ...a, status: "resolved", answers: event.answers, updatedAt: event.at });
+      return upsertActivity(model, { ...a, status: "resolved", answers: event.answers, updatedAt: event.at }, mut);
     }
     case "plan.proposed": {
       // A newer plan on the same thread supersedes any earlier unacted-on proposal so refining a
@@ -418,65 +564,73 @@ export function applyEvent(model: ReadModel, event: DomainEvent): ReadModel {
         if (e.kind !== "plan") continue;
         const prev = plans[e.id];
         if (prev?.status === "proposed") {
-          plans = { ...plans, [prev.id]: { ...prev, status: "superseded", updatedAt: event.plan.createdAt } };
+          plans = put(plans, prev.id, { ...prev, status: "superseded", updatedAt: event.plan.createdAt }, mut);
         }
       }
-      let next: ReadModel = { ...model, plans: { ...plans, [event.plan.id]: event.plan } };
-      next = appendTimeline(next, event.plan.threadId, { kind: "plan", id: event.plan.id });
-      return refreshAttention(next, event.plan.threadId, event.plan.createdAt);
+      let next = patchModel(model, { plans: put(plans, event.plan.id, event.plan, mut) }, mut);
+      next = appendTimeline(next, event.plan.threadId, { kind: "plan", id: event.plan.id }, mut);
+      return refreshAttention(next, event.plan.threadId, event.plan.createdAt, mut);
     }
     case "plan.updated": {
       const plan = model.plans[event.planId];
       if (!plan) return model;
-      let plans: ReadModel["plans"] = {
-        ...model.plans,
-        [plan.id]: { ...plan, status: event.status, updatedAt: event.at, ...(event.implementationThreadId !== undefined ? { implementationThreadId: event.implementationThreadId } : {}) },
-      };
+      let plans = put(
+        model.plans,
+        plan.id,
+        { ...plan, status: event.status, updatedAt: event.at, ...(event.implementationThreadId !== undefined ? { implementationThreadId: event.implementationThreadId } : {}) },
+        mut,
+      );
       if (event.status === "implemented") {
         for (const e of model.threadTimeline[plan.threadId] ?? []) {
           if (e.kind !== "plan" || e.id === plan.id) continue;
           const other = plans[e.id];
           if (other?.status === "proposed") {
-            plans = { ...plans, [other.id]: { ...other, status: "superseded", updatedAt: event.at } };
+            plans = put(plans, other.id, { ...other, status: "superseded", updatedAt: event.at }, mut);
           }
         }
       }
-      const next: ReadModel = { ...model, plans };
-      return refreshAttention(next, plan.threadId, event.at);
+      const next = patchModel(model, { plans }, mut);
+      return refreshAttention(next, plan.threadId, event.at, mut);
     }
     case "plan.progressed":
-      return withThread(model, event.threadId, { planProgress: { steps: event.steps, updatedAt: event.at }, updatedAt: event.at });
+      return withThread(model, event.threadId, { planProgress: { steps: event.steps, updatedAt: event.at }, updatedAt: event.at }, mut);
     case "usage.reported":
     case "usage.corrected":
     case "quota.changed":
     case "quota.lifted":
     case "quota.metered":
     case "turn.released":
-      return applyUsageEvent(model, event);
+      return applyUsageEvent(model, event, mut, state);
     case "turn.settled": {
       const turn = model.turns[event.turnId];
+      state?.queuedTurns.delete(event.turnId);
       let messages = model.messages;
       for (const id of model.threadMessages[event.threadId] ?? []) {
         const m = messages[id];
-        if (m && m.turnId === event.turnId && m.streaming) messages = { ...messages, [id]: { ...m, streaming: false } };
+        if (m && m.turnId === event.turnId && m.streaming) messages = put(messages, id, { ...m, streaming: false }, mut);
       }
       // pending approvals/questions of a settled turn can no longer be answered
       let activities = model.activities;
       for (const e of model.threadTimeline[event.threadId] ?? []) {
         const a = e.kind === "activity" ? activities[e.id] : undefined;
         if (a && a.turnId === event.turnId && (a.kind === "approval" || a.kind === "user-input") && a.status === "pending") {
-          activities = { ...activities, [a.id]: { ...a, status: "resolved", updatedAt: event.settledAt } as Activity };
+          activities = put(activities, a.id, { ...a, status: "resolved", updatedAt: event.settledAt } as Activity, mut);
         }
         if (a && a.turnId === event.turnId && a.kind === "tool" && a.status === "running") {
-          activities = { ...activities, [a.id]: { ...a, status: event.status === "completed" ? "ok" : "error", updatedAt: event.settledAt } };
+          activities = put(activities, a.id, { ...a, status: event.status === "completed" ? "ok" : "error", updatedAt: event.settledAt }, mut);
         }
       }
-      let next: ReadModel = {
-        ...model,
-        messages,
-        activities,
-        turns: turn ? { ...model.turns, [turn.id]: { ...turn, status: event.status, settledAt: event.settledAt, ...(event.error !== undefined ? { error: event.error } : {}) } } : model.turns,
-      };
+      let next = patchModel(
+        model,
+        {
+          messages,
+          activities,
+          turns: turn
+            ? put(model.turns, turn.id, { ...turn, status: event.status, settledAt: event.settledAt, ...(event.error !== undefined ? { error: event.error } : {}) }, mut)
+            : model.turns,
+        },
+        mut,
+      );
       const t = next.threads[event.threadId];
       if (t) {
         const patched: Thread = { ...t, status: event.status === "completed" ? "idle" : event.status, updatedAt: event.settledAt };
@@ -488,73 +642,77 @@ export function applyEvent(model: ReadModel, event: DomainEvent): ReadModel {
         if (provider !== undefined && known !== undefined) patched.providerSessions = { ...t.providerSessions, [provider]: { ...known, lastTurnId: event.turnId } };
         // the oldest queued turn becomes the live one; the thread never goes idle in between.
         // R20: unless a quota holds the thread: then it goes idle with its queue, until a `turn.released`
-        const queued = event.holdQueue === true ? undefined : Object.values(next.turns)
-          .filter((x) => x.threadId === t.id && x.status === "queued")
-          .sort((a, b) => a.requestedAt - b.requestedAt)[0];
+        const queued = event.holdQueue === true ? undefined : oldestQueuedTurn(next.turns, t.id, state);
         if (queued) {
-          next = { ...next, turns: { ...next.turns, [queued.id]: { ...queued, status: "requested" } } };
+          state?.queuedTurns.delete(queued.id);
+          next = patchModel(next, { turns: put(next.turns, queued.id, { ...queued, status: "requested" }, mut) }, mut);
           patched.latestTurnId = queued.id;
           patched.status = "running";
         }
-        next = { ...next, threads: { ...next.threads, [t.id]: patched } };
+        next = patchModel(next, { threads: put(next.threads, t.id, patched, mut) }, mut);
       }
-      return refreshAttention(next, event.threadId, event.settledAt);
+      return refreshAttention(next, event.threadId, event.settledAt, mut);
     }
     // ---- R4 ----
     case "turn.steered":
-      return withThread(addUserMessage(model, event.message), event.threadId, { updatedAt: event.message.createdAt });
+      return withThread(addUserMessage(model, event.message, mut), event.threadId, { updatedAt: event.message.createdAt }, mut);
     case "turn.steer-fell-back":
-      return requestTurn(dropMessage(model, event.threadId, event.messageId), { ...event.turn, steerFallback: { reason: event.reason } }, event.userMessage);
+      return requestTurn(dropMessage(model, event.threadId, event.messageId, mut), { ...event.turn, steerFallback: { reason: event.reason } }, event.userMessage, mut, state);
     case "turn.edited": {
       const m = model.messages[event.messageId];
       if (!m) return model;
-      return withThread({ ...model, messages: { ...model.messages, [m.id]: { ...m, text: event.text } } }, event.threadId, { updatedAt: event.at });
+      return withThread(patchModel(model, { messages: put(model.messages, m.id, { ...m, text: event.text }, mut) }, mut), event.threadId, { updatedAt: event.at }, mut);
     }
     case "turns.reordered": {
       // promotion picks the smallest requestedAt among queued turns, so the order is encoded there
       const base = Math.min(...event.turnIds.map((id) => model.turns[id]?.requestedAt ?? event.at));
-      const turns = { ...model.turns };
+      let turns = model.turns;
       event.turnIds.forEach((id, i) => {
         const turn = turns[id];
-        if (turn && turn.status === "queued") turns[id] = { ...turn, requestedAt: base + i };
+        if (turn && turn.status === "queued") turns = put(turns, id, { ...turn, requestedAt: base + i }, mut);
       });
-      return withThread({ ...model, turns }, event.threadId, { updatedAt: event.at });
+      return withThread(patchModel(model, { turns }, mut), event.threadId, { updatedAt: event.at }, mut);
     }
     case "handoff.recorded":
-      return withThread({ ...model, handoffs: { ...model.handoffs, [event.handoff.id]: event.handoff } }, event.handoff.threadId, { pendingHandoffId: event.handoff.id, updatedAt: event.handoff.createdAt });
+      return withThread(
+        patchModel(model, { handoffs: put(model.handoffs, event.handoff.id, event.handoff, mut) }, mut),
+        event.handoff.threadId,
+        { pendingHandoffId: event.handoff.id, updatedAt: event.handoff.createdAt },
+        mut,
+      );
     case "handoff.refined": {
       const h = model.handoffs[event.handoffId];
       if (!h) return model;
       const next: Handoff = { ...h, text: event.text, coveredTurnIds: event.coveredTurnIds, omittedTurnIds: event.omittedTurnIds, judge: event.judge };
-      return withThread({ ...model, handoffs: { ...model.handoffs, [h.id]: next } }, h.threadId, { updatedAt: event.at });
+      return withThread(patchModel(model, { handoffs: put(model.handoffs, h.id, next, mut) }, mut), h.threadId, { updatedAt: event.at }, mut);
     }
     case "judge.recorded": {
       const { target, verdict } = event;
-      if (target.kind === "thread") return withThread(model, target.id, { judge: verdict, updatedAt: verdict.at });
+      if (target.kind === "thread") return withThread(model, target.id, { judge: verdict, updatedAt: verdict.at }, mut);
       if (target.kind === "experts") {
         const s = model.expertsSessions[target.id];
         if (!s) return model;
-        return { ...model, expertsSessions: { ...model.expertsSessions, [s.id]: { ...s, judge: verdict, updatedAt: verdict.at } } };
+        return patchModel(model, { expertsSessions: put(model.expertsSessions, s.id, { ...s, judge: verdict, updatedAt: verdict.at }, mut) }, mut);
       }
       const a = model.activities[target.id];
       if (!a || a.kind !== "approval") return model;
-      return { ...model, activities: { ...model.activities, [a.id]: { ...a, judge: verdict } } };
+      return patchModel(model, { activities: put(model.activities, a.id, { ...a, judge: verdict }, mut) }, mut);
     }
     case "handoff.delivered": {
       const turn = model.turns[event.turnId];
       if (!turn) return model;
-      return { ...model, turns: { ...model.turns, [turn.id]: { ...turn, handoffId: event.handoffId, handoffDelivery: event.delivery } } };
+      return patchModel(model, { turns: put(model.turns, turn.id, { ...turn, handoffId: event.handoffId, handoffDelivery: event.delivery }, mut) }, mut);
     }
     case "rollback.requested":
-      return withThread(model, event.threadId, { rollback: { status: "rolling", turnId: event.turnId, restoreFiles: event.restoreFiles, at: event.at }, updatedAt: event.at });
+      return withThread(model, event.threadId, { rollback: { status: "rolling", turnId: event.turnId, restoreFiles: event.restoreFiles, at: event.at }, updatedAt: event.at }, mut);
     case "rollback.completed": {
       const t = model.threads[event.threadId];
       if (!t) return model;
       const gone = new Set(event.turnIds);
-      const turns = { ...model.turns };
+      let turns = model.turns;
       for (const id of gone) {
         const turn = turns[id];
-        if (turn) turns[id] = { ...turn, rolledBack: true };
+        if (turn) turns = put(turns, id, { ...turn, rolledBack: true }, mut);
       }
       // the newest surviving turn is the one the harness's history now ends on
       const survivor = Object.values(turns)
@@ -602,34 +760,34 @@ export function applyEvent(model: ReadModel, event: DomainEvent): ReadModel {
       if (rolledBackPlanAfter && lastSurvivingPlanId !== undefined) {
         const prev = plans[lastSurvivingPlanId];
         if (prev?.status === "superseded") {
-          plans = { ...plans, [prev.id]: { ...prev, status: "proposed", updatedAt: event.at } };
+          plans = put(plans, prev.id, { ...prev, status: "proposed", updatedAt: event.at }, mut);
         }
       }
-      return refreshAttention({ ...model, turns, plans, threads: { ...model.threads, [t.id]: patched } }, t.id, event.at);
+      return refreshAttention(patchModel(model, { turns, plans, threads: put(model.threads, t.id, patched, mut) }, mut), t.id, event.at, mut);
     }
     case "rollback.failed": {
       const t = model.threads[event.threadId];
       if (!t) return model;
-      return withThread(model, t.id, { rollback: { ...(t.rollback ?? { restoreFiles: false }), status: "error", turnId: event.turnId, error: event.error, at: event.at }, updatedAt: event.at });
+      return withThread(model, t.id, { rollback: { ...(t.rollback ?? { restoreFiles: false }), status: "error", turnId: event.turnId, error: event.error, at: event.at }, updatedAt: event.at }, mut);
     }
     case "thread.limited":
-      return withThread(model, event.threadId, { limited: event.limited, updatedAt: event.limited.at });
+      return withThread(model, event.threadId, { limited: event.limited, updatedAt: event.limited.at }, mut);
     case "thread.limit-policy-changed": {
       const t = model.threads[event.threadId];
       if (!t?.limited) return model;
-      return withThread(model, t.id, { limited: { ...t.limited, resume: event.resume }, updatedAt: event.at });
+      return withThread(model, t.id, { limited: { ...t.limited, resume: event.resume }, updatedAt: event.at }, mut);
     }
     case "thread.snoozed":
-      return withThread(model, event.threadId, { snoozedUntil: event.until, updatedAt: event.at });
+      return withThread(model, event.threadId, { snoozedUntil: event.until, updatedAt: event.at }, mut);
     case "thread.settled":
-      return withThread(model, event.threadId, { settledAt: event.at, settleReason: event.reason, updatedAt: event.at });
+      return withThread(model, event.threadId, { settledAt: event.at, settleReason: event.reason, updatedAt: event.at }, mut);
     case "thread.unsettled": {
       const t = model.threads[event.threadId];
       if (!t) return model;
       const next: Thread = { ...t, updatedAt: event.at };
       delete next.settledAt;
       delete next.settleReason;
-      return { ...model, threads: { ...model.threads, [t.id]: next } };
+      return patchModel(model, { threads: put(model.threads, t.id, next, mut) }, mut);
     }
     case "thread.resumed": {
       const t = model.threads[event.threadId];
@@ -637,26 +795,26 @@ export function applyEvent(model: ReadModel, event: DomainEvent): ReadModel {
       const next: Thread = { ...t, updatedAt: event.at };
       delete next.limited;
       delete next.snoozedUntil;
-      return { ...model, threads: { ...model.threads, [t.id]: next } };
+      return patchModel(model, { threads: put(model.threads, t.id, next, mut) }, mut);
     }
     case "task.created":
-      return { ...model, scheduledTasks: { ...model.scheduledTasks, [event.task.id]: event.task } };
+      return patchModel(model, { scheduledTasks: put(model.scheduledTasks, event.task.id, event.task, mut) }, mut);
     case "task.updated": {
       const task = model.scheduledTasks[event.taskId];
       if (!task) return model;
-      return { ...model, scheduledTasks: { ...model.scheduledTasks, [task.id]: { ...task, ...event.patch, updatedAt: event.updatedAt } } };
+      return patchModel(model, { scheduledTasks: put(model.scheduledTasks, task.id, { ...task, ...event.patch, updatedAt: event.updatedAt }, mut) }, mut);
     }
     case "task.deleted": {
       const task = model.scheduledTasks[event.taskId];
       if (!task) return model;
-      return { ...model, scheduledTasks: { ...model.scheduledTasks, [task.id]: { ...task, archivedAt: event.at, updatedAt: event.at } } };
+      return patchModel(model, { scheduledTasks: put(model.scheduledTasks, task.id, { ...task, archivedAt: event.at, updatedAt: event.at }, mut) }, mut);
     }
     case "task.fired": {
       const task = model.scheduledTasks[event.taskId];
       if (!task) return model;
       const next = { ...task, runs: task.runs + 1, lastRunAt: event.at, lastRunThreadId: event.threadId, updatedAt: event.at };
       if (event.nextRunAt !== undefined) next.nextRunAt = event.nextRunAt;
-      return { ...model, scheduledTasks: { ...model.scheduledTasks, [task.id]: next } };
+      return patchModel(model, { scheduledTasks: put(model.scheduledTasks, task.id, next, mut) }, mut);
     }
     case "pr.watch-changed": {
       const t = model.threads[event.threadId];
@@ -664,7 +822,7 @@ export function applyEvent(model: ReadModel, event: DomainEvent): ReadModel {
       const next: Thread = { ...t, updatedAt: event.at };
       if (event.enabled) next.prWatch = { since: event.at };
       else delete next.prWatch;
-      return { ...model, threads: { ...model.threads, [t.id]: next } };
+      return patchModel(model, { threads: put(model.threads, t.id, next, mut) }, mut);
     }
     default: {
       const _exhaustive: never = event;
@@ -674,9 +832,24 @@ export function applyEvent(model: ReadModel, event: DomainEvent): ReadModel {
   }
 }
 
+export function applyEvent(model: ReadModel, event: DomainEvent): ReadModel {
+  return projectEvent(model, event, false);
+}
+
 export function applyRecord(model: ReadModel, rec: EventRecord): ReadModel {
   if (rec.seq <= model.seq) return model; // idempotent replay
-  return { ...applyEvent(model, rec.event), seq: rec.seq };
+  return { ...projectEvent(model, rec.event, false), seq: rec.seq };
+}
+
+/**
+ * In-place variant of {@link applyRecord} for boot replay on a freshly constructed or parsed
+ * `ReadModel`. Produces the exact same state as `applyRecord` while avoiding O(N²) map clones.
+ */
+export function applyRecordInPlace(model: ReadModel, rec: EventRecord, state?: ReplayState): ReadModel {
+  if (rec.seq <= model.seq) return model;
+  const next = projectEvent(model, rec.event, true, state);
+  next.seq = rec.seq;
+  return next;
 }
 
 export function replay(model: ReadModel, records: Iterable<EventRecord>): ReadModel {
