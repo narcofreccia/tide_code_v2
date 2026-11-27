@@ -18,6 +18,22 @@ export function isSupportedImage(type: string): boolean {
   return IMAGE_TYPES.includes(type);
 }
 
+const HEIC_TYPES = new Set(["image/heic", "image/heif", "image/heic-sequence", "image/heif-sequence"]);
+const HEIC_EXT = /\.(heic|heif)$/i;
+
+/** iPhone photos. No harness takes them, so they become JPEG in the browser (lib/heic.ts). */
+export function isHeic(file: { type: string; name: string }): boolean {
+  const type = file.type.toLowerCase();
+  if (HEIC_TYPES.has(type)) return true;
+  // some OSes hand HEIC over with an empty or generic type
+  return (type === "" || type === "application/octet-stream") && HEIC_EXT.test(file.name);
+}
+
+/** An image the composer sends inline: a supported type, or HEIC it converts first. */
+export function isInlineImage(file: { type: string; name: string }): boolean {
+  return isSupportedImage(file.type) || isHeic(file);
+}
+
 export function formatBytes(bytes: number): string {
   if (bytes >= 1024 * 1024) return `${(bytes / (1024 * 1024)).toFixed(1)} MB`;
   if (bytes >= 1024) return `${Math.round(bytes / 1024)} KB`;
@@ -76,13 +92,13 @@ export function imageFilesOf(transfer: DataTransfer | null): File[] {
   if (!transfer) return [];
   const files: File[] = [];
   for (const file of Array.from(transfer.files ?? [])) {
-    if (isSupportedImage(file.type)) files.push(file);
+    if (isInlineImage(file)) files.push(file);
   }
   if (files.length > 0) return files;
   for (const item of Array.from(transfer.items ?? [])) {
-    if (item.kind !== "file" || !isSupportedImage(item.type)) continue;
+    if (item.kind !== "file") continue;
     const file = item.getAsFile();
-    if (file) files.push(file);
+    if (file && isInlineImage(file)) files.push(file);
   }
   return files;
 }

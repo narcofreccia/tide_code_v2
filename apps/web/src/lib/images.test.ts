@@ -1,10 +1,21 @@
 import { describe, expect, it } from "vitest";
-import { formatBytes, imageFilesOf, isSupportedImage, readImageFile } from "./images.ts";
+import { formatBytes, imageFilesOf, isHeic, isSupportedImage, readImageFile } from "./images.ts";
 
 const png = (name = "a.png", type = "image/png"): File =>
   new File([new Uint8Array([1, 2, 3, 4])], name, { type });
 
 describe("images", () => {
+  it("recognises HEIC by type, or by extension when the type is empty or generic", () => {
+    expect(isHeic({ type: "image/heic", name: "a" })).toBe(true);
+    expect(isHeic({ type: "image/HEIF", name: "a" })).toBe(true);
+    expect(isHeic({ type: "", name: "IMG_1.HEIC" })).toBe(true);
+    expect(isHeic({ type: "application/octet-stream", name: "IMG_1.heif" })).toBe(true);
+    expect(isHeic({ type: "image/jpeg", name: "IMG_1.heic" })).toBe(false);
+    expect(isHeic({ type: "", name: "notes.txt" })).toBe(false);
+    const photo = new File([""], "IMG_2.HEIC", { type: "image/heic" });
+    expect(imageFilesOf({ files: [photo] } as unknown as DataTransfer)).toEqual([photo]);
+  });
+
   it("accepts only the types every harness understands", () => {
     expect(isSupportedImage("image/png")).toBe(true);
     expect(isSupportedImage("image/svg+xml")).toBe(false);

@@ -15,6 +15,8 @@ describe("file attachment caps", () => {
     const pdf = new File([""], "a.pdf", { type: "application/pdf" });
     expect(splitFiles([png, pdf], true)).toEqual({ images: [png], files: [pdf] });
     expect(splitFiles([png, pdf], false)).toEqual({ images: [], files: [png, pdf] });
+    const photo = new File([""], "IMG_3.HEIC", { type: "image/heic" });
+    expect(splitFiles([photo], true)).toEqual({ images: [photo], files: [] });
   });
 });
 

@@ -1,7 +1,7 @@
 import type { AttachmentRef } from "@tide/contracts";
 import { call } from "../state/model.ts";
 import type { DraftFile } from "../state/drafts.ts";
-import { isSupportedImage } from "./images.ts";
+import { isInlineImage } from "./images.ts";
 
 /**
  * Non-image files the composer attaches. They are written into the thread's cwd by
@@ -69,7 +69,7 @@ export function splitFiles(files: readonly File[], imagesInline: boolean): { ima
   const images: File[] = [];
   const rest: File[] = [];
   for (const file of files) {
-    if (imagesInline && isSupportedImage(file.type)) images.push(file);
+    if (imagesInline && isInlineImage(file)) images.push(file);
     else rest.push(file);
   }
   return { images, files: rest };

@@ -6,6 +6,7 @@ import {
   MAX_IMAGES,
   MAX_IMAGE_BYTES,
   formatBytes,
+  isHeic,
   readImageFile,
   revokeThumbnail,
   thumbnailUrl,
@@ -13,6 +14,7 @@ import {
   type PendingImage,
 } from "../../lib/images.ts";
 import { fitImage } from "../../lib/imageShrink.ts";
+import { convertHeic } from "../../lib/heic.ts";
 import { Icon } from "../ui/Icon.tsx";
 import styles from "./Attachments.module.css";
 
@@ -57,13 +59,14 @@ export function useAttachments(): Attachments {
         break;
       }
       try {
-        // over the cap: re-encode smaller (a Retina screenshot is often 6–10 MB) instead of refusing
-        const fitted = await fitImage(file, MAX_IMAGE_BYTES);
+        // iPhone photos become JPEG; over the cap, re-encode smaller (a Retina screenshot is often 6–10 MB)
+        const usable = isHeic(file) ? await convertHeic(file) : file;
+        const fitted = await fitImage(usable, MAX_IMAGE_BYTES);
         if (fitted === undefined) {
           showToast(`${file.name || "Image"} is larger than ${formatBytes(MAX_IMAGE_BYTES)} and could not be shrunk`);
           continue;
         }
-        const source = fitted === file ? file : new File([fitted], file.name, { type: fitted.type });
+        const source = fitted === usable ? usable : new File([fitted], usable.name, { type: fitted.type });
         const read = await readImageFile(source);
         commit([
           ...current.current,

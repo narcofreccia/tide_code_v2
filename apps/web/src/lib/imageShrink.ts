@@ -32,7 +32,11 @@ export async function fitImage(file: File, limit: number, encode: Encode = canva
 
 async function canvasEncode(file: Blob, maxEdge: number, type: string, quality?: number): Promise<Blob | undefined> {
   if (typeof createImageBitmap !== "function" || typeof document === "undefined") return undefined;
-  const bitmap = await createImageBitmap(file);
+  return encodeBitmap(await createImageBitmap(file, { imageOrientation: "from-image" }), maxEdge, type, quality);
+}
+
+/** Draws the bitmap at most `maxEdge` on its long side (never upscaled) and encodes it; closes the bitmap. */
+export async function encodeBitmap(bitmap: ImageBitmap, maxEdge: number, type: string, quality?: number): Promise<Blob | undefined> {
   try {
     const scale = Math.min(1, maxEdge / Math.max(bitmap.width, bitmap.height));
     const canvas = document.createElement("canvas");
