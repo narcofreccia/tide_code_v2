@@ -15,10 +15,20 @@ import type { Activity, ReadModel } from "./domain.ts";
  * `user-input.responded`, `turn.settled`) only ever touch resident ones, so a client that
  * lacks a non-resident activity never misses a patch to it.
  */
-export function isResidentActivity(model: Pick<ReadModel, "turns">, a: Activity): boolean {
+/** `threadId\0childKey` of every running sub-agent: their tool rows are resident (background-agent stats). */
+export function runningChildKeys(activities: ReadModel["activities"]): Set<string> {
+  const keys = new Set<string>();
+  for (const a of Object.values(activities)) if (a.kind === "child" && a.status === "running") keys.add(`${a.threadId}\u0000${a.childKey}`);
+  return keys;
+}
+
+export function isResidentActivity(model: Pick<ReadModel, "turns">, a: Activity, runningChildren?: ReadonlySet<string>): boolean {
   if ((a.kind === "approval" || a.kind === "user-input") && a.status === "pending") return true;
   if (a.kind === "child" && a.status === "running") return true;
   if (a.kind === "tool" && a.status === "running") return true;
+  // a sub-agent still running from a settled turn: the rail's background-agent card counts its
+  // tool calls and shows the newest one, without the thread being opened
+  if (a.kind === "tool" && a.parentToolUseId !== undefined && runningChildren?.has(`${a.threadId}\u0000${a.parentToolUseId}`) === true) return true;
   // the in-flight turn: live labels ("Thinking", "Editing foo.ts") read its tail
   const turn = model.turns[a.turnId];
   return turn !== undefined && turn.settledAt === undefined;
@@ -26,8 +36,9 @@ export function isResidentActivity(model: Pick<ReadModel, "turns">, a: Activity)
 
 /** The model with only its resident activities: the snapshot of a `scope: "resident"` subscription. */
 export function residentModel(model: ReadModel): ReadModel {
+  const running = runningChildKeys(model.activities);
   const activities: ReadModel["activities"] = {};
-  for (const [id, a] of Object.entries(model.activities)) if (isResidentActivity(model, a)) activities[id] = a;
+  for (const [id, a] of Object.entries(model.activities)) if (isResidentActivity(model, a, running)) activities[id] = a;
   return { ...model, activities };
 }
 

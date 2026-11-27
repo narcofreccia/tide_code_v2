@@ -29,6 +29,14 @@ describe("activity residency", () => {
     expect(r.threadTimeline).toBe(m.threadTimeline);
   });
 
+  it("keeps the tool rows of a sub-agent still running from a settled turn", () => {
+    const child = { id: "c1", threadId: "t1", turnId: "u1", kind: "child", childKey: "k1", name: "scout", status: "running", createdAt: 1, updatedAt: 1 } as Activity;
+    const under = { ...tool("a7", "u1", "ok"), parentToolUseId: "k1" } as Activity;
+    const other = { ...tool("a8", "u1", "ok"), parentToolUseId: "k2" } as Activity;
+    const m = { ...base(), activities: { ...base().activities, c1: child, a7: under, a8: other } };
+    expect(Object.keys(residentModel(m).activities).sort()).toEqual(["a3", "a7", "c1", "q1"]);
+  });
+
   it("an upsert of an activity the client lacks does not duplicate its timeline entry", () => {
     const m = base();
     const r = residentModel(m);

@@ -39,9 +39,9 @@ export function dropTurnKeys(map: Map<string, string>, turnId: string): void {
 }
 
 /** A turn's input read back from the model (a turn this reactor never saw requested); image bytes come from `imagesFor`. */
-export function storedInput(model: ReadModel, threadId: string, turnId: string, imagesFor: ((turnId: string) => ImageInput[] | undefined) | undefined): TurnInput {
+export function storedInput(model: ReadModel, threadId: string, turnId: string, imagesFor: ((threadId: string, turnId: string) => ImageInput[] | undefined) | undefined): TurnInput {
   const message = (model.threadMessages[threadId] ?? []).map((id) => model.messages[id]).find((m) => m?.turnId === turnId && m.role === "user");
-  const images = imagesFor?.(turnId);
+  const images = imagesFor?.(threadId, turnId);
   return { text: message !== undefined ? textOf(message) : "", ...(images !== undefined && images.length > 0 ? { images } : {}) };
 }
 

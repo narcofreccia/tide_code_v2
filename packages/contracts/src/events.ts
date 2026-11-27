@@ -1,5 +1,5 @@
 import { Type, type Static } from "typebox";
-import { Activity, ApprovalDecision, CheckpointStats, ExpertsFinding, ExpertsMessage, ExpertsPhase, ExpertsSession, Handoff, ImageInput, Limited, MergeStrategy, Message, Project, ProjectLink, ProposedPlan, ProviderKind, PullRequest, Quota, QuotaScope, QuotaState, RateLimit, ScheduledTask, SettleReason, Thread, Triage, Turn, TurnUsage, HandoffJudge, Verdict, ProjectIcon, RunStack, RepoIdentity } from "./domain.ts";
+import { Activity, ApprovalDecision, CheckpointStats, ExpertsFinding, ExpertsMessage, ExpertsPhase, ExpertsSession, Handoff, StoredImage, Limited, MergeStrategy, Message, Project, ProjectLink, ProposedPlan, ProviderKind, PullRequest, Quota, QuotaScope, QuotaState, RateLimit, ScheduledTask, SettleReason, Thread, Triage, Turn, TurnUsage, HandoffJudge, Verdict, ProjectIcon, RunStack, RepoIdentity } from "./domain.ts";
 
 // Events = persisted facts. Payloads are self-contained so the projector
 // never needs to look anything up outside the event.
@@ -66,7 +66,7 @@ export const ProjectUnarchived = evt("project.unarchived", { projectId: Type.Str
 
 /** `turn.status` is `queued` when another turn of the thread is still running. Image bytes live
  *  only here (the projector keeps metadata on the message); the provider reactor reads them. */
-export const TurnRequested = evt("turn.requested", { turn: Turn, userMessage: Message, images: Type.Optional(Type.Array(ImageInput)) });
+export const TurnRequested = evt("turn.requested", { turn: Turn, userMessage: Message, images: Type.Optional(Type.Array(StoredImage)) });
 export const TurnDequeued = evt("turn.dequeued", { turnId: Type.String(), threadId: Type.String(), at: Type.Number() });
 export const TurnStarted = evt("turn.started", {
   turnId: Type.String(),
@@ -222,9 +222,9 @@ export const TurnSettled = evt("turn.settled", {
 
 // ---- R4 ----
 /** A user message delivered into the running turn (or queued behind it when the harness cannot steer). */
-export const TurnSteered = evt("turn.steered", { turnId: Type.String(), threadId: Type.String(), message: Message, images: Type.Optional(Type.Array(ImageInput)) });
+export const TurnSteered = evt("turn.steered", { turnId: Type.String(), threadId: Type.String(), message: Message, images: Type.Optional(Type.Array(StoredImage)) });
 /** The harness could not take the steer: the message leaves the running turn and becomes a queued turn. */
-export const TurnSteerFellBack = evt("turn.steer-fell-back", { threadId: Type.String(), messageId: Type.String(), reason: Type.String(), turn: Turn, userMessage: Message, images: Type.Optional(Type.Array(ImageInput)), at: Type.Number() });
+export const TurnSteerFellBack = evt("turn.steer-fell-back", { threadId: Type.String(), messageId: Type.String(), reason: Type.String(), turn: Turn, userMessage: Message, images: Type.Optional(Type.Array(StoredImage)), at: Type.Number() });
 export const TurnEdited = evt("turn.edited", { turnId: Type.String(), threadId: Type.String(), messageId: Type.String(), text: Type.String(), at: Type.Number() });
 /** `requestedAt` of each queued turn is rewritten so the projector's oldest-first promotion follows the new order. */
 export const TurnsReordered = evt("turns.reordered", { threadId: Type.String(), turnIds: Type.Array(Type.String()), at: Type.Number() });

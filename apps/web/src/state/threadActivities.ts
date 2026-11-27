@@ -58,6 +58,11 @@ export function useThreadWindow(threadId: string): ThreadWindow {
   return useSyncExternalStore(subscribe, () => threadActivities().windowOf(threadId));
 }
 
+/** Follows the thread's window without opening it: for rows inside a stream that already did. */
+export function useWindowOf(threadId: string): ThreadWindow {
+  return useSyncExternalStore(subscribe, () => threadActivities().windowOf(threadId));
+}
+
 /**
  * The model with every activity of the thread, for a whole-thread export. Fetched for this
  * call only (not merged into the store): an export must not undo the pruning.

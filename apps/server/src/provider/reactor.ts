@@ -9,6 +9,7 @@ import {
   type ProviderSession,
   type RuntimeMode,
   type SlashCommandInfo,
+  type StoredImage,
   type TurnInput,
 } from "@tide/contracts";
 import type { Engine } from "../orchestration/engine.ts";
@@ -23,7 +24,7 @@ import { ownerChildRow, rememberChild } from "./children.ts";
 import { dismissHarnessTurn, HarnessTurnQueue, SteerRetargets } from "./harnessTurns.ts";
 import { instanceIdOf, type HarnessTurn, type SessionDirectory } from "./sessions.ts";
 import { resumeLostActivity, resumeRefusedRow, startCommand, type ResumeLoss } from "./sessionNotices.ts";
-import { steerImages, turnImages } from "./turnImages.ts";
+import { inlineImages, steerImages, steerInput, turnImages } from "./turnImages.ts";
 
 export { HANDOFF_READY_WAIT_MS, type CancelTimer } from "./openTurn.ts";
 
@@ -46,7 +47,9 @@ export interface ReactorOptions {
    * Image bytes of a turn whose `turn.requested` this reactor never saw (a queued turn
    * promoted after a restart). The read model keeps only attachment metadata.
    */
-  imagesFor?: (turnId: string) => ImageInput[] | undefined;
+  imagesFor?: (threadId: string, turnId: string) => ImageInput[] | undefined;
+  /** R24: image references on events back to bytes (default: inline images only) */
+  loadImages?: (images: readonly StoredImage[] | undefined) => ImageInput[] | undefined;
   /** R8: a session announced its slash commands / skills (feeds the `providers.commands` cache) */
   onCommands?: (threadId: string, commands: SlashCommandInfo[]) => void;
   /** resolves when the handoff judge is done with `handoffId` (undefined: nothing running) */
@@ -72,7 +75,8 @@ export class ProviderReactor {
   #sessions: SessionDirectory;
   #beforeTurn: ((threadId: string, turnId: string) => Promise<void>) | undefined;
   #beforeSettle: ((threadId: string) => Promise<void>) | undefined;
-  #imagesFor: ((turnId: string) => ImageInput[] | undefined) | undefined;
+  #imagesFor: ((threadId: string, turnId: string) => ImageInput[] | undefined) | undefined;
+  #loadImages: (images: readonly StoredImage[] | undefined) => ImageInput[] | undefined;
   #open: OpenTurnDeps;
   #onCommands: ((threadId: string, commands: SlashCommandInfo[]) => void) | undefined;
   #secrets: SecretValues;
@@ -105,6 +109,7 @@ export class ProviderReactor {
     this.#beforeTurn = options.beforeTurn;
     this.#beforeSettle = options.beforeSettle;
     this.#imagesFor = options.imagesFor;
+    this.#loadImages = options.loadImages ?? inlineImages;
     this.#onCommands = options.onCommands;
     this.#secrets = options.secrets ?? secretValuesFor(options.engine);
     this.#interruptTimeoutMs = options.interruptTimeoutMs ?? DEFAULT_INTERRUPT_TIMEOUT_MS;
@@ -216,15 +221,15 @@ export class ProviderReactor {
     switch (event.type) {
       case "turn.requested":
         if (event.userMessage.notification?.source === "harness") this.#harnessTurns.claim(event.turn.threadId, event.turn.id);
-        this.#accept(event.turn.threadId, event.turn.id, textOf(event.userMessage), event.images);
+        this.#accept(event.turn.threadId, event.turn.id, textOf(event.userMessage), this.#loadImages(event.images));
         return;
       // the harness could not take a steer: the message became a turn of its own, run like any other
       case "turn.steer-fell-back":
         this.#retargetFallback(event.threadId, event.messageId, event.turn.id, event.turn.status === "queued");
-        this.#accept(event.threadId, event.turn.id, textOf(event.userMessage), event.images);
+        this.#accept(event.threadId, event.turn.id, textOf(event.userMessage), this.#loadImages(event.images));
         return;
       case "turn.steered":
-        this.#track(this.#steer(event.threadId, event.turnId, event.message.id, { text: textOf(event.message), ...(event.images && event.images.length > 0 ? { images: event.images } : {}) }));
+        this.#track(this.#steer(event.threadId, event.turnId, event.message.id, steerInput(textOf(event.message), this.#loadImages(event.images))));
         return;
       case "turn.dequeued":
         this.#known.delete(event.turnId);

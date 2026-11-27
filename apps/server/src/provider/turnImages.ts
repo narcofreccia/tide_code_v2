@@ -1,4 +1,4 @@
-import type { DriverCaps, Message, Project, ReadModel, Thread, TurnInput } from "@tide/contracts";
+import type { DriverCaps, ImageInput, Message, Project, ReadModel, StoredImage, Thread, TurnInput } from "@tide/contracts";
 import { saveInlineImages } from "../workspace/attachments.ts";
 import { instanceIdOf, threadCwd } from "./sessions.ts";
 
@@ -61,4 +61,13 @@ export function steerImages(deps: TurnImagesDeps, threadId: string, messageId: s
   const project = thread !== undefined ? model.projects[thread.projectId] : undefined;
   if (thread === undefined || project === undefined) return Promise.resolve(input);
   return withSavedCopies(deps, thread, threadCwd(thread, project), model.messages[messageId]?.attachments, input);
+}
+
+/** Without a blob store only inline images can be handed on (events from before R24, tests). */
+export function inlineImages(images: readonly StoredImage[] | undefined): ImageInput[] | undefined {
+  return images?.filter((i): i is ImageInput => "data" in i);
+}
+
+export function steerInput(text: string, images: ImageInput[] | undefined): TurnInput {
+  return { text, ...(images !== undefined && images.length > 0 ? { images } : {}) };
 }

@@ -1,4 +1,4 @@
-import { isResidentActivity, type Activity, type ReadModel, type Turn } from "@tide/contracts";
+import { isResidentActivity, runningChildKeys, type Activity, type ReadModel, type Turn } from "@tide/contracts";
 import { selectThreadTurns } from "./selectors.ts";
 
 /*
@@ -84,8 +84,11 @@ export interface ThreadActivities {
   open(threadId: string): () => void;
   /** Fetch the first window if it is not held (no-op while in flight or loaded). */
   ensureWindow(threadId: string): void;
-  /** Extend the window by {@link EARLIER_TURNS} older turns. */
-  loadEarlier(threadId: string): void;
+  /**
+   * Extend the window by {@link EARLIER_TURNS} older turns (`toStart`: every older turn).
+   * Resolves once the fetch settled, whatever its outcome (an error lands on the window).
+   */
+  loadEarlier(threadId: string, opts?: { toStart?: boolean }): Promise<void>;
   /** After an error: retries whichever fetch failed (the first window, or the earlier turns). */
   retry(threadId: string): void;
   /** Stable per change; {@link windowStartIndex} turns it into a turn index. */
@@ -129,19 +132,20 @@ export function createThreadActivities(host: ThreadActivitiesHost, opts: { keep?
   };
 
   /** Fetch `turnIds` for the entry's current generation; `onDone` runs only if still current. */
-  const request = (threadId: string, entry: Entry, turnIds: readonly string[], onDone: () => void, onFail: (err: unknown) => void): void => {
+  const request = (threadId: string, entry: Entry, turnIds: readonly string[], onDone: () => void, onFail: (err: unknown) => void, onStale?: () => void): void => {
     const gen = entry.gen;
     const epoch = entry.epoch;
     const current = (): boolean => entries.get(threadId) === entry && entry.gen === gen && host.epoch(threadId) === epoch;
     host.fetch(threadId, turnIds).then(
       (activities) => {
-        if (!current()) return;
+        if (!current()) return onStale?.();
         // a thread deleted while the reply was in flight: nothing to fill
         if (host.getModel().threads[threadId] !== undefined) host.merge(threadId, activities);
         onDone();
       },
       (err: unknown) => {
         if (current()) onFail(err);
+        else onStale?.();
       },
     );
   };
@@ -197,23 +201,33 @@ export function createThreadActivities(host: ThreadActivitiesHost, opts: { keep?
     );
   };
 
-  const loadEarlier = (threadId: string): void => {
+  const loadEarlier = (threadId: string, opts: { toStart?: boolean } = {}): Promise<void> => {
     const entry = entries.get(threadId);
-    if (entry === undefined || !entry.loaded || entry.window.loadingEarlier) return;
+    if (entry === undefined || !entry.loaded || entry.window.loadingEarlier) return Promise.resolve();
     const turns = selectThreadTurns(host.getModel(), threadId);
     const end = windowStartIndex(entry.window, turns);
-    if (end === 0) return;
-    const start = Math.max(0, end - EARLIER_TURNS);
+    if (end === 0) return Promise.resolve();
+    const start = opts.toStart === true ? 0 : Math.max(0, end - EARLIER_TURNS);
     const anchor = start === 0 ? null : (turns[start]?.id ?? null);
     setWindow(entry, { loadingEarlier: true, error: undefined, errorOn: undefined });
     // the window grows when the activities are here, so rows appear once (one scroll anchor)
-    request(
-      threadId,
-      entry,
-      turns.slice(start, end).map((t) => t.id),
-      () => setWindow(entry, { anchor, loadingEarlier: false }),
-      (err) => setWindow(entry, { loadingEarlier: false, error: errorText(err), errorOn: "earlier" }),
-    );
+    return new Promise((resolve) => {
+      request(
+        threadId,
+        entry,
+        turns.slice(start, end).map((t) => t.id),
+        () => {
+          setWindow(entry, { anchor, loadingEarlier: false });
+          resolve();
+        },
+        (err) => {
+          setWindow(entry, { loadingEarlier: false, error: errorText(err), errorOn: "earlier" });
+          resolve();
+        },
+        // a reply dropped as stale (reset, new snapshot) still settles the caller
+        resolve,
+      );
+    });
   };
 
   /** Drop every non-resident activity of threads neither on screen nor recently opened. */
@@ -222,14 +236,10 @@ export function createThreadActivities(host: ThreadActivitiesHost, opts: { keep?
     recent = recent.filter((id) => kept.has(id));
     for (const id of [...entries.keys()]) if (!kept.has(id)) entries.delete(id);
     const model = host.getModel();
-    const all = Object.values(model.activities);
-    // tool rows under a running sub-agent count toward its background-agent stats: keep them
-    const runningChildren = new Set<string>();
-    for (const a of all) if (a.kind === "child" && a.status === "running") runningChildren.add(`${a.threadId}\u0000${a.childKey}`);
+    const running = runningChildKeys(model.activities);
     const drop = new Set<string>();
-    for (const a of all) {
-      if (kept.has(a.threadId) || isResidentActivity(model, a)) continue;
-      if (a.kind === "tool" && a.parentToolUseId !== undefined && runningChildren.has(`${a.threadId}\u0000${a.parentToolUseId}`)) continue;
+    for (const a of Object.values(model.activities)) {
+      if (kept.has(a.threadId) || isResidentActivity(model, a, running)) continue;
       drop.add(a.id);
     }
     if (drop.size > 0) host.drop(drop);
@@ -270,7 +280,7 @@ export function createThreadActivities(host: ThreadActivitiesHost, opts: { keep?
     ensureWindow,
     loadEarlier,
     retry(threadId) {
-      if (entries.get(threadId)?.loaded === true) loadEarlier(threadId);
+      if (entries.get(threadId)?.loaded === true) void loadEarlier(threadId);
       else ensureWindow(threadId);
     },
     windowOf(threadId) {

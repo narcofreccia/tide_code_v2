@@ -15,6 +15,7 @@ import { decide, type DecideDefaults } from "./decider/index.ts";
 import { handoffCapFromEnv } from "./handoff/select.ts";
 import { Compactor, type CompactionStats } from "./compaction.ts";
 import type { EventStore } from "./store.ts";
+import { stashEventImages, type ImageBlobs } from "../workspace/imageBlobs.ts";
 
 /** Every `type` literal the command union accepts, flattened across its nested unions. */
 const KNOWN_COMMAND_TYPES: ReadonlySet<string> = new Set(
@@ -85,6 +86,8 @@ export interface EngineOptions {
   /** user-facing startup status lines (e.g. replay progress for the desktop splash screen) */
   onBootProgress?: (message: string) => void;
   log?: (msg: string) => void;
+  /** R24: where pasted image bytes go instead of the log (absent: they stay inline on the event) */
+  imageBlobs?: Pick<ImageBlobs, "stash">;
 }
 
 export interface SnapshotResult {
@@ -117,6 +120,7 @@ export class Engine {
   /** tail of the serial processing chain; also the drain() handle */
   #queue: Promise<unknown> = Promise.resolve();
   #log: (msg: string) => void;
+  #imageBlobs: Pick<ImageBlobs, "stash"> | undefined;
   #onBootProgress: ((message: string) => void) | undefined;
   #snapshotEvery: number;
   #snapshotTag: string | null | undefined;
@@ -136,6 +140,7 @@ export class Engine {
     this.#defaults = options.defaults ?? (() => ({}));
     this.#handoffCap = "handoffCap" in options ? options.handoffCap : handoffCapFromEnv();
     this.#log = options.log ?? ((msg) => console.log(msg));
+    this.#imageBlobs = options.imageBlobs;
     this.#onBootProgress = options.onBootProgress;
     this.#snapshotEvery = options.snapshotEvery ?? DEFAULT_SNAPSHOT_EVERY;
     this.#snapshotTag = options.snapshotTag;
@@ -328,7 +333,9 @@ export class Engine {
     if (!decision.ok) throw new CommandError(decision.error.code, decision.error.message);
     if (decision.events.length === 0 && commandId === undefined) return { seq: this.#model.seq, events: [] };
 
-    const records = this.#store.append(decision.events, ts, commandId === undefined ? undefined : { commandId });
+    const blobs = this.#imageBlobs;
+    const events = blobs === undefined ? decision.events : decision.events.map((e) => stashEventImages(e, blobs));
+    const records = this.#store.append(events, ts, commandId === undefined ? undefined : { commandId });
     this.#sinceSnapshot += records.length;
     for (const record of records) {
       // In place (R24): the model's maps are huge and owned by the engine alone, so copying them

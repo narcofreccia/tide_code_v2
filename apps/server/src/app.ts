@@ -1,4 +1,4 @@
-import type { ImageInput } from "@tide/contracts";
+import type { DomainEvent, StoredImage } from "@tide/contracts";
 import type { ServerConfig } from "./config.ts";
 import { IS_BUILD } from "./version.ts";
 import type { Transport } from "./decisions/client.ts";
@@ -40,6 +40,9 @@ import { ClientTokenStore } from "./rpc/clientTokens.ts";
 import { localHostFor } from "./rpc/remote.ts";
 import { loopbackTrust } from "./loopback.ts";
 import { createWorkspaceServices, type WorkspaceServices } from "./rpc/workspace.ts";
+import { createImageBlobs } from "./workspace/imageBlobs.ts";
+import { inlineImages } from "./provider/turnImages.ts";
+import { join } from "node:path";
 import { CheckpointService } from "./vcs/checkpoints.ts";
 import { Gh, type GhLike } from "./vcs/gh.ts";
 import { GitHubForge } from "./vcs/forge/github.ts";
@@ -147,8 +150,12 @@ export async function createApp(options: AppOptions): Promise<App> {
     bootReported = true;
     log(`[tide-boot] ${msg}`);
   };
+  // R24: pasted image bytes go to files, the events keep a sha-256 reference
+  // (an in-memory server — tests — has no data dir: images stay inline)
+  const imageBlobs = config.dataDir === ":memory:" ? undefined : createImageBlobs(join(config.dataDir, "images"), log);
   const engine = new Engine({
     store,
+    ...(imageBlobs !== undefined ? { imageBlobs } : {}),
     defaults: () => deciderDefaults(settings, registry),
     log: (msg) => log(msg),
     onBootProgress: reportBoot,
@@ -233,7 +240,11 @@ export async function createApp(options: AppOptions): Promise<App> {
     handoffReady: (handoffId) => handoffSite?.pending(handoffId),
     beforeTurn: (_threadId, turnId) => checkpoints.beforeReady(turnId),
     beforeSettle: () => quotas.measureNow(),
-    imagesFor: (turnId) => imagesOf(store, turnId),
+    imagesFor: (threadId, turnId) => {
+      const images = imagesOf(store, threadId, turnId);
+      return imageBlobs !== undefined ? imageBlobs.load(images) : inlineImages(images);
+    },
+    ...(imageBlobs !== undefined ? { loadImages: (images: readonly StoredImage[] | undefined) => imageBlobs.load(images) } : {}),
     onCommands: (threadId, list) => {
       const model = engine.getModel();
       const thread = model.threads[threadId];
@@ -491,9 +502,11 @@ function warmProviderStatus(registry: DriverRegistry, log: (msg: string, data?: 
 }
 
 /** Image bytes ride only on `turn.requested`; a turn promoted after a restart reads them back from the log. */
-function imagesOf(store: EventStore, turnId: string): ImageInput[] | undefined {
-  for (const record of store.readAll()) {
-    const event = record.event;
+function imagesOf(store: EventStore, threadId: string, turnId: string): StoredImage[] | undefined {
+  // the thread's turn.requested events only (aggregate index), not the whole log
+  for (const payload of store.payloadsOf(threadId, "turn.requested")) {
+    if (!payload.includes(turnId)) continue;
+    const event = JSON.parse(payload) as DomainEvent;
     if (event.type === "turn.requested" && event.turn.id === turnId) return event.images;
   }
   return undefined;

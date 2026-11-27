@@ -5,6 +5,7 @@ import type { ModelStore, ModelStoreState } from "@tide/client";
 import { Stream } from "./Stream.tsx";
 import { forgetAllScroll } from "../../lib/scrollMemory.ts";
 import { attachModelStore } from "../../state/model.ts";
+import { useChildReveal } from "../../state/childReveal.ts";
 import { makeMessage, makeThread, makeTool, makeTurn, mockRpc, modelWithTurns, resetUi } from "../../testHarness.ts";
 
 afterEach(() => {
@@ -104,5 +105,31 @@ describe("Stream activity window (R24)", () => {
     await settle();
     expect(screen.queryByRole("alert")).toBeNull();
     expect(screen.getByText("cmd-19")).toBeDefined();
+  });
+});
+
+describe("a 'reported' notice about a sub-agent in an unloaded turn (R24)", () => {
+  it("links it anyway: a click loads the earlier turns and reveals the sub-agent", async () => {
+    const full = fullModel();
+    const scout = { id: "c0", threadId: "t1", turnId: "u0", kind: "child" as const, childKey: "k0", name: "Scout", status: "done" as const, report: "found it", createdAt: 1, updatedAt: 2 };
+    full.activities[scout.id] = scout;
+    full.threadTimeline["t1"]?.splice(1, 0, { kind: "activity", id: scout.id });
+    full.messages["m19"] = makeMessage("m19", { turnId: "u19", createdAt: 30, notification: { source: "harness", summary: 'sub-agent "Scout" reported' } });
+    const requested: string[][] = [];
+    mockRpc({
+      "thread.activities": ((p: { threadId: string; turnIds: string[] }) => {
+        requested.push(p.turnIds);
+        return { seq: full.seq, activities: threadActivitiesOf(full, p.threadId, p.turnIds) };
+      }) as never,
+    });
+    attachModelStore(residentStore(full));
+    render(<Stream threadId="t1" provider="claude" />);
+    await settle();
+
+    fireEvent.click(screen.getByRole("button", { name: "Scout" }));
+    await settle();
+    await settle();
+    expect(requested.at(-1)).toHaveLength(5);
+    expect(useChildReveal.getState().target).toMatchObject({ threadId: "t1", childKey: "k0" });
   });
 });

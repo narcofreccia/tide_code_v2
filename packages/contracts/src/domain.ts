@@ -541,6 +541,15 @@ export type Message = Static<typeof Message>;
 /** A base64 image handed to the harness with the prompt. */
 export const ImageInput = Type.Object({ mediaType: Type.String(), data: Type.String() });
 export type ImageInput = Static<typeof ImageInput>;
+/**
+ * R24: an image as recorded on an event. New events carry a `blob` (sha-256 hex of the bytes,
+ * stored by the server under its data dir) so the log and every subscriber stream stay small;
+ * events written before R24 carry the bytes inline.
+ */
+export const ImageBlob = Type.Object({ mediaType: Type.String(), blob: Type.String({ pattern: "^[0-9a-f]{64}$" }) });
+export type ImageBlob = Static<typeof ImageBlob>;
+export const StoredImage = Type.Union([ImageInput, ImageBlob]);
+export type StoredImage = Static<typeof StoredImage>;
 
 export const CheckpointStats = Type.Object({ files: Type.Number(), additions: Type.Number(), deletions: Type.Number() });
 export type CheckpointStats = Static<typeof CheckpointStats>;

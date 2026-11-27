@@ -151,6 +151,41 @@ describe("thread activity windows (R24)", () => {
     expect(h.pending).toHaveLength(0);
   });
 
+  it("loadEarlier toStart fetches every older turn in one go and resolves when it landed", async () => {
+    const full = fullModel(["t1"], 40);
+    const h = setup(full);
+    h.setStatus("open");
+    h.snapshot(full);
+    h.tracker.open("t1");
+    await h.answer();
+    let done = false;
+    const loading = h.tracker.loadEarlier("t1", { toStart: true }).then(() => {
+      done = true;
+    });
+    expect(h.pending[0]?.turnIds).toHaveLength(25);
+    expect(done).toBe(false);
+    await h.answer();
+    await loading;
+    expect(h.tracker.windowOf("t1").anchor).toBeNull();
+    expect(h.held("t1")).toHaveLength(40);
+    // nothing left to load: resolves at once
+    await h.tracker.loadEarlier("t1", { toStart: true });
+  });
+
+  it("loadEarlier still resolves when a snapshot makes its reply stale", async () => {
+    const full = fullModel(["t1"], 40);
+    const h = setup(full);
+    h.setStatus("open");
+    h.snapshot(full);
+    h.tracker.open("t1");
+    await h.answer();
+    const loading = h.tracker.loadEarlier("t1", { toStart: true });
+    const stale = h.pending.shift();
+    h.snapshot(full);
+    stale?.resolve(threadActivitiesOf(full, "t1", stale.turnIds));
+    await loading;
+  });
+
   it("keeps a newer live upsert over an older fetched copy", async () => {
     const full = fullModel(["t1"], 3);
     const h = setup(full);

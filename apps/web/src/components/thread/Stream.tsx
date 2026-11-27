@@ -172,7 +172,7 @@ function ThreadStream({ threadId, provider, hotkeys }: { threadId: string; provi
           window={win}
           onShow={(below) => {
             holdRow(below);
-            threadActivities().loadEarlier(threadId);
+            void threadActivities().loadEarlier(threadId);
           }}
           onRetry={(below) => {
             // a failed first window grows below the reader (they follow the end): nothing to hold

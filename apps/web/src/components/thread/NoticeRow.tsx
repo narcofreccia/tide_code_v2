@@ -1,7 +1,8 @@
 import { memo } from "react";
 import type { Message, ProviderKind, ReadModel } from "@tide/contracts";
-import { useModel } from "../../state/model.ts";
+import { storeForThread, useModel } from "../../state/model.ts";
 import { revealChild } from "../../state/childReveal.ts";
+import { threadActivities, useWindowOf } from "../../state/threadActivities.ts";
 import { Button } from "../ui/Button.tsx";
 import { Icon, type IconName } from "../ui/Icon.tsx";
 import styles from "./NoticeRow.module.css";
@@ -43,11 +44,22 @@ export function reportedChildKey(model: ReadModel, message: Message, name: strin
   return undefined;
 }
 
+/** Loads the rest of the thread, then reveals the sub-agent the notice names (if it exists there). */
+async function revealEarlierChild(message: Message, name: string): Promise<void> {
+  await threadActivities().loadEarlier(message.threadId, { toStart: true });
+  // the owning store holds the merged rows now; its publish to `useModel` waits for the next frame
+  const model = storeForThread(message.threadId)?.getState().model ?? useModel.getState().model;
+  const childKey = reportedChildKey(model, message, name);
+  if (childKey !== undefined) revealChild(message.threadId, childKey);
+}
+
 /** A harness-initiated turn: the continuation of background work, linked to the sub-agent that reported. */
 function HarnessNotice({ message, provider, summary }: { message: Message; provider: ProviderKind | undefined; summary: string }) {
   const actor = (provider !== undefined ? ACTOR[provider] : undefined) ?? "The harness";
   const name = reportedAgentName(summary);
   const childKey = useModel((s) => (name === undefined ? undefined : reportedChildKey(s.model, message, name)));
+  // R24: the sub-agent may sit in an earlier turn the stream has not loaded yet
+  const partial = useWindowOf(message.threadId).anchor !== null;
   if (name === undefined) {
     // pass-through: whatever the driver said, after who continued
     return (
@@ -60,7 +72,11 @@ function HarnessNotice({ message, provider, summary }: { message: Message; provi
   return (
     <>
       <span className={styles.reported}>
-        {childKey === undefined ? (
+        {childKey === undefined && partial ? (
+          <Button variant="link" className={styles.agentLink} title="Load earlier turns and show this sub-agent" onClick={() => void revealEarlierChild(message, name)}>
+            {name}
+          </Button>
+        ) : childKey === undefined ? (
           <span className={styles.agent}>{name}</span>
         ) : (
           <Button variant="link" className={styles.agentLink} title="Show this sub-agent and its report" onClick={() => revealChild(message.threadId, childKey)}>

@@ -4,6 +4,10 @@ import { openDatabase } from "../db/sqlite.ts";
 import { Engine } from "../orchestration/engine.ts";
 import { EventStore } from "../orchestration/store.ts";
 import { ProviderReactor } from "./reactor.ts";
+import { createImageBlobs, type ImageBlobs } from "../workspace/imageBlobs.ts";
+import { mkdtempSync } from "node:fs";
+import { tmpdir } from "node:os";
+import { join } from "node:path";
 import { DriverRegistry } from "./registry.ts";
 import { SessionDirectory } from "./sessions.ts";
 import { awaitInterrupt, createFakeDriver, emit, type FakeDriverControl } from "./testing/fakeDriver.ts";
@@ -41,14 +45,15 @@ function waitFor(engine: Engine, match: (event: DomainEvent) => boolean): Promis
   });
 }
 
-async function harness(): Promise<Harness> {
+async function harness(opts: { blobs?: ImageBlobs } = {}): Promise<Harness> {
   const store = new EventStore(await openDatabase(":memory:"));
-  const engine = new Engine({ store });
+  const engine = new Engine({ store, ...(opts.blobs ? { imageBlobs: opts.blobs } : {}) });
   const claude = createFakeDriver("claude");
   const registry = new DriverRegistry({ env: { dataDir: ":memory:", log: () => undefined } });
   registry.register(claude.driver);
   const sessions = new SessionDirectory({ registry, autoReap: false, log: () => undefined, model: () => engine.getModel() });
-  const reactor = new ProviderReactor({ engine, sessions, log: () => undefined });
+  const blobs = opts.blobs;
+  const reactor = new ProviderReactor({ engine, sessions, log: () => undefined, ...(blobs ? { loadImages: (images) => blobs.load(images) } : {}) });
   reactor.start();
   const events: DomainEvent[] = [];
   engine.subscribe((r) => void events.push(r.event));
@@ -135,6 +140,17 @@ describe("ProviderReactor: limits keep the queue", () => {
     expect(h.events.filter((e) => e.type === "thread.limited")).toHaveLength(1);
   });
 
+  it("R24: a turn whose images were recorded as blobs reaches the harness with the bytes", async () => {
+    const h = await harness({ blobs: createImageBlobs(join(mkdtempSync(join(tmpdir(), "tide-reactor-blobs-")), "images")) });
+    await limitedWithQueue(h);
+    const requested = h.events.filter((e) => e.type === "turn.requested").at(-1);
+    expect(requested?.type === "turn.requested" && requested.images?.[0] !== undefined && "blob" in requested.images[0]).toBe(true);
+    h.claude.script(emit({ type: "assistant.delta", messageKey: "m1", delta: "two" }), emit({ type: "settled", status: "completed" }));
+    await h.engine.dispatch({ type: "thread.resume", threadId: h.threadId });
+    await h.reactor.drain();
+    expect(h.claude.sessionFor(h.threadId)?.inputs[1]?.images).toEqual([IMAGE]);
+  });
+
   it("turn.released starts the held turn once, with its text and images", async () => {
     const h = await harness();
     const { secondId } = await limitedWithQueue(h);
@@ -156,7 +172,7 @@ describe("ProviderReactor: limits keep the queue", () => {
     const h = await harness();
     const { secondId } = await limitedWithQueue(h);
     h.reactor.stop();
-    const restarted = new ProviderReactor({ engine: h.engine, sessions: h.sessions, log: () => undefined, imagesFor: (turnId) => (turnId === secondId ? [IMAGE] : undefined) });
+    const restarted = new ProviderReactor({ engine: h.engine, sessions: h.sessions, log: () => undefined, imagesFor: (_threadId, turnId) => (turnId === secondId ? [IMAGE] : undefined) });
     restarted.start();
     h.claude.script(emit({ type: "settled", status: "completed" }));
     await h.engine.dispatch({ type: "thread.resume", threadId: h.threadId });

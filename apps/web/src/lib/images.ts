@@ -30,6 +30,23 @@ export function thumbnailUrl(file: Blob, mediaType: string, data: string): strin
   return typeof create === "function" ? create(file) : `data:${mediaType};base64,${data}`;
 }
 
+/**
+ * Thumbnail source for bytes we only hold as base64 (a restored draft): an object URL keeps a
+ * multi-MB `data:` string out of the DOM attribute, which a thread switch would otherwise re-set.
+ */
+export function thumbnailUrlOf(mediaType: string, data: string): string {
+  const create = typeof URL !== "undefined" ? URL.createObjectURL : undefined;
+  if (typeof create !== "function" || typeof atob !== "function" || typeof Blob === "undefined") return `data:${mediaType};base64,${data}`;
+  try {
+    const raw = atob(data);
+    const bytes = new Uint8Array(raw.length);
+    for (let i = 0; i < raw.length; i++) bytes[i] = raw.charCodeAt(i);
+    return create(new Blob([bytes], { type: mediaType }));
+  } catch {
+    return `data:${mediaType};base64,${data}`;
+  }
+}
+
 export function revokeThumbnail(url: string): void {
   if (!url.startsWith("blob:")) return;
   const revoke = typeof URL !== "undefined" ? URL.revokeObjectURL : undefined;

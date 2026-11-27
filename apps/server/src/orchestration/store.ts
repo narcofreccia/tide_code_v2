@@ -130,6 +130,7 @@ export class EventStore {
   #getMeta: SqlStatement;
   #setMeta: SqlStatement;
   #firstOf: SqlStatement | undefined;
+  #allOf: SqlStatement | undefined;
   #getReceipt: SqlStatement;
   #putReceipt: SqlStatement;
   #readRange: SqlStatement;
@@ -235,6 +236,12 @@ export class EventStore {
     this.#firstOf ??= this.#db.prepare("SELECT payload FROM events WHERE aggregate_id = ? AND type = ? ORDER BY seq ASC LIMIT 1");
     const row = this.#firstOf.get(aggregateId, type);
     return row === undefined ? undefined : String(row["payload"]);
+  }
+
+  /** Payloads (JSON text) of every event of `type` on an aggregate, oldest first; uses the aggregate index. */
+  payloadsOf(aggregateId: string, type: string): string[] {
+    this.#allOf ??= this.#db.prepare("SELECT payload FROM events WHERE aggregate_id = ? AND type = ? ORDER BY seq ASC");
+    return this.#allOf.all(aggregateId, type).map((row) => String(row["payload"]));
   }
 
   close(): void {

@@ -9,6 +9,7 @@ import {
   readImageFile,
   revokeThumbnail,
   thumbnailUrl,
+  thumbnailUrlOf,
   type PendingImage,
 } from "../../lib/images.ts";
 import { Icon } from "../ui/Icon.tsx";
@@ -28,7 +29,7 @@ export function serializeImages(images: PendingImage[]): SerializedImage[] {
 }
 
 export function deserializeImages(images: SerializedImage[]): PendingImage[] {
-  return images.map((i) => ({ ...i, url: `data:${i.mediaType};base64,${i.data}` }));
+  return images.map((i) => ({ ...i, url: thumbnailUrlOf(i.mediaType, i.data) }));
 }
 
 /** The composer's pending image list: reads files to base64 and caps the set. */
