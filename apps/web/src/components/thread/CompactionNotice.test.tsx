@@ -67,6 +67,17 @@ describe("compaction notice", () => {
     expect(document.querySelector("[data-compaction]")).toBeNull();
   });
 
+  it("claims no compaction when the harness answered /compact with text (agy on an empty session)", () => {
+    const model = modelWithTimeline(makeThread("t1", { latestTurnId: "u1" }), []);
+    model.messages.m1 = { id: "m1", threadId: "t1", turnId: "u1", role: "user", text: "/compact", createdAt: 1 } as never;
+    model.messages.m2 = { id: "m2", threadId: "t1", turnId: "u1", role: "assistant", text: "There is no history to compact yet.", createdAt: 2 } as never;
+    model.threadTimeline.t1 = [{ kind: "message", id: "m1" }, { kind: "message", id: "m2" }];
+    model.turns.u1 = makeTurn("u1", { status: "completed" });
+    attachFakeStore(model);
+    render(<Stream threadId="t1" provider="antigravity" />);
+    expect(document.querySelector("[data-compaction]")).toBeNull();
+  });
+
   it("shows one row when a harness reports start and end separately", () => {
     mount([note("i1", "Compacting context (manual)"), note("i2", "Context compacted")]);
     expect(document.querySelectorAll("[data-compaction]")).toHaveLength(1);

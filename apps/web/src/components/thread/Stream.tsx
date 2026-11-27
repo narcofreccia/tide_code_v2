@@ -58,7 +58,10 @@ function buildRows(items: readonly TimelineItem[], turns: readonly Turn[], prev:
   // a harness that reports start and end as two rows (Pi): the "done" row stands for both
   const compacted = new Set<string>();
   const reported = new Set<string>();
+  // a harness that answered `/compact` with text did not compact (agy on an empty session replies instead)
+  const replied = new Set<string>();
   for (const entry of top) {
+    if (entry.kind === "message" && entry.message.role === "assistant" && entry.message.text.trim() !== "") replied.add(entry.message.turnId);
     if (entry.kind !== "activity") continue;
     const phase = compactionOf(entry.activity)?.phase;
     if (phase !== undefined) reported.add(entry.activity.turnId);
@@ -80,7 +83,7 @@ function buildRows(items: readonly TimelineItem[], turns: readonly Turn[], prev:
         turnNumber: turnNumber.get(turnId),
         conclusion: showMeta ? stable(`turn:${turnId}`, turnActivities.get(turnId) ?? []) : undefined,
       });
-      const quiet = node.message.role === "user" && isCompactPrompt(node.message.text) && !reported.has(turnId) ? quietCompaction(turnStatus.get(turnId)) : undefined;
+      const quiet = node.message.role === "user" && isCompactPrompt(node.message.text) && !reported.has(turnId) && !replied.has(turnId) ? quietCompaction(turnStatus.get(turnId)) : undefined;
       if (quiet !== undefined) rows.push({ kind: "compaction", key: `compaction:${turnId}`, turnId, title: quiet.text, compaction: quiet });
     } else if (node.kind === "boundary") {
       rows.push({ kind: "boundary", key: `boundary:${node.turnId}`, turnId: node.turnId });
@@ -107,7 +110,8 @@ function buildRows(items: readonly TimelineItem[], turns: readonly Turn[], prev:
 
 /**
  * A `/compact` turn on a harness that reports no compaction rows (Antigravity, OpenCode):
- * the notice still shimmers while the turn runs and says it is done once it completed.
+ * the notice still shimmers while the turn runs and says it is done once it completed. A turn
+ * the harness answered with text is not a compaction: its reply says what happened instead.
  */
 function quietCompaction(status: Turn["status"] | undefined): Compaction | undefined {
   if (status === "requested" || status === "running") return { phase: "running", text: COMPACTING_LABEL };
