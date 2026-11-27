@@ -63,8 +63,8 @@ export function McpPanel({ info, envId }: { info: ServerInfo | undefined; envId?
         <SettingRow
           label="Environment ID"
           help="Identifies this machine on the relay"
-          control={
-            <div className={styles.cardActions}>
+          extra={
+            <div className={styles.urlRow}>
               <span className={styles.value} data-testid="mcp-environment-id">
                 {environmentId}
               </span>
@@ -94,34 +94,38 @@ export function McpPanel({ info, envId }: { info: ServerInfo | undefined; envId?
               <SettingRow
                 label="MCP Bearer token"
                 help="Shown once — revoke it anytime under Paired devices (Tide AI Chat MCP)"
-                control={
-                  <div className={styles.cardActions}>
+                extra={
+                  <div className={styles.urlRow}>
                     <span className={styles.value} data-testid="mcp-bearer-token">
                       {revealToken ? creds.token : maskSecret(creds.token)}
                     </span>
-                    <Button variant="quiet" onClick={() => setRevealToken((prev) => !prev)}>
-                      {revealToken ? "Hide" : "Show"}
-                    </Button>
-                    <Button variant="quiet" onClick={() => void copyText(creds.token, "MCP Bearer token")}>
-                      Copy
-                    </Button>
+                    <div className={styles.cardActions}>
+                      <Button variant="quiet" onClick={() => setRevealToken((prev) => !prev)}>
+                        {revealToken ? "Hide" : "Show"}
+                      </Button>
+                      <Button variant="quiet" onClick={() => void copyText(creds.token, "MCP Bearer token")}>
+                        Copy
+                      </Button>
+                    </div>
                   </div>
                 }
               />
               <SettingRow
                 label="Elevation secret"
                 help="Shared HMAC secret for 2FA step-up full-access leases"
-                control={
-                  <div className={styles.cardActions}>
+                extra={
+                  <div className={styles.urlRow}>
                     <span className={styles.value} data-testid="mcp-elevation-secret">
                       {revealSecret ? creds.elevationSecret : maskSecret(creds.elevationSecret)}
                     </span>
-                    <Button variant="quiet" onClick={() => setRevealSecret((prev) => !prev)}>
-                      {revealSecret ? "Hide" : "Show"}
-                    </Button>
-                    <Button variant="quiet" onClick={() => void copyText(creds.elevationSecret, "Elevation secret")}>
-                      Copy
-                    </Button>
+                    <div className={styles.cardActions}>
+                      <Button variant="quiet" onClick={() => setRevealSecret((prev) => !prev)}>
+                        {revealSecret ? "Hide" : "Show"}
+                      </Button>
+                      <Button variant="quiet" onClick={() => void copyText(creds.elevationSecret, "Elevation secret")}>
+                        Copy
+                      </Button>
+                    </div>
                   </div>
                 }
               />
