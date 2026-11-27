@@ -1,5 +1,5 @@
 import { memo, useMemo, useRef } from "react";
-import { groupActivities, selectThreadTurnsStable, selectTimelineStable } from "@tide/client";
+import { groupActivities, selectThreadTurnsStable, selectTimelineStable, windowStartIndex } from "@tide/client";
 import type { Activity, ActivityOf, ProposedPlan, ProviderKind, Turn } from "@tide/contracts";
 import type { TimelineItem } from "@tide/client";
 import { useModel } from "../../state/model.ts";
@@ -20,6 +20,9 @@ import { CiteButton } from "./CiteButton.tsx";
 import { activitiesByTurn, lastPendingApprovalId, listStabilizer, metaMessageIds, splitChildren } from "./streamModel.ts";
 import { Icon } from "../ui/Icon.tsx";
 import { useStreamScroll } from "./useStreamScroll.ts";
+import { threadActivities, useThreadWindow } from "../../state/threadActivities.ts";
+import { EarlierTurns } from "./EarlierTurns.tsx";
+import { useKeepRowInPlace, windowItems } from "./streamWindow.ts";
 import styles from "./Stream.module.css";
 
 type Note = Extract<Activity, { kind: "info" | "error" }>;
@@ -141,16 +144,21 @@ function ThreadStream({ threadId, provider, hotkeys }: { threadId: string; provi
   const items = useModel((s) => selectTimelineStable(s.model, threadId));
   const turns = useModel((s) => selectThreadTurnsStable(s.model, threadId));
   const thread = useModel((s) => s.model.threads[threadId]);
+  // R24: only the loaded window of turns renders; "Show earlier" grows it
+  const win = useThreadWindow(threadId);
+  const start = windowStartIndex(win, turns);
+  const shown = useMemo(() => windowItems(items, turns, start), [items, turns, start]);
   const lists = useRef<ReadonlyMap<string, Activity[]>>(new Map());
   const rows = useMemo(() => {
-    const built = buildRows(items, turns, lists.current);
+    const built = buildRows(shown, turns, lists.current);
     lists.current = built.lists;
     return built.rows;
-  }, [items, turns]);
+  }, [shown, turns]);
 
   const scroller = useRef<HTMLOListElement>(null);
   const hasRows = items.length > 0;
   const { showNew, jumpToEnd } = useStreamScroll(scroller, { threadId, rowsSignature: rows, hasRows });
+  const holdRow = useKeepRowInPlace(scroller, rows, win.loadingEarlier);
 
   if (!hasRows) {
     return thread ? <EmptyThread thread={thread} /> : <div className={styles.empty}>No messages yet.</div>;
@@ -159,6 +167,19 @@ function ThreadStream({ threadId, provider, hotkeys }: { threadId: string; provi
   return (
     <div className={styles.wrap}>
       <ol className={styles.stream} ref={scroller}>
+        <EarlierTurns
+          hidden={start}
+          window={win}
+          onShow={(below) => {
+            holdRow(below);
+            threadActivities().loadEarlier(threadId);
+          }}
+          onRetry={(below) => {
+            // a failed first window grows below the reader (they follow the end): nothing to hold
+            if (win.errorOn === "earlier") holdRow(below);
+            threadActivities().retry(threadId);
+          }}
+        />
         {rows.map((row) => renderRow(row, provider, hotkeys))}
       </ol>
       <CiteButton root={scroller} />

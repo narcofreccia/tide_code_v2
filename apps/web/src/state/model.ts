@@ -63,6 +63,28 @@ export function attachModelStore(store: ModelStore): () => void {
   };
 }
 
+/** R24: which client store owns a thread (its activities are merged there), and every store. */
+export interface StoreRouter {
+  forThread(threadId: string): ModelStore | undefined;
+  all(): ModelStore[];
+}
+
+let storeRouter: StoreRouter | undefined;
+
+/** The environment manager's router; wins over an attached single store. */
+export function setStoreRouter(next: StoreRouter | undefined): void {
+  storeRouter = next;
+}
+
+export function storeForThread(threadId: string): ModelStore | undefined {
+  return storeRouter ? storeRouter.forThread(threadId) : client;
+}
+
+export function allStores(): ModelStore[] {
+  if (storeRouter) return storeRouter.all();
+  return client ? [client] : [];
+}
+
 export function setEnvironmentId(environmentId: string | null): void {
   useModel.setState({ environmentId });
 }

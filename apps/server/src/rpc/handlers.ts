@@ -2,7 +2,7 @@ import { PROTOCOL_VERSION } from "../version.ts";
 import { mkdir, readdir, realpath, rm, stat } from "node:fs/promises";
 import { isAbsolute, join } from "node:path";
 import { Git, GitError } from "../vcs/git.ts";
-import { isInternalCommand, type ClientCommand, type DeviceAccess, type EventRecord, type RpcOutput } from "@tide/contracts";
+import { isInternalCommand, residentModel, threadActivitiesOf, type ClientCommand, type DeviceAccess, type EventRecord, type RpcOutput } from "@tide/contracts";
 import { CommandError, type Engine } from "../orchestration/engine.ts";
 import type { EventStore } from "../orchestration/store.ts";
 import type { DriverRegistry } from "../provider/registry.ts";
@@ -248,6 +248,12 @@ export function registerHandlers(router: RpcRouter, deps: HandlerDeps): void {
 
   router.register("model.get", async () => deps.engine.getModel());
 
+  router.register("thread.activities", async (input) => {
+    const model = deps.engine.getModel();
+    if (model.threads[input.threadId] === undefined) throw new RpcException("not-found", `unknown thread ${input.threadId}`);
+    return { seq: model.seq, activities: threadActivitiesOf(model, input.threadId, input.turnIds) };
+  });
+
   router.registerStream("model.subscribe", async (input, _ctx, emit) => {
     // Subscribe before reading state, buffering anything that lands while we
     // build the catch-up frames, so no event can slip through the gap.
@@ -280,7 +286,7 @@ export function registerHandlers(router: RpcRouter, deps: HandlerDeps): void {
     } else {
       const model = deps.engine.getModel();
       lastSeq = model.seq;
-      emit({ kind: "snapshot", model });
+      emit({ kind: "snapshot", model: input.scope === "resident" ? residentModel(model) : model });
     }
 
     live = true;

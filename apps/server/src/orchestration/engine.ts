@@ -2,7 +2,6 @@ import { Check, Errors } from "typebox/value";
 import {
   Command as CommandSchema,
   DomainEvent as DomainEventSchema,
-  applyRecord,
   applyRecordInPlace,
   createReplayState,
   emptyReadModel,
@@ -10,6 +9,7 @@ import {
   type Command,
   type EventRecord,
   type ReadModel,
+  type ReplayState,
 } from "@tide/contracts";
 import { decide, type DecideDefaults } from "./decider/index.ts";
 import { handoffCapFromEnv } from "./handoff/select.ts";
@@ -111,6 +111,8 @@ export class Engine {
   #defaults: () => DecideDefaults;
   #handoffCap: number | undefined;
   #model: ReadModel;
+  /** auxiliary indexes the in-place projector keeps in step with `#model` */
+  #replayState: ReplayState;
   #listeners = new Set<EventListener>();
   /** tail of the serial processing chain; also the drain() handle */
   #queue: Promise<unknown> = Promise.resolve();
@@ -138,6 +140,7 @@ export class Engine {
     this.#snapshotEvery = options.snapshotEvery ?? DEFAULT_SNAPSHOT_EVERY;
     this.#snapshotTag = options.snapshotTag;
     this.#model = this.#boot();
+    this.#replayState = createReplayState(this.#model);
     this.#autoCompact = options.compaction !== false;
     this.#compactor = new Compactor(this.#store.compaction, (turnId) => {
       const turn = this.#model.turns[turnId];
@@ -328,7 +331,10 @@ export class Engine {
     const records = this.#store.append(decision.events, ts, commandId === undefined ? undefined : { commandId });
     this.#sinceSnapshot += records.length;
     for (const record of records) {
-      this.#model = applyRecord(this.#model, record);
+      // In place (R24): the model's maps are huge and owned by the engine alone, so copying them
+      // per event cost ~15 ms and most of the server's garbage. Maps and per-thread lists change in
+      // place; entity objects (thread, turn, activity) are still replaced, never mutated.
+      this.#model = applyRecordInPlace(this.#model, record, this.#replayState);
       if (record.event.type === "turn.settled" && this.#autoCompact) this.#settledThreads.add(record.event.threadId);
       for (const listener of this.#listeners) {
         try {

@@ -1,0 +1,10 @@
+.row {
+  display: flex;
+  align-items: center;
+  justify-content: center;
+  gap: var(--sp-2);
+  min-height: var(--activity-h);
+  color: var(--muted);
+  font-size: var(--fs-sm);
+}
+.error { color: var(--danger); }

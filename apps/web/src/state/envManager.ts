@@ -17,6 +17,7 @@ import { loadEnvironments, saveEnvironments } from "./envPersist.ts";
 import { migrateEnvStorage, purgeEnvStorage, renameEnvStorage } from "./envStorage.ts";
 import {
   setDispatcher,
+  setStoreRouter,
   setRpcCaller,
   setRpcStreamer,
   useModel,
@@ -424,6 +425,15 @@ export const routedStream = ((method: string, params: unknown, onChunk: (c: unkn
   return conn.stream(method, params, onChunk);
 }) as RpcStreamer;
 
+/** R24: a thread's activities are fetched from and merged into its owner's store. */
+const storeRouter = {
+  forThread(threadId: string) {
+    const envId = envFor({ threadId });
+    return envId === undefined ? undefined : entries.get(envId)?.conn.store;
+  },
+  all: () => [...entries.values()].map((e) => e.conn.store),
+};
+
 export const routedDispatch: Dispatcher = (command: ClientCommand, opts?: RouteOptions) => {
   let entry: Entry;
   try {
@@ -528,6 +538,7 @@ export function startEnvironments(local: LocalLaunch): () => void {
   setRpcCaller(routedCall);
   setRpcStreamer(routedStream);
   setDispatcher(routedDispatch);
+  setStoreRouter(storeRouter);
   for (const env of environments) openEnvironment(env);
   useModel.setState({ ownership: merged.ownership });
   mirrorPrimary();
@@ -540,6 +551,7 @@ export function stopEnvironments(): void {
   setRpcCaller(undefined);
   setRpcStreamer(undefined);
   setDispatcher(undefined);
+  setStoreRouter(undefined);
 }
 
 /** Retry now: the primary re-walks its routes instead of waiting out the backoff. */

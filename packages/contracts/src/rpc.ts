@@ -2,7 +2,7 @@ import { Type, type Static, type TSchema } from "typebox";
 import { AgentCommand, ClientCommand } from "./commands.ts";
 import { EventRecord } from "./events.ts";
 import { UserSettings, UserSettingsPatch } from "./settings.ts";
-import { AttachmentRef, JudgeSite, JudgeSource, MergeStrategy, ProjectIcon, ProviderInstanceConfig, ProviderKind, PullRequest, RateLimit, ReadModel, RepoIdentity, RuntimeMode, ScheduledTask, SlashCommandInfo, Team, RunPlan, RunProfile, RunRepo, RunServiceStatus, RunSession } from "./domain.ts";
+import { Activity, AttachmentRef, JudgeSite, JudgeSource, MergeStrategy, ProjectIcon, ProviderInstanceConfig, ProviderKind, PullRequest, RateLimit, ReadModel, RepoIdentity, RuntimeMode, ScheduledTask, SlashCommandInfo, Team, RunPlan, RunProfile, RunRepo, RunServiceStatus, RunSession } from "./domain.ts";
 
 export * from "./settings.ts";
 
@@ -528,7 +528,26 @@ export const rpcMethods = {
   /** escape hatch: shell command that reopens the thread's harness session in a terminal */
   "thread.terminalCommand": unary(Type.Object({ threadId: Type.String() }), Type.Object({ cwd: Type.String(), command: Type.Optional(Type.String()) })),
   /** full model snapshot then live events; `fromSeq` skips the snapshot when the client already has one */
-  "model.subscribe": stream(Type.Object({ fromSeq: Type.Optional(Type.Number()) }), ModelChunk),
+  "model.subscribe": stream(
+    Type.Object({
+      fromSeq: Type.Optional(Type.Number()),
+      /**
+       * R24: `resident` sends a snapshot holding only the resident activities (see
+       * `isResidentActivity`); the client fetches the rest per thread with `thread.activities`.
+       * Live events are the same in both scopes. Default `full`.
+       */
+      scope: Type.Optional(Type.Union([Type.Literal("full"), Type.Literal("resident")])),
+    }),
+    ModelChunk,
+  ),
+  /**
+   * R24: the activities of one thread for the given turns, in timeline order, as of `seq`.
+   * Clients on a `resident` subscription merge them with `mergeActivities`.
+   */
+  "thread.activities": unary(
+    Type.Object({ threadId: Type.String(), turnIds: Type.Array(Type.String(), { maxItems: 500 }) }),
+    Type.Object({ seq: Type.Number(), activities: Type.Array(Activity) }),
+  ),
   "model.get": unary(Type.Object({}), ReadModel),
   "unsubscribe": unary(Type.Object({ id: Type.String() }), Type.Object({ ok: Type.Boolean() })),
   /**

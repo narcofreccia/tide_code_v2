@@ -18,6 +18,16 @@ export {
   type ModelStoreOptions,
   type ModelStoreState,
 } from "./modelStore.ts";
+export {
+  EARLIER_TURNS,
+  INITIAL_TURNS,
+  KEEP_THREADS,
+  createThreadActivities,
+  windowStartIndex,
+  type ThreadActivities,
+  type ThreadActivitiesHost,
+  type ThreadWindow,
+} from "./threadActivities.ts";
 export { onPageHidden, scheduleFrame, type FrameScheduler } from "./frameScheduler.ts";
 export {
   EnvironmentConnection,

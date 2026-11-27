@@ -49,6 +49,7 @@ export const METHOD_ACCESS: Record<keyof typeof rpcMethods, AccessNeeded> = {
   // only use is opening a terminal on the host
   "thread.terminalCommand": "full",
   "model.subscribe": "limited",
+  "thread.activities": "limited",
   "model.get": "limited",
   unsubscribe: "limited",
   cancel: "limited",

@@ -1,9 +1,10 @@
 import type { Activity, ActivityOf, ApprovalDecision, Message, ProposedPlan, ReadModel } from "@tide/contracts";
 import { selectTimeline } from "@tide/client";
 import { toolTarget } from "./activity.ts";
-import { copyWithToast } from "./clipboard.ts";
+import { copyPendingWithToast, copyWithToast } from "./clipboard.ts";
 import { useModel } from "../state/model.ts";
 import { showToast } from "../state/toast.ts";
+import { modelWithAllActivities } from "../state/threadActivities.ts";
 
 export interface ThreadExportOptions {
   /** append each tool call's (truncated) output as a fenced block under its line */
@@ -191,20 +192,38 @@ export function downloadText(fileName: string, text: string, type = "text/markdo
   return true;
 }
 
+/**
+ * R24: the client holds only a window of an opened thread's activities; an export fetches
+ * the rest first (a full store, as in tests, answers synchronously).
+ */
+function withWholeThread(threadId: string, run: (model: ReadModel) => void): void {
+  modelWithAllActivities(threadId).then(run, (err: unknown) => {
+    showToast(`Could not load the whole thread: ${err instanceof Error ? err.message : String(err)}`);
+  });
+}
+
 /** ⋯ › Export as Markdown: downloads `<slug>-<date>.md`. */
 export function exportThreadMarkdown(threadId: string, options: ThreadExportOptions = {}): void {
-  const model = useModel.getState().model;
-  const thread = model.threads[threadId];
-  if (thread === undefined) return;
-  const name = exportFileName(thread.title);
-  const text = threadToMarkdown(model, threadId, options);
-  if (downloadText(name, text)) showToast(`Exported ${name}`);
-  else void copyWithToast(text, "Downloads are not available here; copied the thread as Markdown");
+  withWholeThread(threadId, (model) => {
+    const thread = model.threads[threadId];
+    if (thread === undefined) return;
+    const name = exportFileName(thread.title);
+    const text = threadToMarkdown(model, threadId, options);
+    if (downloadText(name, text)) showToast(`Exported ${name}`);
+    else void copyWithToast(text, "Downloads are not available here; copied the thread as Markdown");
+  });
 }
 
 /** ⋯ › Copy as Markdown: the same document on the clipboard (works where downloads do not). */
 export function copyThreadMarkdown(threadId: string, options: ThreadExportOptions = {}): void {
-  const model = useModel.getState().model;
-  if (model.threads[threadId] === undefined) return;
-  void copyWithToast(threadToMarkdown(model, threadId, options), "Copied the thread as Markdown");
+  if (useModel.getState().model.threads[threadId] === undefined) return;
+  // the clipboard write starts inside the click (WebKit), while the rest of the thread loads
+  const text = modelWithAllActivities(threadId).then(
+    (model) => (model.threads[threadId] === undefined ? undefined : threadToMarkdown(model, threadId, options)),
+    (err: unknown) => {
+      showToast(`Could not load the whole thread: ${err instanceof Error ? err.message : String(err)}`);
+      return undefined;
+    },
+  );
+  void copyPendingWithToast(text, "Copied the thread as Markdown");
 }

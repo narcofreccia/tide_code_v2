@@ -1,6 +1,8 @@
 import {
   applyRecord,
   emptyReadModel,
+  mergeActivities,
+  type Activity,
   type ClientCommand,
   type ModelChunk,
   type ReadModel,
@@ -22,12 +24,26 @@ export interface ModelStoreState {
    * Optional so structural test doubles can omit it; absent reads as ready.
    */
   ready?: boolean;
+  /**
+   * R24: how many snapshots replaced the model. The store subscribes with `scope: "resident"`,
+   * so activities fetched with `thread.activities` live only until the next snapshot (first
+   * load, or a reconnect past the server's compaction): a change means "fetch them again".
+   * Absent on stores that hold the full model (test doubles).
+   */
+  epoch?: number;
 }
 
 export interface ModelStore {
   getState(): ModelStoreState;
   subscribe(listener: () => void): () => void;
   dispatch(command: ClientCommand): Promise<RpcOutput<"orchestration.dispatch">>;
+  /**
+   * R24: merge a `thread.activities` reply (newer `updatedAt` wins over live upserts).
+   * Optional: a store holding the full model (test doubles) has nothing to merge.
+   */
+  mergeActivities?(activities: readonly Activity[]): void;
+  /** R24: forget these activities (pruning a thread the user left); one map copy. */
+  dropActivities?(ids: ReadonlySet<string>): void;
   /** stop following the connection and cancel the live subscription */
   dispose(): void;
 }
@@ -48,7 +64,7 @@ export interface ModelStoreOptions {
  */
 export function createModelStore(conn: ModelStoreConnection, opts: ModelStoreOptions = {}): ModelStore {
   const schedule = opts.schedule ?? scheduleFrame;
-  let state: ModelStoreState = { model: emptyReadModel(), status: conn.status, lastError: null, ready: false };
+  let state: ModelStoreState = { model: emptyReadModel(), status: conn.status, lastError: null, ready: false, epoch: 0 };
   const listeners = new Set<() => void>();
   let sub: StreamHandle | undefined;
   let hasSnapshot = false;
@@ -66,9 +82,9 @@ export function createModelStore(conn: ModelStoreConnection, opts: ModelStoreOpt
     state = { ...state, ...next };
     emit();
   };
-  const setModelBatched = (model: ReadModel, ready = state.ready === true): void => {
-    if (model === state.model && ready === state.ready) return;
-    state = { ...state, model, ready };
+  const setModelBatched = (model: ReadModel, ready = state.ready === true, epoch = state.epoch ?? 0): void => {
+    if (model === state.model && ready === state.ready && epoch === state.epoch) return;
+    state = { ...state, model, ready, epoch };
     if (publishQueued) return;
     publishQueued = true;
     schedule(flushPending);
@@ -78,7 +94,7 @@ export function createModelStore(conn: ModelStoreConnection, opts: ModelStoreOpt
     if (chunk.kind === "snapshot") {
       hasSnapshot = true;
       // ready rides with the snapshot's own publish: no frame where it is ready but still empty
-      setModelBatched(chunk.model, true);
+      setModelBatched(chunk.model, true, (state.epoch ?? 0) + 1);
     } else {
       setModelBatched(applyRecord(state.model, chunk.record));
     }
@@ -87,7 +103,8 @@ export function createModelStore(conn: ModelStoreConnection, opts: ModelStoreOpt
 
   const startSubscription = (): void => {
     if (disposed || sub) return;
-    const params = hasSnapshot ? { fromSeq: state.model.seq } : {};
+    // R24: resident scope — activities of settled turns are fetched per thread (`thread.activities`)
+    const params = hasSnapshot ? { fromSeq: state.model.seq, scope: "resident" as const } : { scope: "resident" as const };
     const handle = conn.stream("model.subscribe", params, onChunk);
     sub = handle;
     handle.done
@@ -132,6 +149,20 @@ export function createModelStore(conn: ModelStoreConnection, opts: ModelStoreOpt
         patch({ lastError: err instanceof Error ? err.message : String(err) });
         throw err;
       }
+    },
+    mergeActivities(activities) {
+      const next = mergeActivities(state.model.activities, activities);
+      if (next !== state.model.activities) setModelBatched({ ...state.model, activities: next });
+    },
+    dropActivities(ids) {
+      const held = state.model.activities;
+      let next: ReadModel["activities"] | undefined;
+      for (const id of ids) {
+        if (held[id] === undefined) continue;
+        next ??= { ...held };
+        delete next[id];
+      }
+      if (next !== undefined) setModelBatched({ ...state.model, activities: next });
     },
     dispose() {
       disposed = true;

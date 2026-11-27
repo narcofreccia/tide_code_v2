@@ -73,3 +73,29 @@ export async function copyWithToast(text: string, success = "Copied"): Promise<b
   else reportCopyFailure(text);
   return ok;
 }
+
+/**
+ * Copies text that is still being produced (e.g. after a fetch). WebKit, the desktop shell's
+ * engine, drops the click's clipboard permission across an `await`, so where `ClipboardItem`
+ * exists the write starts now, inside the gesture, with the text as a pending blob.
+ * Resolves to undefined when the text could not be produced (the caller reports that).
+ */
+export async function copyPendingWithToast(text: Promise<string | undefined>, success = "Copied"): Promise<boolean | undefined> {
+  const clipboard = typeof navigator === "undefined" ? undefined : navigator.clipboard;
+  if (clipboard !== undefined && typeof clipboard.write === "function" && typeof ClipboardItem !== "undefined") {
+    const blob = text.then((t) => {
+      if (t === undefined) throw new Error("nothing to copy");
+      return new Blob([t], { type: "text/plain" });
+    });
+    try {
+      await clipboard.write([new ClipboardItem({ "text/plain": blob })]);
+      showToast(success);
+      return true;
+    } catch {
+      /* denied or not produced: fall through to the plain path */
+    }
+  }
+  const resolved = await text.catch(() => undefined);
+  if (resolved === undefined) return undefined;
+  return copyWithToast(resolved, success);
+}

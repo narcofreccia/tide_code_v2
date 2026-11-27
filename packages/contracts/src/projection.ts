@@ -201,9 +201,22 @@ function findPendingByRequest<K extends "approval" | "user-input">(model: ReadMo
   return undefined;
 }
 
+/** Is `id` already on the thread's timeline? Scans from the tail, where upserts land. */
+function timelineHasActivity(model: ReadModel, threadId: string, id: string): boolean {
+  const timeline = model.threadTimeline[threadId];
+  if (timeline === undefined) return false;
+  for (let i = timeline.length - 1; i >= 0; i--) {
+    const e = timeline[i];
+    if (e !== undefined && e.kind === "activity" && e.id === id) return true;
+  }
+  return false;
+}
+
 function upsertActivity(model: ReadModel, activity: Activity, mut: boolean): ReadModel {
   const prev = model.activities[activity.id];
-  const exists = prev !== undefined;
+  // A resident-scope client (R24) may not hold an activity the timeline already lists: check
+  // the timeline before appending. In-place replay always holds the full map, so it skips the scan.
+  const exists = prev !== undefined || (!mut && timelineHasActivity(model, activity.threadId, activity.id));
   let next = patchModel(model, { activities: put(model.activities, activity.id, activity, mut) }, mut);
   if (!exists) next = appendTimeline(next, activity.threadId, { kind: "activity", id: activity.id }, mut);
   // Non-attention activities (tool/info/child) cannot change deriveAttention unless replacing an approval/question

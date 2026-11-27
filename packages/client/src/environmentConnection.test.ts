@@ -142,7 +142,7 @@ describe("EnvironmentConnection", () => {
     await waitFor(() => conn.snapshot.state === "connected");
     await waitFor(() => s.requests.filter((r) => r.method === "model.subscribe").length === 2);
     const resumed = s.requests.filter((r) => r.method === "model.subscribe")[1];
-    expect(resumed?.params).toEqual({ fromSeq: 3 });
+    expect(resumed?.params).toEqual({ fromSeq: 3, scope: "resident" });
   });
 
   it("falls back to a local route whose preflight fails (CORS / pre-R9 server) and adopts its id", async () => {
@@ -167,7 +167,7 @@ describe("EnvironmentConnection", () => {
     expect(timers.run(UPGRADE_MS)).toBe(1);
     await waitFor(() => conn.snapshot.route?.url === near.url);
     await waitFor(() => near.requests.some((r) => r.method === "model.subscribe"));
-    expect(near.requests.find((r) => r.method === "model.subscribe")?.params).toEqual({ fromSeq: 3 });
+    expect(near.requests.find((r) => r.method === "model.subscribe")?.params).toEqual({ fromSeq: 3, scope: "resident" });
     await waitFor(() => far.sockets.length === 0);
   });
 

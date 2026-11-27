@@ -1,7 +1,7 @@
 import { describe, expect, it, vi } from "vitest";
 import { createModelStore, type ModelStoreConnection } from "./modelStore.ts";
 import type { ConnectionStatus, StreamHandle } from "./connection.ts";
-import { emptyReadModel, type EventRecord, type ModelChunk, type ReadModel } from "@tide/contracts";
+import { emptyReadModel, type ActivityOf, type EventRecord, type ModelChunk, type ReadModel } from "@tide/contracts";
 
 interface Harness {
   conn: ModelStoreConnection;
@@ -63,7 +63,7 @@ describe("createModelStore", () => {
 
     h.setStatus("open");
     expect(h.streamCalls).toHaveLength(1);
-    expect(h.streamCalls[0]?.params).toEqual({});
+    expect(h.streamCalls[0]?.params).toEqual({ scope: "resident" });
 
     h.streamCalls[0]?.push(snapshot({ ...emptyReadModel(), seq: 5 }));
     h.streamCalls[0]?.push(projectCreated(6, "p1"));
@@ -95,7 +95,7 @@ describe("createModelStore", () => {
     h.setStatus("open");
 
     expect(h.streamCalls).toHaveLength(2);
-    expect(h.streamCalls[1]?.params).toEqual({ fromSeq: 6 });
+    expect(h.streamCalls[1]?.params).toEqual({ fromSeq: 6, scope: "resident" });
 
     h.streamCalls[1]?.push(projectCreated(7, "p2"));
     expect(store.getState().model.seq).toBe(7);
@@ -136,6 +136,68 @@ describe("createModelStore", () => {
     h.streamCalls[0]?.push({ kind: "event", record });
     expect(store.getState().model.seq).toBe(1);
     expect(Object.keys(store.getState().model.projects)).toEqual(["p1"]);
+  });
+});
+
+const tool = (id: string, updatedAt: number, status: "ok" | "running" = "ok"): ActivityOf<"tool"> => ({
+  id,
+  threadId: "t1",
+  turnId: "u1",
+  createdAt: 1,
+  updatedAt,
+  kind: "tool",
+  toolUseId: `use-${id}`,
+  toolName: "Read",
+  input: {},
+  status,
+});
+
+describe("createModelStore resident scope (R24)", () => {
+  it("counts snapshots in epoch: a fresh snapshot means fetched activities are gone", () => {
+    const h = harness();
+    const store = createModelStore(h.conn, { schedule: (cb) => cb() });
+    expect(store.getState().epoch).toBe(0);
+    h.setStatus("open");
+    h.streamCalls[0]?.push(snapshot({ ...emptyReadModel(), seq: 5 }));
+    expect(store.getState().epoch).toBe(1);
+    h.streamCalls[0]?.push(projectCreated(6, "p1"));
+    expect(store.getState().epoch).toBe(1);
+    // reconnect past compaction: the server answers fromSeq with a snapshot
+    h.setStatus("reconnecting");
+    h.setStatus("open");
+    h.streamCalls[1]?.push(snapshot({ ...emptyReadModel(), seq: 9 }));
+    expect(store.getState().epoch).toBe(2);
+  });
+
+  it("merges fetched activities (newer updatedAt wins) and publishes", () => {
+    const h = harness();
+    const store = createModelStore(h.conn, { schedule: (cb) => cb() });
+    h.setStatus("open");
+    h.streamCalls[0]?.push(snapshot({ ...emptyReadModel(), seq: 1, activities: { a: tool("a", 5, "running") } }));
+    const listener = vi.fn();
+    store.subscribe(listener);
+    store.mergeActivities?.([tool("a", 3), tool("b", 2)]);
+    const held = store.getState().model.activities;
+    expect(held["a"]).toMatchObject({ updatedAt: 5, status: "running" });
+    expect(held["b"]?.updatedAt).toBe(2);
+    expect(listener).toHaveBeenCalledTimes(1);
+    // nothing new: same map, no publish
+    store.mergeActivities?.([tool("b", 2)]);
+    expect(store.getState().model.activities).toBe(held);
+    expect(listener).toHaveBeenCalledTimes(1);
+  });
+
+  it("drops activities in one copy and ignores ids it does not hold", () => {
+    const h = harness();
+    const store = createModelStore(h.conn, { schedule: (cb) => cb() });
+    h.setStatus("open");
+    h.streamCalls[0]?.push(snapshot({ ...emptyReadModel(), seq: 1, activities: { a: tool("a", 1), b: tool("b", 1) } }));
+    const before = store.getState().model.activities;
+    store.dropActivities?.(new Set(["zzz"]));
+    expect(store.getState().model.activities).toBe(before);
+    store.dropActivities?.(new Set(["a", "zzz"]));
+    expect(Object.keys(store.getState().model.activities)).toEqual(["b"]);
+    expect(before["a"]).toBeDefined();
   });
 });
 
