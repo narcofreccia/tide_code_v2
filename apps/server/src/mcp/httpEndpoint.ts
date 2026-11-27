@@ -42,7 +42,7 @@ export function createMcpEndpoint(tools: ReturnType<typeof createRemoteTools>, s
         return respond({
           protocolVersion: typeof requested === "string" && PROTOCOL_VERSIONS.includes(requested) ? requested : PROTOCOL_VERSIONS[0],
           capabilities: { tools: {} },
-          serverInfo: { name: "Tide Code v2", version },
+          serverInfo: { name: "Tide Code", version },
         });
       }
       case "tools/list":

@@ -134,27 +134,51 @@ function toItem(model: ReadModel, entry: TimelineEntry, view: "messages" | "acti
 export function readTimeline(
   model: ReadModel,
   threadId: string,
-  options: { view?: "messages" | "activity"; afterPosition?: number; limit?: number; maxCharsPerItem?: number },
-): { items: AgentTimelineItem[]; nextPosition: number; truncated: boolean } {
+  options: { view?: "messages" | "activity"; afterPosition?: number; limit?: number; maxCharsPerItem?: number; fromEnd?: boolean },
+): { items: AgentTimelineItem[]; nextPosition: number; truncated: boolean; totalItems: number; oldestPosition?: number; hasOlder: boolean } {
   const view = options.view ?? "messages";
   const limit = options.limit ?? DEFAULT_READ_LIMIT;
   const maxChars = options.maxCharsPerItem ?? DEFAULT_MAX_CHARS;
-  const after = options.afterPosition ?? -1;
   const timeline = model.threadTimeline[threadId] ?? [];
+
+  if (options.fromEnd === true && options.afterPosition === undefined) {
+    const matched: { position: number; item: Omit<AgentTimelineItem, "position" | "truncated"> }[] = [];
+    for (let position = 0; position < timeline.length; position++) {
+      const item = toItem(model, timeline[position] as TimelineEntry, view);
+      if (item) matched.push({ position, item });
+    }
+    const totalItems = matched.length;
+    const start = Math.max(0, totalItems - limit);
+    const slice = matched.slice(start);
+    const items: AgentTimelineItem[] = slice.map(({ position, item }) => {
+      const truncated = item.text.length > maxChars;
+      return { position, ...item, text: truncated ? item.text.slice(0, maxChars) : item.text, truncated };
+    });
+    const oldestPosition = items.length > 0 ? (items[0] as AgentTimelineItem).position : undefined;
+    const nextPosition = items.length > 0 ? (items[items.length - 1] as AgentTimelineItem).position : -1;
+    const hasOlder = start > 0;
+    return { items, nextPosition, truncated: hasOlder, totalItems, ...(oldestPosition !== undefined ? { oldestPosition } : {}), hasOlder };
+  }
+
+  const after = options.afterPosition ?? -1;
   const items: AgentTimelineItem[] = [];
   let more = false;
-  for (let position = after + 1; position < timeline.length; position++) {
+  let totalItems = 0;
+  for (let position = 0; position < timeline.length; position++) {
     const item = toItem(model, timeline[position] as TimelineEntry, view);
     if (!item) continue;
+    totalItems++;
+    if (position <= after) continue;
     if (items.length === limit) {
       more = true;
-      break;
+      continue;
     }
     const truncated = item.text.length > maxChars;
     items.push({ position, ...item, text: truncated ? item.text.slice(0, maxChars) : item.text, truncated });
   }
+  const oldestPosition = items.length > 0 ? (items[0] as AgentTimelineItem).position : undefined;
   const nextPosition = items.length > 0 ? (items[items.length - 1] as AgentTimelineItem).position : after;
-  return { items, nextPosition, truncated: more };
+  return { items, nextPosition, truncated: more, totalItems, ...(oldestPosition !== undefined ? { oldestPosition } : {}), hasOlder: after >= 0 };
 }
 
 type WaitResult = RpcOutput<"agent.thread.wait">;

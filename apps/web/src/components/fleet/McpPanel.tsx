@@ -56,7 +56,7 @@ export function McpPanel({ info, envId }: { info: ServerInfo | undefined; envId?
     >
       <SettingNote>
         Connect Tide AI Chat (or another remote MCP client) to this machine over the relay. Paste the Environment ID,
-        MCP Bearer token, and elevation secret into Tide AI Chat → Connectors → Tide Code v2, then paste the Relay URL
+        MCP Bearer token, and elevation secret into Tide AI Chat → Connectors → Tide Code, then paste the Relay URL
         and key from Tide AI Chat into the Relay section above.
       </SettingNote>
       {environmentId ? (

@@ -118,7 +118,7 @@ describe("remote MCP", () => {
         jsonrpc: "2.0", id: 42,
         result: {
           protocolVersion: version === "unsupported" ? "2025-03-26" : version,
-          capabilities: { tools: {} }, serverInfo: { name: "Tide Code v2", version: config.version },
+          capabilities: { tools: {} }, serverInfo: { name: "Tide Code", version: config.version },
         },
       });
     }
@@ -129,9 +129,10 @@ describe("remote MCP", () => {
     const response = await rpc("tools/list");
     const tools = JSON.parse(response.text).result.tools as { name: string; description: string; inputSchema: { type: string } }[];
     expect(tools.map((tool) => tool.name)).toEqual([
-      "tide_projects_list", "tide_harnesses", "tide_thread_list", "tide_thread_read", "tide_thread_diff",
-      "tide_thread_create", "tide_thread_send", "tide_thread_interrupt", "tide_thread_archive", "tide_pending_list",
-      "tide_pending_respond", "tide_list_scheduled_tasks", "tide_project_create",
+      "tide_projects_list", "tide_harnesses", "tide_thread_list", "tide_thread_read", "tide_thread_wait",
+      "tide_vcs_status", "tide_thread_diff", "tide_thread_create", "tide_thread_send", "tide_thread_interrupt",
+      "tide_thread_archive", "tide_pending_list", "tide_pending_respond", "tide_approvals_list",
+      "tide_approval_respond", "tide_list_scheduled_tasks", "tide_project_create",
     ]);
     expect(tools.every((tool) => tool.description.length > 0 && tool.inputSchema.type === "object")).toBe(true);
     expect((await relayRequest(" ".repeat(1024 * 1024 + 1), master, true)).status).toBe(413);
@@ -170,9 +171,24 @@ describe("remote MCP", () => {
     expect(engine.getModel().threads[threadId]?.mode).toBe("approval-required");
     expect(engine.getModel().turns[turnId]?.threadId).toBe(threadId);
     const listed = await call("tide_thread_list", { projectId, title: "SAFE" });
-    expect(listed.structuredContent.threads).toMatchObject([{ id: threadId, title: "Safe thread" }]);
-    const read = await call("tide_thread_read", { threadId, limit: 1 });
-    expect(read.structuredContent.items).toMatchObject([{ text: "Hello" }]);
+    expect(listed.structuredContent.serverNowIso).toMatch(/^\d{4}-\d{2}-\d{2}T/);
+    expect(listed.structuredContent.threads).toMatchObject([
+      { id: threadId, title: "Safe thread", mode: "approval-required", requiresElevation: false },
+    ]);
+    await call("tide_thread_send", { threadId, text: "Second", mode: "queue" });
+    await call("tide_thread_send", { threadId, text: "Third", mode: "queue" });
+    const tailRead = await call("tide_thread_read", { threadId, limit: 2 });
+    expect(tailRead.structuredContent.totalItems).toBe(3);
+    expect(tailRead.structuredContent.hasOlder).toBe(true);
+    expect(tailRead.structuredContent.items.map((i: { text: string }) => i.text)).toEqual(["Second", "Third"]);
+    const headRead = await call("tide_thread_read", { threadId, limit: 2, fromEnd: false });
+    expect(headRead.structuredContent.items.map((i: { text: string }) => i.text)).toEqual(["Hello", "Second"]);
+    const vcs = await call("tide_vcs_status", { threadId });
+    expect(vcs.structuredContent).toMatchObject({ cwd: roots, isRepo: false, worktree: false, dirty: 0 });
+    const approvals = await call("tide_approvals_list", { threadId });
+    expect(approvals.structuredContent).toEqual({ approvals: [] });
+    const waited = await call("tide_thread_wait", { threadId, timeoutMs: 1000 });
+    expect(waited.structuredContent.serverNowIso).toMatch(/^\d{4}-\d{2}-\d{2}T/);
   });
 
   it("requires fresh elevation to create and send to full-access threads", async () => {
