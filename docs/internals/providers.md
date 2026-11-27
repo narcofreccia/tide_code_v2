@@ -572,7 +572,13 @@ the protocol (a non-JSON line is logged and skipped), stderr is logged.
   `session/request_user_input {questions: [{id, question, options: [{label, description?}],
   multiSelect?}]}` is not in ACP v1 (unverified shape, accepted early): it becomes a
   `user-input` activity and is answered `{outcome: {outcome: "answered", answers: {<id>:
-  string | string[]}}}`, or `cancelled` with no answer. Interrupt, turn end and `close()`
+  string | string[]}}}`, or `cancelled` with no answer.
+  `elicitation/create {sessionId, toolCallId?, mode: "form", message, requestedSchema}` (ACP
+  elicitation draft; Tide advertises `clientCapabilities.elicitation: {form: {}}`) becomes a
+  `user-input` activity built by `elicitationForm` from `@tide/contracts` (the same helper as the
+  Codex MCP elicitation), `requestId` = `toolCallId`, answered `{action: "accept", content}` with
+  each option label mapped back to its `const`; no answer / interrupt → `{action: "cancel"}`;
+  a URL-mode or unrenderable form → `{action: "decline"}`. Interrupt, turn end and `close()`
   answer every pending permission/question `cancelled` (close waits for those replies to be
   written before it stops the process).
   `fs/read_text_file {path, line?, limit?}` / `fs/write_text_file {path, content}` are served with
@@ -651,6 +657,14 @@ set in the driver config, so a binary with another name keeps them. There is one
 keeps every Google sign-in in one OS keyring entry, so `settings.set` and the instance factory
 refuse an extra instance of this kind, and the card has no "Add account". "Update harnesses" runs
 `agy update`.
+
+**Questions (`ask_question`), checked live on `agy` 1.5.18 (2026-11-27).** Without the
+`elicitation.form` client capability agy "asks in chat instead": the tool call completes at once,
+the question and its options are written as assistant text (`- [1] …`) and the turn ends. With it,
+agy sends `elicitation/create` with `message: "The agent has a question."` and one property per
+question: `q<n>` `{type: "string", title: <question>, oneOf: [{const: "1", title: <option>}, …]}`
+plus an optional free-text `q<n>_other`, which the card leaves out. It waits for the reply, then
+completes the tool call and continues the same turn. Fixture: `antigravity-1.5/ask-question.ndjson`.
 
 **Checked live on `agy` 1.5.14, signed out (2026-11-21).** `initialize` answers
 `agentInfo {name: "Antigravity ACP Server", version: "1.5.14"}`, `loadSession: true`,

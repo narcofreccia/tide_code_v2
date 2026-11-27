@@ -1,5 +1,3 @@
-import type { McpServerElicitationRequestParams } from "./generated/v2/McpServerElicitationRequestParams.ts";
-
 /** One question of a Tide `UserInputActivity` (contracts `UserInputQuestion`). */
 export interface FormQuestion {
   id: string;
@@ -70,29 +68,44 @@ function field(name: string, raw: unknown, required: boolean): Field | undefined
   return undefined;
 }
 
+export interface ElicitationFormOptions {
+  /**
+   * Text put before the first question (Codex: `[server] message`). Without it the message is
+   * used only when the first field has no title of its own.
+   */
+  head?: string;
+}
+
 /**
- * Builds a Tide form from an MCP elicitation's requested schema, using only the top-level
+ * Builds a Tide form from an elicitation's requested schema (MCP `elicitation/create`, Codex
+ * `mcpServer/elicitation/request`, ACP `elicitation/create`), using only the top-level
  * string / number / boolean / enum / multi-select properties (nested objects are not
- * renderable as a question). `undefined` when nothing is renderable or the request is a URL flow —
- * the caller then falls back to a plain approval card.
+ * renderable as a question). An optional free-text `<name>_other` next to an enum `<name>`
+ * (Antigravity's "Other" box) is left out, so the question stays one click.
+ * `undefined` when nothing is renderable or the request is a URL flow — the caller then
+ * falls back to a plain approval card or declines.
  */
-export function elicitationForm(params: Record<string, unknown>): ElicitationForm | undefined {
-  const typed = params as unknown as McpServerElicitationRequestParams;
-  if (typed.mode === "url") return undefined;
-  const schema: unknown = (params as { requestedSchema?: unknown }).requestedSchema;
+export function elicitationForm(params: Record<string, unknown>, options: ElicitationFormOptions = {}): ElicitationForm | undefined {
+  if (params["mode"] === "url") return undefined;
+  const schema: unknown = params["requestedSchema"];
   if (!isObject(schema) || !isObject(schema["properties"])) return undefined;
   const required = new Set(Array.isArray(schema["required"]) ? schema["required"].filter((item): item is string => typeof item === "string") : []);
   const fields: Field[] = [];
-  for (const [name, raw] of Object.entries(schema["properties"])) {
+  const properties = schema["properties"];
+  for (const [name, raw] of Object.entries(properties)) {
+    const base = name.endsWith("_other") ? name.slice(0, -"_other".length) : undefined;
+    if (base !== undefined && !required.has(name) && isObject(properties[base]) && enumOptions(properties[base]) !== undefined) continue;
     const built = field(name, raw, required.has(name));
     if (built) fields.push(built);
   }
   if (fields.length === 0) return undefined;
 
-  const server = str(params["serverName"]) ?? "MCP server";
   const message = str(params["message"]);
-  const head = fields[0]!.question;
-  head.text = `[${server}] ${message ? `${message}\n` : ""}${head.text}`;
+  const first = fields[0]!.question;
+  const firstSchema = properties[first.id];
+  const titled = isObject(firstSchema) && str(firstSchema["title"]) !== undefined;
+  if (options.head !== undefined) first.text = `${options.head}${first.text}`;
+  else if (!titled && message !== undefined) first.text = `${message}\n${first.text}`;
 
   return {
     questions: fields.map((entry) => entry.question),

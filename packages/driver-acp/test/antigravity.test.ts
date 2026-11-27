@@ -29,13 +29,13 @@ const AGY: AcpConfig = { command: ANTIGRAVITY_PROFILE.command, args: ANTIGRAVITY
 
 describe("clientInitialize quirks", () => {
   it("without quirks it is exactly the generic handshake", () => {
-    expect(clientInitialize("1.0.0")).toEqual({ protocolVersion: 1, clientCapabilities: { fs: { readTextFile: true, writeTextFile: true }, terminal: false }, clientInfo: { name: "tide", version: "1.0.0" } });
+    expect(clientInitialize("1.0.0")).toEqual({ protocolVersion: 1, clientCapabilities: { fs: { readTextFile: true, writeTextFile: true }, terminal: false, elicitation: { form: {} } }, clientInfo: { name: "tide", version: "1.0.0" } });
     expect(clientInitialize("1.0.0", {})).toEqual(clientInitialize("1.0.0"));
   });
 
   it("advertiseFsWrite: false drops writeTextFile; Tide still identifies itself as tide", () => {
     const init = clientInitialize("1.0.0", { advertiseFsWrite: false }) as { clientCapabilities: unknown; clientInfo: { name: string } };
-    expect(init.clientCapabilities).toEqual({ fs: { readTextFile: true, writeTextFile: false }, terminal: false });
+    expect(init.clientCapabilities).toEqual({ fs: { readTextFile: true, writeTextFile: false }, terminal: false, elicitation: { form: {} } });
     expect(init.clientInfo.name).toBe("tide");
   });
 

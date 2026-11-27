@@ -48,6 +48,25 @@ describe("compaction notice", () => {
     expect(document.querySelector("[data-compaction=running] [data-live-label]")).toBeNull();
   });
 
+  it("a /compact turn on a harness that reports nothing (Antigravity) still shimmers, then reads compacted", () => {
+    const quiet = (status: "running" | "completed" | "interrupted") => {
+      const model = modelWithTimeline(makeThread("t1", { latestTurnId: "u1" }), []);
+      model.messages.m1 = { id: "m1", threadId: "t1", turnId: "u1", role: "user", text: "/compact", createdAt: 1 } as never;
+      model.threadTimeline.t1 = [{ kind: "message", id: "m1" }];
+      model.turns.u1 = makeTurn("u1", { status });
+      attachFakeStore(model);
+      render(<Stream threadId="t1" provider="antigravity" />);
+    };
+    quiet("running");
+    expect(document.querySelector("[data-compaction=running] [data-live-label]")?.textContent).toBe("Compacting conversation…");
+    cleanup();
+    quiet("completed");
+    expect(document.querySelector("[data-compaction=done]")?.textContent).toBe("Context compacted");
+    cleanup();
+    quiet("interrupted");
+    expect(document.querySelector("[data-compaction]")).toBeNull();
+  });
+
   it("shows one row when a harness reports start and end separately", () => {
     mount([note("i1", "Compacting context (manual)"), note("i2", "Context compacted")]);
     expect(document.querySelectorAll("[data-compaction]")).toHaveLength(1);

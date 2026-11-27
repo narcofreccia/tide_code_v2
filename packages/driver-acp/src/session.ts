@@ -1,4 +1,5 @@
 import type { ApprovalDecision, DriverEnv, HarnessTurnHandle, NormalizedEvent, OpenSessionOptions, ProviderSession, ReconfigureResult, SessionSettings, SlashCommandInfo, SteerTarget, TurnInput, TurnUsage } from "@tide/contracts";
+import { elicitationForm } from "@tide/contracts";
 import type { TranscriptUsageReader } from "./antigravity-usage.ts";
 import { AsyncQueue, deferred, type Deferred } from "./async-queue.ts";
 import { FsPolicy } from "./fs.ts";
@@ -40,7 +41,9 @@ interface ActiveHarnessTurn {
 export function clientInitialize(version: string, quirks?: AcpQuirks): Record<string, unknown> {
   return {
     protocolVersion: PROTOCOL_VERSION,
-    clientCapabilities: { fs: { readTextFile: true, writeTextFile: quirks?.advertiseFsWrite !== false }, terminal: false },
+    // `elicitation.form`: agents that support it (Antigravity's ask_question) send questions as
+    // `elicitation/create` instead of writing them into the chat and ending the turn
+    clientCapabilities: { fs: { readTextFile: true, writeTextFile: quirks?.advertiseFsWrite !== false }, terminal: false, elicitation: { form: {} } },
     clientInfo: { name: "tide", version },
   };
 }
@@ -356,6 +359,8 @@ export class AcpSession implements ProviderSession {
       case "session/request_user_input":
         // not in ACP v1; accepted early so an agent that ships it still reaches the user
         return this.#userInput(params as AcpUserInputRequest);
+      case "elicitation/create":
+        return this.#elicitation(params);
       case "fs/read_text_file":
         return this.#fs.read(params);
       case "fs/write_text_file":
@@ -418,6 +423,22 @@ export class AcpSession implements ProviderSession {
     const result = userInputResult(questions, await this.#ask(this.#uniqueId(`input-${this.#inputSeq}`), questions));
     this.#maybeSettleRequestHarnessTurn();
     return result;
+  }
+
+  /** ACP `elicitation/create` (form mode) → a question card; answered `{action, content}`. */
+  async #elicitation(params: unknown): Promise<unknown> {
+    const cancel = { action: "cancel" };
+    const request = (typeof params === "object" && params !== null ? params : {}) as Record<string, unknown>;
+    const form = elicitationForm(request);
+    // nothing renderable (or a URL flow): decline, and the agent asks in the chat instead
+    if (form === undefined) return { action: "decline" };
+    if (this.#interrupted) return cancel;
+    if (!this.#inTurn && !this.#ensureRequestHarnessTurn(`${this.#ctx.label} asks a question`)) return cancel;
+    const base = typeof request["toolCallId"] === "string" && request["toolCallId"] !== "" ? request["toolCallId"] : `elicitation-${++this.#inputSeq}`;
+    const answers = await this.#ask(this.#uniqueId(base), form.questions);
+    this.#maybeSettleRequestHarnessTurn();
+    const content = answers === undefined ? undefined : form.toContent(answers);
+    return content === undefined ? cancel : { action: "accept", content };
   }
 
   /** Emit a `user-input` activity and wait for `respondUserInput` (undefined = cancelled). */

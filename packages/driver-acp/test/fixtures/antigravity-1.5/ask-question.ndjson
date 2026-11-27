@@ -1,0 +1,7 @@
+{"_header": {"note": "agy 1.5.18 live (2026-11-27): with clientCapabilities.elicitation.form advertised, ask_question arrives as elicitation/create; the q1_other free-text companion is left out of the card; the answer is the option's const"}}
+{"_dir": "c2a", "jsonrpc": "2.0", "id": 2, "method": "session/prompt", "params": {"sessionId": "sess_1", "prompt": [{"type": "text", "text": "pick"}]}}
+{"jsonrpc": "2.0", "method": "session/update", "params": {"sessionId": "sess_1", "update": {"sessionUpdate": "tool_call", "toolCallId": "call_39", "name": "ask_question", "status": "in_progress", "kind": "other", "title": "Run ask_question", "rawInput": {"questions": [{"is_multi_select": false, "options": ["Red", "Blue"], "question": "Pick a colour"}]}}}}
+{"jsonrpc": "2.0", "method": "elicitation/create", "params": {"sessionId": "sess_1", "toolCallId": "call_39", "mode": "form", "message": "The agent has a question.", "requestedSchema": {"type": "object", "properties": {"q1": {"type": "string", "title": "Pick a colour", "oneOf": [{"const": "1", "title": "Red"}, {"const": "2", "title": "Blue"}]}, "q1_other": {"type": "string", "title": "Other", "description": "Optional free-form answer to: Pick a colour"}}}}, "id": "1"}
+{"_dir": "c2a", "jsonrpc": "2.0", "id": "1", "result": {"action": "accept", "content": {"q1": "2"}}}
+{"jsonrpc": "2.0", "method": "session/update", "params": {"sessionId": "sess_1", "update": {"sessionUpdate": "tool_call_update", "toolCallId": "call_39", "status": "completed"}}}
+{"jsonrpc": "2.0", "id": 2, "result": {"stopReason": "end_turn"}}

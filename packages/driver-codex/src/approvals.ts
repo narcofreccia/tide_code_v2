@@ -1,9 +1,8 @@
-import type { ApprovalDecision, NormalizedEvent } from "@tide/contracts";
+import { elicitationForm, type ApprovalDecision, type FormQuestion, type NormalizedEvent } from "@tide/contracts";
 import { deferred, type Deferred } from "./async-queue.ts";
 import { truncate } from "./items.ts";
 import { rawPayload } from "./normalize.ts";
 import type { RequestId } from "./jsonrpc.ts";
-import { elicitationForm, type FormQuestion } from "./elicitation.ts";
 import type { ToolRequestUserInputParams } from "./generated/v2/ToolRequestUserInputParams.ts";
 
 /**
@@ -167,7 +166,8 @@ export class ApprovalBroker {
    * nothing renderable, stay an accept/decline approval card.
    */
   #elicitation(context: ServerRequestContext): boolean {
-    const form = elicitationForm(context.params);
+    const message = typeof context.params["message"] === "string" && context.params["message"] !== "" ? `${context.params["message"]}\n` : "";
+    const form = elicitationForm(context.params, { head: `[${String(context.params["serverName"] || "MCP server")}] ${message}` });
     if (form) {
       return this.#askQuestions(context, form.questions, (answers) => {
         const content = form.toContent(answers);

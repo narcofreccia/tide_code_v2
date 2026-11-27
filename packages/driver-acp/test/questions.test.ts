@@ -2,7 +2,7 @@ import { existsSync, mkdtempSync, readFileSync, realpathSync } from "node:fs";
 import { tmpdir } from "node:os";
 import { join } from "node:path";
 import { describe, expect, it } from "vitest";
-import type { DriverEnv, NormalizedEvent, OpenSessionOptions, ProviderSession } from "@tide/contracts";
+import { elicitationForm, type DriverEnv, type NormalizedEvent, type OpenSessionOptions, type ProviderSession } from "@tide/contracts";
 import { createAcpInstance } from "../src/index.ts";
 import { answerOption, isQuestionOptions } from "../src/questions.ts";
 import type { AcpPermissionOption, JsonRpcMessage } from "../src/types.ts";
@@ -130,6 +130,29 @@ describe("AcpSession user input", () => {
       },
     });
     expect(reply(agent, "ui-1")?.result).toEqual({ outcome: { outcome: "answered", answers: { lang: ["Go"], name: "tide" } } });
+  });
+
+  it("elicitation/create (Antigravity ask_question) becomes a one-click question; the answer goes back as the option's const", async () => {
+    const { agent, session } = await open([CONFIG, "antigravity-1.5/ask-question"]);
+    const events = await collect(session.send({ text: "pick" }), async (event) => {
+      if (event.type === "activity" && event.activity.kind === "user-input") await session.respondUserInput(event.activity.requestId, { q1: "Blue" });
+    });
+    const activity = events.find((event) => event.type === "activity" && event.activity.kind === "user-input");
+    expect(activity).toMatchObject({ activity: { requestId: "call_39", questions: [{ id: "q1", text: "Pick a colour", options: [{ label: "Red" }, { label: "Blue" }] }] } });
+    if (activity?.type !== "activity" || activity.activity.kind !== "user-input") throw new Error("expected a question");
+    expect(activity.activity.questions).toHaveLength(1);
+    expect(reply(agent, "1")?.result).toEqual({ action: "accept", content: { q1: "2" } });
+    expect(agent.mismatches).toEqual([]);
+  });
+
+  it("an unanswered elicitation is cancelled on interrupt; an unrenderable one is declined so the agent asks in chat", async () => {
+    const { agent, session } = await open([CONFIG, "antigravity-1.5/ask-question"]);
+    await collect(session.send({ text: "pick" }), async (event) => {
+      if (event.type === "activity" && event.activity.kind === "user-input") await session.interrupt();
+    });
+    expect(reply(agent, "1")?.result).toEqual({ action: "cancel" });
+    expect(elicitationForm({ mode: "url", url: "https://x" })).toBeUndefined();
+    expect(elicitationForm({ mode: "form", requestedSchema: { type: "object", properties: { deep: { type: "object" } } } })).toBeUndefined();
   });
 
   it("an unknown agent request is still answered method-not-found", async () => {

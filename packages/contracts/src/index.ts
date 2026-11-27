@@ -9,3 +9,4 @@ export * from "./background.ts";
 export * from "./rpc.ts";
 export * from "./repoIdentity.ts";
 export * from "./driver.ts";
+export * from "./elicitation.ts";

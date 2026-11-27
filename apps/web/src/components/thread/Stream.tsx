@@ -10,7 +10,7 @@ import { ApprovalCard } from "./ApprovalCard.tsx";
 import { ChildGroup } from "./ChildGroup.tsx";
 import { SessionBoundary } from "./SessionBoundary.tsx";
 import { CompactionNotice } from "./CompactionNotice.tsx";
-import { compactionOf, type Compaction } from "../../lib/compaction.ts";
+import { COMPACTING_LABEL, compactionOf, isCompactPrompt, type Compaction } from "../../lib/compaction.ts";
 import { EmptyThread } from "./EmptyThread.tsx";
 import { HarnessEvents, collapsePassThrough, isPassThrough } from "./HarnessEvents.tsx";
 import { PlanCard } from "./PlanCard.tsx";
@@ -37,7 +37,7 @@ type Row =
   | { kind: "child"; key: string; child: ActivityOf<"child">; activities: Activity[] }
   | { kind: "harness"; key: string; activities: Note[] }
   | { kind: "boundary"; key: string; turnId: string }
-  | { kind: "compaction"; key: string; activity: Activity; compaction: Compaction }
+  | { kind: "compaction"; key: string; turnId: string; title: string; compaction: Compaction }
   | { kind: "activity"; key: string; activity: Activity };
 
 /**
@@ -57,7 +57,14 @@ function buildRows(items: readonly TimelineItem[], turns: readonly Turn[], prev:
   const turnNumber = new Map(turns.map((t, i) => [t.id, i + 1] as const));
   // a harness that reports start and end as two rows (Pi): the "done" row stands for both
   const compacted = new Set<string>();
-  for (const entry of top) if (entry.kind === "activity" && compactionOf(entry.activity)?.phase === "done") compacted.add(entry.activity.turnId);
+  const reported = new Set<string>();
+  for (const entry of top) {
+    if (entry.kind !== "activity") continue;
+    const phase = compactionOf(entry.activity)?.phase;
+    if (phase !== undefined) reported.add(entry.activity.turnId);
+    if (phase === "done") compacted.add(entry.activity.turnId);
+  }
+  const turnStatus = new Map(turns.map((t) => [t.id, t.status] as const));
   const rows: Row[] = [];
   for (const node of groupActivities(top)) {
     if (node.kind === "group") {
@@ -73,6 +80,8 @@ function buildRows(items: readonly TimelineItem[], turns: readonly Turn[], prev:
         turnNumber: turnNumber.get(turnId),
         conclusion: showMeta ? stable(`turn:${turnId}`, turnActivities.get(turnId) ?? []) : undefined,
       });
+      const quiet = node.message.role === "user" && isCompactPrompt(node.message.text) && !reported.has(turnId) ? quietCompaction(turnStatus.get(turnId)) : undefined;
+      if (quiet !== undefined) rows.push({ kind: "compaction", key: `compaction:${turnId}`, turnId, title: quiet.text, compaction: quiet });
     } else if (node.kind === "boundary") {
       rows.push({ kind: "boundary", key: `boundary:${node.turnId}`, turnId: node.turnId });
     } else if (node.kind === "plan") {
@@ -82,7 +91,9 @@ function buildRows(items: readonly TimelineItem[], turns: readonly Turn[], prev:
       const events = isPassThrough(activity) ? groups.get(activity.id) : undefined;
       const compaction = compactionOf(activity);
       if (compaction !== undefined) {
-        if (compaction.phase === "done" || !compacted.has(activity.turnId)) rows.push({ kind: "compaction", key: activity.id, activity, compaction });
+        if (compaction.phase === "done" || !compacted.has(activity.turnId)) {
+          rows.push({ kind: "compaction", key: activity.id, turnId: activity.turnId, title: activity.kind === "info" ? activity.text : compaction.text, compaction });
+        }
       } else if (activity.kind === "approval") rows.push({ kind: "approval", key: activity.id, activity, active: activity.id === liveApprovalId });
       else if (activity.kind === "user-input") rows.push({ kind: "input", key: activity.id, activity });
       else if (activity.kind === "child") {
@@ -92,6 +103,16 @@ function buildRows(items: readonly TimelineItem[], turns: readonly Turn[], prev:
     }
   }
   return { rows, lists };
+}
+
+/**
+ * A `/compact` turn on a harness that reports no compaction rows (Antigravity, OpenCode):
+ * the notice still shimmers while the turn runs and says it is done once it completed.
+ */
+function quietCompaction(status: Turn["status"] | undefined): Compaction | undefined {
+  if (status === "requested" || status === "running") return { phase: "running", text: COMPACTING_LABEL };
+  if (status === "completed") return { phase: "done", text: "Context compacted" };
+  return undefined;
 }
 
 function renderRow(row: Row, provider: ProviderKind, hotkeys: boolean) {
@@ -123,7 +144,7 @@ function renderRow(row: Row, provider: ProviderKind, hotkeys: boolean) {
     case "boundary":
       return <SessionBoundary key={row.key} turnId={row.turnId} />;
     case "compaction":
-      return <CompactionNotice key={row.key} activity={row.activity} compaction={row.compaction} />;
+      return <CompactionNotice key={row.key} turnId={row.turnId} title={row.title} compaction={row.compaction} />;
     case "activity":
       return <ActivityRow key={row.key} activity={row.activity} />;
   }
