@@ -21,6 +21,7 @@ export interface HttpContext {
   /** settings.environment.name, read per request (the user may rename the machine) */
   envName: () => string;
   webhook: WebhookDeps;
+  mcp: { handle: (req: IncomingMessage, res: ServerResponse) => Promise<void>; secret: () => string; ips: ReadonlySet<string> };
   /** R18: which Host names this server answers to (hostOrigin.ts) */
   hosts: HostPolicy;
   /** R18: the configured relay's http origin, read per request; undefined = no relay configured */
@@ -56,7 +57,7 @@ function bearerGrant(ctx: HttpContext, header: string | undefined): { clientId?:
   return clientId === undefined ? undefined : { clientId };
 }
 
-function json(res: ServerResponse, status: number, body: unknown): void {
+export function json(res: ServerResponse, status: number, body: unknown): void {
   res.writeHead(status, { "content-type": "application/json" });
   res.end(JSON.stringify(body));
 }
@@ -112,6 +113,35 @@ function routes(ctx: HttpContext): Route[] {
   const { config } = ctx;
   return [
     {
+      method: "POST",
+      path: "/mcp",
+      cors: "none",
+      handle: async (req, res) => {
+        const grant = bearerGrant(ctx, req.headers.authorization);
+        if (grant === undefined) return json(res, 401, { error: "unauthorized" });
+        if (!originTrusted(ctx, req)) return refuseOrigin(res);
+        const peer = (req.socket.remoteAddress ?? "").replace(/^::ffff:/, "");
+        if (ctx.mcp.ips.size > 0 && !isRelayed(ctx, req) && !ctx.mcp.ips.has(peer)) {
+          return json(res, 403, { error: "forbidden" });
+        }
+        if (grant.clientId !== undefined) ctx.clientTokens.use(grant.clientId);
+        await ctx.mcp.handle(req, res);
+      },
+    },
+    {
+      method: "GET",
+      path: "/api/mcp/info",
+      cors: "none",
+      handle: (req, res) => {
+        if (!safeEqual(req.headers.authorization ?? "", `Bearer ${config.token}`)) return json(res, 401, { error: "unauthorized" });
+        if (!originTrusted(ctx, req)) return refuseOrigin(res);
+        const elevationSecret = ctx.mcp.secret();
+        const { id: clientId, token } = ctx.clientTokens.mint("Tide AI Chat MCP", req.socket.remoteAddress ?? "unknown", "limited", "mcp");
+        res.setHeader("Cache-Control", "no-store");
+        json(res, 200, { token, elevationSecret, environmentId: config.environmentId, clientId });
+      },
+    },
+    {
       method: "GET",
       path: "/health",
       cors: "trusted",
@@ -138,7 +168,9 @@ function routes(ctx: HttpContext): Route[] {
       cors: "bearer",
       handle: (req, res) => {
         const grant = bearerGrant(ctx, req.headers.authorization);
-        if (grant === undefined) return json(res, 401, { error: "unauthorized" });
+        if (grant === undefined || (grant.clientId !== undefined && ctx.clientTokens.isMcpOnly(grant.clientId))) {
+          return json(res, 401, { error: "unauthorized" });
+        }
         if (grant.clientId !== undefined) ctx.clientTokens.use(grant.clientId);
         json(res, 200, ctx.tickets.issue("websocket", grant));
       },

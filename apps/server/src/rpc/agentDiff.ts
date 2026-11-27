@@ -1,4 +1,4 @@
-import type { DiffFile, RpcOutput } from "@tide/contracts";
+import type { DiffFile, ReadModel, RpcInput, RpcOutput, Thread } from "@tide/contracts";
 import type { Engine } from "../orchestration/engine.ts";
 import { threadCwd } from "../provider/sessions.ts";
 import type { CheckpointService } from "../vcs/checkpoints.ts";
@@ -31,11 +31,15 @@ export function registerAgentDiffHandler(router: RpcRouter, deps: AgentDiffDeps)
   router.register("agent.thread.diff", async (input, ctx) => {
     const model = deps.engine.getModel();
     const target = reachable(model, callerThread(model, ctx), input.threadId);
-    const project = model.projects[target.projectId];
-    if (!project) throw new RpcException("not-found", `unknown project ${target.projectId}`);
-    const turns = Object.values(model.turns).filter((t) => t.threadId === target.id);
-    const diff = await deps.checkpoints.threadDiff(threadCwd(target, project), target, turns);
-    const max = input.maxCharsPerFile ?? DEFAULT_DIFF_CHARS_PER_FILE;
-    return { base: diff.base, head: diff.head, files: diff.files.map((file) => boundFile(file, max)) };
+    return threadDiff(deps.checkpoints, model, target, input);
   });
+}
+
+export async function threadDiff(checkpoints: CheckpointService, model: ReadModel, target: Thread, input: RpcInput<"agent.thread.diff">) {
+  const project = model.projects[target.projectId];
+  if (!project) throw new RpcException("not-found", `unknown project ${target.projectId}`);
+  const turns = Object.values(model.turns).filter((t) => t.threadId === target.id);
+  const diff = await checkpoints.threadDiff(threadCwd(target, project), target, turns);
+  const max = input.maxCharsPerFile ?? DEFAULT_DIFF_CHARS_PER_FILE;
+  return { base: diff.base, head: diff.head, files: diff.files.map((file) => boundFile(file, max)) };
 }

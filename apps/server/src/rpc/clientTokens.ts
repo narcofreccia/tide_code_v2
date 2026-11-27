@@ -14,6 +14,7 @@ export const TOKEN_IDLE_EXPIRY_MS = 90 * 24 * 60 * 60_000;
 interface StoredClient extends PairedClient {
   /** sha256 hex of the token; the token itself is never stored */
   hash: string;
+  scope?: "mcp";
   /** R18: last ticket purchase with this token (absent in files written before R18) */
   lastUsedAt?: number;
 }
@@ -45,6 +46,7 @@ function isStored(value: unknown): value is StoredClient {
     typeof v["createdAt"] === "number" &&
     typeof v["hash"] === "string" &&
     /^[0-9a-f]{64}$/.test(v["hash"]) &&
+    (v["scope"] === undefined || v["scope"] === "mcp") &&
     (v["lastUsedAt"] === undefined || typeof v["lastUsedAt"] === "number") &&
     (v["access"] === undefined || v["access"] === "limited" || v["access"] === "full")
   );
@@ -81,13 +83,13 @@ export class ClientTokenStore {
   }
 
   /** R19: new devices are `limited` unless the code they redeemed said otherwise */
-  mint(name: string, address: string, access: DeviceAccess = "limited"): { id: string; token: string } {
+  mint(name: string, address: string, access: DeviceAccess = "limited", scope?: "mcp"): { id: string; token: string } {
     let id: string;
     do id = this.#random(9).toString("base64url");
     while (this.has(id));
     const token = this.#random(32).toString("base64url");
     const now = this.#now();
-    this.#clients.push({ id, name, createdAt: now, lastSeenAt: now, lastAddress: address, access, hash: hashOf(token) });
+    this.#clients.push({ id, name, createdAt: now, lastSeenAt: now, lastAddress: address, access, ...(scope === undefined ? {} : { scope }), hash: hashOf(token) });
     this.#touchWritten.set(id, now);
     this.#save();
     return { id, token };
@@ -127,6 +129,10 @@ export class ClientTokenStore {
     return true;
   }
 
+  isMcpOnly(id: string): boolean {
+    return this.#clients.find((c) => c.id === id)?.scope === "mcp";
+  }
+
   touch(id: string, address: string): void {
     const client = this.#clients.find((c) => c.id === id);
     if (!client) return;
@@ -158,7 +164,7 @@ export class ClientTokenStore {
   }
 
   list(): PairedClient[] {
-    return this.#clients.map(({ hash: _hash, lastUsedAt: _used, ...client }) => ({ ...client, access: client.access ?? "full" }));
+    return this.#clients.map(({ hash: _hash, lastUsedAt: _used, scope: _scope, ...client }) => ({ ...client, access: client.access ?? "full" }));
   }
 
   revoke(id: string): boolean {

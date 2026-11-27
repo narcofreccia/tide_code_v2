@@ -1,3 +1,7 @@
+import { loadElevationSecret } from "../mcp/elevation.ts";
+import { createMcpEndpoint } from "../mcp/httpEndpoint.ts";
+import { createRemoteTools } from "../mcp/remoteTools.ts";
+import { projectRoots } from "../mcp/roots.ts";
 import type { IncomingMessage, Server } from "node:http";
 import type { Duplex } from "node:stream";
 import { WebSocketServer, type WebSocket } from "ws";
@@ -59,6 +63,7 @@ function detectTools(): { git: boolean; gh: boolean; rg: boolean } {
 }
 
 export interface ServerDeps {
+  mcpAllowedRoots?: readonly string[];
   engine: Engine;
   store: EventStore;
   config: ServerConfig;
@@ -237,6 +242,14 @@ export async function startServer(deps: ServerDeps): Promise<ServerHandle> {
   })().catch(() => undefined);
 
   const hosts = createHostPolicy({ environmentId: config.environmentId, allowedHosts: deps.allowedHosts ?? parseAllowedHosts(process.env[ALLOWED_HOSTS_ENV]) });
+  let elevationSecret: string | undefined;
+  const secret = () => elevationSecret ??= loadElevationSecret(config.dataDir);
+  const mcpTools = createRemoteTools({
+    engine, registry, checkpoints, providerDefaults: () => settings.get().providerDefaults,
+    roots: deps.mcpAllowedRoots ?? projectRoots(),
+  });
+  const ips = new Set((process.env.TIDE_MCP_ALLOWED_IPS ?? "").split(",").map((ip) => ip.trim().replace(/^::ffff:/, "")).filter(Boolean));
+  let mcpEndpoint: ReturnType<typeof createMcpEndpoint> | undefined;
   // R19: HTTPS/WSS on the same single listener when a certificate is configured
   const http: Server = createListener(
     createHttpHandler({
@@ -247,6 +260,7 @@ export async function startServer(deps: ServerDeps): Promise<ServerHandle> {
       remote,
       envName: () => settings.get().environment.name,
       webhook: { engine, settings },
+      mcp: { secret, ips, handle: (req, res) => (mcpEndpoint ??= createMcpEndpoint(mcpTools, secret(), config.version))(req, res) },
       hosts,
       relayOrigin: () => relayOriginOf(deps.relayState?.()?.url),
     }),

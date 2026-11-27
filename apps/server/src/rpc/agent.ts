@@ -106,10 +106,7 @@ export function registerAgentHandlers(router: RpcRouter, deps: AgentHandlerDeps)
 
   router.register("agent.harnesses", async (input, ctx) => {
     callerOf(deps.engine.getModel(), ctx);
-    if (deps.registry === undefined) return { harnesses: [] };
-    const defaults = deps.providerDefaults?.() ?? {};
-    const dtos = await deps.registry.statusAll(input.refresh === true);
-    return { harnesses: dtos.map((dto) => toAgentHarness(dto, defaults)) };
+    return listHarnesses(deps, input.refresh === true);
   });
 
   router.register("agent.context", async (input, ctx) => {
@@ -167,4 +164,11 @@ export function registerAgentHandlers(router: RpcRouter, deps: AgentHandlerDeps)
       ...(turn?.error !== undefined ? { error: turn.error } : {}),
     };
   });
+}
+
+export async function listHarnesses(deps: Pick<AgentHandlerDeps, "registry" | "providerDefaults">, refresh: boolean) {
+  if (deps.registry === undefined) return { harnesses: [] };
+  const defaults = deps.providerDefaults?.() ?? {};
+  const dtos = await deps.registry.statusAll(refresh);
+  return { harnesses: dtos.map((dto) => toAgentHarness(dto, defaults)) };
 }

@@ -271,19 +271,16 @@ export class Engine {
     };
   }
 
-  dispatch(command: Command): Promise<DispatchResult> {
-    return this.#enqueue(command);
+  /** A state-dependent authorization check runs inside the command queue, before deciding. */
+  dispatch(command: Command, authorize?: (model: ReadModel) => void): Promise<DispatchResult> {
+    return this.#enqueue(command, authorize);
   }
 
-  /**
-   * Entry point for the server's own commands (see `decider/server.ts`). It shares the
-   * single-writer queue and the decider with `dispatch`, but skips contracts validation
-   * because these types are intentionally outside the wire `Command` union — which is also
-   * why no RPC handler can ever reach this method.
-   */
-
-  #enqueue(command: Command): Promise<DispatchResult> {
-    const run = this.#queue.then(() => this.#process(command));
+  #enqueue(command: Command, authorize?: (model: ReadModel) => void): Promise<DispatchResult> {
+    const run = this.#queue.then(() => {
+      authorize?.(this.#model);
+      return this.#process(command);
+    });
     // keep the chain alive regardless of this command's outcome; maintenance is its own step,
     // one tick later, so the caller's continuation runs before compaction or a snapshot
     this.#queue = run
