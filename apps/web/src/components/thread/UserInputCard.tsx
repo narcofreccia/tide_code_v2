@@ -6,10 +6,19 @@ import { Button } from "../ui/Button.tsx";
 import { Checkbox } from "../ui/Choice.tsx";
 import { RequestFrom, type RequestOrigin } from "./RequestFrom.tsx";
 import styles from "./Card.module.css";
-import secretStyles from "./UserInputCard.module.css";
+import local from "./UserInputCard.module.css";
+import { Pill } from "../ui/Pill.tsx";
 
 type Answer = string | string[];
 type Question = ActivityOf<"user-input">["questions"][number];
+
+/** Harnesses mark their pick in the label ("(Recommended) Hybrid…"); shown as a tag, sent back verbatim. */
+export function splitRecommended(label: string): { text: string; recommended: boolean } {
+  const match = /^\s*\(recommended\)\s*[:\-–—]?\s*|\s*\(recommended\)\s*$/i.exec(label);
+  if (match === null) return { text: label, recommended: false };
+  const text = (label.slice(0, match.index) + label.slice(match.index + match[0].length)).trim();
+  return text === "" ? { text: label, recommended: false } : { text, recommended: true };
+}
 
 function answered(question: Question, answer: Answer | undefined): boolean {
   if (answer === undefined) return false;
@@ -61,12 +70,12 @@ function SecretCard({ activity, from }: { activity: ActivityOf<"user-input">; fr
         {from ? <RequestFrom what="Secret request" from={from} /> : null}
         <div className={styles.question}>
           {question?.text ? <span className={styles.questionText}>{question.text}</span> : null}
-          <label htmlFor={inputId} className={secretStyles.name}>
+          <label htmlFor={inputId} className={local.name}>
             {name}
           </label>
           <input
             id={inputId}
-            className={secretStyles.input}
+            className={local.input}
             type="password"
             autoComplete="off"
             spellCheck={false}
@@ -106,7 +115,7 @@ function QuestionCard({ activity, from }: { activity: ActivityOf<"user-input">; 
 
   if (activity.status === "resolved") {
     const given = Object.values(activity.answers ?? {})
-      .map((v) => (Array.isArray(v) ? v.join(", ") : String(v)))
+      .map((v) => (Array.isArray(v) ? v : [String(v)]).map((l) => splitRecommended(l).text).join(", "))
       .join(" · ");
     return (
       <li className={styles.resolved}>
@@ -137,42 +146,67 @@ function QuestionCard({ activity, from }: { activity: ActivityOf<"user-input">; 
 
   const complete = questions.every((q) => answered(q, answers[q.id]));
 
+  const done = questions.filter((q) => answered(q, answers[q.id])).length;
+  const many = questions.length > 1;
+
   return (
     <li>
-      <section className={`${styles.card} ${styles.attention}`} aria-label="Question">
+      <section className={`${styles.card} ${styles.attention} ${local.card}`} aria-label="Question">
         {from ? <RequestFrom what="Question" from={from} /> : null}
-        {questions.map((question) => (
-          <div key={question.id} className={styles.question}>
-            <span className={styles.questionText}>{question.text}</span>
+        {questions.map((question, index) => (
+          <fieldset key={question.id} className={local.question}>
+            <legend className={local.questionText}>
+              {many ? <span className={local.index}>{index + 1}.</span> : null}
+              <span>{question.text}</span>
+            </legend>
             {question.options && question.options.length > 0 ? (
-              <div className={styles.options}>
-                {question.options.map((option) =>
-                  question.multi ? (
-                    <Checkbox
+              <div className={local.options}>
+                {question.options.map((option) => {
+                  const { text, recommended } = splitRecommended(option.label);
+                  const body = (
+                    <>
+                      <span className={local.optionLabel}>
+                        {text}
+                        {recommended ? (
+                          <Pill tone="accent" size="sm" className={local.recommended}>
+                            Recommended
+                          </Pill>
+                        ) : null}
+                      </span>
+                      {option.description ? <span className={local.optionHint}>{option.description}</span> : null}
+                    </>
+                  );
+                  if (question.multi) {
+                    const checked = (answers[question.id] as string[] | undefined)?.includes(option.label) ?? false;
+                    return (
+                      <Checkbox
+                        key={option.label}
+                        className={`${local.option} ${checked ? local.selected : ""}`}
+                        aria-label={option.label}
+                        checked={checked}
+                        onChange={() => toggle(question, option.label)}
+                      >
+                        <span className={local.optionBody}>{body}</span>
+                      </Checkbox>
+                    );
+                  }
+                  const selected = answers[question.id] === option.label;
+                  return (
+                    <button
                       key={option.label}
-                      className={styles.check}
-                      aria-label={option.label}
-                      checked={(answers[question.id] as string[] | undefined)?.includes(option.label) ?? false}
-                      onChange={() => toggle(question, option.label)}
-                    >
-                      {option.label}
-                      {option.description ? (
-                        <span className={styles.optionHint}>{option.description}</span>
-                      ) : null}
-                    </Checkbox>
-                  ) : (
-                    <Button
-                      key={option.label}
-                      variant={answers[question.id] === option.label ? "primary" : "ghost"}
+                      type="button"
+                      className={`${local.option} ${selected ? local.selected : ""}`}
+                      aria-pressed={single ? undefined : selected}
                       // a single choice answers on click
                       disabled={single && offline !== undefined}
                       title={single ? offline : undefined}
                       onClick={() => pick(question, option.label)}
                     >
-                      {option.label}
-                    </Button>
-                  ),
-                )}
+                      <span className={local.radio} aria-hidden="true" />
+                      <span className={local.optionBody}>{body}</span>
+                    </button>
+                  );
+                })}
               </div>
             ) : (
               <textarea
@@ -182,10 +216,15 @@ function QuestionCard({ activity, from }: { activity: ActivityOf<"user-input">; 
                 onChange={(e) => setAnswers((prev) => ({ ...prev, [question.id]: e.target.value }))}
               />
             )}
-          </div>
+          </fieldset>
         ))}
         {single ? null : (
-          <div className={styles.actions}>
+          <div className={local.footer}>
+            {many ? (
+              <span className={local.progress}>
+                {done} of {questions.length} answered
+              </span>
+            ) : null}
             <Button variant="primary" disabled={!complete || offline !== undefined} title={offline} onClick={() => submit(answers)}>
               Send answer
             </Button>

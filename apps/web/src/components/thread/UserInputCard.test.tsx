@@ -1,6 +1,6 @@
 import { afterEach, describe, expect, it } from "vitest";
 import { cleanup, fireEvent, render, screen, waitFor } from "@testing-library/react";
-import { UserInputCard } from "./UserInputCard.tsx";
+import { UserInputCard, splitRecommended } from "./UserInputCard.tsx";
 import { attachFakeStore, makeUserInput, mockRpc, modelWith, resetUi } from "../../testHarness.ts";
 
 afterEach(() => {
@@ -63,6 +63,40 @@ describe("UserInputCard", () => {
       requestId: "req-q3",
       answers: { note: "ship it" },
     });
+  });
+});
+
+describe("UserInputCard: layout", () => {
+  it("shows a harness's (Recommended) prefix as a tag and sends the label back verbatim", () => {
+    const fake = attachFakeStore(modelWith({}));
+    render(
+      <UserInputCard
+        activity={makeUserInput("q4", [
+          { id: "a", text: "Playback?", options: [{ label: "(Recommended) Hybrid: on device" }, { label: "Cloud only" }] },
+          { id: "b", text: "Auth?", options: [{ label: "Apple" }, { label: "Email" }] },
+        ])}
+      />,
+    );
+    expect(screen.getByText("Hybrid: on device")).toBeTruthy();
+    expect(screen.getByText("Recommended")).toBeTruthy();
+    expect(screen.getByText("0 of 2 answered")).toBeTruthy();
+    fireEvent.click(screen.getByText("Hybrid: on device"));
+    expect(screen.getByText("1 of 2 answered")).toBeTruthy();
+    fireEvent.click(screen.getByText("Email"));
+    fireEvent.click(screen.getByText("Send answer"));
+    expect(fake.dispatch).toHaveBeenCalledWith({
+      type: "user-input.respond",
+      threadId: "t1",
+      requestId: "req-q4",
+      answers: { a: "(Recommended) Hybrid: on device", b: "Email" },
+    });
+  });
+
+  it("splits the recommended marker at either end only", () => {
+    expect(splitRecommended("(Recommended) Patch")).toEqual({ text: "Patch", recommended: true });
+    expect(splitRecommended("Patch (recommended)")).toEqual({ text: "Patch", recommended: true });
+    expect(splitRecommended("Use the (recommended) flag")).toEqual({ text: "Use the (recommended) flag", recommended: false });
+    expect(splitRecommended("(Recommended)")).toEqual({ text: "(Recommended)", recommended: false });
   });
 });
 

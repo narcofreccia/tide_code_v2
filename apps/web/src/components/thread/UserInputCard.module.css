@@ -7,3 +7,63 @@
   font-family: var(--font-mono);
 }
 .name { font-family: var(--font-mono); color: var(--muted); }
+
+/* Question card: one row per option that wraps inside the card, never a run-on of nowrap buttons. */
+.card { min-width: 0; max-width: 100%; gap: var(--sp-3); }
+.question {
+  display: flex;
+  flex-direction: column;
+  gap: var(--sp-2);
+  min-width: 0;
+  margin: 0;
+  padding: 0;
+  border: none;
+}
+.question + .question { border-top: 1px solid var(--border); padding-top: var(--sp-3); }
+.questionText {
+  display: flex;
+  gap: var(--sp-2);
+  padding: 0;
+  margin-bottom: var(--sp-2);
+  color: var(--text);
+  font-weight: var(--fw-medium);
+  line-height: var(--lh-body);
+}
+.index { color: var(--muted); font-variant-numeric: tabular-nums; }
+.options { display: flex; flex-direction: column; gap: var(--sp-1); min-width: 0; }
+.option {
+  display: flex;
+  align-items: flex-start;
+  gap: var(--sp-2);
+  width: 100%;
+  min-width: 0;
+  padding: var(--sp-2) var(--sp-3);
+  border: 1px solid var(--border);
+  border-radius: var(--radius);
+  background: var(--surface-2);
+  color: var(--text);
+  font: inherit;
+  text-align: left;
+  line-height: var(--lh-body);
+  cursor: pointer;
+  transition: border-color var(--dur-fast) var(--ease), background-color var(--dur-fast) var(--ease);
+}
+.option:hover:not(:disabled) { border-color: var(--accent); }
+.option:disabled { opacity: 0.45; cursor: default; }
+.selected { border-color: var(--accent); background: var(--selection); }
+.radio {
+  flex: none;
+  width: 14px;
+  height: 14px;
+  margin-top: 3px;
+  border: 1px solid var(--border-strong);
+  border-radius: 50%;
+}
+.selected .radio { border: 4px solid var(--accent); }
+.option input { margin-top: 3px; }
+.optionBody { display: flex; flex-direction: column; gap: 2px; min-width: 0; overflow-wrap: anywhere; }
+.optionLabel { display: inline; }
+.recommended { margin-left: var(--sp-2); vertical-align: 1px; }
+.optionHint { color: var(--muted); font-size: var(--fs-sm); }
+.footer { display: flex; align-items: center; justify-content: flex-end; gap: var(--sp-3); }
+.progress { color: var(--muted); font-size: var(--fs-sm); font-variant-numeric: tabular-nums; }
