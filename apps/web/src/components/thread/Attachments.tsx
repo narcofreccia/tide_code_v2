@@ -12,6 +12,7 @@ import {
   thumbnailUrlOf,
   type PendingImage,
 } from "../../lib/images.ts";
+import { fitImage } from "../../lib/imageShrink.ts";
 import { Icon } from "../ui/Icon.tsx";
 import styles from "./Attachments.module.css";
 
@@ -55,12 +56,15 @@ export function useAttachments(): Attachments {
         showToast(`At most ${MAX_IMAGES} images per message`);
         break;
       }
-      if (file.size > MAX_IMAGE_BYTES) {
-        showToast(`${file.name || "Image"} is larger than ${formatBytes(MAX_IMAGE_BYTES)}`);
-        continue;
-      }
       try {
-        const read = await readImageFile(file);
+        // over the cap: re-encode smaller (a Retina screenshot is often 6–10 MB) instead of refusing
+        const fitted = await fitImage(file, MAX_IMAGE_BYTES);
+        if (fitted === undefined) {
+          showToast(`${file.name || "Image"} is larger than ${formatBytes(MAX_IMAGE_BYTES)} and could not be shrunk`);
+          continue;
+        }
+        const source = fitted === file ? file : new File([fitted], file.name, { type: fitted.type });
+        const read = await readImageFile(source);
         commit([
           ...current.current,
           {
@@ -68,7 +72,7 @@ export function useAttachments(): Attachments {
             mediaType: read.mediaType,
             data: read.data,
             bytes: read.bytes,
-            url: thumbnailUrl(file, read.mediaType, read.data),
+            url: thumbnailUrl(source, read.mediaType, read.data),
           },
         ]);
       } catch (error: unknown) {
