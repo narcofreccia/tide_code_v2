@@ -123,8 +123,19 @@
   font-size: var(--fs-sm);
   line-height: var(--lh-body);
 }
-.markdown :global(:is(th, td)) { border: 1px solid var(--border); padding: 2px var(--sp-2); text-align: left; }
-.markdown :global(th) { font-weight: var(--fw-medium); }
+/*
+ * Cells size on whole words: the body's `overflow-wrap: anywhere` would let a column shrink
+ * to one letter ("Backen/d"). A table wider than the column scrolls instead.
+ */
+.markdown :global(:is(th, td)) {
+  border: 1px solid var(--border);
+  padding: var(--sp-1) var(--sp-2);
+  text-align: left;
+  vertical-align: top;
+  overflow-wrap: break-word;
+  min-width: 6ch;
+}
+.markdown :global(th) { font-weight: var(--fw-medium); background: var(--surface-2); white-space: nowrap; }
 .markdown :global(blockquote) {
   margin: 0 0 0.75em;
   padding-left: var(--sp-3);

@@ -38,6 +38,17 @@ const SAMPLES = [
 ];
 
 describe("Markdown", () => {
+  it("turns <br> in a table cell into a line break, and leaves other html as text", () => {
+    const { container } = render(
+      <Markdown text={"| a | b |\n| - | - |\n| one<br>two<br/>three | <b>x</b> |"} />,
+    );
+    const cells = container.querySelectorAll("td");
+    expect(cells[0]?.querySelectorAll("br").length).toBe(2);
+    expect(cells[0]?.textContent).toBe("one\ntwo\nthree");
+    expect(container.textContent).not.toContain("<br");
+    expect(cells[1]?.querySelector("b")).toBeNull();
+  });
+
   it.each(SAMPLES)("renders the same DOM streaming (in blocks) as settled (one parse): %#", (text) => {
     const settled = html(text, false);
     cleanup();

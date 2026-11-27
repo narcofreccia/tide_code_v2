@@ -1,6 +1,7 @@
 import { memo, useState } from "react";
 import ReactMarkdown from "react-markdown";
 import remarkGfm from "remark-gfm";
+import { remarkHtmlBreaks } from "./remarkHtmlBreaks.ts";
 import { threadSendBlock } from "@tide/client";
 import type { ProposedPlan, ProviderKind } from "@tide/contracts";
 import { dismissPlan, implementPlanHere, implementPlanInNewThread } from "../../lib/threadActions.ts";
@@ -18,7 +19,7 @@ import markdown from "./MessageItem.module.css";
 import styles from "./Card.module.css";
 import own from "./PlanCard.module.css";
 
-const REMARK_PLUGINS = [remarkGfm];
+const REMARK_PLUGINS = [remarkGfm, remarkHtmlBreaks];
 const MARKDOWN_COMPONENTS = { a: MarkdownLink };
 
 /**

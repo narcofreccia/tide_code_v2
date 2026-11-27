@@ -1,11 +1,12 @@
 import { Fragment, memo, useRef } from "react";
 import ReactMarkdown from "react-markdown";
 import remarkGfm from "remark-gfm";
+import { remarkHtmlBreaks } from "./remarkHtmlBreaks.ts";
 import { MarkdownLink, markdownUrlTransform } from "./MarkdownLink.tsx";
 import { MarkdownPre, OpenFence } from "./VisualBlocks.tsx";
 import { advanceScan, emptyScan, endsInOpenFence, pendingStart, type StreamScan } from "./streamBlocks.ts";
 
-const REMARK_PLUGINS = [remarkGfm];
+const REMARK_PLUGINS = [remarkGfm, remarkHtmlBreaks];
 const COMPONENTS = { pre: MarkdownPre, a: MarkdownLink };
 
 /** One parse. Memoized on its text, so a settled block is parsed once and never again. */
