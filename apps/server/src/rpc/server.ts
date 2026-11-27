@@ -170,6 +170,8 @@ export async function startServer(deps: ServerDeps): Promise<ServerHandle> {
     deviceGuard(method, params, ctx, ctx.clientId === undefined ? "full" : (clientTokens.accessOf(ctx.clientId) ?? "limited")),
   );
   const settings = deps.settings ?? new SettingsStore(config.dataDir === ":memory:" ? {} : { path: SettingsStore.pathFor(config.tideHome) });
+  let elevationSecret: string | undefined;
+  const secret = () => (elevationSecret ??= loadElevationSecret(config.dataDir));
   const envDeps: EnvDeps = {
     engine,
     registry,
@@ -178,6 +180,10 @@ export async function startServer(deps: ServerDeps): Promise<ServerHandle> {
     clients: { store: clientTokens, closeClient },
     remote,
     discover: deps.discovery?.browse ?? ((timeoutMs) => browse({ timeoutMs, selfEnvironmentId: config.environmentId, ...mdnsSockets })),
+    mcpCredentials: (label) => {
+      const { id: clientId, token } = clientTokens.mint(label ?? "Tide AI Chat MCP", "local-ui", "limited", "mcp");
+      return { environmentId: config.environmentId, token, elevationSecret: secret(), clientId };
+    },
     ...(deps.relayState !== undefined ? { relayState: deps.relayState } : {}),
     ...(deps.runUpdate !== undefined ? { runUpdate: deps.runUpdate } : {}),
   };
@@ -242,8 +248,6 @@ export async function startServer(deps: ServerDeps): Promise<ServerHandle> {
   })().catch(() => undefined);
 
   const hosts = createHostPolicy({ environmentId: config.environmentId, allowedHosts: deps.allowedHosts ?? parseAllowedHosts(process.env[ALLOWED_HOSTS_ENV]) });
-  let elevationSecret: string | undefined;
-  const secret = () => elevationSecret ??= loadElevationSecret(config.dataDir);
   const mcpTools = createRemoteTools({
     engine, registry, checkpoints, providerDefaults: () => settings.get().providerDefaults,
     roots: deps.mcpAllowedRoots ?? projectRoots(),

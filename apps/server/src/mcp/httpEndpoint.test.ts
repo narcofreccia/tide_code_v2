@@ -144,7 +144,12 @@ describe("remote MCP", () => {
     const pair = await fetch(url, { headers: { authorization: `Bearer ${master}` } });
     expect(pair.status).toBe(200);
     expect(pair.headers.get("cache-control")).toBe("no-store");
-    const { token, clientId, elevationSecret, environmentId } = await pair.json();
+    const { token, clientId, elevationSecret, environmentId } = (await pair.json()) as {
+      token: string;
+      clientId: string;
+      elevationSecret: string;
+      environmentId: string;
+    };
     expect({ elevationSecret, environmentId }).toEqual({ elevationSecret: secret, environmentId: config.environmentId });
     expect(server.clientTokens.list()).toContainEqual(expect.objectContaining({ id: clientId, name: "Tide AI Chat MCP" }));
     const headers = { authorization: `Bearer ${token}` };

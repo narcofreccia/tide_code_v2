@@ -23,6 +23,7 @@ export const METHOD_ACCESS: Record<keyof typeof rpcMethods, AccessNeeded> = {
   "providers.commands": "limited",
   // owner-only for every device (deviceGuard), whatever this says
   "env.pairingCode": "full",
+  "env.mcpCredentials": "full",
   "env.clients.setAccess": "full",
   "env.discover": "limited",
   "env.clients.list": "limited",

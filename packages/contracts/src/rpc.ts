@@ -473,6 +473,11 @@ export const rpcMethods = {
    * server exchanges for the token — what `tide pair` prints and what the Environments UI shows.
    */
   "env.pairingCode": unary(Type.Object({ /** R19: level of the device this code will pair; default `limited` */ access: Type.Optional(DeviceAccess) }), Type.Object({ code: Type.String(), expiresAt: Type.Number(), urls: Type.Array(Type.String()) })),
+  /** Owner-only: mint a revocable MCP-only Bearer token and return the environment ID and 2FA elevation secret for remote MCP clients (e.g. Tide AI Chat). */
+  "env.mcpCredentials": unary(
+    Type.Object({ label: Type.Optional(Type.String({ minLength: 1, maxLength: 64 })) }),
+    Type.Object({ environmentId: Type.String(), token: Type.String(), elevationSecret: Type.String(), clientId: Type.String() }),
+  ),
   /** R17: browse the LAN for other tide-servers (mDNS `_tide._tcp`); `enabled: false` when this server cannot multicast */
   "env.discover": unary(Type.Object({ timeoutMs: Type.Optional(Type.Number({ minimum: 200, maximum: 5000 })) }), Type.Object({ peers: Type.Array(DiscoveredPeer), enabled: Type.Boolean() })),
   /** R17: devices holding a per-device token for this server; revoking closes their sockets with 4401 */

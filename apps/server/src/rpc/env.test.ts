@@ -230,3 +230,56 @@ describe("env.discover (R17)", () => {
     );
   });
 });
+
+describe("env.mcpCredentials", () => {
+  it("mints a revocable MCP-only token and returns environmentId + elevationSecret for the owner, and refuses paired devices", async () => {
+    const b = await boot();
+    try {
+      const creds = await b.client.call<{ environmentId: string; token: string; elevationSecret: string; clientId: string }>("env.mcpCredentials", {});
+      expect(creds.environmentId).toBe("env-env");
+      expect(creds.token.length).toBeGreaterThan(16);
+      expect(creds.elevationSecret.length).toBeGreaterThan(16);
+      expect(creds.clientId.length).toBeGreaterThan(0);
+
+      // Minted MCP token works against POST /mcp initialize, and is refused for ws-ticket
+      const mcpRes = await fetch(`http://127.0.0.1:${b.port}/mcp`, {
+        method: "POST",
+        headers: {
+          "content-type": "application/json",
+          accept: "application/json, text/event-stream",
+          authorization: `Bearer ${creds.token}`,
+        },
+        body: JSON.stringify({ jsonrpc: "2.0", id: 1, method: "initialize", params: { protocolVersion: "2025-03-26", capabilities: {}, clientInfo: { name: "test", version: "1.0" } } }),
+      });
+      expect(mcpRes.status).toBe(200);
+
+      const ticketRes = await fetch(`http://127.0.0.1:${b.port}/api/auth/ws-ticket`, {
+        method: "POST",
+        headers: { authorization: `Bearer ${creds.token}` },
+      });
+      expect(ticketRes.status).toBe(401);
+
+      // A paired device (even with full access) cannot mint remote MCP credentials
+      const pairing = await b.client.call<{ code: string }>("env.pairingCode", { access: "full" });
+      const pairRes = await fetch(`http://127.0.0.1:${b.port}/api/auth/pair`, {
+        method: "POST",
+        headers: { "content-type": "application/json" },
+        body: JSON.stringify({ code: pairing.code, name: "Phone" }),
+      });
+      const paired = (await pairRes.json()) as { token: string };
+      const wsTicketRes = await fetch(`http://127.0.0.1:${b.port}/api/auth/ws-ticket`, {
+        method: "POST",
+        headers: { authorization: `Bearer ${paired.token}` },
+      });
+      const { ticket } = (await wsTicketRes.json()) as { ticket: string };
+      const pairedClient = await WsTestClient.open(`ws://127.0.0.1:${b.port}/ws?wsTicket=${ticket}`);
+      try {
+        await expect(pairedClient.call("env.mcpCredentials", {})).rejects.toMatchObject({ code: "forbidden" });
+      } finally {
+        pairedClient.close();
+      }
+    } finally {
+      await b.close();
+    }
+  });
+});

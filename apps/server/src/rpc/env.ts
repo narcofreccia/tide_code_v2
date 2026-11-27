@@ -110,6 +110,8 @@ export interface EnvDeps {
   discover?: (timeoutMs: number) => Promise<DiscoveredPeer[]>;
   /** the relay client's state (apps/server/src/relay) when one is configured */
   relayState?: () => RelayState | undefined;
+  /** owner-only remote MCP credentials (revocable MCP token + 2FA elevation secret) */
+  mcpCredentials?: (label?: string) => { environmentId: string; token: string; elevationSecret: string; clientId: string };
   runUpdate?: UpdateRunner;
 }
 
@@ -144,6 +146,8 @@ export function deviceGuard(method: string, params: unknown, ctx: Pick<RpcCallCo
   switch (method) {
     case "env.pairingCode":
       return "only the machine's owner can pair new devices; open Tide on that machine (or run `tide pair` there)";
+    case "env.mcpCredentials":
+      return "only the machine's owner can generate remote MCP credentials; open Tide on that machine";
     case "env.clients.setAccess":
       return "only the machine's owner can change a device's access; change it on the machine itself";
     case "env.clients.revoke":
@@ -163,6 +167,14 @@ export function registerEnvHandlers(router: RpcRouter, deps: EnvDeps): void {
   router.register("env.pairingCode", async ({ access }) => {
     const { code, expiresAt } = deps.pairing.issue(access !== undefined ? { access } : {});
     return { code, expiresAt, urls: pairingUrls(deps.remote({ includePairing: false }), deps.relayState?.()) };
+  });
+
+  router.register("env.mcpCredentials", async ({ label }) => {
+    if (deps.mcpCredentials === undefined) {
+      throw new RpcException("internal", "remote MCP credentials are not enabled on this server");
+    }
+    const trimmed = label?.trim();
+    return deps.mcpCredentials(trimmed && trimmed.length > 0 ? trimmed : undefined);
   });
 
   // R17: Tide servers on the LAN, for "Add machine"; enabled: false when this host cannot browse

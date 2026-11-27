@@ -4,6 +4,7 @@ import { Button } from "../ui/Button.tsx";
 import { AddMachineDialog } from "../fleet/AddMachineDialog.tsx";
 import { openAddMachine } from "../fleet/fleetUi.ts";
 import { MachineCard } from "../fleet/MachineCard.tsx";
+import { McpPanel } from "../fleet/McpPanel.tsx";
 import { RelayPanel } from "../fleet/RelayPanel.tsx";
 import { ThisMachine } from "../fleet/ThisMachine.tsx";
 import fleet from "../fleet/Environments.module.css";
@@ -16,7 +17,7 @@ export const META: SectionMeta = {
   title: "Environments",
   blurb:
     "Every machine running tide-server that this window drives. This machine is the primary: its settings are the ones these pages edit.",
-  keywords: ["This machine", "Machine name", "SSH host", "Other machines", "Add machine", "Pair another device", "Paired devices", "Relay", "remote", "Projects folder", "Cloned repositories", "tide-projects"],
+  keywords: ["This machine", "Machine name", "SSH host", "Other machines", "Add machine", "Pair another device", "Paired devices", "Relay", "Remote MCP", "MCP", "Tide AI Chat", "Elevation secret", "remote", "Projects folder", "Cloned repositories", "tide-projects"],
 };
 
 /**
@@ -62,6 +63,7 @@ export function EnvironmentsSection() {
       </SettingsGroup>
 
       <RelayPanel info={info} />
+      <McpPanel info={info} envId={primaryId} />
       <AddMachineDialog />
     </SettingsPage>
   );
